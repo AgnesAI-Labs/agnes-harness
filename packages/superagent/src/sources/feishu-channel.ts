@@ -1,70 +1,77 @@
 // Adapted from dsh-superagent (MIT)
-/** Feishu outbound channel: replies under the asked message through the AGH channel and builds chat deep links. */
-import type { MessageRef } from '@agnes/extension-api/channel-contract'
+/** Feishu outbound replies through the verified bot CLI, with durable delivery receipts and chat deep links. */
+import { createHash } from 'node:crypto'
 import type { OutboundMessage } from '../core/index.js'
+import { FeishuNotDispatched, FeishuRefusal } from '../infra/commands.js'
 import { checkedImText } from '../infra/text.js'
-import type { FeishuIo } from './feishu-io.js'
+import { KV } from '../kv.js'
+import { fetchMessages } from './feishu-client.js'
+import { type FeishuIo, requireIdentity } from './feishu-io.js'
 import { feishuTriggerId } from './feishu-trigger.js'
+import type { SourceContext } from './host.js'
 import type { ChannelLink, ChannelLinks } from './kind.js'
 
 /** Feishu or Lark AppLink that opens a chat; used when the message's own link was not delivered with the event. */
 export const feishuChatLink = (brand: 'feishu' | 'lark', chatId: string): string =>
   `https://applink.${brand === 'lark' ? 'larksuite.com' : 'feishu.cn'}/client/chat/open?openChatId=${encodeURIComponent(chatId)}`
+/** Only a structured API refusal proves that a target was recalled or removed. */
+export const gone = (error: unknown): boolean => error instanceof FeishuRefusal && error.code === 230011
 /**
- * True when Feishu permanently refuses a reply because the target message was recalled, withdrawn or not found: its
- * error code 230011, or a 2300xx code that says not found. Timeouts, crashes and other refusals may pass on a retry.
- */
-export function gone(error: unknown): boolean {
-  const text =
-    error instanceof Error ? error.message : String((error as { message?: unknown })?.message ?? '')
-  const data = JSON.stringify((error as { data?: unknown })?.data ?? '')
-  const all = `${text} ${data}`
-  return (
-    /\b230011\b/.test(all) ||
-    /withdrawn|recalled/i.test(all) ||
-    (/\b2300\d\d\b/.test(all) && /not found/i.test(all))
-  )
-}
-/** Where a reply to a message goes: its topic, or the message itself when it starts none, and its chain's root. */
-export interface ReplyPlace {
-  threadId?: string | undefined
-  root: string
-}
-/**
- * Replies to the message an outgoing message answers, in its topic, through the channel. The outgoing message's id is
- * the delivery key, so a retried send posts at most one reply. On a channel without replies or topics the reply posts
- * as a new message of the chat with the same key.
+ * Uses a stable provider idempotency key. A durable sending marker prevents an ambiguous crash/timeout being replayed
+ * outside the provider's dedupe window; the existing outbox keeps it pending for operator reconciliation.
  */
 export async function sendFeishu(
   io: FeishuIo,
   message: OutboundMessage,
-  place: (messageId: string) => ReplyPlace,
-  sent: (ref: MessageRef, root: string) => void,
-  during: (chatId: string, messageId: string, root: string) => () => void = () => () => {},
+  state: SourceContext['state'],
+  sent: (messageId: string) => void,
 ): Promise<'sent' | 'gone'> {
-  const { chatId, messageId } = message.channel.address
+  const { chatId, messageId, botIdentity } = message.channel.address
   if (!chatId || !messageId) throw new Error('Missing Feishu reply target')
-  if (!io.channel) throw new Error('The Feishu Source has no channel instance set')
-  const text = checkedImText(message.text)
-  const chatType = message.channel.address.direct === 'true' ? ('dm' as const) : ('group' as const)
-  const { threadId, root } = place(messageId)
-  let ref: MessageRef
-  // A reply in several parts returns only its first part, and parts may come back before it returns.
-  const done = during(chatId, messageId, root)
-  try {
-    ref = await io.channels.send(
-      io.channel,
-      { chatType, chatId, threadId: threadId ?? root, deliveryKey: message.id },
-      { blocks: [{ kind: 'text', markdown: text }], replyTo: { chatId, messageId, chatType } },
+  requireIdentity(io, botIdentity)
+  const key = KV.feishu.delivery(message.id)
+  const previous = state.get(key)
+  if (previous === 'sent') return 'sent'
+  if (previous)
+    throw new Error(
+      'Feishu delivery is uncertain; inspect the external reply before reconciling this pending receipt',
     )
+  // A message id alone is not a chat boundary: verify the reply target using the same bot first.
+  if (!(await fetchMessages(io, chatId, [messageId])).length) return 'gone'
+  const text = checkedImText(message.text)
+  const deliveryKey = createHash('sha256').update(message.id).digest('hex').slice(0, 50)
+  state.set(key, 'sending')
+  try {
+    // stdin prevents CLI @file expansion of message content and handles multiline text on Windows.
+    const result = await io.commands.lark<{ message_id?: string }>(
+      [
+        'im',
+        '+messages-reply',
+        '--message-id',
+        messageId,
+        '--markdown',
+        '-',
+        '--reply-in-thread',
+        '--idempotency-key',
+        deliveryKey,
+      ],
+      undefined,
+      text,
+    )
+    if (!result?.message_id) throw new Error('Feishu reply did not return a message id')
+    state.set(key, 'sent')
+    sent(result.message_id)
+    return 'sent'
   } catch (error) {
-    if (gone(error)) return 'gone'
+    if (
+      error instanceof FeishuNotDispatched ||
+      (error instanceof FeishuRefusal && error.code !== undefined)
+    ) {
+      state.set(key, undefined)
+      if (gone(error)) return 'gone'
+    } else state.set(key, 'uncertain')
     throw error
-  } finally {
-    done()
   }
-  sent(ref, root)
-  return 'sent'
 }
 /** Fallback chat link on the bot's brand; the message's own deep link on its Trigger is preferred when available. */
 export const feishuLink = (address: Record<string, string>, links: ChannelLinks): ChannelLink => ({

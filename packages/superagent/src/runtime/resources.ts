@@ -142,7 +142,7 @@ export interface ResourceHost {
   /** Whether a Session may read `revision` (the revision it currently runs under or any revision it ran under previously). */
   mayRead(sessionId: string, revision: number): boolean
   feishuPageSize(): number
-  /** The Feishu Source's channel reads; throws while the Source is off or not connected. */
+  /** The Feishu Source's scoped bot CLI reads; throws while the Source is off or unconfigured. */
   feishu(signal?: AbortSignal): FeishuIo
   sourceLink(
     trigger: Trigger,

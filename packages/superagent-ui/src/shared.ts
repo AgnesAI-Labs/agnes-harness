@@ -31,27 +31,6 @@ export const LIMITS = {
 export const HEALTH_TEXT = {
   setupPending: 'Waiting for the deployment check',
   sourceOff: 'Off',
-  feishuDedicatedBot:
-    "Direct messages and other chats need a Feishu bot instance of Superagent's own; only the listed chats are received",
-  feishuWaiting: 'Waiting for the channel subscription',
-  feishuChannelUnset: 'Setup required: the Source is on, and its channel instance is not set',
-  feishuChatsUnset: 'Setup required: no chat is listed to receive',
-  feishuChannelRefused:
-    'Setup required: the channel instance {channel} refused the chats ({reason}); retrying',
-  feishuPluginUnset:
-    'Setup required: to claim the whole instance, name it with its channel row, as <channel row id>/<instance id>',
-  feishuInstanceShared:
-    'Setup required: the channel instance {channel} already serves the owner or another feature, or a pairing code for it is still unused (it expires within an hour); use a dedicated bot instance',
-  feishuInstanceReleasing:
-    'Setup required: the channel instance {channel} is in use; waiting for a previous Superagent run to release it',
-  feishuInstanceRefused:
-    'Setup required: the channel instance {channel} refused the claim ({reason}); retrying',
-  feishuNoHistory:
-    'The channel cannot read chat history, so nothing is recovered after a restart or disconnect',
-  feishuNoMembers:
-    'The channel cannot list chat members, so the allowlist is not synced and the allowlist in the settings applies',
-  feishuNoReads:
-    'The channel cannot read messages or threads, so orchestrator_feishu_read and context reads are unavailable',
   pollFailures: '{count} consecutive failed polls; last: {error}',
 } as const
 export type HealthCode = keyof typeof HEALTH_TEXT
@@ -205,6 +184,24 @@ export function reasonText(reasons: readonly Reason[] | Reason | undefined): str
 
 export type SetupPlace = 'deployment' | 'github' | 'feishu'
 export const SETUP_PROBLEMS = {
+  feishuCliUnset: [
+    'feishu',
+    'Enter the absolute path of an already configured bot lark-cli wrapper in the Feishu Source. Old channel instances cannot supply a CLI.',
+  ],
+  feishuCliMissing: ['feishu', 'The Feishu CLI must be an absolute path to an executable wrapper.'],
+  feishuCliFailed: [
+    'feishu',
+    'The Feishu CLI could not verify its authenticated app. Check the wrapper with auth status.',
+  ],
+  feishuBotNotReady: [
+    'feishu',
+    'The Feishu CLI bot identity is not ready. Configure bot authentication first.',
+  ],
+  feishuUserIdentity: [
+    'feishu',
+    'The Feishu CLI must use strict-mode bot. User or automatic identity is refused.',
+  ],
+  feishuNoBot: ['feishu', 'The Feishu CLI did not return a valid bot identity.'],
   foreignFile: [
     'deployment',
     '{file} was not written by Superagent; move it, or choose another state directory.',

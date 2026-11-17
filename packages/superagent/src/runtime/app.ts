@@ -77,6 +77,7 @@ export interface SuperagentApp {
   reconfigure(): Promise<void>
   /** Why the started app waits for setup; undefined when it does not. */
   setupProblem(): SetupProblem | undefined
+  feishuProblem(): SetupProblem | undefined
   /**
    * Shows on the runtime health, which the panel lists, why a start failed and when it is tried again; undefined takes
    * that back, unless the app has reported its own state since.
@@ -112,6 +113,7 @@ export interface AppParts {
   readonly notices: SessionNotices
   deployment(): Deployment | undefined
   setupProblem(): SetupProblem | undefined
+  feishuProblem(): SetupProblem | undefined
   models(): Promise<ModelCatalog>
   ticketEnvironment(ticket: Ticket): ReturnType<typeof ticketEnvironment>
   sourceHost: SourceHost
@@ -207,6 +209,7 @@ export function createSuperagentApp(given: AppDeps): SuperagentApp {
       notices: core.notices,
       deployment: () => state.deployment,
       setupProblem: () => state.problem,
+      feishuProblem: () => state.feishuProblem,
       models: tools.models,
       ticketEnvironment: core.environmentOfTicket,
       sourceHost: parts.sourceHost,
@@ -214,6 +217,7 @@ export function createSuperagentApp(given: AppDeps): SuperagentApp {
     unavailable,
     reconfigure: () => running.reconfigure(),
     setupProblem: () => state.problem,
+    feishuProblem: () => state.feishuProblem,
     reportStart(problem) {
       if (problem) {
         core.runtimeHealth.set({

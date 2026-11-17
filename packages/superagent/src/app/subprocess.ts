@@ -106,7 +106,7 @@ function collector(limit: number): { push(chunk: Buffer): void; text(): string }
 }
 
 /** Sends `signal` to the child's whole process group, so a grandchild started by `sh -c` is stopped too. */
-function signalGroup(child: ChildProcess, signal: NodeJS.Signals, processes: Processes): void {
+export function signalGroup(child: ChildProcess, signal: NodeJS.Signals, processes: Processes): void {
   try {
     if (child.pid === undefined) return
     processes.kill(-child.pid, signal)
@@ -125,7 +125,7 @@ const taskkillPath = (): string => {
  * process groups to signal, and a tree a shell started would otherwise outlive it. When taskkill cannot run, or fails
  * while the child still runs, the child alone is ended.
  */
-function killTree(child: ChildProcess, processes: Processes): void {
+export function killTree(child: ChildProcess, processes: Processes): void {
   if (child.pid === undefined) return
   const running = () => child.exitCode === null && child.signalCode === null
   try {

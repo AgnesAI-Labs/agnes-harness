@@ -5,7 +5,7 @@ English | [简体中文](superagent.zh-CN.md)
 [Documentation](../README.md) · [Plugins](packages.md) · [Security](security.md) · [Network deployment](deployment.md)
 
 Superagent is an official plugin installed and enabled by default with AGH. It watches one GitHub repository (and, optionally, Feishu chats
-through an AGH Feishu channel instance), turns requests from allowed people into tickets, and gives each ticket its own
+through an already configured bot lark-cli wrapper), turns requests from allowed people into tickets, and gives each ticket its own
 session. That session works in the ticket's directory, pushes its own branch and opens a pull request; the main session
 answers people. Its sidebar entry opens the existing panel. Until configured, it waits for setup without listening to
 external sources, accepting work, starting sessions or calling models. Default installation authorizes no external
@@ -228,12 +228,24 @@ time it opens them.
 ## Settings and first use
 
 Open the **Superagent** entry on the AGH home page and save, in order, the Sources (repository and the agent's GitHub
-CLI, `/srv/superagent/bin/gh-agent`; the Feishu channel instance if used), the Policy (who may ask), the Execution settings (the ticket directory root and
+CLI, `/srv/superagent/bin/gh-agent`; the bot CLI wrapper path if Feishu is used), the Policy (who may ask), the Execution settings (the ticket directory root and
 the prepare command, for example `git clone "https://github.com/<owner>/<name>.git" repo`) and the team prompt sections.
 The [setup guide](../../packages/superagent/docs/setup.md) explains each field. On a fresh install the overview reports
 that the GitHub Source names no repository: the **Source** settings list GitHub from the first start, and once its
 repository and CLI are saved, setup goes on by itself, without a restart. Then, from an allowed account, comment
 `@<agent login> <request>` on an Issue: a ticket appears on the overview within about a minute.
+
+For Feishu, enter the absolute path of an already authenticated lark-cli wrapper in **Sources → Feishu → Bot CLI path**.
+Its strict-mode must be `bot`. Saving verifies and displays the app/bot identity. Configure the chat list,
+mention policy, direct messages and **Policy** requester allowlist, then enable the Source. No AGH Feishu plugin,
+channel instance or claim is required. The backend owns CLI events, context reads, image downloads and replies;
+workers use `orchestrator_feishu_read` scoped to their ticket's bot, chats and topics.
+
+Old instance settings retain chat policies and allowlists but require a CLI path. Existing tickets and message dedupe
+records are kept. Work without a verified bot identity, or belonging to another bot, cannot read or reply through the
+new bot; initiate a new request instead. Restart recovery uses bot-scoped cursors. A timeout/crash with unknown reply
+outcome leaves its receipt pending for operator reconciliation; it is not silently resent. The panel has no override
+for that state. Coordinate real-bot validation and consumer handover separately from synthetic CLI tests.
 
 In the Web sidebar each ticket session is titled `Worker · <ticket title>` and sits under its ticket directory's project;
 the main session keeps its own name, and a ticket's link still opens its session. What Superagent delivers into its

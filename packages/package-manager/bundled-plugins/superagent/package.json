@@ -81,12 +81,12 @@
         "metadata": {
           "displayName": "Superagent",
           "summary": "A proactive agent for one GitHub repository: it assesses requests, opens tickets and works each in its own session.",
-          "description": "Installed and enabled by default, waiting for configuration before any source, task or model runs. Once configured, Superagent watches one GitHub repository (and optionally Feishu group chats through an AGH channel), assesses requests under its policy and turns authorized ones into tickets. Each ticket gets its own directory and a full-access session that commits as the configured agent account and pushes branches named agent/<short name>-<ticket id prefix>; it never merges. It runs with the profile owner's local client, keeps its database in a private platform directory and sends repository and chat content to the configured models.",
+          "description": "Installed and enabled by default, waiting for configuration before any source, task or model runs. Once configured, Superagent watches one GitHub repository (and optionally Feishu chats through a configured bot lark-cli wrapper), assesses requests under its policy and turns authorized ones into tickets. Each ticket gets its own directory and a full-access session that commits as the configured agent account and pushes branches named agent/<short name>-<ticket id prefix>; it never merges. It runs with the profile owner's local client, keeps its database in a private platform directory and sends repository and chat content to the configured models.",
           "locales": {
             "zh-CN": {
               "displayName": "Superagent",
               "summary": "面向单个 GitHub 仓库的主动智能体：研判请求、开工单，并在各自会话中完成。",
-              "description": "默认安装并启用，未配置时等待设置，不监听来源、不启动任务、不调用模型。配置后，Superagent 监听一个 GitHub 仓库（可选经 AGH 渠道监听飞书群），按策略研判请求，把获授权的请求转为工单。每张工单有自己的目录和一个完全访问的会话，以配置的智能体账号提交并推送名为 agent/<短名>-<工单 id 前缀> 的分支，从不合并。它以 profile 主人的本地客户端运行，数据库放在平台给的私有目录，并把仓库与聊天内容发给所配置的模型。"
+              "description": "默认安装并启用，未配置时等待设置，不监听来源、不启动任务、不调用模型。配置后，Superagent 监听一个 GitHub 仓库（可选通过已配置的机器人 lark-cli 包装程序监听飞书群），按策略研判请求，把获授权的请求转为工单。每张工单有自己的目录和一个完全访问的会话，以配置的智能体账号提交并推送名为 agent/<短名>-<工单 id 前缀> 的分支，从不合并。它以 profile 主人的本地客户端运行，数据库放在平台给的私有目录，并把仓库与聊天内容发给所配置的模型。"
             }
           }
         },
@@ -854,12 +854,12 @@
     "metadata": {
       "displayName": "Superagent",
       "summary": "A proactive agent for one GitHub repository: it assesses requests, opens tickets and works each in its own session.",
-      "description": "Installed and enabled by default, waiting for configuration before any source, task or model runs. Once configured, Superagent watches one GitHub repository (and optionally Feishu group chats through an AGH channel), assesses requests under its policy and turns authorized ones into tickets. Each ticket gets its own directory and a full-access session that commits as the configured agent account and pushes branches named agent/<short name>-<ticket id prefix>; it never merges. It runs with the profile owner's local client, keeps its database in a private platform directory and sends repository and chat content to the configured models.",
+      "description": "Installed and enabled by default, waiting for configuration before any source, task or model runs. Once configured, Superagent watches one GitHub repository (and optionally Feishu chats through a configured bot lark-cli wrapper), assesses requests under its policy and turns authorized ones into tickets. Each ticket gets its own directory and a full-access session that commits as the configured agent account and pushes branches named agent/<short name>-<ticket id prefix>; it never merges. It runs with the profile owner's local client, keeps its database in a private platform directory and sends repository and chat content to the configured models.",
       "locales": {
         "zh-CN": {
           "displayName": "Superagent",
           "summary": "面向单个 GitHub 仓库的主动智能体：研判请求、开工单，并在各自会话中完成。",
-          "description": "默认安装并启用，未配置时等待设置，不监听来源、不启动任务、不调用模型。配置后，Superagent 监听一个 GitHub 仓库（可选经 AGH 渠道监听飞书群），按策略研判请求，把获授权的请求转为工单。每张工单有自己的目录和一个完全访问的会话，以配置的智能体账号提交并推送名为 agent/<短名>-<工单 id 前缀> 的分支，从不合并。它以 profile 主人的本地客户端运行，数据库放在平台给的私有目录，并把仓库与聊天内容发给所配置的模型。"
+          "description": "默认安装并启用，未配置时等待设置，不监听来源、不启动任务、不调用模型。配置后，Superagent 监听一个 GitHub 仓库（可选通过已配置的机器人 lark-cli 包装程序监听飞书群），按策略研判请求，把获授权的请求转为工单。每张工单有自己的目录和一个完全访问的会话，以配置的智能体账号提交并推送名为 agent/<短名>-<工单 id 前缀> 的分支，从不合并。它以 profile 主人的本地客户端运行，数据库放在平台给的私有目录，并把仓库与聊天内容发给所配置的模型。"
         }
       }
     },

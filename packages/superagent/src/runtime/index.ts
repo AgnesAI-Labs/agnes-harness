@@ -191,8 +191,6 @@ export async function startService(
     )
   grant.assertCurrent()
   asSdkClient(grant.client)
-  if (typeof grant.channels.subscribe !== 'function')
-    throw new TypeError('The bundled-app grant has no channels')
   const machine = machineConfig(options.config, grant.stateDirectory)
   mkdirSync(machine.stateDir, { recursive: true, mode: 0o700 })
   const opened = openStore(join(machine.stateDir, DATABASE_FILE))
@@ -215,7 +213,7 @@ export async function startService(
   service.register('services', createPanelServices(panel.host))
   service.register('lifecycle', composed.lifecycle)
   // The Feishu Source and its worker tool join the app before the lifecycle starts it.
-  service.register('feishu', attachFeishu({ app: composed.app, grant }, log))
+  service.register('feishu', attachFeishu({ app: composed.app }, log))
   init.ready()
   // The lifecycle begins once `start()` has returned; it reports its own failures through its status.
   void composed.lifecycle

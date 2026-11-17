@@ -185,7 +185,9 @@ function panelParts(
     get setupProblem() {
       return lifecycleProblem() ?? parts.setupProblem()
     },
-    feishuProblem: undefined,
+    get feishuProblem() {
+      return parts.feishuProblem()
+    },
     configured: () => parts.deployment() !== undefined && lifecycleProblem() === undefined,
     links() {
       const deployment = parts.deployment()
@@ -199,7 +201,8 @@ function panelParts(
     checkSetup() {
       const current = lifecycle()
       // As the setup check always did: nothing to check once everything is set up.
-      if (current?.status().state === 'running' && !parts.setupProblem()) throw new UserError('setupComplete')
+      if (current?.status().state === 'running' && !parts.setupProblem() && !parts.feishuProblem())
+        throw new UserError('setupComplete')
       current?.recheck()
     },
     requestPass: () => parts.passes.request(),

@@ -35,6 +35,7 @@ export interface AppState {
   phase: Phase
   deployment: Deployment | undefined
   problem: SetupProblem | undefined
+  feishuProblem: SetupProblem | undefined
   /** How many tool calls run whose domain events the main session knows of already. */
   quiet: number
   /** The start that runs, which a stop waits for. */
@@ -45,6 +46,7 @@ export function appState(): AppState {
     phase: 'idle',
     deployment: undefined,
     problem: undefined,
+    feishuProblem: undefined,
     quiet: 0,
     started: Promise.resolve(),
   }

@@ -1,19 +1,17 @@
 /**
- * The Feishu part of the running service: the Feishu Source over the grant's channels, started with the other Sources,
+ * The Feishu part of the running service: the Feishu Source over its configured bot CLI, started with the other Sources,
  * and the worker tool `orchestrator_feishu_read`, which reads messages of its own ticket's chats by id or a topic of its
  * own ticket, and nothing else.
  */
-import type { BundledAppGrant } from '@agnes/extension-api'
 import { z } from 'zod'
 import type { Store } from '../app/store.js'
 import type { Ticket } from '../core/index.js'
+import { botIdentity } from '../feishu-setup.js'
 import { feishuIo, registerFeishu } from '../sources/feishu.js'
-import { listInstances } from '../sources/feishu-instances.js'
 import { type FeishuIo, feishuLink } from '../sources/feishu-io.js'
 import { feishuView, fetchFeishu, readTopic } from '../sources/feishu-read.js'
 import { SOURCE } from '../sources/feishu-trigger.js'
 import type { SuperagentApp } from './app.js'
-import { asSdkClient } from './sdk.js'
 import type { Tool } from './tool.js'
 
 export const FEISHU_READ_NAME = 'orchestrator_feishu_read'
@@ -47,7 +45,7 @@ export const FeishuReadSchema = z
   .strict()
 export type FeishuReadInput = z.infer<typeof FeishuReadSchema>
 
-/** What the tool reads with: the store of the ticket's Threads and Triggers, and the Source's channel reads. */
+/** What the tool reads with: the ticket's Threads and Triggers, and the Source's scoped bot CLI reads. */
 export interface FeishuReadHost {
   readonly store: Pick<Store, 'read' | 'triggers'>
   io(signal: AbortSignal): FeishuIo
@@ -60,6 +58,7 @@ export interface FeishuReadHost {
 export function ticketChats(
   store: FeishuReadHost['store'],
   ticket: Ticket,
+  identity?: string,
 ): Map<string, Map<string, string>> {
   const chats = new Map<string, Map<string, string>>()
   const add = (chat: string, root?: unknown, topic?: unknown) => {
@@ -72,19 +71,23 @@ export function ticketChats(
   }
   for (const thread of store.read.subscribedThreads(SOURCE)) {
     if (!thread.subscriptions.includes(ticket.id)) continue
+    const evidence = store.read.threadTriggers(thread.key, 1)[0]
+    if (identity && evidence?.meta.botIdentity !== identity) continue
     const at = thread.ref.id.indexOf(':')
     add(thread.ref.id.slice(0, at), thread.ref.id.slice(at + 1), thread.meta.threadId)
   }
   for (const id of ticket.origin.triggerIds) {
     const trigger = store.triggers.get(id)
-    if (trigger?.source !== SOURCE) continue
+    if (trigger?.source !== SOURCE || (identity && trigger.meta.botIdentity !== identity)) continue
     add(
       String(trigger.meta.chatId ?? ''),
       trigger.meta.rootId ?? trigger.meta.messageId,
       trigger.meta.threadId,
     )
   }
-  for (const channel of ticket.channels) if (channel.source === SOURCE) add(channel.address.chatId ?? '')
+  for (const channel of ticket.channels)
+    if (channel.source === SOURCE && (!identity || channel.address.botIdentity === identity))
+      add(channel.address.chatId ?? '')
   return chats
 }
 
@@ -97,9 +100,11 @@ export function feishuReadTool(host: FeishuReadHost, ticket: Ticket): Tool {
     execute: async (args, signal) => {
       const input = args as FeishuReadInput
       if (!input.message_ids === !input.thread_id) throw new Error('Give either message_ids or thread_id')
-      const topics = ticketChats(host.store, ticket).get(input.chat_id)
-      if (!topics) throw new Error(`The chat ${input.chat_id} is not one of this ticket's chats`)
       const io = host.io(signal)
+      io.assertCurrent()
+      const topics = ticketChats(host.store, ticket, botIdentity(io.bot)).get(input.chat_id)
+      if (!topics)
+        throw new Error(`The chat ${input.chat_id} is not one of this ticket's chats for the verified bot`)
       if (input.message_ids) {
         const events = await fetchFeishu(io, input.chat_id, input.message_ids)
         const found = new Set(events.map((event) => event.messageId))
@@ -117,22 +122,17 @@ export function feishuReadTool(host: FeishuReadHost, ticket: Ticket): Tool {
 }
 
 /**
- * Registers the Feishu Source on the grant's channels with the app: its kind at once, so its settings and policy sync
+ * Registers the Feishu Source on its bot CLI with the app: its kind at once, so its settings and policy sync
  * are there before the app starts, its loops with the other Sources, and the read tool for every worker.
  */
 export function attachFeishu(
   context: {
     readonly app: SuperagentApp
-    readonly grant: Pick<BundledAppGrant, 'channels'> & { client?: unknown }
   },
   log?: { warn(message: string): void },
 ) {
   const { app } = context
-  const link = feishuLink(context.grant.channels, log ? (message) => log.warn(message) : undefined)
-  // The owner's client lists the running channel instances, as the Channels page does.
-  const owner = context.grant.client
-  if (owner !== undefined)
-    link.instances = () => listInstances((method, params) => asSdkClient(owner).call(method, params))
+  const link = feishuLink(log ? (message) => log.warn(message) : undefined)
   const registered = registerFeishu(app.parts.sourceHost, link)
   app.extend({
     sources: () => {

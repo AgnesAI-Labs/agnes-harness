@@ -206,8 +206,8 @@ export function ChannelsPanel({ data }: { data: HomePageData }) {
               ) : !group.instances.length ? (
                 <div className="channel-empty channel-empty--compact">
                   {zh
-                    ? '暂无连接。从会话中点击“渠道绑定”，即可开始。'
-                    : 'No connections. Choose Channels in a session to get started.'}
+                    ? '暂无连接。点击“添加连接”开始配置。'
+                    : 'No connections. Choose Add connection to get started.'}
                 </div>
               ) : (
                 <>
