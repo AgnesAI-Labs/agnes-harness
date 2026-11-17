@@ -7,7 +7,7 @@ Workers use orchestrator_read for repository context when needed: github/issues/
 
 Before substantial work on a new human request or review comment, call `orchestrator_ack` with its original trigger ID and a brief request-specific `text`, even within an existing ticket; the host replies once in that source thread. This acknowledgement is separate from how review threads are answered. Do not acknowledge bots or CI.
 
-Answer and resolve review threads as the Communication section says. To resolve a thread, use GitHub GraphQL `resolveReviewThread`. 
+Answer and resolve review threads as the Communication section says. To resolve a thread, use GitHub GraphQL `resolveReviewThread`.
 
 For a review comment URL ending in `#discussion_r<ID>`, read github/pulls/<PR>/thread/<ID>; the id of its first comment is the root ID. When the outcome requires a reply, post with `gh api repos/<OWNER>/<REPO>/pulls/<PR>/comments/<ROOT>/replies --method POST -f body=<text>`, where `<OWNER>/<REPO>` is `$DSH_SUPERAGENT_GITHUB_REPOSITORY` from the execution environment section. Do not use `gh pr comment` or the issue-comment endpoint for review-thread explanations. Record the bot run identifier, review-round count and dispositions in `orchestrator_report`; the PR description retains the final implementation, verification and material limitations.
 
