@@ -14,6 +14,7 @@ import type {
 } from '@agnes/extension-api'
 import type { JsonValue } from '@agnes/protocol'
 import { openStore, type Store } from '../app/store.js'
+import { retiredTickets } from '../app/store-retention.js'
 import { type Machine, machineOf, type Probe } from '../deployment.js'
 import { HOST_PLATFORM, isWindows, pathsOf } from '../infra/platform.js'
 import type { createRuntimeParts, SuperagentApp } from './app.js'
@@ -216,11 +217,13 @@ export async function startService(
   const service = createService(composed.app, parts, panel, () => {
     grant.assertCurrent()
     if (composed.lifecycle.status().state !== 'starting') throw denied('Session upgrade')
+    const retired = new Set(retiredTickets(opened, Date.now()).map((ticket) => ticket.id))
     return composed.runtime.registry.ids().filter((id) => {
       const role = composed.runtime.registry.role(id)
       if (role?.kind === 'orchestrator') return true
       const ticket = role?.kind === 'worker' ? opened.tickets.get(role.ticketId) : undefined
-      return ticket !== undefined && !ticket.ended
+      // Completed tickets can wake on a person's reply and reuse this exact worker session.
+      return ticket !== undefined && ticket.ended?.by !== 'human' && !retired.has(ticket.id)
     })
   })
   service.register('services', createPanelServices(panel.host))

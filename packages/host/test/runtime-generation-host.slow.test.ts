@@ -726,6 +726,8 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       'wrong-subject',
       'wrong-lane',
       'automatic',
+      'system-answer',
+      'agent-answer',
       'invalidated',
       'other-effect',
       'bad-digest',
@@ -801,6 +803,11 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
           ...(mode === 'untrusted' ? { origin: 'ext:fixture', trust: 'untrusted' as const } : {}),
         })
       let answered = answeredDecision(pending, 8, mode === 'rejected' ? 'rejected' : 'allowed-once')
+      if ((mode === 'system-answer' || mode === 'agent-answer') && answered.result?.reason === 'answered')
+        answered.result.answeredBy = {
+          ...answered.result.answeredBy,
+          role: mode === 'system-answer' ? 'system' : 'agent',
+        }
       if (mode === 'automatic') {
         answered = {
           ...answered,

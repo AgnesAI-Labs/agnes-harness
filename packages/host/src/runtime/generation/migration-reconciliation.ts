@@ -46,6 +46,8 @@ export function unreconciled(
       subject.step !== call.step ||
       result?.reason !== 'answered' ||
       result.code === 'full-access' ||
+      result.answeredBy.role === 'system' ||
+      result.answeredBy.role === 'agent' ||
       !value.answerCommand ||
       !['allowed-once', 'allowed-session', 'rejected'].includes(result.response.option) ||
       !consumption ||

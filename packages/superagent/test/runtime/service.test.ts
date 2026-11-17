@@ -64,7 +64,35 @@ describe('the service generations', () => {
         },
       }),
     )
-    store.tickets.save(ticket('ended', { state: 'ended' }))
+    store.tickets.save(
+      ticket('ended', {
+        ended: { at: '2020-01-01T00:00:00.000Z', by: 'executor', outcome: 'completed' },
+      }),
+    )
+    const recent = new Date().toISOString()
+    for (const [id, by, at] of [
+      ['completed', 'executor', recent],
+      ['subscribed', 'executor', '2020-01-01T00:00:00.000Z'],
+      ['followed', 'executor', '2020-01-01T00:00:00.000Z'],
+      ['stopped', 'human', recent],
+    ] as const) {
+      registry.record({ kind: 'worker', ticketId: id }, `${id}-worker`)
+      store.tickets.save(
+        ticket(id, {
+          ended: { at, by, outcome: by === 'human' ? 'stopped' : 'completed' },
+          ...(id === 'followed' ? { follows: [{ thread: 'chat:continuing', own: true }] } : {}),
+        }),
+      )
+    }
+    store.threads.save({
+      key: 'chat:continuing',
+      ref: { source: 'chat', id: 'continuing' },
+      createdAt: recent,
+      subscriptions: ['subscribed'],
+      correlated: [],
+      pending: [],
+      meta: {},
+    })
     new SessionDelivery({ sessions: { handle: () => Promise.reject(new Error('unused')) }, store }).notify(
       'superagent:orchestrator',
       { content: 'Settings saved' },
@@ -74,7 +102,15 @@ describe('the service generations', () => {
     await startService(first.init, holder, log)
     await settled()
     const service = await startService(second.init, holder, log)
-    expect(service.upgradeSessionIds()).toEqual(['superagent:orchestrator', 'legacy-worker-without-prefix'])
+    expect(new Set(service.upgradeSessionIds())).toEqual(
+      new Set([
+        'superagent:orchestrator',
+        'legacy-worker-without-prefix',
+        'completed-worker',
+        'subscribed-worker',
+        'followed-worker',
+      ]),
+    )
     await settled()
     const current = holder.get()
     // The first generation's stop finishes only now, after the second took over.
