@@ -10,6 +10,7 @@ import {
 } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { DEFERRED_INVOCATION_EVENT } from '@agnes/host-providers/assemble/deferred-invocations'
+import { unreconciled } from './migration-reconciliation.js'
 
 type Reason = { kind: string; id: string; sessionKey: string; seq?: number }
 type Fact = {
@@ -240,7 +241,7 @@ export async function assertMigrationSettled(
       else if (['rejected', 'succeeded', 'failed'].includes(action.status) && !action.delivered)
         add('undelivered-ui-receipt', id, action.seq)
     }
-    for (const [id, seq] of unknown) add('unknown-external-outcome', id, seq)
+    for (const [id, seq] of unreconciled(rows, state, key, unknown)) add('unknown-external-outcome', id, seq)
     for (const [id, call] of deferred)
       if (!['succeeded', 'failed'].includes(call.state)) add('unfinished-deferred-invocation', id, call.seq)
     for (const [id, job] of jobs)

@@ -14,6 +14,7 @@ import type {
 } from '@agnes/extension-api'
 import type { JsonValue } from '@agnes/protocol'
 import { openStore, type Store } from '../app/store.js'
+import { retiredTickets } from '../app/store-retention.js'
 import { type Machine, machineOf, type Probe } from '../deployment.js'
 import { HOST_PLATFORM, isWindows, pathsOf } from '../infra/platform.js'
 import type { createRuntimeParts, SuperagentApp } from './app.js'
@@ -40,6 +41,8 @@ export type SuperagentSlot = 'lifecycle' | 'services' | 'feishu'
 
 /** The value `handle.get()` resolves to while the service is current. */
 export interface SuperagentService {
+  /** Backend upgrade authority reads only the current starting service's durable registrations. */
+  upgradeSessionIds(): string[]
   handleTool(call: {
     sessionId: string
     toolName: string
@@ -87,8 +90,10 @@ function createService(
   app: SuperagentApp,
   parts: Map<SuperagentSlot, unknown>,
   panel: PanelWiring,
+  upgradeSessionIds: () => string[],
 ): SuperagentService & { readonly panel: PanelWiring } {
   return {
+    upgradeSessionIds,
     // What the starting parts wire into the panel services (see `panel-host.ts`).
     panel,
     handleTool: (call) => app.handleTool(call),
@@ -209,7 +214,18 @@ export async function startService(
   })
   generation = composed
   const parts = new Map<SuperagentSlot, unknown>()
-  const service = createService(composed.app, parts, panel)
+  const service = createService(composed.app, parts, panel, () => {
+    grant.assertCurrent()
+    if (composed.lifecycle.status().state !== 'starting') throw denied('Session upgrade')
+    const retired = new Set(retiredTickets(opened, Date.now()).map((ticket) => ticket.id))
+    return composed.runtime.registry.ids().filter((id) => {
+      const role = composed.runtime.registry.role(id)
+      if (role?.kind === 'orchestrator') return true
+      const ticket = role?.kind === 'worker' ? opened.tickets.get(role.ticketId) : undefined
+      // Completed tickets can wake on a person's reply and reuse this exact worker session.
+      return ticket !== undefined && ticket.ended?.by !== 'human' && !retired.has(ticket.id)
+    })
+  })
   service.register('services', createPanelServices(panel.host))
   service.register('lifecycle', composed.lifecycle)
   // The Feishu Source and its worker tool join the app before the lifecycle starts it.

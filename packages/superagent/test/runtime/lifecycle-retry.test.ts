@@ -100,6 +100,27 @@ it('starts the app again when its start failed, rather than taking it as begun',
   expect(log.filter((line) => line.startsWith('app.start'))).toEqual(['app.start failed', 'app.start'])
 })
 
+it('keeps the app paused while upgrade is refused and resumes only after preparation succeeds', async () => {
+  let refused = true
+  const { lifecycle } = setup(() => Promise.resolve(plan), {
+    retryDelaysMs: [60_000],
+    async prepareSessionUpgrade() {
+      log.push('upgrade')
+      if (refused) throw new Error('E_GENERATION_EXECUTION_UNSETTLED')
+    },
+  })
+  await lifecycle.start()
+  await lifecycle.settled()
+  expect(lifecycle.status()).toEqual({ state: 'failed', detail: 'E_GENERATION_EXECUTION_UNSETTLED' })
+  expect(log).toEqual(['environment', 'upgrade'])
+  refused = false
+  lifecycle.recheck()
+  await lifecycle.settled()
+  expect(lifecycle.status()).toEqual({ state: 'running' })
+  expect(log).toEqual(['environment', 'upgrade', 'environment', 'upgrade', 'app.start'])
+  await lifecycle.stop('shutdown')
+})
+
 it('backs off to a pause of 10 minutes, shows each next attempt, and warns once while the same failure repeats', async () => {
   fakeTimers()
   let error = 'daemon discovery owner identity is unavailable'

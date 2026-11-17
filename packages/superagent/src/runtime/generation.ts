@@ -26,7 +26,7 @@ import { ORCHESTRATOR_KEY, type SessionRegistry } from './sessions.js'
 export const STOPPED = 'Superagent is not running; its sessions can use tools again once it runs'
 
 export interface GenerationInput {
-  grant: Pick<BundledAppGrant, 'stateDirectory' | 'client'>
+  grant: Pick<BundledAppGrant, 'stateDirectory' | 'client' | 'prepareSessionUpgrade'>
   store: Store
   machine: Machine
   holder: HookStateHolder
@@ -113,6 +113,11 @@ export function composeGeneration(input: GenerationInput): Generation {
     registeredSessions: () => runtime.registry.ids(),
     startingState: () => built.hookState(new Set()),
     refusingState: (reason) => built.stoppedState(reason),
+    async prepareSessionUpgrade() {
+      if (!grant.prepareSessionUpgrade)
+        throw new Error('Superagent session upgrade requires an updated daemon')
+      await grant.prepareSessionUpgrade()
+    },
     async environment(signal) {
       const settings = store.settings()
       const github = settings.sources.github?.config

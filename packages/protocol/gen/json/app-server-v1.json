@@ -2685,6 +2685,16 @@
         "$ref": "#/$defs/_agnes_v1_pluginRuntime_statusResult"
       }
     },
+    "_agnes/v1/superagent.sessions.upgrade": {
+      "kind": "request",
+      "direction": "c2s",
+      "params": {
+        "$ref": "#/$defs/_agnes_v1_superagent_sessions_upgradeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/_agnes_v1_superagent_sessions_upgradeResult"
+      }
+    },
     "_agnes/v1/pluginStreams.endpoint": {
       "kind": "request",
       "direction": "c2s",
@@ -55033,6 +55043,44 @@
     },
     "_agnes_v1_pluginRuntime_statusResult": {
       "$ref": "#/$defs/D0c8771250f11_PluginRuntimeStatusResult"
+    },
+    "_agnes_v1_superagent_sessions_upgradeParams": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "integrity": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        },
+        "incarnation": {
+          "minLength": 1,
+          "maxLength": 128,
+          "type": "string"
+        }
+      },
+      "required": [
+        "integrity",
+        "incarnation"
+      ]
+    },
+    "_agnes_v1_superagent_sessions_upgradeResult": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "sessionIds": {
+          "uniqueItems": true,
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "maxLength": 1024,
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "sessionIds"
+      ]
     },
     "_agnes_v1_pluginStreams_endpointParams": {
       "$ref": "#/$defs/D0c8771250f11_PluginStreamsEndpointParams"

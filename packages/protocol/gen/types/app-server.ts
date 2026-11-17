@@ -2102,6 +2102,8 @@ export type _agnes_v1_submit_ackParams = D0c8771250f11_CommandAckParams
 export type _agnes_v1_submit_ackResult = D0c8771250f11_Empty
 export type _agnes_v1_pluginRuntime_statusParams = D0c8771250f11_PluginRuntimeStatusParams
 export type _agnes_v1_pluginRuntime_statusResult = D0c8771250f11_PluginRuntimeStatusResult
+export type _agnes_v1_superagent_sessions_upgradeParams = { "integrity": string; "incarnation": string }
+export type _agnes_v1_superagent_sessions_upgradeResult = { "sessionIds": Array<string> }
 export type _agnes_v1_pluginStreams_endpointParams = D0c8771250f11_PluginStreamsEndpointParams
 export type _agnes_v1_pluginStreams_endpointResult = D0c8771250f11_PluginStreamsEndpointResult
 export type _agnes_v1_surfaces_mountsParams = D0c8771250f11_SurfacesMountsParams
@@ -2421,6 +2423,7 @@ export interface AppServerMethods {
   "_agnes/v1/submit": {params:_agnes_v1_submitParams; result:_agnes_v1_submitResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/submit.ack": {params:_agnes_v1_submit_ackParams; result:_agnes_v1_submit_ackResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/pluginRuntime.status": {params:_agnes_v1_pluginRuntime_statusParams; result:_agnes_v1_pluginRuntime_statusResult; direction:"c2s"; kind:"request"}
+  "_agnes/v1/superagent.sessions.upgrade": {params:_agnes_v1_superagent_sessions_upgradeParams; result:_agnes_v1_superagent_sessions_upgradeResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/pluginStreams.endpoint": {params:_agnes_v1_pluginStreams_endpointParams; result:_agnes_v1_pluginStreams_endpointResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/surfaces.mounts": {params:_agnes_v1_surfaces_mountsParams; result:_agnes_v1_surfaces_mountsResult; direction:"c2s"; kind:"request"}
   "authenticate": {params:authenticateParams; result:authenticateResult; direction:"c2s"; kind:"request"}

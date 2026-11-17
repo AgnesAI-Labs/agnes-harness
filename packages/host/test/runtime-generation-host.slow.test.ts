@@ -709,6 +709,213 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       expect(await storage.scan(key, { toSeq: log.lastSeq })).toEqual(beforeFacts)
       await required(host.releaseSessionGeneration)(key)
     }
+    // A formal, consumed human reconciliation acknowledges one exact unknown call, without
+    // rewriting history or clearing a different effect merely because it has the same tool name.
+    for (const mode of [
+      'allowed',
+      'rejected',
+      'unanswered',
+      'unconsumed',
+      'checkpoint-missing',
+      'checkpoint-other',
+      'wrong-owner',
+      'wrong-package',
+      'wrong-purpose',
+      'wrong-session',
+      'wrong-operation',
+      'wrong-subject',
+      'wrong-lane',
+      'automatic',
+      'system-answer',
+      'agent-answer',
+      'invalidated',
+      'other-effect',
+      'bad-digest',
+      'bad-receipt',
+      'expired',
+      'untrusted',
+    ]) {
+      const key = `migration-reconciliation-${mode}`
+      store.pin(key, required(firstId), pinnedBindings(host.seamBindings()))
+      const storage = host.kernel.o.storage
+      const log = await SessionLogImpl.open({
+        storage,
+        key,
+        writerRunId: key,
+        ttlMs: 30000,
+        ids: defaultIds(),
+        clock: Date.now,
+      })
+      const pending = pendingDecision('unknown-decision', {
+        sessionId: mode === 'wrong-session' ? 'another-session' : key,
+        operationId: mode === 'wrong-operation' ? 'another-call' : 'unknown-call',
+        owner: mode === 'wrong-owner' ? 'extension/unknown-outcome' : 'core/unknown-outcome',
+        lane: mode === 'wrong-lane' ? 'another-lane' : 'main',
+        subject: {
+          toolUseId: 'unknown-call',
+          name: 'orchestrator_report',
+          turn: 1,
+          step: mode === 'wrong-subject' ? 2 : 1,
+        },
+      })
+      pending.request.spec = {
+        ...pending.request.spec,
+        key: pending.request.operationId,
+        purpose: mode === 'wrong-purpose' ? 'tool.permission' : 'unknown-outcome',
+      }
+      if (mode === 'wrong-package') pending.request.sourcePackage = '@acme/other'
+      if (mode === 'bad-digest') pending.request.subjectDigest = '0'.repeat(64)
+      const facts: (Pick<EventInput, 'type' | 'data'> & Partial<EventInput>)[] = [
+        { type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
+        { type: 'step/start', data: { turn: 1, step: 1 } },
+        {
+          type: 'tool/call',
+          data: { toolUseId: 'unknown-call', name: 'orchestrator_report', args: {}, ordinal: 0 },
+        },
+        {
+          type: 'effect/intent',
+          data: {
+            effectId: 'unknown-effect',
+            kind: 'tool',
+            replay: 'never',
+            tool: { toolUseId: 'unknown-call', name: 'orchestrator_report' },
+          },
+        },
+        {
+          type: 'tool/result',
+          data: {
+            toolUseId: 'unknown-call',
+            code: 'TOOL_OUTCOME_UNKNOWN',
+            isError: true,
+            content: [],
+            enforcement: { level: 'none', scope: [] },
+            authz: { decisionId: 'fixture' },
+          },
+        },
+        { type: 'effect/settled', data: { effectId: 'unknown-effect', outcome: 'unknown' } },
+      ]
+      const decision = (value: DecisionSnapshot) =>
+        facts.push({
+          type: 'decision/state',
+          register: 'decision/state',
+          data: value,
+          lane: value.request.lane,
+          ...(mode === 'untrusted' ? { origin: 'ext:fixture', trust: 'untrusted' as const } : {}),
+        })
+      let answered = answeredDecision(pending, 8, mode === 'rejected' ? 'rejected' : 'allowed-once')
+      if ((mode === 'system-answer' || mode === 'agent-answer') && answered.result?.reason === 'answered')
+        answered.result.answeredBy = {
+          ...answered.result.answeredBy,
+          role: mode === 'system-answer' ? 'system' : 'agent',
+        }
+      if (mode === 'automatic') {
+        answered = {
+          ...answered,
+          revision: 1,
+          answerCommand: null,
+          result: {
+            ...(answered.result as Extract<DecisionSnapshot['result'], { reason: 'answered' }>),
+            code: 'full-access',
+            answeredBy: {
+              ...pending.request.requestedBy,
+              role: 'system',
+              attrs: { permissionPolicy: 'full-access' },
+            },
+          },
+        }
+      } else decision(pending)
+      if (mode !== 'unanswered') {
+        if (mode === 'bad-receipt') answered.answerCommand = { ...answered.answerCommand!, seq: 1 }
+        if (mode === 'expired' && answered.result) answered.result.at = '2027-01-01T00:00:00.000Z'
+        decision(answered)
+        if (mode === 'invalidated')
+          decision({
+            ...answered,
+            revision: 3,
+            invalidation: { code: 'withdrawn', at: '2025-09-07T00:00:00.002Z' },
+          })
+        else if (mode !== 'unconsumed') {
+          decision({
+            ...answered,
+            revision: answered.revision + 1,
+            consumption: {
+              operationId: pending.request.operationId,
+              effectId: null,
+              at: '2025-09-07T00:00:00.002Z',
+            },
+          })
+          if (mode !== 'checkpoint-missing')
+            facts.push({
+              type: 'x/core/decision-checkpoint',
+              lane: pending.request.lane,
+              data: {
+                handle: pending.handle,
+                operationId: mode === 'checkpoint-other' ? 'another-call' : pending.request.operationId,
+              },
+            })
+        }
+      }
+      if (mode === 'other-effect')
+        facts.push(
+          {
+            type: 'tool/call',
+            data: { toolUseId: 'other-call', name: 'orchestrator_report', args: {}, ordinal: 1 },
+          },
+          {
+            type: 'effect/intent',
+            data: {
+              effectId: 'other-effect',
+              kind: 'tool',
+              replay: 'never',
+              tool: { toolUseId: 'other-call', name: 'orchestrator_report' },
+            },
+          },
+          {
+            type: 'tool/result',
+            data: {
+              toolUseId: 'other-call',
+              code: 'TOOL_OUTCOME_UNKNOWN',
+              isError: true,
+              content: [],
+              enforcement: { level: 'none', scope: [] },
+              authz: { decisionId: 'fixture' },
+            },
+          },
+          { type: 'effect/settled', data: { effectId: 'other-effect', outcome: 'unknown' } },
+        )
+      facts.push({ type: 'step/end', data: { turn: 1, step: 1 } })
+      const append = log.append(
+        facts.map((fact) => ({
+          actor: resumed.d.actor,
+          origin: 'system',
+          trust: 'trusted',
+          lane: 'main',
+          ignorable: true,
+          ...fact,
+        })),
+      )
+      if (mode === 'untrusted') {
+        await expect(append).rejects.toThrow('decision/state is a Core-owned register')
+        expect(store.session(key)?.generationId).toBe(firstId)
+        await log.close()
+        await required(host.releaseSessionGeneration)(key)
+        continue
+      }
+      await append
+      await log.close()
+      const beforeFacts = await storage.scan(key, { toSeq: log.lastSeq })
+      const beforePin = store.session(key)
+      const migration = required(host.migrateSessionGeneration)(key)
+      if (mode === 'allowed' || mode === 'rejected')
+        await expect(migration).resolves.toMatchObject({ changed: true })
+      else {
+        await expect(migration).rejects.toThrow()
+        expect(store.session(key)).toEqual(beforePin)
+      }
+      expect(await storage.scan(key, { toSeq: log.lastSeq })).toEqual(beforeFacts)
+      expect((await storage.scan(key, { order: 'desc', limit: 1 }))[0]?.seq).toBe(log.lastSeq)
+      await required(host.releaseSessionGeneration)(key)
+    }
     // A durable open chat turn with no tool/effect binding does not fence migration.
     const chatKey = 'migration-unfinished-chat'
     store.pin(chatKey, required(firstId), pinnedBindings(host.seamBindings()))

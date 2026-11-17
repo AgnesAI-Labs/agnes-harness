@@ -108,11 +108,38 @@ import {
 import { SessionIntegrityParams, SessionIntegrityStatus } from '../src/session-integrity.js'
 import { SessionRuntimeDescriptor, SessionRuntimeParams } from '../src/session-runtime.js'
 import { SessionToolsParams, SessionToolsResult } from '../src/session-tools.js'
+import { SuperagentSessionUpgradeParams, SuperagentSessionUpgradeResult } from '../src/superagent.js'
 import { intelligentUiSamples } from './parity-intelligent-ui-samples.js'
 
 type Json = Record<string, unknown>
 type FixtureRow = { id: string; payload: unknown }
 type Sample = { valid: unknown; invalid: unknown[]; note: string }
+
+const SUPERAGENT_ID = 'https://agnes.ai/schema/superagent.json'
+const SUPERAGENT_SAMPLES: Record<string, Sample> = {
+  params: {
+    valid: { integrity: 'sha256-payload', incarnation: 'current-service' },
+    invalid: [
+      {},
+      { integrity: 'sha256-payload' },
+      { integrity: '', incarnation: 'service' },
+      { integrity: 'a'.repeat(257), incarnation: 'service' },
+      { integrity: 'payload', incarnation: 'a'.repeat(129) },
+      { integrity: 'payload', incarnation: 'service', sessionIds: ['claimed'] },
+    ],
+    note: 'private Superagent upgrade carries service identity and no caller roster',
+  },
+  result: {
+    valid: { sessionIds: ['registered'] },
+    invalid: [
+      {},
+      { sessionIds: ['duplicate', 'duplicate'] },
+      { sessionIds: [''] },
+      { sessionIds: ['a'.repeat(1025)] },
+    ],
+    note: 'upgrade returns the service-owned roster only',
+  },
+}
 
 const pkgRoot = fileURLToPath(new URL('..', import.meta.url))
 
@@ -256,6 +283,10 @@ ajv.addSchema({
   },
 })
 ajv.addSchema({ $id: SESSION_INTEGRITY_ID, $defs: { SessionIntegrityParams, SessionIntegrityStatus } })
+ajv.addSchema({
+  $id: SUPERAGENT_ID,
+  $defs: { SuperagentSessionUpgradeParams, SuperagentSessionUpgradeResult },
+})
 ajv.addSchema({ $id: SESSION_TOOLS_ID, $defs: { SessionToolsParams, SessionToolsResult } })
 ajv.addSchema({ $id: AGENTS_ID, $defs: { AgentResolveParams, AgentPlan } })
 ajv.addSchema({ $id: SESSION_RUNTIME_ID, $defs: { SessionRuntimeParams, SessionRuntimeDescriptor } })
@@ -8780,6 +8811,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     SchedulesUpsertResult,
   },
   [SESSION_INTEGRITY_ID]: { SessionIntegrityParams, SessionIntegrityStatus },
+  [SUPERAGENT_ID]: { SuperagentSessionUpgradeParams, SuperagentSessionUpgradeResult },
   [SESSION_TOOLS_ID]: { SessionToolsParams, SessionToolsResult },
   [AGENTS_ID]: { AgentResolveParams, AgentPlan },
   [SESSION_RUNTIME_ID]: { SessionRuntimeParams, SessionRuntimeDescriptor },
@@ -10136,6 +10168,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'PluginRuntimeStatusParams',
     result: 'PluginRuntimeStatusResult',
   },
+  '_agnes/v1/superagent.sessions.upgrade': {
+    fileId: SUPERAGENT_ID,
+    params: 'SuperagentSessionUpgradeParams',
+    result: 'SuperagentSessionUpgradeResult',
+  },
   '_agnes/v1/pluginStreams.endpoint': {
     fileId: AGNES_ID,
     params: 'PluginStreamsEndpointParams',
@@ -11180,6 +11217,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/workspace.reveal': AGNES_SAMPLES.WorkspaceRevealParams as Sample,
   '_agnes/v1/workspace.remove': AGNES_SAMPLES.WorkspaceRemoveParams as Sample,
   '_agnes/v1/pluginRuntime.status': AGNES_SAMPLES.PluginRuntimeStatusParams as Sample,
+  '_agnes/v1/superagent.sessions.upgrade': SUPERAGENT_SAMPLES.params as Sample,
   '_agnes/v1/pluginStreams.endpoint': AGNES_SAMPLES.PluginStreamsEndpointParams as Sample,
   '_agnes/v1/surfaces.mounts': AGNES_SAMPLES.SurfacesMountsParams as Sample,
   '_agnes/v1/session.setPreset': AGNES_SAMPLES.SessionSetPresetParams as Sample,
@@ -11930,6 +11968,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/workspace.reveal': AGNES_SAMPLES.WorkspaceRevealResult as Sample,
   '_agnes/v1/workspace.remove': AGNES_SAMPLES.WorkspaceRemoveResult as Sample,
   '_agnes/v1/pluginRuntime.status': AGNES_SAMPLES.PluginRuntimeStatusResult as Sample,
+  '_agnes/v1/superagent.sessions.upgrade': SUPERAGENT_SAMPLES.result as Sample,
   '_agnes/v1/pluginStreams.endpoint': AGNES_SAMPLES.PluginStreamsEndpointResult as Sample,
   '_agnes/v1/surfaces.mounts': AGNES_SAMPLES.SurfacesMountsResult as Sample,
   '_agnes/v1/session.setPreset': AGNES_SAMPLES.EffectiveFromResult as Sample,
