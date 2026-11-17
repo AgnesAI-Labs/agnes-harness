@@ -139,26 +139,23 @@ it('cleans ANSI, paired wrappers, SHA and fences without erasing code-only tasks
 })
 
 it('matches full reference formatting after compaction, including Unicode and omission counts', () => {
-  // Reference formatter/truncation; see THIRD-PARTY-NOTICES.
-  const full = (turns: { role: string; text: string; thinking?: string }[]) => {
-    const formatted = turns.map(
-      (turn) =>
-        `<${turn.role}>\n${[turn.text, turn.thinking ? `<think>\n${turn.thinking}\n</think>` : ''].filter(Boolean).join('\n\n')}\n</${turn.role}>`,
-    )
-    const message = `<chat>\n${formatted.join('\n\n')}\n</chat>`
-    if (message.length <= 2000) return message
-    let omitted = message.length - 2000,
-      marker = '',
-      head = 0,
-      tail = 0
-    for (let pass = 0; pass < 2; pass++) {
-      marker = `\n[… ${omitted} chars omitted …]\n`
-      const kept = 2000 - marker.length
-      head = Math.ceil((kept * 2) / 3)
-      tail = kept - head
-      omitted = message.length - head - tail
-    }
-    return `${message.slice(0, head)}\n[… ${omitted} chars omitted …]\n${message.slice(-tail)}`
+  // Reference formatter: the whole transcript as one string, cut with closed-form head/tail arithmetic.
+  const full = (turns: { role: string; text: string; thinking?: string }[]): string => {
+    const blocks = turns
+      .map(({ role, text, thinking = '' }) => {
+        const body = [text, thinking && `<think>\n${thinking}\n</think>`].filter(Boolean).join('\n\n')
+        return body && `<${role}>\n${body}\n</${role}>`
+      })
+      .filter(Boolean)
+    if (blocks.length === 0) return ''
+    const message = `<chat>\n${blocks.join('\n\n')}\n</chat>`
+    const size = message.length
+    if (size <= 2000) return message
+    const digits = (n: number) => String(n).length
+    const room = 1978 - digits(size - 1978 + digits(size - 2000))
+    const tail = Math.floor(room / 3)
+    const head = room - tail
+    return `${message.slice(0, head)}\n[… ${size - room} chars omitted …]\n${message.slice(size - tail)}`
   }
   for (const size of [1, 1334, 1400, 1900, 2000, 2001, 9999, 16384]) {
     const text = '文🙂Q'.repeat(size).slice(0, size)

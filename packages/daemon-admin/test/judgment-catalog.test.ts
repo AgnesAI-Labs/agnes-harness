@@ -19,7 +19,7 @@ it('lists judgment as an optional bundled package, not installed by default', as
     expect(
       (await catalog.read({ offline: true })).entries.find((entry) => entry.id === '@agnes/judgment'),
     ).toMatchObject({
-      version: '0.1.1',
+      version: '0.1.2',
       sourceId: 'builtin-plugins',
       source: { type: 'file', ref: 'file:./bundled-plugins/judgment' },
       metadata: { displayName: 'Judgment' },

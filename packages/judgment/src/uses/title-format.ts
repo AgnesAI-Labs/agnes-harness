@@ -1,81 +1,91 @@
-// See THIRD-PARTY-NOTICES.
-/** Enough prefix/suffix for any final 2000-character 2:1 split, including scaffolding. */
+/** Units kept from the start of a stored text. */
 export const TITLE_HEAD = 1334
+/** Units kept from the end of a stored text. */
 export const TITLE_TAIL = 667
+
+/** A text reduced to its first and last units plus its real length. */
 export type TitleSection = { head: string; tail: string; length: number }
+
 export const section = (text: string): TitleSection => ({
   head: text.slice(0, TITLE_HEAD),
   tail: text.slice(-TITLE_TAIL),
   length: text.length,
 })
+
 export type TitleTurn = {
   seq: number
   role: 'user' | 'assistant'
   text: TitleSection
   thinking: TitleSection
 }
-type Part = string | TitleSection
-const lengthOf = (part: Part) => part.length
-function prefix(parts: Part[], count: number): string {
+
+/** Longest document returned unabridged. */
+const LIMIT = 2000
+
+/** A fixed piece of markup, or a stored text known only by its ends. */
+type Piece = string | TitleSection
+
+const notice = (omitted: number): string => `\n[… ${omitted} chars omitted …]\n`
+
+/** The first `want` units of the document, never touching the middle of a stored text. */
+function readFront(pieces: Piece[], want: number): string {
   let out = ''
-  for (const part of parts) {
-    const size = Math.min(count - out.length, lengthOf(part))
-    out +=
-      typeof part === 'string'
-        ? part.slice(0, size)
-        : size <= part.head.length
-          ? part.head.slice(0, size)
-          : part.head +
-            part.tail.slice(
-              part.tail.length - (part.length - part.head.length),
-              part.tail.length - (part.length - size),
-            )
-    if (out.length >= count) break
-  }
-  return out
-}
-function suffix(parts: Part[], count: number): string {
-  let out = ''
-  for (let i = parts.length - 1; i >= 0; i--) {
-    const part = parts[i]
-    if (part === undefined) continue
-    const size = Math.min(count - out.length, lengthOf(part))
-    out =
-      (typeof part === 'string'
-        ? part.slice(-size || part.length)
-        : part.tail.slice(-size || part.tail.length)) + out
-    if (out.length >= count) break
-  }
-  return out
-}
-export function formatTitleContext(turns: TitleTurn[]): string {
-  const parts: Part[] = []
-  for (const turn of turns) {
-    if (!turn.text.length && !turn.thinking.length) continue
-    if (parts.length) parts.push('\n\n')
-    parts.push(`<${turn.role}>\n`)
-    if (turn.text.length) parts.push(turn.text)
-    if (turn.thinking.length) {
-      if (turn.text.length) parts.push('\n\n')
-      parts.push('<think>\n', turn.thinking, '\n</think>')
+  for (const piece of pieces) {
+    const take = Math.min(want - out.length, piece.length)
+    if (typeof piece === 'string') out += piece.slice(0, take)
+    else if (take <= piece.head.length) out += piece.head.slice(0, take)
+    else {
+      const { head, tail, length } = piece
+      out += head + tail.slice(tail.length - (length - head.length), tail.length - (length - take))
     }
-    parts.push(`\n</${turn.role}>`)
+    if (out.length >= want) break
   }
-  if (!parts.length) return ''
-  parts.unshift('<chat>\n')
-  parts.push('\n</chat>')
-  const length = parts.reduce((sum, part) => sum + lengthOf(part), 0)
-  if (length <= 2000) return prefix(parts, length)
-  let omitted = length - 2000,
-    marker = '',
-    head = 0,
-    tail = 0
+  return out
+}
+
+/** The last `want` units of the document, never touching the middle of a stored text. */
+function readBack(pieces: Piece[], want: number): string {
+  let out = ''
+  for (let i = pieces.length - 1; i >= 0; i--) {
+    const piece = pieces[i] as Piece
+    const take = Math.min(want - out.length, piece.length)
+    const source = typeof piece === 'string' ? piece : piece.tail
+    out = (take ? source.slice(-take) : '') + out
+    if (out.length >= want) break
+  }
+  return out
+}
+
+/** Render turns as a chat transcript, abridged to LIMIT units with a count of what was left out. */
+export function formatTitleContext(turns: TitleTurn[]): string {
+  const pieces: Piece[] = []
+  for (const turn of turns) {
+    const { role, text, thinking } = turn
+    if (text.length === 0 && thinking.length === 0) continue
+    pieces.push(pieces.length === 0 ? '<chat>\n' : '\n\n', `<${role}>\n`)
+    if (text.length > 0) pieces.push(text)
+    if (thinking.length > 0) {
+      if (text.length > 0) pieces.push('\n\n')
+      pieces.push('<think>\n', thinking, '\n</think>')
+    }
+    pieces.push(`\n</${role}>`)
+  }
+  if (pieces.length === 0) return ''
+  pieces.push('\n</chat>')
+
+  let total = 0
+  for (const piece of pieces) total += piece.length
+  if (total <= LIMIT) return readFront(pieces, total)
+
+  // The notice's own width depends on the count it prints, so size it twice.
+  let omitted = total - LIMIT
+  let front = 0
+  let back = 0
   for (let pass = 0; pass < 2; pass++) {
-    marker = `\n[… ${omitted} chars omitted …]\n`
-    const kept = Math.max(0, 2000 - marker.length)
-    head = Math.ceil((kept * 2) / 3)
-    tail = kept - head
-    omitted = length - head - tail
+    const room = Math.max(0, LIMIT - notice(omitted).length)
+    front = Math.ceil((room * 2) / 3)
+    back = room - front
+    omitted = total - front - back
   }
-  return `${prefix(parts, head)}\n[… ${omitted} chars omitted …]\n${suffix(parts, tail)}`
+  return readFront(pieces, front) + notice(omitted) + readBack(pieces, back)
 }
