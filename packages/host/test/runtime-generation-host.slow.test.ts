@@ -28,6 +28,7 @@ import {
 } from '@agnes/resource-control-runtime'
 import { expect, it, vi } from 'vitest'
 import { answeredDecision, pendingDecision } from '../../core-ledger/testkit/decision.js'
+import { assertMigrationSettled } from '../src/runtime/generation/migration-state.js'
 import { createGenerationSkills } from '../src/runtime/generation/resources.js'
 import { pinnedBindings } from '../src/runtime/generation/seam-pins.js'
 import { hostInspectionSource } from '../src/runtime/lifecycle/host-facade.js'
@@ -708,6 +709,140 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       expect(store.session(key)).toEqual(before)
       expect(await storage.scan(key, { toSeq: log.lastSeq })).toEqual(beforeFacts)
       await required(host.releaseSessionGeneration)(key)
+    }
+    // A cancelled read-only wait is terminal; a separately running job remains fenced.
+    for (const mode of [
+      'safe',
+      'running-job',
+      'write',
+      'bad-hash',
+      'missing-policy',
+      'unsafe-replay',
+      'unknown',
+    ]) {
+      const key = `migration-cancel-${mode}`
+      const storage = host.kernel.o.storage
+      const log = await SessionLogImpl.open({
+        storage,
+        key,
+        writerRunId: key,
+        ttlMs: 30000,
+        ids: defaultIds(),
+        clock: Date.now,
+      })
+      const policy = {
+        isReadOnly: mode !== 'write',
+        isDestructive: mode === 'write',
+        isPresentational: false,
+        isConcurrencySafe: true,
+        isOpenWorld: false,
+        replay: 'safe',
+        requiresApproval: 'never',
+        approvalScopes: [],
+        policyVersion: 'static-v1',
+      }
+      const facts: (Pick<EventInput, 'type' | 'data'> & Partial<EventInput>)[] = [
+        { type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
+        { type: 'step/start', data: { turn: 1, step: 1 } },
+        ...(mode === 'running-job'
+          ? [
+              {
+                type: 'tool/call',
+                origin: 'model',
+                data: { toolUseId: 'shell', name: 'shell', args: {}, ordinal: 1 },
+              },
+              {
+                type: 'tool/result',
+                origin: 'tool:shell',
+                trust: 'untrusted' as const,
+                data: {
+                  toolUseId: 'shell',
+                  content: [],
+                  isError: false,
+                  enforcement: { level: 'none', scope: [] },
+                  authz: { decisionId: 'fixture' },
+                  structured: { jobId: 'job', status: 'running' },
+                },
+              },
+            ]
+          : []),
+        {
+          type: 'tool/call',
+          origin: 'model',
+          data: {
+            toolUseId: 'wait',
+            name: 'fixture_wait',
+            args: {},
+            ordinal: 0,
+            ...(mode === 'missing-policy'
+              ? {}
+              : {
+                  resolvedPolicy: policy,
+                  policyHash:
+                    mode === 'bad-hash'
+                      ? '0'.repeat(64)
+                      : mode === 'write'
+                        ? '4104122519da7ec356772c65b4e7574f15725ec2ea1152c2c259cf7d842d2f18'
+                        : '98eae655d46b0b7f23316813965df674f18e235e396fc26d8a864c2bb3a5e4d8',
+                  definitionFingerprint: '1'.repeat(64),
+                  executionDomain: 'workspace',
+                }),
+          },
+        },
+        {
+          type: 'effect/intent',
+          data: {
+            effectId: 'wait-effect',
+            kind: 'tool',
+            replay: mode === 'unsafe-replay' ? 'never' : 'safe',
+            argsSeq: mode === 'running-job' ? 5 : 3,
+            tool: { toolUseId: 'wait', name: 'fixture_wait' },
+          },
+        },
+        {
+          type: 'tool/result',
+          data: {
+            toolUseId: 'wait',
+            code: mode === 'unknown' ? 'TOOL_OUTCOME_UNKNOWN' : 'CANCELLED',
+            isError: true,
+            partial: true,
+            content: [],
+            enforcement: { level: 'none', scope: [] },
+            authz: { decisionId: 'fixture' },
+          },
+        },
+        {
+          type: 'effect/settled',
+          data: { effectId: 'wait-effect', outcome: mode === 'unknown' ? 'unknown' : 'aborted' },
+        },
+        { type: 'step/end', data: { turn: 1, step: 1 } },
+      ]
+      await log.append(
+        facts.map((fact) => ({
+          actor: resumed.d.actor,
+          origin: 'system',
+          trust: 'trusted',
+          lane: 'main',
+          ignorable: true,
+          ...fact,
+        })),
+      )
+      await log.close()
+      const settled = assertMigrationSettled(storage, key, 'fixture-generation')
+      if (mode === 'safe') await expect(settled).resolves.toBeUndefined()
+      else
+        await expect(settled).rejects.toMatchObject({
+          code: 'E_GENERATION_EXECUTION_UNSETTLED',
+          ...(mode === 'running-job'
+            ? {
+                detail: {
+                  reasons: expect.arrayContaining([
+                    expect.objectContaining({ kind: 'unfinished-background-job', id: 'job' }),
+                  ]),
+                },
+              }
+            : {}),
+        })
     }
     // A formal, consumed human reconciliation acknowledges one exact unknown call, without
     // rewriting history or clearing a different effect merely because it has the same tool name.
