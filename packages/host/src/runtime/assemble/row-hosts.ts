@@ -51,9 +51,7 @@ export function createRowHosts(
       for (const listener of modelListeners) listener()
     })
   }
-  const hostGrants = pinOptionalBundledRowGrants(ctx.profile.packages, (packageId, snapshotId) =>
-    pluginCatalogue.get(packageId, snapshotId),
-  )
+  const hostGrants = optionalRowGrants(ctx, pluginCatalogue)
   const extensionInfo = {
     agnesVersion: deps.agnesVersion ?? '0.0.0',
     apiVersion: API_VERSION,
@@ -228,6 +226,21 @@ export function createRowHosts(
     rowServices,
     refreshPluginCatalogue,
   }
+}
+
+/**
+ * Optional host grants for installed rows. The package list this container was built with misses
+ * a package that an in-place publication enabled or updated later, so a generation host supplies
+ * the verified entry of the generation that selected the row's snapshot, as a fresh container has.
+ */
+function optionalRowGrants(ctx: AssemblyContext, catalogue: RuntimePluginCatalogue) {
+  const { generationPackage } = ctx.deps
+  return pinOptionalBundledRowGrants(
+    generationPackage
+      ? (origin) => generationPackage(origin.packageId, origin.snapshotId)
+      : ctx.profile.packages,
+    (packageId, snapshotId) => catalogue.get(packageId, snapshotId),
+  )
 }
 
 /** Where row backends keep their state; channel rows and the bundled app's grant share it. */

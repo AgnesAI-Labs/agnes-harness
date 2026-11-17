@@ -246,6 +246,38 @@ it('binds only after full proof and rechecks a refreshed directory and row', () 
   current = { ...current, snapshot: { ...current.snapshot } }
   expect(grant(origin)).toEqual({})
 })
+it('proves a newly published package entry afresh, while one entry keeps its proven identity', () => {
+  // A generation lookup returns the entry of the generation that selected the snapshot.
+  let entry: ResolvedPackage = Object.freeze({ ...pkg })
+  let current = source
+  const grant = authority.pinOptionalBundledRowGrants(
+    () => entry,
+    () => current,
+    declarations,
+  )
+  expect(grant(origin)).toEqual({ sideCall: true, hookTimeoutMs: 15000 })
+  const moved = { ...origin, snapshotId: 'new-snapshot' }
+  current = { ...source, snapshot: { ...source.snapshot, snapshotId: 'new-snapshot' } }
+  expect(grant(moved)).toEqual({})
+  entry = Object.freeze({ ...pkg })
+  expect(grant(moved)).toEqual({ sideCall: true, hookTimeoutMs: 15000 })
+  expect(grant({ ...moved, exportName: 'other' })).toEqual({})
+  expect(grant(origin)).toEqual({})
+  entry = Object.freeze({ ...pkg, integrity: 'sha256-other' })
+  expect(grant(moved)).toEqual({})
+})
+it('refuses a looked-up entry that is missing or names another package', () => {
+  const lookup = (found: ResolvedPackage | undefined) =>
+    authority.pinOptionalBundledRowGrants(
+      () => found,
+      () => source,
+      declarations,
+    )(origin)
+  expect(lookup(undefined)).toEqual({})
+  expect(lookup({ ...pkg, id: '@other/package' })).toEqual({})
+  expect(lookup({ ...pkg, enabled: false })).toEqual({})
+  expect(lookup(pkg)).toEqual({ sideCall: true, hookTimeoutMs: 15000 })
+})
 it('rejects a changed capability identity after a successful proof', () => {
   let current = source
   const grant = authority.pinOptionalBundledRowGrants([pkg], () => current, declarations)
