@@ -60,6 +60,8 @@ Superagent 是随 AGH 发布的可选插件。它关注一个 GitHub 仓库（�
    /srv/superagent/bin/gh-agent api user --jq .login
    ```
 
+   在 macOS 上用 `gh-agent auth login --insecure-storage` 登录（经典令牌用 `--with-token --insecure-storage`），让令牌留在包装自己的配置目录里。工单会话在 macOS 沙箱中运行，读不到 `gh` 默认存放令牌的钥匙串，智能体的 `gh` 在会话里会表现为未登录。设置检查发现令牌在钥匙串中时会报告。
+
    Windows 上包装是 `gh-agent.cmd`，它用完整路径运行 `gh.exe`（`where.exe gh` 会打印出来），从不经过 Superagent 的 `gh` 垫片；
    它自己的路径只能含 ASCII 字符：垫片里写着这个路径，而 `cmd.exe` 读批处理文件时会读错其他字符。写进包装的 `gh.exe` 路径也一样：
    装在你的配置文件目录下的（winget 或 scoop 按用户安装）改写成 `%LOCALAPPDATA%` 或 `%USERPROFILE%` 开头，由 `cmd.exe` 运行时展开；
@@ -271,6 +273,7 @@ Issue 标题或评论放进 `gh` 的命令行，就可能执行写那段文字�
 | `git would ask other credential helpers than the agent's for github.com` | 有凭据助手被加进了 `<stateDir>/worker-gitconfig`，Superagent 下次启动时会重写它：点 **Check again**。否则就是智能体用的 git 早于 2.32 |
 | `The agent's GitHub token cannot read notifications; …` | 智能体用细粒度令牌登录，GitHub 的通知 API 拒绝它。用 `gh-agent auth login` 在浏览器里重新登录，或改用带 `repo` 与 `notifications` 范围的经典令牌，见第 4 步 |
 | `gh acts as @…, not the agent account @…` | 用 `gh-agent auth login` 重新登录，见第 4 步 |
+| `The agent's GitHub token for @… is in the macOS keychain, …`，或者 macOS 上智能体的 `gh` 在工单会话里表现为未登录，而 `gh-agent auth status` 显示 `(keyring)` | 会话在 macOS 沙箱中运行，读不到钥匙串。用 `gh-agent auth login --insecure-storage` 重新登录（经典令牌用 `--with-token --insecure-storage`），见第 4 步 |
 | `The agent GitHub CLI was not found.` | 在 GitHub 来源里写 `gh-agent` 包装的绝对路径，并让单元 `PATH` 能找到它运行的 `gh` |
 | `The agent GitHub CLI cannot read its account.` | 包装还没登录：运行 `gh-agent auth login`，见第 4 步 |
 | 某个文件 `… was not written by Superagent` | 把它移出 `<stateDir>/worker-bin`，或把 `<stateDir>/worker-gitconfig` 挪走，或换一个状态目录 |

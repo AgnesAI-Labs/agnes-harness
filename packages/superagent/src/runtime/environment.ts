@@ -418,6 +418,39 @@ export async function verifyEnvironment(
   if (user.code !== 0) throw new SetupError('agentCliSignedOut', { output: user.stderr.trim() })
   const account = user.stdout.trim()
   if (account !== cfg.login) throw new SetupError('agentLoginMismatch', { account, login: cfg.login })
+  // On macOS a session's commands run inside the Seatbelt sandbox, which cannot reach the keychain: a token kept there
+  // leaves gh signed out in every session, while this check, which runs outside the sandbox, still reads it. gh says
+  // where its token comes from, never the token itself; a gh without `auth status --json` cannot say, and passes.
+  if (platform === 'darwin') {
+    const status = await asSession(
+      env,
+      ['gh', 'auth', 'status', '--hostname', 'github.com', '--json', 'hosts'],
+      stateDir,
+      signal,
+      session,
+      platform,
+    )
+    if (status.code === 0 && activeTokenInKeychain(status.stdout))
+      throw new SetupError('agentTokenInKeychain', { account })
+  }
+}
+
+/** Whether `gh auth status --json hosts` output names the keychain as the active github.com account's token source. */
+function activeTokenInKeychain(text: string): boolean {
+  let value: unknown
+  try {
+    value = JSON.parse(text)
+  } catch {
+    return false
+  }
+  const entries = (value as { hosts?: Record<string, unknown> } | null)?.hosts?.['github.com']
+  return (
+    Array.isArray(entries) &&
+    entries.some(
+      (entry: { active?: unknown; tokenSource?: unknown } | null) =>
+        entry?.active === true && entry.tokenSource === 'keyring',
+    )
+  )
 }
 
 /**

@@ -74,6 +74,10 @@ Local stdio MCP isolation uses the same compiler, so its strict, workspace-write
 
 Linux bubblewrap already supplies an isolated minimal device tree through `--dev /dev`, rather than exposing host raw devices. Its device permissions are not identical to Seatbelt's literal rules. Landlock is currently a diagnostic ABI check, not an alternative command confinement backend. Windows has no implemented local L1 backend; the Windows compiler refuses confinement. Read-only and workspace-write commands use the [Windows write restriction](#windows-write-restriction) instead, and full access runs directly. Neither Linux nor Windows needs a device-policy change for this macOS defect.
 
+## Certificate verification with an open network
+
+When the macOS Seatbelt profile allows the network, it also permits looking up the system certificate trust services `com.apple.trustd.agent` and `com.apple.trustd`. Go programs such as `gh`, and other clients that verify server certificates with Security.framework, need them to complete TLS; without them they fail with `x509: OSStatus -26276` or a TLS error. Commands in a login session ask the trust agent and commands under a LaunchDaemon ask the system trust daemon, so both names are granted. Certificate verification stays on and no other Mach service is granted. trustd downloads intermediate certificates and revocation data for the certificates it checks, outside the profile's network rules, so the lookup comes only with a fully open network: closed-network and loopback-serving profiles receive no Mach lookup.
+
 ## Windows write restriction
 
 On Windows, `local` runs commands for `read-only` and `workspace-write` sessions under a Windows ACL write restriction: a restricted token, Low integrity, NTFS ACL grants and a Job Object that the Host owns. This is partial protection. It limits file writes only. It is not the full L1 isolation of macOS and Linux, and it is not a strict path sandbox. It needs an NTFS workspace and a working native module.

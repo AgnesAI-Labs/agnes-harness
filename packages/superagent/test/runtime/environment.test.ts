@@ -75,6 +75,8 @@ let realBin: string
 /** The `gh-agent` wrapper the operator made, as the deployment guide shows: it runs `gh` by name. */
 let cli: string
 let cliLog: string
+/** What the operator's `gh` answers to `auth status`, when the test writes it: `{ stdout, stderr, code }`. */
+let authStatus: string
 
 beforeEach(() => {
   root = realpathSync(mkdtempSync(join(tmpdir(), 'sa-env-')))
@@ -85,6 +87,7 @@ beforeEach(() => {
   agentConfig = join(root, 'config', 'gh-agent')
   realBin = join(root, 'bin')
   cliLog = join(root, 'gh.log')
+  authStatus = join(root, 'auth-status.json')
   for (const dir of [stateDir, operatorHome, agentConfig, realBin]) mkdirSync(dir, { recursive: true })
   // The operator's own git: an identity and a credential helper that must never answer for the agent.
   writeFileSync(
@@ -95,13 +98,19 @@ beforeEach(() => {
   nodeCommand(
     join(realBin, 'gh'),
     [
-      "import { appendFileSync } from 'node:fs'",
+      "import { appendFileSync, existsSync, readFileSync } from 'node:fs'",
       'const args = process.argv.slice(2)',
       'const env = process.env',
       `appendFileSync(${JSON.stringify(cliLog)}, \`config=\${env.GH_CONFIG_DIR} token=\${env.GH_TOKEN ?? 'unset'} github=\${env.GITHUB_TOKEN ?? 'unset'} args=\${args.join(' ')}\\n\`)`,
       "if (args.slice(0, 2).join(' ') === 'api user')",
       `  console.log(env.GH_CONFIG_DIR === ${JSON.stringify(agentConfig)} ? ${JSON.stringify(LOGIN)} : 'operator-login')`,
       "else if (args.slice(0, 3).join(' ') === 'auth git-credential get') console.log('username=agent-user\\npassword=agent-pass')",
+      `else if (args.slice(0, 2).join(' ') === 'auth status' && existsSync(${JSON.stringify(authStatus)})) {`,
+      `  const reply = JSON.parse(readFileSync(${JSON.stringify(authStatus)}, 'utf8'))`,
+      '  process.stdout.write(reply.stdout)',
+      '  process.stderr.write(reply.stderr)',
+      '  process.exitCode = reply.code',
+      '}',
       '',
     ].join('\n'),
   )
@@ -369,6 +378,54 @@ describe('the setup self-check', () => {
       rmSync(join(operatorHome, name))
     }
   })
+
+  // The sessions' macOS sandbox cannot reach the keychain: gh there acts signed out, while this check, unconfined, reads
+  // the token. The check asks gh where its token is; it never asks for the token.
+  it.skipIf(windows)(
+    "on macOS, fails when the agent's token is in the keychain, where sessions cannot read it",
+    async () => {
+      await writeEnvironment(stateDir, config())
+      const answer = (stdout: string, code = 0, stderr = '') =>
+        writeFileSync(authStatus, JSON.stringify({ stdout, stderr, code }))
+      const hosts = (...entries: [tokenSource: string, active: boolean][]) =>
+        JSON.stringify({
+          hosts: {
+            'github.com': entries.map(([tokenSource, active]) => ({
+              state: 'success',
+              active,
+              host: 'github.com',
+              login: LOGIN,
+              tokenSource,
+              gitProtocol: 'https',
+            })),
+          },
+        })
+      const on = (platform: string) =>
+        verifyEnvironment(stateDir, { login: LOGIN, cli }, daemonEnv(), undefined, platform)
+      const asked = () =>
+        readFileSync(cliLog, 'utf8')
+          .split('\n')
+          .filter((line) => line.includes('auth status'))
+      answer(hosts(['keyring', true]))
+      await expect(on('darwin')).rejects.toMatchObject({
+        code: 'agentTokenInKeychain',
+        values: { account: LOGIN },
+      })
+      expect(asked()).toEqual([
+        expect.stringContaining('args=auth status --hostname github.com --json hosts'),
+      ])
+      // Elsewhere there is no keychain sandbox to miss it.
+      await expect(on('linux')).resolves.toBeUndefined()
+      expect(asked()).toHaveLength(1)
+      // A token in the wrapper's configuration directory passes, beside a keychain one of an account gh does not use.
+      answer(hosts([join(agentConfig, 'hosts.yml'), true], ['keyring', false]))
+      await expect(on('darwin')).resolves.toBeUndefined()
+      // A gh without `auth status --json` cannot say where its token is; the check passes over it.
+      answer('', 1, 'unknown flag: --json\n')
+      await expect(on('darwin')).resolves.toBeUndefined()
+      expect(readFileSync(cliLog, 'utf8')).not.toMatch(/show-token|auth token/)
+    },
+  )
 
   it('ignores GIT_CONFIG_* variables of its own process, which sessions do not get', async () => {
     await writeEnvironment(stateDir, config())

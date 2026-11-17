@@ -89,7 +89,18 @@ export function seatbeltDenyNetworkArgv(
     `(deny file-write* (regex #"^${LOOPBACK_GATE_PATH_PREFIX}[^/]*(/|$)"))`,
     '(deny file-write-unlink (literal "/") (literal "/private") (literal "/private/tmp"))',
     ...(policy.network === 'allow'
-      ? ['(allow network*)']
+      ? [
+          '(allow network*)',
+          // Go programs such as gh, and every Security.framework client, verify a server certificate
+          // through trustd; without it an allowed network cannot complete TLS. A login session's
+          // commands ask the trust agent, and a LaunchDaemon's (root, or the System launchd session)
+          // ask the system trust daemon, with no fallback, so both names are granted and nothing else.
+          // Certificate verification itself stays on. trustd fetches AIA intermediates and OCSP/CRL
+          // responses for the certificates it is given, outside this profile's network rules, so the
+          // lookup is an egress channel: it must stay with a fully open network, never with a closed,
+          // loopback-only or host-filtered one.
+          '(allow mach-lookup (global-name "com.apple.trustd.agent") (global-name "com.apple.trustd"))',
+        ]
       : policy.loopbackServe
         ? [
             // Default deny still blocks outbound (including Unix peers), UDP and all binds.

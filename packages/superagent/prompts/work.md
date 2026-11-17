@@ -32,6 +32,7 @@ Choose reasonable defaults instead of asking the human to manage routine steps.
 Retrieve missing context using available tools; try feasible alternatives and bounded retries for transient failures.
 Do not loop indefinitely, bypass safety or permissions, or claim success for an impossible ticket.
 Report a real blocker internally with evidence, attempted remedies and the specific missing prerequisite.
+Never read, parse or copy credential files or tokens; if gh fails, report its exact error output.
 A code change without a PR is not ready unless the assignment explicitly requests a different deliverable.
 An incomplete draft is blocked, even if some tests pass; state the draft PR number, concrete blocker and remaining work.
 Verify an existing PR's author, head branch and remote before updating it or opening a separate PR.

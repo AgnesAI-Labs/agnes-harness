@@ -148,6 +148,11 @@ steps, and the defaults. Ask for one confirmation.
    ~/.local/bin/gh-agent api user --jq .login   # prints the account the agent acts as
    ```
 
+   On macOS, sign in with `gh-agent auth login --insecure-storage` (a classic token: `--with-token --insecure-storage`)
+   so the token stays in the wrapper's configuration directory: ticket sessions run inside the macOS sandbox, which
+   cannot read the keychain where `gh` keeps a token otherwise, and the agent's `gh` would act signed out there. The
+   setup check reports a token in the keychain (`agentTokenInKeychain`).
+
    On Windows the wrapper is a `gh-agent.cmd` file. Have it run `gh.exe` by its full path (`where.exe gh` prints it),
    so it never reaches Superagent's `gh` shim, and keep it in a path of ASCII characters only, such as
    `C:\Superagent\bin`: the shim names it, and `cmd.exe` misreads other characters in a batch file (Superagent refuses
