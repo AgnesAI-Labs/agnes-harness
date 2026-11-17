@@ -246,12 +246,17 @@ describe('the app', () => {
   })
 
   it('lists the GitHub Source on a fresh start, saves its repository during setup and then starts it', async () => {
-    const { app } = setup(true)
+    const probes: string[][] = []
+    const { app, fake } = setup(true, undefined, { probes })
     const starts = watchStarts(app)
     await app.start()
     expect(app.parts.setupProblem()).toMatchObject({ code: 'repositoryUnset' })
     expect(app.parts.sources.instances().map((instance) => instance.id)).toContain('github')
     expect(starts.sources).not.toHaveBeenCalled()
+    expect(starts.passes).not.toHaveBeenCalled()
+    expect(starts.effects).not.toHaveBeenCalled()
+    expect(fake.sessions.size).toBe(0)
+    expect(probes).toEqual([])
     const saved = await app.parts.settings.save('source:github', GITHUB, 0, 'panel')
     expect(saved).toMatchObject({ saved: true, restarting: true })
     await vi.waitFor(() => expect(app.unavailable()).toBeUndefined())

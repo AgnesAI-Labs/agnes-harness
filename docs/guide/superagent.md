@@ -4,10 +4,17 @@ English | [简体中文](superagent.zh-CN.md)
 
 [Documentation](../README.md) · [Plugins](packages.md) · [Security](security.md) · [Network deployment](deployment.md)
 
-Superagent is an optional plugin that ships with AGH. It watches one GitHub repository (and, optionally, Feishu chats
+Superagent is an official plugin installed and enabled by default with AGH. It watches one GitHub repository (and, optionally, Feishu chats
 through an AGH Feishu channel instance), turns requests from allowed people into tickets, and gives each ticket its own
 session. That session works in the ticket's directory, pushes its own branch and opens a pull request; the main session
-answers people. Superagent is not installed or enabled by default; until you enable it, nothing changes.
+answers people. Its sidebar entry opens the existing panel. Until configured, it waits for setup without listening to
+external sources, accepting work, starting sessions or calling models. Default installation authorizes no external
+account or requester.
+
+Upgrades add the package to existing homes that have never installed or removed it. Installed configuration and data,
+explicit disable or uninstall choices, and profile capability ceilings are preserved. If an upgrade needs to offer new
+defaults but package removal history is unreadable or incomplete, provisioning refuses instead of assuming consent;
+profiles with no new default candidates do not read that history.
 
 This page covers running it as a long-lived service: the accounts and the separate AGH home, a launchd or systemd unit
 or a Windows scheduled task,
@@ -54,13 +61,12 @@ panel's **Deployment** page names. Setting it explicitly before the service star
    provider as in [Install](install.md). In a fresh home, create nothing under `AGH_HOME` before this first start: a
    file there, such as a log the daemon's output is redirected to, makes the launcher refuse the home with
    `E_HOME_VERSION`. Write the log outside the home, for example to `/srv/superagent/agh.log`.
-2. Open **Plugins → Marketplace**, install **Superagent**, review what it asks for (model and session access, running
-   commands on this machine), and enable it ([Plugins](packages.md)). From a terminal, with the same `AGH_HOME`,
-   `agh plugins add file:./bundled-plugins/superagent` does the same: that reference is the payload's official bundled
-   source, the one the marketplace installs from; the command shows the review and, once you confirm it, installs,
-   trusts and enables Superagent. Use one of these two ways. A package name, as in `agh package add @agnes/superagent`,
-   is not a source and is refused, and a folder path installs a local copy without the bundled-app grant (see
-   [Troubleshooting](#troubleshooting)).
+2. Open **Superagent** in the sidebar; it is already installed and enabled and waits for configuration. If you previously
+   disabled it, enable it from **Plugins**. If you removed it, reinstall from **Plugins → Marketplace** after reviewing
+   its model/session access and local command execution ([Plugins](packages.md)). The terminal equivalent is
+   `agh plugins add file:./bundled-plugins/superagent` with the same `AGH_HOME`: this reserved reference identifies the
+   official shipped payload. A package name alone is not a source, and a folder copy receives no bundled-app grant
+   (see [Troubleshooting](#troubleshooting)).
 3. On the plugin's settings page set `stateDir` to `/srv/superagent/state` (on Windows, leave it unset; see
    [Windows](#windows-task-scheduler)). Superagent then reports a setup problem because the agent's environment is not
    in place yet; that is expected.

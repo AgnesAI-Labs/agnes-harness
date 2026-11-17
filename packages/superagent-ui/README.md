@@ -1,6 +1,6 @@
 # Superagent panel source
 
-This private browser source package is bundled into the existing `@agnes/superagent` optional payload
+This private browser source package is bundled into the existing `@agnes/superagent` default payload
 (`src/client.js`, built by `tools/build-feature-clients.mjs` next to the committed `src/agnes.client.json`). Users
 install one Superagent package. The browser module uses only React, the public web-client API and the page's shared
 `@agnes/web-ui` components, and never imports the Superagent runtime: the package's `panel-api` is read for types only, and the few values the panel needs from the

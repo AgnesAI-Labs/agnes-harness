@@ -83,7 +83,7 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 | [Candidate review](extend/agent-built-plugins.md) | Review agent drafts, tests and permissions before publication |
 | [Provenance and MCP isolation](guide/security.md#package-provenance-and-source-policy) | Package sources, integrity and local MCP process boundaries |
 | [Network deployment and Linux](guide/deployment.md) | Outbound proxies, timeouts and Linux preparation |
-| [Superagent deployment](guide/superagent.md) | Run the optional GitHub and Feishu agent as a service: accounts, launchd and systemd units, disabling, clearing data and its security boundaries |
+| [Superagent deployment](guide/superagent.md) | Configure the bundled GitHub and Feishu agent as a service: accounts, launchd and systemd units, disabling, clearing data and its security boundaries |
 | [App Server stdio](reference/app-server.md) | Build a client on the shared backend |
 | [Troubleshooting](guide/troubleshooting.md) | Use error codes and runtime state to choose the next diagnostic step |
 

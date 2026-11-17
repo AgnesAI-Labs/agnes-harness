@@ -4,8 +4,12 @@
 
 [文档](../README.zh-CN.md) · [插件](packages.zh-CN.md) · [安全](security.zh-CN.md) · [网络部署](deployment.zh-CN.md)
 
-Superagent 是随 AGH 发布的可选插件。它关注一个 GitHub 仓库（也可以通过一个 AGH 飞书渠道实例关注飞书群），把允许名单里的人提出的请求变成工单，
-每个工单交给它自己的会话：该会话在工单目录里工作，推送自己的分支并开 PR；对人说话的是主会话。Superagent 默认不安装、不启用；不启用就没有任何变化。
+Superagent 是随 AGH 默认安装并启用的官方插件。它关注一个 GitHub 仓库（也可以通过一个 AGH 飞书渠道实例关注飞书群），把允许名单里的人提出的请求变成工单，
+每个工单交给它自己的会话：该会话在工单目录里工作，推送自己的分支并开 PR；对人说话的是主会话。侧栏入口可直接打开现有面板。
+未配置时保持等待设置，不监听外部来源、不接单、不启动会话、不调用模型。默认安装不授权任何外部账号或请求者。
+
+升级会给从未安装或卸载过它的旧 home 补入默认包，保留已安装配置、数据以及明确的禁用或卸载选择，并遵守 profile 的能力上限。
+升级需要补入新默认包时，若包卸载历史损坏、截断或不可读，会拒绝自动补入；没有新默认候选的 profile 不读取这份历史。
 
 本页讲把它作为长期服务运行：账号与单独的 AGH home、launchd 或 systemd 单元或 Windows 计划任务、启用、停用、清除数据，以及它的会话能碰到什么、碰不到什么。
 由编码智能体陪你逐步完成的设置（包括各项设置与面板）见插件自带的[设置指南](../../packages/superagent/docs/setup.md)（英文）。
@@ -42,10 +46,10 @@ Superagent 是随 AGH 发布的可选插件。它关注一个 GitHub 仓库（�
 1. 以服务用户、`AGH_HOME=/srv/superagent/agh` 先启动一次 daemon（`agh serve`），按[安装](install.zh-CN.md)配好模型。
    全新的 home 在首次启动之前不要在 `AGH_HOME` 下创建任何文件：那里有文件（比如把 daemon 输出重定向到其中的日志）时，启动器会以
    `E_HOME_VERSION` 拒绝这个 home。日志请写到 home 之外，例如 `/srv/superagent/agh.log`。
-2. 打开 **插件 → 市场**，安装 **Superagent**，审阅它申请的权限（模型与会话访问、在本机运行命令），然后启用（见[插件](packages.zh-CN.md)）。
-   在终端里，用同一个 `AGH_HOME` 运行 `agh plugins add file:./bundled-plugins/superagent` 效果相同：这个引用是载荷的官方随包来源，也就是市场安装所用的来源；
-   命令先给出审阅内容，你确认后安装、信任并启用 Superagent。只用这两种方式之一。包名（如 `agh package add @agnes/superagent`）不是来源，会被拒绝；
-   用文件夹路径安装得到的是没有随包应用授权的本地副本（见[排错](#排错)）。
+2. 打开侧栏 **Superagent**；它已安装、启用并等待配置。如果以前禁用过，在 **插件** 页手动启用；如果以前卸载过，
+   从 **插件 → 市场** 重新安装，并审阅模型与会话访问、在本机执行命令等能力（见[插件](packages.zh-CN.md)）。
+   终端的等价操作是用同一个 `AGH_HOME` 运行 `agh plugins add file:./bundled-plugins/superagent`；这个保留引用标识官方随包载荷。
+   包名本身不是来源，文件夹副本也不获随包应用授权（见[排错](#排错)）。
 3. 在插件设置页把 `stateDir` 设为 `/srv/superagent/state`（Windows 上不要设，见 [Windows](#windows任务计划程序)）。此时 Superagent 会报告一个设置问题，因为智能体的环境还没就绪，这是正常的。
 4. 给智能体一个只用它自己登录、绝不用你的登录的 GitHub CLI：一个带自己配置目录的 `gh-agent` 包装。然后用它登录：
 

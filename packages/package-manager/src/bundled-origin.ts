@@ -5,13 +5,14 @@ import {
   BUNDLED_PLUGIN_DIGESTS,
   bundledPluginDigest,
   bundledPluginSource,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
   OPTIONAL_BUNDLED_PACKAGES,
 } from './bundled-plugin-source.js'
 import { hashDirectory } from './directory-digest.js'
 import { HOST_CAPABILITY_GRANTS, type HostGrantDeclaration, optionalRowGrant } from './host-grants.js'
 import { parseSource } from './sources.js'
 
-/** The release-table identity of one optional shipped plugin. */
+/** The release-table identity of one shipped plugin, independent of its default activation. */
 export type BundledReleaseEntry = Readonly<{ id: string; ref: string }>
 /** What this AGH ships under a reserved reference: the payload's own name and version and its digest. */
 export type ShippedBundledRelease = Readonly<{ id: string; version: string; digest: string }>
@@ -21,7 +22,7 @@ export type ShippedBundledRelease = Readonly<{ id: string; version: string; dige
 export function bundledReleaseEntry(
   id: string,
   source: unknown,
-  table: readonly BundledReleaseEntry[] = OPTIONAL_BUNDLED_PACKAGES,
+  table: readonly BundledReleaseEntry[] = [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES],
 ): BundledReleaseEntry | undefined {
   const ref = source && typeof source === 'object' ? (source as { ref?: unknown }).ref : undefined
   const entry = table.find((item) => item.id === id && item.ref === ref)
@@ -93,7 +94,7 @@ function grantsOwnerApplication(
   )
 }
 
-/** The read-only fact that a reviewed tree is the optional plugin this AGH ships, or undefined. The
+/** The read-only fact that a reviewed tree is the plugin this AGH ships, or undefined. The
  * name, a catalogue label or a local path proves nothing; the same bytes from another source are an
  * ordinary package. It is never publisher evidence and grants nothing by itself. */
 export function provenBundledOrigin(

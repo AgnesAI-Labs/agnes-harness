@@ -2,7 +2,8 @@
 
 A proactive agent for one GitHub repository, run as an Agnes plugin: it listens to GitHub (and optionally Feishu),
 assesses requests under a policy, turns authorized ones into tickets, and hands each ticket to its own session.
-This package is not installed or enabled by default.
+This package is installed and enabled by default. Until configured, it waits for setup without listening to sources,
+starting tasks or calling models. Existing configuration and explicit disable or uninstall choices are preserved.
 
 ## Origin
 
@@ -46,7 +47,7 @@ header.
   `acknowledgement.ts`).
 - `prompts/`, `skills/` and `locale/` are the prototype's files (their text is read verbatim, so they carry no per-file
   header); `locale/` words the plugin for the host in the prototype's two languages.
-- The plugin ships as the optional payload `packages/package-manager/bundled-plugins/superagent`, built from this
+- The plugin ships as the default payload `packages/package-manager/bundled-plugins/superagent`, built from this
   package (`pnpm --filter @agnes/package-manager build:superagent-payload`); `package.json` here declares the same plugin
   row and bundles the payload declares.
 - Imports use `.js` suffixes, the code is formatted by Biome, and it compiles with `exactOptionalPropertyTypes`.

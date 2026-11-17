@@ -1,8 +1,10 @@
 # Superagent
 
-An optional plugin that watches one GitHub repository, assesses requests under its policy, turns authorized ones into
-tickets and works each ticket in its own session. It is **not installed or enabled by default**. Install it from the AGH
-Marketplace, trust and enable it.
+A bundled plugin that watches one GitHub repository, assesses requests under its policy, turns authorized ones into
+tickets and works each ticket in its own session. It is installed and enabled by default, with a sidebar entry. Until
+configured it waits for setup without listening to sources, starting tasks or calling models. Upgrades preserve existing
+configuration and explicit disable or uninstall choices; profile capability ceilings still apply. Reinstall it from the
+AGH Marketplace if you previously removed it. Default installation grants no external account or requester access.
 
 The plugin runs one profile-managed service. Only this shipped payload, with bytes matching the release snapshot,
 receives the platform's bundled-app grant: a private state directory, an owner-level local client and access to the

@@ -8,6 +8,7 @@ import {
   type HostCapabilityGrant,
   hashDirectory,
   parseSource,
+  RuntimeGenerationSnapshotStore,
   type RuntimePluginSnapshot,
 } from '@agnes/package-manager'
 import { createPluginRow, type RowOrigin } from '@agnes/plugin-runtime/host'
@@ -111,13 +112,14 @@ const judgmentRow = (source: RuntimePluginSnapshot) =>
     inject: entry.inject,
   })
 
-async function bootWithoutJudgment(boot: 'absent' | 'disabled') {
+async function bootWithoutJudgment(boot: 'absent' | 'disabled', deferInitialGeneration = false) {
   let sources: RuntimePluginSnapshot[] = boot === 'disabled' ? [judgment(shipped, false)] : []
   const selves: ExtensionContext[] = []
   const sessionWork: (true | string)[] = []
   const root = scratch()
   const h = await createTestHost({
     dataDir: root,
+    deferInitialGeneration,
     packageDirs: {
       '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)),
       '@agnes/code': fileURLToPath(new URL('../../../code', import.meta.url)),
@@ -180,19 +182,43 @@ function judgmentGrants() {
 }
 
 it.each([
-  { boot: 'absent', bound: false },
-  { boot: 'disabled', bound: false },
-  { boot: 'absent', bound: true },
+  { boot: 'absent', bound: false, deferred: false },
+  { boot: 'disabled', bound: false, deferred: false },
+  { boot: 'absent', bound: true, deferred: false },
+  { boot: 'absent', bound: false, deferred: true },
 ] as const)(
-  'grants judgment enabled after boot exactly as a fresh container would, and drops it when disabled ($boot, bound: $bound)',
-  async ({ boot, bound }) => {
-    const f = await bootWithoutJudgment(boot)
+  'grants judgment enabled after boot exactly as a fresh container would, and drops it when disabled ($boot, bound: $bound, deferred: $deferred)',
+  async ({ boot, bound, deferred }) => {
+    const f = await bootWithoutJudgment(boot, deferred)
     try {
       expect(judgmentGrants().mounted).toBeUndefined()
       const container = hostInspectionSource(f.host)
       const session = bound ? await f.host.createSession({ key: 'bound', cwd: f.root }) : undefined
       const enabled = judgment()
       f.setSources([enabled])
+      if (deferred) {
+        const archive = vi
+          .spyOn(RuntimeGenerationSnapshotStore.prototype, 'createAsync')
+          .mockImplementationOnce(async () => {
+            // The row remains granted while its first generation is being registered.
+            await Promise.resolve()
+            expect(judgmentGrants().now).toContainEqual(GRANTED)
+            throw new Error('fixture archive unavailable')
+          })
+        try {
+          await expect(f.host.applyRuntimeTarget(targetOf([judgmentRow(enabled)]))).resolves.toMatchObject({
+            ok: false,
+            publication: {
+              recovery: 'retry-same-input',
+              containers: [{ status: 'failed', error: 'Error: fixture archive unavailable' }],
+            },
+          })
+          // A failed first publication cannot leave candidate authority behind; retry below.
+          for (const grant of judgmentGrants().now) expect(grant).toEqual({})
+        } finally {
+          archive.mockRestore()
+        }
+      }
       expect(await f.host.applyRuntimeTarget(targetOf([judgmentRow(enabled)]))).toMatchObject({ ok: true })
       await settle()
       // Unbound, the package is mounted in place in the boot container; bound, the change forks.
@@ -219,31 +245,35 @@ it.each([
   30000,
 )
 
-it('grants nothing to a changed judgment payload and grants the shipped one it is updated to in place', async () => {
-  const f = await bootWithoutJudgment('absent')
-  try {
-    const changed = judgment(changedCopy())
-    f.setSources([changed])
-    expect(await f.host.applyRuntimeTarget(targetOf([judgmentRow(changed)]))).toMatchObject({ ok: true })
-    await settle()
-    expect(judgmentGrants().mounted).toEqual({})
-    expect(f.selves.at(-1)?.sideModels).toBeUndefined()
+it.each([false, true])(
+  'grants nothing to a changed judgment payload and grants the shipped one it is updated to in place (deferred: %s)',
+  async (deferred) => {
+    const f = await bootWithoutJudgment('absent', deferred)
+    try {
+      const changed = judgment(changedCopy())
+      f.setSources([changed])
+      expect(await f.host.applyRuntimeTarget(targetOf([judgmentRow(changed)]))).toMatchObject({ ok: true })
+      await settle()
+      expect(judgmentGrants().mounted).toEqual({})
+      expect(f.selves.at(-1)?.sideModels).toBeUndefined()
 
-    const container = hostInspectionSource(f.host)
-    const updated = judgment()
-    f.setSources([updated])
-    expect(await f.host.applyRuntimeTarget(targetOf([judgmentRow(updated)]))).toMatchObject({ ok: true })
-    await settle()
-    expect(hostInspectionSource(f.host) === container).toBe(true)
-    expect(judgmentGrants().mounted).toEqual(GRANTED)
-    // The authority still refuses the changed snapshot, another export and another row.
-    const { origin } = seen.asked.filter((item) => item.origin.rowId === ROW).at(-1)!
-    for (const authority of seen.authorities) {
-      expect(authority({ ...origin, snapshotId: changed.snapshot.snapshotId })).toEqual({})
-      expect(authority({ ...origin, exportName: 'other' })).toEqual({})
-      expect(authority({ ...origin, rowId: 'ext:agnes.judgment/other' })).toEqual({})
+      const container = hostInspectionSource(f.host)
+      const updated = judgment()
+      f.setSources([updated])
+      expect(await f.host.applyRuntimeTarget(targetOf([judgmentRow(updated)]))).toMatchObject({ ok: true })
+      await settle()
+      expect(hostInspectionSource(f.host) === container).toBe(true)
+      expect(judgmentGrants().mounted).toEqual(GRANTED)
+      // The authority still refuses the changed snapshot, another export and another row.
+      const { origin } = seen.asked.filter((item) => item.origin.rowId === ROW).at(-1)!
+      for (const authority of seen.authorities) {
+        expect(authority({ ...origin, snapshotId: changed.snapshot.snapshotId })).toEqual({})
+        expect(authority({ ...origin, exportName: 'other' })).toEqual({})
+        expect(authority({ ...origin, rowId: 'ext:agnes.judgment/other' })).toEqual({})
+      }
+    } finally {
+      await f.host.close()
     }
-  } finally {
-    await f.host.close()
-  }
-}, 30000)
+  },
+  30000,
+)

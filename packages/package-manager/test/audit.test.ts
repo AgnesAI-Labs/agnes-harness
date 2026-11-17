@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as system from '@agnes/system-node'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { appendPackageAudit, type PackageAuditEvent } from '../src/audit.js'
+import { appendPackageAudit, type PackageAuditEvent, readRemovedPackageIds } from '../src/audit.js'
 
 let root: string
 const event: PackageAuditEvent = {
@@ -39,6 +39,24 @@ function seed(contents: string): void {
   }
 }
 
+it('reads only committed historical removals, retaining the choice after a reinstall', async () => {
+  const profile = join(root, 'local-dev')
+  mkdirSync(profile)
+  await expect(readRemovedPackageIds(profile)).resolves.toEqual([])
+  appendPackageAudit(profile, event)
+  appendPackageAudit(profile, { ...event, eventId: 'disabled', operation: 'disable' })
+  await expect(readRemovedPackageIds(profile)).resolves.toEqual([])
+  appendPackageAudit(profile, {
+    ...event,
+    eventId: 'removed',
+    operation: 'remove',
+    old: 'installed-disabled-untrusted',
+    next: 'removed',
+  })
+  appendPackageAudit(profile, { ...event, eventId: 'reinstalled' })
+  await expect(readRemovedPackageIds(profile)).resolves.toEqual([event.id])
+})
+
 it('flushes an event before mirroring it and keeps replay idempotent', () => {
   const sink = { write: vi.fn(() => expect(JSON.parse(readFileSync(file(), 'utf8'))).toEqual(event)) }
   appendPackageAudit(root, event, sink)
@@ -54,7 +72,7 @@ it('keeps the local event when the optional mirror fails', () => {
   })
   expect(JSON.parse(readFileSync(file(), 'utf8'))).toEqual(event)
 })
-it('preserves a corrupt complete line and names the log in the refusal', () => {
+it('preserves a corrupt complete line and names the log in the refusal', async () => {
   seed('[]\n')
   expect(() => appendPackageAudit(root, event)).toThrow(
     expect.objectContaining({ detail: expect.objectContaining({ reason: 'audit-corrupt', path: file() }) }),
@@ -65,6 +83,16 @@ it('preserves a corrupt complete line and names the log in the refusal', () => {
   seed('[]\n{"partial":')
   expect(() => appendPackageAudit(root, event)).toThrow(/corrupt/)
   expect(readFileSync(file(), 'utf8')).toBe('[]\n{"partial":')
+  for (const text of [
+    '[]\n',
+    '{"partial":',
+    JSON.stringify(event),
+    `${JSON.stringify(event)}\n{"partial":`,
+  ]) {
+    writeFileSync(file(), text)
+    await expect(readRemovedPackageIds(root)).rejects.toThrow('removal history is unreadable')
+    expect(readFileSync(file(), 'utf8')).toBe(text)
+  }
 })
 // An interrupted append leaves a last line without its newline; the transaction's journal re-appends it.
 it('cuts an incomplete last record, keeps complete lines, appends, and records the repair', () => {
@@ -88,11 +116,12 @@ it('rejects a conflicting same-ID record without changing the log', () => {
   expect(() => appendPackageAudit(root, event)).toThrow(/conflicting/)
   expect(readFileSync(file(), 'utf8')).toBe(contents)
 })
-it('does not call the mirror when local storage fails', () => {
+it('does not call the mirror when local storage fails', async () => {
   const sink = { write: vi.fn() }
   mkdirSync(file())
   expect(() => appendPackageAudit(root, event, sink)).toThrow()
   expect(sink.write).not.toHaveBeenCalled()
+  await expect(readRemovedPackageIds(root)).rejects.toThrow('removal history is unreadable')
 })
 
 it('propagates flush failures and retries flushing a present record without duplicating it', () => {

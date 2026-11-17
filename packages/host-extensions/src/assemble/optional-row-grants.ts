@@ -4,6 +4,7 @@ import type { ResolvedPackage } from '@agnes/host-common/profile/types'
 import {
   bundledPluginSource,
   bundledReleaseEntry,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
   HOST_CAPABILITY_GRANTS,
   type HostCapabilityGrant,
   type HostGrantDeclaration,
@@ -30,7 +31,10 @@ export function pinOptionalBundledRowGrants(
   sourceFor: (packageId: string, snapshotId: string) => Readonly<RuntimePluginSnapshot> | undefined,
   declarations: readonly HostGrantDeclaration[] = HOST_CAPABILITY_GRANTS,
   releaseSourceFor = bundledPluginSource,
-  optionalPackages: readonly Readonly<{ id: string; ref: string }>[] = OPTIONAL_BUNDLED_PACKAGES,
+  optionalPackages: readonly Readonly<{ id: string; ref: string }>[] = [
+    ...DEFAULT_ENABLED_BUNDLED_PACKAGES,
+    ...OPTIONAL_BUNDLED_PACKAGES,
+  ],
 ) {
   const expected = new Map<string, ShippedBundledRelease | undefined>()
   // One proven identity per package entry: an entry never changes the code it grants. A newly

@@ -7,6 +7,7 @@ import {
 import type { Host } from '../lifecycle/host.js'
 
 type Served = ReadonlyMap<string, Readonly<{ snapshot: PluginGenerationSnapshot; host: Host }>>
+type GrantSources = Pick<PluginGenerationSnapshot, 'sources'>
 type Scope = Readonly<{
   host: () => Host | undefined
   building?: PluginGenerationSnapshot
@@ -21,9 +22,9 @@ type Scope = Readonly<{
  * generation retired from the container no longer grants.
  */
 export function generationGrants(profile: ResolvedProfile, live: Served) {
-  const verified = new WeakMap<PluginGenerationSnapshot, readonly ResolvedPackage[]>()
-  const mounting = new Map<Host, PluginGenerationSnapshot>()
-  const packagesOf = (generation: PluginGenerationSnapshot): readonly ResolvedPackage[] => {
+  const verified = new WeakMap<GrantSources, readonly ResolvedPackage[]>()
+  const mounting = new Map<Host, GrantSources>()
+  const packagesOf = (generation: GrantSources): readonly ResolvedPackage[] => {
     let packages = verified.get(generation)
     if (!packages) {
       packages = Object.freeze(
@@ -72,7 +73,7 @@ export function generationGrants(profile: ResolvedProfile, live: Served) {
       }
     },
     /** Runs an in-place publication whose rows are granted against `candidate` while they mount. */
-    async mounting<T>(host: Host, candidate: PluginGenerationSnapshot, apply: () => Promise<T>) {
+    async mounting<T>(host: Host, candidate: GrantSources, apply: () => Promise<T>) {
       mounting.set(host, candidate)
       try {
         return await apply()

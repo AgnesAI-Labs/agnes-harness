@@ -54,7 +54,8 @@ echo "${AGH_HOME:-$HOME/.agh}"
 
 - **Prerequisites:** AGH installed with a model provider configured (see [Install](../../../docs/guide/install.md)),
   git 2.32 or later, and GitHub CLI 2.48 or later. A missing one becomes an item of the plan, not a question.
-- **Existing home:** a home that already has Superagent installed is an earlier setup: ask whether to continue it.
+- **Existing setup:** saved Superagent configuration or work may be an earlier setup; confirm whether to continue it.
+  Installation alone is expected in a new home.
 
 ## 2. Questions
 
@@ -118,11 +119,11 @@ steps, and the defaults. Ask for one confirmation.
 
    Create it with the first command that uses it, and configure a model provider in it as in
    [Install](../../../docs/guide/install.md). Start the daemon once as usual (`agh serve`).
-3. **Install and enable the plugin.** Open **Plugins → Marketplace**, find **Superagent**, and select **Install**. The
-   package ships with AGH but is not installed by default. Review what it asks for: model and session access, the
-   credentials of the agent account, and running commands on this machine. Finish the installation and enable the plugin
-   (see [Plugins](../../../docs/guide/packages.md)). It reports a setup problem, because the agent's environment does
-   not exist yet; that is expected.
+3. **Open the plugin.** Select **Superagent** in the sidebar. AGH installs and enables the official bundled package by
+   default, preserving earlier disable or uninstall choices and capability ceilings. If previously disabled, enable it
+   from **Plugins**; if removed, reinstall from **Plugins → Marketplace** after reviewing its capabilities
+   (see [Plugins](../../../docs/guide/packages.md)). It waits for configuration without listening to sources, opening
+   work sessions or calling models; the setup problem is expected until the agent's environment is ready.
 4. **Fix the state directory.** Superagent writes the agent's environment into its state directory, the plugin setting
    `stateDir`. Either set `stateDir` to an absolute path of your choice on the plugin's settings page, or leave it unset
    and read the default from the **Deployment** page of the panel (it is under the AGH data directory, in

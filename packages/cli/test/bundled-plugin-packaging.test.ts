@@ -31,7 +31,7 @@ it.each([
   roots.push(root)
   const output = join(root, 'runtime')
   await copyBundledPlugins(output)
-  expect(OPTIONAL_BUNDLED_PACKAGES.map((pkg) => pkg.name)).toEqual(['jev-loop', 'judgment', 'superagent'])
+  expect(OPTIONAL_BUNDLED_PACKAGES.map((pkg) => pkg.name)).toEqual(['jev-loop', 'judgment'])
   // The release digest is the same formula boot would otherwise compute over the final payload.
   const payload = { root: output, path: `bundled-plugins/${helper.name}` }
   expect(bundledPluginDigest(payload)).toBe(hashDirectory(join(output, payload.path)))
@@ -209,7 +209,7 @@ it('ships the optional judgment payload with its callable plugin and release dig
   expect(bundle).not.toContain('from "@agnes/core"')
 })
 
-it('ships the optional Superagent payload with its resource folders, callable plugin and release digest', async () => {
+it('ships the default Superagent payload with its resource folders, callable plugin and release digest', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-superagent-delivery-'))
   roots.push(root)
   await copyBundledPlugins(root)

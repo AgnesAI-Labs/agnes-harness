@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Bundle packages/superagent into the optional Superagent payload.
+// Bundle packages/superagent into the default Superagent payload.
 // packages/superagent stays the only source; the payload index.mjs and its prompts/, skills/ and locale/ copies are
 // generated and not committed; so are the panel's src/client.js, its stylesheet and client-build.json (NOTICE is generated
 // and committed).

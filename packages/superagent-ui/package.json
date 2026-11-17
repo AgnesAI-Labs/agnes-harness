@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Browser panel source for the Superagent optional package",
+  "description": "Browser panel source for the Superagent bundled package",
   "exports": {
     ".": "./src/index.tsx"
   },

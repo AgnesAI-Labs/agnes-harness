@@ -183,13 +183,13 @@ export async function createRuntimeGenerationHost(
     // The pointer is a shortcut; the next worker snapshots afresh after a failed write.
     bestEffortSync(options.log, 'generation-head-write', () => store.setHead(headKey, id))
   }
-  const ensureCurrent = async (): Promise<LiveGeneration> => {
+  const ensureCurrent = async (sources?: readonly RuntimePluginSnapshot[]): Promise<LiveGeneration> => {
     if (current) return current
     const target = initial.runtimeTargetSnapshot?.()
     if (!target) throw generationError('E_GENERATION_TARGET_MISSING', 'Host has no runtime snapshot')
     const snapshot = await snapshotTarget(
       target,
-      await sourcesFor(target),
+      sources ?? (await sourcesFor(target)),
       options.skillResources,
       undefined,
       GenerationReuseMode.Head,
@@ -738,12 +738,17 @@ export async function createRuntimeGenerationHost(
   }
   const publishTarget: typeof publishTargetCore = async (target, skills, extensionRows) => {
     if (!current && options.deferInitialGeneration && !skills && !extensionRows) {
-      const report = await initial.applyRuntimeTarget(target)
-      if (report.ok) {
-        const head = await ensureCurrent()
-        lastChange = changeResult({ outcome: 'in-place', generationId: head.snapshot.id })
-      }
-      return report
+      // Default packages first mount before this container has a generation. Bind their verified
+      // target sources until that generation is registered, as in later in-place publications.
+      const sources = await sourcesFor(target)
+      return grants.mounting(initial, { sources }, async () => {
+        const report = await initial.applyRuntimeTarget(target)
+        if (report.ok) {
+          const head = await ensureCurrent(sources)
+          lastChange = changeResult({ outcome: 'in-place', generationId: head.snapshot.id })
+        }
+        return report
+      })
     }
     const head = await ensureCurrent()
     const previous =

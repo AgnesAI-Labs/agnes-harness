@@ -7,7 +7,6 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { provenBundledOrigin, shippedBundledRelease } from '../src/bundled-origin.js'
 import {
   BUNDLED_EXAMPLES,
-  BUNDLED_HELPERS,
   bundledExampleSource,
   bundledPluginSource,
   bundledPluginSourceRoot,
@@ -30,7 +29,10 @@ const fixture = () => {
 }
 
 it('keeps the optional catalogue limited to shipped payloads without reserving ordinary workspace sources', () => {
-  expect(OPTIONAL_BUNDLED_PACKAGES.map((item) => item.name)).toEqual(['jev-loop', 'judgment', 'superagent'])
+  expect(OPTIONAL_BUNDLED_PACKAGES.map((item) => item.name)).toEqual(['jev-loop', 'judgment'])
+  const shipped = [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES]
+  expect(new Set(shipped.map((pkg) => pkg.id)).size).toBe(shipped.length)
+  expect(new Set(shipped.map((pkg) => pkg.ref)).size).toBe(shipped.length)
   expect(bundledPluginSource('file:./bundled-plugins/fixture-optional')).toBeUndefined()
   expect(bundledPluginSourceRoot('file:./bundled-plugins/fixture-optional')).toBeUndefined()
 })
@@ -103,18 +105,14 @@ function offlineManager() {
   return { root, profile, exec, manager }
 }
 
-it.each([...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES])(
+it.each([...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES])(
   'inspects and installs $id offline without automatic trust or activation',
   async (helper) => {
     const { profile, exec, manager } = offlineManager()
     const preview = await manager.inspect(profile, parseSource(helper.ref))
     expect(preview).toMatchObject({ id: helper.id, blockers: [] })
-    // Only the optional release table carries the exact shipped-copy fact; it is never a signature.
-    const fact = OPTIONAL_BUNDLED_PACKAGES.includes(helper as (typeof OPTIONAL_BUNDLED_PACKAGES)[number])
-      ? helper.id === '@agnes/superagent'
-        ? { ownerApplication: true }
-        : {}
-      : undefined
+    // Default activation never substitutes for proof of the canonical shipped bytes.
+    const fact = helper.id === '@agnes/superagent' ? { ownerApplication: true } : {}
     expect(preview.bundledOrigin).toEqual(fact)
     expect(preview.provenance.signatureVerified).toBe(false)
     const installed = await manager.add(profile, helper.ref)
@@ -134,7 +132,7 @@ it.each([...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES])(
   },
 )
 
-const superagent = OPTIONAL_BUNDLED_PACKAGES.find((item) => item.name === 'superagent')!
+const superagent = DEFAULT_ENABLED_BUNDLED_PACKAGES.find((item) => item.name === 'superagent')!
 
 /** Inspect a tree as acquisition hands it over: its own digest, claimed under `source`. */
 function inspectCopy(dir: string, source: PackageSource) {
