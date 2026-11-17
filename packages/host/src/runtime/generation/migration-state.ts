@@ -2,24 +2,20 @@ import { createHash } from 'node:crypto'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import {
   foldEvents,
-  hasAuthenticToolPolicyHash,
   hasChildControl,
-  hasCompleteToolPolicyEnvelope,
-  hasTrustedToolCallProvenance,
   isTerminalChildState,
   type OpStateObj,
   type StorageAdapter,
   scanAll,
-  toolPolicyBindingProblem,
 } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { DEFERRED_INVOCATION_EVENT } from '@agnes/host-providers/assemble/deferred-invocations'
 import { unreconciled } from './migration-reconciliation.js'
+import { classifyUnknown, safeCancelledEffects } from './migration-safe-cancel.js'
 
 type Reason = { kind: string; id: string; sessionKey: string; seq?: number }
 type Fact = {
   id?: string
-  name?: unknown
   kind?: string
   effectId?: string
   outcome?: string
@@ -45,9 +41,6 @@ type Fact = {
   content?: unknown
   partial?: boolean
   tool?: unknown
-  replay?: unknown
-  argsSeq?: unknown
-  isError?: unknown
 }
 const object = (value: unknown): Fact =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Fact) : {}
@@ -81,7 +74,6 @@ export async function assertMigrationSettled(
     const rows = await scanAll((query) => storage.scan(key, query), { order: 'asc', toSeq: head?.seq ?? 0 })
     const state = foldEvents(rows)
     const registers = await storage.registers(key)
-    const rowsBySeq = new Map(rows.map((row) => [row.seq, row]))
     const add = (kind: string, id: string, seq?: number) =>
       reasons.push({ kind, id, sessionKey: key, ...(seq === undefined ? {} : { seq }) })
     for (const [id, { value, seq }] of state.registers.decisionStates)
@@ -223,126 +215,8 @@ export async function assertMigrationSettled(
         }
       }
     }
-    // A stopped read-only call cannot have an uncertain external write. Require the
-    // exact durable policy and effect binding; never infer this from the tool name.
-    const safeCancelled = new Set<string>()
-    for (const [effectId, intent] of intents) {
-      if (
-        !intent.toolUseId ||
-        results.get(intent.toolUseId)?.code !== 'CANCELLED' ||
-        !results.get(intent.toolUseId)?.partial
-      )
-        continue
-      const matchingIntents = rows.filter(
-        (row) =>
-          row.type === 'effect/intent' &&
-          row.origin === 'system' &&
-          row.trust === 'trusted' &&
-          object(row.data).effectId === effectId,
-      )
-      const intentRow = matchingIntents[0]
-      const intentData = object(intentRow?.data)
-      const tool = object(intentData.tool)
-      const call = intent.toolUseId ? state.toolCalls.get(intent.toolUseId) : undefined
-      const callRow = call && rowsBySeq.get(call.seq)
-      const callData = object(callRow?.data) as Parameters<typeof hasCompleteToolPolicyEnvelope>[0] & Fact
-      const receipts = rows.filter(
-        (row) =>
-          row.type === 'tool/result' &&
-          row.origin === 'system' &&
-          row.trust === 'trusted' &&
-          object(row.data).toolUseId === intent.toolUseId,
-      )
-      const effectSettlements = settlements.filter((row) => row.effectId === effectId)
-      const receipt = receipts[0]
-      const settlement = effectSettlements[0]
-      const stateCalls = registers.flatMap((cell) => {
-        if (cell.register !== 'op.state' || cell.data === null) return []
-        const op = cell.data as OpStateObj
-        // Compaction can park a tools phase in resumeAfter.
-        const phase =
-          op.phase.kind === 'compaction' ? (op.phase.resumeAfter as OpStateObj['phase']) : op.phase
-        return phase?.kind === 'tools'
-          ? phase.batch.calls
-              .filter((candidate) => candidate.toolUseId === intent.toolUseId)
-              .map((candidate) => ({ cell, candidate }))
-          : []
-      })
-      const stateMatches = stateCalls.every(
-        ({ cell, candidate }) =>
-          call &&
-          cell.key === call.lane &&
-          candidate.status === 'completed' &&
-          candidate.name === call.name &&
-          candidate.argsSeq === call.seq &&
-          candidate.effectId === effectId &&
-          candidate.replay === 'safe' &&
-          toolPolicyBindingProblem(candidate, callData) === undefined,
-      )
-      if (
-        stateMatches &&
-        matchingIntents.length === 1 &&
-        intentRow &&
-        intent.kind === 'tool' &&
-        call &&
-        callRow &&
-        hasTrustedToolCallProvenance(callRow) &&
-        hasCompleteToolPolicyEnvelope(callData) &&
-        hasAuthenticToolPolicyHash(callData) &&
-        callData.resolvedPolicy.isReadOnly === true &&
-        callData.resolvedPolicy.isDestructive === false &&
-        callData.resolvedPolicy.replay === 'safe' &&
-        intentData.replay === 'safe' &&
-        intentData.argsSeq === call.seq &&
-        tool.name === call.name &&
-        (intentRow.lane ?? 'main') === call.lane &&
-        intentRow.seq > call.seq &&
-        receipts.length === 1 &&
-        receipt &&
-        (receipt.lane ?? 'main') === call.lane &&
-        receipt.seq > intentRow.seq &&
-        object(receipt.data).code === 'CANCELLED' &&
-        object(receipt.data).partial === true &&
-        object(receipt.data).isError === true &&
-        effectSettlements.length === 1 &&
-        settlement &&
-        settlement.outcome === 'aborted' &&
-        settlement.seq > receipt.seq &&
-        [...intents.values()].filter((other) => other.toolUseId === intent.toolUseId).length === 1
-      )
-        safeCancelled.add(effectId)
-    }
-    const receiptFor = (effectId: string) => {
-      const toolUseId = intents.get(effectId)?.toolUseId
-      return toolUseId ? results.get(toolUseId) : undefined
-    }
-    const toolEffect = (effectId: string) => {
-      const intent = intents.get(effectId)
-      return intent?.kind === 'tool' || typeof intent?.toolUseId === 'string'
-    }
-    for (const event of settlements) {
-      const receipt = receiptFor(event.effectId)
-      const sentCancel = receipt?.code === 'CANCELLED' && receipt?.partial === true
-      // A CANCELLED receipt without partial is the not-sent proof. Anything weaker may have run.
-      const neverSent = receipt?.code === 'CANCELLED' && receipt?.partial !== true
-      if (event.outcome === 'unknown') unknown.set(event.effectId, event.seq)
-      else if ((event.outcome === 'ok' || event.outcome === 'error') && !sentCancel)
-        unknown.delete(event.effectId)
-      else if (
-        event.outcome === 'aborted' &&
-        toolEffect(event.effectId) &&
-        !neverSent &&
-        !safeCancelled.has(event.effectId)
-      )
-        unknown.set(event.effectId, event.seq)
-    }
-    for (const [toolUseId, receipt] of results)
-      if (
-        receipt.code === 'CANCELLED' &&
-        receipt.partial &&
-        ![...safeCancelled].some((id) => intents.get(id)?.toolUseId === toolUseId)
-      )
-        unknown.set(`tool:${toolUseId}`, receipt.seq)
+    const safeCancelled = safeCancelledEffects(rows, state, registers, intents, results, settlements)
+    const classifiedUnknown = classifyUnknown(unknown, intents, results, settlements, safeCancelled)
     for (const id of openSurfaces) add('open-surface', id)
     for (const [id, action] of uiActions) {
       if (['received', 'pending-approval', 'executing'].includes(action.status) || action.outcomeUnknown)
@@ -350,7 +224,8 @@ export async function assertMigrationSettled(
       else if (['rejected', 'succeeded', 'failed'].includes(action.status) && !action.delivered)
         add('undelivered-ui-receipt', id, action.seq)
     }
-    for (const [id, seq] of unreconciled(rows, state, key, unknown)) add('unknown-external-outcome', id, seq)
+    for (const [id, seq] of unreconciled(rows, state, key, classifiedUnknown))
+      add('unknown-external-outcome', id, seq)
     for (const [id, call] of deferred)
       if (!['succeeded', 'failed'].includes(call.state)) add('unfinished-deferred-invocation', id, call.seq)
     for (const [id, job] of jobs)
