@@ -203,7 +203,12 @@
     --ant-switch-handle-size-sm: var(--switch-knob);
     /* antd's default inner margins: half the knob, and the knob plus three track paddings. */
     --ant-switch-inner-min-margin-sm: calc(var(--switch-knob) / 2);
-    --ant-switch-inner-max-margin-sm: calc(var(--switch-knob) + 3 * (var(--switch-height) - var(--switch-knob)) / 2);
+    --ant-switch-inner-max-margin-sm: calc(
+      var(--switch-knob) +
+      3 *
+      (var(--switch-height) - var(--switch-knob)) /
+      2
+    );
     height: var(--switch-height);
     min-height: var(--switch-height);
     padding: 0;
