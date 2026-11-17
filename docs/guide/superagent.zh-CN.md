@@ -33,6 +33,7 @@ Superagent 是随 AGH 默认安装并启用的官方插件。它关注一个 Git
 | --- | --- |
 | `/srv/superagent/agh` | `AGH_HOME`：daemon 的 home、模型配置、会话，以及它列出的 Superagent 技能 |
 | `/srv/superagent/state` | Superagent 的状态目录（插件设置 `stateDir`）：`superagent.sqlite`、`work/` 下的工单目录 |
+| `/srv/superagent/state/Superagent` | 新建主会话的工作区目录；侧栏直接显示它的真实目录名 `Superagent` |
 | `/srv/superagent/state/worker-bin` | 垫片，Superagent 每次启动时重写：`gh` 运行智能体的 GitHub CLI，被禁用的命令直接失败 |
 | `/srv/superagent/state/worker-gitconfig` | 智能体的 git 配置，Superagent 每次启动时重写 |
 | `/srv/superagent/bin/gh-agent` | 智能体的 GitHub CLI：一个用自己配置目录的 `gh` 包装 |
@@ -40,6 +41,8 @@ Superagent 是随 AGH 默认安装并启用的官方插件。它关注一个 Git
 
 不设 `stateDir` 时，Superagent 使用 AGH 数据目录下的 `bundled-apps/<哈希>`，面板的 **Deployment** 页会写出它。
 在服务启动前显式设置，下面的单元文件就可以写死。
+新建主会话使用 `<stateDir>/Superagent`，显式配置 `stateDir` 时也一样。数据库、智能体环境和工单目录仍使用原来的
+`stateDir` 下的路径；显式设置的工单执行目录也不变。这个默认值不会迁移已有会话的工作区。
 
 ## 安装与启用
 

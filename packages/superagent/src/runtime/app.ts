@@ -4,6 +4,7 @@
  * part is built at once and does nothing until `start()` (see `app-run.ts`); `stop()` stops it again and leaves sessions,
  * turns and jobs to the lifecycle that owns cancelling them.
  */
+import { join } from 'node:path'
 import type { BundledAppGrant } from '@agnes/extension-api'
 import type { TextCache } from '../app/cache.js'
 import type { Effects } from '../app/effects.js'
@@ -285,7 +286,7 @@ export function createRuntimeParts(input: {
   const sessions = new Sessions({
     client,
     registry,
-    orchestratorDir: () => machine.stateDir,
+    orchestratorDir: () => join(machine.stateDir, 'Superagent'),
     prepareCommand: () => store.settings().executor.prepare,
     environment: (ticket) => input.environment?.(ticket) ?? {},
     sessionEnvironment: agentSessionEnvironment(machine.stateDir),

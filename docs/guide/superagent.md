@@ -47,6 +47,7 @@ service account.
 | --- | --- |
 | `/srv/superagent/agh` | `AGH_HOME`: the daemon's home, its model configuration, sessions and the Superagent skills it lists |
 | `/srv/superagent/state` | Superagent's state directory (the plugin setting `stateDir`): `superagent.sqlite`, the ticket directories in `work/` |
+| `/srv/superagent/state/Superagent` | The workspace directory for a new main session; the sidebar displays its actual directory name, `Superagent` |
 | `/srv/superagent/state/worker-bin` | Shims, written by Superagent on every start: `gh` runs the agent's GitHub CLI; blocked commands fail |
 | `/srv/superagent/state/worker-gitconfig` | The agent's git configuration, written by Superagent on every start |
 | `/srv/superagent/bin/gh-agent` | The agent's GitHub CLI: a `gh` wrapper with its own configuration directory |
@@ -54,6 +55,9 @@ service account.
 
 Without a `stateDir` setting Superagent uses a directory under the AGH data directory, `bundled-apps/<hash>`, which the
 panel's **Deployment** page names. Setting it explicitly before the service starts keeps the unit files below fixed.
+New main sessions use `<stateDir>/Superagent`, including when `stateDir` is configured explicitly. The database,
+agent environment and ticket directories keep their paths under `stateDir`; an explicit executor directory is unchanged.
+This default does not move an existing session's workspace.
 
 ## Install and enable
 
