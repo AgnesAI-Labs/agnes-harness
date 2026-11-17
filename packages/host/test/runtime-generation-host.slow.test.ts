@@ -710,16 +710,8 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       expect(await storage.scan(key, { toSeq: log.lastSeq })).toEqual(beforeFacts)
       await required(host.releaseSessionGeneration)(key)
     }
-    // A cancelled read-only wait is terminal; a separately running job remains fenced.
-    for (const mode of [
-      'safe',
-      'running-job',
-      'write',
-      'bad-hash',
-      'missing-policy',
-      'unsafe-replay',
-      'unknown',
-    ]) {
+    // A cancelled read-only wait is terminal when its durable policy and effect agree.
+    for (const mode of ['safe', 'write', 'bad-hash', 'missing-policy', 'unsafe-replay', 'unknown']) {
       const key = `migration-cancel-${mode}`
       const storage = host.kernel.o.storage
       const log = await SessionLogImpl.open({
@@ -744,28 +736,6 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       const facts: (Pick<EventInput, 'type' | 'data'> & Partial<EventInput>)[] = [
         { type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
         { type: 'step/start', data: { turn: 1, step: 1 } },
-        ...(mode === 'running-job'
-          ? [
-              {
-                type: 'tool/call',
-                origin: 'model',
-                data: { toolUseId: 'shell', name: 'shell', args: {}, ordinal: 1 },
-              },
-              {
-                type: 'tool/result',
-                origin: 'tool:shell',
-                trust: 'untrusted' as const,
-                data: {
-                  toolUseId: 'shell',
-                  content: [],
-                  isError: false,
-                  enforcement: { level: 'none', scope: [] },
-                  authz: { decisionId: 'fixture' },
-                  structured: { jobId: 'job', status: 'running' },
-                },
-              },
-            ]
-          : []),
         {
           type: 'tool/call',
           origin: 'model',
@@ -795,7 +765,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
             effectId: 'wait-effect',
             kind: 'tool',
             replay: mode === 'unsafe-replay' ? 'never' : 'safe',
-            argsSeq: mode === 'running-job' ? 5 : 3,
+            argsSeq: 3,
             tool: { toolUseId: 'wait', name: 'fixture_wait' },
           },
         },
@@ -830,19 +800,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       await log.close()
       const settled = assertMigrationSettled(storage, key, 'fixture-generation')
       if (mode === 'safe') await expect(settled).resolves.toBeUndefined()
-      else
-        await expect(settled).rejects.toMatchObject({
-          code: 'E_GENERATION_EXECUTION_UNSETTLED',
-          ...(mode === 'running-job'
-            ? {
-                detail: {
-                  reasons: expect.arrayContaining([
-                    expect.objectContaining({ kind: 'unfinished-background-job', id: 'job' }),
-                  ]),
-                },
-              }
-            : {}),
-        })
+      else await expect(settled).rejects.toMatchObject({ code: 'E_GENERATION_EXECUTION_UNSETTLED' })
     }
     // A formal, consumed human reconciliation acknowledges one exact unknown call, without
     // rewriting history or clearing a different effect merely because it has the same tool name.

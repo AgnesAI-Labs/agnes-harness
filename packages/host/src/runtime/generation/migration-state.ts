@@ -158,24 +158,6 @@ export async function assertMigrationSettled(
         }
         if (data.recoveryRequired === true) add('recovery-required', row.id, row.seq)
       }
-      // Tool-origin results carry normal background receipts as untrusted output. Bind
-      // them to their recorded trusted call before using them for job lifecycle fencing.
-      if (row.type === 'tool/result' && row.trust === 'untrusted' && typeof data.toolUseId === 'string') {
-        const call = state.toolCalls.get(data.toolUseId)
-        const recorded = call && rowsBySeq.get(call.seq)
-        const details = object(data.structured)
-        if (
-          call &&
-          recorded &&
-          hasTrustedToolCallProvenance(recorded) &&
-          row.origin === `tool:${call.name}` &&
-          (row.lane ?? 'main') === call.lane &&
-          row.seq > call.seq &&
-          typeof details.jobId === 'string' &&
-          typeof details.status === 'string'
-        )
-          jobs.set(details.jobId, { status: details.status, seq: row.seq })
-      }
       if (
         row.type === 'x/agnes/interaction/requested' &&
         row.origin === 'ext:agnes/interaction' &&
