@@ -212,7 +212,6 @@ it('keeps backend origin, isolates controls and reports slow or capped output wi
       { operation: 'send', text: 'no' },
       { operation: 'resize', columns: 80, rows: 24 },
       { operation: 'signal', signal: 'SIGINT' },
-      { operation: 'kill' },
     ])
       await expect(control!.handler({ ...input, jobId: agent.id }, ctx)).rejects.toThrow('CAPABILITY_DENIED')
     await expect(

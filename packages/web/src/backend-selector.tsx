@@ -2,6 +2,7 @@ import { remoteFrontendOrigin } from '@agnes/protocol'
 import { Button, SettingsInput, SettingsPage, useDocumentLanguage } from '@agnes/web-ui'
 import { useState } from 'react'
 import { backendSelectorCatalog } from './backend-selector-locale.js'
+import { cloudFailureText } from './backends/cloud-errors.js'
 import { backendFrame, requestBackendEnvironment } from './backends/frame-context.js'
 import { selectedRemoteOrigin } from './remote-frontend.js'
 
@@ -21,6 +22,7 @@ export function backendHref(remote?: string): string {
 export function BackendSelector() {
   const t = useText()
   const remote = selectedRemoteOrigin()
+  if (backendFrame()) return null
   return (
     <Button
       size="small"
@@ -100,10 +102,10 @@ export function ConnectionPage({
 }
 export function RemoteFrontendFailure({ message }: { message: string }) {
   const t = useText()
-  if (!backendFrame()) return <ConnectionPage message={message} />
+  if (!backendFrame()) return <ConnectionPage message={cloudFailureText(message)} />
   return (
     <SettingsPage title={t('failed')}>
-      <p role="alert">{message}</p>
+      <p role="alert">{cloudFailureText(message)}</p>
       <p>{t('retrySettings')}</p>
     </SettingsPage>
   )

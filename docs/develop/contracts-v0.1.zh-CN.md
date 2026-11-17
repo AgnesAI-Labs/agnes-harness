@@ -4,13 +4,13 @@
 
 [插件架构](architecture-plugins.zh-CN.md) · [作者指南](../extend/README.zh-CN.md) · [版本规则](../maintainers/versioning.zh-CN.md)
 
-本文维护产品 v0.1 的作者合同清单，Extension API 为 **5.14.0**。源码、schema 与包出口共同定义当前行为；请固定源码版本。本文不代表已发行或完整部署验收，发行结果应引用对应版本的 CI 与验收记录。
+本文维护产品 v0.1 的作者合同清单，Extension API 为 **5.23.0**。源码、schema 与包出口共同定义当前行为；请固定源码版本。本文不代表已发行或完整部署验收，发行结果应引用对应版本的 CI 与验收记录。
 
 ## 稳定性与兼容政策
 
 **stable** 表示已建立、拟在 v0.1 中给予兼容保护的作者合同；**experimental** 表示仍演进的合同，使用时必须对齐源码、示例与 testkit 版本。两种标签都不代表生产就绪、平台支持、任意插件隔离或 npm 可用。候选政策在维护者接受产品冻结时生效；已有预览版本仍遵循[预览版本政策](../maintainers/versioning.zh-CN.md)。
 
-已接受的 stable 合同在公开包中遵循 semver：不兼容签名、删除、缩小可接受输入或改变可观察保证须升主版本；兼容新增升次版本；兼容修复升补丁版本。产品 `v0.1` 发布 extension API `5.14.0`。experimental 修改也必须给出变更与迁移说明，即使预览版本号暂不变。仓库的已发布包 semver 规则也适用于 experimental 出口，本候选不新增已发布包例外。已发布的 stable 接口不能靠改标 experimental 来绕过主版本规则。
+已接受的 stable 合同在公开包中遵循 semver：不兼容签名、删除、缩小可接受输入或改变可观察保证须升主版本；兼容新增升次版本；兼容修复升补丁版本。产品 `v0.1` 发布 extension API `5.23.0`。experimental 修改也必须给出变更与迁移说明，即使预览版本号暂不变。仓库的已发布包 semver 规则也适用于 experimental 出口，本候选不新增已发布包例外。已发布的 stable 接口不能靠改标 experimental 来绕过主版本规则。
 
 弃用说明必须在 API changelog 与双语指南中写明旧名称、替代方案、兼容窗口和迁移办法。此规则只保护公开发布后已接受的 stable 别名：至少保留至后续一个次版本发行，且只能在主版本中删除。尚未发布的预览构建不承诺永久保留现有别名；退役格式明确拒绝并提示使用新的空 home，不做转换或沿用旧字节的信任摘要。安全原因的例外须明确发行说明与恢复步骤。本文不为 `defineKind` 输入 `restartRequired`（改用 `scope`；重启要求由它推导）指定删除日期。本轮保留 generation 别名、ACP `session/load`、without/fresh 执行闸门、旧 home 布局检测与 Windows 安全回退。插件 checkpoint 和数据迁移需要各自的兼容决定；升级包或迁移 generation 不会自动迁移 schema。
 
@@ -251,3 +251,15 @@ JSONL 示例提供完整 Host 端口、合同测试与新进程恢复用例，�
 按目标修订执行[验证流程](../maintainers/verification.zh-CN.md)并记录实际结果。历史合同关闭运行不证明当前发行验收。公开 registry 可用性、仓外干净安装、真实模型质量与具体部署插件仍是独立[发行门槛](../maintainers/release.zh-CN.md)。本文不会创建标签或发布包。
 
 工具构造函数 `defineTool` 及 `readOnlyTool` / `writeTool` 元数据预设仅从 `@agnes/plugin-runtime` 导出。
+
+Extension API 5.16.0 新增可选的 `HookContext.sideCall` 和 `ToolContext.sideCall`（`SideCallPort`，与循环端口同为 prepare/invoke/status）。插件在 `inject` 声明 `sideCall`，但初始化时的 `PluginContext` 不增加该属性；仍须有宿主授权且在进程内运行。准备好的调用绑定本次调用与回合，跨范围使用以 `foreign` 拒绝；钩子或工具结束时，Core 中止并等待它自己的旁路调用收尾。调用 id 和 status 使用命名空间：`c` + 宿主已知插件行 id 的 SHA-256 前八位十六进制 + `:` + 本地 id。本地 id 最长 112 字符，超出以 `E_REQUEST` 拒绝；原有 id 与 label 格式仍适用。成本行新增可选 `caller`，值为清单插件行 id，与包身份和内部运行时 owner 分开。循环调用保留原有 id 与收工检查；回合最终结束时清理所有调用方。隔离模式 `preferred`、`required` 均不暴露旁路端口。
+
+可选的 `ExtensionContext.sideModels.list()` 仅向获授权的声明者返回 `{route, model, api}`，不含端点和凭据；提供方可能在 apply 后才完成装配，应在调用时重新读取。公开纯函数 `redactSecrets(text)` 用于遮蔽文本，不授予执行或审批权限。`HookRegisterOptions.timeoutMs` 只对获宿主授权的 `turn_stopping`、`tool_result` 生效，上限 15,000 ms；未授权的申请沿用事件默认值并记录诊断。钩子的失败策略不变。
+
+Extension API 5.17.0 新增可选的 `self.sideModels.subscribe(listener)`，提供无载荷、合并后的模型目录变化通知。先订阅再读取 `list()` 可观察晚就绪的 provider；两个方法沿用原有 grant、进程内声明和生命周期检查，卸载时取消订阅。`list()` 仍只返回 route/model/api。
+
+Extension API 5.21.0 为 `ManagedSessions`（`init.sessions`）新增主人输入准入，全部为可选新增。`ManagedSessionStartInput.taskBinding?: { id, generation }` 把会话绑定到调用服务的一个任务：已绑定的会话调 `send` 被 `CAPABILITY_DENIED` 拒绝（`data.reason: 'OWNER_INPUT_REQUIRED'`，在归档、重复、忙之前判），同一 startKey 换绑定或换首个输入重复开会话会被拒绝（`START_KEY_REUSED`）。`admitInput(sessionId, { key, target: { taskId, taskGeneration, startKey }, input })` 请平台准入一条输入，`inputResult(sessionId, { key })` 读其状态：从不改动请求本身，但可能顺带提交一条此时已可投的持有输入（会话空闲时和定期巡检时平台也会这样做）。`input` 为 `{ kind: 'ownerMessage', receiptId }`（原文由平台按其记录的回执取出，从不经参数传入）、`{ kind: 'recoveryContinuation', turnEndSeq }`（平台核对该回合是会话最后一个回合、以取消或失败结束且之后没有新回合开始后，提交固定的英文句子 "Continue the interrupted turn without treating this recovery as a new owner decision."）或 `{ kind: 'legacyOwnerMessage', text, originalInbox }`（来源无法认证的文字，一律由主人处置）。`ChannelTargetEvent.receiptId?`（1–256 字符）只在平台持久记下事件来源与原文之后才带上，重投时不变。拒绝为 `CAPABILITY_DENIED`，`data.reason` 取 `OWNER_INPUT_REQUIRED`、`OWNER_INPUT_TARGET_MISMATCH`（`target` 与会话的 startKey 或绑定不符）、`OWNER_INPUT_KEY_REUSED`（同 key、请求有任何不同）、`SESSION_ARCHIVED`（抛出，不作为结果返回）或 `START_KEY_REUSED`；参数不合法为 `INVALID_PARAMS`。结果状态为：`queued`（key 已占下但记录未完成：崩溃在两步之间，或 `admitInput` 因开会话闸门读不到（例如 daemon 正在重启）而 reject；该输入不会执行；用同一请求再调一次 `admitInput`）、`enqueued`（已准入，平台持有原文，等会话空闲且开会话闸门通过后提交；闸门读不到时输入原样持有）、`consumed`（已被某一轮取走，带 `turn`、`seq`）、`retained`（保留不投）、`needsOwner`（无法证明可投：回执查不到或不属于本服务、配对已变、授权已撤、闸门不通过，或已提交的输入在平台之外被移出会话收件箱）、`waitingQuestion`（会话有未答的问题）、`recoveryUnknown`（旧消息，或校验不过的续跑）、`legacySend`（key 只出现在旧 `send` 台账，`delivery` 为 `consumed`、`pending` 或 `unknown`）和 `absent`（服务仍在托管的会话，`historyCoverage` 一律为 `complete`，因为受管会话的输入与发送记录不按时间清理；`partial` 为保留值，目前不会返回）。除 `legacySend` 与 `absent` 外，状态都带 `inputId`（等于 `key`）、每次变化加一的 `version`、取自开放集合 `eligible`、`busy`、`questionOpen`、`legacySourceUnknown`、`recoveryUnverified`、`receiptUnknown`、`pairingChanged`、`grantRevoked`、`sessionArchived`、`ownerRetained`、`ownerDiscarded` 的 `reason`（`ownerDiscarded` 配 `retained` 表示主人已丢弃，配 `needsOwner` 表示在平台之外被移除、原文为主人保留；只当文字显示，取值可增），以及 `reviewLocation`，即 `/?session=<sessionId>&ownerInput=<inputId>`，主人在网页审阅该输入的位置。主人也无需任何 key 就能找到所有等其处理的内容：等其决定的输入（`needsOwner`、`recoveryUnknown`）、开会话闸门读不到而被持有的输入、调用方一分钟内没有完成准入的 `queued` 记录，以及所有停放的渠道回执——网页主页侧栏的一个带计数的入口，背后是仅主人可调的 `_agnes/v1/managedInput.list`。卸载插件的包时，平台先把其已提交的输入从会话收件箱撤回，再删除其输入记录（含持有中的）和渠道回执（待确认的与停放的）；这些都不会执行。信任标注：已准入的主人原文仍以 `origin: 'system'`、`trust: 'untrusted'` 进入会话收件箱；准入不是主人身份输入，也不授予审批。不新增声明键：`sessions: true` 已授予该端口；需要这些方法的插件把 `apiRange` 提到 `^5.21.0`。见[插件托管会话](../extend/managed-sessions.zh-CN.md#准入主人的输入)。
+
+Extension API 5.22.0 新增可选的 `ProfileManagedInit.bundledApp`（`BundledAppGrant`：`stateDirectory`、主人级本地 SDK `client`、`channels` 与 `assertCurrent()`）。只有发布装配白名单内、安装载荷与随包摘要一致的随包插件才会获得；插件代码、清单与配置都不能申请或替换。停用插件或替换其激活后授予失效、客户端关闭。
+
+Extension API 5.22.0 还为渠道新增可选的 `Sender.kind`（`user` 或 `bot`；缺省视为用户，会话路由忽略机器人发送者）、`ChannelCapabilities.read`，以及 `ChannelAdapter` 上五个可选的游标分页读取方法：`fetchMessages`、`listThread`、`listHistory`、`listChats`、`listMembers`。适配器在运行时由 `capabilities()` 声明各项读取；清单 schema 不变，未声明的读取不会被调用。读取结果与实时消息事件同形。不实现这些方法的适配器行为不变。`BundledAppGrant.channels` 接入主人正在运行的渠道实例：`subscribe` 独占认领群聊，`send` 按会话回复的方式分段与限流，读取使用适配器已声明的读取方法；错误为 `CAPABILITY_DENIED`（授权已失效或读取未声明）、`SEMANTIC_REJECTED` 的 `CHANNEL_UNAVAILABLE`（渠道行运行后重试）或 `CHANNEL_CHAT_CLAIMED`、读取错误与 `INVALID_PARAMS`。`claimInstance({ pluginId, instanceId }, onEvent)` 按渠道插件的行 id 认领整个实例：它的群聊和私聊只交给认领方，不进会话路由、私聊配对与配对回执，直到 `release()`、停用或中止；实例已有别的使用方（认领方、按群订阅方、主人配对或已绑定会话）时以 `CHANNEL_CLAIMED` 拒绝，对已整个认领的实例调用 `subscribe` 同样被拒。

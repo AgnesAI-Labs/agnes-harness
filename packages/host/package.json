@@ -47,7 +47,8 @@
     "@agnes/base": "workspace:*",
     "@agnes/code": "workspace:*",
     "@agnes/loop-default": "workspace:*",
-    "@sinclair/typebox": "0.34.33"
+    "@sinclair/typebox": "0.34.33",
+    "@agnes/judgment": "workspace:*"
   },
   "license": "Apache-2.0 AND MIT"
 }

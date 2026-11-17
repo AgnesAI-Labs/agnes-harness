@@ -1,5 +1,7 @@
+import { jcs, sha256Hex } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
 import { expect, it, vi } from 'vitest'
+import { ChannelRefusal } from './channel-dedicated.js'
 import { channelWorkbench } from './channel-workbench.js'
 
 function fixture() {
@@ -8,9 +10,19 @@ function fixture() {
   let configuration = { instances: [] as Record<string, unknown>[] }
   let bindings: Record<string, unknown>[] = []
   const receipts = new Map<string, Record<string, unknown>>()
+  const expectations = new Map<string, string>()
+  const hooks: { workspaces?: () => void } = {}
   const call = vi.fn(async (method: string, params: any) => {
     if (method === '_agnes/v1/channels.catalog')
-      return { providers: [{ extension: 'plugin/chat', bindingAvailable: true, manifest: { id: 'chat' } }] }
+      return {
+        providers: [
+          {
+            extension: 'plugin/chat',
+            bindingAvailable: true,
+            manifest: { id: 'chat', credentials: { required: ['appId', 'appSecret'], optional: ['token'] } },
+          },
+        ],
+      }
     if (params.service === 'channel.configuration') return { output: structuredClone(configuration) }
     if (params.service === 'channel.check')
       return {
@@ -25,9 +37,17 @@ function fixture() {
         },
       }
     if (params.service === 'channel.configure') {
-      if (approved) configuration = structuredClone(params.input)
-      const receipt = { state: approved ? 'completed' : 'approval-required', operationId: params.operationId }
+      // The Host compares a stated revision before review and again in the write transaction.
+      const stale =
+        params.expectedConfigurationRevision !== undefined &&
+        sha256Hex(jcs(configuration)) !== params.expectedConfigurationRevision
+      if (approved && !stale) configuration = structuredClone(params.input)
+      const receipt = stale
+        ? { state: 'refused', operationId: params.operationId, code: 'REVISION_CONFLICT' }
+        : { state: approved ? 'completed' : 'approval-required', operationId: params.operationId }
       receipts.set(params.operationId, receipt)
+      if (params.expectedConfigurationRevision)
+        expectations.set(params.operationId, params.expectedConfigurationRevision)
       return receipt
     }
     throw new Error('unexpected call')
@@ -44,8 +64,28 @@ function fixture() {
       runtime: vi.fn(async () => ({ loop: { id: 'agnes.default' } })),
     },
     packages: { list: vi.fn(async () => ({ packages: [] })) },
+    workspace: {
+      list: vi.fn(async () => {
+        hooks.workspaces?.()
+        return {
+          items: [
+            { workspaceId: 'w-team', name: 'Team', path: '/work/team', available: true },
+            { workspaceId: 'w-gone', name: 'Gone', path: '/work/gone', available: false },
+            { name: 'Unregistered', path: '/work/legacy', available: true },
+          ],
+        }
+      }),
+    },
     extensions: {
       readOperation: vi.fn(async ({ operationId }: { operationId: string }) => {
+        const expected = expectations.get(operationId)
+        // The Host settles a pending configuration whose stored revision moved since review.
+        if (
+          receipts.get(operationId)?.state === 'approval-required' &&
+          expected &&
+          sha256Hex(jcs(configuration)) !== expected
+        )
+          receipts.set(operationId, { state: 'refused', operationId, code: 'REVISION_CONFLICT' })
         const receipt = receipts.get(operationId)
         if (receipt) return receipt
         throw Object.assign(new Error('unknown operation'), { data: { code: 'CAPABILITY_DENIED' } })
@@ -68,6 +108,8 @@ function fixture() {
     setBindings: (value: typeof bindings) => {
       bindings = value
     },
+    hooks,
+    configuration: () => configuration,
   }
 }
 
@@ -217,4 +259,135 @@ it('shows authorized session names and hides inaccessible binding identities whi
       credentialRefs: {},
     }),
   ).rejects.toThrow()
+})
+
+const refs = { appId: 'secret://generic/app-id', appSecret: 'secret://generic/app-secret' }
+const bound = {
+  id: 's-123456abcdef-123456',
+  workspace: 'D:/owned',
+  agent: 'default',
+  credentialRefs: { appId: 'secret://generic/old' },
+  allowFrom: ['owner'],
+  requireMention: true,
+  config: { mode: 'stream' },
+}
+async function dedicated(f: ReturnType<typeof fixture>) {
+  f.setConfiguration({ instances: [structuredClone(bound)] })
+  const context = await f.api.dedicatedContext('plugin/chat')
+  const configurationRevision = (await f.api.overview()).channels[0]!.configurationRevision!
+  return {
+    context,
+    params: {
+      extension: 'plugin/chat',
+      workspaceId: 'w-team',
+      instanceId: context.instanceId,
+      credentialRefs: refs,
+      operationId: 'dedicated-1',
+      configurationRevision,
+    },
+  }
+}
+const configures = (f: ReturnType<typeof fixture>) =>
+  f.call.mock.calls.filter(([, p]) => p.service === 'channel.configure')
+
+it('creates a dedicated connection without a session and appends it only to the reviewed revision', async () => {
+  const f = fixture()
+  const { context, params } = await dedicated(f)
+  expect(context).toEqual({
+    instanceId: expect.stringMatching(/^d-[a-f0-9]{12}$/),
+    agent: 'default',
+    agentTitle: { en: 'Default assistant', 'zh-CN': '默认助手' },
+    workspaces: [{ workspaceId: 'w-team', name: 'Team', path: '/work/team' }],
+  })
+  f.setApproved(false)
+  expect(await f.api.configureDedicated(params)).toEqual({
+    receipt: { state: 'approval-required', operationId: 'dedicated-1' },
+    instanceId: context.instanceId,
+  })
+  expect(configures(f)[0]![1]).toMatchObject({
+    expectedConfigurationRevision: params.configurationRevision,
+    operationId: 'dedicated-1',
+  })
+  expect(f.configuration().instances).toEqual([bound])
+  f.setApproved(true)
+  expect(await f.api.configureDedicated(params)).toMatchObject({ receipt: { state: 'completed' } })
+  expect(await f.api.configureDedicated(params)).toMatchObject({ receipt: { state: 'completed' } })
+  expect(configures(f)).toHaveLength(2)
+  expect(f.configuration().instances).toEqual([
+    bound,
+    {
+      id: context.instanceId,
+      workspace: '/work/team',
+      agent: 'default',
+      credentialRefs: refs,
+      config: {},
+      allowFrom: [],
+      requireMention: true,
+    },
+  ])
+  const [kept, created] = (await f.api.overview()).channels[0]!.instances
+  expect(kept).toMatchObject({ id: bound.id, workspace: bound.workspace })
+  expect(created).toMatchObject({ id: context.instanceId, bindings: [], unavailable: false })
+  expect(created?.intendedSession).toBeUndefined()
+  // No session is read, bound or entered: the flow ends once the connection exists.
+  expect(
+    f.call.mock.calls.some(
+      ([method]) => method !== '_agnes/v1/channels.catalog' && !method.includes('callScoped'),
+    ),
+  ).toBe(false)
+  expect(f.call.mock.calls.some(([, p]) => ['channel.bind', 'channel.session'].includes(p?.service))).toBe(
+    false,
+  )
+  expect(f.client.session.runtime).not.toHaveBeenCalled()
+})
+
+it.each(['before-read', 'between-read-and-prepare', 'during-approval'] as const)(
+  'refuses a dedicated connection when the configuration changed %s and keeps the other change',
+  async (moment) => {
+    const f = fixture()
+    const { params } = await dedicated(f)
+    const other = { ...structuredClone(bound), id: 'd-0123456789ab', workspace: '/work/other' }
+    const change = () => f.setConfiguration({ instances: [structuredClone(bound), other] })
+    if (moment === 'before-read') change()
+    if (moment === 'between-read-and-prepare') f.hooks.workspaces = change
+    if (moment === 'during-approval') {
+      f.setApproved(false)
+      expect(await f.api.configureDedicated(params)).toMatchObject({
+        receipt: { state: 'approval-required' },
+      })
+      change()
+      f.setApproved(true)
+    }
+    const conflict = { state: 'refused', operationId: 'dedicated-1', code: 'REVISION_CONFLICT' }
+    expect(await f.api.configureDedicated(params)).toEqual({
+      receipt: conflict,
+      instanceId: params.instanceId,
+    })
+    expect(f.configuration().instances).toEqual([bound, other])
+    // Every refusal is the Host's journaled receipt: a stale form is still sent, a pending one settled.
+    expect(configures(f)).toHaveLength(1)
+    expect(await f.client.extensions.readOperation(params as never)).toEqual(conflict)
+  },
+)
+
+it.each([
+  ['an existing connection', { instanceId: 'd-0123456789ab' }],
+  ['a session connection identity', { instanceId: 's-abcdefabcdef-abcdef' }],
+  ['a forged identity', { instanceId: 'channel-1' }],
+  ['an unregistered workspace', { workspaceId: 'w-missing' }],
+  ['an unavailable workspace', { workspaceId: 'w-gone' }],
+  ['another provider', { extension: 'plugin/other' }],
+  ['an undeclared credential', { credentialRefs: { ...refs, unknown: 'secret://generic/x' } }],
+  ['a missing required credential', { credentialRefs: { appId: refs.appId } }],
+])('refuses a dedicated request that targets %s before configuring', async (_name, change) => {
+  const f = fixture()
+  const { params } = await dedicated(f)
+  f.setConfiguration({
+    instances: [structuredClone(bound), { ...structuredClone(bound), id: 'd-0123456789ab' }],
+  })
+  const configurationRevision = (await f.api.overview()).channels[0]!.configurationRevision!
+  await expect(
+    f.api.configureDedicated({ ...params, configurationRevision, ...change }),
+  ).rejects.toBeInstanceOf(ChannelRefusal)
+  expect(configures(f)).toHaveLength(0)
 })

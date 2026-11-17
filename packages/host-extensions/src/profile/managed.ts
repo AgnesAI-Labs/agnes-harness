@@ -11,9 +11,12 @@ import type {
 } from '@agnes/extension-api'
 import { grantKey } from '@agnes/plugin-runtime/host'
 import type { JsonValue, ManagedServiceDescriptor } from '@agnes/protocol'
-import { rpcError } from '@agnes/protocol'
+import { configurationRevision, rpcError } from '@agnes/protocol'
 import { compileExtensionSchema } from '../ext-host/json-schema.js'
+import { pluginRowSource } from '../ext-host/row-extension-host.js'
+import { type BundledAppProvision, openBundledApp } from './bundled-app.js'
 import { type ChannelTargets, deniedChannelTargets } from './channel-targets.js'
+import { writeManagedConfiguration } from './managed-configuration.js'
 import {
   confirmManagedShutdown,
   handoverManagedMarker,
@@ -30,6 +33,7 @@ import {
 } from './managed-owner.js'
 import { deniedManagedSessions, type ManagedSessionsFactory } from './managed-sessions.js'
 import { managedStore } from './managed-store.js'
+import { withOwnerReceipts } from './owner-input-receipts.js'
 
 type Reason = 'disable' | 'upgrade' | 'exit'
 type Resource = ManagedPredecessor & {
@@ -46,6 +50,21 @@ type Resource = ManagedPredecessor & {
     code?: string
     endpoints?: Record<string, { host: '127.0.0.1'; port: number }>
   }
+  /** Holds a release bundled-app grant: it is stopped as soon as its row is dropped (see `retireAbsent`). */
+  bundledApp?: true
+  /** A publication or a dropped row retired it: never retained, and a retry may not take its slot. */
+  retired?: true
+  /** The instance a retry or reconcile installed in this slot; a pending publication keeps that one. */
+  successor?: Resource
+  /** When its own start failed (not a retirement); see `FAILED_RESTART_BACKOFF_MS`. */
+  failedAt?: number
+}
+/** A failed service is not started again by a publication within this long of its last failure. */
+export const FAILED_RESTART_BACKOFF_MS = 30_000
+const follow = (r: Resource): Resource => (r.successor ? follow(r.successor) : r)
+const retire = (r: Resource, reason: Reason) => {
+  r.retired = true
+  r.lifetime.abort(reason)
 }
 const profiles = new Map<
   string,
@@ -84,6 +103,7 @@ export class ProfileManagedResources {
     descriptor: ManagedServiceDescriptor
     store: OwnedStore
     wakesAllowed?: boolean
+    bundledApp?: BundledAppProvision
     assert(): void
   }[] = []
   private closed = false
@@ -104,6 +124,8 @@ export class ProfileManagedResources {
     definition: ProfileManagedDefinition<T>
     store: OwnedStore
     wakesAllowed?: boolean
+    /** Release-assembly grant, decided by the caller from Host grants; never from the definition. */
+    bundledApp?: BundledAppProvision
     assert(): void
   }) {
     if (
@@ -171,16 +193,7 @@ export class ProfileManagedResources {
           throw rpcError('CAPABILITY_DENIED')
         // No await between the final fence, reservation and durable marker update.
         markShutdown(input.store, r.id, false)
-        r.status = { state: 'starting' }
-        const next = await this.start(input, r)
-        const profile = profiles.get(this.key)
-        if (!profile || profile.manager !== this) {
-          await next.stop('disable')
-          throw rpcError('CAPABILITY_DENIED')
-        }
-        profile.resources.splice(profile.resources.indexOf(r), 1, next)
-        await next.value
-        return null
+        return this.restartSlot(input, r)
       },
       retry: async () => {
         const r = resource()
@@ -191,22 +204,19 @@ export class ProfileManagedResources {
             !hasManagedShutdownConfirmation(r.shutdownConfirmation, input.store))
         )
           throw rpcError('CAPABILITY_DENIED')
-        // Reserve the failed slot before yielding so two approved retries cannot start twins.
-        r.status = { state: 'starting' }
-        const next = await this.start(input, r)
-        const profile = profiles.get(this.key)
-        if (!profile || profile.manager !== this) {
-          await next.stop('disable')
-          throw rpcError('CAPABILITY_DENIED')
-        }
-        profile.resources.splice(profile.resources.indexOf(r), 1, next)
-        await next.value
-        return null
+        return this.restartSlot(input, r)
       },
-      configure: async (config: JsonValue) => {
+      configure: async (config: JsonValue, expectedRevision?: string) => {
         resource()
         if (!validate(config)) throw rpcError('INVALID_PARAMS')
-        input.store.set(configKey, config)
+        // A refused comparison throws before anything is written or published.
+        writeManagedConfiguration(
+          input.store,
+          configKey,
+          input.definition.defaultConfig,
+          config,
+          expectedRevision,
+        )
         await this.publish('upgrade', true)
         return null
       },
@@ -219,6 +229,36 @@ export class ProfileManagedResources {
           : [{ name: 'runtime', state: r.status.state === 'ready' ? 'passed' : 'failed' }]
       },
     }
+  }
+  /**
+   * Starts a replacement for the failed slot `r`, reserved before the first await so two approved retries
+   * cannot start twins, and a publication meanwhile keeps the slot rather than starting its own instance.
+   * The replacement is installed only if the slot is still in the current publication and nothing retired
+   * it; otherwise it is stopped, so a racing publication can neither twin it nor leave it untracked.
+   */
+  private async restartSlot(input: (typeof this.definitions)[number], r: Resource): Promise<null> {
+    const prior = r.status,
+      reservation: Resource['status'] = { state: 'starting' }
+    if (r.retired) throw rpcError('CAPABILITY_DENIED')
+    r.status = reservation
+    let next: Resource
+    try {
+      next = await this.start(input, r)
+    } catch (error) {
+      if (r.status === reservation) r.status = prior
+      throw error
+    }
+    const profile = profiles.get(this.key)
+    const index = profile?.manager === this && !this.closed ? profile.resources.indexOf(r) : -1
+    if (!profile || index < 0 || r.retired || r.status !== reservation || reservation.state !== 'starting') {
+      if (r.status === reservation) r.status = prior
+      await next.stop('disable')
+      throw rpcError('CAPABILITY_DENIED')
+    }
+    profile.resources.splice(index, 1, next)
+    r.successor = next
+    await next.value
+    return null
   }
   private async start(input: (typeof this.definitions)[number], predecessor?: Resource): Promise<Resource> {
     const epoch = this.current?.(input.owner, input.integrity, input.revision)
@@ -238,12 +278,22 @@ export class ProfileManagedResources {
     let startupComplete = false
     let ended = false
     let stopping: Promise<void> | undefined
+    let app: ReturnType<typeof openBundledApp> | undefined
+    const appFence = bundledAppFence(lifetime.signal, () => {
+      input.assert()
+      if (this.current && !this.current(input.owner, input.integrity, input.revision))
+        throw rpcError('CAPABILITY_DENIED')
+    })
+    const closeApp = async () => {
+      appFence.close()
+      await app?.close()
+    }
     let shutdownResult: Promise<{ state: 'settled' | 'unknown' } | undefined> | undefined
     const shut = (reason: Reason) => {
       if (!shutdownResult) {
         const ownConfirmation = startupComplete ? r.shutdownConfirmation : undefined
         const work = Promise.resolve()
-          .then(() => shutdown?.(reason))
+          .then(() => appFence.shutdown(() => shutdown?.(reason)))
           .then((result) => {
             if (result?.state === 'settled' && ownConfirmation) confirmManagedShutdown(ownConfirmation)
             return result
@@ -274,6 +324,7 @@ export class ProfileManagedResources {
           // A blocked definition never acquired a live instance. Retiring its registration must
           // not poison the next publication: leave the durable unknown marker for native recovery.
           if (!started) {
+            await closeApp()
             r.status =
               input.store.get(`managed-shutdown:${r.id}`) === true
                 ? { state: 'failed', code: 'shutdown-unconfirmed' }
@@ -282,6 +333,7 @@ export class ProfileManagedResources {
             return
           }
           const result = await shut(reason)
+          await closeApp()
           const settled =
             result?.state === 'settled' || hasManagedShutdownConfirmation(r.shutdownConfirmation, input.store)
           r.status = settled ? { state: 'stopped' } : { state: 'failed', code: 'shutdown-unconfirmed' }
@@ -324,6 +376,7 @@ export class ProfileManagedResources {
         listeners[listener.name] = { host: listener.host, port: port === 'auto' ? await freePort() : port }
       }
       lifetime.signal.throwIfAborted()
+      if (input.bundledApp) app = openBundledApp(input.bundledApp, appFence)
       const owner = await managedProcessOwner(process.pid, this.processIdentity)
       lifetime.signal.throwIfAborted()
       input.store.transaction(() => {
@@ -340,6 +393,7 @@ export class ProfileManagedResources {
         current: input.store,
       }
       started = true
+      if (input.bundledApp) r.bundledApp = true
       const value = await input.definition.start({
         signal: lifetime.signal,
         listeners,
@@ -357,7 +411,7 @@ export class ProfileManagedResources {
                 throw rpcError('CAPABILITY_DENIED')
               },
             },
-        sessions:
+        sessions: withOwnerReceipts(
           input.descriptor.sessions === true && this.sessions
             ? this.sessions({
                 owner: input.owner,
@@ -366,6 +420,9 @@ export class ProfileManagedResources {
                 service: input.definition.id,
               })
             : deniedManagedSessions,
+          input.descriptor.channelTargets === true ? this.targets?.receipts : undefined,
+          { owner: grantKey(input.packageId, input.owner), service: input.definition.id },
+        ),
         channels:
           input.descriptor.channelTargets === true && this.targets
             ? this.targets.port({
@@ -373,6 +430,16 @@ export class ProfileManagedResources {
                 service: input.definition.id,
                 packageId: input.packageId,
                 signal: lifetime.signal,
+                assertSession: async (sessionId) => {
+                  if (input.descriptor.sessions !== true || !this.sessions)
+                    throw rpcError('CAPABILITY_DENIED')
+                  await this.sessions({
+                    owner: input.owner,
+                    packageId: input.packageId,
+                    integrity: input.integrity,
+                    service: input.definition.id,
+                  }).status(sessionId)
+                },
                 assertCurrent: () => {
                   lifetime.signal.throwIfAborted()
                   input.assert()
@@ -387,6 +454,7 @@ export class ProfileManagedResources {
           if (shutdown) throw new Error('shutdown already registered')
           shutdown = handler
         },
+        ...(app ? { bundledApp: app.grant } : {}),
         ready: () => {
           if (!shutdown) throw new Error('shutdown required')
           lifetime.signal.throwIfAborted()
@@ -423,7 +491,9 @@ export class ProfileManagedResources {
         markShutdown(input.store, r.id, result?.state !== 'settled')
         if (result?.state !== 'settled') code = 'shutdown-unconfirmed'
       }
+      await closeApp()
       ended = true
+      r.failedAt = Date.now()
       r.status = { state: 'failed', code }
       throw rpcError('CAPABILITY_DENIED')
     })
@@ -440,21 +510,35 @@ export class ProfileManagedResources {
       .map((d) => `${d.owner}/${d.revision}/${d.integrity}/${d.definition.id}`)
       .sort()
       .join('\0')
-    if (previous?.manager === this && previous.stamp === stamp && !force) return previous.draining
+    // A retired resource is never retained. One whose own start failed is retained (not started
+    // again) for FAILED_RESTART_BACKOFF_MS after that failure; later each publication starts it once. A
+    // failed slot that a retry or reconcile reserved is retained: that call installs its instance there.
+    const now = Date.now()
+    const live = (r: Resource) =>
+      !r.retired &&
+      (!r.lifetime.signal.aborted ||
+        r.status.state === 'starting' ||
+        (r.status.state === 'failed' &&
+          r.lifetime.signal.reason === 'failed' &&
+          now - (r.failedAt ?? 0) < FAILED_RESTART_BACKOFF_MS))
+    if (previous?.manager === this && previous.stamp === stamp && !force && previous.resources.every(live))
+      return previous.draining
     const retained =
       previous?.manager === this && !force
-        ? previous.resources.filter((r) =>
-            definitions.some(
-              (d) =>
-                d.owner === r.owner &&
-                d.revision === r.revision &&
-                d.integrity === r.integrity &&
-                d.definition.id === r.id,
-            ),
+        ? previous.resources.filter(
+            (r) =>
+              live(r) &&
+              definitions.some(
+                (d) =>
+                  d.owner === r.owner &&
+                  d.revision === r.revision &&
+                  d.integrity === r.integrity &&
+                  d.definition.id === r.id,
+              ),
           )
         : []
     let retiring = (previous?.resources ?? []).filter((r) => !retained.includes(r))
-    for (const r of retiring) r.lifetime.abort(reason)
+    for (const r of retiring) retire(r, reason)
     const next = {
       manager: this,
       stamp,
@@ -467,7 +551,7 @@ export class ProfileManagedResources {
       // A predecessor may have entered start() before this publication but installed its slot
       // while we joined its drain. Include that late slot before starting any replacement.
       retiring = (previous?.resources ?? []).filter((r) => !retained.includes(r))
-      for (const r of retiring) r.lifetime.abort(reason)
+      for (const r of retiring) retire(r, reason)
       const stopped = await Promise.allSettled(retiring.map((r) => r.stop(reason)))
       // An unconfirmed predecessor can be replaced only by a fenced registration of the same
       // package/service. Removed resources still report their shutdown failure to the caller.
@@ -480,10 +564,11 @@ export class ProfileManagedResources {
         )
           throw result.reason
       if (profiles.get(this.key) !== next || this.closed) return
-      next.resources = retained
+      // A retry that installed its instance in a retained slot meanwhile: keep that instance, tracked.
+      next.resources = retained.map(follow)
       for (const definition of definitions)
         if (
-          !retained.some(
+          !next.resources.some(
             (r) =>
               r.owner === definition.owner &&
               r.revision === definition.revision &&
@@ -499,6 +584,37 @@ export class ProfileManagedResources {
     })()
     void next.draining.catch(() => undefined)
     return next.draining
+  }
+  /**
+   * Stops the bundled-app resources whose plugin row is not among `owners`, the rows of a runtime target
+   * about to be applied, without waiting for that target's generation to be built: a disabled, removed or
+   * untrusted bundled app stops its sessions as soon as the change reaches this process. A stopped
+   * resource leaves the publication, so a later publication that still defines it starts it again.
+   */
+  async retireAbsent(owners: ReadonlySet<string>): Promise<void> {
+    const profile = profiles.get(this.key)
+    if (!profile || profile.manager !== this || this.closed) return
+    const retiring = profile.resources.filter((r) => r.bundledApp && !owners.has(r.owner))
+    if (!retiring.length) return
+    profile.resources = profile.resources.filter((r) => !retiring.includes(r))
+    profile.stamp = ''
+    for (const r of retiring) retire(r, 'disable')
+    await Promise.allSettled(retiring.map((r) => r.stop('disable')))
+  }
+  /** `retireAbsent` for the enabled rows of a runtime target about to be applied. */
+  retireDropped(rows: readonly Readonly<{ id: string; disabled?: boolean }>[]): Promise<void> {
+    return this.retireAbsent(
+      new Set(rows.filter((row) => !row.disabled).map((row) => pluginRowSource(row.id))),
+    )
+  }
+  /** The stored configuration revision behind a Host-registered `<id>.configure` effect, if it is one. */
+  configurationRevision(owner: string, service: string): string | undefined {
+    const input = this.definitions.find(
+      (d) => d.owner === owner && service === `${d.definition.id}.configure`,
+    )
+    if (!input) return undefined
+    const stored = input.store.get(`managed-config:${input.definition.id}`)
+    return configurationRevision(stored ?? input.definition.defaultConfig)
   }
   /** Host-owned preparation; plugin presentation can never waive native admission. */
   reconciliation(owner: string, service: string) {
@@ -649,4 +765,34 @@ function managedRevision(
     instance: store.get(`managed-incarnation:${resource.id}`) ?? null,
     ...managedMarkerBinding(store, resource.id),
   })
+}
+
+/**
+ * A bundled app's grant has its own fence. The resource's lifetime aborts before `onShutdown` runs, and
+ * the shutdown needs the grant's client to stop what the app started: only while the shutdown handler
+ * runs does the grant pass without being current. `close` ends the grant for good, once the shutdown
+ * returned or its deadline passed.
+ */
+function bundledAppFence(lifetime: AbortSignal, assertCurrent: () => void) {
+  const fence = new AbortController()
+  let shuttingDown = false
+  return {
+    signal: fence.signal,
+    assertCurrent() {
+      if (shuttingDown && !fence.signal.aborted) return
+      lifetime.throwIfAborted()
+      assertCurrent()
+    },
+    async shutdown<T>(handler: () => T | Promise<T>): Promise<T> {
+      shuttingDown = true
+      try {
+        return await handler()
+      } finally {
+        shuttingDown = false
+      }
+    },
+    close() {
+      fence.abort()
+    },
+  }
 }

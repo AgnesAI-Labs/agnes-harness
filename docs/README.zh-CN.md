@@ -66,6 +66,7 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 | [使用本地模型](guide/local-model.zh-CN.md) | 本地 OpenAI-compatible endpoint 和模型发现 |
 | [使用 TypeSafe Jev 做旁路模型调用](guide/typesafe-jev.zh-CN.md) | 配置内置的只接受 payload 的适配器，供循环插件在对话之外调用 |
 | [使用 Jev Agent Loop](guide/jev-loop.zh-CN.md) | 安装并配置由 TypeSafe Jev 选择每一步的可选循环 |
+| [判断插件](guide/judgment.zh-CN.md) | 手动开启意外收工检测，了解发送内容及限制 |
 | [和智能体说话](guide/voice.zh-CN.md) | 通过旁路模型里的语音账户，用话筒听写、进行语音对话并让回复被朗读出来 |
 | [安全与信任](guide/security.zh-CN.md) | 选择工作目录，理解授权和执行边界 |
 | [沙箱提供者](guide/sandbox-providers.zh-CN.md) | 在启动时选择进程沙箱，并阅读声明的能力 |
@@ -76,6 +77,7 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 | [候选审阅](extend/agent-built-plugins.zh-CN.md) | 核对 Agent 草稿、测试与权限后发布 |
 | [来源与 MCP 隔离](guide/security.zh-CN.md#package-provenance-and-source-policy) | 安装来源、完整性与本地 MCP 进程边界 |
 | [网络部署与 Linux](guide/deployment.zh-CN.md) | 出站代理、超时与 Linux 准备 |
+| [Superagent 部署](guide/superagent.zh-CN.md) | 配置内置的 GitHub 与飞书智能体作为服务运行：账号、launchd 与 systemd 单元、停用、清除数据与安全边界 |
 | [App Server stdio](reference/app-server.zh-CN.md) | 通过共享后台集成自己的客户端 |
 | [排错](guide/troubleshooting.zh-CN.md) | 从错误码和运行状态定位下一步 |
 

@@ -1,5 +1,6 @@
 import { decisionLocaleCatalog } from './decision.js'
 import type { LocaleCatalog } from './index.js'
+import { judgmentCostLocaleCatalog } from './judgment-cost.js'
 import { turnErrorLocaleCatalog } from './turn-error.js'
 
 /**
@@ -8,6 +9,7 @@ import { turnErrorLocaleCatalog } from './turn-error.js'
  */
 export const conversationLocaleCatalog: LocaleCatalog = {
   en: {
+    ...judgmentCostLocaleCatalog.en,
     'accounts.keepEditing': 'Keep editing',
     'accounts.discardAction': 'Discard changes',
     'accounts.or': 'Or',
@@ -189,6 +191,7 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'step.copy': 'Copy',
     'step.copied': 'Copied',
     'timeline.deferredQueued': 'Running a queued business action',
+    'timeline.appDelivery': 'Message delivered automatically by an app',
     'activity.summary.thinking': 'Thought',
     'activity.summary.joiner': ', ',
     'activity.failed.many': '{n} failed',
@@ -406,6 +409,7 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'settings.oauth.methodLabel': 'Auth method',
   },
   'zh-CN': {
+    ...judgmentCostLocaleCatalog['zh-CN'],
     'accounts.keepEditing': '继续编辑',
     'accounts.discardAction': '放弃更改',
     'accounts.or': '或者',
@@ -584,6 +588,7 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'step.copy': '复制',
     'step.copied': '已复制',
     'timeline.deferredQueued': '正在执行排队的业务操作',
+    'timeline.appDelivery': '应用自动投递的消息',
     'activity.summary.thinking': '已思考',
     'activity.summary.joiner': '，',
     'activity.failed.many': '{n} 步失败',

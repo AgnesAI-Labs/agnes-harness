@@ -273,6 +273,8 @@ export type ToolRequestAvailability = Readonly<{
 }>
 
 export interface ToolContext {
+  /** Invocation-scoped side calls, present only with Host authorization. */
+  readonly sideCall?: import('./side-call.js').SideCallPort
   /** Read-only session resource access. Each operation acquires a fresh workspace invocation;
    * unlike fs, this may serve delayed browser resources after this call settles. Session close
    * and current filesystem policy revoke access. Never retain the ordinary invocation fs. */

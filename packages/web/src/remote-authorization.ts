@@ -1,5 +1,11 @@
-import { CLOUD_AUTHORIZATION_PATH, remoteFrontendSessionPath } from '@agnes/protocol'
+import {
+  CLOUD_AUTHORIZATION_PATH,
+  REMOTE_FRONTEND_SESSION_PREFIX,
+  remoteFrontendSessionPath,
+} from '@agnes/protocol'
+import { requestCloudFrameAuthorization } from './backends/cloud-frame-transport.js'
 import { readCloudCredentialRef } from './backends/cloud-key.js'
+import { backendFrame } from './backends/frame-context.js'
 
 const sessions = new Map<string, { token: string; expiresAt: number }>()
 export const remoteAccessPath = (remote: string): string => {
@@ -13,11 +19,14 @@ export function forgetRemoteAccess(remote: string): void {
 export async function authorizeRemoteFrontend(remote: string, signal: AbortSignal, fetcher: typeof fetch) {
   const existing = sessions.get(remote)
   if (existing && existing.expiresAt > Date.now() + 30_000) return remoteFrontendSessionPath(existing.token)
+  if (backendFrame()?.remote) {
+    const path = await requestCloudFrameAuthorization(remote, signal)
+    const token = path.slice(REMOTE_FRONTEND_SESSION_PREFIX.length)
+    sessions.set(remote, { token, expiresAt: Number.parseInt(token.split('.')[0] ?? '', 36) })
+    return path
+  }
   const credentialRef = readCloudCredentialRef(remote)
-  if (!credentialRef)
-    throw new Error(
-      'Cloud Key is required. Open Settings → Advanced → Cloud connection. / 请在“设置 → 高级 → 云端连接”填写授权 Key。',
-    )
+  if (!credentialRef) throw new Error('CLOUD_CREDENTIAL_REQUIRED')
   const response = await fetcher(new URL(CLOUD_AUTHORIZATION_PATH, location.origin), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -29,13 +38,9 @@ export async function authorizeRemoteFrontend(remote: string, signal: AbortSigna
   })
   if (!response.ok) {
     const failure = (await response.json().catch(() => ({}))) as { error?: unknown }
-    if (failure.error === 'CONFIG_CREDENTIAL_REJECTED')
-      throw new Error('Cloud Key is invalid / 云端授权 Key 不正确')
-    if (failure.error === 'CONFIG_CREDENTIAL_NOT_FOUND')
-      throw new Error(
-        'Cloud credential was removed. Configure the Key again. / 云端凭证已删除，请重新配置 Key。',
-      )
-    throw new Error('Cloud Key verification is unavailable / 云端 Key 验证服务不可用')
+    if (failure.error === 'CONFIG_CREDENTIAL_REJECTED') throw new Error('CLOUD_CREDENTIAL_REJECTED')
+    if (failure.error === 'CONFIG_CREDENTIAL_NOT_FOUND') throw new Error('CLOUD_CREDENTIAL_NOT_FOUND')
+    throw new Error('CLOUD_AUTH_UNAVAILABLE')
   }
   const value = (await response.json()) as { token?: unknown; expiresAt?: unknown }
   if (
@@ -44,7 +49,7 @@ export async function authorizeRemoteFrontend(remote: string, signal: AbortSigna
     !Number.isFinite(value.expiresAt) ||
     value.expiresAt <= Date.now()
   )
-    throw new Error('Invalid cloud authentication response / 云端认证响应无效')
+    throw new Error('CLOUD_INVALID_AUTHORIZATION')
   const path = remoteFrontendSessionPath(value.token)
   sessions.set(remote, { token: value.token, expiresAt: value.expiresAt })
   return path

@@ -94,6 +94,8 @@ describe('published generation runtime view', () => {
     const source = {
       source: 'agnes/generation-test',
       trust: 'builtin' as const,
+      pluginRowId: 'ext:fixture/main',
+      sideCall: true as const,
       executionBinding: {
         rowId: 'ext:fixture',
         exportName: 'read',
@@ -128,9 +130,16 @@ describe('published generation runtime view', () => {
       seed: { tools, resources },
     })
     expect(first.tools.resolve('generation_one')?.executionBinding).toEqual(source.executionBinding)
+    expect(first.tools.resolve('generation_one')?.source).toEqual({
+      source: 'agnes/generation-test',
+      trust: 'builtin',
+      pluginRowId: 'ext:fixture/main',
+      sideCall: true,
+    })
     tools.add(
       {
         name: 'generation_two',
+        source: { source: 'forged/owner', trust: 'builtin', pluginRowId: 'ext:forged/main', sideCall: true },
         description: 'second generation',
         parameters: Type.Object({}),
         meta: {
@@ -145,7 +154,7 @@ describe('published generation runtime view', () => {
         },
         execute: async () => ({ content: [] }),
       } as never,
-      source,
+      { source: 'agnes/ordinary', trust: 'trusted' },
     )
     resources.register({ id: 'generation-two', kind: 'skill', name: 'two', description: 'two' }, source)
     const second = publishedSessionRuntime({
@@ -153,6 +162,10 @@ describe('published generation runtime view', () => {
       cache,
       hooks: noopHooks,
       seed: { tools, resources },
+    })
+    expect(second.tools.resolve('generation_two')?.source).toEqual({
+      source: 'agnes/ordinary',
+      trust: 'trusted',
     })
     expect(first.tools.list().map((tool) => tool.name)).toEqual(['generation_one'])
     expect(first.resources.snapshot().map(({ entry }) => entry.id)).toEqual(['generation-one'])
@@ -171,7 +184,12 @@ describe('published generation runtime view', () => {
   })
 
   it('replaces one owner in a bound generation without copying unrelated Kernel registrations', () => {
-    const source = { source: 'agnes/reloadable', trust: 'builtin' as const }
+    const source = {
+      source: 'agnes/reloadable',
+      trust: 'builtin' as const,
+      pluginRowId: 'ext:fixture/main',
+      sideCall: true as const,
+    }
     const other = { source: 'agnes/unrelated', trust: 'builtin' as const }
     const tool = (name: string) =>
       ({
@@ -203,9 +221,13 @@ describe('published generation runtime view', () => {
       tools: initialTools,
       resources: initialResources,
     })
+    expect(generation.tools.resolve('reload_old')?.source).toMatchObject({
+      pluginRowId: 'ext:fixture/main',
+      sideCall: true,
+    })
     const refreshedTools = new ToolRegistry()
     const refreshedResources = new ResourceRegistry()
-    refreshedTools.add(tool('reload_new'), source)
+    refreshedTools.add(tool('reload_new'), { source: source.source, trust: source.trust })
     refreshedTools.add(tool('unrelated_tool'), other)
     refreshedResources.register({ id: 'reload-new', kind: 'skill', name: 'new', description: 'new' }, source)
     refreshedResources.register(
@@ -219,6 +241,10 @@ describe('published generation runtime view', () => {
     })
     replacement.commit()
     replacement.finalize()
+    expect(generation.tools.resolve('reload_new')?.source).toEqual({
+      source: 'agnes/reloadable',
+      trust: 'builtin',
+    })
 
     expect(
       generation.tools
@@ -232,5 +258,30 @@ describe('published generation runtime view', () => {
         .map(({ entry }) => entry.id)
         .sort(),
     ).toEqual(['reload-new', 'unrelated-resource'])
+
+    const grantedTools = new ToolRegistry()
+    grantedTools.add(tool('reload_granted'), source)
+    const granted = prepareGenerationOwnerReplacement(generation, source.source, {
+      tools: grantedTools,
+      resources: new ResourceRegistry(),
+    })
+    granted.commit()
+    granted.finalize()
+    expect(generation.tools.resolve('reload_granted')?.source).toMatchObject({
+      pluginRowId: 'ext:fixture/main',
+      sideCall: true,
+    })
+    const revokedTools = new ToolRegistry()
+    revokedTools.add(tool('reload_granted'), { source: source.source, trust: source.trust })
+    const revoked = prepareGenerationOwnerReplacement(generation, source.source, {
+      tools: revokedTools,
+      resources: new ResourceRegistry(),
+    })
+    revoked.commit()
+    revoked.finalize()
+    expect(generation.tools.resolve('reload_granted')?.source).toEqual({
+      source: 'agnes/reloadable',
+      trust: 'builtin',
+    })
   })
 })

@@ -1,16 +1,24 @@
+import type { SessionPreferencesStore } from '@agnes/daemon-foundation/storage/session-preferences'
 import type { WorkspaceCatalog } from '@agnes/daemon-foundation/storage/workspaces'
-import { runQueued } from '@agnes/daemon-rpc/local/command-queue'
-import type { SessionActivityResult, SessionRuntimeDescriptor, SessionViewResult } from '@agnes/protocol'
+import type { runQueued } from '@agnes/daemon-rpc/local/command-queue'
+import type { ScanRead } from '@agnes/host'
+import type {
+  EventEnvelope,
+  SessionActivityResult,
+  SessionRuntimeDescriptor,
+  SessionViewResult,
+} from '@agnes/protocol'
 import { createClient, memoryJournal, type NodeClient } from '@agnes/sdk'
+import { gateRefused, ManagedPortsClosed } from './managed-gate-read.js'
+import type { LivePolicy } from './managed-input-gates.js'
+import { type ManagedInputEntry, managedInputPorts } from './managed-input-ports.js'
+import { hasOpenNativeQuestion } from './managed-question-status.js'
+import type { IdleSignal } from './managed-session-idle.js'
 import type { ManagedSessionRecords } from './managed-session-records.js'
 import type { ManagedSessionCaller, ManagedSessionPorts, ManagedToolDetail } from './managed-sessions.js'
 
-type Entry = {
-  key: string
-  ac: AbortController
-  inflight: unknown
-  session: {
-    enqueue(target: 'next-turn', message: unknown, options?: { dedupeByCommandId?: boolean }): Promise<number>
+type Entry = ManagedInputEntry & {
+  session: ManagedInputEntry['session'] & {
     /** Whether the open session's live policy holds outward calls for a person, read in its worker. */
     outwardCheckpoint(): Promise<boolean>
     /** The principal the deployment resolves a credential to for answering approvals. */
@@ -32,11 +40,40 @@ export function managedWorkspaceRoot(workspaces: Pick<WorkspaceCatalog, 'validat
 }
 
 /**
+ * Whether the open session's live policy holds outward calls for a person. A read that failed
+ * without the worker answering is no checkpoint, and is marked `unread`: a start or send refuses on
+ * it, a held input's checks wait.
+ */
+export async function readOutwardCheckpoint(session: Pick<Entry['session'], 'outwardCheckpoint'>) {
+  try {
+    return { outwardCheckpoint: await session.outwardCheckpoint() }
+  } catch (error) {
+    return gateRefused(error)
+      ? { outwardCheckpoint: false }
+      : { outwardCheckpoint: false, unread: 'outward-checkpoint' as const }
+  }
+}
+
+/** The live policy the gates read; a session whose policy cannot be read counts as full access with no boundary, and as `unread`. */
+export function livePolicy(
+  policy: SessionRuntimeDescriptor['policy'] | undefined,
+  outward: { outwardCheckpoint: boolean; unread?: 'outward-checkpoint' },
+): LivePolicy {
+  if (!policy) return { fullAccess: true, osBoundary: false, ...outward, unread: outward.unread ?? 'policy' }
+  return {
+    fullAccess: policy.permission?.policy === 'full-access' || policy.toolPolicy === 'full-access',
+    osBoundary: policy.sandbox.enforcement?.level === 'full',
+    ...outward,
+  }
+}
+
+/**
  * Real session facts behind the managed-session contract: the same private local SDK path as chat,
  * webhook and scheduled sessions, so workspace ownership, Bundle review and admission apply unchanged.
  */
 export function managedSessionPorts(deps: {
   socketPath: string
+  sessionFactRead?: (sessionId: string) => ScanRead<EventEnvelope>
   serverIdentity: { pid: number; processStartId: string }
   records: ManagedSessionRecords
   authorize(caller: ManagedSessionCaller): Promise<void>
@@ -51,13 +88,18 @@ export function managedSessionPorts(deps: {
   continueTurn(entry: Entry): void
   /** Whether `registry.open` turns outward command rules on for managed sessions and their lineage. */
   opensWithCommandRules: boolean
-  /** Whether the platform's sandbox probe reports a full OS boundary; false when it cannot be read. */
-  osBoundary(): Promise<boolean>
+  /** The platform's sandbox L1 level: `full` is an OS boundary; `unprobed` until a workspace binds. */
+  sandboxL1(): Promise<string | undefined>
+  /** The daemon's session preferences, where an owner's Web archive is recorded. */
+  preferences: Pick<SessionPreferencesStore, 'get'>
+  idle: Pick<IdleSignal, 'onIdle'>
+  /** The shared worker's agent resolution over the daemon's own link (`sharedWorkerReads`); else through the local SDK. */
+  resolveAgent?(bundle: string): Promise<void>
 }) {
   const clients = new Set<NodeClient>()
   let closing = false
   const withClient = async <T>(work: (client: NodeClient) => Promise<T>): Promise<T> => {
-    if (closing) throw new Error('managed session admission closed')
+    if (closing) throw new ManagedPortsClosed()
     const client = createClient({
       transport: {
         kind: 'unix',
@@ -86,23 +128,35 @@ export function managedSessionPorts(deps: {
     const binding = await deps.workspaces.restoreBinding(sessionId)
     return deps.registry.open({ key: sessionId, cwd: binding.canonicalRoot, binding })
   }
+  const inputs = managedInputPorts({
+    open,
+    commandQueue: deps.commandQueue,
+    continueTurn: deps.continueTurn,
+    preferences: deps.preferences,
+    ...(deps.sessionFactRead ? { sessionFactRead: deps.sessionFactRead } : {}),
+  })
   const ports: ManagedSessionPorts = {
     authorize: deps.authorize,
     records: deps.records,
     forkParent: deps.forkParent,
     workspaceRoot: managedWorkspaceRoot(deps.workspaces),
-    resolveAgent: (bundle) => withClient(async (client) => void (await client.agents.resolve(bundle))),
+    resolveAgent:
+      deps.resolveAgent ??
+      ((bundle) => withClient(async (client) => void (await client.agents.resolve(bundle)))),
     models: deps.models,
     autoReview: () =>
       withClient(
         async (client) =>
           (await client.call<{ enabled?: boolean }>('_agnes/v1/autoReview.get', {})).enabled === true,
       ),
-    fullAccess: async () => ({
-      outwardCheckpoint: deps.opensWithCommandRules,
-      osBoundary: await deps.osBoundary().catch(() => false),
-    }),
+    fullAccess: async () => {
+      // One that cannot be read is no boundary; for a held input's checks it is no answer either.
+      const l1 = (await deps.sandboxL1().catch(() => undefined)) ?? 'unreadable'
+      return { outwardCheckpoint: deps.opensWithCommandRules, osBoundary: l1 === 'full', l1 }
+    },
     sessions: {
+      ...inputs,
+      onIdle: (listener) => deps.idle.onIdle(listener),
       create: (input) =>
         withClient(async (client) => {
           const { id } = await client.createSession({
@@ -129,47 +183,17 @@ export function managedSessionPorts(deps: {
         }),
       async policy(sessionId) {
         const entry = await open(sessionId)
-        const outwardCheckpoint = await entry.session.outwardCheckpoint().catch(() => false)
+        const outward = await readOutwardCheckpoint(entry.session)
         return withClient(async (client) => {
           const { policy } = await client.call<SessionRuntimeDescriptor>('_agnes/v1/session.runtime', {
             sessionId,
           })
-          // A session whose policy cannot be read is treated as full access with no boundary.
-          if (!policy) return { fullAccess: true, osBoundary: false, outwardCheckpoint }
-          return {
-            fullAccess: policy.permission?.policy === 'full-access' || policy.toolPolicy === 'full-access',
-            osBoundary: policy.sandbox.enforcement?.level === 'full',
-            outwardCheckpoint,
-          }
+          return livePolicy(policy, outward)
         })
       },
       async submit(sessionId, input) {
-        const entry = await open(sessionId)
-        if (entry.inflight) return 'busy'
-        try {
-          await runQueued(deps.commandQueue, entry.key, entry.ac.signal, () =>
-            entry.session.enqueue(
-              'next-turn',
-              {
-                content: [{ type: 'text', text: input.text }],
-                actor: input.actor,
-                origin: 'system',
-                trust: 'untrusted',
-                // The follow-up runner only starts a turn for a backend-minted follow_up or steer item.
-                kind: 'follow_up',
-                commandId: input.commandId,
-                ifEmpty: true,
-              },
-              { dedupeByCommandId: true },
-            ),
-          )
-        } catch (error) {
-          if (/continuation input competed with pending input/u.test(String((error as Error)?.message)))
-            return 'busy'
-          throw error
-        }
-        deps.continueTurn(entry)
-        return 'started'
+        const submitted = await inputs.submitInput(sessionId, { ...input, dedupe: true })
+        return submitted.state === 'busy' ? 'busy' : 'started'
       },
       loaded: (sessionId) => deps.registry.get(sessionId) !== undefined,
       activity: () =>
@@ -178,6 +202,9 @@ export function managedSessionPorts(deps: {
             (await client.call<SessionActivityResult>('_agnes/v1/session.activity', {})).items,
         ),
       view,
+      ...(deps.sessionFactRead
+        ? { openQuestion: (sessionId: string) => hasOpenNativeQuestion(deps.sessionFactRead!(sessionId)) }
+        : {}),
       async toolDetail(sessionId, callSeq) {
         const node = (await view(sessionId)).timeline.nodes.find(
           (candidate) => candidate.kind === 'tool' && candidate.seq === callSeq,

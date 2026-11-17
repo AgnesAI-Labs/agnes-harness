@@ -5,6 +5,7 @@ import {
   type LocaleService,
   resolveHomeEntry,
   type UiExtensionContext,
+  withoutOwnerOnly,
 } from '@agnes/web-client'
 import {
   createDocumentLocaleSource,
@@ -17,6 +18,7 @@ import {
 } from '@agnes/web-ui'
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { ChannelDialogHost } from './channel-dialog.js'
+import { isBuiltinHomeEntry } from './entries.js'
 import { useWorkLaunchQuiet, workLaunch } from './work-launch.js'
 
 /**
@@ -42,6 +44,23 @@ export type HomePageData = Readonly<{
     workspaceId?(): string | undefined
   }
 }>
+
+const pluginData = new WeakMap<HomePageData, HomePageData>()
+/** What a plugin's page gets as `data`: the same, with the owner-only methods refused on its calls. */
+export function pluginPageData(data: HomePageData): HomePageData {
+  let view = pluginData.get(data)
+  if (!view) {
+    view = Object.freeze({
+      ...data,
+      call: withoutOwnerOnly(data.call) as HomePageData['call'],
+      ...(data.channelCall
+        ? { channelCall: withoutOwnerOnly(data.channelCall) as HomePageData['call'] }
+        : {}),
+    })
+    pluginData.set(data, view)
+  }
+  return view
+}
 
 /** The entry the user asked for and that is still registered, showing or not. */
 function requestedHomeEntry() {
@@ -90,7 +109,7 @@ export function HomePageHost({
   const Page = entry.component
   const context: UiExtensionContext = {
     t: (key, vars) => locale.t(key, vars),
-    data,
+    data: isBuiltinHomeEntry(entry) ? data : pluginPageData(data),
     ...(requested?.selection === undefined ? {} : { selection: requested.selection }),
   }
   return (

@@ -88,6 +88,7 @@ function createExtensionLoaders(input: ExtensionRowsInput) {
     return builtinRows.load({
       rowId: `ext:${extensionId}`,
       spec: found.spec,
+      declaration: found.declaration,
       hostGrants: () =>
         input.pkgs.grants.extension(found.packageId, extensionId, input.pkgs.modules.get(found.packageId)),
       executionBinding: {

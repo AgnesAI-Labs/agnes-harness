@@ -19,10 +19,22 @@ export const principalsLocal: SeamFactory<PrincipalsSeam> = async (ctx) => {
   const id = fromEnv?.trim() ?? 'local'
   ctx.log.debug('principals-local resolved the machine owner', { id })
   return {
-    async resolve(_cred, surface) {
-      // The surface is recorded rather than acted on: it is the one thing about an inbound
-      // credential that stays true after this seam has flattened everything else into one owner.
-      return { id, org: 'local', role: 'owner', deptPath: [], attrs: { surface } }
+    async resolve(credential, surface) {
+      // The deployment still maps to its machine owner; keep channel provenance for the audit trail.
+      const source = credential as {
+        kind?: string
+        channel?: unknown
+        accountId?: unknown
+        userId?: unknown
+        chatId?: unknown
+      } | null
+      const attrs: Record<string, string> = { surface }
+      if (source?.kind === 'channel')
+        for (const key of ['channel', 'accountId', 'userId', 'chatId'] as const) {
+          const value = source[key]
+          if (typeof value === 'string') attrs[key] = value
+        }
+      return { id, org: 'local', role: 'owner', deptPath: [], attrs }
     },
     async authorize() {
       return { decisionId: 'n/a', effect: 'allow', reason: 'local-owner' }

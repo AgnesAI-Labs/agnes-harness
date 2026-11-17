@@ -182,7 +182,7 @@ Each factory call returns an isolated adapter: no shared credentials, sockets, l
 - render(): convert supported projection nodes to ChannelMessage, returning null otherwise. Do not mirror every user node yourself; the bridge owns user labels and echo suppression.
 - send(): return a real MessageRef only after successful platform delivery.
 - update(): use genuine editing when declared; otherwise refuse rather than silently posting duplicates.
-- renderApproval/onApprovalAction: required methods even without interactive cards. Plain explanation and null actions are acceptable. A text “approve” must never authorize arbitrary native actions. Native approvals for current bindings remain in AGH.
+- renderApproval/onApprovalAction: required methods even without interactive cards. Plain explanation and null actions are acceptable. A text “approve” must never authorize arbitrary actions. Card interactions must pass verified channel identity to the backend approval service.
 
 attention, react, onSlotAction and syncDirectory are optional. Normally omit attention to retain the bridge's allowFrom/requireMention checks; a custom implementation must preserve equivalent checks.
 
@@ -261,7 +261,7 @@ Use ChatTarget.deliveryKey for platform idempotency where available. MessageRef 
 6. Refresh and explicitly confirm/bind the target. Workspace must match and no pre-binding history is exported.
 7. Bound composer controls show channel status and open the existing connection editor. The grouped overview shows instances, session titles and targets, with unbind/move actions.
 
-Configured, connected and bound are different states. Reconnect requires a fresh trusted target message. Unknown transitions need native recovery/unbind, not plugin-owned routing changes. Successful uninstall clears this plugin's current-profile channel overrides, targets and bindings; credentials and conversation history remain. Disable, restart and update preserve configuration. Other profiles/namespaces and remote app state are not automatically deleted.
+Configured, connected and bound are different states. Confirmed active bindings with verified account and chat type are restored after reconnect; older bindings without that context require a fresh trusted target message. Interrupted binding transitions remain pending and require native recovery/unbind. Successful uninstall clears this plugin's current-profile channel overrides, targets and bindings; credentials and conversation history remain. Disable, restart and update preserve configuration. Other profiles/namespaces and remote app state are not automatically deleted.
 
 ## 12. Artwork and shared UI
 

@@ -49,6 +49,7 @@ import { bindChildFactory } from './child/sessions.js'
 import { bindChildSessionToolFilter, narrowedRuntime, sessionToolView } from './child/tool-filter.js'
 import { type DispatchContext, HookEngine } from './hooks/engine.js'
 import { LoopEventRegistry } from './loop/events.js'
+import { hookSideCallFactory } from './loop/scoped-side-call.js'
 import { bindRefinement, captureRefinement } from './refinement/capture.js'
 import type { RefinementDeps } from './refinement/scheduler.js'
 import type { RefinementTriggerSink } from './refinement/triggers.js'
@@ -373,15 +374,14 @@ export class Kernel {
   }
 
   /** Scheduling and quota are per session; only immutable registration ownership is shared. */
-  private createHookEngine(logger: Logger, preset: PresetView): HookEngine {
+  private createHookEngine(logger: Logger, preset: PresetView, session?: SessionImpl): HookEngine {
     return new HookEngine(
       {
         onFailure: (failure) => logger.warn('hook failed', failure as never),
-        diag: (name, data) => {
-          logger.warn(`x/core/${name}`, data as never)
-        },
+        diag: (name, data) => logger.warn(`x/core/${name}`, data as never),
         eventsPerTurn: preset.ext.eventsPerTurn,
         platform: this.platform,
+        ...(session ? { sideCallFor: hookSideCallFactory(session) } : {}),
         toolResultMaxBytes: preset.tools.outputMaxBytes,
         ...(this.o.hookLeaseFor ? { leaseFor: this.o.hookLeaseFor } : {}),
         ...(this.o.retainSessionRefIdentity
@@ -802,7 +802,7 @@ export class Kernel {
       bindRefinement(session, refinement)
       await this.bindSessionScope(session, so)
       if (children instanceof KernelChildren) bindChildFactory(session.key, children)
-      const sessionHooks = this.createHookEngine(logger, preset)
+      const sessionHooks = this.createHookEngine(logger, preset, session)
       let resumed = false
       const creationSignal = AbortSignal.any([
         this.construction.signal,

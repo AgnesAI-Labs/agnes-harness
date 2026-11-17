@@ -31,7 +31,8 @@
     "testkit/tool-heavy-ledger.ts",
     "test/helpers/fake-seams.ts",
     "test/helpers/fake-provider.ts",
-    "testkit/gen-crash.ts"
+    "testkit/gen-crash.ts",
+    "test/helpers/side-call-session.ts"
   ],
   "references": [
     {

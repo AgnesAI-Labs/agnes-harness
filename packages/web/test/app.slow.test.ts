@@ -35,15 +35,19 @@ async function renderUI(work: () => void | Promise<void>): Promise<void> {
 }
 
 async function bootApp(): Promise<void> {
-  // Reload hints are independent of each case's admin/upload HTTP fixtures.
+  // Reload hints and the composer's channel overview are independent of each case's admin/upload
+  // HTTP fixtures, whose catch-all body is not a channel overview.
   const fetcher = globalThis.fetch
   vi.stubGlobal(
     'fetch',
-    vi.fn<typeof fetch>((input, init) =>
-      new URL(String(input), location.href).pathname === '/plugins/changes'
-        ? Promise.resolve(Response.json({ epoch: 'fixture', cursor: 0, reset: false, events: [] }))
-        : fetcher(input, init),
-    ),
+    vi.fn<typeof fetch>((input, init) => {
+      const path = new URL(String(input), location.href).pathname
+      if (path === '/plugins/changes')
+        return Promise.resolve(Response.json({ epoch: 'fixture', cursor: 0, reset: false, events: [] }))
+      // No channel plugin is installed: the launcher's overview lists no channels.
+      if (path === '/api/channels') return Promise.resolve(Response.json({ channels: [], sessions: [] }))
+      return fetcher(input, init)
+    }),
   )
   await renderUI(async () => {
     await import('../src/app.js')
@@ -193,10 +197,20 @@ vi.mock('@agnes/sdk/browser', async (importOriginal) => ({
     if (client && !('connectionState' in client)) client.connectionState = 'connected'
     // Session binding is mocked below; these doubles have no cached SDK session handles.
     if (client && !('sessions' in client)) client.sessions = new Map()
+    // The page reserves the owner-only methods on the client's own call/notify at boot; a double that
+    // stubs none of them refuses any call that reaches the transport.
+    for (const name of ['call', 'notify'] as const)
+      if (client && !(name in client))
+        client[name] = vi.fn(async (method: string) => {
+          throw new Error(`unstubbed client.${name}(${method})`)
+        })
     if (vi.isMockFunction(client?.on) && !client.on.getMockImplementation())
       client.on.mockImplementation(() => () => undefined)
     if (client?.session?.list && !client.session.groups)
       Object.assign(client.session, sidebarListingFixture(client.session.list))
+    // The page reserves the owner-only methods on the client's own senders before anything else.
+    if (client && !('call' in client)) client.call = vi.fn(async () => ({}))
+    if (client && !('notify' in client)) client.notify = vi.fn(async () => undefined)
     return client
   },
   memoryJournal: sdk.memoryJournal,
@@ -2320,6 +2334,9 @@ describe('web session selection', () => {
         await pickerReady
         return new Response(JSON.stringify({ available: true }), { status: 200 })
       }
+      // Only the picker's own requests are picker answers; the page's other POSTs (the automation
+      // attention read of /api/triggers) must not take the first, cancelled one.
+      if (_input !== '/api/workspace-picker') return new Response(null, { status: 404 })
       pickerCalls++
       return new Response(
         JSON.stringify(
@@ -3638,6 +3655,125 @@ describe('sidebar recency', () => {
     await vi.waitFor(() => expect(order()).toEqual(['old', 'other']))
     expect(new URL(location.href).searchParams.get('session')).toBe('old')
     expect(document.getElementById('task-title')?.textContent).toBe('旧任务')
+  })
+})
+
+describe('sidebar workspace folders', () => {
+  it('names the folder of a workspace another client registered after the page loaded, keeping the open session and its pages', async () => {
+    installPublicFixture()
+    const workspace = (id: string, path: string, name: string) => ({
+      workspaceId: id.repeat(64),
+      path,
+      name,
+      lastUsedAt: null,
+      sessionCount: 0,
+      available: true,
+    })
+    const alpha = workspace('a', '/workspace/alpha', 'Alpha')
+    // A worker's ticket directory, registered by another client (an app) while this page is open.
+    const ticket = workspace('c', '/state/work/t1', 't1')
+    const alphaRows = ['old', 's1', 's2', 's3', 's4', 's5', 's6'].map((sessionId) => ({
+      sessionId,
+      cwd: alpha.path,
+      workspaceId: alpha.workspaceId,
+      title: `任务 ${sessionId}`,
+    }))
+    const workerRow = {
+      sessionId: 'superagent:worker:t1',
+      cwd: ticket.path,
+      workspaceId: ticket.workspaceId,
+      title: 'Worker · Fix login',
+    }
+    let registered = [alpha]
+    const rowsOf = (groupId: string) => (groupId === ticket.workspaceId ? [workerRow] : alphaRows)
+    const old = session('old', async () => idleTimeline('old'))
+    const workspaceList = vi.fn(async () => ({ items: registered }))
+    sdk.createClient.mockReturnValue({
+      initialize: vi.fn(initialized),
+      on: vi.fn(),
+      close: vi.fn(async () => undefined),
+      apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
+      config: {
+        get: vi.fn(async () => ({ configured: true })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      workspace: { list: workspaceList },
+      session: {
+        activity: vi.fn(async () => ({ items: [] })),
+        groups: vi.fn(
+          async (): Promise<SessionGroupsResult> => ({
+            ready: true,
+            items: registered.map((entry) => ({
+              groupId: entry.workspaceId,
+              workspaceId: entry.workspaceId,
+              total: rowsOf(entry.workspaceId).length,
+              lastMessageAt: null,
+              revision: '1',
+              ready: true,
+            })),
+          }),
+        ),
+        list: vi.fn(async (input: SessionListParams) => {
+          if (!('sidebar' in input)) {
+            const all = registered.includes(ticket) ? [...alphaRows, workerRow] : alphaRows
+            const prefix = input.q?.prefix
+            return { items: all.filter((row) => !prefix || row.sessionId.startsWith(prefix)) }
+          }
+          const rows = rowsOf(input.sidebar.groupId)
+          const offset = input.cursor ? Number(input.cursor) : 0
+          const limit = input.limit ?? 5
+          return {
+            items: rows.slice(offset, offset + limit),
+            total: rows.length,
+            revision: '1',
+            ...(offset + limit < rows.length ? { next: String(offset + limit) } : {}),
+          }
+        }),
+        load: vi.fn(async () => old),
+      },
+    })
+    binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+    await bootApp()
+    const folders = () =>
+      [...document.querySelectorAll('.workspace-group')].map((group) => [
+        group.querySelector('.workspace-name')?.textContent,
+        group.querySelectorAll('[data-session]').length,
+      ])
+    await vi.waitFor(() => expect(folders()).toEqual([['Alpha', 5]]))
+    // The reader opened every page of the folder.
+    document
+      .querySelector<HTMLButtonElement>(
+        `[data-testid="workspace-sessions-toggle"][data-workspace="${alpha.workspaceId}"]`,
+      )
+      ?.click()
+    await vi.waitFor(() => expect(folders()).toEqual([['Alpha', 7]]))
+    // Startup reads the list once; the sidebar's groups do not read it again.
+    const listed = workspaceList.mock.calls.length
+    expect(listed).toBe(1)
+
+    registered = [alpha, ticket]
+    window.dispatchEvent(new Event('focus'))
+    await vi.waitFor(() =>
+      expect(folders()).toEqual([
+        ['Alpha', 7],
+        ['t1', 0],
+      ]),
+    )
+    expect(workspaceList.mock.calls.length).toBe(listed + 1)
+    // The open session, its row and the folder's pages stay as they were.
+    expect(new URL(location.href).searchParams.get('session')).toBe('old')
+    expect(
+      document.querySelector('.session-row[data-active="true"] [data-session]')?.getAttribute('data-session'),
+    ).toBe('old')
+    // A later refresh with nothing new reads the workspace list no more.
+    window.dispatchEvent(new Event('focus'))
+    await vi.waitFor(() =>
+      expect(folders()).toEqual([
+        ['Alpha', 7],
+        ['t1', 0],
+      ]),
+    )
+    expect(workspaceList.mock.calls.length).toBe(listed + 1)
   })
 })
 

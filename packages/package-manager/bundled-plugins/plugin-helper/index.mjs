@@ -1,4 +1,9 @@
-import { authoringGuidance, toolSafetyGuidance, verification } from './src/authoring.mjs'
+import {
+  authoringGuidance,
+  panelAuthoringGuidance,
+  toolSafetyGuidance,
+  verification,
+} from './src/authoring.mjs'
 import { panelFiles } from './src/panel.generated.mjs'
 import { array, enumeration, object, optional, string } from './src/schema.mjs'
 import { skinFiles, skinGuidance } from './src/skin.mjs'
@@ -160,6 +165,7 @@ export const pluginHelper = {
                 type: 'text',
                 text: JSON.stringify({
                   ...info,
+                  authoringPath: panelAuthoringGuidance,
                   templateFiles: files.map((file) => file.path),
                   previewFiles: files
                     .filter((file) =>

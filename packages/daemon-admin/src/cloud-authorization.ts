@@ -7,6 +7,8 @@ import {
 } from '@agnes/protocol'
 import type { AdminCloudAuthorization, AdminCloudAuthorize } from '@agnes/protocol/gen/app-server'
 
+const AUTHORIZATION_CLOCK_SKEW_MS = 5 * 60 * 1000
+
 /** Resolve the managed credential only in A's daemon; never return its value to the browser/BFF. */
 export async function authorizeCloudConnection(
   input: AdminCloudAuthorize,
@@ -34,7 +36,7 @@ export async function authorizeCloudConnection(
       typeof value.expiresAt !== 'number' ||
       !Number.isFinite(value.expiresAt) ||
       value.expiresAt <= Date.now() ||
-      value.expiresAt > Date.now() + 8 * 60 * 60 * 1000
+      value.expiresAt > Date.now() + 8 * 60 * 60 * 1000 + AUTHORIZATION_CLOCK_SKEW_MS
     )
       throw new Error('invalid authorization')
     remoteFrontendSessionPath(value.token)

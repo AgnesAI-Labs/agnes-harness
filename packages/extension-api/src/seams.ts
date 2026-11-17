@@ -84,6 +84,8 @@ export type TokenCounts = {
   reasoning?: number
 }
 export type CostLedger = {
+  /** Host-attested plugin row id for an invocation-scoped side call. */
+  caller?: string
   purpose:
     | 'inference'
     | 'compaction'

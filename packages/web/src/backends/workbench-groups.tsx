@@ -4,6 +4,7 @@ import type { SidebarNavigationOptions } from '@agnes/web-units/shell'
 import { useState } from 'react'
 import { SessionRowLabel } from '../sidebar-rendering.js'
 import { CloudConnectionIndicator } from './cloud-connection-status.js'
+import { cloudFailureText } from './cloud-errors.js'
 import type { BackendCommand, BackendId, BackendSnapshot } from './frame-contract.js'
 import type { WorkbenchText } from './workbench-locale.js'
 import { cloudConnectionState } from './workbench-state.js'
@@ -91,7 +92,7 @@ export function BackendSessionGroups(props: BackendGroupsProps & { language: str
               {configured && !state && <p className="backend-group-hint">{t('connecting')}</p>}
               {state?.error && (
                 <p className="backend-group-error" role="status">
-                  {state.error}
+                  {cloudFailureText(state.error, props.language)}
                 </p>
               )}
               {state?.connected && !items.length && <p className="backend-group-hint">{t('empty')}</p>}

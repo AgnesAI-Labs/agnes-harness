@@ -96,6 +96,7 @@ const start = {
 function world(
   authorize?: ManagedSessionPorts['authorize'],
   real?: Pick<ManagedSessionPorts, 'records' | 'workspaceRoot'>,
+  withQuestionReader = true,
 ) {
   const records = real?.records ?? new ManagedSessionRecords(table())
   const state = {
@@ -126,6 +127,8 @@ function world(
     fullAccess: [] as string[],
     tools: new Map<number, ManagedToolDetail>(),
     busy: new Set<string>(),
+    openQuestions: new Set<string>(),
+    questionReadError: false,
     presetFullAccess: false,
     forks: new Map<string, string>(),
     /** The identity the owner's approvals carry; undefined when it cannot be read. */
@@ -148,7 +151,8 @@ function world(
         return root
       }),
     async resolveAgent(bundle) {
-      if (bundle.endsWith('#missing')) throw new Error('not reviewed')
+      // The shared worker's reply for a bundle it does not resolve.
+      if (bundle.endsWith('#missing')) throw { code: 'E_PRESET_UNSUPPORTED', message: 'agent: unknown agent' }
     },
     models: async () => state.models,
     autoReview: async () => state.autoReview,
@@ -180,7 +184,22 @@ function world(
         return 'started'
       },
       loaded: (sessionId) => state.loaded.has(sessionId),
+      // Held owner inputs are exercised against their own ports; these sessions never take one.
+      submitInput: async () => ({ state: 'busy' }),
+      findUserMessage: async () => undefined,
+      withdraw: async () => 'absent',
+      archived: (sessionId) => state.archived.includes(sessionId),
+      lastTurnEnd: async () => undefined,
+      onIdle: () => () => undefined,
       activity: async () => state.activity,
+      ...(withQuestionReader
+        ? {
+            openQuestion: async (sessionId: string) => {
+              if (state.questionReadError) throw new Error('question read unavailable')
+              return state.openQuestions.has(sessionId)
+            },
+          }
+        : {}),
       async view(sessionId) {
         const turns = state.turns.get(sessionId) ?? []
         const nodes = state.nodes.get(sessionId) ?? []
@@ -678,6 +697,43 @@ describe('driving a managed session', () => {
     expect(await port(caller).status(sessionId)).toEqual({ kind: 'active', flags: ['waitingOnUserInput'] })
   })
 
+  it('reports an open non-blocking native question after the turn ends', async () => {
+    const { state, port, sessionId } = await started()
+    state.openQuestions.add(sessionId)
+    expect(await port(caller).status(sessionId)).toEqual({ kind: 'active', flags: ['waitingOnUserInput'] })
+    expect((await port(caller).list())[0]?.status).toEqual({ kind: 'active', flags: ['waitingOnUserInput'] })
+    state.loaded.delete(sessionId)
+    expect(await port(caller).status(sessionId)).toEqual({ kind: 'active', flags: ['waitingOnUserInput'] })
+    state.loaded.add(sessionId)
+    state.activity = [{ sessionId, state: 'waiting', waiting: 'approval' }]
+    expect(await port(caller).status(sessionId)).toEqual({
+      kind: 'active',
+      flags: ['waitingOnApproval', 'waitingOnUserInput'],
+    })
+    state.activity = [{ sessionId, state: 'running' }]
+    expect(await port(caller).status(sessionId)).toEqual({ kind: 'active', flags: ['waitingOnUserInput'] })
+    state.activity = []
+    state.openQuestions.delete(sessionId)
+    expect(await port(caller).status(sessionId)).toEqual({ kind: 'idle', flags: [] })
+  })
+
+  it('does not report no open question when question facts cannot be read', async () => {
+    const { state, port, sessionId } = await started()
+    state.questionReadError = true
+    await expect(port(caller).status(sessionId)).rejects.toThrow('question read unavailable')
+    await expect(port(caller).list()).rejects.toThrow('question read unavailable')
+  })
+
+  it('preserves notLoaded status for historical tasks without a question reader', async () => {
+    const { state, records, port } = world(undefined, undefined, false)
+    records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
+    const { sessionId } = await port(caller).start(start)
+    state.activity = []
+    state.loaded.delete(sessionId)
+    expect(await port(caller).status(sessionId)).toEqual({ kind: 'notLoaded', flags: [] })
+    expect((await port(caller).list())[0]?.status).toEqual({ kind: 'notLoaded', flags: [] })
+  })
+
   it('refuses an archived session', async () => {
     const { port, sessionId } = await started()
     await port(caller).archive(sessionId)
@@ -1054,6 +1110,11 @@ describe('the managed session owner', () => {
     const forged = { ...own, owner: victim.owner }
     records.grant(grantKey(victim.packageId, victim.owner), '/work/repo')
     const victimSession = await port(victim).start({ ...start, bundle: '@example/other#worker' })
+    const admission = {
+      key: 'k',
+      target: { taskId: 't', taskGeneration: 1, startKey: 's' },
+      input: { kind: 'ownerMessage', receiptId: 'r' },
+    } as const
     const calls: [string, () => Promise<unknown>][] = [
       ['start', () => port(forged).start(start)],
       ['send', () => port(forged).send(victimSession.sessionId, { text: 'x', idempotencyKey: 'k' })],
@@ -1065,6 +1126,8 @@ describe('the managed session owner', () => {
       ['toolResult', () => port(forged).toolResult(victimSession.sessionId, 1)],
       ['interrupt', () => port(forged).interrupt(victimSession.sessionId)],
       ['archive', () => port(forged).archive(victimSession.sessionId)],
+      ['admitInput', () => port(forged).admitInput(victimSession.sessionId, admission)],
+      ['inputResult', () => port(forged).inputResult(victimSession.sessionId, { key: 'k' })],
     ]
     for (const [, call] of calls) await expect(call()).rejects.toMatchObject(denied)
     await expect(port(own).start(start)).rejects.toMatchObject(refused('WORKSPACE_NOT_AUTHORIZED'))
@@ -1600,7 +1663,9 @@ describe('submitting to a real session', () => {
         commandQueue,
         continueTurn: (queued) => continueTurn(queued as never),
         opensWithCommandRules: true,
-        osBoundary: async () => false,
+        sandboxL1: async () => 'unavailable',
+        preferences: { get: () => ({ archived: false }) },
+        idle: { onIdle: () => () => undefined },
       })
       expect(
         await managed.ports.sessions.submit('managed-real', {

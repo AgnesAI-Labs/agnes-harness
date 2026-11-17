@@ -6,11 +6,12 @@ import {
   runWorkerExecutable as runRuntimeWorkerExecutable,
 } from '@agnes/worker-runtime'
 import { daemonChannelRuntime } from '../channels/runtime.js'
+import { bundledAppClient } from '../superagent/grant.js'
 
 export * from '@agnes/worker-runtime'
 
 export function runWorkerExecutable(deps: WorkerHostDeps = {}): Promise<void> {
-  return runRuntimeWorkerExecutable({ channelRuntime: daemonChannelRuntime, ...deps })
+  return runRuntimeWorkerExecutable({ channelRuntime: daemonChannelRuntime, bundledAppClient, ...deps })
 }
 
 declare const AGNES_COMPOSED_WORKER: boolean | undefined

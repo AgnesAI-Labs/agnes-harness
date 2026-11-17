@@ -1,10 +1,10 @@
 @layer app {
-  body[data-agnes-region="app"][data-agh-backend-frame="true"] {
+  body[data-agnes-region="app"][data-agh-backend-frame="cloud"] {
     grid-template-columns: minmax(0, 1fr);
   }
-  body[data-agh-backend-frame="true"] > #app-root > .sidebar,
-  body[data-agh-backend-frame="true"] .sidebar-backdrop,
-  body[data-agh-backend-frame="true"] .sidebar-toggle {
+  body[data-agh-backend-frame="cloud"] > #app-root > .sidebar,
+  body[data-agh-backend-frame="cloud"] .sidebar-backdrop,
+  body[data-agh-backend-frame="cloud"] .sidebar-toggle {
     display: none;
   }
   .backend-session-group {
@@ -45,39 +45,37 @@
     padding: var(--s8);
     overflow-wrap: anywhere;
   }
-  .backend-workbench-main {
-    min-width: 0;
-    min-height: 0;
+  body[data-agh-backend-workbench="true"] {
+    display: block;
   }
-  .backend-workbench-toolbar {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--s8);
-    min-height: var(--s48);
-    padding: var(--s8) var(--s16);
-    border-bottom: 1px solid var(--agnes-line-primary);
-  }
-  .backend-workbench-toolbar > span {
-    flex: 1;
-    overflow-wrap: anywhere;
-  }
-  @media (min-width: 901px) {
-    body:not(.sidebar-collapsed) .backend-workbench-toolbar {
-      display: none;
-    }
-  }
-  .backend-workbench-contexts {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
+  .backend-workbench-stage {
+    --backend-sidebar-right: 0px;
+    position: relative;
+    width: 100%;
+    height: 100%;
   }
   .backend-workbench-frame {
+    position: absolute;
+    inset: 0;
     display: block;
     width: 100%;
-    flex: 1;
-    min-height: 0;
+    height: 100%;
     border: 0;
+  }
+  .backend-workbench-frame[data-backend-origin]:not([data-backend-origin=""]) {
+    left: var(--backend-sidebar-right, 0px);
+    width: calc(100% - var(--backend-sidebar-right, 0px));
+  }
+  .backend-cloud-menu {
+    display: none;
+    position: absolute;
+    top: var(--s8);
+    left: var(--s8);
+    z-index: 1;
+  }
+  @media (max-width: 900px) {
+    .backend-cloud-menu {
+      display: inline-flex;
+    }
   }
 }

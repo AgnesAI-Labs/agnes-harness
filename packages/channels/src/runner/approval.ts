@@ -547,6 +547,8 @@ function sameChat(left: ChatTarget, right: ChatTarget): boolean {
 function chatOf(event: ChannelEvent): ChatTarget {
   return {
     chatId: event.chat.id,
+    accountId: event.accountId,
+    ...(event.chat.type !== 'thread' ? { chatType: event.chat.type } : {}),
     ...(event.chat.threadId === undefined ? {} : { threadId: event.chat.threadId }),
   }
 }

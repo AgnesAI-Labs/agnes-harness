@@ -129,10 +129,10 @@ import type { CoreDiagName } from '../kernel.js'
 import { Listeners } from '../listeners.js'
 import { LoopChildren } from '../loop/children.js'
 import { SessionControls } from '../loop/controls.js'
-import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
+import { LoopEventRegistry } from '../loop/events.js'
 import { drivenOutcome, isAdmissionEnding, publicOutcome, shouldStopLoop } from '../loop/outcome.js'
 import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
-import { settleSideCalls, sideCallInFlight } from '../loop/side-call-receipts.js'
+import { settleSideCalls } from '../loop/side-call-receipts.js'
 import { drainMaintenance } from '../maintenance/recovery.js'
 import type {
   AuxiliaryVisionAssemblyInput,
@@ -175,12 +175,13 @@ import {
 } from './control.js'
 import { askApprovalAnswer } from './decision-delivery.js'
 import { DecisionCommands, type DecisionSource } from './decisions.js'
+import { claimedInputEvents } from './delivery-marker.js'
 import { assertCurrentDomainDecisions } from './domain-decision.js'
 import { sysEvent } from './events.js'
 import { appendExtensionEvent, prepareExtensionEvent } from './ext-events.js'
 import { compactionSettingsFor, contextWindowFor } from './gate.js'
 import { createChildTraceCache, exportVerifiedRlaf } from './history.js'
-import { claimFrom, type EnqueueMsg, inboxEvent, inputMessageEvents, inputTainted, TRIGGER } from './inbox.js'
+import { claimFrom, type EnqueueMsg, inboxEvent, inputTainted, TRIGGER } from './inbox.js'
 import { discloseTools, resolveModel, runInference } from './inference.js'
 import { LoopScope, stepWithinLoopDeadline } from './loop-deadline.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
@@ -218,6 +219,7 @@ import { filteredTools, NO_TOOL_FILTER, type SessionToolFilter, setToolFilter } 
 import { effectiveToolPolicy, sessionFloor } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
+import { notifyCommittedTurnHook, notifyLoopTurnEnd } from './turn-observers.js'
 import { attend, attendRecovered, rehydratedCallState } from './turn-restore.js'
 
 /**
@@ -944,26 +946,26 @@ export class SessionImpl {
     return this.d.log.lastSeq
   }
   /** Every committed batch, in commit order, as it is committed. */
-  onAppended(fn: (events: Event[]) => void): () => void {
-    return this.d.log.observeCommitted('*', fn)
-  }
+  onAppended = (fn: (events: Event[]) => void): (() => void) => this.d.log.observeCommitted('*', fn)
   /** Streamed model text as it arrives. It is never a ledger row and carries no seq. */
-  onPreview(fn: (p: PreviewDelta) => void): () => void {
-    return this.preview.on(fn)
+  readonly onPreview = (fn: (p: PreviewDelta) => void): (() => void) => this.preview.on(fn)
+  private readonly listeners = {
+    closed: new Listeners(),
+    settings: new Listeners(),
+    cancelled: new Listeners(),
+    runSettled: new Listeners(),
   }
-  private readonly listeners = { closed: new Listeners(), settings: new Listeners() }
   /** Called once when `close()` finishes, whether it succeeded or failed. */
   readonly onClosed = this.listeners.closed.on
+  /** Explicit cancellation and close, independent of the replaceable foreground turn controller. */
+  readonly onCancelled = this.listeners.cancelled.on
+  readonly onRunSettled = this.listeners.runSettled.on
   /** Called after `setModel`, `setToolFilter` or `setPreset` resolves; never when one rejects. */
   readonly onSettingsChanged = this.listeners.settings.on
   /** The text every inference still in flight has streamed so far. */
-  previewSnapshot(): PreviewSnapshot[] {
-    return this.preview.snapshot()
-  }
+  readonly previewSnapshot = (): PreviewSnapshot[] => this.preview.snapshot()
   /** Called once if this session's log seals itself; see SessionLogImpl.onFault. */
-  onFault(fn: (e: CoreError) => void): () => void {
-    return this.d.log.onFault(fn)
-  }
+  readonly onFault = (fn: (e: CoreError) => void): (() => void) => this.d.log.onFault(fn)
   get lane(): string {
     return this.d.lane
   }
@@ -1365,7 +1367,7 @@ export class SessionImpl {
   ): Promise<Seq> {
     const expected = this.opSeq()
     const turnNumber = this.op()?.meta.turn ?? 0
-    if (!extra.sideCallsDrained && sideCallInFlight(this)) await settleSideCalls(this, expected)
+    if (!extra.sideCallsDrained) await settleSideCalls(this, expected)
     // Serialize completion with pause admission; whichever fact commits first wins.
     const seqs = await this.locked(async () => {
       if (reason === 'completed' && (await this.controls.paused()))
@@ -1409,20 +1411,11 @@ export class SessionImpl {
       this.turn = null
       return result.seqs
     })
-    await this.hooks
-      .turnEnd?.({ turn: turnNumber, reason, endSeq: seqs[seqs.length - 1] as number })
-      .catch((error) => this.d.logger.warn('turn_end hook failed', { message: String(error) }))
+    await notifyCommittedTurnHook(this, { turn: turnNumber, reason, endSeq: seqs[seqs.length - 1] as number })
     this.turnEndError = extra.error
     // Between turns: a proposed refinement is applied now, before any queued input opens a turn.
     if (this.d.refinement) await refinementAfterTurn(this)
-    // Observer failure cannot undo a committed turn ending.
-    await this.loopEvents
-      .dispatch(
-        'turn_end',
-        { turn: turnNumber, reason },
-        loopEventContext(this, new AbortController().signal),
-      )
-      .catch((error) => this.d.logger.warn('turn_end observer failed', { message: String(error) }))
+    await notifyLoopTurnEnd(this, { turn: turnNumber, reason })
     return seqs[seqs.length - 1] as Seq
   }
 
@@ -1656,7 +1649,7 @@ export class SessionImpl {
       await this.d.log.append(
         [
           inboxEvent(this.lane, this.d.actor, rest),
-          ...inputMessageEvents(item, this.lane),
+          ...(await claimedInputEvents(this, item, this.lane)),
           {
             type: 'turn/start',
             origin: 'system',
@@ -2051,6 +2044,7 @@ export class SessionImpl {
    * that a cancellation outlives the controller that delivered it.
    */
   abort(by: Actor = this.d.actor): Promise<AbortResult> {
+    this.listeners.cancelled.emit()
     this.abortRevision++
     return abortSession(this, by).finally(() => {
       cancelSessionRuntimes(this, [
@@ -2084,7 +2078,10 @@ export class SessionImpl {
     })
     this.running = work
     return work.finally(() => {
-      if (this.running === work) this.running = undefined
+      if (this.running === work) {
+        this.running = undefined
+        this.listeners.runSettled.emit()
+      }
     })
   }
 
@@ -2713,6 +2710,7 @@ export class SessionImpl {
     this.decisions.detach()
     const draining = this.activeWork.size > 0
     unbindChildFactory(this.key)
+    this.listeners.cancelled.emit()
     this.executePermits.close()
     this.ac.abort()
     this.loopChildren?.cancel()

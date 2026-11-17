@@ -1,9 +1,9 @@
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { openRuntimeLog, workerStderrEvidence } from '../src/supervisor/runtime-log.js'
+import { openDaemonLogs, openRuntimeLog, workerStderrEvidence } from '../src/supervisor/runtime-log.js'
 
 it('bounds and rotates runtime facts, omits worker text and detaches the crash listener', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'agh-runtime-log-'))
@@ -36,6 +36,26 @@ it('bounds and rotates runtime facts, omits worker text and detaches the crash l
     expect(statSync(file).size).toBeLessThan(600)
     expect(statSync(`${file}.1`).size).toBeLessThan(600)
     if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600)
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+it('routes owner input traces to their own audit file, opened on first use, never to the runtime log', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'agh-runtime-log-'))
+  try {
+    const logs = openDaemonLogs(directory)
+    const file = join(directory, 'audit', 'owner-input.jsonl')
+    logs.record({ kind: 'worker.exited', detail: { exitCode: 0 } })
+    expect(existsSync(file)).toBe(false)
+    logs.record({
+      kind: 'owner-input.trace',
+      detail: { event: 'held', pass: 'abcdef01', trigger: 'startup-sweep', text: 'private-fixture' },
+    })
+    await logs.close()
+    expect(readFileSync(file, 'utf8')).toContain('"trigger":"startup-sweep"')
+    expect(readFileSync(file, 'utf8')).not.toContain('private-fixture')
+    expect(readFileSync(join(directory, 'audit', 'runtime.jsonl'), 'utf8')).not.toContain('owner-input')
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }

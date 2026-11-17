@@ -48,7 +48,7 @@ export const cloudSettingsState = {
 }
 
 export function installCloudSettingsProjection(): () => void {
-  if (!backendFrame()) return () => {}
+  if (!backendFrame() || backendFrame()?.remote) return () => {}
   const receive = (event: MessageEvent) => {
     if (event.source !== window.parent || event.origin !== location.origin) return
     const value = event.data
@@ -98,7 +98,7 @@ export function installCloudSettingsProjection(): () => void {
 }
 
 export function requestCloudConnection(action: CloudConnectionAction): void {
-  if (backendFrame())
+  if (backendFrame() && !backendFrame()?.remote)
     window.parent.postMessage(
       { type: BACKEND_FRAME_MESSAGE, kind: 'cloud-action', ...action },
       location.origin,

@@ -3,14 +3,16 @@ import {
   constants,
   existsSync,
   ftruncateSync,
+  lstatSync,
   openSync,
   readFileSync,
   truncateSync,
 } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { windowsAppendPrivateFileSync, windowsOpenPrivateFileSync } from '@agnes/system-node'
 import { PackageError } from './errors.js'
 import { canonical } from './integrity.js'
+import { withLock } from './lockfile.js'
 import { appendPrivateLog, recordPackageRecovery } from './recovery-log.js'
 
 export type PackageAuditEvent = Readonly<{
@@ -97,6 +99,33 @@ function validateEvent(value: unknown): asserts value is PackageAuditEvent {
     !digest(row.sourceHash)
   )
     throw new PackageError('E_EXT_LOAD', 'package audit is corrupt')
+}
+
+/** IDs ever removed by a committed operation in this profile, not the currently absent packages.
+ * The caller must recover package transactions first. This read holds the profile lock but never
+ * repairs the log; missing history is empty, while unreadable, corrupt or incomplete history refuses. */
+export async function readRemovedPackageIds(profileDir: string): Promise<readonly string[]> {
+  return withLock(profileDir, async () => {
+    const file = join(profileDir, '.agnes-package-audit.jsonl')
+    const removed = new Set<string>()
+    try {
+      if (!lstatSync(file, { throwIfNoEntry: false })) return []
+      const text = readAudit(file)
+      if (text && !text.endsWith('\n')) throw new Error('Incomplete audit')
+      for (const line of text.split('\n').filter(Boolean)) {
+        const row: unknown = JSON.parse(line)
+        validateEvent(row)
+        if (row.profile !== basename(resolve(profileDir))) throw new Error('Audit profile mismatch')
+        if (row.operation === 'remove' && row.next === 'removed' && row.result === 'committed')
+          removed.add(row.id)
+      }
+    } catch {
+      throw new PackageError('E_EXT_LOAD', 'package removal history is unreadable', {
+        detail: { reason: 'audit-unreadable' },
+      })
+    }
+    return [...removed]
+  })
 }
 /** Cut the log back to `length` bytes without following a link planted at its path (POSIX). */
 function truncateAudit(file: string, length: number): void {

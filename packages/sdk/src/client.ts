@@ -79,6 +79,7 @@ import { Reconnector } from './reattach.js'
 import { RpcConnection } from './rpc.js'
 import { Session } from './session.js'
 import { requireAdditionalDirectories, requireForkAdditionalDirectories } from './session-directories.js'
+import { newSessionMeta, openSessionMeta } from './session-new.js'
 import { resendPending, submitForkCommand } from './submit.js'
 import { textFor } from './text.js'
 import { inprocTransport, type RpcEndpoint } from './transport/inproc.js'
@@ -471,26 +472,7 @@ export class Client {
     new: async (o: NewSessionOptions): Promise<Session> => {
       const extra = o.additionalDirectories ?? []
       if (extra.length) requireAdditionalDirectories((await this.initialize()).capabilities)
-      const meta: Record<string, unknown> = {}
-      if (o.agent !== undefined) {
-        meta.agent = parseAgentRef(o.agent)
-        if (
-          o.loop ||
-          o.bundles !== undefined ||
-          o.preset ||
-          o.permission !== undefined ||
-          o.systemPromptAppend !== undefined
-        )
-          throw new TypeError('agent cannot be combined with execution overrides')
-      }
-      if (o.agentDigest !== undefined) meta.agentDigest = o.agentDigest
-      if (o.loop) meta.loop = parseLoopSelection(o.loop)
-      if (o.preset) meta.preset = o.preset
-      if (o.agent === undefined) meta.permission = o.permission ?? 'default'
-      if (o.bundles !== undefined) meta.bundles = parseSessionBundles(o.bundles)
-      if (o.systemPromptAppend !== undefined)
-        meta.systemPromptAppend = parseSystemPromptAppend(o.systemPromptAppend)
-      if (o.sessionKey) meta.sessionKey = o.sessionKey
+      const meta = newSessionMeta(o)
       // Creating a session can wait for the shared worker to start (see slowCall); a short budget only
       // turns a late success into a failure the caller has to retry.
       const r = await this.call<{ sessionId: string }>(
@@ -526,7 +508,14 @@ export class Client {
         }
       }
       try {
-        await this.loadSessionHistory(id, o.cwd ?? '', o.onProgress, o.history === 'none', o.signal)
+        await this.loadSessionHistory(
+          id,
+          o.cwd ?? '',
+          o.onProgress,
+          o.history === 'none',
+          o.signal,
+          o.environment,
+        )
         this.sessionHistory.set(id, o.history ?? 'full')
         if (o.cwd) session.rememberWorkspace(o.cwd)
         return session
@@ -688,6 +677,7 @@ export class Client {
     onProgress?: (progress: import('@agnes/protocol').SessionLoadingParams) => void,
     admissionOnly = false,
     signal?: AbortSignal,
+    environment?: SessionLoadOptions['environment'],
   ): Promise<unknown> {
     const info = signal ? await untilAborted(() => this.initialize(), signal) : await this.initialize()
     signal?.throwIfAborted()
@@ -704,7 +694,9 @@ export class Client {
         try {
           return await this.call(
             open ? '_agnes/v1/session.open' : 'session/load',
-            open ? { sessionId: id, cwd, requestId } : { sessionId: id, cwd, mcpServers: [] },
+            open
+              ? { sessionId: id, cwd, requestId, ...openSessionMeta(environment) }
+              : { sessionId: id, cwd, mcpServers: [], ...openSessionMeta(environment) },
             { timeoutMs: null, signal },
           )
         } catch (error) {

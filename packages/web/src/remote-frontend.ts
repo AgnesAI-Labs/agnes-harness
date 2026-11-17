@@ -13,7 +13,7 @@ import { authorizeRemoteFrontend, forgetRemoteAccess, remoteAccessPath } from '.
 export function selectedRemoteOrigin(search?: string): string | undefined {
   const frame = search === undefined ? backendFrame() : undefined
   const value = frame
-    ? frame.getAttribute('data-backend-origin')
+    ? (frame.remote ?? '')
     : new URLSearchParams(search ?? globalThis.location?.search ?? '').get('remote')
   if (value === '') return undefined
   return value === null ? undefined : remoteFrontendOrigin(value)
@@ -80,7 +80,7 @@ export async function readRemoteFrontendInfo(remote: string, signal: AbortSignal
       signal,
     })
   }
-  if (!response.ok) throw new Error('Cloud connection denied / 云端连接未获授权')
+  if (!response.ok) throw new Error('CLOUD_ORIGIN_DENIED')
   const info = (await response.json()) as {
     version?: unknown
     access?: unknown
@@ -96,7 +96,7 @@ export async function readRemoteFrontendInfo(remote: string, signal: AbortSignal
     !info.instanceId ||
     info.instanceId.length > 256
   )
-    throw new Error('The remote service is unavailable or incompatible. / 远程服务不可用或版本不兼容。')
+    throw new Error('CLOUD_SERVICE_UNAVAILABLE')
   return { instanceId: info.instanceId }
 }
 

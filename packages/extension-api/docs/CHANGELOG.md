@@ -2,7 +2,7 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
-## 5.15.0
+## 5.23.0
 
 ### Added
 
@@ -14,6 +14,66 @@ API additions require a minor version; removals or semantic changes require a ma
 - Optional ledger `tool/result.dispatchPhase` records `not_sent`, `may_have_sent` or `responded`.
   It describes backend dispatch, independently of tool-provided result content, so consumers can
   distinguish admitted attempts from pre-dispatch refusals without a second tool counter.
+
+## 5.22.0
+
+- Optional `ProfileManagedInit.bundledApp` (`BundledAppGrant`, `BundledAppChannels`) gives a release-whitelisted bundled package a platform-chosen state directory, an owner-level local SDK client (typed `unknown`; narrow it with the SDK client type) and channel group access. Only release assembly grants it, for a payload matching the shipped digest; package code, manifests and configuration cannot request it. `assertCurrent()` refuses with `CAPABILITY_DENIED` after disable or activation change, and the client is closed.
+- Channel `Sender.kind` (`user` or `bot`) marks who sent a message; absent means a user, and session routing ignores bot senders.
+- `ChannelCapabilities.read` and five optional cursor-paged `ChannelAdapter` reads: `fetchMessages`, `listThread`, `listHistory`, `listChats` and `listMembers`. An adapter declares each read in `capabilities()` at run time; the manifest schema is unchanged. Adapters that implement none of them are unchanged.
+- `BundledAppGrant.channels` reaches the owner's running channel instances. `subscribe` claims group chats exclusively (never direct chats, never a chat a session is bound to); `send` is split and throttled as a session reply; reads use only the reads the adapter declares. Errors: `CAPABILITY_DENIED` for a stale grant or an undeclared read; `SEMANTIC_REJECTED` with `CHANNEL_UNAVAILABLE` (retry once the channel row runs), `CHANNEL_CHAT_CLAIMED`, `CHANNEL_READ_INVALID`, `CHANNEL_CURSOR_STALLED` or `CHANNEL_READ_TOO_LARGE`; `INVALID_PARAMS` for malformed arguments.
+- `BundledAppChannels.claimInstance({ pluginId, instanceId }, onEvent)` claims a whole channel instance, named by its channel plugin's row id (the catalog's `rowId`): its group and direct messages go only to `onEvent` (card clicks there go to nobody), never to session routing, direct-message pairing or pairing receipts; `send` and the reads work as before. `release()`, disable or abort returns the instance to ordinary routing. Refused with `SEMANTIC_REJECTED` `CHANNEL_CLAIMED` while the instance has another consumer (a claimant, a group subscriber, an owner-paired direct chat or a bound session), and with `CHANNEL_UNAVAILABLE` while no running row of that plugin has the instance, or another row uses the same instance id. `subscribe` on a claimed instance is refused with `CHANNEL_CLAIMED`.
+
+## 5.21.0
+
+### Added
+
+The additions are optional; `^5.0.0` ranges admit 5.21.0, and a plugin that uses them raises its range to `^5.21.0`. `sessions: true` already grants the port; there is no new declaration key.
+
+- `ManagedSessionStartInput.taskBinding?: { id, generation }` binds a session to a task of the calling service. A bound session refuses `send` with `CAPABILITY_DENIED` (`data.reason: 'OWNER_INPUT_REQUIRED'`, checked before archived, duplicate and busy). Repeating a start key with another binding, or another first input, is refused (`START_KEY_REUSED`).
+- `ManagedSessions.admitInput(sessionId, { key, target, input })` and `inputResult(sessionId, { key })`. `input` is an `ownerMessage` (the platform takes the text from the recorded `receiptId`), a `recoveryContinuation` (after checking `turnEndSeq`, the platform submits the fixed sentence "Continue the interrupted turn without treating this recovery as a new owner decision.") or a `legacyOwnerMessage` (unverifiable origin; always held for the owner). Refusals: `CAPABILITY_DENIED` with `data.reason` `OWNER_INPUT_REQUIRED`, `OWNER_INPUT_TARGET_MISMATCH`, `OWNER_INPUT_KEY_REUSED`, `SESSION_ARCHIVED` (thrown, never returned) or `START_KEY_REUSED`; malformed parameters are `INVALID_PARAMS`.
+- `ManagedInputResult` states: `queued`, `enqueued`, `consumed` (with `turn` and `seq`), `retained`, `needsOwner`, `waitingQuestion`, `recoveryUnknown`, `legacySend` (`delivery`: `consumed`, `pending` or `unknown`) and `absent` (`historyCoverage`: `complete` for every session the service still manages; `partial` is reserved). Held and final states carry `inputId` (equal to `key`), a `version` that rises on every change, a `reason` from the open `ManagedInputReason` set (display it as text) and `reviewLocation`, `/?session=<sessionId>&ownerInput=<inputId>`, the Web page where the owner reviews the input.
+- `ChannelTargetEvent.receiptId?` (1-256 characters) is present only after the platform durably recorded the event's source and text, and is the same on redeliveries.
+- Trust: an admitted owner message still enters the session inbox as `origin: 'system'` with `trust: 'untrusted'`. Admission is not an owner-identity input and grants no approval.
+
+See [Plugin-managed sessions](../../../docs/extend/managed-sessions.md).
+
+## 5.20.0
+
+- Add optional row-bound `sessionWork` registration with fresh background side-call scopes and independently granted automatic-title inspection and refresh. Existing facets and turn-bound side calls remain compatible.
+
+## 5.17.0
+
+- Optional `ExtensionContext.sideModels.subscribe(listener)` emits payload-free catalogue change notices. Subscribe before `list()` to observe late provider readiness. The existing grant, declaration and lifetime checks still apply; unsubscribe on disposal. `list()` retains its route/model/api-only shape.
+
+## 5.16.0
+
+### Added
+
+- `HookRegisterOptions.timeoutMs` requests a Host-granted timeout for `turn_stopping` and `tool_result`, capped at 15,000 ms.
+- Optional `SideCallPort` on `HookContext` and `ToolContext` for authorized in-process plugins declaring `sideCall`. Prepared calls belong to one invocation and turn; invocation end aborts and waits for its calls. IDs are namespaced by the Host-known plugin row id and cost rows retain that `caller`.
+- Optional `ExtensionContext.sideModels.list()` returns only side-model route, model and API identifiers, with no endpoints or credentials.
+- Public `redactSecrets` sanitizes text before plugins send it to another model or persist it. This pure helper grants no execution or approval authority.
+
+## 5.15.0
+
+### Added
+
+- Channel adapters can render bounded native question forms through `ChannelSurfaceBlock` and decode
+  their submissions with `onSurfaceAction`. Fields preserve the native input binding and nested key.
+- `ManagedChannelTargets.watchSession` observes human interactions in the calling service's own child
+  sessions. The Host retains watches across restart and revokes them with the pairing or service.
+- `ManagedChannelTargets.update` replaces only messages delivered by the calling service to its current
+  pairing. Channel `MessageRef` and `ChatTarget` can retain verified `accountId` and `chatType` for
+  edits and sends after restart.
+- Native callbacks use verified platform identity and durable delivered-message bindings. Existing
+  backend action and decision owners retain validation, authorization, replay checks and settlement.
+
+### Fixed
+
+- Retained managed tasks report `waitingOnUserInput` for unanswered native questions after a
+  nonblocking turn completes. Status reads use durable facts without loading historical workers.
+- Failed managed watch activation releases its own session/lane so restart reconciliation can retry;
+  concurrent activations share SDK attachment without detaching the winning session.
 
 ## 5.14.0
 

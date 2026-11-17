@@ -4,6 +4,7 @@ import type { WorkspaceCatalog } from '@agnes/daemon-foundation/storage/workspac
 import { sessionKey as canonicalSessionKey } from '@agnes/host'
 import { parseAgentRef, parseLoopSelection, parseSessionBundles, rpcError } from '@agnes/protocol'
 import type { LocalContext } from './methods/acp.js'
+import { admitSessionEnvironment } from './methods/session-environment.js'
 import { admitSystemPromptAppend } from './methods/session-prompt-append.js'
 import { applyOpenToolFilter, parseOpenToolFilter } from './methods/session-switches.js'
 import { throwWorkspaceRpcError } from './methods/workspaces.js'
@@ -138,6 +139,7 @@ export async function createSessionWithAdmission(
     context: c,
     configurationReadOnly: cx.configurationReadOnly,
   })
+  const environment = admitSessionEnvironment(h.environment, c.conn, cx.sessionEnvironment, requestedKey)
   const ownership = cx.sessionOwnership
   if (!ownership) return denyOwnership('session/new', requestedKey)
   let reservedNew = false
@@ -151,6 +153,8 @@ export async function createSessionWithAdmission(
       canonicalRoot: workspace.path,
       extraRoots,
       hasSessionFact,
+      // Derived from the connection the auth gate verified, never from the request.
+      ...(c.conn.bundledApp === true ? { creator: 'bundled-app' as const } : {}),
     })
     reservedNew = reserved.reservedNew
     binding = reserved.envelope
@@ -160,6 +164,8 @@ export async function createSessionWithAdmission(
   }
   try {
     c.signal.throwIfAborted()
+    // Kept before the session opens, so its very first command already runs with it; the Host reads it on each command.
+    if (environment) await cx.sessionEnvironment?.write(requestedKey, environment)
     if (origin) {
       origin.afterBind(requestedKey)
       binding = await cx.workspaces.restoreBinding(requestedKey)
@@ -182,6 +188,8 @@ export async function createSessionWithAdmission(
     if (reservedNew && !ownership.activateNew(entry.key, c.conn.principalId))
       denyOwnership('session/new', requestedKey)
   } catch (error) {
+    // A session that never came to be keeps no environment for the next one to open under this key.
+    if (environment && reservedNew) await cx.sessionEnvironment?.release(requestedKey).catch(() => undefined)
     throwSessionOpenRpcError(error, requestedKey)
   }
   return { sessionId: entry.key }

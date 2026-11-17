@@ -18,6 +18,7 @@ import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import {
   bundledExampleSource,
   bundledPluginSource,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
   OPTIONAL_BUNDLED_PACKAGES,
 } from './bundled-plugin-source.js'
 import { copyPackageTreeSync } from './copy-tree.js'
@@ -378,7 +379,9 @@ export function assertSkillSourceLocation(
 
 /** A bundled package whose entry is generated says how to build it when a checkout has not yet. */
 export function requireGeneratedEntry(ref: string, directory: string): void {
-  const build = OPTIONAL_BUNDLED_PACKAGES.find((item) => item.ref === ref)?.build
+  const build = [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].find(
+    (item) => item.ref === ref,
+  )?.build
   if (!build) return
   let entry: unknown
   try {

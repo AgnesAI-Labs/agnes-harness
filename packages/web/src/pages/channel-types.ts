@@ -64,3 +64,9 @@ export type ChannelContext = {
   agentTitle: { en: string; 'zh-CN': string }
   instanceId: string
 }
+export type DedicatedContext = {
+  instanceId: string
+  agent: string
+  agentTitle: { en: string; 'zh-CN': string }
+  workspaces: { workspaceId: string; name: string; path: string }[]
+}

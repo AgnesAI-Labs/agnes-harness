@@ -5,6 +5,8 @@ import type { UINode } from '@agnes/protocol'
 import { ClientResourceService, SessionService, SlotRegistry } from '@agnes/web-client'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as frameContext from '../src/backends/frame-context.js'
+import * as sidebarProjection from '../src/backends/sidebar-projection.js'
 import {
   APPROVAL_SLOT,
   CONVERSATION_SLOT,
@@ -46,6 +48,7 @@ afterEach(async () => {
   while (contexts.length) await contexts.pop()?.fiber.dispose()
   document.documentElement.lang = 'en'
   document.body.replaceChildren()
+  vi.restoreAllMocks()
 })
 
 describe('DSH top-level shell', () => {
@@ -276,11 +279,31 @@ describe('migrated sidebar region', () => {
   })
 
   it('declares and renders the first DSH sidebar child slots without replacing the shell', async () => {
+    const projection = vi
+      .spyOn(sidebarProjection, 'useSidebarProjection')
+      .mockReturnValue({ active: 'cloud', cloud: 'https://cloud.test', states: {} })
+    vi.spyOn(frameContext, 'backendFrame').mockReturnValue({ parentOrigin: location.origin })
+    const messages = vi.spyOn(window.parent, 'postMessage').mockImplementation(() => {})
     const slots = await registry()
     const sidebar = document.createElement('aside')
     sidebar.className = 'sidebar'
     document.body.append(sidebar)
-    mounts.push(mountSidebarRegion(slots, sidebar, {}, zhLocaleService()))
+    mounts.push(
+      mountSidebarRegion(
+        slots,
+        sidebar,
+        {
+          state: {
+            sessions: [],
+            workspaces: [],
+            labels: new Map(),
+            newDisabled: false,
+            sessionPending: false,
+          },
+        },
+        zhLocaleService(),
+      ),
+    )
 
     const remove = slots.register(
       { name: 'sidebar.footer.action', id: 'fixture-footer-action', owner: 'fixture' },
@@ -289,10 +312,25 @@ describe('migrated sidebar region', () => {
     await vi.waitFor(() => {
       expect(sidebar.querySelector('#new')).toBeTruthy()
       expect(sidebar.querySelector('#fixture-sidebar-action')?.textContent).toBe('扩展动作')
+      expect(sidebar.querySelector('[data-testid=backend-group-local]')).toBeTruthy()
+      expect(sidebar.querySelector('[data-testid=backend-group-cloud]')).toBeTruthy()
       expect(sidebar.querySelector('#fixture-sidebar-action')?.closest('.sidebar-footer')).toBeTruthy()
       expect(slots.entriesByOwner('fixture').map((entry) => entry.name)).toEqual(['sidebar.footer.action'])
     }, committed)
     remove()
+    sidebar.querySelector<HTMLButtonElement>('#settings')?.click()
+    expect(messages.mock.calls.at(-1)?.[0]).toMatchObject({
+      kind: 'sidebar-command',
+      backend: 'local',
+      command: { kind: 'settings', section: 'model' },
+    })
+    sidebar.querySelector<HTMLButtonElement>('#new')?.click()
+    expect(messages.mock.calls.at(-1)?.[0]).toMatchObject({
+      kind: 'sidebar-command',
+      backend: 'cloud',
+      command: { kind: 'new' },
+    })
+    projection.mockRestore()
   })
 
   it('keeps the workspace directory flow as a nested DSH outlet', async () => {

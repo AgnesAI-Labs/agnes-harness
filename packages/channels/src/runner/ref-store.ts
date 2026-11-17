@@ -1,12 +1,31 @@
 import { DatabaseSync } from 'node:sqlite'
-import type { MessageRef } from '../adapter.js'
+import type { ChannelMessage, ChatTarget, MessageRef } from '../adapter.js'
 import { ChannelError } from '../errors.js'
 
-export type RefPart = { ref: MessageRef; contentHash: string }
+export type InteractionSubject =
+  | { kind: 'surface'; surfaceId: string; revision: number; actionId?: string }
+  | { kind: 'approval'; decisionKey: string }
+export type RefPart = {
+  ref: MessageRef
+  contentHash: string
+  accountId?: string
+  subject?: InteractionSubject
+}
 export type RefRow = { ref: MessageRef; contentHash: string }
 export type DeliveryRefRow = RefRow & {
   parts: RefPart[]
   complete: boolean
+  isUpdate: boolean
+}
+
+export type SendIntent = {
+  nodeId: string
+  hash: string
+  index: number
+  pieceHash: string
+  piece: ChannelMessage
+  target: ChatTarget
+  parts: RefPart[]
   isUpdate: boolean
 }
 
@@ -52,6 +71,9 @@ export class RefStore {
       updated_at INTEGER NOT NULL,
       PRIMARY KEY (session_key, session_id, node_id)
     )`)
+      this.db.exec(
+        `CREATE TABLE IF NOT EXISTS send_intents (session_key TEXT NOT NULL, session_id TEXT NOT NULL, node_id TEXT NOT NULL, intent_json TEXT NOT NULL, PRIMARY KEY (session_key, session_id, node_id))`,
+      )
       this.db.exec(`CREATE TABLE IF NOT EXISTS ref_sessions (
         session_key TEXT NOT NULL,
         session_id TEXT NOT NULL,
@@ -170,6 +192,26 @@ export class RefStore {
     return new Map(rows.map((row) => [row.node_id, fromStored(row)]))
   }
 
+  putIntent(sessionKey: string, sessionId: string, intent: SendIntent): void {
+    this.db
+      .prepare(`INSERT INTO send_intents VALUES (?, ?, ?, ?)
+      ON CONFLICT(session_key, session_id, node_id) DO UPDATE SET intent_json = excluded.intent_json`)
+      .run(sessionKey, sessionId, intent.nodeId, JSON.stringify(intent))
+  }
+
+  intents(sessionKey: string, sessionId: string): SendIntent[] {
+    const rows = this.db
+      .prepare('SELECT intent_json FROM send_intents WHERE session_key = ? AND session_id = ?')
+      .all(sessionKey, sessionId) as Array<{ intent_json: string }>
+    return rows.map((row) => JSON.parse(row.intent_json) as SendIntent)
+  }
+
+  clearIntent(sessionKey: string, sessionId: string, nodeId: string): void {
+    this.db
+      .prepare('DELETE FROM send_intents WHERE session_key = ? AND session_id = ? AND node_id = ?')
+      .run(sessionKey, sessionId, nodeId)
+  }
+
   retireSession(sessionKey: string, sessionId: string): void {
     if (this.closed) return
     this.db
@@ -193,6 +235,11 @@ export class RefStore {
             AND s.retired_at IS NOT NULL
             AND s.retired_at < ?
         )`)
+        .run(cutoffMs)
+      this.db
+        .prepare(
+          `DELETE FROM send_intents WHERE EXISTS (SELECT 1 FROM ref_sessions s WHERE s.session_key = send_intents.session_key AND s.session_id = send_intents.session_id AND s.retired_at IS NOT NULL AND s.retired_at < ?)`,
+        )
         .run(cutoffMs)
       this.db
         .prepare(`DELETE FROM ref_sessions

@@ -73,6 +73,7 @@ export type WorkerMethod =
   | 'channels.catalog'
   | 'channels.clear'
   | 'channels.pairing'
+  | 'channels.receipts'
   | 'ping'
   | 'pluginGenerations.status'
   | 'pluginGenerations.publicationStatus'
@@ -90,6 +91,8 @@ export type WorkerMethod =
   | 'boundWake.read'
   | 'boundWake.require'
   | 'profileManaged.status'
+  | 'sessionEnvironment.write'
+  | 'sessionEnvironment.release'
   | 'profileStreams.endpoint'
   | 'profileService.identity'
   | 'profileService.authorizeControl'
@@ -240,6 +243,7 @@ export type RequestFrame = {
     | 'scheduling'
     | 'bound-wake'
     | 'managed-session'
+    | 'channel-interaction'
     | 'permission'
     | 'permission-abort'
     | 'permission-revoke'
@@ -252,6 +256,7 @@ export type RequestFrame = {
     | 'mcp-manage'
     | 'mcp-manage-abort'
     | 'refinement-save'
+    | 'auto-title-eligible'
   params: unknown
 }
 export type WorkerCommandFrame = {

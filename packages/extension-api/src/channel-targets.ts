@@ -18,6 +18,12 @@ interface ChannelTargetEventBase {
   readonly at: string
   readonly chat: { readonly id: string; readonly type: 'dm' }
   readonly sender: { readonly userId: string }
+  /**
+   * 1–256 characters. Present only after the platform durably recorded the event's source and text; pass it
+   * to `admitInput` as an `ownerMessage` receipt instead of the text. Redeliveries of one event carry the
+   * same id. Added in 5.21.
+   */
+  readonly receiptId?: string
 }
 
 /** A text message the paired owner sent in the paired direct chat. Attachments and empty text never arrive. */
@@ -99,6 +105,10 @@ export interface ManagedChannelTargets {
   onPairingChange(handler: () => void): void
   /** One platform message per call. The chat always comes from the pairing; repeating a key never sends twice. */
   send(pairingId: string, input: ChannelTargetSend): Promise<{ messageId: string }>
+  /** Observe native human questions and approvals of a session owned by this service. */
+  watchSession(pairingId: string, sessionId: string): Promise<void>
+  /** Replace a message this service delivered to the current pairing. No new destination is accepted. */
+  update(pairingId: string, messageId: string, input: Omit<ChannelTargetSend, 'deliveryKey'>): Promise<void>
   delivery(pairingId: string, deliveryKey: string): Promise<ChannelDelivery>
   unpair(pairingId: string): Promise<void>
 }

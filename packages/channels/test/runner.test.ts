@@ -9,6 +9,7 @@ import type { RunnerConfig } from '../src/runner/config.js'
 import { startHealthz } from '../src/runner/health.js'
 import { RefStore } from '../src/runner/ref-store.js'
 import { createRunner, type RunnerDeps } from '../src/runner/runner.js'
+import { choiceSurface } from '../testkit/choice-surface.js'
 import { createFakeClient, FAKE_MANIFEST, FakeChannel } from '../testkit/index.js'
 
 const config: RunnerConfig = {
@@ -66,6 +67,171 @@ function ledgerEvent(seq: number, type: string): EventEnvelope & { _meta: Harnes
 describe('createRunner', () => {
   it('accepts the current SDK Client without adding imaginary convenience APIs', () => {
     expectTypeOf<Client>().toMatchTypeOf<RunnerDeps['client']>()
+  })
+
+  it('rolls back a failed managed watch so retry activates and its disposer detaches', async () => {
+    const client = createFakeClient()
+    const runner = createRunner({
+      adapter: new FakeChannel(),
+      cfg: config,
+      secrets: {},
+      client,
+      log: logger(),
+    })
+    const key = 'managed-watch'
+    const target = { chatId: 'chat-1' }
+    const failure = new Error('initial flush failed')
+    let enter!: () => void
+    let reject!: (error: Error) => void
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve
+    })
+    const gate = new Promise<void>((_resolve, fail) => {
+      reject = fail
+    })
+    const first = runner.watchManaged(key, 'session-1', target, async () => {
+      enter()
+      await gate
+    })
+    await entered
+    const concurrent = runner.watchManaged(key, 'session-1', target, async () => {})
+    const firstResult = expect(first).rejects.toBe(failure)
+    const concurrentResult = expect(concurrent).rejects.toBe(failure)
+    reject(failure)
+    await Promise.all([firstResult, concurrentResult])
+    expect(client.calls.filter((call) => call.method === 'detach')).toHaveLength(1)
+
+    const dispose = await runner.watchManaged(key, 'session-1', target, async () => {})
+    expect(client.calls.filter((call) => call.method === 'session.attach')).toHaveLength(2)
+    expect(client.calls.filter((call) => call.method === 'projectUI').length).toBeGreaterThan(0)
+    dispose()
+    await vi.waitFor(() => expect(client.calls.filter((call) => call.method === 'detach')).toHaveLength(2))
+    await runner.stop()
+  })
+
+  it('opens a closed managed task session before attaching its watch', async () => {
+    const client = createFakeClient()
+    const adapter = new FakeChannel()
+    client.setSurfaces('closed-session', {
+      sessionId: 'closed-session',
+      lastSeq: 1,
+      actions: [],
+      surfaces: [
+        {
+          surface: choiceSurface('question'),
+          status: 'open',
+          owner: 'agnes/intelligent-ui',
+          lane: 'main',
+          taskId: 'task',
+          createdSeq: 1,
+          updatedSeq: 1,
+        },
+      ],
+    })
+    client.fireNotFound('closed-session')
+    const runner = createRunner({
+      adapter,
+      cfg: config,
+      secrets: {},
+      client,
+      log: logger(),
+    })
+    const dispose = await runner.watchManaged(
+      'managed-watch',
+      'closed-session',
+      { chatId: 'chat-1' },
+      async () => {},
+    )
+    const methods = client.calls.map((call) => call.method)
+    expect(methods.filter((method) => method === 'session.load')).toHaveLength(1)
+    expect(methods.filter((method) => method === 'session.attach')).toHaveLength(2)
+    expect(methods.indexOf('session.load')).toBeLessThan(methods.lastIndexOf('session.attach'))
+    expect(client.calls.find((call) => call.method === 'session.load')?.args).toEqual([
+      'closed-session',
+      { history: 'none' },
+    ])
+    expect(
+      adapter.sent.some((item) =>
+        item.msg.blocks.some((block) => block.kind === 'text' && block.markdown.includes('Pick')),
+      ),
+    ).toBe(true)
+    dispose()
+    await runner.stop()
+  })
+
+  it('keeps an attach failure that is not SESSION_NOT_FOUND', async () => {
+    const client = createFakeClient()
+    const failure = new Error('attach failed')
+    client.session.attach = vi.fn(async () => {
+      throw failure
+    })
+    const runner = createRunner({
+      adapter: new FakeChannel(),
+      cfg: config,
+      secrets: {},
+      client,
+      log: logger(),
+    })
+    await expect(
+      runner.watchManaged('managed-watch', 'session-1', { chatId: 'chat-1' }, async () => {}),
+    ).rejects.toBe(failure)
+    expect(client.calls.some((call) => call.method === 'session.load')).toBe(false)
+    await runner.stop()
+  })
+
+  it('shares an in-flight managed attach without detaching the active SDK session', async () => {
+    const client = createFakeClient()
+    const attach = client.session.attach.bind(client.session)
+    let release!: () => void
+    let enter!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve
+    })
+    let detached = false
+    let readActive!: () => Promise<unknown>
+    client.session.attach = vi.fn(async (id, options) => {
+      const session = await attach(id, options)
+      const projectUI = session.projectUI.bind(session)
+      const detach = session.detach.bind(session)
+      session.projectUI = async (...args) => {
+        if (detached) throw new Error('session was detached')
+        return projectUI(...args)
+      }
+      readActive = () => session.projectUI()
+      session.detach = async () => {
+        detached = true
+        await detach()
+      }
+      enter()
+      await gate
+      return session
+    })
+    const runner = createRunner({
+      adapter: new FakeChannel(),
+      cfg: config,
+      secrets: {},
+      client,
+      log: logger(),
+    })
+    const target = { chatId: 'chat-1' }
+    const first = runner.watchManaged('managed-watch', 'session-1', target, async () => {})
+    await entered
+    const concurrent = runner.watchManaged('managed-watch', 'session-1', target, async () => {})
+    release()
+    const [dispose, duplicateDispose] = await Promise.all([first, concurrent])
+    expect(client.session.attach).toHaveBeenCalledTimes(1)
+    expect(detached).toBe(false)
+    expect(client.calls.filter((call) => call.method === 'projectUI').length).toBeGreaterThan(0)
+    duplicateDispose()
+    await expect(readActive()).resolves.toMatchObject({ sessionId: 'session-1' })
+    expect(detached).toBe(false)
+    dispose()
+    await vi.waitFor(() => expect(detached).toBe(true))
+    expect(client.calls.filter((call) => call.method === 'detach')).toHaveLength(1)
+    await runner.stop()
   })
 
   it('garbage-collects stale outbound refs while the runner remains live', async () => {

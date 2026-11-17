@@ -13,6 +13,8 @@ import {
   parseAgnesPluginEntries,
 } from '@agnes/package-manager'
 import { rpcError } from '@agnes/protocol'
+import type { HostInputResolution } from './managed-input-admission.js'
+import { parseResolution } from './managed-input-resolution.js'
 import type { ManagedSessionCaller } from './managed-sessions.js'
 import type { WorkerRegistry } from './registry.js'
 import { workerProfileServices, workerWakeBindings } from './service-worker.js'
@@ -32,6 +34,8 @@ const MANAGED_SESSION_ACTIONS = new Set<string>([
   'toolResult',
   'interrupt',
   'archive',
+  'admitInput',
+  'inputResult',
 ])
 
 export async function packageRowOwners(packageId: string, directory: string): Promise<Set<string>> {
@@ -74,6 +78,64 @@ export async function managedSessionPackages(runtime: {
       owners: pkg.directory ? await packageRowOwners(pkg.id, pkg.directory) : new Set<string>(),
     })),
   )
+}
+
+/** Rechecks the registered channel row before forwarding an interaction to its session owner. */
+function createChannelInteractionAdmission(
+  input: {
+    runtime: { manager: PackageManager; profileDirectory: PackageProfileDirectory } | undefined
+    profile: string
+  },
+  profileAuthority: (identity: { packageId: string; integrity: string }) => Promise<void>,
+) {
+  const channelInteractions: {
+    submit?: (kind: 'surface' | 'approval', params: unknown, credential: unknown) => Promise<unknown>
+  } = {}
+  const channelInteraction = async (
+    lane: { sharedWorker: boolean; sessionKey: string },
+    inputValue: unknown,
+  ) => {
+    if (
+      !lane.sharedWorker ||
+      lane.sessionKey !== PROFILE_LANE ||
+      !input.runtime ||
+      !channelInteractions.submit
+    )
+      throw rpcError('CAPABILITY_DENIED')
+    const p = inputValue as {
+      caller?: { owner?: string; packageId?: string; integrity?: string; provider?: string }
+      kind?: string
+      params?: unknown
+      credential?: unknown
+    }
+    const caller = p?.caller
+    if (
+      !caller ||
+      typeof caller.packageId !== 'string' ||
+      typeof caller.integrity !== 'string' ||
+      typeof caller.owner !== 'string' ||
+      typeof caller.provider !== 'string' ||
+      (p.kind !== 'surface' && p.kind !== 'approval')
+    )
+      throw rpcError('CAPABILITY_DENIED')
+    await profileAuthority({ packageId: caller.packageId, integrity: caller.integrity })
+    const directory = await input.runtime.profileDirectory(input.profile)
+    const inventory = await input.runtime.manager.inventory(directory, { fresh: true })
+    const pkg = inventory.packages.find((row) => row.id === caller.packageId)
+    if (
+      !pkg?.directory ||
+      !(await packageRowOwners(pkg.id, pkg.directory)).has(caller.owner) ||
+      !pkg.entry.declaredCapabilities?.managedServices?.some(
+        (d) => d.id === 'channel' && d.scope === 'profile',
+      )
+    )
+      throw rpcError('CAPABILITY_DENIED')
+    const credential = p.credential as { kind?: string; channel?: string; userId?: string }
+    if (credential?.kind !== 'channel' || credential.channel !== caller.provider || !credential.userId)
+      throw rpcError('CAPABILITY_DENIED')
+    return channelInteractions.submit(p.kind, p.params, p.credential)
+  }
+  return { channelInteractions, channelInteraction }
 }
 
 /** Current inventory admission and durable original-session notification delivery. */
@@ -120,8 +182,15 @@ export function createSupervisorProfileServices(input: {
     if (packages.some((row) => row.packageId !== pkg.id && row.owners.has(caller.owner)))
       throw rpcError('CAPABILITY_DENIED', { reason: 'PLUGIN_ROW_AMBIGUOUS' })
   }
+  const { channelInteractions, channelInteraction } = createChannelInteractionAdmission(
+    input,
+    profileAuthority,
+  )
   const managedSessions: {
-    port?: (caller: ManagedSessionCaller) => ManagedSessions
+    port?: (
+      caller: ManagedSessionCaller,
+      host?: { readonly resolution?: HostInputResolution | undefined },
+    ) => ManagedSessions
     skillInstallsOff?: (sessionId: string) => boolean
   } = {}
   /**
@@ -131,7 +200,11 @@ export function createSupervisorProfileServices(input: {
   const ownedSession = async (lane: { sharedWorker: boolean; sessionKey: string }, params: unknown) => {
     if (!lane.sharedWorker || lane.sessionKey !== PROFILE_LANE)
       throw rpcError('CAPABILITY_DENIED', { reason: 'MANAGED_SESSION_LANE' })
-    const p = params as Partial<ManagedSessionCaller> & { action?: unknown; args?: unknown }
+    const p = params as Partial<ManagedSessionCaller> & {
+      action?: unknown
+      args?: unknown
+      resolution?: unknown
+    }
     const port = managedSessions.port
     if (
       !port ||
@@ -144,12 +217,10 @@ export function createSupervisorProfileServices(input: {
       !Array.isArray(p.args)
     )
       throw rpcError('CAPABILITY_DENIED')
-    const sessions = port({
-      owner: p.owner,
-      packageId: p.packageId,
-      integrity: p.integrity,
-      service: p.service,
-    })
+    const caller = { owner: p.owner, packageId: p.packageId, integrity: p.integrity, service: p.service }
+    // The Host's receipt resolution rides beside `args`, and only an admission reads it.
+    const sessions =
+      p.action === 'admitInput' ? port(caller, { resolution: parseResolution(p.resolution) }) : port(caller)
     return (sessions[p.action as keyof ManagedSessions] as (...args: unknown[]) => Promise<unknown>)(
       ...p.args,
     )
@@ -239,9 +310,20 @@ export function createSupervisorProfileServices(input: {
     }
   }
   return {
+    channelInteractions,
+    channelInteraction,
     features: ['services.profile.v1', 'store.owned.v1', ...(boundWakes ? ['jobs.bound-wake.v1'] : [])],
     ownedWake,
     managedSessionAuthority,
+    /** Whether a grant key's package is installed, enabled and trusted: held owner inputs wait while it is not. */
+    managedSessionEnabled: async (owner: string): Promise<boolean> => {
+      if (!input.runtime) return false
+      const packageId = owner.slice(0, owner.indexOf('#'))
+      const directory = await input.runtime.profileDirectory(input.profile)
+      const inventory = await input.runtime.manager.inventory(directory, { fresh: true })
+      const pkg = inventory.packages.find((row) => row.id === packageId)
+      return pkg !== undefined && isRuntimePackageEligible(pkg)
+    },
     managedSessionPackages: async (): Promise<ManagedSessionPackage[]> => {
       if (!input.runtime) throw rpcError('CAPABILITY_DENIED')
       const directory = await input.runtime.profileDirectory(input.profile)

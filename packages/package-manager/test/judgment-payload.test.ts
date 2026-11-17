@@ -1,0 +1,115 @@
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { validatePluginMetadata } from '@agnes/protocol'
+import { expect, it } from 'vitest'
+import { buildJudgmentPayload } from '../tools/build-judgment-payload.mjs'
+import { ensureJudgmentPayload } from '../tools/ensure-judgment-payload.mjs'
+
+const payload = new URL('../bundled-plugins/judgment/', import.meta.url)
+it('mirrors the source row with API 5.20 and exports the real plugin', async () => {
+  const source = JSON.parse(readFileSync(new URL('../../judgment/package.json', import.meta.url), 'utf8'))
+  const manifest = JSON.parse(readFileSync(new URL('package.json', payload), 'utf8'))
+  const { default: disabled, ...row } = source.agnes.plugins[0]
+  expect(disabled).toBe(false)
+  expect(validatePluginMetadata(row.metadata).ok).toBe(true)
+  expect(validatePluginMetadata(manifest.agnes.metadata).ok).toBe(true)
+  expect(manifest.agnes.plugins).toEqual([row])
+  expect(row).toMatchObject({
+    export: 'judgmentPlugin',
+    id: 'ext:agnes.judgment/main',
+    apiRange: '^5.20.0',
+    configReload: 'next-session',
+    inject: ['hooks', 'projections', 'eventLog', 'sideCall', 'services', 'self', 'tools', 'sessionWork'],
+  })
+  expect(row.capabilities.tools).toEqual({ prefix: '', names: ['find_relevant', 'judge_batch'] })
+  expect(row.capabilities.filesystem).toEqual({ read: ['**'] })
+  expect(row.capabilities.projections).toContainEqual({
+    name: 'tools.session',
+    inputEventTypes: ['session/start'],
+    maxStateBytes: 256,
+  })
+  expect(row.configSchema.properties.uses.properties.stop.properties.enabled.default).toBe(false)
+  expect(row.configSchema.properties.uses.properties.rules.properties.enabled.default).toBe(false)
+  expect(row.capabilities.hooks).toContain('tool_result')
+  expect(row.capabilities.services).toContainEqual(
+    expect.objectContaining({ name: 'judgment.status', scope: 'profile', kind: 'query' }),
+  )
+  expect(row.capabilities.ui).toBe(true)
+  expect(manifest.agnes.clientDescriptors).toEqual([
+    { rowId: 'ext:agnes.judgment/main', path: './src/agnes.client.json' },
+  ])
+  const descriptor = JSON.parse(readFileSync(new URL('src/agnes.client.json', payload), 'utf8'))
+  expect(descriptor.client).toMatchObject({
+    id: 'judgment',
+    lifetime: 'profile',
+    services: ['judgment.status'],
+    requiresBackendRows: ['ext:agnes.judgment/main'],
+    slots: [],
+  })
+  const loaded = await import(/* @vite-ignore */ new URL('index.mjs', payload).href)
+  expect(loaded.judgmentPlugin.inject).toEqual(row.inject)
+  expect(loaded.CONFIG_SCHEMA).toEqual(row.configSchema)
+})
+it('builds atomically and refreshes missing or stale payloads without rewriting a fresh one', async () => {
+  const temporary = mkdtempSync(join(tmpdir(), 'agnes-judgment-payload-'))
+  const root = join(temporary, 'renamed-payload')
+  mkdirSync(root)
+  try {
+    cpSync(fileURLToPath(new URL('package.json', payload)), join(root, 'package.json'))
+    await ensureJudgmentPayload(root)
+    expect(readdirSync(temporary)).toEqual(['renamed-payload'])
+    const file = join(root, 'index.mjs'),
+      first = readFileSync(file, 'utf8'),
+      at = statSync(file).mtimeMs
+    await ensureJudgmentPayload(root)
+    expect(statSync(file).mtimeMs).toBe(at)
+    writeFileSync(file, 'stale')
+    utimesSync(file, 0, 0)
+    await ensureJudgmentPayload(root)
+    expect(readFileSync(file, 'utf8')).toBe(first)
+    await buildJudgmentPayload(root)
+    expect(readdirSync(root).sort()).toEqual([
+      'NOTICE',
+      'client-build.json',
+      'index.mjs',
+      'package.json',
+      'src',
+    ])
+    const browser = join(root, 'src', 'client.js')
+    const before = statSync(file).mtimeMs
+    const originalBrowser = readFileSync(browser, 'utf8')
+    for (const name of ['src/client.js', 'NOTICE', 'client-build.json', 'src/agnes.client.json']) {
+      const artifact = join(root, name)
+      const original = readFileSync(artifact, 'utf8')
+      writeFileSync(artifact, 'corrupt')
+      await ensureJudgmentPayload(root)
+      expect(readFileSync(artifact, 'utf8')).toBe(original)
+      expect(readFileSync(browser, 'utf8')).toBe(originalBrowser)
+      expect(statSync(file).mtimeMs).toBe(before)
+      expect(readdirSync(temporary)).toEqual(['renamed-payload'])
+    }
+    // Only module statements count: the bundled protocol schemas carry `"from"` property keys, which
+    // are text in the bundle, not imports. Every statement that does load a module must be a Node
+    // builtin or the host-provided extension API.
+    const imports = [...first.matchAll(/^(?:import|export)\b[^;'"]*?["']([^"']+)["']/gm)].map(
+      (match) => match[1]!,
+    )
+    expect(imports).toContain('@agnes/extension-api')
+    for (const specifier of imports)
+      expect(specifier.startsWith('node:') || specifier === '@agnes/extension-api', specifier).toBe(true)
+  } finally {
+    rmSync(temporary, { recursive: true, force: true })
+  }
+})

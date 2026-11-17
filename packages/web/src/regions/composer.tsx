@@ -24,6 +24,7 @@ import { loadHeadsUp } from '../heads-up.js'
 import { HeadsUpNote } from '../heads-up-view.js'
 import { ModelPickerControl } from '../model-picker.js'
 import { SessionChannelControl } from '../pages/channel-session-control.js'
+import { selectedRemoteOrigin } from '../remote-frontend.js'
 import { loadReplySuggestion } from '../reply-suggestion.js'
 import { VoiceComposerButtons } from '../voice/composer-buttons.js'
 import { ApplicationComposerContext, ApplicationWorkActions } from '../workbench/application-actions.js'
@@ -145,7 +146,7 @@ export function mountComposerRegion(
         <SlotOutlet
           name="conversation.input.model.catalog"
           props={{
-            owner: { draft: !registry.sessionId },
+            owner: { draft: !registry.sessionId, remote: Boolean(selectedRemoteOrigin()) },
             value: props.state,
             actions: {
               select: props.onSelect,

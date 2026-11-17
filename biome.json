@@ -64,6 +64,16 @@
       }
     },
     {
+      "includes": ["packages/superagent-ui/src/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noArrayIndexKey": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["packages/web/public/style.css"],
       "linter": {
         "rules": {

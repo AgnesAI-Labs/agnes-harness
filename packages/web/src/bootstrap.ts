@@ -17,7 +17,8 @@ if (
   if (!root) throw new Error('missing #app-root')
   mountApplication(root, createElement(ConnectionPage))
 } else {
-  if (backendFrame()) document.body.dataset.aghBackendFrame = 'true'
+  if (backendFrame()) document.body.dataset.aghBackendFrame = backendFrame()?.remote ? 'cloud' : 'local'
+
   try {
     const { prepareRemoteFrontend } = await import('./remote-frontend.js')
     await prepareRemoteFrontend()

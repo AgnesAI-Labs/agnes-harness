@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
-import { jcs, jcsChunks, jcsWrite } from '../src/jcs.js'
+import { configurationRevision, jcs, jcsChunks, jcsWrite } from '../src/jcs.js'
+import { sha256Hex } from '../src/sha256.js'
 
 it('sorts raw UTF-16 keys recursively and preserves array order and Unicode', () => {
   const value = { '\ufb33': 1, '😀': 2, z: [{ b: 1, a: 2 }], '10': 10, '2': 2, a: 'e\u0301' }
@@ -176,4 +177,16 @@ it('serializes and refuses exactly as the bounded encoder does, and its chunks a
     expect(candidate(value)).toBeInstanceOf(Error)
     expect(reference(value)).toBeInstanceOf(Error)
   }
+})
+it('derives a configuration revision from the canonical form only', () => {
+  const stored = { instances: [{ id: 'bot', config: { b: 1, a: [2, 1] } }] }
+  const read = JSON.parse('{"instances":[{"config":{"a":[2,1],"b":1},"id":"bot"}]}')
+  expect(configurationRevision(read)).toBe(configurationRevision(stored))
+  expect(configurationRevision(stored)).toBe(
+    sha256Hex('{"instances":[{"config":{"a":[2,1],"b":1},"id":"bot"}]}'),
+  )
+  expect(configurationRevision(stored)).toMatch(/^[a-f0-9]{64}$/)
+  expect(configurationRevision({ instances: [{ id: 'bot', config: { b: 1, a: [1, 2] } }] })).not.toBe(
+    configurationRevision(stored),
+  )
 })

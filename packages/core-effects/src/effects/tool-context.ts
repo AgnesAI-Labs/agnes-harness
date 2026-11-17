@@ -192,6 +192,8 @@ export function buildToolContext(
   call: {
     toolUseId: string
     name: string
+    /** Host-granted port fitted before binding; only invoke starts an effect. */
+    sideCall?: ToolContext['sideCall']
     signal: AbortSignal
     timeoutMs: number
     defaultTimeoutMs?: number
@@ -574,6 +576,7 @@ export function buildToolContext(
     log: d.log,
   }
   return effects.bind({
+    ...(call.sideCall ? { sideCall: effects.guard(call.sideCall, ['invoke']) } : {}),
     ...effects.guard(context, ['exec', 'requestCompaction']),
     fs: {
       read: (path, options) => files.read(path, options),

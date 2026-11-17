@@ -2,7 +2,7 @@ import { defaultLoop, defaultModelAdapter } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import type { StartedSession } from '@agnes/web-admin/agents'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
-import { factChainLinks } from '@agnes/web-client'
+import { factChainLinks, reserveOwnerOnly } from '@agnes/web-client'
 import {
   appServerErrorMessage,
   bindDialogSheets,
@@ -122,10 +122,12 @@ import {
   rewriteMovedSettingsLink,
 } from './settings-redirects.js'
 import { createSidebarPagination } from './sidebar-pagination.js'
+import { openStartupAnchors } from './startup-anchors.js'
 import { readTraceFactChain } from './trace-facts.js'
 import type { RunReceipt, WebView } from './view.js'
 import { unmountWorkbench } from './workbench/dock.js'
 import { requestWorkspacePicker } from './workspace-picker.js'
+import { createWorkspaceSync } from './workspace-sync.js'
 
 installBrowserLogCapture()
 const { hosts, config: shellConfig, dispose: unmountAppShell } = mountAppShell()
@@ -683,6 +685,9 @@ onPageHide(
     (action, id, title, trigger) => void sessionActions.act(action, id, title, trigger),
   ),
 )
+// Before plugins load, retain develop's owner-only method reservation.
+const ownerCall = reserveOwnerOnly(client)
+
 onPageHide(
   bindJobsClient({
     client,
@@ -744,7 +749,7 @@ const claimSlotCard: ClaimResolver = (entry, extId) =>
   entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
 const references = composerReferences(prepareComposerSession, renderControls)
 // Reserve host entries before installed modules can register their reviewed declarations.
-const removeHomeEntries = registerBuiltinHomeEntries()
+const removeHomeEntries = registerBuiltinHomeEntries(ownerCall)
 homeEntries.subscribe(openApplicationHome)
 const clientModules = await startClientModules({
   agnes: client,
@@ -1259,6 +1264,12 @@ let sessionRows: PageSessionMeta['items'] = []
 let workspaceRows: WorkspaceEntry[] = []
 // The search panel's footer total follows the sidebar snapshot; the panel itself never reads pages.
 let refreshSearchTotal: (() => void) | undefined
+// A group can name a workspace another client registered after this page read the list.
+const workspaceSync = createWorkspaceSync({
+  known: () => (workspaceController.loaded ? workspaceRows : undefined),
+  read: () => client.workspace.list(),
+  apply: (page) => workspaceController.apply(page),
+})
 const sidebarPages = createSidebarPagination(
   client.session,
   () => {
@@ -1268,6 +1279,7 @@ const sidebarPages = createSidebarPagination(
       sessionRows.push(selected)
     updateSidebar()
     refreshSearchTotal?.()
+    void workspaceSync.reconcile(sidebarPages.snapshot().groups)
   },
   (error) => {
     const failure = error as { code?: number; data?: { code?: string }; message?: string }
@@ -2493,21 +2505,8 @@ const startup = backendFrameStartup(async () => {
   const modelSelection = sessionBinding.capture()
   await awaitModels()
   if (!sessionBinding.isCurrent(modelSelection)) return
-  const factCandidate = startupRequest.get('factCandidate')
-  if (
-    selected &&
-    sessionBinding.session?.id === selected &&
-    factCandidate &&
-    /^candidate-[a-f0-9]{32}$/.test(factCandidate)
-  ) {
-    requestAnimationFrame(() =>
-      factChainLinks.open({
-        sessionId: selected,
-        laneId: 'main',
-        anchor: { kind: 'authoring', candidateId: factCandidate },
-      }),
-    )
-  }
+  const anchored = sessionBinding.session?.id === selected ? selected : undefined
+  openStartupAnchors(startupRequest, anchored, ownerCall)
   const shown = await firstRun.initialize(
     snapshot,
     !empty || Boolean(startupSection || startupTerminal || startupMoved || homeNavigation.getSnapshot()),

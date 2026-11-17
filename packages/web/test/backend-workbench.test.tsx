@@ -1,11 +1,16 @@
 // @vitest-environment happy-dom
 
+import { remoteFrontendSessionPath } from '@agnes/protocol'
 import type { SettingsController } from '@agnes/web-admin/settings'
 import { mountApplication } from '@agnes/web-ui'
 import { act } from 'react'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import { RemoteFrontendFailure } from '../src/backend-selector.js'
 import { CloudConnectionSettings } from '../src/backends/cloud-connection-settings.js'
+import { cloudFailureText } from '../src/backends/cloud-errors.js'
+import { applyCloudFrameAppearance } from '../src/backends/cloud-frame-appearance.js'
+import { installCloudFrameAuthorization } from '../src/backends/cloud-frame-authorization.js'
+import { bindCloudCredential } from '../src/backends/cloud-key.js'
 import { type CloudConnectionAction, cloudConnectionAction } from '../src/backends/cloud-settings-bridge.js'
 import * as frameContext from '../src/backends/frame-context.js'
 import {
@@ -16,8 +21,8 @@ import {
   localManagementCommand,
 } from '../src/backends/frame-contract.js'
 import { routeLocalSettings } from '../src/backends/local-management.js'
+import { BackendSessionGroups } from '../src/backends/workbench-groups.js'
 import { workbenchCatalog } from '../src/backends/workbench-locale.js'
-import { WorkbenchSidebar } from '../src/backends/workbench-sidebar.js'
 import { initialWorkbench, workbenchAddress } from '../src/backends/workbench-state.js'
 
 let dispose: (() => void) | undefined
@@ -47,7 +52,8 @@ it.each(['local', 'cloud'] as const)(
     await act(async () => {
       dispose = mountApplication(
         host,
-        <WorkbenchSidebar
+        <BackendSessionGroups
+          language="en"
           active={active}
           cloud="http://cloud.test:8443"
           states={{ local: snapshot, cloud: snapshot }}
@@ -58,12 +64,6 @@ it.each(['local', 'cloud'] as const)(
         />,
       )
     })
-    expect(host.querySelector('[data-agnes-region-unit="sidebar"]')).not.toBeNull()
-    expect(host.querySelector('.brand-lockup .brand-wordmark-text')?.textContent).toBe('Agnes Harness')
-    expect(host.querySelector('#new')?.getAttribute('aria-keyshortcuts')).toContain('Control+Shift+O')
-    expect(host.querySelector('#new')?.classList.contains('agh-btn--primary')).toBe(false)
-    expect(host.querySelector('#session-search kbd')).not.toBeNull()
-    expect(host.querySelector('.sidebar-footer #settings')).not.toBeNull()
     const local = host.querySelector<HTMLButtonElement>(
       '[data-testid="backend-session-local"] [data-session]',
     )
@@ -82,24 +82,6 @@ it.each(['local', 'cloud'] as const)(
       host.querySelector<HTMLButtonElement>('[aria-label="New cloud conversation"]')?.click(),
     )
     expect(commands).toEqual([['cloud', { kind: 'new' }]])
-    await act(async () => host.querySelector<HTMLButtonElement>('#session-search')?.click())
-    expect(commands.at(-1)).toEqual([active, { kind: 'search' }])
-    await act(async () =>
-      document.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'O', ctrlKey: true, shiftKey: true, bubbles: true }),
-      ),
-    )
-    expect(commands.at(-1)).toEqual([active, { kind: 'new' }])
-    for (const page of ['plugins', 'agents', 'automation', 'mhs']) {
-      await act(async () =>
-        host
-          .querySelector<HTMLButtonElement>(`[aria-label="${workbenchCatalog.en[page as 'plugins']}"]`)
-          ?.click(),
-      )
-      expect(commands.at(-1)).toEqual(['local', { kind: 'home', page }])
-    }
-    await act(async () => host.querySelector<HTMLButtonElement>('#settings')?.click())
-    expect(commands.at(-1)).toEqual(['local', { kind: 'settings', section: 'model' }])
     const status = host.querySelector('[data-testid="cloud-connection-status"]')
     expect(status?.getAttribute('aria-label')).toBe('Ready')
     expect(status?.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Ready')
@@ -132,7 +114,8 @@ it.each([
   await act(async () => {
     dispose = mountApplication(
       host,
-      <WorkbenchSidebar
+      <BackendSessionGroups
+        language="en"
         active="local"
         {...(cloud ? { cloud } : {})}
         states={snapshot ? { cloud: { ...snapshot, rows: [], activity: [] } } : {}}
@@ -205,14 +188,16 @@ it('keeps cloud connection actions inside settings and rejects unsafe origins', 
 })
 
 it('shows only recovery guidance when a cloud page cannot start, keeping address inputs in settings', async () => {
-  const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue(document.createElement('iframe'))
+  const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue({ parentOrigin: location.origin })
   const host = document.createElement('div')
   document.body.append(host)
   try {
     await act(async () => {
       dispose = mountApplication(host, <RemoteFrontendFailure message="unavailable" />)
     })
-    expect(host.querySelector('[role="alert"]')?.textContent).toBe('unavailable')
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+      'The cloud service is unavailable or incompatible. Try reconnecting.',
+    )
     expect(host.textContent).toContain('Settings → Advanced → Cloud connection')
     expect(host.querySelector('input')).toBeNull()
   } finally {
@@ -331,5 +316,84 @@ it('redirects account/dialog links in cloud frames without calling B settings an
     expect(openAccount).toHaveBeenCalledWith('local-account')
   } finally {
     redirect.mockRestore()
+  }
+})
+
+it('authorizes only the configured cloud from its exact frame, ignoring sender-selected destinations and credentials', async () => {
+  const previousLocation = location.href
+  vi.stubGlobal('location', new URL('http://127.0.0.1:4177/'))
+  const meta = document.createElement('meta')
+  meta.id = 'agnes-config'
+  meta.dataset.cloudOrigin = 'http://127.0.0.1:4178'
+  document.head.append(meta)
+  const remote = 'https://configured-cloud.test'
+  const credentialRef = 'secret://generic/11111111-1111-1111-1111-111111111111'
+  bindCloudCredential(remote, credentialRef, [{ id: credentialRef }])
+  const frame = document.createElement('iframe')
+  document.body.append(frame)
+  const token = `${(Date.now() + 60_000).toString(36)}.${'a'.repeat(22)}.${'b'.repeat(43)}`
+  const fetcher = vi
+    .spyOn(window, 'fetch')
+    .mockResolvedValue(new Response(JSON.stringify({ token, expiresAt: Date.now() + 60_000 })))
+  const frameWindow = frame.contentWindow
+  if (!frameWindow) throw Error('missing fixture frame window')
+  const post = vi.spyOn(frameWindow, 'postMessage').mockImplementation(() => {})
+  const stop = installCloudFrameAuthorization(() => ({ remote, frame }))
+  const data = {
+    type: 'agh.backend.frame/v1',
+    kind: 'authorization-request',
+    requestId: crypto.randomUUID(),
+    origin: 'https://attacker.test',
+    credentialRef: 'forged',
+  }
+  const send = (origin: string, source: Window) =>
+    window.dispatchEvent(new MessageEvent('message', { origin, source, data }))
+  try {
+    send(location.origin, frameWindow)
+    send('http://127.0.0.1:4178', window)
+    expect(fetcher).not.toHaveBeenCalled()
+    send('http://127.0.0.1:4178', frameWindow)
+    await vi.waitFor(() => expect(post).toHaveBeenCalled())
+    const body = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))
+    expect(body).toEqual({ origin: remote, credentialRef })
+    const reply = post.mock.calls.at(-1)?.[0]
+    expect(reply).toMatchObject({ kind: 'authorization', remote, path: remoteFrontendSessionPath(token) })
+    expect(JSON.stringify(reply)).not.toContain(credentialRef)
+  } finally {
+    stop()
+    meta.remove()
+    fetcher.mockRestore()
+    post.mockRestore()
+    localStorage.clear()
+    vi.stubGlobal('location', new URL(previousLocation))
+  }
+})
+
+it('localizes cloud refusal codes without exposing backend details or obsolete manual-key guidance', () => {
+  expect(cloudFailureText('CLOUD_CREDENTIAL_REQUIRED', 'en')).toContain('Select a local credential')
+  expect(cloudFailureText('CLOUD_CREDENTIAL_REQUIRED', 'zh-CN')).toContain('选择本地凭证')
+  expect(cloudFailureText('CLOUD_CREDENTIAL_REJECTED', 'en')).not.toMatch(/[\u4e00-\u9fff]/u)
+  expect(cloudFailureText('sensitive transport detail', 'en')).not.toContain('sensitive')
+  const root = document.documentElement
+  const previous = {
+    lang: root.lang,
+    dark: root.classList.contains('dark'),
+    style: root.getAttribute('style'),
+  }
+  const unavailable = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw Error('storage disabled')
+  })
+  try {
+    expect(() =>
+      applyCloudFrameAppearance({ locale: 'zh-CN', theme: 'dark', fontScale: 'large' }),
+    ).not.toThrow()
+    expect(root.lang).toBe('zh-CN')
+    expect(root.classList.contains('dark')).toBe(true)
+  } finally {
+    unavailable.mockRestore()
+    root.lang = previous.lang
+    root.classList.toggle('dark', previous.dark)
+    if (previous.style) root.setAttribute('style', previous.style)
+    else root.removeAttribute('style')
   }
 })

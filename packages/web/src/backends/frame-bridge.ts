@@ -11,6 +11,7 @@ import {
   type BackendSnapshot,
   backendCommand,
 } from './frame-contract.js'
+import { publishSidebarLayout } from './sidebar-projection.js'
 
 export function backendFrameStartup(op: () => Promise<void>): () => Promise<void> {
   return async () => {
@@ -28,7 +29,8 @@ export function installBackendFrameBridge(
   label?: (id: string) => string | undefined,
   sessionAction?: (action: BackendSessionAction, id: string, title: string, trigger: HTMLElement) => void,
 ): () => void {
-  if (!backendFrame()) return () => {}
+  const context = backendFrame()
+  if (!context) return () => {}
   let disposed = false
   let ready = false
   let reading = false
@@ -39,7 +41,8 @@ export function installBackendFrameBridge(
   const publish = (snapshot: BackendSnapshot) => {
     if (disposed) return
     last = snapshot
-    window.parent.postMessage({ type: BACKEND_FRAME_MESSAGE, kind: 'state', snapshot }, location.origin)
+    publishSidebarLayout()
+    window.parent.postMessage({ type: BACKEND_FRAME_MESSAGE, kind: 'state', snapshot }, context.parentOrigin)
   }
   const refresh = async () => {
     if (disposed || reading || !ready) return
@@ -137,11 +140,11 @@ export function installBackendFrameBridge(
     }
     window.parent.postMessage(
       { type: BACKEND_FRAME_MESSAGE, kind: 'ack', commandId: entry.commandId },
-      location.origin,
+      context.parentOrigin,
     )
   }
   const receive = (event: MessageEvent) => {
-    if (event.source !== window.parent || event.origin !== location.origin) return
+    if (event.source !== window.parent || event.origin !== backendFrame()?.parentOrigin) return
     const command = backendCommand(event.data)
     if (command && typeof event.data.commandId === 'string' && event.data.commandId.length <= 128)
       accept({ command, commandId: event.data.commandId })
@@ -149,6 +152,11 @@ export function installBackendFrameBridge(
   window.addEventListener('message', receive)
   const homeOff = homeNavigation.subscribe(() => {
     const page = homeNavigation.getSnapshot()?.id
+    if (page && !context.remote)
+      window.parent.postMessage(
+        { type: BACKEND_FRAME_MESSAGE, kind: 'local-navigation' },
+        context.parentOrigin,
+      )
     if (
       page &&
       ['plugins', 'agents', 'automation', 'mhs'].includes(page) &&
@@ -160,6 +168,11 @@ export function installBackendFrameBridge(
       homeNavigation.close()
   })
   const localSettings = (event: Event) => {
+    if (!context.remote)
+      window.parent.postMessage(
+        { type: BACKEND_FRAME_MESSAGE, kind: 'local-navigation' },
+        context.parentOrigin,
+      )
     const section = (event as CustomEvent<{ section?: unknown }>).detail?.section
     if (
       typeof section !== 'string' ||
@@ -192,11 +205,20 @@ export function installBackendFrameBridge(
   const historyOff = onHistoryNavigation(() => {
     void refresh()
   })
+  const layoutObserver = new ResizeObserver(publishSidebarLayout)
+  const sidebar = document.querySelector('.sidebar')
+  if (sidebar) layoutObserver.observe(sidebar)
+  const layoutChanges = new MutationObserver(publishSidebarLayout)
+  layoutChanges.observe(document.body, { attributes: true, attributeFilter: ['class'] })
+  window.addEventListener('resize', publishSidebarLayout)
   const timer = setInterval(() => {
     void refresh()
   }, 2000)
   return () => {
     disposed = true
+    layoutObserver.disconnect()
+    layoutChanges.disconnect()
+    window.removeEventListener('resize', publishSidebarLayout)
     clearInterval(timer)
     queued = undefined
     window.removeEventListener('message', receive)

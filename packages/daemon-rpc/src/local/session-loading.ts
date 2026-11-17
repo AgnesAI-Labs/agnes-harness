@@ -4,6 +4,7 @@ import { notify } from '@agnes/daemon-foundation/rpc'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
 import { waitForHistoryOpen } from './history-open.js'
 import type { Feed, LocalContext } from './methods/acp.js'
+import { admitSessionEnvironment } from './methods/session-environment.js'
 import type { SessionEntry } from './sessions.js'
 
 /** ACP replay and window-based clients share exactly one execution admission path. */
@@ -35,6 +36,13 @@ export function registerSessionLoading(
         requestId?: string
       }
       const method = replay ? 'session/load' : 'session.open'
+      const meta = (params as { _meta?: Record<string, Record<string, unknown> | undefined> })._meta
+      const environment = admitSessionEnvironment(
+        meta?.['ai.agnes.harness']?.environment,
+        call.conn,
+        cx.sessionEnvironment,
+        p.sessionId,
+      )
       let recoverScheduledOwner = false
       try {
         requireOwner(method, p.sessionId)
@@ -60,6 +68,15 @@ export function registerSessionLoading(
       loading.set(p.sessionId, pending)
       try {
         signal.throwIfAborted()
+        // Only for a session the caller owns already; a live session reads it from its next command on.
+        if (environment) {
+          if (recoverScheduledOwner)
+            throw rpcError('CAPABILITY_DENIED', {
+              code: 'SESSION_ENVIRONMENT_DENIED',
+              reason: 'session owner unavailable',
+            })
+          await cx.sessionEnvironment?.write(p.sessionId, environment)
+        }
         let entry = cx.registry.get(p.sessionId)
         const wasOpen = entry !== undefined
         try {

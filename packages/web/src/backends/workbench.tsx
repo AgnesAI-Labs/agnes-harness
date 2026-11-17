@@ -1,5 +1,6 @@
 import { remoteFrontendOrigin } from '@agnes/protocol'
 import { CredentialsApi } from '@agnes/resource-control-web/credentials-api'
+import { applyDocumentLocale, readLocalePreference } from '@agnes/web-foundation/locale-preference'
 import {
   applyFontScale,
   applyTheme,
@@ -9,22 +10,23 @@ import {
   safeThemeStorage,
 } from '@agnes/web-foundation/theme'
 import { Button, Icon, mountApplication, useDocumentLanguage } from '@agnes/web-ui'
-import type { SidebarHandle } from '@agnes/web-units/shell'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { installCloudFrameAuthorization } from './cloud-frame-authorization.js'
 import { bindCloudCredential, readCloudCredentialRef } from './cloud-key.js'
 import { CLOUD_SETTINGS_SECTION, cloudConnectionAction } from './cloud-settings-bridge.js'
+import { cloudFrameOrigin } from './frame-context.js'
 import {
   BACKEND_FRAME_COMMAND,
   BACKEND_FRAME_MESSAGE,
   type BackendCommand,
   type BackendId,
   type BackendSnapshot,
+  backendCommand,
   backendSnapshot,
   commandBackend,
   localManagementCommand,
 } from './frame-contract.js'
 import { workbenchCatalog } from './workbench-locale.js'
-import { WorkbenchSidebar } from './workbench-sidebar.js'
 import {
   backendFrameSource,
   CLOUD_ORIGIN_KEY,
@@ -34,12 +36,12 @@ import {
 } from './workbench-state.js'
 
 function initialFrameSource(remote: string | undefined, selected: boolean, search: string): string {
-  const url = new URL(backendFrameSource(remote), location.origin)
+  const url = new URL(backendFrameSource(remote), remote ? cloudFrameOrigin() : location.origin)
   if (selected)
     for (const [key, value] of new URLSearchParams(search)) {
       if (key !== 'remote' && key !== 'connection') url.searchParams.append(key, value)
     }
-  return `${url.pathname}${url.search}`
+  return remote ? url.href : `${url.pathname}${url.search}`
 }
 
 function BackendWorkbench() {
@@ -56,7 +58,8 @@ function BackendWorkbench() {
   const connectionRevision = useRef(0)
   const [states, setStates] = useState<Partial<Record<BackendId, BackendSnapshot>>>({})
   const [revisions, setRevisions] = useState({ local: 0, cloud: 0 })
-  const sidebar = useRef<SidebarHandle>(null)
+  const [sidebarRight, setSidebarRight] = useState(0)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const language = useDocumentLanguage()
   const catalog = workbenchCatalog[language === 'zh-CN' ? 'zh-CN' : 'en']
   const t = useCallback((key: keyof typeof catalog) => catalog[key], [catalog])
@@ -83,6 +86,11 @@ function BackendWorkbench() {
   const intent = useRef<Partial<Record<BackendId, string>>>({})
   const latest = useRef({ active, cloud, states, configure })
   latest.current = { active, cloud, states, configure }
+  useEffect(
+    () =>
+      installCloudFrameAuthorization(() => ({ remote: latest.current.cloud, frame: frames.current.cloud })),
+    [],
+  )
   const initialSearch = useRef(location.search)
   const setAddress = useCallback((backend: BackendId, sessionId?: string) => {
     const href = workbenchAddress(backend, latest.current.cloud, sessionId)
@@ -99,7 +107,8 @@ function BackendWorkbench() {
         setActive(backend)
         latest.current.active = backend
         setConfigure(false)
-        sidebar.current?.close()
+        if (window.matchMedia('(max-width: 900px)').matches)
+          frames.current.local?.contentDocument?.getElementById('sidebar-close')?.click()
       }
       if (command.kind === 'session' || command.kind === 'new') {
         intent.current[backend] = command.kind === 'new' ? '' : command.sessionId
@@ -111,7 +120,7 @@ function BackendWorkbench() {
       if (frame?.contentWindow && latest.current.states[backend]?.ready)
         frame.contentWindow.postMessage(
           { type: BACKEND_FRAME_COMMAND, ...command, commandId: entry.commandId },
-          location.origin,
+          new URL(frame.src, location.origin).origin,
         )
     },
     [setAddress],
@@ -125,7 +134,8 @@ function BackendWorkbench() {
       setActive(backend)
       latest.current.active = backend
       setConfigure(false)
-      sidebar.current?.close()
+      if (window.matchMedia('(max-width: 900px)').matches)
+        frames.current.local?.contentDocument?.getElementById('sidebar-close')?.click()
       setAddress(backend, latest.current.states[backend]?.selected)
     },
     [send, setAddress],
@@ -196,22 +206,40 @@ function BackendWorkbench() {
   }, [select])
   useEffect(() => {
     const receive = (event: MessageEvent) => {
-      if (event.origin !== location.origin) return
       const backend = (['local', 'cloud'] as const).find(
         (id) => frames.current[id]?.contentWindow === event.source,
       )
       if (
         !backend ||
+        event.origin !== new URL(frames.current[backend]?.src ?? '/', location.origin).origin ||
         (backend === 'cloud' && frames.current.cloud?.dataset.backendOrigin !== latest.current.cloud)
       )
         return
+      if (backend === 'local' && event.data?.type === BACKEND_FRAME_MESSAGE) {
+        if (event.data.kind === 'sidebar-layout') {
+          if (Number.isFinite(event.data.right))
+            setSidebarRight(Math.min(window.innerWidth, Math.max(0, event.data.right)))
+          setSidebarOpen(event.data.open === true)
+          return
+        }
+        if (event.data.kind === 'sidebar-command') {
+          const command = backendCommand(event.data.command)
+          if (command && ['local', 'cloud'].includes(event.data.backend)) send(event.data.backend, command)
+          return
+        }
+        if (event.data.kind === 'local-navigation') {
+          setActive('local')
+          latest.current.active = 'local'
+          return
+        }
+      }
       const management = localManagementCommand(event.data)
       if (management) {
         send('local', management)
         return
       }
       const action = cloudConnectionAction(event.data)
-      if (action) {
+      if (action && backend === 'local') {
         if (action.action === 'connect') connect(action.origin, false, action.credentialRef)
         else if (action.action === 'disconnect') disconnect()
         else if (action.action === 'refresh-credentials') loadCredentials()
@@ -228,7 +256,7 @@ function BackendWorkbench() {
         if (snapshot.ready && command) {
           frames.current[backend]?.contentWindow?.postMessage(
             { type: BACKEND_FRAME_COMMAND, ...command.command, commandId: command.commandId },
-            location.origin,
+            new URL(frames.current[backend]?.src ?? '/', location.origin).origin,
           )
         }
         const desired = intent.current[backend]
@@ -259,7 +287,11 @@ function BackendWorkbench() {
             error: event.data.message.slice(0, 4096),
           },
         }))
-      } else if (event.data?.type === BACKEND_FRAME_MESSAGE && event.data.kind === 'environment') {
+      } else if (
+        backend === 'local' &&
+        event.data?.type === BACKEND_FRAME_MESSAGE &&
+        event.data.kind === 'environment'
+      ) {
         if (typeof event.data.remote === 'string') connect(event.data.remote)
         else select('local')
       }
@@ -275,7 +307,7 @@ function BackendWorkbench() {
       credentialError,
       ...(configurationError ? { error: configurationError } : {}),
     }
-    for (const frame of Object.values(frames.current))
+    for (const frame of [frames.current.local].filter((frame): frame is HTMLIFrameElement => !!frame))
       frame.contentWindow?.postMessage(
         { type: BACKEND_FRAME_MESSAGE, kind: 'cloud-state', state },
         location.origin,
@@ -287,67 +319,71 @@ function BackendWorkbench() {
   useEffect(() => {
     if (cloud) safeThemeStorage().setItem(CLOUD_ORIGIN_KEY, cloud)
   }, [cloud])
-  const activeTitle =
-    active === 'local' ? t('localShort') : `${t('cloudShort')} · ${cloud ? new URL(cloud).host : ''}`
+  useEffect(() => {
+    frames.current.local?.contentWindow?.postMessage(
+      {
+        type: BACKEND_FRAME_MESSAGE,
+        kind: 'sidebar-projection',
+        projection: { active, ...(cloud ? { cloud } : {}), states },
+      },
+      location.origin,
+    )
+  }, [active, cloud, states])
+  useEffect(() => {
+    if (cloud) frames.current.cloud?.toggleAttribute('inert', sidebarOpen)
+  }, [sidebarOpen, cloud])
+  const stage = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    stage.current?.style.setProperty('--backend-sidebar-right', `${sidebarRight}px`)
+  }, [sidebarRight])
   return (
-    <>
-      <Button id="sidebar-backdrop" className="sidebar-backdrop" aria-label={t('menu')} />
-      <WorkbenchSidebar
-        ref={sidebar}
-        active={active}
-        {...(cloud ? { cloud } : {})}
-        states={states}
-        t={t}
-        select={select}
-        command={send}
-        configure={() => {
-          setConfigure(true)
-          sidebar.current?.close()
-        }}
-      />
-      <main className="backend-workbench-main">
-        <header className="backend-workbench-toolbar">
-          <Button id="sidebar-toggle" className="sidebar-toggle" appearance="ghost" aria-label={t('menu')}>
-            <Icon name="menu" />
-          </Button>
-          <span role="status" aria-label={t('activeBackend')}>
-            {activeTitle}
-          </span>
-        </header>
-        <div className="backend-workbench-contexts">
-          {(['local', 'cloud'] as const).map((backend) =>
-            backend === 'cloud' && !cloud ? null : (
-              <iframe
-                key={`${backend}:${backend === 'cloud' ? cloud : ''}:${revisions[backend]}`}
-                ref={(node) => {
-                  if (node) frames.current[backend] = node
-                  else delete frames.current[backend]
-                }}
-                title={t(backend)}
-                className="backend-workbench-frame"
-                data-agh-backend-frame="1"
-                data-backend-origin={backend === 'cloud' ? cloud : ''}
-                data-testid={`backend-frame-${backend}`}
-                hidden={active !== backend}
-                src={initialFrameSource(
-                  backend === 'cloud' ? cloud : undefined,
-                  initial.active === backend && (backend === 'local' || cloud === initial.remote),
-                  initialSearch.current,
-                )}
-              />
-            ),
-          )}
-        </div>
-      </main>
-    </>
+    <main ref={stage} className="backend-workbench-stage">
+      {active === 'cloud' && !sidebarOpen && (
+        <Button
+          className="backend-cloud-menu"
+          appearance="ghost"
+          aria-label={t('menu')}
+          onClick={() => frames.current.local?.contentDocument?.getElementById('sidebar-toggle')?.click()}
+        >
+          <Icon name="menu" />
+        </Button>
+      )}
+      {(['local', 'cloud'] as const).map((backend) =>
+        backend === 'cloud' && !cloud ? null : (
+          <iframe
+            key={`${backend}:${backend === 'cloud' ? cloud : ''}:${revisions[backend]}`}
+            ref={(node) => {
+              if (node) frames.current[backend] = node
+              else delete frames.current[backend]
+            }}
+            title={t(backend)}
+            className="backend-workbench-frame"
+            data-agh-backend-frame="1"
+            data-backend-origin={backend === 'cloud' ? cloud : ''}
+            data-testid={`backend-frame-${backend}`}
+            sandbox={
+              backend === 'cloud'
+                ? 'allow-scripts allow-same-origin allow-forms allow-downloads allow-popups'
+                : undefined
+            }
+            hidden={backend === 'cloud' && (active !== 'cloud' || sidebarOpen)}
+            src={initialFrameSource(
+              backend === 'cloud' ? cloud : undefined,
+              initial.active === backend && (backend === 'local' || cloud === initial.remote),
+              initialSearch.current,
+            )}
+          />
+        ),
+      )}
+    </main>
   )
 }
 
 export function mountBackendWorkbench(): void {
+  document.body.dataset.aghBackendWorkbench = 'true'
   const storage = safeThemeStorage()
   const sync = () => {
-    document.documentElement.lang =
-      storage.getItem('agnes-locale') ?? (navigator.language.startsWith('zh') ? 'zh-CN' : 'en')
+    applyDocumentLocale(document.documentElement, readLocalePreference(storage))
     applyTheme(
       document.documentElement,
       resolveTheme(readThemePreference(storage), matchMedia('(prefers-color-scheme: dark)').matches),

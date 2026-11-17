@@ -50,6 +50,7 @@ import { type ChangeResult, type ContainerHandle, changeResult, sessionBindingOf
 import { type GenerationFailure, generationError, generationFailure } from './failure.js'
 import { assertMigrationSettled } from './migration-state.js'
 import { createOpenedSessionsRelay } from './opened-sessions.js'
+import { generationGrants, sameCodeAuthorityChanged } from './packages.js'
 import { GenerationReuseMode, openGenerationStore, trackRunningGenerations } from './process-liveness.js'
 import { createGenerationSkills, restoreGenerationRows } from './resources.js'
 import { describeColdSession, describeHostSession, readGenerationStatusAsync } from './runtime-descriptor.js'
@@ -105,6 +106,12 @@ export async function createRuntimeGenerationHost(
   })
   const developmentDirectories = new Map(options.developmentPluginDirectories)
   const basePackages = new Set<string>()
+  const onGenerationBasePackages = (ids: readonly string[]) => {
+    for (const id of ids) basePackages.add(id)
+    options.onGenerationBasePackages?.(ids)
+  }
+  // Optional host grants follow the generations each container serves, including in-place ones.
+  const grants = generationGrants(profile, live)
   const failures = new Map<string, GenerationFailure>()
   const failedSnapshots = new Map<string, PluginGenerationSnapshot>()
   const pendingRestart = new Set<string>()
@@ -118,11 +125,9 @@ export async function createRuntimeGenerationHost(
       ...(authoring.pluginManage ? { pluginManage: authoring.pluginManage } : {}),
       profileAuthorityPublication: 'retained',
       runtimePluginSources: runtimeSources,
+      generationPackage: grants.boot(profile.packages, () => initial),
       ...(options.skillResources ? { skillResources: initialSkills.input } : {}),
-      onGenerationBasePackages: (ids) => {
-        for (const id of ids) basePackages.add(id)
-        options.onGenerationBasePackages?.(ids)
-      },
+      onGenerationBasePackages,
       onGenerationSessionBinding: (key) => initialBinding?.(key),
       sessionGeneration: (key) => store.session(key)?.generationId ?? options.sessionGeneration?.(key),
     }).then(opened.watch)
@@ -178,13 +183,13 @@ export async function createRuntimeGenerationHost(
     // The pointer is a shortcut; the next worker snapshots afresh after a failed write.
     bestEffortSync(options.log, 'generation-head-write', () => store.setHead(headKey, id))
   }
-  const ensureCurrent = async (): Promise<LiveGeneration> => {
+  const ensureCurrent = async (sources?: readonly RuntimePluginSnapshot[]): Promise<LiveGeneration> => {
     if (current) return current
     const target = initial.runtimeTargetSnapshot?.()
     if (!target) throw generationError('E_GENERATION_TARGET_MISSING', 'Host has no runtime snapshot')
     const snapshot = await snapshotTarget(
       target,
-      await sourcesFor(target),
+      sources ?? (await sourcesFor(target)),
       options.skillResources,
       undefined,
       GenerationReuseMode.Head,
@@ -247,35 +252,14 @@ export async function createRuntimeGenerationHost(
     }).target
     const generationSkills = createGenerationSkills(skills)
     const hasSkills = !!skills
-    // A disabled row has no selected snapshot, but its package remains part of the composition
-    // vocabulary. Keep inactive metadata without importing it; old sessions retain their code pin.
-    const packages = profile.packages
-      .filter(
-        (pkg) =>
-          pkg.trust === 'builtin' || !snapshot.sources.some((source) => source.snapshot.packageId === pkg.id),
-      )
-      .map((pkg) => (pkg.trust === 'builtin' ? pkg : { ...pkg, enabled: false }))
-    const packageDirs = new Map(options.packageDirs)
-    for (const source of snapshot.sources) {
-      const previous = profile.packages.find((pkg) => pkg.id === source.snapshot.packageId)
-      packages.push({
-        ...previous,
-        id: source.snapshot.packageId,
-        version: source.snapshot.version,
-        integrity: source.snapshot.integrity,
-        source: previous?.source ?? 'runtime-snapshot',
-        trust: 'trusted',
-        enabled: true,
-      })
-      packageDirs.set(source.snapshot.packageId, source.snapshot.directory)
-    }
+    const assembly = grants.container(snapshot, options.packageDirs)
     const { skillResources: _skills, ...generationOptions } = options
     const binding = { id: snapshot.id }
     const seams = Object.fromEntries(
       plan.seams.map((seam) => [seam.kind, seam.selection]),
     ) as ResolvedProfile['seams']
     const host = await factory(
-      { ...profile, packages, seams },
+      { ...profile, packages: assembly.packages, seams },
       {
         ...generationOptions,
         assemblyCause: { ...generationOptions.assemblyCause, reason: 'generation' },
@@ -283,12 +267,10 @@ export async function createRuntimeGenerationHost(
         profileAuthorityPublication: 'retained',
         generationBuiltinRows: targetRows(target).filter((row) => row.plugin.startsWith('builtin:')),
         ordinaryPluginLayers: pluginWorkspaceLayers(targetRows(target), options.ordinaryPluginLayers),
-        onGenerationBasePackages: (ids) => {
-          for (const id of ids) basePackages.add(id)
-          options.onGenerationBasePackages?.(ids)
-        },
+        onGenerationBasePackages,
         ...(hasSkills ? { skillResources: generationSkills.input } : {}),
-        packageDirs,
+        packageDirs: assembly.packageDirs,
+        generationPackage: assembly.generationPackage,
         runtimePluginSnapshots: snapshot.sources,
         // Target identities still pin imports; an unbound container may receive newer targets.
         runtimePluginSources: runtimeSources,
@@ -299,7 +281,7 @@ export async function createRuntimeGenerationHost(
         },
       },
     )
-    opened.watch(host)
+    opened.watch(assembly.adopt(host))
     try {
       const savedRows = snapshot.resources
         ? await restoreGenerationRows(snapshot.resources, options, rowsByGeneration.get(snapshot.id))
@@ -596,11 +578,15 @@ export async function createRuntimeGenerationHost(
           .filter((row) => !liveResourceRow(row))
           .map(codeRow),
       ) !== JSON.stringify(extensionRows.filter((row) => !liveResourceRow(row)).map(codeRow))
-    if (
+    // Identical rows can still select the same code under a relocated source or changed grant;
+    // that is an authority change, not an unchanged target.
+    const unchangedSources =
       !skills &&
       !extensionCodeChanged &&
       encodeRuntimeTargetArtifact(oldTarget).digest === encodeRuntimeTargetArtifact(target).digest
-    ) {
+        ? await sourcesFor(target)
+        : undefined
+    if (unchangedSources && !sameCodeAuthorityChanged(head.snapshot.sources, unchangedSources)) {
       lastChange = changeResult({ outcome: 'unchanged', generationId: head.snapshot.id })
       return head.host.ordinaryConvergence()
     }
@@ -614,7 +600,9 @@ export async function createRuntimeGenerationHost(
         )
           refuseRestart(row.id)
       }
-    const sources = await sourcesFor(target)
+    // Resolve sources only after the restart guards: a refused backend row may name no snapshot.
+    const sources = unchangedSources ?? (await sourcesFor(target))
+    const authorityChanged = sameCodeAuthorityChanged(head.snapshot.sources, sources)
     for (const previous of head.snapshot.sources)
       if (requiresRestart(head.host, previous.snapshot.packageId)) {
         const next = sources.find((item) => item.snapshot.packageId === previous.snapshot.packageId)
@@ -625,7 +613,8 @@ export async function createRuntimeGenerationHost(
           refuseRestart(previous.snapshot.packageId)
       }
     const skillInput = skills ? skills.input : latestSkills
-    const codeChanged = extensionCodeChanged || codeRevision(oldTarget) !== codeRevision(target)
+    const codeChanged =
+      authorityChanged || extensionCodeChanged || codeRevision(oldTarget) !== codeRevision(target)
     // prepare() may have replaced a claim on the incumbent before a bound code update forks.
     // Restore its pinned importers before any later resource-only transaction uses that container.
     if (store.sessions().some((pin) => live.get(pin.generationId)?.host === head.host))
@@ -681,9 +670,11 @@ export async function createRuntimeGenerationHost(
       const bound = store.sessions().some((pin) => live.get(pin.generationId)?.host === head.host)
       const neutral =
         !extensionCodeChanged && registryCodeRevision(oldTarget) === registryCodeRevision(target)
-      if (!bound || neutral) {
-        if (extensionRows) await head.host.extensionRows.apply(extensionRows)
-        else await head.host.applyRuntimeTarget(target)
+      if (!authorityChanged && (!bound || neutral)) {
+        // The candidate's rows mount, and ask for grants, before it is published as served.
+        await grants.mounting(head.host, snapshot, async () =>
+          extensionRows ? head.host.extensionRows.apply(extensionRows) : head.host.applyRuntimeTarget(target),
+        )
         current = { snapshot, host: head.host }
         live.set(snapshot.id, current)
         const binding = bindings.get(head.host)
@@ -747,12 +738,17 @@ export async function createRuntimeGenerationHost(
   }
   const publishTarget: typeof publishTargetCore = async (target, skills, extensionRows) => {
     if (!current && options.deferInitialGeneration && !skills && !extensionRows) {
-      const report = await initial.applyRuntimeTarget(target)
-      if (report.ok) {
-        const head = await ensureCurrent()
-        lastChange = changeResult({ outcome: 'in-place', generationId: head.snapshot.id })
-      }
-      return report
+      // Default packages first mount before this container has a generation. Bind their verified
+      // target sources until that generation is registered, as in later in-place publications.
+      const sources = await sourcesFor(target)
+      return grants.mounting(initial, { sources }, async () => {
+        const report = await initial.applyRuntimeTarget(target)
+        if (report.ok) {
+          const head = await ensureCurrent(sources)
+          lastChange = changeResult({ outcome: 'in-place', generationId: head.snapshot.id })
+        }
+        return report
+      })
     }
     const head = await ensureCurrent()
     const previous =

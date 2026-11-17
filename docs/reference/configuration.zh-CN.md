@@ -94,7 +94,7 @@ API 客户端可通过 `_agnes/v1/session.setModel` 传入可选的 `thinking`�
 
 原计划完成门仍由 `completion_gate.enabled` 与 `completion_gate.min_items` 控制；普通验证、修复、取消与副作用协调保持。
 
-两个独立的预设字段默认关闭：`tools.logical_changes: true` 将代码指导改为按跨编辑、跨文件的逻辑变更整体验证，允许一次回复发起独立读取、搜索与检查，并为 `edit` 启用对应的顺序批量编辑说明；省略或设为 `false` 保持原提示词和编辑工具描述。`tools.shell_observation_ms: 10000` 将可继续运行的前台 shell 观察窗口设为 10 秒（整数，1000–30000）；省略时保留 300 秒上限。10 秒让普通命令有机会完成并尽早交付长命令的反馈，30 秒上限约束单次观察而不改变工具执行预算。显式更短的 `timeoutMs` 与 turn 期限仍优先；`timeoutToBackground: false` 保留终止约定，没有 jobs 后端的执行器保留原超时行为。运行中结果始终通过现有有界首尾输出守卫带回已捕获的 stdout/stderr，必要时含截断标记与 artifact；这只提前交付 `job_output` 已能读取的内容，不改变所有权、寿命或服务存活规则。
+两个独立的预设字段默认关闭：`tools.logical_changes: true` 在代码指导中加一条规则：按跨编辑、跨文件的逻辑变更整体验证，允许一次回复发起独立读取、搜索与检查，并为 `edit` 启用对应的顺序批量编辑说明；省略或设为 `false` 保持原提示词和编辑工具描述。`tools.shell_observation_ms: 10000` 将可继续运行的前台 shell 观察窗口设为 10 秒（整数，1000–30000）；省略时保留 300 秒上限。10 秒让普通命令有机会完成并尽早交付长命令的反馈，30 秒上限约束单次观察而不改变工具执行预算。显式更短的 `timeoutMs` 与 turn 期限仍优先；`timeoutToBackground: false` 保留终止约定，没有 jobs 后端的执行器保留原超时行为。运行中结果始终通过现有有界首尾输出守卫带回已捕获的 stdout/stderr，必要时含截断标记与 artifact；这只提前交付 `job_output` 已能读取的内容，不改变所有权、寿命或服务存活规则。
 
 字段写在导出的预设中，包括 [bundle 提供的预设](../extend/bundles-and-profiles.zh-CN.md)，不放在 profile 顶层。无界面运行时，在 profile 的 `bundles` 选择该 bundle，设 `presets: { default: trial, allowed: [trial] }`，再运行 `AGNES_PROFILE=trial agh --preset trial -p '你的请求'`。`trial` 定义使用 `extends: standard`，每次只开启要测的字段；修改后新建会话。没有控制这些开关的环境变量。
 

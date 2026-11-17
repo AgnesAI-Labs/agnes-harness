@@ -2,6 +2,8 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 
 export const operationsCatalog: LocaleCatalog = {
   en: {
+    'review.dataUse': 'Package-declared purpose and data use',
+    'review.noAdditionalScopes': 'No additional permission scopes listed',
     'update.dependents.review': 'Review parent and dependent updates together',
     'update.dependents.title': 'Update the parent and its dependents',
     'update.dependents.description':
@@ -77,6 +79,11 @@ export const operationsCatalog: LocaleCatalog = {
     'review.policy': 'Sandbox and network',
     'review.policy.current': 'Follows the current policy',
     'review.source': 'Source',
+    'review.bundled': 'Provided with this AGH',
+    'review.signature': 'Publisher signature',
+    'review.signatureBundled':
+      'Not separately verified. Being provided with AGH does not change trust; review what it gets.',
+    'review.ownerApplication': 'Bundled app access',
     'review.cancel': 'Cancel',
     'review.retry': 'Retry',
     'review.separator': '; ',
@@ -194,6 +201,8 @@ export const operationsCatalog: LocaleCatalog = {
     'source.validation.prefix': 'This source reference must start with “{prefix}”, for example {example}.',
   },
   'zh-CN': {
+    'review.dataUse': '包声明的用途与数据使用',
+    'review.noAdditionalScopes': '未列出额外权限范围',
     'update.dependents.review': '联合审核父插件和依赖插件更新',
     'update.dependents.title': '更新父插件及其依赖插件',
     'update.dependents.description':
@@ -261,6 +270,10 @@ export const operationsCatalog: LocaleCatalog = {
     'review.policy': '沙箱与网络',
     'review.policy.current': '沿用当前策略',
     'review.source': '来源',
+    'review.bundled': '随当前 AGH 提供',
+    'review.signature': '发布者签名',
+    'review.signatureBundled': '未单独验证。随 AGH 提供不改变信任；请审阅它会获得的能力。',
+    'review.ownerApplication': '随包应用权限',
     'review.cancel': '取消',
     'review.retry': '重试',
     'review.separator': '；',

@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { type Context, type Fiber, Service } from '@agnes/cordis'
+import { type Context, type Fiber, FiberState, Service } from '@agnes/cordis'
 import {
   type ExtensionContext,
   ExtensionError,
   type ExtensionManifest,
   type HookEvent,
   type HookHandler,
+  type HookRegisterOptions,
   type LeaseView,
   type Logger,
   type PluginContextFacets,
@@ -30,6 +31,15 @@ import type { KernelPorts } from './ports.js'
 import { buildRowExtensionAPI, OBSERVE_HOOK_EVENTS, type RowExtensionApi } from './row-extension-api.js'
 
 export type RowExtensionHostOptions = Readonly<{
+  /** Called only for a live, verified installed RowOrigin. */
+  hostGrants?: (origin: Readonly<RowOrigin>) => import('@agnes/package-manager').HostCapabilityGrant
+  sessionWorkAuthority?: (
+    origin: Readonly<RowOrigin>,
+    integrity: string,
+  ) => import('./ports.js').SessionWorkAuthority & { dispose(): void }
+  projectionNames?: (origin: Readonly<RowOrigin>) => readonly string[]
+  sideModels?: () => readonly import('@agnes/extension-api').SideModelEntry[]
+  subscribeSideModels?: (listener: () => void) => () => void
   mcpManage?: import('../resources/mcp-manage-port.js').McpManageBridge
   pluginManage?: import('../resources/plugin-manage-port.js').PluginManageBridge
   store?: (input: {
@@ -59,11 +69,14 @@ export type RowExtensionHostOptions = Readonly<{
     packageId: string,
     snapshotId: string,
     exportName?: string,
+    rowId?: string,
   ):
     | Readonly<{
         version?: string
         integrity?: string
         declaredCapabilities?: import('@agnes/protocol').PluginCapabilities
+        sideCallDeclared?: boolean
+        sessionWorkDeclared?: boolean
       }>
     | undefined
 }>
@@ -276,13 +289,18 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
     publish(r)
   }
 
-  const create = (fiber: Fiber, origin: Readonly<RowOrigin>): RowRecord => {
+  const create = (fiber: Fiber, origin: Readonly<RowOrigin>, origins: RowOriginLookup): RowRecord => {
     const rowId = origin.rowId
     const source = pluginRowSource(rowId)
     const holder = sources.get(source)
     if (holder !== undefined && holder !== rowId)
       throw new HostError('E_EXT_LOAD', 'extension source is already held by another row')
-    const info = options.describePackage?.(origin.packageId, origin.snapshotId, origin.exportName)
+    const info = options.describePackage?.(
+      origin.packageId,
+      origin.snapshotId,
+      origin.exportName,
+      origin.rowId,
+    )
     const packageVersion = info?.version ?? origin.snapshotId
     const serviceCapabilities = info?.declaredCapabilities?.services ?? []
     const manifest = manifestLikeFor(source, packageVersion)
@@ -324,9 +342,28 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
     const requestMcpManage = options.mcpManage
     const requestPluginManage = options.pluginManage
     const sourceIntegrity = info?.integrity
+    const backgroundAuthority = options.sessionWorkAuthority
     const openStore = options.store
     const bindWake = options.bindWake
     record.api = buildRowExtensionAPI({
+      assertCurrent() {
+        if (
+          origins.lookup(fiber) !== origin ||
+          fiber.state === FiberState.UNLOADING ||
+          fiber.state === FiberState.DISPOSED
+        )
+          throw new ExtensionError('E_LEASE_EXPIRED', 'row is closed')
+      },
+      rowId,
+      ...(backgroundAuthority && sourceIntegrity
+        ? { sessionWorkAuthority: () => backgroundAuthority(origin, sourceIntegrity) }
+        : {}),
+      ...(options.projectionNames ? { projectionNames: () => options.projectionNames!(origin) } : {}),
+      ...(options.hostGrants ? { hostGrants: () => options.hostGrants!(origin) } : {}),
+      ...(options.sideModels ? { sideModels: options.sideModels } : {}),
+      ...(options.subscribeSideModels ? { subscribeSideModels: options.subscribeSideModels } : {}),
+      ...(info?.sessionWorkDeclared ? { sessionWorkDeclared: true } : {}),
+      ...(info?.sideCallDeclared ? { sideCallDeclared: true } : {}),
       ...(openStore && sourceIntegrity
         ? {
             store: () =>
@@ -476,7 +513,7 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
     // A row that lost its id to a newer owner must not take it back: that would evict the owner.
     if (existing && owners.has(existing.rowId))
       throw new ExtensionError('E_CAPABILITY_UNDECLARED', 'this extension row was replaced by a newer one')
-    const record = create(found.fiber, found.origin)
+    const record = create(found.fiber, found.origin, origins)
     byFiber.set(found.fiber, record)
     try {
       found.fiber.effect(
@@ -501,8 +538,12 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
         constructor(context: Context) {
           super(context, 'hooks')
         }
-        register<E extends HookEvent>(event: E, handler: NoInfer<HookHandler<E>>) {
-          const dispose = apiFor(this.ctx, origins).registerHook(event, handler)
+        register<E extends HookEvent>(
+          event: E,
+          handler: NoInfer<HookHandler<E>>,
+          options?: HookRegisterOptions,
+        ) {
+          const dispose = apiFor(this.ctx, origins).registerHook(event, handler, options)
           const row = rowFiberOf(this.ctx.fiber, origins)
           // The row wind-down dispatches shutdown before revoking registrations.
           if (row?.fiber === this.ctx.fiber) return dispose
@@ -510,6 +551,16 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
         }
       }
       new HooksService(root)
+      class SessionWorkService extends Service {
+        constructor(context: Context) {
+          super(context, 'sessionWork')
+        }
+        register(registration: import('@agnes/extension-api').SessionWorkRegistration) {
+          const dispose = apiFor(this.ctx, origins).sessionWork.register(registration)
+          return this.ctx.effect(() => dispose, `ctx.sessionWork.register(${registration.name})`)
+        }
+      }
+      new SessionWorkService(root)
       class EventLogService extends Service {
         constructor(context: Context) {
           super(context, 'eventLog')
@@ -549,6 +600,9 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
         }
         get platform() {
           return this.facts.platform
+        }
+        get sideModels() {
+          return this.facts.sideModels
         }
       }
       new SelfService(root)

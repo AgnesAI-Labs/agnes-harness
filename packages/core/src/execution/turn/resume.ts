@@ -3,7 +3,7 @@ import type { EventInput, Seq } from '@agnes/core-common/types'
 import { isNestedCall } from '@agnes/core-ledger'
 import { scanAll, scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { EffectNode } from '@agnes/core-ledger/reduce/state'
-import { settleSideCalls, sideCallInFlight } from '../../loop/side-call-receipts.js'
+import { anySideCallInFlight, settleSideCalls } from '../../loop/side-call-receipts.js'
 import { readSideCallBinding } from '../../orchestrator/side-call-effect-port.js'
 import {
   hasCompleteToolPolicyEnvelope,
@@ -190,6 +190,7 @@ async function interruptedSideCallRows(s: SessionImpl, node: EffectNode): Promis
   const { binding, audit } = known
   const cost = s.ev('cost/ledger', {
     purpose: 'side-call',
+    ...(audit.caller === undefined ? {} : { caller: audit.caller }),
     effectId: node.effectId,
     model: binding.model,
     tokens: { input: audit.inputTokens, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -575,7 +576,7 @@ export async function closeInterrupted(
   if (!op) return { state: 'idle', actions: [] }
   // Freeze inference first so it cannot settle separately while live side calls drain.
   if (error) await s.drainFailureReceipts(true)
-  if (sideCallInFlight(s)) await settleSideCalls(s, s.opSeq())
+  if (anySideCallInFlight(s)) await settleSideCalls(s, s.opSeq())
   if (error) await s.drainFailureReceipts()
   const events: EventInput[] = []
   const actions: ResumeReport['actions'] = []

@@ -1,15 +1,22 @@
+import type { ConnectionState } from '@agnes/daemon-foundation/local/endpoint'
 import { runQueued } from './command-queue.js'
+import { withDeliveredBy } from './delivered-by.js'
 import type { LocalContext } from './methods/acp.js'
 import type { SessionEntry } from './sessions.js'
 
-/** Preserve late steers at the completed boundary and reuse the existing continuation gates. */
+/**
+ * Preserve late steers at the completed boundary and reuse the existing continuation gates. With the submitting
+ * connection, what the bundled application delivers into a session it created is shown as its delivery (display only).
+ */
 export async function enqueueFollowUp(
-  cx: Pick<LocalContext, 'continueFollowUps'>,
+  cx: Pick<LocalContext, 'continueFollowUps' | 'sessionOwnership'>,
   entry: SessionEntry,
   kind: 'steer' | 'followUp',
+  conn: Pick<ConnectionState, 'bundledApp' | 'principalId' | 'clientId'>,
   message: Parameters<SessionEntry['session']['enqueue']>[1],
 ): Promise<number> {
-  const seq = await entry.session.enqueue(kind === 'steer' ? 'next-step' : 'next-turn', message)
+  const admitted = withDeliveredBy(cx.sessionOwnership, conn, entry.key, message)
+  const seq = await entry.session.enqueue(kind === 'steer' ? 'next-step' : 'next-turn', admitted)
   if (kind === 'followUp') cx.continueFollowUps?.(entry)
   else {
     // Core promotes only a steer admitted after completion. Read that durable decision

@@ -3,7 +3,15 @@ import type { OwnedStore } from '@agnes/extension-api'
 import type { ChannelEvent } from './adapter.js'
 import type { Runner } from './runner/runner.js'
 
-type Target = { id: string; key: string; chatId: string; threadId?: string; label: string }
+type Target = {
+  accountId?: string
+  chatType?: 'dm' | 'group'
+  id: string
+  key: string
+  chatId: string
+  threadId?: string
+  label: string
+}
 type Binding = { sessionId: string; targetId: string; afterSeq: number; state: 'active' | 'pending' }
 type State = { version: number; targets: Target[]; bindings: Binding[] }
 
@@ -23,6 +31,8 @@ export class ChannelBindings {
     private readonly assertCurrent: () => void,
     /** A chat target paired with a plugin service cannot also be bound to a session. */
     private readonly paired: (targetId: string) => boolean = () => false,
+    /** Nor can a group chat claimed by a bundled app. */
+    private readonly claimed: (chat: { chatId: string; chatType?: 'dm' | 'group' }) => boolean = () => false,
   ) {
     this.state = (store.get(key) as unknown as State | undefined) ?? { version: 0, targets: [], bindings: [] }
   }
@@ -30,7 +40,13 @@ export class ChannelBindings {
     if (event.kind !== 'message') return
     this.assertCurrent()
     const id = chatTargetId(event.accountId, route)
-    if (this.state.targets.some((t) => t.id === id)) {
+    const existing = this.state.targets.find((t) => t.id === id)
+    if (existing) {
+      if (!existing.accountId || !existing.chatType) {
+        existing.accountId = event.accountId
+        if (event.chat.type !== 'thread') existing.chatType = event.chat.type
+        this.save()
+      }
       this.fresh.add(id)
       return
     }
@@ -39,6 +55,8 @@ export class ChannelBindings {
     this.state.targets.push({
       id,
       key: route,
+      accountId: event.accountId,
+      ...(event.chat.type !== 'thread' ? { chatType: event.chat.type } : {}),
       chatId: event.chat.id,
       ...(event.chat.threadId ? { threadId: event.chat.threadId } : {}),
       label:
@@ -48,6 +66,33 @@ export class ChannelBindings {
         ),
     })
     this.save()
+  }
+  async restore(): Promise<void> {
+    await this.serial(async () => {
+      this.assertCurrent()
+      for (const binding of this.state.bindings) {
+        if (binding.state !== 'active' || this.paired(binding.targetId)) continue
+        const target = this.state.targets.find((item) => item.id === binding.targetId)
+        if (
+          !target?.accountId ||
+          !target.chatType ||
+          chatTargetId(target.accountId, target.key) !== target.id
+        )
+          continue
+        this.fresh.add(target.id)
+        try {
+          await this.runner?.activate(target.key, {
+            accountId: target.accountId,
+            chatType: target.chatType,
+            chatId: target.chatId,
+            ...(target.threadId ? { threadId: target.threadId } : {}),
+          })
+        } catch (error) {
+          this.fresh.delete(target.id)
+          throw error
+        }
+      }
+    })
   }
   resolve(key: string): { sessionId: string; afterSeq: number } | undefined {
     this.assertCurrent()
@@ -66,6 +111,7 @@ export class ChannelBindings {
         confirmed: this.fresh.has(t.id),
         unavailable:
           this.paired(t.id) ||
+          this.claimed(t) ||
           this.state.bindings.some((b) => b.targetId === t.id && b.sessionId !== sessionId),
       })),
       bindings: this.state.bindings
@@ -114,6 +160,8 @@ export class ChannelBindings {
         throw new Error('Channel target has not been confirmed or is already bound')
       if (action === 'bind' && this.paired(target.id))
         throw new Error('Channel target is paired with a plugin service; unpair it first')
+      if (action === 'bind' && this.claimed(target))
+        throw new Error('Channel target is subscribed by a bundled app; unsubscribe it first')
       if (action === 'bind' && old && old.targetId !== target.id)
         throw new Error('Unbind the current target first')
       const pending: Binding = old ?? { sessionId, targetId: target.id, afterSeq: 0, state: 'pending' }
@@ -133,6 +181,8 @@ export class ChannelBindings {
         try {
           await this.runner.activate(target.key, {
             chatId: target.chatId,
+            ...(target.accountId ? { accountId: target.accountId } : {}),
+            ...(target.chatType ? { chatType: target.chatType } : {}),
             ...(target.threadId ? { threadId: target.threadId } : {}),
           })
         } catch (error) {
@@ -147,6 +197,16 @@ export class ChannelBindings {
   /** Whether a session is bound, or being bound, to the chat target. */
   bound(targetId: string): boolean {
     return this.state.bindings.some((b) => b.targetId === targetId)
+  }
+  /** Whether a session is bound, or being bound, to any target of this instance. */
+  boundAny(): boolean {
+    return this.state.bindings.length > 0
+  }
+  /** Whether a session is bound, or being bound, to any target in this chat. */
+  boundChat(chatId: string): boolean {
+    return this.state.bindings.some(
+      (b) => this.state.targets.find((t) => t.id === b.targetId)?.chatId === chatId,
+    )
   }
   /** Runs after every earlier binding change and pairing of this instance, one at a time. */
   serial<T>(work: () => Promise<T>): Promise<T> {

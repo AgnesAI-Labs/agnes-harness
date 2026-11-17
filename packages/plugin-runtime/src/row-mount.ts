@@ -274,7 +274,9 @@ export function normalizePluginExport(
     throw new TypeError('plugin export inject differs from its agnes.plugins entry')
   const inject = deepFreeze(cloneValue(listed ?? own ?? {}))
   const provides = normalizeProvides(exported.provide)
-  const prepared = preparePluginInvocation(exported, inject)
+  // sideCall declares invocation authority; it is never a Cordis apply-time service.
+  const runtimeInject = Object.fromEntries(Object.entries(inject).filter(([name]) => name !== 'sideCall'))
+  const prepared = preparePluginInvocation(exported, runtimeInject)
   return Object.freeze({ prepared, inject, provides })
 }
 
@@ -656,6 +658,7 @@ function originOf(mount: DescriptorSnapshot): Readonly<RowOrigin> {
     packageId: mount.snapshot.packageId,
     snapshotId: mount.snapshot.snapshotId,
     rowRevision: canonicalRowRevision(mount.boundRow),
+    mountIdentity: mount.boundRow.mountIdentity,
     configDigest: pluginConfigDigest(mount.boundRow.config),
     rowId: mount.row.id,
     exportName: mount.snapshot.exportName,
@@ -795,6 +798,7 @@ function createVerifiedRowAdapter(
           restoreOrigin = gate.origins.replace(state.fiber, {
             ...bound,
             rowRevision: canonicalRowRevision(snapshotBoundRow(row)),
+            mountIdentity: row.mountIdentity,
             configDigest: pluginConfigDigest(row.config),
           })
         await state.fiber.update(normalized)

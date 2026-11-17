@@ -5,8 +5,14 @@ import { checkToolchain } from '../toolchain/check.mjs'
 checkToolchain()
 
 export default defineConfig({
-  testDir: '../../packages/web-ui/test',
-  testMatch: ['button-contrast.spec.ts', 'primitives.spec.ts'],
+  testDir: '../../packages',
+  // The shared components, and the Superagent panel as the page serves it (its stylesheet under the page CSP).
+  testMatch: [
+    '**/web-ui/test/button-contrast.spec.ts',
+    '**/web-ui/test/primitives.spec.ts',
+    '**/web-ui/test/switch.spec.ts',
+    '**/superagent-ui/test/panel-styles.spec.ts',
+  ],
   forbidOnly: true,
   retries: 0,
   failOnFlakyTests: true,

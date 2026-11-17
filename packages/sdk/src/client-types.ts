@@ -86,6 +86,8 @@ export type CallOptions = {
 
 export type SessionLoadOptions = {
   cwd?: string
+  /** Replaces the session's own environment, as `NewSessionOptions.environment`; the same client restriction applies. */
+  environment?: import('@agnes/protocol').SessionEnvironment
   /** Admission only, with a negotiated fallback to ACP load on older daemons. */
   history?: 'full' | 'none'
   signal?: AbortSignal
@@ -110,4 +112,9 @@ export type NewSessionOptions = {
   loop?: LoopSelection
   /** Extra directories for this new session's file fence; the daemon must advertise support. */
   additionalDirectories?: readonly string[]
+  /**
+   * The session's own environment, kept with the session and applied to every command it runs. Accepted only from the
+   * bundled application's client; any other client is refused with `SESSION_ENVIRONMENT_DENIED`.
+   */
+  environment?: import('@agnes/protocol').SessionEnvironment
 }

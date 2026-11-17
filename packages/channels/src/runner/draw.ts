@@ -4,6 +4,7 @@ import { surfaceText } from '@agnes/protocol/intelligent-ui'
 import type { Block, CardBlock, ChannelMessage } from '../adapter.js'
 import { decisionKey } from '../decision.js'
 import { escapeReviewText } from '../degrade.js'
+import { surfaceBlock } from './surface.js'
 
 // UINode's approval options are Agnes' own vocabulary (it has a 'allow_permanent' entry for the
 // durable-grant flow, core/src/project/ui.ts:1018-1023); the channel card only understands ACP's
@@ -210,14 +211,17 @@ export function whatToDraw(
   }
 }
 
-/** Channels have no authenticated surface-action callback; human replies use the same Web action. */
+/** Unsupported forms retain the authenticated Web fallback. */
 export function drawSurfaceMessage(
   record: UiSurfaceRecord,
   sessionId: string,
   webUrl?: string,
+  native = false,
 ): ChannelMessage {
   const path = `/?session=${encodeURIComponent(sessionId)}&surface=${encodeURIComponent(record.surface.id)}`
   const link = webUrl ? new URL(path, webUrl).href : path
+  const block = native ? surfaceBlock(record, sessionId, link) : undefined
+  if (block) return { blocks: [block] }
   const escapeMarkdown = (text: string) => text.replace(/[\\`*_{}[\]()<>#!|]/g, '\\$&')
   return {
     blocks: [

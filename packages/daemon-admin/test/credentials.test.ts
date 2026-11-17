@@ -27,6 +27,16 @@ it('resolves managed cloud credentials privately, refuses rejected/missing crede
     })
     expect(result).toEqual({ token, expiresAt })
     expect(JSON.stringify(result)).not.toContain(key)
+    for (const skew of [-60_000, 0, 60_000]) {
+      const expiry = Date.now() + 8 * 60 * 60 * 1000 + skew
+      await expect(
+        authorizeCloudConnection(input, store, async () => Response.json({ token, expiresAt: expiry })),
+      ).resolves.toEqual({ token, expiresAt: expiry })
+    }
+    for (const expiry of [Date.now() - 1, Date.now() + 9 * 60 * 60 * 1000, Number.NaN])
+      await expect(
+        authorizeCloudConnection(input, store, async () => Response.json({ token, expiresAt: expiry })),
+      ).rejects.toMatchObject({ data: { reason: 'CONFIG_AUTH_UNAVAILABLE' } })
     await expect(
       authorizeCloudConnection(input, store, async () => new Response('', { status: 401 })),
     ).rejects.toMatchObject({ data: { reason: 'CONFIG_CREDENTIAL_REJECTED' } })

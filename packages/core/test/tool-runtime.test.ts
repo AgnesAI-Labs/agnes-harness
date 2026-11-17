@@ -123,119 +123,130 @@ describe('tool providers', () => {
     await runtime.dispose()
   })
 
-  it('selects a policy by preset and denies writes even with full access, while the default loop emits lifecycle events', async () => {
-    const policies = new ToolPolicyRegistry()
-    const remove = policies.register('@agnes-example/read-only-policy', policy)
-    expect(policies.catalog()).toContainEqual({
-      id: 'read-only',
-      version: '1.0.0',
-      sourcePackage: '@agnes-example/read-only-policy',
-    })
-    const runtimes = new ToolRuntimeRegistry()
-    runtimes.register('@test/tagged', {
-      id: 'tagged',
-      version: '1.0.0',
-      create(options) {
-        const runtime = defaultToolRuntimeProvider.create(options)
-        return {
-          ...runtime,
-          async execute(call, execution, signal) {
-            const returned = await runtime.execute(call, execution, signal)
-            return { ...returned, content: result('runtime read').content }
-          },
-        }
-      },
-    })
-    const events = new LoopEventRegistry()
-    const observed: string[] = []
-    events.on('before_model_request', () => {
-      observed.push('request')
-      return { patch: { maxTokens: 77 } }
-    })
-    events.on('after_model_response', () => {
-      observed.push('response')
-    })
-    events.on('before_tool_call', () => {
-      observed.push('tool')
-      return { allow: true }
-    })
-    events.on('after_tool_result', (payload) => {
-      expect(payload.result.content).toEqual(result('runtime read').content)
-      return { result: result('transformed read') }
-    })
-    events.on('turn_end', () => {
-      observed.push('end')
-    })
-    const preset = presetDefaults()
-    preset.approval.policy = 'read-only'
-    preset.tools.runtime = 'tagged'
-    preset.tools.maxParallel = 2
-    const provider = fakeProvider([toolTurn('shell', {}), toolTurn('read', {}), textTurn('done')])
-    const k = Kernel.create({
-      loops: defaultLoops(),
-      storage: new MemoryStorage(),
-      seams: fakeSeams(),
-      provider,
-      preset,
-      toolPolicies: policies,
-      toolRuntimes: runtimes,
-      loopEvents: events,
-      contract: { contract_id: null, parser_version: '1' },
-      fsOps: testFsOps(),
-      netFetch: async () => new Response(''),
-      timers: noTimers,
-    })
-    k.tools.add(
-      shellTool(async () => {
-        throw new Error('write must not run')
-      }),
-      { source: 'test', trust: 'builtin' },
-    )
-    k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
-    const session = await k.session('policy', {
-      actor,
-      cwd: '/w',
-      resolvedProfileHash: null,
-      writerRunId: 'writer',
-      workspaceInvocation: testWorkspaceInvocation(),
-    })
-    const committedEnds: number[] = []
-    session.hooks.turnEnd = async (payload) => {
-      const rows = await session.d.log.scan({ fromSeq: payload.endSeq, limit: 1 })
-      expect(rows[0]?.type).toBe('turn/end')
-      committedEnds.push(payload.endSeq)
-      throw Error('passive exporter failure')
-    }
-    try {
-      await session.setYolo(true, actor)
-      await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'work' }] })
-      expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
-      expect(committedEnds).toHaveLength(1)
-      const rows = await session.scan({ fromSeq: 1, limit: 200 })
-      expect(
-        rows.find(
-          (row) => row.type === 'tool/result' && (row.data as { code?: string }).code === 'POLICY_DENIED',
-        ),
-      ).toBeDefined()
-      expect(rows.filter((row) => row.type === 'tool/result').map((row) => row.data)).toContainEqual(
-        expect.objectContaining({ content: result('transformed read').content }),
+  it.each(['sync', 'async'])(
+    'preserves policy enforcement and committed turn events when a %s observer fails',
+    async (failureMode) => {
+      const policies = new ToolPolicyRegistry()
+      const remove = policies.register('@agnes-example/read-only-policy', policy)
+      expect(policies.catalog()).toContainEqual({
+        id: 'read-only',
+        version: '1.0.0',
+        sourcePackage: '@agnes-example/read-only-policy',
+      })
+      const runtimes = new ToolRuntimeRegistry()
+      runtimes.register('@test/tagged', {
+        id: 'tagged',
+        version: '1.0.0',
+        create(options) {
+          const runtime = defaultToolRuntimeProvider.create(options)
+          return {
+            ...runtime,
+            async execute(call, execution, signal) {
+              const returned = await runtime.execute(call, execution, signal)
+              return { ...returned, content: result('runtime read').content }
+            },
+          }
+        },
+      })
+      const events = new LoopEventRegistry()
+      const observed: string[] = []
+      events.on('before_model_request', () => {
+        observed.push('request')
+        return { patch: { maxTokens: 77 } }
+      })
+      events.on('after_model_response', () => {
+        observed.push('response')
+      })
+      events.on('before_tool_call', () => {
+        observed.push('tool')
+        return { allow: true }
+      })
+      events.on('after_tool_result', (payload) => {
+        expect(payload.result.content).toEqual(result('runtime read').content)
+        return { result: result('transformed read') }
+      })
+      events.on('turn_end', () => {
+        observed.push('end')
+      })
+      const preset = presetDefaults()
+      preset.approval.policy = 'read-only'
+      preset.tools.runtime = 'tagged'
+      preset.tools.maxParallel = 2
+      const provider = fakeProvider([toolTurn('shell', {}), toolTurn('read', {}), textTurn('done')])
+      const k = Kernel.create({
+        loops: defaultLoops(),
+        storage: new MemoryStorage(),
+        seams: fakeSeams(),
+        provider,
+        preset,
+        toolPolicies: policies,
+        toolRuntimes: runtimes,
+        loopEvents: events,
+        contract: { contract_id: null, parser_version: '1' },
+        fsOps: testFsOps(),
+        netFetch: async () => new Response(''),
+        timers: noTimers,
+      })
+      k.tools.add(
+        shellTool(async () => {
+          throw new Error('write must not run')
+        }),
+        { source: 'test', trust: 'builtin' },
       )
-      expect(provider.requests[0]?.sampling?.maxTokens).toBe(77)
-      expect(observed).toEqual([
-        'request',
-        'response',
-        'tool',
-        'request',
-        'response',
-        'tool',
-        'request',
-        'response',
-        'end',
-      ])
-    } finally {
-      await k.close()
-    }
-    remove()
-    expect(() => policies.resolve('read-only')).toThrow('not installed')
-  })
+      k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
+      const session = await k.session('policy', {
+        actor,
+        cwd: '/w',
+        resolvedProfileHash: null,
+        writerRunId: 'writer',
+        workspaceInvocation: testWorkspaceInvocation(),
+      })
+      const committedEnds: number[] = []
+      const observe: NonNullable<typeof session.hooks.turnEnd> = (payload) => {
+        committedEnds.push(payload.endSeq)
+        throw Error('passive exporter failure')
+      }
+      session.hooks.turnEnd =
+        failureMode === 'sync'
+          ? observe
+          : async (payload) => {
+              const rows = await session.d.log.scan({ fromSeq: payload.endSeq, limit: 1 })
+              expect(rows[0]?.type).toBe('turn/end')
+              return observe(payload)
+            }
+
+      try {
+        await session.setYolo(true, actor)
+        await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'work' }] })
+        expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+        expect(committedEnds).toHaveLength(1)
+        const rows = await session.scan({ fromSeq: 1, limit: 200 })
+        expect(rows.find((row) => row.seq === committedEnds[0])?.type).toBe('turn/end')
+        expect(
+          rows.find(
+            (row) => row.type === 'tool/result' && (row.data as { code?: string }).code === 'POLICY_DENIED',
+          ),
+        ).toBeDefined()
+        expect(rows.filter((row) => row.type === 'tool/result').map((row) => row.data)).toContainEqual(
+          expect.objectContaining({ content: result('transformed read').content }),
+        )
+        expect(provider.requests[0]?.sampling?.maxTokens).toBe(77)
+        expect(observed).toEqual([
+          'request',
+          'response',
+          'tool',
+          'request',
+          'response',
+          'tool',
+          'request',
+          'response',
+          'end',
+        ])
+      } finally {
+        await k.close()
+      }
+      remove()
+      expect(() => policies.resolve('read-only')).toThrow('not installed')
+    },
+  )
 })

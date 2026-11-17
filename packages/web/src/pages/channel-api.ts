@@ -8,12 +8,13 @@ export async function callChannel<T>(method: string, params: unknown): Promise<T
   })
   if (!response.ok) {
     const body = (await response.json().catch(() => undefined)) as
-      | { error?: { data?: { code?: unknown } } }
+      | { error?: { data?: { code?: unknown; reason?: unknown } } }
       | undefined
-    const code = body?.error?.data?.code
+    const { code, reason } = body?.error?.data ?? {}
     throw Object.assign(
       new Error('Channel operation was not confirmed'),
       typeof code === 'string' ? { code } : {},
+      typeof reason === 'string' ? { reason } : {},
     )
   }
   return response.json() as Promise<T>

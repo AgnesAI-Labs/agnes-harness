@@ -15,6 +15,7 @@
     "./lease/lease": "./src/lease/lease.ts",
     "./lease/reclaim": "./src/lease/reclaim.ts",
     "./local/attached": "./src/local/attached.ts",
+    "./local/bundled-app": "./src/local/bundled-app.ts",
     "./local/endpoint": "./src/local/endpoint.ts",
     "./local/meta": "./src/local/meta.ts",
     "./local/notice": "./src/local/notice.ts",

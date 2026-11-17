@@ -1,4 +1,4 @@
-import type { PackagePreview, PackageSource } from '@agnes/protocol'
+import { type PackagePreview, type PackageSource, resolvePluginMetadata } from '@agnes/protocol'
 import {
   ADMIN_LOCALE_NAMESPACE,
   adminLocaleCatalog,
@@ -36,6 +36,7 @@ export function InstallReview({
   gets,
   getsNote,
   verified,
+  bundled = false,
   source,
   notices,
   warnings = [],
@@ -59,6 +60,9 @@ export function InstallReview({
   getsNote?: ReactNode
   /** Whether the publisher evidence was verified; undefined when nothing was reported. */
   verified: boolean | undefined
+  /** The Host proved this is the copy shipped with this AGH. It is shown apart from publisher
+   * evidence, which stays unverified, and replaces the unverified-source warning. */
+  bundled?: boolean
   /** A short name for where it comes from, never an absolute path. */
   source: string
   notices?: ReactNode
@@ -71,6 +75,7 @@ export function InstallReview({
   actions: ReactNode
 }) {
   const { t } = useUiText(PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog)
+  const unverified = verified !== true && !bundled
   return (
     <div className="install-review" data-testid={testId}>
       <div className="install-review-hero">
@@ -98,9 +103,9 @@ export function InstallReview({
       </section>
       <section aria-labelledby={`${testId}-source`}>
         <h3 id={`${testId}-source`}>{t('review.source')}</h3>
-        {(verified !== true || warnings.length > 0) && (
+        {(unverified || warnings.length > 0) && (
           <Banner tone="warning" data-testid="install-review-unverified">
-            {[...new Set([...(verified !== true ? [t('provenance.unverified')] : []), ...warnings])].map(
+            {[...new Set([...(unverified ? [t('provenance.unverified')] : []), ...warnings])].map(
               (warning) => (
                 <p key={warning}>{warning}</p>
               ),
@@ -109,10 +114,18 @@ export function InstallReview({
         )}
         <SettingsGroup data-testid="install-review-source">
           <SettingsItem
-            icon={verified ? 'shield-check' : 'folder-open'}
+            icon={verified ? 'shield-check' : bundled ? 'circle-check' : 'folder-open'}
             label={t('review.source')}
-            description={source}
+            info={bundled ? t('provenance.bundled') : undefined}
+            description={bundled ? `${t('review.bundled')} · ${source}` : source}
           />
+          {bundled && verified !== true && (
+            <SettingsItem
+              icon="info"
+              label={t('review.signature')}
+              description={t('review.signatureBundled')}
+            />
+          )}
         </SettingsGroup>
       </section>
       {notices}
@@ -177,8 +190,9 @@ export function PluginInstallReview({
   onConfirm(enableAfter: boolean): void
   onReviewDependents?(): void
 }) {
-  const { t: adminText } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
+  const { t: adminText, locale } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
   const { preview, mode, current, combined, enables, enableAfter, busy, error } = review
+  const description = resolvePluginMetadata(preview.metadata, locale)?.description?.trim()
   const describe = mode === 'install' ? mode : combined ? 'update-combined' : 'update-compatible'
   const action = combined
     ? 'update-activate'
@@ -189,27 +203,44 @@ export function PluginInstallReview({
         : 'update'
   const requests = capabilityRequests(preview.declaredCapabilities, t)
   const blocked = preview.blockers.length > 0
+  const bundled = preview.bundledOrigin !== undefined
   return (
     <InstallReview
       name={name}
       meta={[kind, preview.version, tier]}
       lead={t(`preview.description.${describe}`)}
       before={
-        current ? <UpdateDiff preview={preview} fromVersion={current.version} current={current} /> : undefined
+        <>
+          {description && (
+            <section data-testid="install-review-data-use" aria-label={t('review.dataUse')}>
+              <h3>{t('review.dataUse')}</h3>
+              <p>{description}</p>
+            </section>
+          )}
+          {current && <UpdateDiff preview={preview} fromVersion={current.version} current={current} />}
+        </>
       }
       gets={
-        <SettingsItem
-          icon="key-round"
-          label={t('review.capabilities')}
-          description={
-            requests.length
-              ? requests.join(t('review.separator'))
-              : t(preview.declaredCapabilities === undefined ? 'review.undeclared' : 'capability.none')
-          }
-        />
+        <>
+          <SettingsItem
+            icon="key-round"
+            label={t('review.capabilities')}
+            description={
+              requests.length ? requests.join(t('review.separator')) : t('review.noAdditionalScopes')
+            }
+          />
+          {preview.bundledOrigin?.ownerApplication && (
+            <SettingsItem
+              icon="lock-keyhole"
+              label={t('review.ownerApplication')}
+              description={t('capability.ownerApplication')}
+            />
+          )}
+        </>
       }
       getsNote={t('capability.community')}
       verified={preview.provenance.signatureVerified}
+      bundled={bundled}
       source={[tier, shortSource(preview.source)].filter(Boolean).join(' · ')}
       warnings={preview.warnings
         .filter(

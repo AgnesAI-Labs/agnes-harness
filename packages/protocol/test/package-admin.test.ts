@@ -117,7 +117,8 @@ describe('PM4 management contracts', () => {
     // Three binding rows cover history-only session ownership and reject invalid availability/owner.
     // Twenty-three role selection rows cover attested bindings, closed roles and state boundaries.
     // Six additional standalone Skill/environment/MCP fixtures supplement the import method rows.
-    expect(result.total).toBe(706)
+    // Four bundled-origin rows admit the shipped-copy fact and refuse a false or signature claim.
+    expect(result.total).toBe(710)
     expect(result.skipped).toBe(0)
   })
   it('requires explicit classification, permission and command identity for every management method', () => {

@@ -399,6 +399,7 @@ function projectPackage(
     ...(row.entry.declaredCapabilities === undefined
       ? {}
       : { declaredCapabilities: row.entry.declaredCapabilities }),
+    ...(row.bundledOrigin ? { bundledOrigin: row.bundledOrigin } : {}),
   }
   value.primaryStatus = projectPluginPrimaryStatus(value)
   if (!validatePackageAdminData('PackageInstalledDescriptor', value).ok)

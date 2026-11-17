@@ -10,7 +10,7 @@ async function started() {
   const root = mkdtempSync(join(tmpdir(), 'agnes-web-guard-'))
   writeFileSync(
     join(root, 'index.html'),
-    '<html><meta content="__AGNES_CSP_NONCE__"><script>"__AGNES_WS_URL__"</script></html>',
+    '<html><meta id="agnes-config"><meta content="__AGNES_CSP_NONCE__"><script>"__AGNES_WS_URL__"</script></html>',
   )
   const reservation = createServer()
   await new Promise<void>((resolve) => reservation.listen(0, '127.0.0.1', resolve))
@@ -113,19 +113,50 @@ it('refuses cross-site writes to the BFF and accepts the page itself and non-bro
 })
 
 it('admits only the explicitly selected backend origin in a remote page CSP', async () => {
-  const { root, web } = await started()
+  const { root, web, admin } = await started()
+  let isolatedOrigin: string | undefined
   try {
     const local = await fetch(web.url)
     expect(local.headers.get('content-security-policy')).not.toContain('computer-b')
-    const remote = await fetch(`${web.url}/?remote=${encodeURIComponent('https://computer-b:8443')}`)
+    const selected = `/?remote=${encodeURIComponent('https://computer-b:8443')}`
+    const trusted = await fetch(`${web.url}${selected}`)
+    expect(trusted.headers.get('content-security-policy')).not.toContain('computer-b')
+    const html = await trusted.text()
+    const isolated = /data-cloud-origin="([^"]+)"/u.exec(html)?.[1]
+    if (!isolated) throw Error('missing isolated origin')
+    isolatedOrigin = isolated
+    expect(new URL(isolated).origin).not.toBe(web.url)
+    const remote = await fetch(`${isolated}${selected}`)
     expect(remote.status).toBe(200)
     const csp = remote.headers.get('content-security-policy') ?? ''
     expect(csp).toContain("connect-src 'self' https://computer-b:8443 wss://computer-b:8443")
     expect(csp).toContain("script-src 'self' https://computer-b:8443")
     expect(csp).not.toContain('connect-src *')
-    expect((await remote.text()).includes('__AGNES_WS_URL__')).toBe(false)
+    const cloudHtml = await remote.text()
+    expect(cloudHtml).toContain('data-backend-frame="cloud"')
+    expect(cloudHtml).toContain(`data-parent-origin="${web.url}"`)
+    expect(cloudHtml).not.toContain('ws://127.0.0.1:4312')
+    expect(csp).toContain(`frame-ancestors ${web.url}`)
+    expect((await fetch(`${isolated}/admin/resources/api/mcp/trust`)).status).toBe(404)
+    expect((await fetch(`${isolated}/admin/api/credentials`)).status).toBe(404)
+    expect((await fetch(`${isolated}/_agnes/cloud-connection/authorize`, { method: 'POST' })).status).toBe(
+      403,
+    )
+    expect(
+      (await send(Number(new URL(isolated).port), 'GET', selected, { Host: 'evil.example' })).status,
+    ).toBe(403)
+    expect(admin).toEqual([])
+    expect(
+      (
+        await fetch(`${web.url}/admin/resources/api/mcp/trust`, {
+          method: 'POST',
+          headers: { Origin: isolated },
+        })
+      ).status,
+    ).toBe(403)
   } finally {
     await web.close()
     rmSync(root, { recursive: true, force: true })
   }
+  if (isolatedOrigin) await expect(fetch(isolatedOrigin)).rejects.toThrow()
 })

@@ -11,6 +11,7 @@ import {
 } from '@agnes/web-ui'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { CloudConnectionIndicator } from './cloud-connection-status.js'
+import { cloudFailureText } from './cloud-errors.js'
 import {
   CLOUD_SETTINGS_SECTION,
   type CloudConnectionAction,
@@ -106,7 +107,11 @@ export function CloudConnectionSettings({
           />
         </SettingsItem>
       </SettingsGroup>
-      {(error || state.error) && <p role="alert">{error || state.error}</p>}
+      {(error || state.error) && (
+        <p role="alert">
+          {error || (state.error?.startsWith('CLOUD_') ? cloudFailureText(state.error) : state.error)}
+        </p>
+      )}
       <SettingsToolbar>
         <Button appearance="primary" onClick={connect}>
           {t('saveConnect')}
@@ -130,7 +135,7 @@ function CloudConnectionSection() {
 
 /** Browser connection settings belong to A, independent of the selected backend's configuration. */
 export function installCloudConnectionSettings(locale: LocaleService): () => void {
-  if (!backendFrame()) return () => {}
+  if (!backendFrame() || backendFrame()?.remote) return () => {}
   const projectionOff = installCloudSettingsProjection()
   const localeOff = locale.register('@agnes/cloud-connection', {
     en: { 'settings-shell.page.cloud-connection': 'Cloud connection' },

@@ -5,7 +5,7 @@ import type { FsPolicy, FsRule } from '@agnes/core'
 import { validateFsPolicy } from '@agnes/core'
 import { assertWorkspaceBinding, type WorkspaceBinding } from '@agnes/host-common/workspace-authority'
 import type { WorkspacePathSemantics } from '@agnes/host-common/workspace-policy'
-import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
+import { type SessionEnvironment, WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import type { RemoteWorkspacePool } from '@agnes/sandbox-remote'
 import type { WorkspaceRuntimeFence, WorkspaceRuntimeHandle } from '../session-workspace-runtime.js'
 import { createPolicyExec, createPolicyOpenProcess, type ExecAdapter, type ExecGateState } from './exec.js'
@@ -16,6 +16,7 @@ import { createRemoteFsIo } from './fs-io-remote.js'
 import type { PlatformBackend } from './platform.js'
 import { probeCaseSensitive } from './platform-posix.js'
 import type { RemoteTransport } from './remote-transport.js'
+import { withSessionEnvironment } from './session-environment.js'
 
 type HandleState = Readonly<{
   sessionKey: string
@@ -99,6 +100,8 @@ export function createSessionWorkspaceAdapterFactory(
     fullAccessReadOnlyRoots?: () => readonly string[]
     /** The installation homes whose files are agh configuration, for `FencedFs.isConfigPath`. */
     configHomes?: () => readonly string[]
+    /** A session's own environment, read for each of its commands (see `withSessionEnvironment`). */
+    sessionEnvironment?: (sessionKey: string) => SessionEnvironment | undefined
   }>,
 ): SessionWorkspaceAdapterFactory {
   if ((input.transport === undefined) !== (input.remotePool === undefined))
@@ -265,8 +268,12 @@ export function createSessionWorkspaceAdapterFactory(
         state: () => gate,
         authorizeCwd: (cwd: string) => fs.resolveInside(cwd),
       }
-      const exec = createPolicyExec(input.exec, execGate)
-      const openProcess = createPolicyOpenProcess(input.exec, execGate)
+      const environment = input.sessionEnvironment
+      const runner = environment
+        ? withSessionEnvironment(input.exec, () => environment(state.sessionKey), state.semantics.flavor)
+        : input.exec
+      const exec = createPolicyExec(runner, execGate)
+      const openProcess = createPolicyOpenProcess(runner, execGate)
       return Object.freeze({
         root: handle.root,
         fs,

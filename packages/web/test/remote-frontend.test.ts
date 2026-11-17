@@ -61,7 +61,9 @@ it('requires the saved Key, exchanges it once and routes backend resources throu
         })
   }) as typeof fetch
   try {
-    await expect(readRemoteFrontendInfo(remote, new AbortController().signal, fetcher)).rejects.toThrow('Key')
+    await expect(readRemoteFrontendInfo(remote, new AbortController().signal, fetcher)).rejects.toThrow(
+      'CLOUD_CREDENTIAL_REQUIRED',
+    )
     expect(calls).toEqual([])
     localStorage.setItem(`agnes.cloud.credential.v1:${remote}`, credentialRef)
     expect(await readRemoteFrontendInfo(remote, new AbortController().signal, fetcher)).toEqual({
@@ -103,7 +105,7 @@ it('reports a rejected credential and refuses an old public publication instead 
       readRemoteFrontendInfo(remote, new AbortController().signal, async () =>
         Response.json({ error: 'CONFIG_CREDENTIAL_REJECTED' }, { status: 400 }),
       ),
-    ).rejects.toThrow('Key')
+    ).rejects.toThrow('CLOUD_CREDENTIAL_REJECTED')
     await expect(
       readRemoteFrontendInfo(remote, new AbortController().signal, async (input) =>
         String(input).endsWith(CLOUD_AUTHORIZATION_PATH)
@@ -118,7 +120,7 @@ it('reports a rejected credential and refuses an old public publication instead 
               wsPath: REMOTE_FRONTEND_WS,
             }),
       ),
-    ).rejects.toThrow('incompatible')
+    ).rejects.toThrow('CLOUD_SERVICE_UNAVAILABLE')
   } finally {
     localStorage.removeItem(`agnes.cloud.credential.v1:${remote}`)
     forgetRemoteAccess(remote)

@@ -1,3 +1,5 @@
+import { sha256Hex } from './sha256.js'
+
 /** A bounded encoder stopped before materializing an oversized JSON result. */
 export class JcsByteLimitError extends Error {
   constructor() {
@@ -287,4 +289,13 @@ export function jcs(value: unknown, maxBytes?: number): string {
     if (error instanceof JcsByteLimitError) throw error
     throw invalid()
   }
+}
+
+/**
+ * Revision of a Host-managed resource configuration: SHA-256 of its RFC 8785 form. A caller computes it
+ * from the `<id>.configuration` query output and states it as `expectedConfigurationRevision` on the
+ * matching `<id>.configure` effect; the Host compares it with the stored value before writing.
+ */
+export function configurationRevision(value: unknown): string {
+  return sha256Hex(jcs(value))
 }

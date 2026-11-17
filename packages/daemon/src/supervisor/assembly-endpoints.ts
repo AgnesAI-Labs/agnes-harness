@@ -43,6 +43,7 @@ import {
 } from '@agnes/host'
 import { telemetrySnapshot } from '@agnes/observability'
 import { rpcError } from '@agnes/protocol'
+import { sessionEnvironmentAuthority } from '../superagent/sessions.js'
 import type { DispatchState } from './assembly-client-dispatch.js'
 import type { ClientsState } from './assembly-client-services.js'
 import type { AssemblyLifetime } from './assembly-lifetime.js'
@@ -53,6 +54,7 @@ import type { Conn, StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
 import { daemonDoctor } from './doctor.js'
 import { feedbackPorts } from './feedback-ports.js'
+import { registerOwnerInputReview } from './managed-input-review.js'
 import { registerManagedWorkspaceGrants } from './managed-workspace-grants.js'
 import { registerPluginRuntimeIngress } from './plugin-runtime-ingress.js'
 import { activateForkOwnership } from './registry-facade.js'
@@ -142,6 +144,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     resolveActor,
     resolveNewSessionActor,
     effectivePackageAdmin,
+    idle,
   } = state
   const feeds = new Map<string, Feed>()
   const attached = new Map<string, AttachedFeed>()
@@ -172,6 +175,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
         transport,
         ...(transport === 'ws' ? effectiveRemoteAuth : {}),
         ...(transport === 'ws' && o.config.localWeb ? { localWeb: true } : {}),
+        ...(transport === 'unix' ? { bundledAppKey: state.pool.bundledAppKey } : {}),
       },
       nonces,
       clock,
@@ -196,6 +200,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
           localPackageAdminAuthority(['packages.read'])(context),
         ),
       ),
+    sessionEnvironment: sessionEnvironmentAuthority(state.pool),
     limits: {
       subscribeBufferEvents: o.config.limits.subscribeBufferEvents,
       subscribeBufferBytes: o.config.limits.subscribeBufferBytes,
@@ -265,6 +270,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     onPromptEnd: (sessionId) => {
       inflightConn.delete(sessionId)
       registry.retireAtTurnBoundary(sessionId)
+      idle.notify(sessionId)
     },
   }
 
@@ -332,6 +338,12 @@ function registerSessionEndpoints(
     skills: (params, actor) => state.savedSkills.manage(params, actor),
   })
   registerSessionRefine(ep, cx, requireSessionOwner(cx))
+  registerOwnerInputReview(ep, {
+    engine: state.ownerInputs,
+    records: state.managedSessionRecords,
+    requireOwner: requireSessionOwner(cx),
+    worker: () => pool.acquireSharedWorker(),
+  })
   registerDoctor(ep, {
     home: o.config.home ?? dirname(dirname(o.profileDir)),
     profile: o.profile.name,

@@ -32,6 +32,11 @@ import { consumeVendorCss } from '../../../tools/web-vendor-css.mjs'
 import { xSurface } from '../../../tools/web-x-surface.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { buildJevPayload } from '../../package-manager/tools/build-jev-payload.mjs'
+import { buildJudgmentPayload } from '../../package-manager/tools/build-judgment-payload.mjs'
+import {
+  buildSuperagentPayload,
+  SUPERAGENT_RESOURCE_FOLDERS,
+} from '../../package-manager/tools/build-superagent-payload.mjs'
 import { prepareBrowser } from './browser.js'
 import { bundledManifests } from './bundled-manifests.mjs'
 import { bundledPackageVersion, stampBundledPackageVersion } from './bundled-version.js'
@@ -73,10 +78,14 @@ export async function copyBundledPlugins(outputDirectory: string, version = '0.0
     await mkdir(destination, { recursive: true })
     // The Jev payload entry is generated from packages/loop-jev and is not committed.
     if (helper === 'jev-loop') await buildJevPayload(source)
+    if (helper === 'judgment') await buildJudgmentPayload(source)
+    // The Superagent entry reads its generated prompts, skills and locale folders next to it.
+    if (helper === 'superagent') await buildSuperagentPayload(source)
     for (const name of [
       'package.json',
       'index.mjs',
       ...(existsSync(join(source, 'src')) ? ['src'] : []),
+      ...(helper === 'superagent' ? SUPERAGENT_RESOURCE_FOLDERS : []),
       'README.md',
       'LICENSE',
     ])
@@ -88,6 +97,10 @@ export async function copyBundledPlugins(outputDirectory: string, version = '0.0
     if (existsSync(join(source, 'README.zh-CN.md')))
       await cp(join(source, 'README.zh-CN.md'), join(destination, 'README.zh-CN.md'))
     if (existsSync(join(source, 'NOTICE'))) await cp(join(source, 'NOTICE'), join(destination, 'NOTICE'))
+    // Licenses of adapted third-party code (THIRD-PARTY-NOTICES, LICENSE.<name>) travel with the code they cover.
+    for (const name of await readdir(source))
+      if (/^(THIRD-PARTY-NOTICES|LICENSE\..+)$/.test(name))
+        await cp(join(source, name), join(destination, name))
     if (presentations.some((record) => record.name === helper)) {
       await cp(join(source, 'client-build.json'), join(destination, 'client-build.json'))
       await verifyPresentation(destination)

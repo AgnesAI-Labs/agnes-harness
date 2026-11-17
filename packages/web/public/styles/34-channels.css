@@ -38,6 +38,17 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--s16);
   }
+  .channel-page-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s8);
+  }
+  .channel-credential-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: var(--s8);
+  }
   .channel-field-grid > *,
   .channel-instance .agh-field {
     min-width: 0;

@@ -361,6 +361,7 @@ const SESSION_DEFS: Record<string, TSchema> = {
   StepEnd: SessionGen.StepEnd,
   SystemInputPresentation: SessionGen.SystemInputPresentation,
   SystemInput: SessionGen.SystemInput,
+  InputDeliverer: SessionGen.InputDeliverer,
   UserMessage: SessionGen.UserMessage,
   AssistantMessage: SessionGen.AssistantMessage,
   ResolvedToolCallPolicy: SessionGen.ResolvedToolCallPolicy,
@@ -425,6 +426,12 @@ const AGNES_DEFS: Record<string, TSchema> = {
   FactChainEdge: AgnesGen.FactChainEdge,
   FactChainGap: AgnesGen.FactChainGap,
   FactChainResult: AgnesGen.FactChainResult,
+  ManagedInputListParams: AgnesGen.ManagedInputListParams,
+  ManagedInputListResult: AgnesGen.ManagedInputListResult,
+  ManagedInputGetParams: AgnesGen.ManagedInputGetParams,
+  ManagedInputGetResult: AgnesGen.ManagedInputGetResult,
+  ManagedInputDecideParams: AgnesGen.ManagedInputDecideParams,
+  ManagedInputDecideResult: AgnesGen.ManagedInputDecideResult,
 
   AuthoringFile: AgnesGen.AuthoringFile,
   AuthoringOrigin: AgnesGen.AuthoringOrigin,
@@ -525,6 +532,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
 
   BudgetState: AgnesGen.BudgetState,
   SystemInput: AgnesGen.SystemInput,
+  InputDeliverer: AgnesGen.InputDeliverer,
   ArtifactRef: AgnesGen.ArtifactRef,
   ArtifactJob: AgnesGen.ArtifactJob,
   ArtifactReadParams: AgnesGen.ArtifactReadParams,
@@ -789,6 +797,8 @@ const TOOLDEF_DEFS: Record<string, TSchema> = {
 // hooks.json, the fifth self-owned document. Seven of its $defs are cross-file aliases (six of
 // session-v1's and tooldef's ToolMeta), registered here for the two-way coverage guard like the rest.
 const HOOKS_DEFS: Record<string, TSchema> = {
+  TurnEndPayload: HooksGen.TurnEndPayload,
+  TurnEndReturn: HooksGen.TurnEndReturn,
   JsonValue: HooksGen.JsonValue,
   Actor: HooksGen.Actor,
   ContentBlock: HooksGen.ContentBlock,
@@ -1462,6 +1472,17 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { source: 'owner', type: 'result', summary: 'Done', data: {}, actor: {} },
     ],
     note: 'One bounded platform notification owns machine data and presentation.',
+  },
+  InputDeliverer: {
+    valid: { kind: 'bundled-app', appId: '@agnes/superagent/superagent' },
+    invalid: [
+      { kind: 'bundled-app' },
+      { kind: 'person', appId: 'x' },
+      { kind: 'bundled-app', appId: '' },
+      { kind: 'bundled-app', appId: rep(257) },
+      { kind: 'bundled-app', appId: 'x', trusted: true },
+    ],
+    note: 'A display-only, closed and bounded fact the backend stamps; no other kind exists.',
   },
   UserMessage: {
     valid: userMessageOk,
@@ -2395,6 +2416,153 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'bounded immutable read watermark',
   },
 
+  ManagedInputListParams: {
+    valid: {},
+    invalid: [{ sessionId: 'owned' }, { owner: 'plugin' }],
+    note: 'owner input list: no session, no key, no caller-chosen owner',
+  },
+  ManagedInputListResult: {
+    valid: {
+      inputs: [
+        {
+          sessionId: 's1',
+          key: 'k1',
+          kind: 'ownerMessage',
+          state: 'needsOwner',
+          reason: 'receiptUnknown',
+          version: 2,
+          at: '2026-11-14T00:00:00Z',
+        },
+        {
+          sessionId: 's1',
+          key: 'k2',
+          kind: 'ownerMessage',
+          state: 'enqueued',
+          reason: 'busy',
+          version: 2,
+          at: '2026-11-14T00:00:00Z',
+          held: 'gatesUnreadable',
+        },
+      ],
+      parkedReceipts: [
+        {
+          sessionId: null,
+          receiptId: 'r1',
+          service: 'companion',
+          kind: 'message',
+          text: 'hi',
+          at: '',
+          attempts: 5,
+        },
+      ],
+    },
+    invalid: [
+      { inputs: [] },
+      {
+        inputs: [
+          {
+            sessionId: 's1',
+            key: 'k1',
+            kind: 'ownerMessage',
+            state: 'needsOwner',
+            reason: 'x',
+            version: 1,
+            at: '',
+            held: 'stuck',
+          },
+        ],
+        parkedReceipts: [],
+      },
+      {
+        inputs: [],
+        parkedReceipts: [{ receiptId: 'r1', service: 's', kind: 'message', text: '', at: '', attempts: 5 }],
+      },
+    ],
+    note: 'every input waiting on the owner or held without progress, and every parked receipt, across sessions',
+  },
+  ManagedInputGetParams: {
+    valid: { sessionId: 'owned', key: 'k1' },
+    invalid: [
+      { sessionId: 'owned', key: '' },
+      { sessionId: 'owned', key: 'k'.repeat(257) },
+      { sessionId: 'owned' },
+    ],
+    note: 'owner input review read: one session, one admission key',
+  },
+  ManagedInputGetResult: {
+    valid: {
+      input: {
+        key: 'k1',
+        kind: 'legacyOwnerMessage',
+        state: 'consumed',
+        reason: 'eligible',
+        version: 2,
+        text: null,
+        source: { kind: 'legacy' },
+        binding: { taskId: 'T-1', taskGeneration: 0, startKey: 'start' },
+        turn: 3,
+        seq: 9,
+        history: [
+          { version: 1, state: 'queued', reason: 'eligible', at: '2026-11-14T00:00:00Z', by: 'platform' },
+        ],
+      },
+      parkedReceipts: [
+        { receiptId: 'r1', service: 'companion', kind: 'action', text: '', at: '', attempts: 5 },
+      ],
+    },
+    invalid: [
+      { input: null },
+      { input: {}, parkedReceipts: [] },
+      {
+        input: null,
+        parkedReceipts: [{ receiptId: 'r1', service: 's', kind: 'reply', text: '', at: '', attempts: 5 }],
+      },
+      {
+        input: {
+          key: 'k1',
+          kind: 'ownerMessage',
+          state: 'absent',
+          reason: 'eligible',
+          version: 1,
+          text: 'x',
+          source: null,
+          binding: { taskId: 'T-1', taskGeneration: 0, startKey: 'start' },
+          history: [],
+        },
+        parkedReceipts: [],
+      },
+      {
+        input: {
+          key: 'k1',
+          kind: 'ownerMessage',
+          state: 'queued',
+          reason: 'eligible',
+          version: 1,
+          text: 'x',
+          source: null,
+          binding: { taskId: 'T-1', taskGeneration: 0, startKey: 'start' },
+          history: [{ version: 1, state: 'queued', reason: 'eligible', at: '', by: 'plugin' }],
+        },
+        parkedReceipts: [],
+      },
+    ],
+    note: 'the owner-only review projection of one input, or null, beside the parked receipts',
+  },
+  ManagedInputDecideParams: {
+    valid: { sessionId: 'owned', target: { kind: 'input', key: 'k1', decision: 'deliver', version: 2 } },
+    invalid: [
+      { sessionId: 'owned', target: { kind: 'input', key: 'k1', decision: 'deliver' } },
+      { sessionId: 'owned', target: { kind: 'input', key: 'k1', decision: 'redeliver', version: 2 } },
+      { sessionId: 'owned', target: { kind: 'receipt', receiptId: 'r1', decision: 'retain' } },
+    ],
+    note: 'owner decision on one input at a shown version, or on one parked receipt',
+  },
+  ManagedInputDecideResult: {
+    valid: { receipt: 'pending' },
+    invalid: [{ receipt: 'acked' }, { state: 'retained', version: 0 }],
+    note: 'the new input state and version, or the receipt outcome',
+  },
+
   SystemPromptConfig: {
     note: 'prompt and local request snapshot boundary',
     valid: { personaPrefix: 'hello' },
@@ -2777,6 +2945,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
 
   BudgetState: SESSION_SAMPLES.BudgetState as Sample,
   SystemInput: SESSION_SAMPLES.SystemInput as Sample,
+  InputDeliverer: SESSION_SAMPLES.InputDeliverer as Sample,
   ArtifactRef: SESSION_SAMPLES.ArtifactRef as Sample,
   ArtifactJob: SESSION_SAMPLES.ArtifactJob as Sample,
   Credential: {
@@ -5675,6 +5844,17 @@ const nullReturn: Sample = {
 }
 
 const HOOKS_SAMPLES: Record<string, Sample> = {
+  TurnEndPayload: {
+    note: 'committed turn outcome with nonnegative turn and positive ledger sequence',
+    valid: { turn: 0, reason: 'completed', endSeq: 1 },
+    invalid: [
+      { turn: -1, reason: 'completed', endSeq: 1 },
+      { turn: 0, reason: 'unknown', endSeq: 1 },
+      { turn: 0, reason: 'error', endSeq: 0 },
+      { turn: 0, reason: 'completed', endSeq: 1, extra: true },
+    ],
+  },
+  TurnEndReturn: { note: 'the observational hook returns only null', valid: null, invalid: [{}, true, 0] },
   JsonValue: SESSION_SAMPLES.JsonValue as Sample,
   Actor: SESSION_SAMPLES.Actor as Sample,
   ContentBlock: SESSION_SAMPLES.ContentBlock as Sample,
@@ -8769,6 +8949,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     PackageContributionSummary: PackageAdminGen.PackageContributionSummary,
     PackageCapabilityDiff: PackageAdminGen.PackageCapabilityDiff,
     PackageBlocker: PackageAdminGen.PackageBlocker,
+    PackageBundledOrigin: PackageAdminGen.PackageBundledOrigin,
     PackageWarning: PackageAdminGen.PackageWarning,
     PackageProvenance: PackageAdminGen.PackageProvenance,
     PackageProvenanceParams: PackageAdminGen.PackageProvenanceParams,
@@ -9187,6 +9368,21 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     result: 'PluginConfigSaveResult',
   },
 
+  '_agnes/v1/managedInput.list': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'ManagedInputListParams',
+    result: 'ManagedInputListResult',
+  },
+  '_agnes/v1/managedInput.get': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'ManagedInputGetParams',
+    result: 'ManagedInputGetResult',
+  },
+  '_agnes/v1/managedInput.decide': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'ManagedInputDecideParams',
+    result: 'ManagedInputDecideResult',
+  },
   '_agnes/v1/session.factChain': {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'FactChainParams',
@@ -10330,6 +10526,21 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [{}, { profile: 'default' }],
   },
 
+  '_agnes/v1/managedInput.list': {
+    valid: {},
+    invalid: [{ owner: 'plugin' }],
+    note: 'no caller-chosen owner: the owner page and the session owner gate decide',
+  },
+  '_agnes/v1/managedInput.get': {
+    valid: { sessionId: 'owned', key: 'k1' },
+    invalid: [{ sessionId: 'owned' }, { sessionId: 'owned', key: 'k1', owner: 'plugin' }],
+    note: 'no caller-chosen owner: the session owner gate decides',
+  },
+  '_agnes/v1/managedInput.decide': {
+    valid: { sessionId: 'owned', target: { kind: 'receipt', receiptId: 'r1', decision: 'discard' } },
+    invalid: [{ sessionId: 'owned', target: { kind: 'input', key: 'k1', decision: 'deliver', version: 0 } }],
+    note: 'a decision names the version it was shown',
+  },
   '_agnes/v1/session.factChain': {
     valid: { sessionId: 'owned', laneId: 'main', anchor: { kind: 'tool', toolUseId: 'tool-1' } },
     invalid: [
@@ -11363,6 +11574,9 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.controls': AGNES_SAMPLES.SessionControlStateResult as Sample,
   '_agnes/v1/session.fileUpload': AGNES_SAMPLES.FileUploadResultSchema as Sample,
   '_agnes/v1/session.factChain': AGNES_SAMPLES.FactChainResult!,
+  '_agnes/v1/managedInput.list': AGNES_SAMPLES.ManagedInputListResult!,
+  '_agnes/v1/managedInput.get': AGNES_SAMPLES.ManagedInputGetResult!,
+  '_agnes/v1/managedInput.decide': AGNES_SAMPLES.ManagedInputDecideResult!,
   '_agnes/v1/doctor.run': AppSamples.DoctorResult!,
   '_agnes/v1/plugins.candidates.reject': PackageAdminSamples.AuthoringCandidate as Sample,
   '_agnes/v1/plugins.candidates.approve': PackageAdminSamples.AuthoringCandidate as Sample,

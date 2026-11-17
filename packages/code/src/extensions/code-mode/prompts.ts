@@ -133,8 +133,8 @@ export function createPromptOperation(deps: PromptDeps): Operation {
             'coding-doctrine',
             ctx.preset.tools?.logicalChanges
               ? loadPrompt('coding-doctrine').replace(
-                  '- Change one thing at a time and verify it before moving on. Prefer the smallest edit that works.',
-                  '- Make one logical change at a time; it may span several edits or files. Verify the change as a unit before moving on. Prefer the smallest change that works. Independent reads, searches and checks can be issued together in one reply.',
+                  '- Read the file before editing it.',
+                  '- Read the file before editing it.\n- Make one logical change at a time; it may span several edits or files. Verify the change as a unit before moving on. Prefer the smallest change that works. Independent reads, searches and checks can be issued together in one reply.',
                 )
               : loadPrompt('coding-doctrine'),
           ),

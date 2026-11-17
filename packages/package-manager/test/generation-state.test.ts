@@ -473,6 +473,40 @@ describe('generation package trees', () => {
     return { directory, plugin: { snapshot, generation: 1, trusted: true } }
   }
 
+  it('preserves verified source through archive restore and accepts a legacy missing source', async () => {
+    const { home, store, target } = fixture()
+    const { plugin } = source(home)
+    const provenance = { type: 'file' as const, ref: 'file:./bundled-plugins/judgment' }
+    const created = store.create(
+      target,
+      [{ ...plugin, snapshot: { ...plugin.snapshot, source: provenance } }],
+      'compat',
+      [],
+    )
+    expect((await store.readAsync(created.id)).sources[0]?.snapshot.source).toEqual(provenance)
+    const file = join(store.root, created.id, 'generation.json')
+    const raw = JSON.parse(readFileSync(file, 'utf8'))
+    delete raw.sources[0].snapshot.source
+    writeFileSync(file, JSON.stringify(raw))
+    expect(store.read(created.id).sources[0]?.snapshot.source).toBeUndefined()
+  })
+  it.each([
+    null,
+    { type: 'npm', ref: 'file:./bundled-plugins/judgment' },
+    { type: 'file', ref: 'file:./bundled-plugins/judgment', extra: true },
+    { type: 'file', ref: '' },
+    { type: 'file', ref: 'not-a-source' },
+  ])('refuses malformed or noncanonical archived source %j', (provenance) => {
+    const { home, store, target } = fixture()
+    const { plugin } = source(home)
+    const created = store.create(target, [plugin], 'compat', [])
+    const file = join(store.root, created.id, 'generation.json')
+    const raw = JSON.parse(readFileSync(file, 'utf8'))
+    raw.sources[0].snapshot.source = provenance
+    writeFileSync(file, JSON.stringify(raw))
+    expect(() => store.read(created.id)).toThrow('E_GENERATION_INTEGRITY')
+  })
+
   // Writes through one generation must leave the source snapshot and sibling generation intact.
   it('isolates writes through a generation path from its snapshot and sibling generation', () => {
     const { home, store, target } = fixture()

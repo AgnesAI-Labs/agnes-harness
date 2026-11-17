@@ -528,3 +528,21 @@ it('compares each call with the dearest one and prints every cost with the same 
   ])
   expect([1390, 414, 90, 3744].map(money)).toEqual(['$0.001390', '$0.000414', '$0.000090', '$0.003744'])
 })
+it('labels judgment calls in the turn usage disclosure without changing amounts', async () => {
+  const value = turn()
+  value.usage.calls = [
+    {
+      id: 'r',
+      seq: 1,
+      purpose: 'side-call',
+      caller: 'ext:agnes.judgment/main',
+      label: 'judgment.rules',
+      model: 'j',
+      creditSource: 'gateway',
+      credits: 2,
+    },
+  ]
+  await render({ turn: value, finalText: 'answer', settled: true })
+  expect(text('[data-testid="turn-usage-call-details"]')).toBe('判断')
+  expect(host.textContent).toContain('2 credits')
+})

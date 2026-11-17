@@ -163,6 +163,7 @@ it('lets a worker read validated active snapshots while a package effect owns th
     const sources = sourcesRead
     expect(sources).toHaveLength(1)
     expect(sources[0]?.snapshot.integrity).toBe(selected.integrity)
+    expect(sources[0]?.snapshot.source).toEqual(source)
     expect(sources[0]?.snapshot.agents).toEqual([{ ref: `${id}#work`, launch }])
     expect(sources[0]?.snapshot.application).toEqual(application)
     expect(sources[0]?.snapshot.directory).not.toBe(packageDir(root, 'local-dev', id))
@@ -362,6 +363,7 @@ it('pins immutable installed/previous/existing snapshots and keeps nested module
   })
   // The kept previous version is importable, so it carries its on-disk directory and manifest.
   expect(installed.verifiedRollbackTarget?.directory).toMatch(/\.previous-/)
+  expect(installed.verifiedRollbackTarget?.source).toEqual(source)
   expect(installed.verifiedRollbackTarget?.contributions).toEqual(active.snapshot.contributions)
   await m.trust(profile, id, {
     integrity: installed.entry.integrity,

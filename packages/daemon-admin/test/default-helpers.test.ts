@@ -1,4 +1,13 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { rebuildDesiredFromInventory } from '@agnes/daemon-foundation/composite-desired'
@@ -60,7 +69,10 @@ afterEach(() => {
   payloads.clear()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
-function setup(restrictCeiling = false) {
+function setup(
+  restrictCeiling = false,
+  checkpoint?: Parameters<typeof createPackageManager>[0]['checkpoint'],
+) {
   const root = mkdtempSync(join(tmpdir(), 'agh-default-helpers-'))
   roots.push(root)
   const profileDir = join(root, 'profiles', 'local-dev')
@@ -74,6 +86,7 @@ function setup(restrictCeiling = false) {
     agnesVersion: '0.0.0',
     exec,
     references: async () => [],
+    ...(checkpoint ? { checkpoint } : {}),
   })
   // A synthetic fresh-only release default exercises profile navigation without a product plugin.
   const payload = join(root, 'console-payload')
@@ -157,7 +170,7 @@ function setup(restrictCeiling = false) {
   }
   return { root, profileDir, manager, exec, initializePolicy }
 }
-it('installs release defaults and registers a synthetic primary entry offline once and preserves disable/remove on subsequent starts', async () => {
+it('installs release defaults and their primary entries offline once and preserves disable/remove on subsequent starts', async () => {
   const s = setup()
   await initializeDefaultHelpers(s)
   expect(
@@ -177,6 +190,7 @@ it('installs release defaults and registers a synthetic primary entry offline on
     ['@agnes/navigation-ui', true, true],
     ['@agnes/plugin-helper', true, true],
     ['@agnes/skill-helper', true, true],
+    ['@agnes/superagent', true, true],
     ['@agnes/test-console', true, true],
   ])
   const admin = createPackageAdminService({
@@ -193,10 +207,14 @@ it('installs release defaults and registers a synthetic primary entry offline on
       clientId: 'synthetic',
       permissions: ['packages.read'],
     },
-  )) as { packages: { id: string; presentation: { origin: string } }[] }
+  )) as { packages: { id: string; presentation: { origin: string; optional?: boolean } }[] }
   expect(listed.packages.find((row) => row.id === '@agnes/test-console')?.presentation.origin).toBe(
     'official',
   )
+  expect(listed.packages.find((row) => row.id === '@agnes/superagent')?.presentation).toMatchObject({
+    origin: 'official',
+    optional: true,
+  })
   let published: RuntimeTargetArtifact | undefined
   const publish = vi.fn(async (target: RuntimeTargetArtifact) => {
     published = target
@@ -213,6 +231,8 @@ it('installs release defaults and registers a synthetic primary entry offline on
     expect.arrayContaining([
       expect.objectContaining({ id: 'ext:fixture.console', disabled: false }),
       expect.objectContaining({ id: 'web:@agnes/test-console', disabled: false }),
+      expect.objectContaining({ id: 'ext:agnes.superagent/main', disabled: false }),
+      expect.objectContaining({ id: 'web:@agnes/superagent', disabled: false }),
     ]),
   )
   const registry = createClientModuleRegistry({
@@ -231,6 +251,12 @@ it('installs release defaults and registers a synthetic primary entry offline on
       refreshInventory: () => s.manager.inventory(s.profileDir),
     })
   try {
+    expect((await roster()).rows?.find((row) => row.packageId === '@agnes/superagent')).toMatchObject({
+      enabled: true,
+      phase: 'ready',
+      homeEntries: [expect.objectContaining({ id: 'superagent', placement: 'primary' })],
+      binding: { lifetime: 'profile', availability: 'active' },
+    })
     expect((await roster()).rows?.find((row) => row.packageId === '@agnes/test-console')).toMatchObject({
       enabled: true,
       phase: 'ready',
@@ -257,6 +283,7 @@ it('installs release defaults and registers a synthetic primary entry offline on
   } finally {
     registry.close()
   }
+  await s.manager.setEnabled(s.profileDir, '@agnes/superagent', false)
   await s.manager.setEnabled(s.profileDir, '@agnes/mcp-helper', false)
   await s.manager.setEnabled(s.profileDir, '@agnes/skill-helper', false)
   await s.manager.remove(s.profileDir, '@agnes/skill-helper')
@@ -273,8 +300,14 @@ it('installs release defaults and registers a synthetic primary entry offline on
     ['@agnes/mcp-helper', false],
     ['@agnes/navigation-ui', true],
     ['@agnes/plugin-helper', true],
+    ['@agnes/superagent', false],
     ['@agnes/test-console', false],
   ])
+  await s.manager.remove(s.profileDir, '@agnes/superagent')
+  await initializeDefaultHelpers(s)
+  expect((await s.manager.inventory(s.profileDir)).packages.some((p) => p.id === '@agnes/superagent')).toBe(
+    false,
+  )
   expect(s.exec).not.toHaveBeenCalled()
 })
 it.each([
@@ -283,6 +316,7 @@ it.each([
   [true, '@agnes/deliverables-ui'],
   [true, '@agnes/goal-ui'],
   [true, '@agnes/interaction-ui'],
+  [true, '@agnes/superagent'],
 ] as const)(
   'provisions profiles under their ceiling and rejects damaged records (restricted=%s, other blocker=%s)',
   async (restricted, otherBlocker) => {
@@ -313,7 +347,7 @@ it.each([
     }
     await initializeDefaultHelpers(s)
     const packages = (await s.manager.inventory(s.profileDir)).packages
-    expect(packages).toHaveLength(restricted ? 4 : 10)
+    expect(packages).toHaveLength(restricted ? 4 : 11)
     for (const id of [
       '@agnes/browser',
       '@agnes/conversation-ui',
@@ -321,6 +355,7 @@ it.each([
       '@agnes/goal-ui',
       '@agnes/interaction-ui',
       '@agnes/navigation-ui',
+      '@agnes/superagent',
     ])
       expect(
         packages.some((pkg) => pkg.id === id),
@@ -341,6 +376,7 @@ it.each([
       '@agnes/goal-ui',
       '@agnes/interaction-ui',
       '@agnes/navigation-ui',
+      '@agnes/superagent',
     ])
       expect(receipt.offered).toContain(id)
     // Even a subsequently wider ceiling does not silently reverse an omitted offer.
@@ -376,6 +412,7 @@ it.each([
   { backfill: false, step: 'trust' },
   { backfill: true, step: 'policy' },
   { backfill: true, step: 'trust' },
+  { backfill: true, step: 'audit' },
 ])(
   'resumes interrupted provisioning without replacing installed packages (backfill=$backfill, step=$step)',
   async ({ backfill, step }) => {
@@ -395,27 +432,43 @@ it.each([
     const trust = s.manager.trust.bind(s.manager)
     const initializePolicy = s.initializePolicy
     const spy =
-      step === 'trust'
-        ? vi
-            .spyOn(s.manager, 'trust')
-            .mockRejectedValueOnce(new Error('interrupted'))
-            .mockImplementation(trust)
-        : vi
-            .spyOn(s, 'initializePolicy')
-            .mockRejectedValueOnce(new Error('interrupted'))
-            .mockImplementation(initializePolicy)
-    await expect(initializeDefaultHelpers(s)).rejects.toThrow('interrupted')
+      step === 'audit'
+        ? undefined
+        : step === 'trust'
+          ? vi
+              .spyOn(s.manager, 'trust')
+              .mockRejectedValueOnce(new Error('interrupted'))
+              .mockImplementation(trust)
+          : vi
+              .spyOn(s, 'initializePolicy')
+              .mockRejectedValueOnce(new Error('interrupted'))
+              .mockImplementation(initializePolicy)
+    const audit = join(s.profileDir, '.agnes-package-audit.jsonl')
+    if (step === 'audit') {
+      for (const text of ['broken\n', '{"partial":']) {
+        writeFileSync(audit, text)
+        await expect(initializeDefaultHelpers(s)).rejects.toThrow('removal history is unreadable')
+        expect((await s.manager.inventory(s.profileDir)).packages).toEqual([])
+        expect(
+          JSON.parse(readFileSync(join(s.profileDir, 'default-helpers', 'state.json'), 'utf8')).version,
+        ).toBe(3)
+        expect(readFileSync(audit, 'utf8')).toBe(text)
+      }
+      rmSync(audit)
+      await initializeDefaultHelpers(s)
+    } else await expect(initializeDefaultHelpers(s)).rejects.toThrow('interrupted')
     const pending = JSON.parse(readFileSync(join(s.profileDir, 'default-helpers', 'state.json'), 'utf8'))
-    expect(pending).toMatchObject({ version: 4, phase: 'pending' })
+    expect(pending).toMatchObject({ version: 4, phase: step === 'audit' ? 'installed' : 'pending' })
     expect(pending.offered).toContain('@agnes/goal-ui')
     expect(pending.integrity['@agnes/goal-ui']).toMatch(/^sha256-/)
-    expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(step === 'trust' ? 1 : 0)
+    if (step !== 'audit')
+      expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(step === 'trust' ? 1 : 0)
     await initializeDefaultHelpers(s)
     expect((await s.manager.inventory(s.profileDir)).packages.every((p) => p.entry.state.enabled)).toBe(true)
     expect(JSON.parse(readFileSync(join(s.profileDir, 'default-helpers', 'state.json'), 'utf8')).phase).toBe(
       'installed',
     )
-    spy.mockRestore()
+    spy?.mockRestore()
     await activateDefaultHelpers({
       ...s,
       inventory: await s.manager.inventory(s.profileDir),
@@ -477,34 +530,54 @@ it('retries target publication after failure and never reactivates completed def
   expect(publish).toHaveBeenCalledTimes(2)
 })
 
-it('migrates the earlier existing marker without enabling or replacing an installed helper', async () => {
-  const s = setup()
-  await s.initializePolicy()
-  const source = parseSource('file:./bundled-plugins/skill-helper')
-  const preview = await s.manager.inspect(s.profileDir, source)
-  await s.manager.install(s.profileDir, source, { expectedIntegrity: preview.integrity })
-  const before = (await s.manager.inventory(s.profileDir)).packages.find(
-    (p) => p.id === '@agnes/skill-helper',
-  )
-  mkdirSync(join(s.profileDir, 'default-helpers'))
-  writeFileSync(
-    join(s.profileDir, 'default-helpers', 'state.json'),
-    JSON.stringify({ version: 1, phase: 'existing', integrity: {} }),
-  )
-  await initializeDefaultHelpers(s)
-  const inventory = await s.manager.inventory(s.profileDir)
-  expect(inventory.packages.find((p) => p.id === '@agnes/skill-helper')).toEqual(before)
-  expect(inventory.packages.find((p) => p.id === '@agnes/mcp-helper')?.entry.state).toMatchObject({
-    enabled: true,
-  })
-  const publish = vi.fn(async () => {})
-  await activateDefaultHelpers({ profileDir: s.profileDir, inventory, previous: undefined, publish })
-  expect(publish).toHaveBeenCalledOnce()
-  await s.manager.setEnabled(s.profileDir, '@agnes/mcp-helper', false)
-  await s.manager.remove(s.profileDir, '@agnes/mcp-helper')
-  await initializeDefaultHelpers(s)
-  expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(9)
-})
+it.each(['installed', 'disabled', 'removed', 'remove-crash', 'reinstalled'])(
+  'migrates an earlier marker while preserving a previously optional Superagent (%s)',
+  async (choice) => {
+    let crash = false
+    const s = setup(false, (point) => {
+      if (crash && point === 'lock-written') {
+        crash = false
+        throw new Error('interrupted remove')
+      }
+    })
+    await s.initializePolicy()
+    const source = parseSource('file:./bundled-plugins/superagent')
+    const preview = await s.manager.inspect(s.profileDir, source)
+    await s.manager.install(s.profileDir, source, { expectedIntegrity: preview.integrity })
+    if (choice !== 'installed') {
+      if (!preview.capabilityHash) throw new Error('Missing capability hash')
+      await s.manager.trust(s.profileDir, preview.id, {
+        integrity: preview.integrity,
+        capabilityHash: preview.capabilityHash,
+      })
+      await s.manager.setEnabled(s.profileDir, preview.id, true)
+      await s.manager.setEnabled(s.profileDir, preview.id, false)
+    }
+    if (['removed', 'remove-crash', 'reinstalled'].includes(choice)) {
+      crash = choice === 'remove-crash'
+      if (crash)
+        await expect(s.manager.remove(s.profileDir, preview.id)).rejects.toThrow('interrupted remove')
+      else await s.manager.remove(s.profileDir, preview.id)
+      if (choice === 'reinstalled')
+        await s.manager.install(s.profileDir, source, { expectedIntegrity: preview.integrity })
+    }
+    const before = (await s.manager.inventory(s.profileDir)).packages.find((p) => p.id === preview.id)
+    mkdirSync(join(s.profileDir, 'default-helpers'))
+    const receipt = join(s.profileDir, 'default-helpers', 'state.json')
+    writeFileSync(receipt, JSON.stringify({ version: 1, phase: 'existing', integrity: {} }))
+    await initializeDefaultHelpers(s)
+    const inventory = await s.manager.inventory(s.profileDir)
+    expect(inventory.packages.find((p) => p.id === preview.id)).toEqual(before)
+    expect(inventory.packages.find((p) => p.id === '@agnes/mcp-helper')?.enabled).toBe(true)
+    expect(JSON.parse(readFileSync(receipt, 'utf8')).offered).toContain(preview.id)
+    expect(existsSync(join(s.profileDir, '.agnes-package-transaction.json'))).toBe(false)
+    await activateDefaultHelpers({ ...s, inventory, previous: undefined, publish: async () => {} })
+    // No new default candidate: corrupt history must not trigger a new read on the next boot.
+    writeFileSync(join(s.profileDir, '.agnes-package-audit.jsonl'), 'broken\n')
+    await initializeDefaultHelpers(s)
+    expect((await s.manager.inventory(s.profileDir)).packages).toEqual(inventory.packages)
+  },
+)
 it('records completion without activation when all helpers are already installed', async () => {
   const s = setup()
   await s.initializePolicy()
@@ -519,6 +592,7 @@ it('records completion without activation when all helpers are already installed
     'interaction-ui',
     'deliverables-ui',
     'document-reader',
+    'superagent',
   ]) {
     const source = parseSource(`file:./bundled-plugins/${name}`)
     const preview = await s.manager.inspect(s.profileDir, source)
@@ -582,7 +656,7 @@ it.each([1, 2, 3, 4])(
     )
     await initializeDefaultHelpers(s)
     const inventory = await s.manager.inventory(s.profileDir)
-    expect(inventory.packages).toHaveLength(version === 3 ? 10 : 9)
+    expect(inventory.packages).toHaveLength(version === 3 ? 11 : 10)
     expect(inventory.packages.every((pkg) => pkg.trusted)).toBe(true)
     expect(inventory.packages.filter((pkg) => !pkg.enabled).map((pkg) => pkg.id)).toEqual(
       version === 3 ? [] : ['@agnes/skill-helper'],
@@ -598,7 +672,14 @@ it.each([1, 2, 3, 4])(
         target = next
       },
     })
-    for (const name of ['goal-ui', 'interaction-ui', 'deliverables-ui', 'navigation-ui', 'conversation-ui']) {
+    for (const name of [
+      'goal-ui',
+      'interaction-ui',
+      'deliverables-ui',
+      'navigation-ui',
+      'conversation-ui',
+      'superagent',
+    ]) {
       const pkg = inventory.packages.find((pkg) => pkg.id === `@agnes/${name}`)
       if (!pkg || !target) throw new Error('Missing presentation or target')
       expect(pkg.entry.trustDecision).toMatchObject({
@@ -620,7 +701,7 @@ it.each([1, 2, 3, 4])(
       phase: 'complete',
       offered: expect.arrayContaining(inventory.packages.map((pkg) => pkg.id)),
     })
-    expect(JSON.parse(readFileSync(file, 'utf8')).offered).toHaveLength(10)
+    expect(JSON.parse(readFileSync(file, 'utf8')).offered).toHaveLength(11)
     await s.manager.setEnabled(s.profileDir, '@agnes/goal-ui', false)
     await s.manager.remove(s.profileDir, '@agnes/goal-ui')
     await s.manager.setEnabled(s.profileDir, '@agnes/interaction-ui', false)

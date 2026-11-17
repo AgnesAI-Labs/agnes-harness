@@ -463,6 +463,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     o: RemoteOpen,
     sessionEpoch: number,
     rules: boolean,
+    created = false,
   ): Promise<RemoteEntry> {
     const isCurrent = (): boolean => !this.closingAll && (this.sessionEpochs.get(key) ?? 0) === sessionEpoch
     if (!isCurrent()) throw new Error(`session ${key} was closed while opening`)
@@ -485,7 +486,9 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       ...(o.agent !== undefined ? { agent: o.agent } : {}),
       ...(o.agentDigest !== undefined ? { agentDigest: o.agentDigest } : {}),
       ...(o.bundles !== undefined ? { bundles: o.bundles } : {}),
-      ...(o.systemPromptAppend !== undefined ? { systemPromptAppend: o.systemPromptAppend } : {}),
+      // Once an earlier attempt created the session, its append is pinned there; sending it again would be
+      // an append to an existing session, which the kernel refuses.
+      ...(o.systemPromptAppend !== undefined && !created ? { systemPromptAppend: o.systemPromptAppend } : {}),
       ...(o.loop ? { loop: o.loop } : {}),
       ...(o.parent && o.forkAt !== undefined ? { parent: { key: o.parent, boundarySeq: o.forkAt } } : {}),
       ...(rules ? { outwardCommandRules: true as const } : {}),
@@ -570,7 +573,8 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         // and that failure would retire the replacement channel opened next.
         await link.closeSession('resource-snapshot-reload').catch(() => undefined)
         this.artifactReplayBuffers.delete(key)
-        return this.openFresh(key, o, sessionEpoch, rules)
+        // The discarded worker said hello, so the session it opened exists: the replacement reopens it.
+        return this.openFresh(key, o, sessionEpoch, rules, true)
       }
       const replayBuffer = this.artifactReplayBuffers.get(key)
       if (!replayBuffer) throw new Error('session history replay is unavailable')
