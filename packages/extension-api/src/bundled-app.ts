@@ -66,6 +66,10 @@ export interface BundledAppGrant {
    * does not depend on the SDK; narrow it with the SDK's client type. Closed when the grant ends. */
   readonly client: unknown
   readonly channels: BundledAppChannels
+  /** Superagent only: migrate its registered, idle sessions to this published payload before
+   * accepting work. Busy sessions, uncertain effects and incompatible bindings refuse the start.
+   * The daemon obtains the roster from the current service, never from caller-supplied ids. */
+  prepareSessionUpgrade?(): Promise<void>
   /** Throws CAPABILITY_DENIED once the package is disabled or its activation is replaced. */
   assertCurrent(): void
 }

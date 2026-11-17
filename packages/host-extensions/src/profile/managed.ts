@@ -74,7 +74,7 @@ const profiles = new Map<
 export class ProfileManagedResources {
   /** Resolve an already-running current resource from a session composition. Never publishes,
    * starts or revives a factory from that composition; the live resource owns its epoch. */
-  async currentValue<T>(owner: string, id: string, integrity: string): Promise<T> {
+  async currentValue<T>(owner: string, id: string, integrity: string, incarnation?: string): Promise<T> {
     const resource = profiles
       .get(this.key)
       ?.resources.find((row) => row.owner === owner && row.id === id && row.integrity === integrity)
@@ -82,6 +82,7 @@ export class ProfileManagedResources {
       if (
         this.closed ||
         !resource ||
+        (incarnation !== undefined && resource.incarnation !== incarnation) ||
         profiles.get(this.key)?.resources.includes(resource) !== true ||
         resource.lifetime.signal.aborted ||
         resource.status.state !== 'ready' ||
@@ -376,7 +377,7 @@ export class ProfileManagedResources {
         listeners[listener.name] = { host: listener.host, port: port === 'auto' ? await freePort() : port }
       }
       lifetime.signal.throwIfAborted()
-      if (input.bundledApp) app = openBundledApp(input.bundledApp, appFence)
+      if (input.bundledApp) app = openBundledApp(input.bundledApp, appFence, input.integrity, r.incarnation)
       const owner = await managedProcessOwner(process.pid, this.processIdentity)
       lifetime.signal.throwIfAborted()
       input.store.transaction(() => {

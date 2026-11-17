@@ -130,6 +130,45 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   private resourceEpoch = 0
   private readonly generationMigrations = new Set<string>()
 
+  /** Bundled-app coordinator only. Freeze the verified roster through close and migration replies.
+   * On a broken worker link, WorkerPool additionally gates admission on child exit and recovery. */
+  async upgradeIdleSessions<T>(
+    keys: readonly string[],
+    principalId: string,
+    ownership: Pick<SessionPrincipalOwnership, 'resolve'>,
+    upgrade: () => Promise<T>,
+  ): Promise<T> {
+    for (const key of keys) {
+      let owner: ReturnType<SessionPrincipalOwnership['resolve']>
+      try {
+        owner = ownership.resolve(key)
+      } catch {
+        /* fail closed */
+      }
+      if (owner?.principalId !== principalId)
+        throw rpcError('CAPABILITY_DENIED', { reason: 'session owner unavailable' })
+      const entry = this.entries.get(key)
+      if (
+        this.closingAll ||
+        this.opening.has(key) ||
+        this.generationMigrations.has(key) ||
+        entry?.inflight ||
+        entry?.session.running
+      )
+        throw new Error('E_GENERATION_SESSION_OPEN: session is busy or opening')
+    }
+    for (const key of keys) this.generationMigrations.add(key)
+    try {
+      // close() forgets each entry synchronously before awaiting its worker. New requests cannot
+      // use get/require/open while the fence is held, including between close and migration.
+      const closed = await Promise.allSettled(keys.map((key) => this.close(key)))
+      for (const result of closed) if (result.status === 'rejected') throw result.reason
+      return await upgrade()
+    } finally {
+      for (const key of keys) this.generationMigrations.delete(key)
+    }
+  }
+
   /** Refuse live/opening sessions and fence all admissions for this key until pin migration settles. */
   async migrateGeneration<T>(
     key: string,
@@ -776,6 +815,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   }
 
   get(key: string): RemoteEntry | undefined {
+    if (this.generationMigrations.has(key)) return undefined
     return this.entries.get(key)
   }
 
@@ -788,6 +828,8 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   }
 
   require(key: string): RemoteEntry {
+    if (this.generationMigrations.has(key))
+      throw new Error('E_GENERATION_SESSION_OPEN: session migration is in progress')
     const e = this.entries.get(key)
     if (!e) throw rpcError('SESSION_NOT_FOUND', { sessionId: key })
     return e

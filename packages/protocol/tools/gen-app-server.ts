@@ -17,6 +17,7 @@ import * as Schedules from '../src/schedules.js'
 import * as Integrity from '../src/session-integrity.js'
 import * as RuntimeDescriptor from '../src/session-runtime.js'
 import * as Tools from '../src/session-tools.js'
+import * as Superagent from '../src/superagent.js'
 
 type Node = Record<string, unknown>
 /** Flatten TypeBox module scopes and recursive ids into portable document-local JSON pointers. */
@@ -35,6 +36,7 @@ export function appServerArtifacts() {
     ['../../src/session-runtime.js', RuntimeDescriptor],
     ['../../src/session-tools.js', Tools],
     ['../../src/session-integrity.js', Integrity],
+    ['../../src/superagent.js', Superagent],
     ['./app-server.js', App],
     ['./extension-service.js', ProfileServices],
   ] as const

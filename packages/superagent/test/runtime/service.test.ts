@@ -11,6 +11,7 @@ import { createHookStateHolder } from '../../src/runtime/hook-state.js'
 import { closeGeneration, DATABASE_FILE, startService } from '../../src/runtime/index.js'
 import { SessionRegistry } from '../../src/runtime/sessions.js'
 import { fakeClient } from './fake-sdk.js'
+import { ticket } from './helpers.js'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -24,6 +25,7 @@ function generation() {
   const shutdowns: ((reason: 'disable' | 'upgrade' | 'exit') => Promise<unknown>)[] = []
   const init = {
     bundledApp: {
+      prepareSessionUpgrade: async () => {},
       stateDirectory,
       // The SDK client a grant carries, as the service checks it.
       client: {
@@ -51,6 +53,18 @@ describe('the service generations', () => {
     // The second generation's store knows the main session and its live note from an earlier run.
     const store = openStore(join(second.stateDirectory, DATABASE_FILE))
     new SessionRegistry(store).record({ kind: 'orchestrator' }, 'superagent:orchestrator')
+    const registry = new SessionRegistry(store)
+    registry.record({ kind: 'worker', ticketId: 'open' }, 'legacy-worker-without-prefix')
+    registry.record({ kind: 'worker', ticketId: 'ended' }, 'ended-worker')
+    store.tickets.save(
+      ticket('open', {
+        assignment: {
+          state: 'ended',
+          report: { state: 'failed', summary: 'Needs recovery', at: '2025-09-07T00:00:00.000Z' },
+        },
+      }),
+    )
+    store.tickets.save(ticket('ended', { state: 'ended' }))
     new SessionDelivery({ sessions: { handle: () => Promise.reject(new Error('unused')) }, store }).notify(
       'superagent:orchestrator',
       { content: 'Settings saved' },
@@ -59,7 +73,8 @@ describe('the service generations', () => {
 
     await startService(first.init, holder, log)
     await settled()
-    await startService(second.init, holder, log)
+    const service = await startService(second.init, holder, log)
+    expect(service.upgradeSessionIds()).toEqual(['superagent:orchestrator', 'legacy-worker-without-prefix'])
     await settled()
     const current = holder.get()
     // The first generation's stop finishes only now, after the second took over.
@@ -67,6 +82,7 @@ describe('the service generations', () => {
     expect(holder.get()).toBe(current)
 
     await second.shutdown('disable')
+    expect(() => service.upgradeSessionIds()).toThrow()
     const left = holder.get()
     const call = (sessionId: string) => left.guardTool({ sessionId, toolName: 'read', input: {} })
     expect(left.isSuperagentSession('superagent:orchestrator')).toBe(true)

@@ -1267,6 +1267,78 @@ it('fences generation migration by authenticated ownership and releases admissio
   ).resolves.toBe('migrated')
 })
 
+it('freezes the entire idle upgrade roster through close and migration, refusing busy and opening entries', async () => {
+  const deferred = () => {
+    let resolve!: () => void
+    const promise = new Promise<void>((done) => {
+      resolve = done
+    })
+    return { promise, resolve }
+  }
+  const closing = deferred()
+  const acquiring = deferred()
+  const pool = {
+    async acquire(key: string) {
+      if (key === 'opening') await acquiring.promise
+      return {
+        alive: true,
+        hello: Promise.resolve({
+          kind: 'hello',
+          token: key,
+          sessionKey: key,
+          writerRunId: key,
+          generation: 1,
+          profileHash: 'fixture',
+          lastSeq: 0,
+        }),
+        onExit() {},
+        closeSession: () => closing.promise,
+        command: async (method: string) => (method === 'scan' ? [] : undefined),
+      }
+    },
+  } as unknown as WorkerPool
+  const registry = new WorkerRegistry(pool)
+  const ownership = { resolve: () => ({ active: true as const, principalId: 'owner' }) }
+  const main = await open(registry, { key: 'main', cwd: '/workspace' })
+  const worker = await open(registry, { key: 'worker', cwd: '/workspace' })
+  const ordinary = await open(registry, { key: 'ordinary', cwd: '/workspace' })
+  const releaseBusy = worker.session.beginActivity()
+  await expect(
+    registry.upgradeIdleSessions(['main', 'worker'], 'owner', ownership, async () => {}),
+  ).rejects.toThrow('E_GENERATION_SESSION_OPEN')
+  expect(registry.get('main')).toBe(main)
+  releaseBusy()
+  const opening = open(registry, { key: 'opening', cwd: '/workspace' })
+  await vi.waitFor(() => expect(registry.holds('opening', 'anything')).toBe(true))
+  await expect(
+    registry.upgradeIdleSessions(['main', 'opening'], 'owner', ownership, async () => {}),
+  ).rejects.toThrow('E_GENERATION_SESSION_OPEN')
+  acquiring.resolve()
+  await opening
+  const migrating = deferred()
+  const entered = deferred()
+  const upgrade = registry.upgradeIdleSessions(['main', 'worker'], 'owner', ownership, async () => {
+    entered.resolve()
+    await migrating.promise
+    throw new Error('E_GENERATION_EXECUTION_UNSETTLED')
+  })
+  for (const key of ['main', 'worker']) {
+    expect(registry.get(key)).toBeUndefined()
+    expect(() => registry.require(key)).toThrow('E_GENERATION_SESSION_OPEN')
+    await expect(open(registry, { key, cwd: '/workspace' })).rejects.toThrow('E_GENERATION_SESSION_OPEN')
+  }
+  expect(registry.get('ordinary')).toBe(ordinary)
+  closing.resolve()
+  await entered.promise
+  await expect(open(registry, { key: 'main', cwd: '/workspace' })).rejects.toThrow(
+    'E_GENERATION_SESSION_OPEN',
+  )
+  migrating.resolve()
+  await expect(upgrade).rejects.toThrow('E_GENERATION_EXECUTION_UNSETTLED')
+  await expect(open(registry, { key: 'main', cwd: '/workspace' })).resolves.toMatchObject({ key: 'main' })
+  await registry.closeAll()
+})
+
 it('asks the worker for outward command rules on every open of a managed key and refuses an open entry without them', async () => {
   const managed = new Set(['managed-a'])
   const workerExit: Array<() => void> = []

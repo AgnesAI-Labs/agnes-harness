@@ -336,6 +336,15 @@ refuse a line break in an argument to a batch file. The prompt is not a boundary
   jobs are stopped, so a `git push` or a test run in progress is cut off. Once Superagent is back, the interrupted
   tickets resume as after a daemon restart: each interrupted assignment is dispatched again with a recovery note.
   Change plugins in this home when the overview shows no ticket running.
+- **Superagent code upgrades.** Before accepting work, the published service moves its registered main session and
+  unfinished ticket sessions to its exact payload, including updates that keep the same version number. Only sessions
+  whose code differs are closed and migrated; an ordinary restart keeps current bindings. Other sessions keep their pins.
+  Busy sessions or unsettled effects leave startup paused and are retried; **Check again** retries after the cause is
+  resolved. This requires the daemon shipped with this Superagent update.
+- **Unknown tool outcomes.** An upgrade does not discard history or replay an uncertain call. Migration can recognize a
+  formal human answer to that exact call only after Core consumed the answer and recorded its checkpoint. This is a
+  person's reconciliation, not proof that the system observed the effect. Unanswered or unrelated unknown outcomes
+  continue to block migration.
 - **Stored work.** Every outward action (a reply, a launch, a delivery) is stored before it runs and removed only once it
   succeeded, and retried with backoff. While processing is paused, Sources keep recording.
 - **A delivery whose outcome is unknown** is looked up by its command id; when that cannot be confirmed it is recorded as

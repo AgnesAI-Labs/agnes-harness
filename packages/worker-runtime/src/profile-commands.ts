@@ -6,7 +6,7 @@ import {
   type HostSession,
   SessionEnvironmentStore,
 } from '@agnes/host'
-import { type Actor, parseSessionEnvironment, rpcError } from '@agnes/protocol'
+import { type Actor, parseSessionEnvironment, rpcError, sha256Hex } from '@agnes/protocol'
 import type { WorkerCommandFrame } from './frames.js'
 import { profileStreamEndpoint } from './profile-stream-server.js'
 
@@ -63,6 +63,22 @@ export async function profileServiceCommand(
           .statuses(String(p.packageId))
           .map(({ id, state, code }) => ({ id, state, ...(code ? { code } : {}) })),
       }
+    }
+    case 'profileManaged.superagentUpgradeSessions': {
+      if (
+        !host?.profileServices?.managed ||
+        typeof p.integrity !== 'string' ||
+        typeof p.incarnation !== 'string'
+      )
+        throw rpcError('CAPABILITY_DENIED')
+      // This fixed release service supplies the roster; a caller cannot claim sessions by prefix.
+      const service = await host.profileServices.managed.currentValue<{ upgradeSessionIds(): string[] }>(
+        `plugin/${sha256Hex('ext:agnes.superagent/main').slice(0, 16)}`,
+        'superagent',
+        p.integrity,
+        p.incarnation,
+      )
+      return service.upgradeSessionIds()
     }
     case 'sessionEnvironment.write':
     case 'sessionEnvironment.release': {

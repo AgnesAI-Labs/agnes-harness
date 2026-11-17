@@ -47,6 +47,7 @@ import { readRuntimeSkillCandidates, type SkillCandidate } from '@agnes/resource
 import { startApprovalExpiry } from '../approval/expiry.js'
 import { type AssembleDeps, type Assembled, assemble } from '../assemble/assemble.js'
 import { startIdleChildMaintenance } from '../children/idle-child-maintenance.js'
+import type { GenerationMigrationContext } from '../generation/change-result.js'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
 import { createCompositionHost } from '../profile/composition-runtime.js'
 import { trackHostComposition } from '../profile/composition-tracking.js'
@@ -141,13 +142,7 @@ export interface Host extends HostManagement {
   /** Privileged coordinator only: the caller must exclude concurrent admission for this idle session. */
   migrateSessionGeneration?(
     sessionKey: string,
-    context?: {
-      recoveryRequired?: () => boolean
-      /** Pinned seam kinds the administrator agrees to replace; any other pinned change is refused. */
-      repin?: readonly string[]
-      /** Who asked, for the audit record. */
-      operator?: string
-    },
+    context?: GenerationMigrationContext,
   ): Promise<{
     previousGenerationId: string
     generationId: string
