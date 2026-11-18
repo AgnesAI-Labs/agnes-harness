@@ -5789,6 +5789,33 @@
       "type": "string",
       "pattern": "^secret://generic/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
     },
+    "RefinementModelId": {
+      "type": "string",
+      "pattern": "^(?:[^\\u0000-\\u001F\\u007F-\\u009F\\s\\uD800-\\uDFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]){1,256}$"
+    },
+    "RefinementModelOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "contextWindow", "maxTokens"],
+      "properties": {
+        "id": { "$ref": "#/$defs/RefinementModelId" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "contextWindow": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "maxTokens": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+      }
+    },
+    "RefinementModelsResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["models"],
+      "properties": {
+        "models": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": { "$ref": "#/$defs/RefinementModelOption" }
+        }
+      }
+    },
     "RefinementSettings": {
       "anyOf": [
         {
@@ -5798,17 +5825,19 @@
           "properties": {
             "enabled": { "const": false },
             "mode": { "enum": ["manual", "auto"] },
-            "credentialRef": { "$ref": "#/$defs/RefinementCredentialRef" }
+            "credentialRef": { "$ref": "#/$defs/RefinementCredentialRef" },
+            "model": { "$ref": "#/$defs/RefinementModelId" }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["enabled", "mode", "credentialRef"],
+          "required": ["enabled", "mode", "credentialRef", "model"],
           "properties": {
             "enabled": { "const": true },
             "mode": { "enum": ["manual", "auto"] },
-            "credentialRef": { "$ref": "#/$defs/RefinementCredentialRef" }
+            "credentialRef": { "$ref": "#/$defs/RefinementCredentialRef" },
+            "model": { "$ref": "#/$defs/RefinementModelId" }
           }
         }
       ]

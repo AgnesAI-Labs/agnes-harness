@@ -9,7 +9,7 @@ import {
   saveEntryToWorkspace,
 } from '../../src/runtime/sessions/session-refinement.js'
 
-const service = { target: { route: 'rsi', model: 'review' }, provider: () => fakeProvider([]) }
+const service = { target: () => ({ route: 'rsi', model: 'review' }), provider: () => fakeProvider([]) }
 const planner = { buildPrompt: () => ({}) as never, parseOutput: () => ({ error: 'unused' }) }
 
 describe('a manual refinement request', () => {

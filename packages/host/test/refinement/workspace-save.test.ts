@@ -23,7 +23,7 @@ import {
   type PendingParagraph,
   type RefinementApprovals,
 } from '../../src/runtime/refinement/workspace-save.js'
-import { reviewCredential } from './service-key.js'
+import { reviewCredential, reviewModel } from './service-key.js'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -966,7 +966,7 @@ describe('the assembled host', () => {
     const { RefinementSettingsStore } = await import('@agnes/host-infrastructure/refinement-settings')
     const store = new RefinementSettingsStore(ws.dataDir, 'p')
     store.save(
-      { credentialRef: reviewCredential(ws.dataDir), enabled: true, mode: 'auto' },
+      { credentialRef: reviewCredential(ws.dataDir), model: reviewModel, enabled: true, mode: 'auto' },
       store.read().revision,
     )
     const host = createRefinementHost(ws.dataDir, 'p', ws.clock)

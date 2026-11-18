@@ -306,6 +306,9 @@ export async function planRefinementRun(
     const attempt = (run.attempt ?? 0) + 1
     const byId = new Map(snapshot.items.map((item) => [item.id, item]))
     const target = deps.target
+    const current = deps.settings()
+    if (!current.enabled || current.revision !== settings.revision)
+      return await move(s, runId, 'cancelled', { reason: 'settings-changed' }, queued)
     if (!target) return await move(s, runId, 'rejected', { reason: 'unavailable' }, queued)
     const planning = await move(
       s,

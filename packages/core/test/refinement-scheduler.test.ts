@@ -130,7 +130,7 @@ function provider(o: { plans?: Plan[]; holds?: Map<number, Promise<void>> } = {}
 type Switch = RefinementSettingsView
 
 function deps(sw: Switch, over: Partial<RefinementDeps> = {}): RefinementDeps {
-  return { settings: () => ({ ...sw }), planner: () => planner, target, ...over }
+  return { settings: () => ({ ...sw }), planner: () => planner, target: () => target, ...over }
 }
 
 async function open(

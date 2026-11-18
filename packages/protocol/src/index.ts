@@ -140,6 +140,10 @@ export type {
   PluginRuntimeStatusResult,
   PluginStreamsEndpointParams,
   PluginStreamsEndpointResult,
+  RefinementCredentialRef,
+  RefinementModelId,
+  RefinementModelOption,
+  RefinementModelsResult,
   RefinementSavedSkill,
   RefinementSaveReceipt,
   RefinementSettings,
@@ -803,14 +807,7 @@ export * from './session-environment.js'
 export * from './session-integrity.js'
 export * from './session-runtime.js'
 export * from './session-tools.js'
-export type {
-  SessionVersionAction,
-  SessionVersionCode,
-  SessionVersionFacts,
-  SessionVersionIssue,
-  SessionVersionNotice,
-} from './session-version.js'
-export { SESSION_VERSION_CODES, sessionVersionNotice } from './session-version.js'
+export * from './session-version.js'
 export { IncrementalSha256, sha256Hex } from './sha256.js'
 export * from './slots.js'
 export * from './stored-attachments.js'

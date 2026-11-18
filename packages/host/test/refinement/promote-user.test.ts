@@ -18,7 +18,7 @@ import { registryView } from '../../src/runtime/refinement/registry-view.js'
 import { createUserSave, routedSaves } from '../../src/runtime/refinement/user-save.js'
 import { manageUserSections } from '../../src/runtime/refinement/user-sections.js'
 import { createWorkspaceSave } from '../../src/runtime/refinement/workspace-save.js'
-import { reviewCredential } from './service-key.js'
+import { reviewCredential, reviewModel } from './service-key.js'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -506,7 +506,12 @@ describe('the user memory registry', () => {
     ].map(([dataDir, profile]) => {
       const store = new RefinementSettingsStore(dataDir as string, profile as string, h.dir)
       store.save(
-        { credentialRef: reviewCredential(dataDir as string, h.dir), enabled: true, mode: 'auto' },
+        {
+          credentialRef: reviewCredential(dataDir as string, h.dir),
+          model: reviewModel,
+          enabled: true,
+          mode: 'auto',
+        },
         store.read().revision,
       )
       return createRefinementHost(dataDir as string, profile as string, () => h.now.value, { home: h.dir })

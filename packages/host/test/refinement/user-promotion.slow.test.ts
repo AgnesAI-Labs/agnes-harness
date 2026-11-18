@@ -26,7 +26,7 @@ import {
   startWireCapture,
   type WireReply,
 } from '../../testkit/index.js'
-import { reviewCredential, routeReviewToLoopback } from './service-key.js'
+import { reviewCredential, reviewModel, routeReviewToLoopback } from './service-key.js'
 
 // The whole promotion path in an assembled host: the refine plugin's planner on a loopback model, Core's
 // reach and automatic offer, the Host's promotion, user registry and validity view, and the bundled file
@@ -184,7 +184,7 @@ async function twoWorkspaces(
   }
   const settings = new RefinementSettingsStore(dataDir, PROFILE, dataDir)
   settings.save(
-    { credentialRef: reviewCredential(dataDir, dataDir), enabled, mode: 'auto' },
+    { credentialRef: reviewCredential(dataDir, dataDir), model: reviewModel, enabled, mode: 'auto' },
     settings.read().revision,
   )
   const planner = [lesson, confirm(AGAIN), confirm(ONCE_MORE)]

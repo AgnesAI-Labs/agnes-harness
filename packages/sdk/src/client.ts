@@ -300,6 +300,8 @@ export class Client {
   readonly refinement = {
     get: (): Promise<import('@agnes/protocol').RefinementSettingsSnapshot> =>
       this.call('_agnes/v1/refinement.get', {}),
+    models: (): Promise<import('@agnes/protocol').RefinementModelsResult> =>
+      this.call('_agnes/v1/refinement.models', {}),
     save: (
       input: import('@agnes/protocol').RefinementSettingsSaveParams,
     ): Promise<import('@agnes/protocol').RefinementSettingsSaveResult> =>

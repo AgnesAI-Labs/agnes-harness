@@ -10,11 +10,14 @@ It is **off by default**. Each review sends session evidence to the company's de
 
 ## Turn it on
 
-Open **Settings → General → Task experience**. Enter the company service key, select **Save key**, then turn on **Learn from finished work** and choose a mode. The key stays in the local credential store. Use **Replace key** on this page to change it. If the key is missing, learning is disabled until you save a new key and enable it again. Profiles upgraded from a version without service keys keep their mode and start with learning off.
+Open **Settings → General → Task experience**. Enter the company service key and select **Save key**. The workbench loads chat models from the company service and saves the first available model if your profile has no available selection. Choose another under **Review model** at any time. Once the key and model are ready, turn on **Learn from finished work** and choose a mode.
+
+The key stays in the local credential store. If the service rejects it, check it and use **Replace key**. Replacing the key pauses learning until you turn it on again. If the model list is unavailable, select **Reload models**. Upgraded profiles keep their mode and any saved binding, and learning is off when a key or model is missing.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| Learn from finished work | Off | The switch for this profile |
+| Review model | First available model | Used for background reviews |
+| Learn from finished work | Off | Requires a valid service key and a saved review model |
 | How reviews start | Manual only | **Manual only** or **Manual and automatic** |
 
 - Turning it **on** applies to the sessions opened from then on; no restart is needed. Sessions that are already open are not affected: they keep running without it, and `/refine` in them says it is not active. A session that has already sent requests without it stays without it when it is opened again later, also after a restart; one that never sent a request follows the switch.
@@ -57,7 +60,7 @@ Automatic reviews have limits. Manual reviews are not counted against them; they
 
 One review runs per session at a time. A newer request replaces one that is still waiting, but an automatic one never replaces a waiting manual one. A review plans in the background, so you can keep working. Its result is applied only between two turns: if a turn is running, it waits for the end of that turn.
 
-A review reads the session's last 5 turns: your requests, the model's replies, tool calls and results, and compaction summaries (up to about 24,000 tokens, and it may answer with up to 4,096). The model's own words are marked as untrusted, like tool output. It uses the company's fixed review model and gives it up to 60 seconds (90 seconds for a manual review).
+A review reads the session's last 5 turns: your requests, the model's replies, tool calls and results, and compaction summaries (up to about 24,000 tokens, and it may answer with up to 4,096). The model's own words are marked as untrusted, like tool output. It uses the selected review model on the company service and gives it up to 60 seconds (90 seconds for a manual review).
 
 ## What a review saves
 

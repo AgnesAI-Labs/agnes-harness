@@ -123,7 +123,7 @@ async function open(o: {
     provider: () => review,
     settings: () => ({ ...sw }),
     planner: () => planner,
-    target,
+    target: () => target,
     ...(o.runs === false ? {} : { workflowRuns }),
     ...(o.references ? { references: o.references } : {}),
   }

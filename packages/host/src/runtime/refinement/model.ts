@@ -1,15 +1,16 @@
-import { createRefinementProvider, REFINEMENT_MODEL } from '@agnes/distribution'
+import { createRefinementProvider, REFINEMENT_SERVICE } from '@agnes/distribution'
 import type { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import type { Provider } from '@agnes/protocol'
 
 export function refinementModel(store: RefinementSettingsStore, clock: () => number) {
-  const { route, modelId } = REFINEMENT_MODEL
-  const target = { route, model: modelId }
   let cached: { revision: string; provider: Provider } | undefined
   return {
-    target,
+    target() {
+      const { settings } = store.current()
+      return settings.enabled ? { route: REFINEMENT_SERVICE.route, model: settings.model } : undefined
+    },
     provider(): Provider | undefined {
-      const { settings, revision } = store.current()
+      const { settings, revision, modelOption } = store.current()
       if (!settings.enabled) return undefined
       if (cached?.revision === revision) return cached.provider
       // Re-read at dispatch, including for a provider acquired before rotation or deletion.
@@ -20,7 +21,7 @@ export function refinementModel(store: RefinementSettingsStore, clock: () => num
         if (!value) throw new Error('Task experience service key unavailable')
         return value
       }
-      const provider = createRefinementProvider(clock, key)
+      const provider = createRefinementProvider(clock, key, { ...modelOption, modelId: settings.model })
       cached = { revision, provider }
       return provider
     },

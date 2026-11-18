@@ -155,7 +155,18 @@ const VOICE_SETTINGS = {
   conversation: { pauseSeconds: 1.2 },
 }
 /** Valid refinement settings: on, automatic (not the default, so a default change cannot hide a regression). */
-const REFINEMENT_SETTINGS = { enabled: true, mode: 'auto', credentialRef: 'secret://generic/review' }
+const REFINEMENT_SETTINGS = {
+  enabled: true,
+  mode: 'auto',
+  credentialRef: 'secret://generic/review',
+  model: 'company/review-v2',
+}
+const REFINEMENT_MODEL = {
+  id: REFINEMENT_SETTINGS.model,
+  name: 'Review',
+  contextWindow: 65536,
+  maxTokens: 4096,
+}
 /** Deep copy for fixture baselines whose nested fields need changing — fixture objects are shared
  * across several negative cases and must not be mutated in place. */
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T
@@ -718,6 +729,9 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionRefineSaveResult: AgnesGen.SessionRefineSaveResult,
   RefinementSaveReceipt: AgnesGen.RefinementSaveReceipt,
   RefinementCredentialRef: AgnesGen.RefinementCredentialRef,
+  RefinementModelId: AgnesGen.RefinementModelId,
+  RefinementModelOption: AgnesGen.RefinementModelOption,
+  RefinementModelsResult: AgnesGen.RefinementModelsResult,
   RefinementSettings: AgnesGen.RefinementSettings,
   RefinementSettingsSnapshot: AgnesGen.RefinementSettingsSnapshot,
   RefinementSettingsSaveParams: AgnesGen.RefinementSettingsSaveParams,
@@ -4563,10 +4577,33 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     ],
     note: 'refinement service keys must refer to a generic credential by name',
   },
+  RefinementModelId: {
+    valid: 'company/review-v2',
+    invalid: ['', 'two models', 'with\nnewline', 'bad\u0085id', 'bad\u2000id', rep(257), '🙂'.repeat(257)],
+    note: 'review model IDs disallow whitespace, control characters and IDs over 256 characters',
+  },
+  RefinementModelOption: {
+    valid: REFINEMENT_MODEL,
+    invalid: [
+      { ...REFINEMENT_MODEL, contextWindow: 0 },
+      { ...REFINEMENT_MODEL, maxTokens: 1.5 },
+      { ...REFINEMENT_MODEL, name: '' },
+      { ...REFINEMENT_MODEL, apiKey: 'fixture' },
+    ],
+    note: 'review model options carry only an ID, display name and token limits',
+  },
+  RefinementModelsResult: {
+    valid: { models: [REFINEMENT_MODEL] },
+    invalid: [{}, { models: [{ id: 'review' }] }, { models: [], credentials: [] }],
+    note: 'the private model catalogue can be empty',
+  },
   RefinementSettings: {
     valid: REFINEMENT_SETTINGS,
     invalid: [
-      { enabled: true, mode: 'auto' }, // enabled without a key
+      { enabled: true, mode: 'auto' }, // enabled without either binding
+      { enabled: true, mode: 'auto', credentialRef: REFINEMENT_SETTINGS.credentialRef },
+      { enabled: true, mode: 'auto', model: REFINEMENT_SETTINGS.model },
+      { ...REFINEMENT_SETTINGS, model: '' },
       { ...REFINEMENT_SETTINGS, credentialRef: 'secret://chat/model' },
       { enabled: true }, // missing required mode
       { mode: 'auto' }, // missing required enabled
@@ -10092,6 +10129,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'ConfigEmptyParams',
     result: 'RefinementSettingsSnapshot',
   },
+  '_agnes/v1/refinement.models': {
+    fileId: AGNES_ID,
+    params: 'ConfigEmptyParams',
+    result: 'RefinementModelsResult',
+  },
   '_agnes/v1/refinement.save': {
     fileId: AGNES_ID,
     params: 'RefinementSettingsSaveParams',
@@ -11205,6 +11247,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/session.voice.speak': AGNES_SAMPLES.SessionVoiceSpeakParams as Sample,
   '_agnes/v1/voice.status': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/refinement.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
+  '_agnes/v1/refinement.models': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/refinement.save': AGNES_SAMPLES.RefinementSettingsSaveParams as Sample,
   '_agnes/v1/refinement.skills': AGNES_SAMPLES.RefinementSkillsParams as Sample,
   '_agnes/v1/voice.settings.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
@@ -11973,6 +12016,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.voice.speak': AGNES_SAMPLES.SessionVoiceSpeakResult as Sample,
   '_agnes/v1/voice.status': AGNES_SAMPLES.VoiceStatusResult as Sample,
   '_agnes/v1/refinement.get': AGNES_SAMPLES.RefinementSettingsSnapshot as Sample,
+  '_agnes/v1/refinement.models': AGNES_SAMPLES.RefinementModelsResult as Sample,
   '_agnes/v1/refinement.save': AGNES_SAMPLES.RefinementSettingsSaveResult as Sample,
   '_agnes/v1/refinement.skills': AGNES_SAMPLES.RefinementSkillsResult as Sample,
   '_agnes/v1/voice.settings.get': AGNES_SAMPLES.VoiceSettingsSnapshot as Sample,

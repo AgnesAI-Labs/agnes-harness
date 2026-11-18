@@ -28,7 +28,15 @@ afterEach(async () => {
 })
 
 const credentialRef = 'secret://generic/review'
-const OFF: RefinementSettings = { enabled: false, mode: 'manual', credentialRef }
+const model = 'company/review-a'
+const another = 'company/review-b'
+const catalogue = {
+  models: [
+    { id: model, name: 'Company Review A', contextWindow: 65536, maxTokens: 4096 },
+    { id: another, name: 'Company Review B', contextWindow: 90000, maxTokens: 4096 },
+  ],
+}
+const OFF: RefinementSettings = { enabled: false, mode: 'manual', credentialRef, model }
 const REV0 = '0'.repeat(64)
 const REV1 = '1'.repeat(64)
 const REV2 = '2'.repeat(64)
@@ -44,11 +52,13 @@ const macrotask = () => new Promise<void>((resolve) => setTimeout(resolve, 20))
 type FakeApi = RefinementSettingsApi & {
   read: ReturnType<typeof vi.fn<RefinementSettingsApi['read']>>
   save: ReturnType<typeof vi.fn<RefinementSettingsApi['save']>>
+  models: ReturnType<typeof vi.fn<RefinementSettingsApi['models']>>
 }
 function fakeApi(stored: RefinementSettings = OFF): FakeApi {
   const revisions = [REV1, REV2]
   return {
     createKey: vi.fn(async () => credentialRef),
+    models: vi.fn(async () => catalogue),
     read: vi.fn(async () => ({ revision: REV0, settings: structuredClone(stored) })),
     save: vi.fn(async () => ({ revision: revisions.shift() ?? REV2 })),
   }
@@ -119,21 +129,23 @@ it('the settings panel saves with revision and shows the permission text', async
   expect(field(host, 'refinement-approvals').textContent).toContain('more commands')
 
   await toggle(host, 'refinement-enabled')
-  expect(api.save).toHaveBeenLastCalledWith({ credentialRef, enabled: true, mode: 'manual' }, REV0)
+  expect(api.save).toHaveBeenLastCalledWith({ credentialRef, model, enabled: true, mode: 'manual' }, REV0)
   expect(field(host, 'refinement-enabled').getAttribute('aria-checked')).toBe('true')
   // Turning it on needs no restart, so nothing asks for one.
   expect(host.textContent).not.toMatch(/restart/i)
   // The next save carries the revision the first one returned.
   await choose(host, 'refinement-mode', 'auto')
-  expect(api.save).toHaveBeenLastCalledWith({ credentialRef, enabled: true, mode: 'auto' }, REV1)
+  expect(api.save).toHaveBeenLastCalledWith({ credentialRef, model, enabled: true, mode: 'auto' }, REV1)
   await toggle(host, 'refinement-enabled')
-  expect(api.save).toHaveBeenLastCalledWith({ credentialRef, enabled: false, mode: 'auto' }, REV2)
+  expect(api.save).toHaveBeenLastCalledWith({ credentialRef, model, enabled: false, mode: 'auto' }, REV2)
   expect(host.textContent).not.toMatch(/restart/i)
 })
 
 it('requires a saved service key, recovers a missing key and can rotate it without showing its value', async () => {
   for (const missing of [false, true]) {
-    const api = fakeApi(missing ? { ...OFF, credentialRef, enabled: true } : DEFAULT_REFINEMENT_SETTINGS)
+    const api = fakeApi(
+      missing ? { ...OFF, credentialRef, model, enabled: true } : DEFAULT_REFINEMENT_SETTINGS,
+    )
     const host = await mount(api)
     if (missing) {
       expect((field(host, 'refinement-enabled') as HTMLButtonElement).disabled).toBe(false)
@@ -145,6 +157,10 @@ it('requires a saved service key, recovers a missing key and can rotate it witho
     const toggle = field(host, 'refinement-enabled') as HTMLButtonElement
     expect(toggle.disabled).toBe(true)
     if (missing) expect(host.textContent).toContain('Service key missing')
+    else {
+      expect(api.models).not.toHaveBeenCalled()
+      expect((field(host, 'refinement-model') as HTMLSelectElement).disabled).toBe(true)
+    }
     const replace = 'secret://generic/new-review'
     const create = vi
       .fn()
@@ -172,22 +188,67 @@ it('requires a saved service key, recovers a missing key and can rotate it witho
           ?.click(),
       )
       expect(create).toHaveBeenCalledWith('Task experience service key', 'fixture-key')
-      expect(api.save).toHaveBeenLastCalledWith(
-        { enabled: false, mode: 'manual', credentialRef: ref },
-        index === 0 ? REV0 : REV1,
+      expect(api.save).toHaveBeenCalledWith(
+        { enabled: false, mode: 'manual', credentialRef: ref, ...(index || missing ? { model } : {}) },
+        index === 0 ? REV0 : missing ? REV1 : REV2,
       )
+      expect(api.save).toHaveBeenLastCalledWith(
+        { enabled: false, mode: 'manual', credentialRef: ref, model },
+        index ? (missing ? REV1 : REV2) : missing ? REV0 : REV1,
+      )
+      expect((field(host, 'refinement-model') as HTMLSelectElement).value).toBe(model)
       expect(toggle.disabled).toBe(false)
       expect(host.querySelector('input[type=password]')).toBeNull()
     }
   }
 })
 
+it('handles rejected keys, retries model discovery and persists the default and an explicit selection', async () => {
+  const api = fakeApi({ ...OFF, model: 'retired-review' })
+  api.models
+    .mockRejectedValueOnce(
+      Object.assign(new Error('upstream'), { data: { reason: 'REFINEMENT_KEY_INVALID' } }),
+    )
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce({ models: [] })
+  const host = await mount(api)
+  const modelSelect = field(host, 'refinement-model') as HTMLSelectElement
+  const enabled = field(host, 'refinement-enabled') as HTMLButtonElement
+  const retry = () =>
+    act(async () => {
+      const button = [...host.querySelectorAll('button')].find((item) => item.textContent === 'Reload models')
+      if (!button) throw new Error('Missing model reload button')
+      button.click()
+    })
+  expect(host.textContent).toContain('The service key is invalid or lacks access.')
+  expect(modelSelect.disabled).toBe(true)
+  expect(enabled.disabled).toBe(true)
+  expect(api.save).not.toHaveBeenCalled()
+  await retry()
+  expect(host.textContent).toContain('Could not load the available models.')
+  expect(enabled.disabled).toBe(true)
+  await retry()
+  expect(host.textContent).toContain('The service returned no chat models.')
+  expect(enabled.disabled).toBe(true)
+  await retry()
+  expect(modelSelect.value).toBe(model)
+  expect(modelSelect.selectedOptions[0]?.textContent).toContain('Company Review A')
+  expect(api.save).toHaveBeenLastCalledWith(OFF, REV0)
+  expect(enabled.disabled).toBe(false)
+  await choose(host, 'refinement-model', another)
+  expect(api.save).toHaveBeenLastCalledWith({ ...OFF, model: another }, REV1)
+  expect(modelSelect.value).toBe(another)
+  await toggle(host, 'refinement-enabled')
+  expect(api.save).toHaveBeenLastCalledWith({ ...OFF, model: another, enabled: true }, REV2)
+})
+
 it('a revision conflict keeps its banner and reports no success, once the real queue has run', async () => {
   const published = feedbackSpy()
   const api = fakeApi()
-  api.read
-    .mockResolvedValueOnce({ revision: REV0, settings: structuredClone(OFF) })
-    .mockResolvedValueOnce({ revision: REV2, settings: { credentialRef, enabled: false, mode: 'auto' } })
+  api.read.mockResolvedValueOnce({ revision: REV0, settings: structuredClone(OFF) }).mockResolvedValueOnce({
+    revision: REV2,
+    settings: { credentialRef, model, enabled: false, mode: 'auto' },
+  })
   api.save.mockRejectedValueOnce(
     Object.assign(new Error('conflict'), {
       data: { code: 'SEMANTIC_REJECTED', reason: 'CONFIG_REVISION_CONFLICT' },
@@ -227,9 +288,10 @@ it('reports the saved switch, with no restart notice when it was turned on', asy
 
 it('reloads after a revision conflict and says so', async () => {
   const api = fakeApi()
-  api.read
-    .mockResolvedValueOnce({ revision: REV0, settings: structuredClone(OFF) })
-    .mockResolvedValueOnce({ revision: REV2, settings: { credentialRef, enabled: false, mode: 'auto' } })
+  api.read.mockResolvedValueOnce({ revision: REV0, settings: structuredClone(OFF) }).mockResolvedValueOnce({
+    revision: REV2,
+    settings: { credentialRef, model, enabled: false, mode: 'auto' },
+  })
   api.save.mockRejectedValueOnce(
     Object.assign(new Error('conflict'), {
       data: { code: 'SEMANTIC_REJECTED', reason: 'CONFIG_REVISION_CONFLICT' },
@@ -244,7 +306,7 @@ it('reloads after a revision conflict and says so', async () => {
   expect((field(host, 'refinement-mode') as HTMLSelectElement).value).toBe('auto')
   // The next edit builds on the reloaded revision.
   await toggle(host, 'refinement-enabled')
-  expect(api.save).toHaveBeenLastCalledWith({ credentialRef, enabled: true, mode: 'auto' }, REV2)
+  expect(api.save).toHaveBeenLastCalledWith({ credentialRef, model, enabled: true, mode: 'auto' }, REV2)
   expect(query(host, 'refinement-conflict')).toBeNull()
 })
 
@@ -308,7 +370,7 @@ const storage = () => globalThis.localStorage
 it('shows a profile that already had refinement on a one-time notice until it is dismissed', async () => {
   storage().removeItem(NOTICE_KEY)
   try {
-    const host = await mount(fakeApi({ credentialRef, enabled: true, mode: 'auto' }))
+    const host = await mount(fakeApi({ credentialRef, model, enabled: true, mode: 'auto' }))
     const notice = field(host, 'refinement-workspace-notice')
     expect(notice.textContent).toContain('workspace memory')
     expect(notice.textContent).toContain('workspace skills')
@@ -322,7 +384,7 @@ it('shows a profile that already had refinement on a one-time notice until it is
     await act(async () => dismiss.click())
     expect(query(host, 'refinement-workspace-notice')).toBeNull()
     // Dismissed for this viewer: a later visit does not show it again, and nothing was saved.
-    const again = await mount(fakeApi({ credentialRef, enabled: true, mode: 'auto' }))
+    const again = await mount(fakeApi({ credentialRef, model, enabled: true, mode: 'auto' }))
     expect(query(again, 'refinement-workspace-notice')).toBeNull()
   } finally {
     storage().removeItem(NOTICE_KEY)
@@ -344,7 +406,7 @@ it('shows no notice when refinement is off, or turned on here, and works without
     throw new Error('blocked')
   })
   try {
-    const blocked = await mount(fakeApi({ credentialRef, enabled: true, mode: 'manual' }))
+    const blocked = await mount(fakeApi({ credentialRef, model, enabled: true, mode: 'manual' }))
     const notice = field(blocked, 'refinement-workspace-notice')
     await act(async () => notice.querySelector<HTMLButtonElement>('button')?.click())
     expect(query(blocked, 'refinement-workspace-notice')).toBeNull()
@@ -357,7 +419,7 @@ it('shows no notice when refinement is off, or turned on here, and works without
 it('shows the notice in Chinese', async () => {
   storage().removeItem(NOTICE_KEY)
   document.documentElement.lang = 'zh-CN'
-  const host = await mount(fakeApi({ credentialRef, enabled: true, mode: 'auto' }))
+  const host = await mount(fakeApi({ credentialRef, model, enabled: true, mode: 'auto' }))
   expect(field(host, 'refinement-workspace-notice').textContent).toContain('工作区记忆')
   expect(field(host, 'refinement-workspace-notice').textContent).toContain('自动写入用户记忆')
 })

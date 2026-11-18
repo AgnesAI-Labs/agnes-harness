@@ -1,10 +1,11 @@
 import { closeSync, existsSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import { REFINEMENT_MODEL } from '@agnes/distribution'
+import { REFINEMENT_SERVICE } from '@agnes/distribution'
 import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
-import { vi } from 'vitest'
+import { expect, vi } from 'vitest'
 
 export const syntheticKey = 'synthetic-review-service-key'
+export const reviewModel = 'company/review-a'
 export function reviewCredential(
   dataDir: string,
   home = basename(dataDir) === 'data' ? dirname(dataDir) : dataDir,
@@ -34,23 +35,29 @@ export function reviewCredential(
   return `secret://generic/${name}`
 }
 
-/** Exercise the real wire adapter, redirecting only its exact fixed request to an isolated SSE server. */
+/** Exercise the real review requests, redirecting the fixed gateway to an isolated loopback server. */
 export function routeReviewToLoopback(loopback: string) {
   const localFetch = globalThis.fetch
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = input instanceof Request ? input.url : String(input)
     if (new URL(url).hostname === '127.0.0.1') return localFetch(input, init)
     const request = new Request(input, init)
+    if (request.url === `${REFINEMENT_SERVICE.baseUrl}/models` && request.method === 'GET') {
+      expect(request.redirect).toBe('error')
+      return localFetch(`${loopback}/models`, {
+        headers: request.headers,
+        signal: request.signal,
+      })
+    }
     if (
-      request.url !== `${REFINEMENT_MODEL.baseUrl}/chat/completions` ||
+      request.url !== `${REFINEMENT_SERVICE.baseUrl}/chat/completions` ||
       request.method !== 'POST' ||
       request.headers.get('authorization') !== `Bearer ${syntheticKey}`
     )
       throw new Error('Unexpected review request')
     const body = await request.text()
     const parsed = JSON.parse(body)
-    if (parsed.model !== REFINEMENT_MODEL.modelId || !parsed.stream || !parsed.stream_options?.include_usage)
-      throw new Error('Expected the fixed model and streamed usage')
+    if (!parsed.stream || !parsed.stream_options?.include_usage) throw new Error('Expected streamed usage')
     return localFetch(`${loopback}/chat/completions`, {
       method: 'POST',
       headers: request.headers,

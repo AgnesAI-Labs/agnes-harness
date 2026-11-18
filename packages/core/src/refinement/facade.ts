@@ -183,17 +183,18 @@ async function request(s: SessionImpl, trigger: RefinementTrigger): Promise<Refi
   const unsaved = saveRefusal(s, trigger.saveTo, trigger.kind === 'manual' || trigger.kind === 'model')
   if (unsaved) return unsaved
   if (!plannerOf(s)) return { refused: 'unavailable' }
-  if (!s.d.refinement?.target || !s.d.refinement.provider?.()) return { refused: 'unavailable' }
+  const target = s.d.refinement?.target?.()
+  if (!target || !s.d.refinement?.provider?.()) return { refused: 'unavailable' }
   const busy = slotOf(s).planning !== undefined
   if (automatic) {
     // While a plan runs, an automatic trigger waits only if nothing but that plan's cooldown would
     // stop it then; any other limit cannot clear before the next start.
-    const why = await automaticRefusal(s, s.d.refinement?.target, {
+    const why = await automaticRefusal(s, target, {
       ...(busy ? { cooldown: false as const } : {}),
       ...(trigger.kind === 'model' ? { kind: 'model' as const } : {}),
     })
     if (why) return { refused: why.refused }
-  } else if (trigger.allowUnpriced !== true && !plannerPriced(s, s.d.refinement?.target))
+  } else if (trigger.allowUnpriced !== true && !plannerPriced(s, target))
     // The user's own request on a model with no known price runs only once the user agreed to that.
     return { refused: 'unpriced' }
   let runId: string

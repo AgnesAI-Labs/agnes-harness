@@ -19,7 +19,7 @@ import {
   startWireCapture,
   type WireApi,
 } from '../../testkit/index.js'
-import { reviewCredential } from '../refinement/service-key.js'
+import { reviewCredential, reviewModel } from '../refinement/service-key.js'
 
 const baseDir = fileURLToPath(new URL('../../../base/', import.meta.url))
 const apis: readonly WireApi[] = ['anthropic-messages', 'openai-completions', 'openai-responses']
@@ -215,7 +215,7 @@ describe('refinement experience on the provider wire', () => {
       const switchTo = (enabled: boolean) => {
         const settings = new RefinementSettingsStore(dataDir, 'wire-refinement')
         settings.save(
-          { credentialRef: reviewCredential(dataDir), enabled, mode: 'manual' },
+          { credentialRef: reviewCredential(dataDir), model: reviewModel, enabled, mode: 'manual' },
           settings.read().revision,
         )
       }
@@ -398,7 +398,7 @@ describe('refinement experience on the provider wire', () => {
             switchTo = (enabled) => {
               const settings = new RefinementSettingsStore(dataDir, 'wire-refinement')
               settings.save(
-                { credentialRef: reviewCredential(dataDir), enabled, mode: 'manual' },
+                { credentialRef: reviewCredential(dataDir), model: reviewModel, enabled, mode: 'manual' },
                 settings.read().revision,
               )
             }

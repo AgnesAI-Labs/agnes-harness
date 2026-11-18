@@ -128,7 +128,7 @@ async function open(o: { plans?: string[]; references?: false } = {}) {
     provider: () => p.provider,
     settings: () => ({ ...sw }),
     planner: () => planner,
-    target,
+    target: () => target,
     ...(o.references === false ? {} : { references }),
   }
   const p = provider(o.plans ?? [])

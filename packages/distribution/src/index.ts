@@ -217,4 +217,4 @@ export async function builtinModelSelectionData(profile: ModelProfile): Promise<
   return { adapters, routes, models: routes.flatMap((r) => r.models ?? []) }
 }
 
-export { createRefinementProvider, REFINEMENT_MODEL } from './refinement-model.js'
+export { createRefinementProvider, fetchRefinementModels, REFINEMENT_SERVICE } from './refinement-model.js'

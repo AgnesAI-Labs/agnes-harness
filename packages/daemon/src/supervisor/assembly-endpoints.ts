@@ -34,6 +34,7 @@ import { registerSessionSelection } from '@agnes/daemon-rpc/local/methods/sessio
 import { registerVoice } from '@agnes/daemon-rpc/local/methods/session-voice'
 import { registerSurfaces } from '@agnes/daemon-rpc/local/methods/surfaces'
 import { registerWorkspaces } from '@agnes/daemon-rpc/local/methods/workspaces'
+import { fetchRefinementModels } from '@agnes/distribution'
 import {
   RefinementSettingsStore,
   RequestTraceStore,
@@ -338,6 +339,7 @@ function registerSessionEndpoints(
   })
   registerRefinement(ep, {
     settings: new RefinementSettingsStore(o.config.dataDir, o.profile.name, state.ownerHome),
+    fetchModels: fetchRefinementModels,
     switchedOn: () => state.savedSkills.switchedOn(),
     skills: (params, actor) => state.savedSkills.manage(params, actor),
   })

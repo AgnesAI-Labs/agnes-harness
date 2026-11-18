@@ -217,6 +217,7 @@ export async function startClientModules(options: {
   ctx.effect(() =>
     registerRefinementSettingsSection({
       read: () => options.agnes.refinement.get(),
+      models: () => options.agnes.refinement.models(),
       createKey: async (label, value) => (await credentialStore.create(label, value)).id,
       save: (settings, expectedRevision) => options.agnes.refinement.save({ settings, expectedRevision }),
       savedSkills: {

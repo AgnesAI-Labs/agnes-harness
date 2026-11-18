@@ -25,6 +25,8 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
+import { reviewModel } from './service-key.js'
+
 const PROFILE = 'workflow-skill'
 const NAME = 'ship-in-stages'
 const TITLE = 'Ship a feature in stages'
@@ -75,7 +77,7 @@ async function world(answer: (runId: () => string, userRequest: string) => unkno
     label: 'Fixture',
     createdAt: new Date(0).toISOString(),
   })
-  store.save({ credentialRef, enabled: true, mode: 'auto' }, store.read().revision)
+  store.save({ credentialRef, model: reviewModel, enabled: true, mode: 'auto' }, store.read().revision)
   const bridge = createRefinementHost(w.dataDir, PROFILE, Date.now, {
     refinementSave: w.request,
     home: w.home,
@@ -129,7 +131,7 @@ async function world(answer: (runId: () => string, userRequest: string) => unkno
       refinement: {
         ...bridge.kernelOptions.refinement,
         provider: () => provider,
-        target: { route: 'rsi', model: 'planner' },
+        target: () => ({ route: 'rsi', model: 'planner' }),
       },
       refinementEnabled: () => true,
     })

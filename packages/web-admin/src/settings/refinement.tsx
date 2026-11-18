@@ -1,4 +1,6 @@
 import type {
+  RefinementModelOption,
+  RefinementModelsResult,
   RefinementSettings,
   RefinementSettingsSaveResult,
   RefinementSettingsSnapshot,
@@ -27,13 +29,14 @@ import { failureCode } from './side-models/model.js'
 export type RefinementSettingsApi = {
   createKey(label: string, value: string): Promise<string>
   read(): Promise<RefinementSettingsSnapshot>
+  models(): Promise<RefinementModelsResult>
   save(settings: RefinementSettings, expectedRevision: string): Promise<RefinementSettingsSaveResult>
   /** The skills task experience saved in a workspace; absent where the connection cannot reach them. */
   savedSkills?: SavedSkillsApi
 }
 
 const sameSettings = (a: RefinementSettings, b: RefinementSettings) =>
-  a.enabled === b.enabled && a.mode === b.mode && a.credentialRef === b.credentialRef
+  a.enabled === b.enabled && a.mode === b.mode && a.credentialRef === b.credentialRef && a.model === b.model
 
 /** This viewer has dismissed the one-time notice about saving to the workspace (browser storage only). */
 const NOTICE_KEY = 'agnes.refinement.workspace-notice'
@@ -138,6 +141,22 @@ export function RefinementSettingsPanel({ api }: { api: RefinementSettingsApi })
 
 type Text = (key: string, vars?: Record<string, string | number>) => string
 
+const modelFailureText = {
+  REFINEMENT_KEY_INVALID: 'refinement.model.invalidKey',
+  REFINEMENT_KEY_MISSING: 'refinement.key.missing',
+  REFINEMENT_MODEL_UNAVAILABLE: 'refinement.model.unavailable',
+  REFINEMENT_MODELS_UNAVAILABLE: 'refinement.model.error',
+} as const
+
+type ModelCatalogue = { ref: string } & ({ models: RefinementModelOption[] } | { error: string })
+
+function modelFailure(error: unknown): string | undefined {
+  const code = failureCode(error)
+  return code && Object.hasOwn(modelFailureText, code)
+    ? modelFailureText[code as keyof typeof modelFailureText]
+    : undefined
+}
+
 function RefinementFields(props: {
   api: RefinementSettingsApi
   snapshot: RefinementSettingsSnapshot
@@ -152,6 +171,26 @@ function RefinementFields(props: {
   const [creatingKey, setCreatingKey] = useState(false)
   const [keyError, setKeyError] = useState(false)
   const [missing, setMissing] = useState(snapshot.credentialMissing === true)
+  const credentialRef = missing ? undefined : stored.credentialRef
+  const [catalogue, setCatalogue] = useState<ModelCatalogue>()
+  const [modelReads, setModelReads] = useState(0)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: modelReads retries; a fresh snapshot rechecks credential changes.
+  useEffect(() => {
+    if (!credentialRef) return
+    let live = true
+    setCatalogue(undefined)
+    void api.models().then(
+      ({ models }) => {
+        if (live) setCatalogue({ ref: credentialRef, models })
+      },
+      (error) => {
+        if (live) setCatalogue({ ref: credentialRef, error: modelFailure(error) ?? 'refinement.model.error' })
+      },
+    )
+    return () => {
+      live = false
+    }
+  }, [api, credentialRef, modelReads, snapshot])
   // Read when a save is sent, so a save queued behind another one uses the revision the first returned.
   const revision = useRef(snapshot.revision)
   const autosave = useAutosave<RefinementSettings>({
@@ -176,6 +215,8 @@ function RefinementFields(props: {
           if (fresh.credentialMissing) props.onConflict(fresh)
           throw error
         }
+        const feedback = modelFailure(error)
+        if (feedback && credentialRef) setCatalogue({ ref: credentialRef, error: feedback })
         if (failureCode(error) !== 'CONFIG_REVISION_CONFLICT') throw error
         props.onConflict(await api.read())
         throw error
@@ -183,12 +224,34 @@ function RefinementFields(props: {
     },
   })
   const settings = autosave.value ?? stored
-  const ready = Boolean(stored.credentialRef) && !missing
   const binding = settings.credentialRef !== stored.credentialRef
   const locked = creatingKey || binding
-  const change = (patch: { enabled?: boolean; mode?: RefinementSettings['mode'] }) => {
-    if (stored.credentialRef && ready && !locked)
-      autosave.set({ ...settings, ...patch, credentialRef: stored.credentialRef }, 'now')
+  const result = catalogue?.ref === credentialRef ? catalogue : undefined
+  const models = result && 'models' in result ? result.models : undefined
+  const modelError = result && 'error' in result ? result.error : undefined
+  const canEnable = models?.some(({ id }) => id === stored.model) === true
+  const firstModel = models?.[0]?.id
+  const { set: saveSettings, busy, failed } = autosave
+  useEffect(() => {
+    if (firstModel && !canEnable && !locked && !busy && !failed)
+      saveSettings({ ...stored, model: firstModel }, 'now')
+  }, [firstModel, canEnable, locked, busy, failed, stored, saveSettings])
+  const modelStatus = !credentialRef
+    ? 'refinement.model.needsKey'
+    : (modelError ??
+      (models
+        ? firstModel
+          ? 'refinement.model.hint'
+          : 'refinement.model.empty'
+        : 'refinement.model.loading'))
+  const change = (patch: Partial<Pick<RefinementSettings, 'enabled' | 'mode' | 'model'>>) => {
+    if (!credentialRef || locked || busy) return
+    const { enabled = stored.enabled, mode = stored.mode, model = stored.model } = patch
+    if (enabled) {
+      if (model) saveSettings({ enabled, mode, credentialRef, model }, 'now')
+    } else {
+      saveSettings({ enabled, mode, credentialRef, ...(model ? { model } : {}) }, 'now')
+    }
   }
   const saveKey = async () => {
     if (!keyInput.trim() || locked || autosave.busy) return
@@ -198,7 +261,8 @@ function RefinementFields(props: {
       const credentialRef = await api.createKey(t('refinement.key.label'), keyInput.trim())
       setKeyInput('')
       setEditingKey(false)
-      autosave.set({ ...settings, credentialRef }, 'now')
+      // Verify the new binding before learning can be turned back on.
+      saveSettings({ ...stored, enabled: false, credentialRef }, 'now')
     } catch {
       setKeyError(true)
     } finally {
@@ -216,10 +280,14 @@ function RefinementFields(props: {
         <SettingsItem
           label={t('refinement.key')}
           description={t(
-            missing ? 'refinement.key.missing' : ready ? 'refinement.key.ready' : 'refinement.key.hint',
+            missing
+              ? 'refinement.key.missing'
+              : credentialRef
+                ? 'refinement.key.ready'
+                : 'refinement.key.hint',
           )}
         >
-          {ready && !editingKey ? (
+          {credentialRef && !editingKey ? (
             <Button disabled={locked || autosave.busy} onClick={() => setEditingKey(true)}>
               {t('refinement.key.replace')}
             </Button>
@@ -242,6 +310,30 @@ function RefinementFields(props: {
           )}
         </SettingsItem>
         {keyError && <Banner tone="error">{t('refinement.key.error')}</Banner>}
+        <SettingsItem label={t('refinement.model')} description={t(modelStatus)}>
+          <SettingsSelect
+            id="refinement-model"
+            data-testid="refinement-model"
+            aria-label={t('refinement.model')}
+            value={models?.some(({ id }) => id === settings.model) ? settings.model : ''}
+            disabled={!firstModel || locked || busy}
+            onChange={(event) => change({ model: event.target.value })}
+          >
+            <option value="" disabled>
+              {t('refinement.model.placeholder')}
+            </option>
+            {models?.map(({ id, name }) => (
+              <option key={id} value={id}>
+                {name === id ? id : `${name} (${id})`}
+              </option>
+            ))}
+          </SettingsSelect>
+          {(modelError || models?.length === 0) && (
+            <Button disabled={locked || busy} onClick={() => setModelReads((count) => count + 1)}>
+              {t('refinement.model.retry')}
+            </Button>
+          )}
+        </SettingsItem>
         <SettingsItem
           label={t('refinement.enabled')}
           description={t('refinement.enabled.hint')}
@@ -251,9 +343,11 @@ function RefinementFields(props: {
             id="refinement-enabled"
             testId="refinement-enabled"
             label={t('refinement.enabled')}
-            checked={settings.enabled}
-            disabled={!ready || locked}
-            onToggle={(next) => change({ enabled: next })}
+            checked={stored.enabled}
+            disabled={locked || busy || (!stored.enabled && !canEnable)}
+            onToggle={(enabled) => {
+              if (!enabled || canEnable) change({ enabled })
+            }}
           />
         </SettingsItem>
         <SettingsItem label={t('refinement.mode')} description={t('refinement.mode.hint')}>
@@ -261,7 +355,7 @@ function RefinementFields(props: {
             id="refinement-mode"
             data-testid="refinement-mode"
             aria-label={t('refinement.mode')}
-            disabled={!ready || !settings.enabled || locked}
+            disabled={!stored.enabled || locked || busy}
             value={settings.mode}
             onChange={(event) => change({ mode: event.target.value === 'auto' ? 'auto' : 'manual' })}
           >
