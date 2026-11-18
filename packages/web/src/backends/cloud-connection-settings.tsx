@@ -1,10 +1,7 @@
-import { remoteFrontendOrigin } from '@agnes/protocol'
 import { type LocaleService, settingsSections } from '@agnes/web-client'
 import {
   Button,
-  Disclosure,
   SettingsGroup,
-  SettingsInput,
   SettingsItem,
   SettingsSelect,
   SettingsToolbar,
@@ -34,27 +31,16 @@ export function CloudConnectionSettings({
   const language = useDocumentLanguage()
   const catalog = workbenchCatalog[language === 'zh-CN' ? 'zh-CN' : 'en']
   const t = (key: keyof typeof catalog) => catalog[key]
-  const [address, setAddress] = useState(state.origin ?? '')
-  const [manual, setManual] = useState(false)
   const [credentialRef, setCredentialRef] = useState(state.credentialRef ?? '')
   const [error, setError] = useState('')
-  useEffect(() => setAddress(state.origin ?? ''), [state.origin])
   useEffect(() => setCredentialRef(state.credentialRef ?? ''), [state.credentialRef])
   const connect = () => {
-    try {
-      if (!state.credentialOptions?.some((item) => item.id === credentialRef)) {
-        setError(t('keyRequired'))
-        return
-      }
-      onAction({
-        action: 'connect',
-        ...(manual ? { origin: remoteFrontendOrigin(address.trim()) } : {}),
-        credentialRef,
-      })
-      setError('')
-    } catch {
-      setError(t('invalidOrigin'))
+    if (!state.credentialOptions?.some((item) => item.id === credentialRef)) {
+      setError(t('keyRequired'))
+      return
     }
+    onAction({ action: 'connect', credentialRef })
+    setError('')
   }
   return (
     <>
@@ -95,26 +81,6 @@ export function CloudConnectionSettings({
           </SettingsToolbar>
           {state.credentialError && <p role="alert">{t('credentialsUnavailable')}</p>}
         </SettingsItem>
-        <Disclosure open={manual} onOpenChange={setManual} summary={t('manualConnection')} variant="plain">
-          {manual && (
-            <SettingsItem label={<label htmlFor="cloud-service-origin">{t('cloudOrigin')}</label>} stacked>
-              <SettingsInput
-                id="cloud-service-origin"
-                value={address}
-                onChange={(event) => {
-                  setAddress(event.target.value)
-                  setError('')
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    connect()
-                  }
-                }}
-              />
-            </SettingsItem>
-          )}
-        </Disclosure>
       </SettingsGroup>
       {(error || state.error) && (
         <p role="alert">

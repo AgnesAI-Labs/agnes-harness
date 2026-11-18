@@ -2,7 +2,8 @@ export const cloudErrorCatalog = {
   en: {
     CLOUD_BROKER_REQUIRED:
       'The cloud connection service is not configured. Contact your deployment administrator.',
-    CLOUD_CONNECTION_INVALID: 'Check that the sandbox address matches the instance bound to your credential.',
+    CLOUD_CONNECTION_INVALID:
+      'Reconnect to retrieve the instance bound to your credential. If this continues, contact your deployment administrator.',
     CLOUD_SANDBOX_NOT_READY:
       'The sandbox is stopped, changing state or unavailable. Check its status before reconnecting.',
     CLOUD_RATE_LIMITED: 'Cloud connection requests are rate limited. Wait before reconnecting.',
@@ -16,7 +17,7 @@ export const cloudErrorCatalog = {
   },
   'zh-CN': {
     CLOUD_BROKER_REQUIRED: '云端连接服务尚未配置，请联系部署方或查看连接文档。',
-    CLOUD_CONNECTION_INVALID: '请检查沙箱地址是否与所选凭证绑定的实例一致。',
+    CLOUD_CONNECTION_INVALID: '请重新连接以获取凭证绑定的实例；仍失败时请联系部署方核对实例绑定。',
     CLOUD_SANDBOX_NOT_READY: '沙箱已停机、正在操作或暂不可用，请确认实例状态后重连。',
     CLOUD_RATE_LIMITED: '云端连接请求过于频繁，请稍后再重连。',
     CLOUD_CREDENTIAL_REQUIRED: '请在“设置 → 高级 → 云端连接”选择本地凭证。',

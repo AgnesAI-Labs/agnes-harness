@@ -34,8 +34,6 @@ export const workbenchCatalog = {
     statusReady: 'Ready',
     statusDisconnected: 'Disconnected',
     statusError: 'Connection failed',
-    cloudOrigin: 'Cloud service origin',
-    manualConnection: 'Other cloud service (manual configuration)',
     cloudStatus: 'Connection status',
     cloudKey: 'Cloud authorization credential',
     keyRequired: 'Select a local credential.',
@@ -47,7 +45,6 @@ export const workbenchCatalog = {
     saveConnect: 'Save and connect',
     cloudHelp:
       'Select the AGH Key for a sandbox already enabled in LLMSG. Its address is retrieved automatically; this does not start a sandbox.',
-    invalidOrigin: 'Enter an HTTP or HTTPS service origin.',
   },
   'zh-CN': {
     brand: 'Agnes Harness',
@@ -84,8 +81,6 @@ export const workbenchCatalog = {
     statusReady: '已就绪',
     statusDisconnected: '连接中断',
     statusError: '连接失败',
-    cloudOrigin: '云端服务地址',
-    manualConnection: '其他云端服务（手动配置）',
     cloudStatus: '连接状态',
     cloudKey: '云端授权凭证',
     keyRequired: '请选择本地凭证。',
@@ -95,7 +90,6 @@ export const workbenchCatalog = {
     credentialsUnavailable: '本地凭证不可用，请刷新列表或检查 A 的凭证权限。',
     saveConnect: '保存并连接',
     cloudHelp: '选择已在 LLMSG 开通沙箱的 AGH Key，系统自动获取地址并连接，不会自动开机。',
-    invalidOrigin: '请输入完整的 HTTP 或 HTTPS 服务地址。',
   },
 }
 export type WorkbenchText = (key: keyof typeof workbenchCatalog.en) => string

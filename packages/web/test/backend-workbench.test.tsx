@@ -226,7 +226,7 @@ it.each(['en', 'zh-CN'] as const)(
   },
 )
 
-it('keeps cloud connection actions inside settings and rejects unsafe origins', async () => {
+it('connects by credential without exposing sandbox addresses and rejects unsafe legacy origins', async () => {
   const host = document.createElement('div')
   document.body.append(host)
   const actions: CloudConnectionAction[] = []
@@ -265,16 +265,14 @@ it('keeps cloud connection actions inside settings and rejects unsafe origins', 
     select.dispatchEvent(new Event('change', { bubbles: true }))
   })
   await act(async () => find('Save and connect')?.click())
-  const manual = find('Other cloud service (manual configuration)')
-  if (!manual) throw new Error('missing manual connection option')
-  await act(async () => manual.click())
-  expect(host.querySelector<HTMLInputElement>('#cloud-service-origin')?.value).toBe('http://cloud.test:8443')
+  expect(find('Other cloud service (manual configuration)')).toBeUndefined()
+  expect(host.textContent).not.toContain('http://cloud.test:8443')
   await act(async () => find('Save and connect')?.click())
   await act(async () => find('Reconnect')?.click())
   await act(async () => find('Disconnect cloud')?.click())
   expect(actions).toEqual([
     { action: 'connect', credentialRef },
-    { action: 'connect', origin: 'http://cloud.test:8443', credentialRef },
+    { action: 'connect', credentialRef },
     { action: 'reconnect' },
     { action: 'disconnect' },
   ])
@@ -282,7 +280,11 @@ it('keeps cloud connection actions inside settings and rejects unsafe origins', 
   expect(cloudConnectionAction({ ...envelope, origin: 'https://user:secret@cloud.test' })).toBeUndefined()
   expect(cloudConnectionAction({ ...envelope, origin: 'https://cloud.test/path' })).toBeUndefined()
   expect(cloudConnectionAction(envelope)).toEqual(actions[0])
-  expect(cloudConnectionAction({ ...envelope, origin: 'http://cloud.test:8443/' })).toEqual(actions[1])
+  expect(cloudConnectionAction({ ...envelope, origin: 'http://cloud.test:8443/' })).toEqual({
+    action: 'connect',
+    origin: 'http://cloud.test:8443',
+    credentialRef,
+  })
   expect(
     cloudConnectionAction({ ...envelope, origin: 'http://cloud.test', key: 'raw-value' }),
   ).toBeUndefined()
@@ -306,6 +308,8 @@ it('keeps cloud connection actions inside settings and rejects unsafe origins', 
       )
     })
     expect(host.textContent).toContain('系统自动获取地址并连接')
+    expect(host.textContent).not.toContain('其他云端服务（手动配置）')
+    expect(host.textContent).not.toContain('云端服务地址')
     expect(host.querySelector('#cloud-service-origin')).toBeNull()
     expect(host.querySelector<HTMLSelectElement>('#cloud-service-credential')?.disabled).toBe(true)
     expect(find('保存并连接')?.disabled).toBe(true)
