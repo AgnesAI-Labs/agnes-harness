@@ -7,6 +7,46 @@
   body[data-agh-backend-frame="cloud"] .sidebar-toggle {
     display: none;
   }
+  #sessions:has(> .backend-session-tabs) {
+    display: flex;
+    overflow: hidden;
+  }
+  .backend-session-tabs {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+  .backend-session-tabs > .ant-tabs-nav {
+    flex: none;
+    margin-bottom: var(--s8);
+  }
+  .backend-session-tabs > .ant-tabs-nav .ant-tabs-nav-list {
+    width: 100%;
+  }
+  .backend-session-tabs > .ant-tabs-nav .ant-tabs-tab {
+    flex: 1;
+    justify-content: center;
+    padding-block: var(--s8);
+  }
+  .backend-session-tabs > .ant-tabs-nav .ant-tabs-tab-btn {
+    width: 100%;
+  }
+  .backend-session-tabs > :is(.ant-tabs-content-holder, .ant-tabs-body-holder) {
+    min-height: 0;
+    overflow: auto;
+    scrollbar-gutter: stable;
+  }
+  .backend-tab-label {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .backend-session-native {
+    display: grid;
+    gap: var(--s8);
+    min-width: 0;
+  }
   .backend-session-group {
     position: relative;
     margin-bottom: var(--s12);

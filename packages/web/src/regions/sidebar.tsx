@@ -20,7 +20,7 @@ import type { ReactNode } from 'react'
 import { useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import { BackendSelector } from '../backend-selector.js'
-import { sidebarCommand, useSidebarProjection } from '../backends/sidebar-projection.js'
+import { selectSidebarBackend, sidebarCommand, useSidebarProjection } from '../backends/sidebar-projection.js'
 import { BackendSessionGroups } from '../backends/workbench-groups.js'
 import { workbenchCatalog } from '../backends/workbench-locale.js'
 import { SessionNavigation } from '../navigation.js'
@@ -77,9 +77,15 @@ export function SidebarDshFrame({
         projection
           ? {
               ...actions,
-              newSession: () => sidebarCommand(projection.active, { kind: 'new' }),
+              newSession: (workspace) =>
+                projection.active === 'local'
+                  ? actions?.newSession?.(workspace)
+                  : sidebarCommand('cloud', { kind: 'new' }),
               openSettings: () => sidebarCommand('local', { kind: 'settings', section: 'model' }),
-              addWorkspace: () => sidebarCommand(projection.active, { kind: 'workspace' }),
+              addWorkspace: () =>
+                projection.active === 'local'
+                  ? actions?.addWorkspace?.()
+                  : sidebarCommand('cloud', { kind: 'workspace' }),
             }
           : actions
       }
@@ -88,7 +94,7 @@ export function SidebarDshFrame({
           ? {
               ...dependencies,
               renderLeadingNavigation: () => null,
-              renderNavigation: () => (
+              renderNavigation: (options) => (
                 <BackendSessionGroups
                   {...projection}
                   language={document.documentElement.lang}
@@ -96,7 +102,15 @@ export function SidebarDshFrame({
                     workbenchCatalog[document.documentElement.lang === 'zh-CN' ? 'zh-CN' : 'en'][key]
                   }
                   select={(backend, sessionId) =>
-                    sidebarCommand(backend, sessionId ? { kind: 'session', sessionId } : { kind: 'refresh' })
+                    sessionId
+                      ? sidebarCommand(backend, { kind: 'session', sessionId })
+                      : selectSidebarBackend(backend)
+                  }
+                  localNavigation={
+                    <div className="backend-session-native">
+                      {dependencies.renderLeadingNavigation?.(options)}
+                      {dependencies.renderNavigation(options)}
+                    </div>
                   }
                   command={sidebarCommand}
                   configure={() => sidebarCommand('local', { kind: 'settings', section: 'cloud-connection' })}
@@ -114,12 +128,9 @@ export function SidebarDshFrame({
         search: <SessionSearchButton t={dependencies.translate} />,
         // The grouped view puts 置顶 / 项目 / 临时会话 inside the list and the list tools on the 项目
         // heading: a null label tells the shell not to print a heading row it does not own.
-        sectionLabel: projection ? (
-          dependencies.translate('sidebar.sectionHeading')
-        ) : grouping === 'workspace' ? null : (
-          <SessionListLabel t={dependencies.translate} />
-        ),
-        sessionTools: !projection && <SessionListTools t={dependencies.translate} />,
+        sectionLabel:
+          projection || grouping === 'workspace' ? null : <SessionListLabel t={dependencies.translate} />,
+        sessionTools: <SessionListTools t={dependencies.translate} />,
         brandMark: (
           <SlotOutlet
             name={'sidebar.brand.mark' as never}

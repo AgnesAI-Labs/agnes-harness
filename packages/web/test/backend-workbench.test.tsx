@@ -3,7 +3,8 @@
 import { remoteFrontendSessionPath } from '@agnes/protocol'
 import type { SettingsController } from '@agnes/web-admin/settings'
 import { mountApplication } from '@agnes/web-ui'
-import { act } from 'react'
+import { getByRole, queryByRole } from '@testing-library/dom'
+import { act, useState } from 'react'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import { RemoteFrontendFailure } from '../src/backend-selector.js'
 import { CloudConnectionSettings } from '../src/backends/cloud-connection-settings.js'
@@ -49,35 +50,39 @@ it.each(['local', 'cloud'] as const)(
       activity: [],
       selected: 'same-id',
     }
-    await act(async () => {
-      dispose = mountApplication(
-        host,
+    function Fixture() {
+      const [selected, setSelected] = useState(active)
+      return (
         <BackendSessionGroups
           language="en"
-          active={active}
+          active={selected}
           cloud="http://cloud.test:8443"
           states={{ local: snapshot, cloud: snapshot }}
           t={(key) => workbenchCatalog.en[key]}
-          select={(...args) => selections.push(args)}
+          select={(...args) => {
+            selections.push(args)
+            if (!args[1]) setSelected(args[0])
+          }}
           command={(...args) => commands.push(args)}
           configure={() => {}}
-        />,
+        />
       )
+    }
+    await act(async () => {
+      dispose = mountApplication(host, <Fixture />)
     })
-    const local = host.querySelector<HTMLButtonElement>(
-      '[data-testid="backend-session-local"] [data-session]',
+    expect(getByRole(host, 'tabpanel').querySelector('[data-session]')?.getAttribute('aria-current')).toBe(
+      'page',
     )
-    const cloud = host.querySelector<HTMLButtonElement>(
-      '[data-testid="backend-session-cloud"] [data-session]',
+    expect(
+      getByRole(host, 'tab', { name: active === 'local' ? 'Local' : /Cloud/ }).getAttribute('aria-selected'),
+    ).toBe('true')
+    await act(async () => getByRole(host, 'tab', { name: /Cloud/ }).click())
+    expect(getByRole(host, 'tabpanel').querySelector('[data-testid="backend-session-local"]')).toBeNull()
+    await act(async () =>
+      getByRole(host, 'tabpanel').querySelector<HTMLButtonElement>('[data-session]')?.click(),
     )
-    expect(local?.getAttribute('aria-current')).toBe(active === 'local' ? 'page' : null)
-    expect(cloud?.getAttribute('aria-current')).toBe(active === 'cloud' ? 'page' : null)
-    await act(async () => cloud?.click())
-    expect(selections).toEqual([['cloud', 'same-id']])
-    const collapse = host.querySelector<HTMLButtonElement>('[data-testid="backend-group-local"]')
-    await act(async () => collapse?.click())
-    expect(collapse?.getAttribute('aria-expanded')).toBe('false')
-    expect(host.querySelector('[data-testid="backend-session-cloud"] [data-session]')).toBe(cloud)
+    expect(selections.at(-1)).toEqual(['cloud', 'same-id'])
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[aria-label="New cloud conversation"]')?.click(),
     )
@@ -89,6 +94,15 @@ it.each(['local', 'cloud'] as const)(
       host.querySelector<HTMLButtonElement>('[data-testid="backend-group-cloud"]')?.click(),
     )
     expect(status?.closest('[hidden]')).toBeNull()
+    await act(async () => getByRole(host, 'tab', { name: 'Local' }).click())
+    expect(selections.at(-1)).toEqual(['local'])
+    expect(getByRole(host, 'tabpanel').querySelector('[data-testid="backend-session-cloud"]')).toBeNull()
+    expect(getByRole(host, 'tabpanel').querySelector('[data-session]')?.getAttribute('aria-current')).toBe(
+      'page',
+    )
+    const collapse = host.querySelector<HTMLButtonElement>('[data-testid="backend-group-local"]')
+    await act(async () => collapse?.click())
+    expect(collapse?.getAttribute('aria-expanded')).toBe('false')
     expect(
       [...host.querySelectorAll('button')].some((button) => button.textContent === 'Cloud connection'),
     ).toBe(false)
@@ -108,28 +122,69 @@ it.each([
     { ready: false, connected: false, rows: [], activity: [], more: false, error: 'unavailable' },
     'Connection failed',
   ],
-] as const)('shows cloud readiness on its group header (%s, %s)', async (cloud, snapshot, expected) => {
-  const host = document.createElement('div')
-  document.body.append(host)
-  await act(async () => {
-    dispose = mountApplication(
-      host,
-      <BackendSessionGroups
-        language="en"
-        active="local"
-        {...(cloud ? { cloud } : {})}
-        states={snapshot ? { cloud: { ...snapshot, rows: [], activity: [] } } : {}}
-        t={(key) => workbenchCatalog.en[key]}
-        select={() => {}}
-        command={() => {}}
-        configure={() => {}}
-      />,
+] as const)(
+  'shows cloud readiness on its tab even while local is selected (%s, %s)',
+  async (cloud, snapshot, expected) => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    await act(async () => {
+      dispose = mountApplication(
+        host,
+        <BackendSessionGroups
+          language="en"
+          active="local"
+          {...(cloud ? { cloud } : {})}
+          states={snapshot ? { cloud: { ...snapshot, rows: [], activity: [] } } : {}}
+          t={(key) => workbenchCatalog.en[key]}
+          select={() => {}}
+          command={() => {}}
+          configure={() => {}}
+        />,
+      )
+    })
+    expect(host.querySelector('[data-testid="cloud-connection-status"]')?.getAttribute('aria-label')).toBe(
+      expected,
     )
-  })
-  expect(host.querySelector('[data-testid="cloud-connection-status"]')?.getAttribute('aria-label')).toBe(
-    expected,
-  )
-})
+  },
+)
+
+it.each(['en', 'zh-CN'] as const)(
+  'retains native local navigation and the unconfigured cloud view in %s',
+  async (language) => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const configure = vi.fn()
+    const commands = vi.fn()
+    const catalog = workbenchCatalog[language]
+    function Fixture() {
+      const [active, setActive] = useState<'local' | 'cloud'>('local')
+      return (
+        <BackendSessionGroups
+          active={active}
+          states={{}}
+          language={language}
+          t={(key) => catalog[key]}
+          select={(backend) => setActive(backend)}
+          command={commands}
+          configure={configure}
+          localNavigation={<p data-testid="native-local-list">Native projects and temporary conversations</p>}
+        />
+      )
+    }
+    await act(async () => {
+      dispose = mountApplication(host, <Fixture />)
+    })
+    expect(getByRole(host, 'tabpanel').querySelector('[data-testid="native-local-list"]')).not.toBeNull()
+    await act(async () => getByRole(host, 'tab', { name: new RegExp(catalog.cloudShort) }).click())
+    expect(getByRole(host, 'tabpanel').textContent).toContain(catalog.unconfigured)
+    expect(queryByRole(host, 'button', { name: catalog.createLocal })).toBeNull()
+    await act(async () => getByRole(host, 'button', { name: catalog.createCloud }).click())
+    expect(configure).toHaveBeenCalledOnce()
+    expect(commands).not.toHaveBeenCalled()
+    await act(async () => getByRole(host, 'tab', { name: catalog.localShort }).click())
+    expect(getByRole(host, 'tabpanel').querySelector('[data-testid="native-local-list"]')).not.toBeNull()
+  },
+)
 
 it('keeps cloud connection actions inside settings and rejects unsafe origins', async () => {
   const host = document.createElement('div')

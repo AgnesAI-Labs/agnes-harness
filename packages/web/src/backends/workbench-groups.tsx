@@ -1,7 +1,7 @@
-import { Button, Disclosure, IconButton } from '@agnes/web-ui'
+import { Button, Disclosure, IconButton, Tabs } from '@agnes/web-ui'
 import { type ConversationItemType, Conversations, XProvider } from '@agnes/web-ui/x'
 import type { SidebarNavigationOptions } from '@agnes/web-units/shell'
-import { useState } from 'react'
+import { type ReactNode, useState } from 'react'
 import { SessionRowLabel } from '../sidebar-rendering.js'
 import { CloudConnectionIndicator } from './cloud-connection-status.js'
 import { cloudFailureText } from './cloud-errors.js'
@@ -18,6 +18,7 @@ export type BackendGroupsProps = {
   select(id: BackendId, sessionId?: string): void
   command(id: BackendId, command: BackendCommand): void
   configure(): void
+  localNavigation?: ReactNode
 }
 
 export function BackendSessionGroups(props: BackendGroupsProps & { language: string }) {
@@ -25,8 +26,13 @@ export function BackendSessionGroups(props: BackendGroupsProps & { language: str
   const [open, setOpen] = useState({ local: true, cloud: true })
   const nativeText = workbenchText(props.language)
   return (
-    <>
-      {(['local', 'cloud'] as const).map((backend) => {
+    <Tabs
+      className="backend-session-tabs"
+      activeKey={props.active}
+      onChange={(backend) => props.select(backend as BackendId)}
+      tabBarGutter={0}
+      animated={false}
+      items={(['local', 'cloud'] as const).map((backend) => {
         const state = props.states[backend]
         const configured = backend === 'local' || Boolean(props.cloud)
         const currentId = props.active === backend ? state?.selected : undefined
@@ -68,64 +74,75 @@ export function BackendSessionGroups(props: BackendGroupsProps & { language: str
             ),
           }
         })
-        return (
-          <div key={backend} className="backend-session-group" data-backend-group={backend}>
-            <Disclosure
-              variant="plain"
-              open={open[backend]}
-              onOpenChange={(value) => setOpen((current) => ({ ...current, [backend]: value }))}
-              summary={
-                <span className="backend-group-summary">
-                  {t(backend)} <span className="backend-session-count">{state?.rows.length ?? 0}</span>
-                  {backend === 'cloud' && (
-                    <CloudConnectionIndicator
-                      compact
-                      status={cloudConnectionState(props.cloud, state).status}
-                      t={t}
-                    />
-                  )}
-                </span>
-              }
-              summaryProps={{ 'data-testid': `backend-group-${backend}`, 'aria-label': t(backend) }}
-            >
-              {!configured && <p className="backend-group-hint">{t('unconfigured')}</p>}
-              {configured && !state && <p className="backend-group-hint">{t('connecting')}</p>}
-              {state?.error && (
-                <p className="backend-group-error" role="status">
-                  {cloudFailureText(state.error, props.language)}
-                </p>
-              )}
-              {state?.connected && !items.length && <p className="backend-group-hint">{t('empty')}</p>}
-              <XProvider>
-                <Conversations
-                  className="session-conversations"
-                  {...(currentId ? { activeKey: currentId } : {})}
-                  items={items}
+        return {
+          key: backend,
+          label: (
+            <span className="backend-tab-label">
+              {t(backend === 'local' ? 'localShort' : 'cloudShort')}
+              {backend === 'cloud' && (
+                <CloudConnectionIndicator
+                  compact
+                  status={cloudConnectionState(props.cloud, state).status}
+                  t={t}
                 />
-              </XProvider>
-              {state?.more && (
-                <Button
-                  appearance="ghost"
-                  className="session-list-toggle"
-                  onClick={() => props.command(backend, { kind: 'more' })}
-                >
-                  {t('more')}
-                </Button>
               )}
-            </Disclosure>
-            <IconButton
-              className="backend-group-create"
-              name="plus"
-              label={t(backend === 'local' ? 'createLocal' : 'createCloud')}
-              onClick={() =>
-                backend === 'cloud' && !props.cloud
-                  ? props.configure()
-                  : props.command(backend, { kind: 'new' })
-              }
-            />
-          </div>
-        )
+            </span>
+          ),
+          children:
+            backend === 'local' && props.localNavigation !== undefined ? (
+              props.localNavigation
+            ) : (
+              <div key={backend} className="backend-session-group" data-backend-group={backend}>
+                <Disclosure
+                  variant="plain"
+                  open={open[backend]}
+                  onOpenChange={(value) => setOpen((current) => ({ ...current, [backend]: value }))}
+                  summary={
+                    <span className="backend-group-summary">
+                      {t('projects')} <span className="backend-session-count">{state?.rows.length ?? 0}</span>
+                    </span>
+                  }
+                  summaryProps={{ 'data-testid': `backend-group-${backend}`, 'aria-label': t(backend) }}
+                >
+                  {!configured && <p className="backend-group-hint">{t('unconfigured')}</p>}
+                  {configured && !state && <p className="backend-group-hint">{t('connecting')}</p>}
+                  {state?.error && (
+                    <p className="backend-group-error" role="status">
+                      {cloudFailureText(state.error, props.language)}
+                    </p>
+                  )}
+                  {state?.connected && !items.length && <p className="backend-group-hint">{t('empty')}</p>}
+                  <XProvider>
+                    <Conversations
+                      className="session-conversations"
+                      {...(currentId ? { activeKey: currentId } : {})}
+                      items={items}
+                    />
+                  </XProvider>
+                  {state?.more && (
+                    <Button
+                      appearance="ghost"
+                      className="session-list-toggle"
+                      onClick={() => props.command(backend, { kind: 'more' })}
+                    >
+                      {t('more')}
+                    </Button>
+                  )}
+                </Disclosure>
+                <IconButton
+                  className="backend-group-create"
+                  name="plus"
+                  label={t(backend === 'local' ? 'createLocal' : 'createCloud')}
+                  onClick={() =>
+                    backend === 'cloud' && !props.cloud
+                      ? props.configure()
+                      : props.command(backend, { kind: 'new' })
+                  }
+                />
+              </div>
+            ),
+        }
       })}
-    </>
+    />
   )
 }

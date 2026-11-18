@@ -55,6 +55,16 @@ export function sidebarCommand(backend: BackendId, command: BackendCommand): voi
   )
 }
 
+/** Select an existing view without creating a session or rebuilding either frame. */
+export function selectSidebarBackend(backend: BackendId): void {
+  const context = backendFrame()
+  if (!context || context.remote) return
+  window.parent.postMessage(
+    { type: BACKEND_FRAME_MESSAGE, kind: 'sidebar-select', backend },
+    context.parentOrigin,
+  )
+}
+
 export function publishSidebarLayout(): void {
   const context = backendFrame()
   if (!context || context.remote) return
