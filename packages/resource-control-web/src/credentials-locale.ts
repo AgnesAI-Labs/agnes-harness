@@ -39,6 +39,7 @@ export const credentialsCatalog = {
     'reference.plugin': 'Plugin',
     'reference.trigger': 'Trigger',
     'reference.profile': 'Profile',
+    'reference.browserCloud': 'Cloud connection in this browser',
     'error.readOnly':
       'Settings are read-only while the service recovers. You can view credentials but cannot change them.',
     'error.denied': 'You do not have permission to manage credentials. Ask an administrator for access.',
@@ -88,6 +89,7 @@ export const credentialsCatalog = {
     'reference.plugin': '插件',
     'reference.trigger': '触发器',
     'reference.profile': '配置',
+    'reference.browserCloud': '此浏览器的云端连接',
     'error.readOnly': '服务恢复期间设置为只读，可以查看凭据，暂时无法修改。',
     'error.denied': '你没有管理凭据的权限，请联系管理员开通。',
     'error.unavailable': '凭据存储暂不可用，请在服务恢复后重试。',

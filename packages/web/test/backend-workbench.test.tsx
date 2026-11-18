@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { remoteFrontendSessionPath } from '@agnes/protocol'
+import { cloudCredentialUsage } from '@agnes/resource-control-web/credentials-api'
 import type { SettingsController } from '@agnes/web-admin/settings'
 import { mountApplication } from '@agnes/web-ui'
 import { getByRole, queryByRole } from '@testing-library/dom'
@@ -12,7 +13,11 @@ import { cloudFailureText } from '../src/backends/cloud-errors.js'
 import { applyCloudFrameAppearance } from '../src/backends/cloud-frame-appearance.js'
 import { installCloudFrameAuthorization } from '../src/backends/cloud-frame-authorization.js'
 import { bindCloudCredential } from '../src/backends/cloud-key.js'
-import { type CloudConnectionAction, cloudConnectionAction } from '../src/backends/cloud-settings-bridge.js'
+import {
+  type CloudConnectionAction,
+  cloudConnectionAction,
+  installCloudSettingsProjection,
+} from '../src/backends/cloud-settings-bridge.js'
 import * as frameContext from '../src/backends/frame-context.js'
 import {
   type BackendSnapshot,
@@ -33,6 +38,41 @@ afterEach(async () => {
   await act(async () => dispose?.())
   document.body.innerHTML = ''
   dispose = undefined
+})
+
+it('projects browser credential usage only from the local parent and clears it on disconnect or disposal', () => {
+  const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue({ parentOrigin: location.origin })
+  const ref = 'secret://generic/11111111-1111-1111-1111-111111111111'
+  const off = installCloudSettingsProjection()
+  const message = (origin: string, credentialRef?: string) =>
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: window.parent,
+        origin,
+        data: {
+          type: 'agh.backend.frame/v1',
+          kind: 'cloud-state',
+          state: credentialRef
+            ? { status: 'ready', origin: 'https://cloud.test', credentialRef }
+            : { status: 'unconfigured' },
+        },
+      }),
+    )
+  try {
+    message('https://untrusted.test', ref)
+    expect(cloudCredentialUsage.read()).toBeUndefined()
+    message(location.origin, ref)
+    expect(cloudCredentialUsage.read()).toBe(ref)
+    message(location.origin, 'invalid-ref')
+    expect(cloudCredentialUsage.read()).toBe(ref)
+    message(location.origin)
+    expect(cloudCredentialUsage.read()).toBeUndefined()
+    message(location.origin, ref)
+  } finally {
+    off()
+    frame.mockRestore()
+  }
+  expect(cloudCredentialUsage.read()).toBeUndefined()
 })
 
 it.each(['local', 'cloud'] as const)(

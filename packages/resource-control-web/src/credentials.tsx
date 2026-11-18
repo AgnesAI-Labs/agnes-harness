@@ -21,12 +21,13 @@ import {
   useSettingsSubpages,
   useUiText,
 } from '@agnes/web-ui'
-import { type ComponentProps, useEffect, useRef, useState } from 'react'
+import { type ComponentProps, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { CredentialEditor } from './credential-editor.js'
 import {
   CREDENTIALS_CHANGED,
   type CredentialFailure,
   CredentialsApi,
+  cloudCredentialUsage,
   credentialFailure,
   credentialWriteFailure,
 } from './credentials-api.js'
@@ -42,14 +43,15 @@ export { credentialsCatalog } from './credentials-locale.js'
 
 function References({ item }: { item: AdminCredentialMetadata }) {
   const { t } = useUiText('@agnes/credentials', credentialsCatalog)
+  const cloudRef = useSyncExternalStore(cloudCredentialUsage.subscribe, cloudCredentialUsage.read)
+  const names = item.references.map(
+    (ref) => `${t(`reference.${ref.kind}`)} · ${ref.configId} · ${ref.profile}`,
+  )
+  if (cloudRef === item.id) names.push(t('reference.browserCloud'))
   return (
     // One quiet line under the row: where the credential is used, or that nothing uses it yet.
     <span data-testid="credential-references">
-      {item.references.length
-        ? `${t('used')}: ${item.references
-            .map((ref) => `${t(`reference.${ref.kind}`)} · ${ref.configId} · ${ref.profile}`)
-            .join('; ')}`
-        : t('unused')}
+      {names.length ? `${t('used')}: ${names.join('; ')}` : t('unused')}
     </span>
   )
 }

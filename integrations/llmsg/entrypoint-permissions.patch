@@ -1,0 +1,62 @@
+diff --git a/deploy/agh-cloud/README.md b/deploy/agh-cloud/README.md
+index 010bb031..d8b5578c 100644
+--- a/deploy/agh-cloud/README.md
++++ b/deploy/agh-cloud/README.md
+@@ -125,3 +125,10 @@ AGH_HOME=/data/agh
+ - [腾讯云存储挂载](https://cloud.tencent.com/document/product/1814/132215)
+ - [SQLite WAL 限制](https://www.sqlite.org/wal.html)
+ - 原镜像及对应运行时源码核对；独立文档不修改同事原文。
++
++
++## 2026-11-18 数据目录权限补充（本地待交付）
++
++`umask 077` 只能约束新建目录；入口在确认 `AGH_HOME` 为本地文件系统且不是符号链接后，将已有运行数据根目录收紧到 `0700`，失败即停止启动。只修改该目录自身，不递归改权限、不修改工作区/CFS 权限，不改写会话、凭据或待上报文件。
++
++Linux 临时容器已验证已有 `0755` 目录在两次初始化后均为 `0700`，文件内容、`0600` 文件权限及工作区权限保留；入口回归覆盖权限设置失败后拒绝启动。此结果不是共享沙箱已修复，仍需重新构建镜像并部署验收；本轮未操作正在运行的实例。
+diff --git a/deploy/agh-cloud/start.sh b/deploy/agh-cloud/start.sh
+index e285fd58..211bee18 100644
+--- a/deploy/agh-cloud/start.sh
++++ b/deploy/agh-cloud/start.sh
+@@ -37,6 +37,13 @@ case "$runtime_fs" in
+     exit 78
+     ;;
+ esac
++# mkdir 的 umask 不会修正镜像或挂载中已经存在的目录；仅收紧运行数据根目录。
++# 工作区/CFS 权限由挂载配置管理，不递归修改，也不触碰已有文件内容。
++if [ -L "$AGH_HOME" ]; then
++  printf 'AGH_HOME must not be a symbolic link\n' >&2
++  exit 64
++fi
++chmod 0700 -- "$AGH_HOME"
+ cd -- "$WORKSPACE_DIR"
+ 
+ # 下述进程启动与清理逻辑沿用 agh-cloud:0.6.0 的原入口。
+diff --git a/deploy/agh-cloud/start_test.go b/deploy/agh-cloud/start_test.go
+index cce5fbbc..df25b511 100644
+--- a/deploy/agh-cloud/start_test.go
++++ b/deploy/agh-cloud/start_test.go
+@@ -122,6 +122,24 @@ test "$(cat -- "$AGH_HOME/probe")" = runtime-file-marker
+ 	require.NoError(t, err, out)
+ }
+ 
++func TestAghEntrypointRepairsExistingHomeAndRefusesPermissionFailure(t *testing.T) {
++	env := runtimeEnv(t)
++	out, err := runBash(t, `
++mkdir -p -- "$AGH_HOME"
++printf 'preserved' > "$AGH_HOME/probe"
++chmod() { printf '%s\n' "$*" >> "$TEST_EVENTS"; command chmod "$@"; }
++`+entrypointPrefix(t)+`
++test "$(cat -- "$AGH_HOME/probe")" = preserved
++cat -- "$TEST_EVENTS"
++`, env)
++	require.NoError(t, err, out)
++	require.Contains(t, out, "0700 -- "+env["AGH_HOME"])
++	out, err = runBash(t, `chmod() { return 1; }
++`+entrypointPrefix(t)+`printf 'UNEXPECTED_CONTINUE'`, env)
++	require.Error(t, err, out)
++	require.NotContains(t, out, "UNEXPECTED_CONTINUE")
++}
++
+ func TestAghEntrypointRejectsNetworkRuntimeHome(t *testing.T) {
+ 	for _, filesystem := range []string{"nfs", "nfs4", "cifs", "smb2", "9p", "virtiofs", "fuseblk", "fuse.sshfs"} {
+ 		t.Run(filesystem, func(t *testing.T) {

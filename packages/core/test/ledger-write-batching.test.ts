@@ -136,6 +136,7 @@ describe('commits of one tool call', () => {
     // The result, its settlement and the completed call are the other commit, and the last.
     const result = commits.findIndex(hasToolResult)
     expect(commits[result]?.tx.events.map((e) => e.type)).toEqual([
+      'x/core/tool-dispatch',
       'tool/result',
       'effect/settled',
       'verifier/signal',
@@ -173,7 +174,10 @@ describe('commits of one tool call', () => {
       for (const row of list) if (row.type !== 'x/core/op-mark') by[row.type] = (by[row.type] ?? 0) + 1
       return by
     }
-    expect(count(rows)).toEqual(count(reference))
+    expect(count(rows)).toEqual({
+      ...count(reference),
+      'x/core/tool-dispatch': reference.filter((row) => row.type === 'tool/result').length,
+    })
   })
 
   it.each(TRANSITION_SCENARIOS)('%s never stores a call as responded', async (name) => {
@@ -199,7 +203,7 @@ describe('commits of one tool call', () => {
     await opened.session.enqueue('next-turn', go)
     await opened.session.run(turnEnd())
     const result = commits.findIndex(hasToolResult)
-    expect(commits[result]?.tx.events[0]?.trust).toBe('untrusted')
+    expect(commits[result]?.tx.events.find((row) => row.type === 'tool/result')?.trust).toBe('untrusted')
     expect((commits[result]?.tx.opState?.data as OpStateObj | undefined)?.taint).toBe(false)
     // Every reader takes the counter's copy or the fold's answer, and the fold already has the row.
     expect(at[0]).toEqual({ counter: false, lane: true })
@@ -268,9 +272,14 @@ describe('a stop around the pre-dispatch commit', () => {
     const intent = commits.findIndex(isToolIntent)
     expect(callIn(commits[intent]?.tx.opState?.data)).toMatchObject({ status: 'dispatched' })
     const settled = commits[intent + 1]
-    expect(settled?.tx.events.map((e) => e.type)).toEqual(['tool/result', 'effect/settled'])
-    expect(settled?.tx.events[0]?.data).toMatchObject({ code: 'CANCELLED' })
-    expect(settled?.tx.events[1]?.data).toMatchObject({ outcome: 'aborted' })
+    expect(settled?.tx.events.map((e) => e.type)).toEqual([
+      'x/core/tool-dispatch',
+      'tool/result',
+      'effect/settled',
+    ])
+    expect(settled?.tx.events[0]?.data).toMatchObject({ phase: 'not_sent' })
+    expect(settled?.tx.events[1]?.data).toMatchObject({ code: 'CANCELLED' })
+    expect(settled?.tx.events[2]?.data).toMatchObject({ outcome: 'aborted' })
     expect(callIn(settled?.tx.opState?.data)).toMatchObject({
       status: 'completed',
       dispatchPhase: 'not_sent',

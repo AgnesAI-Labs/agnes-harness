@@ -6,7 +6,7 @@ import { mountRegion, SettingsPage } from '@agnes/web-ui'
 import { act } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { CredentialsPage } from '../src/credentials.js'
-import { CredentialError, CredentialsApi } from '../src/credentials-api.js'
+import { CredentialError, CredentialsApi, cloudCredentialUsage } from '../src/credentials-api.js'
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true })
 const canary = 'SYNTHETIC_CREDENTIAL_CANARY_40972'
@@ -41,6 +41,7 @@ const cleanDom = () =>
     input.value.includes(canary),
   )
 afterEach(() => {
+  cloudCredentialUsage.set(undefined)
   vi.unstubAllGlobals()
   document.body.replaceChildren()
 })
@@ -187,6 +188,12 @@ it.each([
   try {
     expect(node<HTMLButtonElement>('credential-create').disabled).toBe(true)
     expect(node('credential-row').textContent).toContain('Service key')
+    expect(node('credential-references').textContent).toContain('Not used')
+    await act(async () => cloudCredentialUsage.set(item.id))
+    expect(node('credential-references').textContent).toBe('Used by: Cloud connection in this browser')
+    await act(async () => cloudCredentialUsage.set('secret://generic/00000000-0000-0000-0000-000000000000'))
+    expect(node('credential-references').textContent).toContain('Not used')
+    await act(async () => cloudCredentialUsage.set(undefined))
     expect(document.body.textContent).toContain(reason === 'readOnly' ? 'read-only' : 'permission')
     expect(
       paths.every((path) => path === '/admin/plugins/api/context' || path === '/admin/api/credentials'),

@@ -27,6 +27,13 @@ export function contributedModelCatalog(changed?: () => void) {
     ) {
       setLocalComposerModels(base)
       if (contributed === undefined) return base
+      // A UI catalog may supply only entitled IDs and labels. Keep the same backend model's
+      // declared capabilities; never borrow capacity or effort levels from a different route.
+      const records = new Map(base.map((model) => [JSON.stringify([model.route, model.id]), model]))
+      const visible = contributed.map((model) => ({
+        ...records.get(JSON.stringify([model.route, model.id])),
+        ...model,
+      }))
       const legacy =
         hasSession && selected
           ? base.filter(
@@ -36,7 +43,7 @@ export function contributedModelCatalog(changed?: () => void) {
                 !contributed?.some((entry) => entry.route === model.route && entry.id === model.id),
             )
           : []
-      return [...contributed, ...legacy]
+      return [...visible, ...legacy]
     },
   }
 }

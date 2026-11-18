@@ -1,4 +1,5 @@
 import { remoteFrontendOrigin } from '@agnes/protocol'
+import { cloudCredentialUsage } from '@agnes/resource-control-web/credentials-api'
 import { backendFrame } from './frame-context.js'
 import { BACKEND_FRAME_MESSAGE } from './frame-contract.js'
 import type { CloudConnectionState } from './workbench-state.js'
@@ -90,11 +91,15 @@ export function installCloudSettingsProjection(): () => void {
           : {}),
         ...(typeof next.credentialError === 'boolean' ? { credentialError: next.credentialError } : {}),
       }
+      cloudCredentialUsage.set(state.credentialRef)
       for (const listener of listeners) listener()
     } catch {}
   }
   window.addEventListener('message', receive)
-  return () => window.removeEventListener('message', receive)
+  return () => {
+    window.removeEventListener('message', receive)
+    cloudCredentialUsage.set(undefined)
+  }
 }
 
 export function requestCloudConnection(action: CloudConnectionAction): void {

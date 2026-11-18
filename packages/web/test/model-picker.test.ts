@@ -845,7 +845,7 @@ it('lets the popover hug its content and aligns model and session rows in fixed 
   )
 })
 
-it('keeps contributed cloud catalogs in their own context and preserves only a running legacy selection', () => {
+it('keeps contributed cloud catalogs isolated, preserves backend capabilities and a running legacy selection', async () => {
   const cloud = contributedModelCatalog(),
     local = contributedModelCatalog()
   const native = [...models]
@@ -862,4 +862,27 @@ it('keeps contributed cloud catalogs in their own context and preserves only a r
   expect(cloud.visible(native, undefined, false)).toEqual([])
   cloud.set(undefined)
   expect(cloud.visible(native, undefined, false)).toBe(native)
+  cloud.set([
+    { route: currentModel.route, id: currentModel.id, label: 'Cloud models' },
+    { route: 'another-cloud', id: currentModel.id },
+  ])
+  const visible = cloud.visible(native, currentModel, true)
+  expect(visible).toEqual([
+    { ...currentModel, label: 'Cloud models' },
+    { route: 'another-cloud', id: currentModel.id },
+  ])
+  expect(native[0]).toEqual(currentModel)
+  const selected = visible[0]
+  if (!selected?.contextWindow) throw new Error('backend capacity was lost')
+  const { trigger, onSettingsChange } = mountPicker({
+    options: visible,
+    selected,
+    settings: { capacity: selected.contextWindow },
+  })
+  await open(trigger)
+  expect(document.querySelector<HTMLButtonElement>('#model-picker-thinking')?.disabled).toBe(true)
+  expect(document.querySelector('#model-picker-thinking')?.textContent).toContain('此模型不支持')
+  await enter('context')
+  choose('session-model-budget', '中等')
+  await vi.waitFor(() => expect(onSettingsChange).toHaveBeenCalledWith({ contextWindow: 64000 }))
 })

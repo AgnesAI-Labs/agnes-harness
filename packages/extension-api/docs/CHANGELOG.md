@@ -15,6 +15,11 @@ API additions require a minor version; removals or semantic changes require a ma
   It describes backend dispatch, independently of tool-provided result content, so consumers can
   distinguish admitted attempts from pre-dispatch refusals without a second tool counter.
 
+兼容修复：新的 Core 写入改用同事务、先于结果的可忽略 `x/core/tool-dispatch` 附注，
+数据为 `{version: 1, toolUseId, phase}`，以 `sourceEventSeqs` 关联原调用。新的 `tool/result`
+不再携带 `dispatchPhase`；该可选字段仍保留历史读取能力，内部恢复状态不变。
+读取阶段的插件应兼容新附注和历史字段；先升级插件，再升级 Core，避免旧插件漏记用量。
+
 ## 5.22.0
 
 - Optional `ProfileManagedInit.bundledApp` (`BundledAppGrant`, `BundledAppChannels`) gives a release-whitelisted bundled package a platform-chosen state directory, an owner-level local SDK client (typed `unknown`; narrow it with the SDK client type) and channel group access. Only release assembly grants it, for a payload matching the shipped digest; package code, manifests and configuration cannot request it. `assertCurrent()` refuses with `CAPABILITY_DENIED` after disable or activation change, and the client is closed.
