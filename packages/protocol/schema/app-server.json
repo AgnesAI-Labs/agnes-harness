@@ -2168,7 +2168,8 @@
           "maxLength": 128,
           "pattern": "^[a-z0-9]+\\.[A-Za-z0-9_-]{22}\\.[A-Za-z0-9_-]{43}$"
         },
-        "expiresAt": { "type": "number" }
+        "expiresAt": { "type": "number" },
+        "trafficToken": { "type": "string", "minLength": 1, "maxLength": 8192, "pattern": "^[\\x21-\\x7e]+$", "description": "Private daemon-to-launcher credential; never project to the browser." }
       },
       "required": ["token", "expiresAt"]
     },

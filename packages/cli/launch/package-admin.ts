@@ -44,6 +44,7 @@ import type { LocalBackend } from './backend.js'
 import { channelRelay } from './channel-relay.js'
 import { localClientExamples } from './client-examples.js'
 import { cloudAuthorizationRelay } from './cloud-authorization.js'
+import { createCloudGateway } from './cloud-gateway.js'
 import { contextAdmin } from './context-admin.js'
 import { doctorAdmin } from './doctor-admin.js'
 import { launchFailure } from './launch-failure.js'
@@ -139,10 +140,19 @@ export function localPackageAdmin(
       throw error
     }))
   const examples = localClientExamples(backend, client, initialize)
-  const handleCloudAuthorization = cloudAuthorizationRelay(origin, async (input) => {
-    await initialize()
-    return client.request('_agnes/v1/admin.cloud.authorize', input)
-  })
+  const cloudGateway = createCloudGateway()
+  const handleCloudAuthorization = cloudAuthorizationRelay(
+    origin,
+    async (input) => {
+      await initialize()
+      return client.request('_agnes/v1/admin.cloud.authorize', input)
+    },
+    (origin, result, binding) =>
+      cloudGateway.register(origin, result, async () => {
+        await initialize()
+        return client.request('_agnes/v1/admin.cloud.authorize', binding)
+      }),
+  )
   // createAdminSurface validates each schema before dispatching this fixed typed mapping.
   const invoke = async (action: AdminSurfaceAction, params: unknown): Promise<unknown> => {
     await initialize()
@@ -452,6 +462,7 @@ export function localPackageAdmin(
     (input) => client.request('_agnes/v1/admin.feedback', input),
   )
   return {
+    cloudGateway,
     doctor: async () => {
       await initialize()
       return client.request('_agnes/v1/doctor.run', {})
@@ -692,6 +703,7 @@ export function localPackageAdmin(
       return true
     },
     async close(): Promise<void> {
+      cloudGateway.close()
       surface.close()
       await client.close()
     },

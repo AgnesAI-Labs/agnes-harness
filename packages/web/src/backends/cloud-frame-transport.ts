@@ -21,7 +21,11 @@ function bindAppearance() {
 }
 
 /** Cross-origin browser messaging carries only a B-scoped temporary capability. */
-export function requestCloudFrameAuthorization(remote: string, signal: AbortSignal): Promise<string> {
+export function requestCloudFrameAuthorization(
+  remote: string,
+  signal: AbortSignal,
+  onGateway?: (value: boolean) => void,
+): Promise<string> {
   const context = backendFrame()
   if (!context?.remote || context.remote !== remote) return Promise.reject(new Error('CLOUD_ORIGIN_DENIED'))
   bindAppearance()
@@ -52,12 +56,14 @@ export function requestCloudFrameAuthorization(remote: string, signal: AbortSign
         if (typeof data.path !== 'string' || !data.path.startsWith(REMOTE_FRONTEND_SESSION_PREFIX))
           throw Error('path')
         const token = data.path.slice(REMOTE_FRONTEND_SESSION_PREFIX.length)
+        if (data.proxied !== undefined && typeof data.proxied !== 'boolean') throw Error('transport')
+        onGateway?.(data.proxied === true)
         resolve(remoteFrontendSessionPath(token))
       } catch {
         reject(new Error('CLOUD_AUTH_UNAVAILABLE'))
       }
     }
-    const timer = setTimeout(fail, 15_000)
+    const timer = setTimeout(fail, 25_000)
     const cleanup = () => {
       clearTimeout(timer)
       window.removeEventListener('message', receive)

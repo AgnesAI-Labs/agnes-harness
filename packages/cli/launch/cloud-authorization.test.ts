@@ -15,13 +15,22 @@ it('accepts only same-origin credential references and never reflects raw daemon
     expiresAt: Date.now() + 60_000,
   }
   let mode = 'success'
+  let registered = false
   let calls = 0
-  const relay = cloudAuthorizationRelay(origin, async (value) => {
-    expect(value).toEqual(input)
-    calls++
-    if (mode === 'throw') throw new Error('private-fixture-Key')
-    return mode === 'echo' ? { ...authorization, key: 'private-fixture-Key' } : authorization
-  })
+  const relay = cloudAuthorizationRelay(
+    origin,
+    async (value) => {
+      expect(value).toEqual(input)
+      calls++
+      if (mode === 'throw') throw new Error('private-fixture-Key')
+      if (mode === 'platform') return { ...authorization, trafficToken: 'business-only-secret' }
+      return mode === 'echo' ? { ...authorization, key: 'private-fixture-Key' } : authorization
+    },
+    (_origin, result) => {
+      registered = result.trafficToken === 'business-only-secret'
+      return registered
+    },
+  )
   async function call(body: object, headers: Record<string, string> = {}, url = CLOUD_AUTHORIZATION_PATH) {
     const request = Object.assign(Readable.from([JSON.stringify(body)]), {
       url,
@@ -51,6 +60,9 @@ it('accepts only same-origin credential references and never reflects raw daemon
   expect((await call({ ...input, key: 'must-not-accept-a-raw-key' })).status).toBe(400)
   expect(calls).toBe(0)
   expect(await call(input)).toEqual({ status: 200, body: authorization })
+  mode = 'platform'
+  expect(await call(input)).toEqual({ status: 200, body: { ...authorization, proxied: true } })
+  expect(registered).toBe(true)
   for (mode of ['throw', 'echo']) {
     const denied = await call(input)
     expect(denied.status).toBe(400)

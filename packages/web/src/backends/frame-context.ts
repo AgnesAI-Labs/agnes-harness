@@ -52,7 +52,7 @@ export function requestLocalManagement(
   return true
 }
 
-/** The local server advertises its static-only listener; arbitrary query input cannot choose it. */
+/** The local server advertises its isolated cloud listener; query input cannot choose it. */
 export function cloudFrameOrigin(): string {
   const value = document.querySelector<HTMLMetaElement>('meta#agnes-config')?.dataset.cloudOrigin
   if (!value) throw Error('CLOUD_AUTH_UNAVAILABLE')

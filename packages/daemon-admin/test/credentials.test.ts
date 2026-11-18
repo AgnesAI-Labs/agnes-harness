@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createCredentialStore } from '@agnes/host'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { authorizeCloudConnection } from '../src/cloud-authorization.js'
 import { createCredentialAdmin } from '../src/credentials.js'
 
@@ -11,7 +11,8 @@ it('resolves managed cloud credentials privately, refuses rejected/missing crede
   const store = createCredentialStore({ root: join(scratch, 'home') })
   const id = 'secret://generic/11111111-1111-1111-1111-111111111111'
   const input = { origin: 'http://cloud.fixture:8443', credentialRef: id }
-  const key = 'synthetic-cloud-key'
+  vi.stubEnv('AGH_LLMSG_API_BASE_URL', 'https://broker.fixture')
+  const key = 'agh_sk_synthetic-cloud-key'
   const token = `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`
   const expiresAt = Date.now() + 3_600_000
   try {
@@ -27,6 +28,79 @@ it('resolves managed cloud credentials privately, refuses rejected/missing crede
     })
     expect(result).toEqual({ token, expiresAt })
     expect(JSON.stringify(result)).not.toContain(key)
+    const sandbox = { ...input, origin: 'https://8443-fixture.ap-shanghai.tencentags.com' }
+    const addresses: string[] = []
+    const platform = await authorizeCloudConnection(sandbox, store, async (url, init) => {
+      addresses.push(String(url))
+      expect(init?.redirect).toBe('error')
+      if (String(url).endsWith('/llmsg/api/agh/connection')) {
+        expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${key}`)
+        expect(JSON.parse(String(init?.body))).toEqual({ sandbox_url: sandbox.origin })
+        return Response.json({
+          code: 200,
+          data: { sandbox_url: sandbox.origin, traffic_token: 'business-fixture' },
+        })
+      }
+      expect(new Headers(init?.headers).get('e2b-traffic-access-token')).toBe('business-fixture')
+      return Response.json({ token, expiresAt })
+    })
+    expect(platform).toEqual({ token, expiresAt, trafficToken: 'business-fixture' })
+    expect(addresses).toEqual([
+      'https://broker.fixture/llmsg/api/agh/connection',
+      `${sandbox.origin}/_agnes/remote-frontend/auth`,
+    ])
+    await expect(
+      authorizeCloudConnection(sandbox, store, async () => new Response('', { status: 401 })),
+    ).rejects.toMatchObject({ data: { reason: 'CONFIG_CREDENTIAL_REJECTED' } })
+    await expect(
+      authorizeCloudConnection(sandbox, store, async () =>
+        Response.json({
+          code: 200,
+          data: { sandbox_url: 'https://foreign.example', traffic_token: 'business-fixture' },
+        }),
+      ),
+    ).rejects.toMatchObject({ data: { reason: 'CONFIG_AUTH_UNAVAILABLE' } })
+    for (const [status, reason] of [
+      [400, 'CLOUD_CONNECTION_INVALID'],
+      [401, 'CONFIG_CREDENTIAL_REJECTED'],
+      [403, 'CONFIG_CREDENTIAL_REJECTED'],
+      [409, 'CLOUD_SANDBOX_NOT_READY'],
+      [429, 'CLOUD_RATE_LIMITED'],
+      [500, 'CONFIG_AUTH_UNAVAILABLE'],
+    ] as const) {
+      await expect(
+        authorizeCloudConnection(sandbox, store, async (url) => {
+          expect(String(url)).toBe('https://broker.fixture/llmsg/api/agh/connection')
+          return Response.json({ message: key, traffic_token: 'must-not-escape' }, { status })
+        }),
+      ).rejects.toMatchObject({ data: { reason } })
+    }
+    for (const body of [
+      null,
+      { code: 200, data: { sandbox_url: sandbox.origin, traffic_token: '' } },
+      { code: 200, data: { sandbox_url: sandbox.origin, traffic_token: 'bad\nheader' } },
+      { code: 200, data: { sandbox_url: sandbox.origin, traffic_token: 'bad\u007fheader' } },
+      {
+        code: 200,
+        data: { sandbox_url: sandbox.origin, traffic_token: 'valid', padding: 'x'.repeat(16_384) },
+      },
+    ])
+      await expect(
+        authorizeCloudConnection(sandbox, store, async () => Response.json(body)),
+      ).rejects.toMatchObject({ data: { reason: 'CONFIG_AUTH_UNAVAILABLE' } })
+    vi.stubEnv('AGH_LLMSG_API_BASE_URL', '')
+    await expect(
+      authorizeCloudConnection(sandbox, store, async () => {
+        throw Error('must not contact a default broker')
+      }),
+    ).rejects.toMatchObject({ data: { reason: 'CLOUD_BROKER_REQUIRED' } })
+    vi.stubEnv('AGH_LLMSG_API_BASE_URL', 'http://broker.fixture')
+    await expect(
+      authorizeCloudConnection(sandbox, store, async () => {
+        throw Error('must not send the Key over public HTTP')
+      }),
+    ).rejects.toMatchObject({ data: { reason: 'CONFIG_AUTH_UNAVAILABLE' } })
+    vi.stubEnv('AGH_LLMSG_API_BASE_URL', 'https://broker.fixture')
     for (const skew of [-60_000, 0, 60_000]) {
       const expiry = Date.now() + 8 * 60 * 60 * 1000 + skew
       await expect(
@@ -49,6 +123,7 @@ it('resolves managed cloud credentials privately, refuses rejected/missing crede
       authorizeCloudConnection({ ...input, origin: 'http://cloud.fixture/path' }, store),
     ).rejects.toMatchObject({ data: { reason: 'CONFIG_AUTH_UNAVAILABLE' } })
   } finally {
+    vi.unstubAllEnvs()
     await rm(scratch, { recursive: true, force: true })
   }
 })

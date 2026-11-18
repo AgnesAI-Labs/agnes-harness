@@ -96,7 +96,10 @@ export function createWebDocumentResponder(options: {
     if (remoteValue !== null) {
       const remote = remoteFrontendOrigin(remoteValue)
       documentCsp = documentCsp
-        .replace(/connect-src [^;]+/, `connect-src 'self' ${remote} ${remote.replace(/^http/u, 'ws')}`)
+        .replace(
+          /connect-src [^;]+/,
+          `connect-src 'self' ${options.frameOrigin.replace(/^http/u, 'ws')} ${remote} ${remote.replace(/^http/u, 'ws')}`,
+        )
         .replace(/frame-src [^;]+/, `frame-src 'self' blob: ${remote}`)
       documentCsp += `; frame-ancestors ${origin}; form-action 'none'; base-uri 'none'`
       documentCsp = documentCsp
