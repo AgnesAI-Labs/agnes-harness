@@ -63,7 +63,7 @@ export function requestCloudFrameAuthorization(
         reject(new Error('CLOUD_AUTH_UNAVAILABLE'))
       }
     }
-    const timer = setTimeout(fail, 15_000)
+    const timer = setTimeout(fail, 25_000)
     const cleanup = () => {
       clearTimeout(timer)
       window.removeEventListener('message', receive)

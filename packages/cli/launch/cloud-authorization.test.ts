@@ -32,7 +32,9 @@ it('accepts only same-origin credential references and never reflects raw daemon
         }
       return mode === 'echo' ? { ...authorization, key: 'private-fixture-Key' } : authorization
     },
-    (_origin, result) => {
+    (target, result, binding) => {
+      expect(binding).toEqual({ ...input, origin: target })
+      if (mode === 'discovery') expect(target).toBe('https://8443-fixture.ap-shanghai.tencentags.com')
       registered = result.trafficToken === 'business-only-secret'
       return registered
     },

@@ -404,6 +404,8 @@ it('authorizes only the configured cloud from its exact frame, ignoring sender-s
 it('localizes cloud refusal codes without exposing backend details or obsolete manual-key guidance', () => {
   expect(cloudFailureText('CLOUD_CREDENTIAL_REQUIRED', 'en')).toContain('Select a local credential')
   expect(cloudFailureText('CLOUD_CREDENTIAL_REQUIRED', 'zh-CN')).toContain('选择本地凭证')
+  expect(cloudFailureText('CLOUD_SANDBOX_NOT_READY', 'zh-CN')).toContain('沙箱已停机')
+  expect(cloudFailureText('CLOUD_RATE_LIMITED', 'en')).toContain('rate limited')
   expect(cloudFailureText('CLOUD_CREDENTIAL_REJECTED', 'en')).not.toMatch(/[\u4e00-\u9fff]/u)
   expect(cloudFailureText('sensitive transport detail', 'en')).not.toContain('sensitive')
   const root = document.documentElement

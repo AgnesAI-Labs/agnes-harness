@@ -6,15 +6,16 @@ import {
   rpcError,
 } from '@agnes/protocol'
 import type { AdminCloudAuthorization, AdminCloudAuthorize } from '@agnes/protocol/gen/app-server'
+import { deploymentFetch } from '@agnes/system-node/deployment-network'
 import { cloudSandboxConnection } from './cloud-sandbox-token.js'
 
 const AUTHORIZATION_CLOCK_SKEW_MS = 5 * 60 * 1000
 
-/** Resolve the managed credential only in A's daemon; never return its value to the browser/BFF. */
+/** Resolve the Key in A's daemon. Only the trusted launcher receives a platform traffic credential. */
 export async function authorizeCloudConnection(
   input: AdminCloudAuthorize,
   store: Pick<CredentialStore, 'read'>,
-  fetcher: typeof fetch = fetch,
+  fetcher: typeof fetch = deploymentFetch,
 ): Promise<AdminCloudAuthorization> {
   try {
     const requestedOrigin = input.origin === undefined ? undefined : remoteFrontendOrigin(input.origin)
@@ -23,7 +24,7 @@ export async function authorizeCloudConnection(
       throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_CREDENTIAL_NOT_FOUND' })
     const sandbox = await cloudSandboxConnection(requestedOrigin, credential.value, fetcher)
     const origin = sandbox?.origin ?? requestedOrigin
-    if (!origin) throw new Error('missing cloud origin')
+    if (!origin) throw Error('missing cloud origin')
     const trafficToken = sandbox?.trafficToken
     const response = await fetcher(`${origin}${REMOTE_FRONTEND_AUTH}`, {
       method: 'POST',
@@ -58,7 +59,10 @@ export async function authorizeCloudConnection(
     const reason = (error as { data?: { reason?: unknown } })?.data?.reason
     throw rpcError('SEMANTIC_REJECTED', {
       reason:
-        reason === 'CONFIG_CREDENTIAL_NOT_FOUND' || reason === 'CONFIG_CREDENTIAL_REJECTED'
+        typeof reason === 'string' &&
+        /^(?:CONFIG_CREDENTIAL_(?:NOT_FOUND|REJECTED)|CLOUD_(?:BROKER_REQUIRED|CONNECTION_INVALID|SANDBOX_NOT_READY|RATE_LIMITED))$/u.test(
+          reason,
+        )
           ? reason
           : 'CONFIG_AUTH_UNAVAILABLE',
     })

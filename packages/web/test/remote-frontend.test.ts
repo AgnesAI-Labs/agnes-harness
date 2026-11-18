@@ -178,6 +178,18 @@ it('reports a rejected credential and refuses an old public publication instead 
         Response.json({ error: 'CONFIG_CREDENTIAL_REJECTED' }, { status: 400 }),
       ),
     ).rejects.toThrow('CLOUD_CREDENTIAL_REJECTED')
+    for (const error of [
+      'CLOUD_BROKER_REQUIRED',
+      'CLOUD_CONNECTION_INVALID',
+      'CLOUD_SANDBOX_NOT_READY',
+      'CLOUD_RATE_LIMITED',
+    ]) {
+      await expect(
+        readRemoteFrontendInfo(remote, new AbortController().signal, async () =>
+          Response.json({ error }, { status: 400 }),
+        ),
+      ).rejects.toThrow(error)
+    }
     await expect(
       readRemoteFrontendInfo(remote, new AbortController().signal, async (input) =>
         String(input).endsWith(CLOUD_AUTHORIZATION_PATH)

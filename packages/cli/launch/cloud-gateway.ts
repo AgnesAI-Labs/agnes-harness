@@ -1,14 +1,46 @@
-import { request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http'
+import {
+  type ClientRequest,
+  request as httpRequest,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { Duplex } from 'node:stream'
-import { remoteFrontendOrigin, remoteFrontendSessionPath } from '@agnes/protocol'
+import {
+  REMOTE_FRONTEND_SESSION_PREFIX,
+  remoteFrontendOrigin,
+  remoteFrontendSessionPath,
+  validateMethod,
+} from '@agnes/protocol'
 import type { AdminCloudAuthorization } from '@agnes/protocol/gen/app-server'
 
 /** A transport-only relay on the isolated cloud origin. It cannot reach local management routes. */
 export function createCloudGateway() {
-  const grants = new Map<string, { origin: string; trafficToken: string; expiresAt: number }>()
-  const sockets = new Set<Duplex>()
-  const register = (origin: string, result: AdminCloudAuthorization) => {
+  type Grant = {
+    origin: string
+    trafficToken: string
+    expiresAt: number
+    refresh?: () => Promise<AdminCloudAuthorization>
+    refreshing?: Promise<void>
+    rejected: boolean
+    reconnect: boolean
+    retryAt: number
+    sockets: Set<Duplex>
+    timer?: ReturnType<typeof setTimeout>
+  }
+  const grants = new Map<string, Grant>()
+  const requests = new Set<ClientRequest>()
+  let closed = false
+  const revoke = (prefix: string) => {
+    const grant = grants.get(prefix)
+    grants.delete(prefix)
+    if (grant?.timer) clearTimeout(grant.timer)
+    for (const socket of grant?.sockets ?? []) socket.destroy()
+  }
+  const register = (origin: string, result: AdminCloudAuthorization, refresh?: Grant['refresh']) => {
+    if (closed) throw Error('cloud gateway closed')
+    if (!validateMethod('_agnes/v1/admin.cloud.authorize', 'result', result).ok)
+      throw Error('invalid authorization')
     if (!result.trafficToken) return false
     const target = new URL(remoteFrontendOrigin(origin))
     if (
@@ -17,33 +49,83 @@ export function createCloudGateway() {
       !/^8443-[a-z0-9-]+\.[a-z0-9-]+\.tencentags\.com$/u.test(target.hostname)
     )
       throw Error('invalid sandbox target')
-    for (const [path, grant] of grants) if (grant.expiresAt <= Date.now()) grants.delete(path)
+    for (const [path, grant] of grants) if (grant.expiresAt <= Date.now()) revoke(path)
     const prefix = remoteFrontendSessionPath(result.token)
     if (grants.size >= 32 && !grants.has(prefix)) {
       const oldest = grants.keys().next().value
-      if (oldest) grants.delete(oldest)
+      if (oldest) revoke(oldest)
     }
+    revoke(prefix)
     grants.set(prefix, {
       origin: target.origin,
       trafficToken: result.trafficToken,
       expiresAt: result.expiresAt,
+      ...(refresh ? { refresh } : {}),
+      rejected: false,
+      reconnect: false,
+      retryAt: 0,
+      sockets: new Set(),
     })
+    const grant = grants.get(prefix)
+    if (grant) {
+      grant.timer = setTimeout(() => revoke(prefix), Math.max(1, result.expiresAt - Date.now()))
+      grant.timer.unref()
+    }
     return true
   }
   const resolve = (request: IncomingMessage) => {
     const path = request.url ?? ''
-    if (!path.startsWith('/_agnes/remote-access/')) return
+    if (!path.startsWith(REMOTE_FRONTEND_SESSION_PREFIX)) return
     const url = new URL(path, 'http://127.0.0.1')
     const prefix = url.pathname.split('/').slice(0, 4).join('/')
     const grant = grants.get(prefix)
-    if (!grant || grant.expiresAt <= Date.now()) {
-      grants.delete(prefix)
+    if (closed || !grant || grant.expiresAt <= Date.now()) {
+      revoke(prefix)
       return null
     }
     // Never route user-supplied absolute URLs, authority changes or normalized dot-segment escapes.
     if (!path.startsWith(`${prefix}/`) || !url.pathname.startsWith(`${prefix}/`)) return null
     if (request.headers.origin && request.headers.origin !== `http://${request.headers.host}`) return null
+    if (
+      request.headers['sec-fetch-site'] &&
+      !['same-origin', 'none'].includes(String(request.headers['sec-fetch-site']))
+    )
+      return null
     return { grant, prefix, url: new URL(`${url.pathname}${url.search}`, grant.origin) }
+  }
+  const rejectGrant = (prefix: string, grant: Grant) => {
+    if (!grant.refresh) return revoke(prefix)
+    grant.rejected = true
+    grant.trafficToken = ''
+    for (const socket of grant.sockets) socket.destroy()
+  }
+  const renew = async (prefix: string, grant: Grant) => {
+    if (grant.refreshing) return grant.refreshing
+    if (!grant.refresh || grant.retryAt > Date.now()) throw Error('cloud authorization unavailable')
+    grant.refreshing = (async () => {
+      try {
+        const next = await grant.refresh?.()
+        if (closed || grants.get(prefix) !== grant || grant.expiresAt <= Date.now()) throw Error('revoked')
+        if (!next?.trafficToken || !validateMethod('_agnes/v1/admin.cloud.authorize', 'result', next).ok)
+          throw Error('invalid authorization')
+        // Keep this browser capability's original expiry and B session path; refresh only transport access.
+        grant.trafficToken = next.trafficToken
+        grant.rejected = false
+        grant.reconnect = false
+        grant.retryAt = 0
+      } catch {
+        grant.retryAt = Date.now() + 30_000
+        throw Error('cloud authorization unavailable')
+      }
+    })().finally(() => {
+      delete grant.refreshing
+    })
+    return grant.refreshing
+  }
+  const own = (request: ClientRequest) => {
+    requests.add(request)
+    request.once('close', () => requests.delete(request))
+    return request
   }
   const headers = (request: IncomingMessage, origin: string, trafficToken: string, upgrade = false) => {
     const result: Record<string, string> = { origin, 'e2b-traffic-access-token': trafficToken }
@@ -72,40 +154,53 @@ export function createCloudGateway() {
         response.writeHead(401, { 'cache-control': 'no-store' }).end()
         return true
       }
-      const upstream = (route.url.protocol === 'https:' ? httpsRequest : httpRequest)(
-        route.url,
-        {
-          method: request.method,
-          headers: headers(request, route.grant.origin, route.grant.trafficToken),
-        },
-        (incoming) => {
-          const status = incoming.statusCode ?? 502
-          if (status === 401 || status === 403) grants.delete(route.prefix)
-          if (status >= 300 && status < 400 && status !== 304) {
-            incoming.resume()
-            response.writeHead(502, { 'cache-control': 'no-store' }).end()
-            return
-          }
-          const safe: Record<string, string> = {
-            'cache-control': 'no-store',
-            'referrer-policy': 'no-referrer',
-            'x-content-type-options': 'nosniff',
-          }
-          for (const name of ['content-type', 'content-range', 'accept-ranges', 'content-disposition']) {
-            const value = incoming.headers[name]
-            if (typeof value === 'string') safe[name] = value
-          }
-          response.writeHead(status, safe)
-          incoming.on('error', () => response.destroy())
-          incoming.pipe(response)
-        },
+      if (route.grant.rejected) {
+        try {
+          await renew(route.prefix, route.grant)
+        } catch {
+          request.resume()
+          response.writeHead(503, { 'cache-control': 'no-store', 'retry-after': '30' }).end()
+          return true
+        }
+      }
+      if (closed || request.aborted || response.destroyed) return true
+      const upstream = own(
+        (route.url.protocol === 'https:' ? httpsRequest : httpRequest)(
+          route.url,
+          {
+            method: request.method,
+            headers: headers(request, route.grant.origin, route.grant.trafficToken),
+          },
+          (incoming) => {
+            const status = incoming.statusCode ?? 502
+            if (status === 401 || status === 403) rejectGrant(route.prefix, route.grant)
+            if (status >= 300 && status < 400 && status !== 304) {
+              incoming.resume()
+              response.writeHead(502, { 'cache-control': 'no-store' }).end()
+              return
+            }
+            const safe: Record<string, string> = {
+              'cache-control': 'no-store',
+              'referrer-policy': 'no-referrer',
+              'x-content-type-options': 'nosniff',
+            }
+            for (const name of ['content-type', 'content-range', 'accept-ranges', 'content-disposition']) {
+              const value = incoming.headers[name]
+              if (typeof value === 'string') safe[name] = value
+            }
+            response.writeHead(status, safe)
+            incoming.on('error', () => response.destroy())
+            incoming.pipe(response)
+          },
+        ),
       )
       upstream.setTimeout(30_000, () => upstream.destroy())
       upstream.on('error', () => {
-        if (!response.headersSent) response.writeHead(502)
-        response.end()
+        if (response.headersSent) response.destroy()
+        else response.writeHead(502, { 'cache-control': 'no-store' }).end()
       })
       request.once('aborted', () => upstream.destroy())
+      request.once('error', () => upstream.destroy())
       response.once('close', () => upstream.destroy())
       request.pipe(upstream)
       return true
@@ -117,11 +212,26 @@ export function createCloudGateway() {
         socket.destroy()
         return true
       }
-      const upstream = httpsRequest(route.url, {
-        headers: headers(request, route.grant.origin, route.grant.trafficToken, true),
-      })
+      if (route.grant.rejected || (route.grant.reconnect && route.grant.refresh)) {
+        try {
+          await renew(route.prefix, route.grant)
+        } catch {
+          socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nRetry-After: 30\r\n\r\n')
+          return true
+        }
+      }
+      if (closed || socket.destroyed) return true
+      const upstream = own(
+        httpsRequest(route.url, {
+          headers: headers(request, route.grant.origin, route.grant.trafficToken, true),
+        }),
+      )
       upstream.setTimeout(10_000, () => upstream.destroy())
       upstream.on('upgrade', (incoming, peer, upstreamHead) => {
+        if (closed || socket.destroyed || grants.get(route.prefix) !== route.grant) {
+          peer.destroy()
+          return
+        }
         upstream.setTimeout(0)
         const raw = ['HTTP/1.1 101 Switching Protocols', 'Connection: Upgrade', 'Upgrade: websocket']
         for (const name of ['sec-websocket-accept', 'sec-websocket-protocol', 'sec-websocket-extensions']) {
@@ -131,8 +241,8 @@ export function createCloudGateway() {
         socket.write(`${raw.join('\r\n')}\r\n\r\n`)
         if (head.length) peer.write(head)
         if (upstreamHead.length) socket.write(upstreamHead)
-        sockets.add(socket)
-        sockets.add(peer)
+        route.grant.sockets.add(socket)
+        route.grant.sockets.add(peer)
         const timer = setTimeout(
           () => {
             socket.destroy()
@@ -143,8 +253,9 @@ export function createCloudGateway() {
         timer.unref()
         const close = () => {
           clearTimeout(timer)
-          sockets.delete(socket)
-          sockets.delete(peer)
+          route.grant.sockets.delete(socket)
+          route.grant.sockets.delete(peer)
+          route.grant.reconnect = true
           socket.destroy()
           peer.destroy()
         }
@@ -155,7 +266,7 @@ export function createCloudGateway() {
         socket.pipe(peer).pipe(socket)
       })
       upstream.on('response', (incoming) => {
-        if ([401, 403].includes(incoming.statusCode ?? 0)) grants.delete(route.prefix)
+        if ([401, 403].includes(incoming.statusCode ?? 0)) rejectGrant(route.prefix, route.grant)
         incoming.resume()
         socket.destroy()
       })
@@ -165,9 +276,10 @@ export function createCloudGateway() {
       return true
     },
     close() {
-      grants.clear()
-      for (const socket of sockets) socket.destroy()
-      sockets.clear()
+      closed = true
+      for (const prefix of grants.keys()) revoke(prefix)
+      for (const request of requests) request.destroy()
+      requests.clear()
     },
   }
 }

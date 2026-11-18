@@ -112,7 +112,7 @@ export async function prepareRemoteFrontend(): Promise<void> {
   const remote = selectedRemoteOrigin()
   if (!remote) return
   const original = window.fetch.bind(window)
-  const info = await readRemoteFrontendInfo(remote, AbortSignal.timeout(8000), original)
+  const info = await readRemoteFrontendInfo(remote, AbortSignal.timeout(25_000), original)
   const meta = document.querySelector<HTMLMetaElement>('meta#agnes-config')
   if (!meta) throw new Error('missing frontend configuration')
   meta.dataset.ws = `${remoteTransportOrigin(remote).replace(/^http/u, 'ws')}${remoteAccessPath(remote)}${REMOTE_FRONTEND_WS}`

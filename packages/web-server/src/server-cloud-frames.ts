@@ -3,7 +3,7 @@ import { createWebDocumentResponder } from './server-document.js'
 import { listen } from './server-http.js'
 import type { WebServerOptions } from './server-types.js'
 
-/** Separate origin, separate listener, static build assets only. No owner handlers are installed. */
+/** Separate origin for build assets and capability-scoped B transport. No A owner handlers. */
 export async function createCloudFrameServer(
   options: Omit<Parameters<typeof createWebDocumentResponder>[0], 'frameOrigin'> &
     Pick<WebServerOptions, 'cloudGateway'>,

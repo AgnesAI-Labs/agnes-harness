@@ -4,9 +4,9 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { createWebServer } from '../src/server.js'
+import { createWebServer, type WebServerOptions } from '../src/server.js'
 
-async function started() {
+async function started(cloudGateway?: WebServerOptions['cloudGateway']) {
   const root = mkdtempSync(join(tmpdir(), 'agnes-web-guard-'))
   writeFileSync(
     join(root, 'index.html'),
@@ -20,6 +20,7 @@ async function started() {
   const admin: string[] = []
   const web = await createWebServer({
     root,
+    ...(cloudGateway ? { cloudGateway } : {}),
     wsUrl: 'ws://127.0.0.1:4312',
     port: address.port,
     handleAdmin: async (request, response) => {
@@ -129,7 +130,9 @@ it('admits only the explicitly selected backend origin in a remote page CSP', as
     const remote = await fetch(`${isolated}${selected}`)
     expect(remote.status).toBe(200)
     const csp = remote.headers.get('content-security-policy') ?? ''
-    expect(csp).toContain("connect-src 'self' https://computer-b:8443 wss://computer-b:8443")
+    expect(csp).toContain(
+      `connect-src 'self' ${isolated.replace('http:', 'ws:')} https://computer-b:8443 wss://computer-b:8443`,
+    )
     expect(csp).toContain("script-src 'self' https://computer-b:8443")
     expect(csp).not.toContain('connect-src *')
     const cloudHtml = await remote.text()
@@ -159,4 +162,87 @@ it('admits only the explicitly selected backend origin in a remote page CSP', as
     rmSync(root, { recursive: true, force: true })
   }
   if (isolatedOrigin) await expect(fetch(isolatedOrigin)).rejects.toThrow()
+})
+
+it('exposes delegated sandbox traffic only on the isolated origin, preserving local owner and Host boundaries', async () => {
+  const prefix = `/_agnes/remote-access/zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`
+  const delegated: string[] = []
+  const upgrades: string[] = []
+  let closed = false
+  const { root, web, admin, port } = await started({
+    async handleHttp(request, response) {
+      if (!request.url?.startsWith(prefix + '/')) return false
+      delegated.push(request.url)
+      request.resume()
+      response.writeHead(200, { 'content-type': 'text/plain' }).end('B only')
+      return true
+    },
+    async handleUpgrade(request, socket) {
+      upgrades.push(request.url ?? '')
+      socket.destroy()
+      return request.url?.startsWith(prefix + '/') ?? false
+    },
+    close() {
+      closed = true
+    },
+  })
+  const remote = 'https://8443-fixture.ap-shanghai.tencentags.com'
+  try {
+    const main = await fetch(web.url + '/?remote=' + encodeURIComponent(remote))
+    expect(main.headers.get('content-security-policy')).not.toContain(remote)
+    const html = await main.text()
+    const isolated = /data-cloud-origin="([^"]+)"/u.exec(html)?.[1]
+    if (!isolated) throw Error('missing isolated origin')
+    const child = await fetch(isolated + '/?remote=' + encodeURIComponent(remote))
+    expect(child.status).toBe(200)
+    const csp = child.headers.get('content-security-policy') ?? ''
+    expect(csp).toContain(`connect-src 'self' ${isolated.replace('http:', 'ws:')} ${remote}`)
+    expect(csp).toContain(`frame-ancestors ${web.url}`)
+    expect((await fetch(isolated + prefix + '/plugins/test/client.js')).status).toBe(200)
+    expect(
+      (
+        await fetch(isolated + prefix + '/admin/resources/api/mcp/trust', {
+          method: 'POST',
+          headers: { origin: isolated },
+          body: '{}',
+        })
+      ).status,
+    ).toBe(200)
+    expect(
+      (
+        await fetch(isolated + '/admin/resources/api/mcp/trust', {
+          method: 'POST',
+          headers: { origin: isolated },
+          body: '{}',
+        })
+      ).status,
+    ).toBe(403)
+    expect((await fetch(isolated + '/admin/resources')).status).toBe(404)
+    expect((await fetch(web.url + prefix + '/api/test')).status).toBe(404)
+    const isolatedPort = Number(new URL(isolated).port)
+    expect(
+      (await send(isolatedPort, 'GET', prefix + '/api/test', { Host: `foreign.example:${isolatedPort}` }))
+        .status,
+    ).toBe(403)
+    expect(admin).toEqual([])
+    expect(delegated).toEqual([prefix + '/plugins/test/client.js', prefix + '/admin/resources/api/mcp/trust'])
+    const socket = new WebSocket(isolated.replace('http:', 'ws:') + prefix + '/_agnes/remote-frontend/ws')
+    await new Promise((resolve) => {
+      socket.onerror = resolve
+    })
+    expect(upgrades).toEqual([prefix + '/_agnes/remote-frontend/ws'])
+    expect(
+      (
+        await send(port, 'POST', '/admin/resources/api/mcp/trust', {
+          Host: new URL(web.url).host,
+          Origin: web.url,
+        })
+      ).status,
+    ).toBe(200)
+    expect(admin).toEqual(['POST /admin/resources/api/mcp/trust'])
+  } finally {
+    await web.close()
+    expect(closed).toBe(true)
+    rmSync(root, { recursive: true, force: true })
+  }
 })

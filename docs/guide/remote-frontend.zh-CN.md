@@ -4,31 +4,23 @@
 
 [部署](deployment.zh-CN.md) · [插件](packages.zh-CN.md) · [Web 工作台](web.zh-CN.md)
 
-A、B 使用同一套完整标准 Harness。A 托管自己的页面，通常由浏览器直接连接 B 的 HTTP/WebSocket 服务，不使用 SSH。需要平台业务 Token 的腾讯云沙箱使用下述本机隔离转发通道；其余连接的本地 BFF 只用于凭证交换。B 启用已安装的云端插件，A 不需要安装该插件。
+A、B 使用同一套完整标准 Harness。A 托管自己的页面，普通连接由浏览器直接访问 B 的 HTTP/WebSocket 服务，不使用 SSH；LLMSG 沙箱使用下述隔离入口转发。普通直连的本地 BFF 只用于凭证交换。B 启用已安装的云端插件，A 不需要安装该插件。
 
-## LLMSG 腾讯云沙箱连接
+## LLMSG 沙箱入口
 
-用户先在 LLMSG 开通沙箱，再在 A 选择保存了 AGH Key 的本地凭证，点击“保存并连接”。默认界面不再显示要求填写实例地址的输入框；本机后端自动获取当前绑定的实例地址和业务 Token。AGH 不自动开通沙箱。其他云端服务的手动地址配置保留在折叠的“其他云端服务（手动配置）”中。
+用户先在 LLMSG 开通沙箱，再在 A 选择保存 AGH Key 的本地凭证，点击“保存并连接”。默认不展示实例地址输入框；其他云端服务的手动地址配置保留在折叠的“其他云端服务（手动配置）”中。此连接只查询已开通的实例，不自动开机、续期或计费。
 
-A 的 daemon 使用选中的 AGH Key 调用 LLMSG `POST /llmsg/api/agh/connection`，请求体为 `{}`。LLMSG 校验 Key、用户和运行实例的绑定后，返回 `data.sandbox_url` 和 `data.traffic_token`。A 校验地址为受支持的腾讯云 8443 HTTPS 实例入口，再携带该 Token 完成原有 Key 认证。旧客户端提供 `sandbox_url` 时，LLMSG 仍做精确地址校验。
+A 的 daemon 使用所选 `agh_sk_` Key 请求 `POST /llmsg/api/agh/connection`，携带 `Authorization: Bearer <Key>` 和 `{}`。LLMSG 按 Key 返回当前绑定的 HTTPS `8443-<实例>.<地域>.tencentags.com` 来源及业务 Token；旧调用传入 `sandbox_url` 时仍要求地址完全一致。需要部署支持空请求体的 LLMSG 版本。原始 Key 和平台 Token 不保存在浏览器中。
 
-A 的 daemon 环境变量 `AGH_LLMSG_API_BASE_URL` 指定 LLMSG API 根地址，默认 `https://api.llm.sg`。开发联调设置为 `https://api-llmsg-dev.agnes-dev.com`，并按本地启动流程重启自己的 daemon。此变量配置在用户运行 AGH 的本机，不属于 B 镜像要求的三个环境变量；旧版 LLMSG 没有上述接口时会明确连接失败，不降级绕过认证。
+在 A 的 daemon 环境中显式配置 `AGH_LLMSG_API_BASE_URL` 为 LLMSG API 的**来源地址**，不要附 `/v1` 或接口路径，再按原有启动流程重启该 daemon。没有默认凭据服务地址。必须使用 HTTPS；隔离测试允许显式指定本机回环 HTTP 服务。这是 A 侧部署配置，不属于 B 云端插件原有三个变量。
 
-平台业务 Token 只在 daemon 与本地 launcher 的可信通道内传递，浏览器只收到 AGH 临时连接凭证及是否使用转发的标识。HTTP、WebSocket 和插件资源通过 A 的隔离云端来源转发到本次授权的固定沙箱目标。该来源仍不能访问 A 的凭证库、管理 API 或本地 daemon；转发会剥离本地 Cookie 和 Authorization，并禁止跟随上游重定向。
+自动连接只保存凭证引用和已发现地址；重新连接或恢复自动连接时重新查询绑定。断开会取消查询，迟到响应不覆盖新连接；显式 `?remote=` 仍优先。普通 API Key 不会发送到自动发现接口。平台 Token 刷新继续绑定首次解析的实例，不会将旧连接迁移到其他实例。
 
-管理端口 49983 的平台鉴权保留。业务 Token 失效或实例不可用时连接失败；重新连接重新查询凭证，不自动重放失败的写请求，不重建实例。该适配只处理入口鉴权，模型网关出口被拒绝需单独处理。
+daemon 取得平台业务 Token，在 B 原有 Key 认证时携带。该 Token 仅经过私有 daemon 到 launcher 的 RPC，由 launcher 在 A 的隔离云端监听上注册数量有界、会过期的授权。浏览器只收到既有 AGH 临时能力凭据及 `proxied` 标识。HTTP、WebSocket 和插件资源通过隔离来源访问，每次出站请求为固定的授权沙箱添加 `e2b-traffic-access-token`。不转发浏览器的 Cookie、Authorization 或伪造业务 Token 头，不跟随重定向；该监听仍不能访问 A 的管理 API，不转发 49983 管理入口。
 
-自动连接成功后，浏览器只保留凭证引用和已发现的地址；重新连接或重新打开已保存的自动连接，会按 Key 再查询当前实例。查询期间禁用重复连接和凭证选择；断开连接会取消查询，迟到结果不会覆盖新连接。普通模型 API Key 不会被发送给 LLMSG 自动发现接口，需使用 AGH 专属 Key。
+新连接查询当前凭据。已建立的 WebSocket 断线或上游拒绝访问后，下次请求/握手通过同一本地凭证引用刷新；并发刷新合并为一次，刷新失败退避 30 秒，不延长浏览器能力凭据原有有效期。失败的业务写请求直接返回，不自动重放。缺失配置、地址错误、Key 被拒绝、实例不可用（409）和限流（429）都有本地化提示，不将上游响应细节或 Token 投射到界面。
 
-LLMSG 的 AGH 模型目录按 Key 的实际分组、模型限制和客户白名单过滤，并要求有效的聊天端点和可用渠道。缺少聊天端点或只有旧 completions、图片、视频、embedding 等能力的条目不作为云端聊天模型；不按名称限制为 Agnes 系列。
-
-跨仓真实联调可复用 `tools/llmsg-connection-probe.ts`。在 LLMSG 源码根目录显式设置 `AGH_RUN_REAL_LIVE_TEST=1`、`AGH_LIVE_WITH_CFS=1`、运维提供的 AGS 配置，并设置 `AGH_CONNECTION_PROBE_SOURCE=<本仓库绝对路径>`、`AGH_CONNECTION_PROBE_NODE=<固定版本 node 可执行文件>`、`AGH_CONNECTION_PROBE_SCRIPT=<本仓库绝对路径>/tools/llmsg-connection-probe.ts`，运行 `go test ./controller -run '^TestLlmsgAghLiveManualHTTPAndRealAGS$' -count=1 -v -timeout 7m`。用例在隔离账本开通真实短时实例，自动把临时 Key 和本地接口地址交给子进程，在首次启动及暂停恢复后分别验证连接；不写共享账本。测试结束会为本次实例设置短时到期，仍需核实回收。
-
-已有专属测试实例可运行 LLMSG 的 `TestLlmsgAghLiveManualExistingConnection`：显式设置 `AGH_RUN_EXISTING_CONNECTION_TEST=1`，在测试进程环境提供 `AGH_PROBE_KEY`、`AGH_PROBE_ORIGIN`、`AGH_PROBE_SANDBOX_ID`、AGS 配置和上述探针路径。设置 `AGH_PROBE_DISCOVERY=1` 时，探针不给 daemon 提供地址，仅把 `AGH_PROBE_ORIGIN` 作为预期结果核对。该用例只在隔离账本保存绑定，不创建、暂停或续期真实实例。另设 `AGH_PROBE_CONVERSATION=1`、`AGH_PROBE_READ_PATH=<自己创建的 /workspace/data/ 下测试文件>`、`AGH_PROBE_READ_EXPECTED=<文件完整文本>` 时，探针会新建标准权限会话，使用 `agnes-2-5-flash` 读取测试文件；会产生正常的真实模型费用。未设置对话开关时只验证连接，不能据此声称模型和工具已经通过。
-
-2026-11-18 联调记录：本次适配基于 GitHub `feat/agh-cloud` 的 `034202d96533a2e10d7d44f36843fa8d33b8a877`，交付至 CNB 独立分支 `codex/llmsg-sandbox-traffic-20261118`。真实上海沙箱 AGH `0.7.0` 已通过业务 HTTP、原生 WebSocket、标准权限会话、模型对话、读文件及插件自动上报；LLMSG 回读工具次数与模型扣费，并验证重复报告不重复入账。此结果包含本地 LLMSG 凭证接口，不等于共享环境已经部署该接口，也不等于新版客户端安装包已交付。联调 Key 和平台 Token 单独提供，不提交到仓库。
-
-检查环境为 Node `24.20.0`、pnpm `10.34.5`。类型检查、lint、生成检查、guards 与本次连接相关测试已通过；完整 fast 测试尚未全部通过。在未修改的上述基线上，`packages/core/test/announce.test.ts` 的 `keeps omitted, empty and false announce options byte-identical` 同样出现记录校验值不一致，实际 `c238957c…`、预设 `416868be…`。该断言保留，原因需继续确认；不得将本次分支当作全量测试通过或发布验收完成。
+普通 IP/域名连接仍走原有直连。此次入口适配不改变 B 的云端模型、工具审批、计费插件、工作区隔离或模型网关出网规则，这些能力须在目标沙箱中单独验收。
 
 ## Key 与发布合同
 
@@ -40,13 +32,13 @@ LLMSG 的 AGH 模型目录按 Key 的实际分组、模型限制和客户白名�
 {"enabled":true,"access":"key-owner","host":"0.0.0.0","port":8443,"auth":{"keySha256":"<64 位校验值>"}}
 ```
 
-A 在“设置 → 高级 → 云端连接”填写地址，并从**本地凭证下拉列表**选择已保存在 A 凭证管理中的通用凭证。此页不输入原始 Key，也不自动创建或修改凭证；“管理本地凭证”会定位到 A 的“设置 → 权限 → 凭据”，新建时将与 B 相同的 Key 保存到凭证值中，返回云端连接后可直接选择，“刷新凭证列表”可更新选项。即使从云端会话打开设置，列表和管理入口也始终来自 A，不使用 B 的凭证库。重名凭证会附加引用尾号以区分。
+普通自定义服务在“设置 → 高级 → 云端连接”的手动配置中填写地址；LLMSG 连接自动获取地址。用户从**本地凭证下拉列表**选择已保存在 A 凭证管理中的通用凭证。此页不输入原始 Key，也不自动创建或修改凭证；“管理本地凭证”会定位到 A 的“设置 → 权限 → 凭据”，新建时将与 B 相同的 Key 保存到凭证值中，返回云端连接后可直接选择，“刷新凭证列表”可更新选项。即使从云端会话打开设置，列表和管理入口也始终来自 A，不使用 B 的凭证库。重名凭证会附加引用尾号以区分。
 
 浏览器只保存地址和 `secret://generic/...` 引用，不把原始 Key 放进 localStorage、sessionStorage、URL、会话 journal 或侧栏状态。更换选择只更新绑定，不替换凭证值；断开云端不会删除凭证，旧版已保存的绑定会自动选中。同一浏览器重开页面可自动重连，换浏览器需重新选择已有凭证。该浏览器绑定尚不计入凭证管理的后端配置引用列表；删除凭证后，下次认证提示重新配置。
 
 连接流程：
 
-1. 浏览器向 **A 本地** `/_agnes/cloud-connection/authorize` 提交 B 的地址和凭证引用；此入口检查同源请求，并经私有连接调用 admin 级 `admin.cloud.authorize`，要求凭证读写和插件激活管理权限。
+1. 浏览器向 **A 本地** `/_agnes/cloud-connection/authorize` 提交凭证引用（手动配置时同时提交 B 的地址）；此入口检查同源请求，并经私有连接调用 admin 级 `admin.cloud.authorize`，要求凭证读写和插件激活管理权限。
 2. A 的 daemon 从自身凭证库读取 Key，向 B 的 `POST /_agnes/remote-frontend/auth` 提交 `{key}`。B 对比部署 Key，大小写及内容必须完全一致；不调用第三方平台验证其购买状态。
 3. B 验证成功后签发有效期 8 小时的临时连接凭证。浏览器只收到该临时凭证，再直接连接 B 的 HTTP／WebSocket，不经 A 转发会话流量。
 4. HTTP、插件资源及 WebSocket 路径均位于 `/_agnes/remote-access/<临时凭证>/...`，相对模块资源继承该路径。B 校验有效性后剥离前缀，转发到固定本机服务。裸 API、文件／插件资源及 WebSocket 均拒绝未认证访问，不能只靠通过首次握手绕过后续校验。临时凭证也是 bearer 凭证，应避免记录完整资源 URL；服务使用 `no-store` 和 `no-referrer`。到期断开 socket，重新认证获得新凭证。
@@ -126,8 +118,8 @@ HTTP 成功（含重复确认）标记完成；超时、429、5xx 使用相同 I
 
 ### 前端隔离与原生导航
 
-A 的可信工作台和本地管理保持在 `http://127.0.0.1:<端口>`。云端会话从独立来源 `http://127.0.0.1:<隔离端口>` 加载标准前端静态资源；此来源只提供允许清单内的构建资源，不能访问 A 的 BFF、插件资源、凭证、daemon socket 或上传处理器。A 的主文档不会允许 B 执行脚本，只有隔离的云端文档在 CSP 中允许已选 B 的来源。
+A 的可信工作台和本地管理保持在 `http://127.0.0.1:<端口>`。云端会话从独立来源 `http://127.0.0.1:<隔离端口>` 加载标准前端静态资源；此来源提供允许清单内的构建资源，LLMSG 模式还转发已授权的 B 能力路径；不能访问 A 的 BFF、本地插件资源、凭证、daemon socket 或上传处理器。A 的主文档不会允许 B 执行脚本，只有隔离的云端文档在 CSP 中允许已选 B 的来源。
 
-消息桥同时校验来源和窗口，只为 A 当前配置的 B 返回临时连接凭证。云端不能选择凭证引用或授权目标、读取 A 的凭证列表、修改连接配置。展示偏好仅同步语言、主题和字号。静态监听器在 Web 服务启动时分配临时端口；重启 A 会创建新的云端页面上下文，未发送草稿可能丢失，B 已保存的会话仍然保留。本地、云端分组在 A 的原生侧栏内渲染，保留品牌、应用导航、插件首页入口和侧栏插槽。设置保持模态行为；关闭设置后再选择侧栏会话。
+消息桥同时校验来源和窗口，只为 A 当前配置的 B 返回临时连接凭证。云端不能选择凭证引用或授权目标、读取 A 的凭证列表、修改连接配置。展示偏好仅同步语言、主题和字号。隔离监听器在 Web 服务启动时分配临时端口；重启 A 会创建新的云端页面上下文，未发送草稿可能丢失，B 已保存的会话仍然保留。本地、云端分组在 A 的原生侧栏内渲染，保留品牌、应用导航、插件首页入口和侧栏插槽。设置保持模态行为；关闭设置后再选择侧栏会话。
 
 云端模型插槽除 `owner.draft` 外，还获得仅用于展示的 `owner.remote` 提示，并通过 `actions.setCatalog` 提供目录数据。插件调用 `actions.renderDefault()` 复用原生模型选择器及其键盘操作。

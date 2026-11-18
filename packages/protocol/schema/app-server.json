@@ -2170,7 +2170,13 @@
         },
         "expiresAt": { "type": "number" },
         "origin": { "type": "string", "minLength": 1, "maxLength": 2048 },
-        "trafficToken": { "type": "string", "minLength": 1, "maxLength": 8192, "pattern": "^[^\\r\\n]+$" }
+        "trafficToken": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "pattern": "^[\\x21-\\x7e]+$",
+          "description": "Private daemon-to-launcher credential; never project to the browser."
+        }
       },
       "required": ["token", "expiresAt"]
     },

@@ -1,5 +1,11 @@
 export const cloudErrorCatalog = {
   en: {
+    CLOUD_BROKER_REQUIRED:
+      'The cloud connection service is not configured. Contact your deployment administrator.',
+    CLOUD_CONNECTION_INVALID: 'Check that the sandbox address matches the instance bound to your credential.',
+    CLOUD_SANDBOX_NOT_READY:
+      'The sandbox is stopped, changing state or unavailable. Check its status before reconnecting.',
+    CLOUD_RATE_LIMITED: 'Cloud connection requests are rate limited. Wait before reconnecting.',
     CLOUD_CREDENTIAL_REQUIRED: 'Select a local credential in Settings → Advanced → Cloud connection.',
     CLOUD_CREDENTIAL_REJECTED: 'The cloud service rejected the selected credential.',
     CLOUD_CREDENTIAL_NOT_FOUND: 'The selected credential was removed. Select another local credential.',
@@ -9,6 +15,10 @@ export const cloudErrorCatalog = {
     CLOUD_SERVICE_UNAVAILABLE: 'The cloud service is unavailable or incompatible. Try reconnecting.',
   },
   'zh-CN': {
+    CLOUD_BROKER_REQUIRED: '云端连接服务尚未配置，请联系部署方或查看连接文档。',
+    CLOUD_CONNECTION_INVALID: '请检查沙箱地址是否与所选凭证绑定的实例一致。',
+    CLOUD_SANDBOX_NOT_READY: '沙箱已停机、正在操作或暂不可用，请确认实例状态后重连。',
+    CLOUD_RATE_LIMITED: '云端连接请求过于频繁，请稍后再重连。',
     CLOUD_CREDENTIAL_REQUIRED: '请在“设置 → 高级 → 云端连接”选择本地凭证。',
     CLOUD_CREDENTIAL_REJECTED: '云端服务拒绝了所选凭证，请检查凭证。',
     CLOUD_CREDENTIAL_NOT_FOUND: '所选凭证已删除，请重新选择本地凭证。',

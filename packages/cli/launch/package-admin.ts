@@ -147,7 +147,11 @@ export function localPackageAdmin(
       await initialize()
       return client.request('_agnes/v1/admin.cloud.authorize', input)
     },
-    cloudGateway.register,
+    (origin, result, binding) =>
+      cloudGateway.register(origin, result, async () => {
+        await initialize()
+        return client.request('_agnes/v1/admin.cloud.authorize', binding)
+      }),
   )
   // createAdminSurface validates each schema before dispatching this fixed typed mapping.
   const invoke = async (action: AdminSurfaceAction, params: unknown): Promise<unknown> => {

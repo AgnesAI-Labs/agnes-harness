@@ -78,6 +78,11 @@ async function requestCloudAuthorization(
     const failure = (await response.json().catch(() => ({}))) as { error?: unknown }
     if (failure.error === 'CONFIG_CREDENTIAL_REJECTED') throw new Error('CLOUD_CREDENTIAL_REJECTED')
     if (failure.error === 'CONFIG_CREDENTIAL_NOT_FOUND') throw new Error('CLOUD_CREDENTIAL_NOT_FOUND')
+    if (
+      typeof failure.error === 'string' &&
+      /^CLOUD_(?:BROKER_REQUIRED|CONNECTION_INVALID|SANDBOX_NOT_READY|RATE_LIMITED)$/u.test(failure.error)
+    )
+      throw new Error(failure.error)
     throw new Error('CLOUD_AUTH_UNAVAILABLE')
   }
   const value = (await response.json()) as {

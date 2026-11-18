@@ -6,7 +6,7 @@ import type { AdminCloudAuthorization, AdminCloudAuthorize } from '@agnes/protoc
 export function cloudAuthorizationRelay(
   origin: string,
   invoke: (input: AdminCloudAuthorize) => Promise<AdminCloudAuthorization>,
-  register?: (origin: string, result: AdminCloudAuthorization) => boolean,
+  register?: (origin: string, result: AdminCloudAuthorization, input: AdminCloudAuthorize) => boolean,
 ) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     const url = new URL(request.url ?? '/', origin)
@@ -40,6 +40,7 @@ export function cloudAuthorizationRelay(
       if (!validateMethod('_agnes/v1/admin.cloud.authorize', 'params', input).ok) throw Error('input')
       const result = await invoke(input as AdminCloudAuthorize)
       if (!validateMethod('_agnes/v1/admin.cloud.authorize', 'result', result).ok) throw Error('response')
+      if (request.aborted || response.destroyed || response.writableEnded) return true
       const requestedOrigin = (input as AdminCloudAuthorize).origin
       const target = result.origin ?? requestedOrigin
       if (requestedOrigin === undefined && !result.trafficToken) throw Error('sandbox credential required')
@@ -49,7 +50,9 @@ export function cloudAuthorizationRelay(
         (requestedOrigin !== undefined && result.origin !== undefined && result.origin !== requestedOrigin)
       )
         throw Error('invalid cloud target')
-      const proxied = result.trafficToken ? register?.(target, result) : false
+      // A transport refresh stays bound to this instance even after Key-only discovery.
+      const binding = { ...(input as AdminCloudAuthorize), origin: target }
+      const proxied = result.trafficToken ? register?.(target, result, binding) : false
       if (result.trafficToken && !proxied) throw Error('sandbox transport unavailable')
       reply(200, {
         token: result.token,
@@ -61,7 +64,10 @@ export function cloudAuthorizationRelay(
       const reason = (error as { data?: { reason?: unknown } })?.data?.reason
       reply(400, {
         error:
-          reason === 'CONFIG_CREDENTIAL_NOT_FOUND' || reason === 'CONFIG_CREDENTIAL_REJECTED'
+          typeof reason === 'string' &&
+          /^(?:CONFIG_CREDENTIAL_(?:NOT_FOUND|REJECTED)|CLOUD_(?:BROKER_REQUIRED|CONNECTION_INVALID|SANDBOX_NOT_READY|RATE_LIMITED))$/u.test(
+            reason,
+          )
             ? reason
             : 'CLOUD_AUTH_UNAVAILABLE',
       })
