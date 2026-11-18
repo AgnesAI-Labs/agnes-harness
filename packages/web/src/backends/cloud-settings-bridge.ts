@@ -5,7 +5,7 @@ import type { CloudConnectionState } from './workbench-state.js'
 
 export const CLOUD_SETTINGS_SECTION = 'cloud-connection'
 export type CloudConnectionAction =
-  | { action: 'connect'; origin: string; credentialRef: string }
+  | { action: 'connect'; origin?: string; credentialRef: string }
   | { action: 'disconnect' }
   | { action: 'reconnect' }
   | { action: 'refresh-credentials' }
@@ -25,12 +25,12 @@ export function cloudConnectionAction(value: unknown): CloudConnectionAction | u
     message.action === 'manage-credentials'
   )
     return { action: message.action }
-  if (message.action === 'connect' && typeof message.origin === 'string') {
+  if (message.action === 'connect') {
     if ('key' in message || !credentialReference(message.credentialRef)) return
     try {
       return {
         action: 'connect',
-        origin: remoteFrontendOrigin(message.origin),
+        ...(message.origin === undefined ? {} : { origin: remoteFrontendOrigin(message.origin as string) }),
         credentialRef: message.credentialRef,
       }
     } catch {}
@@ -74,7 +74,7 @@ export function installCloudSettingsProjection(): () => void {
       return
     try {
       const origin = next.origin === undefined ? undefined : remoteFrontendOrigin(next.origin)
-      if (next.status !== 'unconfigured' && !origin) return
+      if (['ready', 'disconnected'].includes(next.status) && !origin) return
       state = {
         status: next.status,
         ...(origin ? { origin } : {}),

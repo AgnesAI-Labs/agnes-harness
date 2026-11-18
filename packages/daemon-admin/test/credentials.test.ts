@@ -48,6 +48,45 @@ it('resolves managed cloud credentials privately, refuses rejected/missing crede
       'https://api.llm.sg/llmsg/api/agh/connection',
       `${sandbox.origin}/_agnes/remote-frontend/auth`,
     ])
+    const discovered = await authorizeCloudConnection({ credentialRef: id }, store, async (url, init) => {
+      if (String(url).endsWith('/llmsg/api/agh/connection')) {
+        expect(JSON.parse(String(init?.body))).toEqual({})
+        return Response.json({
+          code: 200,
+          data: { sandbox_url: sandbox.origin, traffic_token: 'business-fixture' },
+        })
+      }
+      expect(String(url)).toBe(`${sandbox.origin}/_agnes/remote-frontend/auth`)
+      expect(new Headers(init?.headers).get('e2b-traffic-access-token')).toBe('business-fixture')
+      return Response.json({ token, expiresAt })
+    })
+    expect(discovered).toEqual({ origin: sandbox.origin, token, expiresAt, trafficToken: 'business-fixture' })
+    for (const invalid of ['http://127.0.0.1:80', 'https://foreign.example', `${sandbox.origin}/path`])
+      await expect(
+        authorizeCloudConnection({ credentialRef: id }, store, async () =>
+          Response.json({ code: 200, data: { sandbox_url: invalid, traffic_token: 'business-fixture' } }),
+        ),
+      ).rejects.toMatchObject({ data: { reason: 'CONFIG_AUTH_UNAVAILABLE' } })
+    let ordinaryFetched = false
+    await expect(
+      authorizeCloudConnection(
+        { credentialRef: id },
+        {
+          read: async () => ({
+            version: 1,
+            kind: 'api-key',
+            provider: 'generic',
+            label: 'ordinary',
+            value: 'sk-ordinary',
+          }),
+        },
+        async () => {
+          ordinaryFetched = true
+          return Response.json({})
+        },
+      ),
+    ).rejects.toMatchObject({ data: { reason: 'CONFIG_CREDENTIAL_REJECTED' } })
+    expect(ordinaryFetched).toBe(false)
     await expect(
       authorizeCloudConnection(sandbox, store, async () => new Response('', { status: 401 })),
     ).rejects.toMatchObject({ data: { reason: 'CONFIG_CREDENTIAL_REJECTED' } })

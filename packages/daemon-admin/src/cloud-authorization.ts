@@ -6,7 +6,7 @@ import {
   rpcError,
 } from '@agnes/protocol'
 import type { AdminCloudAuthorization, AdminCloudAuthorize } from '@agnes/protocol/gen/app-server'
-import { cloudSandboxToken } from './cloud-sandbox-token.js'
+import { cloudSandboxConnection } from './cloud-sandbox-token.js'
 
 const AUTHORIZATION_CLOCK_SKEW_MS = 5 * 60 * 1000
 
@@ -17,11 +17,14 @@ export async function authorizeCloudConnection(
   fetcher: typeof fetch = fetch,
 ): Promise<AdminCloudAuthorization> {
   try {
-    const origin = remoteFrontendOrigin(input.origin)
+    const requestedOrigin = input.origin === undefined ? undefined : remoteFrontendOrigin(input.origin)
     const credential = await store.read(input.credentialRef)
     if (credential?.kind !== 'api-key' || credential.provider !== 'generic' || !credential.label)
       throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_CREDENTIAL_NOT_FOUND' })
-    const trafficToken = await cloudSandboxToken(origin, credential.value, fetcher)
+    const sandbox = await cloudSandboxConnection(requestedOrigin, credential.value, fetcher)
+    const origin = sandbox?.origin ?? requestedOrigin
+    if (!origin) throw new Error('missing cloud origin')
+    const trafficToken = sandbox?.trafficToken
     const response = await fetcher(`${origin}${REMOTE_FRONTEND_AUTH}`, {
       method: 'POST',
       headers: {
@@ -45,7 +48,12 @@ export async function authorizeCloudConnection(
     )
       throw new Error('invalid authorization')
     remoteFrontendSessionPath(value.token)
-    return { token: value.token, expiresAt: value.expiresAt, ...(trafficToken ? { trafficToken } : {}) }
+    return {
+      token: value.token,
+      expiresAt: value.expiresAt,
+      ...(trafficToken ? { trafficToken } : {}),
+      ...(requestedOrigin === undefined ? { origin } : {}),
+    }
   } catch (error) {
     const reason = (error as { data?: { reason?: unknown } })?.data?.reason
     throw rpcError('SEMANTIC_REJECTED', {

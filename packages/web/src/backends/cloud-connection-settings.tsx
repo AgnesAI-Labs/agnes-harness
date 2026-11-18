@@ -2,6 +2,7 @@ import { remoteFrontendOrigin } from '@agnes/protocol'
 import { type LocaleService, settingsSections } from '@agnes/web-client'
 import {
   Button,
+  Disclosure,
   SettingsGroup,
   SettingsInput,
   SettingsItem,
@@ -34,18 +35,22 @@ export function CloudConnectionSettings({
   const catalog = workbenchCatalog[language === 'zh-CN' ? 'zh-CN' : 'en']
   const t = (key: keyof typeof catalog) => catalog[key]
   const [address, setAddress] = useState(state.origin ?? '')
+  const [manual, setManual] = useState(false)
   const [credentialRef, setCredentialRef] = useState(state.credentialRef ?? '')
   const [error, setError] = useState('')
   useEffect(() => setAddress(state.origin ?? ''), [state.origin])
   useEffect(() => setCredentialRef(state.credentialRef ?? ''), [state.credentialRef])
   const connect = () => {
     try {
-      const origin = remoteFrontendOrigin(address.trim())
       if (!state.credentialOptions?.some((item) => item.id === credentialRef)) {
         setError(t('keyRequired'))
         return
       }
-      onAction({ action: 'connect', origin, credentialRef })
+      onAction({
+        action: 'connect',
+        ...(manual ? { origin: remoteFrontendOrigin(address.trim()) } : {}),
+        credentialRef,
+      })
       setError('')
     } catch {
       setError(t('invalidOrigin'))
@@ -61,7 +66,7 @@ export function CloudConnectionSettings({
           <SettingsSelect
             id="cloud-service-credential"
             value={credentialRef}
-            disabled={!state.credentialOptions}
+            disabled={!state.credentialOptions || state.status === 'connecting'}
             onFocus={() => onAction({ action: 'refresh-credentials' })}
             onChange={(event) => {
               setCredentialRef(event.target.value)
@@ -90,22 +95,26 @@ export function CloudConnectionSettings({
           </SettingsToolbar>
           {state.credentialError && <p role="alert">{t('credentialsUnavailable')}</p>}
         </SettingsItem>
-        <SettingsItem label={<label htmlFor="cloud-service-origin">{t('cloudOrigin')}</label>} stacked>
-          <SettingsInput
-            id="cloud-service-origin"
-            value={address}
-            onChange={(event) => {
-              setAddress(event.target.value)
-              setError('')
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                connect()
-              }
-            }}
-          />
-        </SettingsItem>
+        <Disclosure open={manual} onOpenChange={setManual} summary={t('manualConnection')} variant="plain">
+          {manual && (
+            <SettingsItem label={<label htmlFor="cloud-service-origin">{t('cloudOrigin')}</label>} stacked>
+              <SettingsInput
+                id="cloud-service-origin"
+                value={address}
+                onChange={(event) => {
+                  setAddress(event.target.value)
+                  setError('')
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    connect()
+                  }
+                }}
+              />
+            </SettingsItem>
+          )}
+        </Disclosure>
       </SettingsGroup>
       {(error || state.error) && (
         <p role="alert">
@@ -113,7 +122,7 @@ export function CloudConnectionSettings({
         </p>
       )}
       <SettingsToolbar>
-        <Button appearance="primary" onClick={connect}>
+        <Button appearance="primary" disabled={state.status === 'connecting'} onClick={connect}>
           {t('saveConnect')}
         </Button>
         {state.origin && (

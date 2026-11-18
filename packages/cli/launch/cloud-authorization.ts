@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { CLOUD_AUTHORIZATION_PATH, validateMethod } from '@agnes/protocol'
+import { CLOUD_AUTHORIZATION_PATH, remoteFrontendOrigin, validateMethod } from '@agnes/protocol'
 import type { AdminCloudAuthorization, AdminCloudAuthorize } from '@agnes/protocol/gen/app-server'
 
 /** A-only fixed BFF. The daemon resolves the reference and exchanges the Key; it never returns it. */
@@ -40,9 +40,23 @@ export function cloudAuthorizationRelay(
       if (!validateMethod('_agnes/v1/admin.cloud.authorize', 'params', input).ok) throw Error('input')
       const result = await invoke(input as AdminCloudAuthorize)
       if (!validateMethod('_agnes/v1/admin.cloud.authorize', 'result', result).ok) throw Error('response')
-      const proxied = result.trafficToken ? register?.((input as AdminCloudAuthorize).origin, result) : false
+      const requestedOrigin = (input as AdminCloudAuthorize).origin
+      const target = result.origin ?? requestedOrigin
+      if (requestedOrigin === undefined && !result.trafficToken) throw Error('sandbox credential required')
+      if (
+        !target ||
+        remoteFrontendOrigin(target) !== target ||
+        (requestedOrigin !== undefined && result.origin !== undefined && result.origin !== requestedOrigin)
+      )
+        throw Error('invalid cloud target')
+      const proxied = result.trafficToken ? register?.(target, result) : false
       if (result.trafficToken && !proxied) throw Error('sandbox transport unavailable')
-      reply(200, { token: result.token, expiresAt: result.expiresAt, ...(proxied ? { proxied: true } : {}) })
+      reply(200, {
+        token: result.token,
+        expiresAt: result.expiresAt,
+        ...(proxied ? { proxied: true } : {}),
+        ...(result.origin ? { origin: result.origin } : {}),
+      })
     } catch (error) {
       const reason = (error as { data?: { reason?: unknown } })?.data?.reason
       reply(400, {

@@ -11,6 +11,7 @@ import {
 } from '@agnes/web-foundation/theme'
 import { Button, Icon, mountApplication, useDocumentLanguage } from '@agnes/web-ui'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { discoverCloudOrigin } from '../remote-authorization.js'
 import { installCloudFrameAuthorization } from './cloud-frame-authorization.js'
 import { bindCloudCredential, readCloudCredentialRef } from './cloud-key.js'
 import { CLOUD_SETTINGS_SECTION, cloudConnectionAction } from './cloud-settings-bridge.js'
@@ -29,6 +30,7 @@ import {
 import { workbenchCatalog } from './workbench-locale.js'
 import {
   backendFrameSource,
+  CLOUD_DISCOVERY_KEY,
   CLOUD_ORIGIN_KEY,
   cloudConnectionState,
   initialWorkbench,
@@ -56,6 +58,8 @@ function BackendWorkbench() {
   const [credentialError, setCredentialError] = useState(false)
   const credentialRequest = useRef<AbortController | undefined>(undefined)
   const connectionRevision = useRef(0)
+  const connectionRequest = useRef<AbortController | undefined>(undefined)
+  const [discovering, setDiscovering] = useState(false)
   const [states, setStates] = useState<Partial<Record<BackendId, BackendSnapshot>>>({})
   const [revisions, setRevisions] = useState({ local: 0, cloud: 0 })
   const [sidebarRight, setSidebarRight] = useState(0)
@@ -81,6 +85,7 @@ function BackendWorkbench() {
       })
   }, [])
   useEffect(() => () => credentialRequest.current?.abort(), [])
+  useEffect(() => () => connectionRequest.current?.abort(), [])
   const frames = useRef<Partial<Record<BackendId, HTMLIFrameElement>>>({})
   const pending = useRef<Partial<Record<BackendId, { command: BackendCommand; commandId: string }>>>({})
   const intent = useRef<Partial<Record<BackendId, string>>>({})
@@ -141,21 +146,42 @@ function BackendWorkbench() {
     [send, setAddress],
   )
   const connect = useCallback(
-    async (value: string, activate = true, credentialRef?: string) => {
+    async (value: string | undefined, activate = true, credentialRef?: string) => {
       const revision = ++connectionRevision.current
+      connectionRequest.current?.abort()
+      const request = new AbortController()
+      connectionRequest.current = request
+      setDiscovering(value === undefined)
       setConfigurationError('')
-      const next = remoteFrontendOrigin(value)
+      let next: string
       try {
+        const items =
+          credentialRef === undefined ? undefined : await new CredentialsApi().list(request.signal)
+        if (revision !== connectionRevision.current || request.signal.aborted) return
+        if (credentialRef !== undefined && !items?.some((item) => item.id === credentialRef))
+          throw Error('CLOUD_CREDENTIAL_NOT_FOUND')
+        next =
+          value === undefined
+            ? await discoverCloudOrigin(credentialRef ?? '', request.signal)
+            : remoteFrontendOrigin(value)
+        if (revision !== connectionRevision.current || request.signal.aborted) return
         if (credentialRef !== undefined) {
-          const items = await new CredentialsApi().list()
-          if (revision !== connectionRevision.current) return
-          bindCloudCredential(next, credentialRef, items)
+          bindCloudCredential(next, credentialRef, items ?? [])
+          if (value === undefined) safeThemeStorage().setItem(CLOUD_DISCOVERY_KEY, credentialRef)
+          else safeThemeStorage().removeItem(CLOUD_DISCOVERY_KEY)
         }
-      } catch {
-        if (revision === connectionRevision.current) setConfigurationError(t('credentialsUnavailable'))
+      } catch (error) {
+        if (revision === connectionRevision.current && !request.signal.aborted)
+          setConfigurationError(
+            error instanceof Error && error.message.startsWith('CLOUD_')
+              ? error.message
+              : t('credentialsUnavailable'),
+          )
         return
+      } finally {
+        if (revision === connectionRevision.current) setDiscovering(false)
       }
-      if (revision !== connectionRevision.current) return
+      if (revision !== connectionRevision.current || request.signal.aborted) return
       if (!readCloudCredentialRef(next)) {
         setConfigurationError(t('keyRequired'))
         setConfigure(true)
@@ -192,8 +218,11 @@ function BackendWorkbench() {
   }, [])
   const disconnect = useCallback(() => {
     connectionRevision.current++
+    connectionRequest.current?.abort()
+    setDiscovering(false)
     setConfigurationError('')
     safeThemeStorage().removeItem(CLOUD_ORIGIN_KEY)
+    safeThemeStorage().removeItem(CLOUD_DISCOVERY_KEY)
     setCloud(undefined)
     latest.current.cloud = undefined
     delete pending.current.cloud
@@ -245,7 +274,11 @@ function BackendWorkbench() {
         else if (action.action === 'refresh-credentials') loadCredentials()
         else if (action.action === 'manage-credentials')
           send('local', { kind: 'settings', section: 'credentials' })
-        else if (latest.current.cloud) retry('cloud')
+        else if (latest.current.cloud) {
+          const ref = safeThemeStorage().getItem(CLOUD_DISCOVERY_KEY)
+          if (ref && readCloudCredentialRef(latest.current.cloud) === ref) connect(undefined, false, ref)
+          else retry('cloud')
+        }
         return
       }
       const snapshot = backendSnapshot(event.data)
@@ -299,9 +332,23 @@ function BackendWorkbench() {
     window.addEventListener('message', receive)
     return () => window.removeEventListener('message', receive)
   }, [connect, disconnect, retry, select, setAddress, loadCredentials, send])
+  const restoredCloud = useRef(false)
+  useEffect(() => {
+    if (restoredCloud.current || !states.local?.ready) return
+    restoredCloud.current = true
+    const ref = safeThemeStorage().getItem(CLOUD_DISCOVERY_KEY)
+    if (
+      !new URLSearchParams(initialSearch.current).has('remote') &&
+      ref &&
+      cloud &&
+      readCloudCredentialRef(cloud) === ref
+    )
+      void connect(undefined, false, ref)
+  }, [states.local?.ready, connect, cloud])
   useEffect(() => {
     const state = {
       ...cloudConnectionState(cloud, states.cloud),
+      ...(discovering ? { status: 'connecting' } : configurationError ? { status: 'error' } : {}),
       ...(cloud && readCloudCredentialRef(cloud) ? { credentialRef: readCloudCredentialRef(cloud) } : {}),
       ...(credentialOptions ? { credentialOptions } : {}),
       credentialError,
@@ -312,7 +359,7 @@ function BackendWorkbench() {
         { type: BACKEND_FRAME_MESSAGE, kind: 'cloud-state', state },
         location.origin,
       )
-  }, [cloud, states, configurationError, credentialOptions, credentialError])
+  }, [cloud, states, configurationError, credentialOptions, credentialError, discovering])
   useEffect(() => {
     if (configure && states.local?.ready) send('local', { kind: 'settings', section: CLOUD_SETTINGS_SECTION })
   }, [configure, states.local?.ready, send])

@@ -1,6 +1,7 @@
 import {
   CLOUD_AUTHORIZATION_PATH,
   REMOTE_FRONTEND_SESSION_PREFIX,
+  remoteFrontendOrigin,
   remoteFrontendSessionPath,
 } from '@agnes/protocol'
 import { requestCloudFrameAuthorization } from './backends/cloud-frame-transport.js'
@@ -33,10 +34,41 @@ export async function authorizeRemoteFrontend(remote: string, signal: AbortSigna
   }
   const credentialRef = readCloudCredentialRef(remote)
   if (!credentialRef) throw new Error('CLOUD_CREDENTIAL_REQUIRED')
+  const value = await requestCloudAuthorization({ origin: remote, credentialRef }, signal, fetcher)
+  const path = remoteFrontendSessionPath(value.token)
+  sessions.set(remote, { token: value.token, expiresAt: value.expiresAt, proxied: value.proxied === true })
+  return path
+}
+
+/** Discover only an existing LLMSG sandbox; raw Keys and platform tokens stay in the local backend. */
+export async function discoverCloudOrigin(
+  credentialRef: string,
+  signal: AbortSignal,
+  fetcher: typeof fetch = fetch,
+): Promise<string> {
+  const value = await requestCloudAuthorization({ credentialRef }, signal, fetcher)
+  if (!value.origin || !value.proxied) throw new Error('CLOUD_INVALID_AUTHORIZATION')
+  const origin = remoteFrontendOrigin(value.origin)
+  const url = new URL(origin)
+  if (
+    origin !== value.origin ||
+    url.protocol !== 'https:' ||
+    url.port ||
+    !/^8443-[a-z0-9-]+\.[a-z0-9-]+\.tencentags\.com$/u.test(url.hostname)
+  )
+    throw new Error('CLOUD_INVALID_AUTHORIZATION')
+  return origin
+}
+
+async function requestCloudAuthorization(
+  input: { origin?: string; credentialRef: string },
+  signal: AbortSignal,
+  fetcher: typeof fetch,
+) {
   const response = await fetcher(new URL(CLOUD_AUTHORIZATION_PATH, location.origin), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ origin: remote, credentialRef }),
+    body: JSON.stringify(input),
     credentials: 'same-origin',
     redirect: 'error',
     cache: 'no-store',
@@ -48,16 +80,26 @@ export async function authorizeRemoteFrontend(remote: string, signal: AbortSigna
     if (failure.error === 'CONFIG_CREDENTIAL_NOT_FOUND') throw new Error('CLOUD_CREDENTIAL_NOT_FOUND')
     throw new Error('CLOUD_AUTH_UNAVAILABLE')
   }
-  const value = (await response.json()) as { token?: unknown; expiresAt?: unknown; proxied?: unknown }
+  const value = (await response.json()) as {
+    token?: unknown
+    expiresAt?: unknown
+    proxied?: unknown
+    origin?: unknown
+  }
   if (
     typeof value.token !== 'string' ||
     typeof value.expiresAt !== 'number' ||
     !Number.isFinite(value.expiresAt) ||
     value.expiresAt <= Date.now() ||
-    (value.proxied !== undefined && typeof value.proxied !== 'boolean')
+    (value.proxied !== undefined && typeof value.proxied !== 'boolean') ||
+    (value.origin !== undefined && typeof value.origin !== 'string')
   )
     throw new Error('CLOUD_INVALID_AUTHORIZATION')
-  const path = remoteFrontendSessionPath(value.token)
-  sessions.set(remote, { token: value.token, expiresAt: value.expiresAt, proxied: value.proxied === true })
-  return path
+  remoteFrontendSessionPath(value.token)
+  return {
+    token: value.token,
+    expiresAt: value.expiresAt,
+    proxied: value.proxied === true,
+    ...(typeof value.origin === 'string' ? { origin: value.origin } : {}),
+  }
 }

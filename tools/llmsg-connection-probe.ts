@@ -26,7 +26,10 @@ let authorization: AdminCloudAuthorization | undefined
 for (let attempt = 0; attempt < 12; attempt++) {
   try {
     authorization = await authorizeCloudConnection(
-      { origin, credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111' },
+      {
+        ...(process.env.AGH_PROBE_DISCOVERY === '1' ? {} : { origin }),
+        credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111',
+      },
       store,
     )
     break
@@ -35,6 +38,10 @@ for (let attempt = 0; attempt < 12; attempt++) {
   }
 }
 requireCheck(authorization?.trafficToken, 'automatic platform credential and key exchange failed')
+if (process.env.AGH_PROBE_DISCOVERY === '1') {
+  requireCheck(authorization.origin === origin, 'Key-only discovery must resolve the owned existing sandbox')
+  console.log('AGH_KEY_ONLY_DISCOVERY_REAL_PASS')
+}
 const gateway = createCloudGateway()
 gateway.register(origin, authorization)
 const server = createServer(async (request, response) => {

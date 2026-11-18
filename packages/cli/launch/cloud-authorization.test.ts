@@ -20,10 +20,16 @@ it('accepts only same-origin credential references and never reflects raw daemon
   const relay = cloudAuthorizationRelay(
     origin,
     async (value) => {
-      expect(value).toEqual(input)
+      expect(value).toEqual(mode === 'discovery' ? { credentialRef: input.credentialRef } : input)
       calls++
       if (mode === 'throw') throw new Error('private-fixture-Key')
       if (mode === 'platform') return { ...authorization, trafficToken: 'business-only-secret' }
+      if (mode === 'discovery')
+        return {
+          ...authorization,
+          origin: 'https://8443-fixture.ap-shanghai.tencentags.com',
+          trafficToken: 'business-only-secret',
+        }
       return mode === 'echo' ? { ...authorization, key: 'private-fixture-Key' } : authorization
     },
     (_origin, result) => {
@@ -63,6 +69,13 @@ it('accepts only same-origin credential references and never reflects raw daemon
   mode = 'platform'
   expect(await call(input)).toEqual({ status: 200, body: { ...authorization, proxied: true } })
   expect(registered).toBe(true)
+  mode = 'discovery'
+  const discovery = await call({ credentialRef: input.credentialRef })
+  expect(discovery).toEqual({
+    status: 200,
+    body: { ...authorization, origin: 'https://8443-fixture.ap-shanghai.tencentags.com', proxied: true },
+  })
+  expect(JSON.stringify(discovery)).not.toContain('business-only-secret')
   for (mode of ['throw', 'echo']) {
     const denied = await call(input)
     expect(denied.status).toBe(400)

@@ -12,13 +12,42 @@ import {
 } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import { bindCloudCredential, readCloudCredentialRef } from '../src/backends/cloud-key.js'
-import { forgetRemoteAccess, remoteTransportOrigin } from '../src/remote-authorization.js'
+import {
+  discoverCloudOrigin,
+  forgetRemoteAccess,
+  remoteTransportOrigin,
+} from '../src/remote-authorization.js'
 import {
   backendResourceUrl,
   readRemoteFrontendInfo,
   remoteFrontendFetch,
   selectedRemoteOrigin,
 } from '../src/remote-frontend.js'
+
+it('discovers a managed sandbox with only a credential reference and rejects unsafe or old discovery replies', async () => {
+  const credentialRef = 'secret://generic/11111111-1111-1111-1111-111111111111'
+  const origin = 'https://8443-fixture.ap-shanghai.tencentags.com'
+  const token = `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`
+  const reply = { origin, token, expiresAt: Date.now() + 60000, proxied: true }
+  const before = JSON.stringify(localStorage)
+  expect(
+    await discoverCloudOrigin(credentialRef, new AbortController().signal, async (url, init) => {
+      expect(String(url)).toBe(new URL(CLOUD_AUTHORIZATION_PATH, location.origin).href)
+      expect(JSON.parse(String(init?.body))).toEqual({ credentialRef })
+      return Response.json(reply)
+    }),
+  ).toBe(origin)
+  expect(JSON.stringify(localStorage)).toBe(before)
+  for (const invalid of [
+    { ...reply, origin: 'http://127.0.0.1:80' },
+    { ...reply, origin: 'https://foreign.example' },
+    { ...reply, origin: undefined },
+    { ...reply, proxied: false },
+  ])
+    await expect(
+      discoverCloudOrigin(credentialRef, new AbortController().signal, async () => Response.json(invalid)),
+    ).rejects.toThrow('CLOUD_INVALID_AUTHORIZATION')
+})
 
 it('binds only A’s listed credential references without creating or replacing secret values', () => {
   const origin = 'http://managed-cloud.test'

@@ -2157,7 +2157,7 @@
         "origin": { "type": "string", "minLength": 1, "maxLength": 2048 },
         "credentialRef": { "type": "string", "pattern": "^secret://generic/[a-f0-9-]{36}$", "maxLength": 64 }
       },
-      "required": ["origin", "credentialRef"]
+      "required": ["credentialRef"]
     },
     "AdminCloudAuthorization": {
       "type": "object",
@@ -2169,6 +2169,7 @@
           "pattern": "^[a-z0-9]+\\.[A-Za-z0-9_-]{22}\\.[A-Za-z0-9_-]{43}$"
         },
         "expiresAt": { "type": "number" },
+        "origin": { "type": "string", "minLength": 1, "maxLength": 2048 },
         "trafficToken": { "type": "string", "minLength": 1, "maxLength": 8192, "pattern": "^[^\\r\\n]+$" }
       },
       "required": ["token", "expiresAt"]
