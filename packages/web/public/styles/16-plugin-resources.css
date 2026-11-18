@@ -184,6 +184,11 @@
     overflow-y: auto;
     overscroll-behavior: contain;
   }
+  /* The skill search is rendered into the list itself, which has no grid gap: give the field the
+     page rhythm before the rows it filters. */
+  .plugin-list > .agh-search-bar {
+    margin-block-end: var(--s16);
+  }
   .plugin-inventory-status {
     margin: 0 0 var(--s8);
     padding: 0.625rem var(--s12);
@@ -548,6 +553,18 @@
     margin: 0;
     overflow-wrap: anywhere;
     color: var(--agnes-text-secondary);
+  }
+  /* The details tab body is plain flow, so facts and the technical fold would sit flush on the
+     section above; the stack gives every part the page rhythm. Inside the stack the gap replaces
+     the facts card's own dialog margin. */
+  .plugin-detail-stack {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s24);
+  }
+  .plugin-detail-stack > .plugin-facts {
+    margin-block: 0;
   }
   .plugin-blockers,
   .plugin-operations {

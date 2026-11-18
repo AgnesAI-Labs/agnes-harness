@@ -150,30 +150,33 @@ export function ScheduleRecords({
     }
   }
   return (
-    <section data-testid={id ? 'schedule-history-page' : 'schedule-results'}>
-      {!id && (
-        <Segmented
-          label={ux('resultFilter')}
-          value={unread ? 'unread' : 'all'}
-          onChange={(value) => setUnread(value === 'unread')}
-          options={[
-            { value: 'all', label: ux('allResults'), testId: 'schedule-results-all' },
-            { value: 'unread', label: ux('unreadResults'), testId: 'schedule-results-unread' },
-          ]}
-        />
-      )}
-      <MetaText>{ux('historyRetained')}</MetaText>
-      <Button
-        size="small"
-        data-testid="schedule-records-refresh"
-        disabled={loading || !!pending}
-        onClick={() => {
-          browsingOlder.current = false
-          void read()
-        }}
-      >
-        {ux('refreshRecords')}
-      </Button>
+    <section data-testid={id ? 'schedule-history-page' : 'schedule-results'} className="schedule-records">
+      {/* The filter, the note and the refresh sit on one row above the records they act on. */}
+      <div className="schedule-records-toolbar">
+        {!id && (
+          <Segmented
+            label={ux('resultFilter')}
+            value={unread ? 'unread' : 'all'}
+            onChange={(value) => setUnread(value === 'unread')}
+            options={[
+              { value: 'all', label: ux('allResults'), testId: 'schedule-results-all' },
+              { value: 'unread', label: ux('unreadResults'), testId: 'schedule-results-unread' },
+            ]}
+          />
+        )}
+        <MetaText>{ux('historyRetained')}</MetaText>
+        <Button
+          size="small"
+          data-testid="schedule-records-refresh"
+          disabled={loading || !!pending}
+          onClick={() => {
+            browsingOlder.current = false
+            void read()
+          }}
+        >
+          {ux('refreshRecords')}
+        </Button>
+      </div>
       {(error || invalidCursor) && (
         <StatusMessage kind="error" data-testid="schedule-records-error">
           {ux(invalidCursor ? 'historyCursorInvalid' : 'historyError')}
