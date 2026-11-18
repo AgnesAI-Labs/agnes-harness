@@ -6,6 +6,7 @@ import {
   rpcError,
 } from '@agnes/protocol'
 import type { AdminCloudAuthorization, AdminCloudAuthorize } from '@agnes/protocol/gen/app-server'
+import { cloudSandboxToken } from './cloud-sandbox-token.js'
 
 const AUTHORIZATION_CLOCK_SKEW_MS = 5 * 60 * 1000
 
@@ -20,9 +21,13 @@ export async function authorizeCloudConnection(
     const credential = await store.read(input.credentialRef)
     if (credential?.kind !== 'api-key' || credential.provider !== 'generic' || !credential.label)
       throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_CREDENTIAL_NOT_FOUND' })
+    const trafficToken = await cloudSandboxToken(origin, credential.value, fetcher)
     const response = await fetcher(`${origin}${REMOTE_FRONTEND_AUTH}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(trafficToken ? { 'e2b-traffic-access-token': trafficToken } : {}),
+      },
       body: JSON.stringify({ key: credential.value }),
       redirect: 'error',
       signal: AbortSignal.timeout(8000),
@@ -40,7 +45,7 @@ export async function authorizeCloudConnection(
     )
       throw new Error('invalid authorization')
     remoteFrontendSessionPath(value.token)
-    return { token: value.token, expiresAt: value.expiresAt }
+    return { token: value.token, expiresAt: value.expiresAt, ...(trafficToken ? { trafficToken } : {}) }
   } catch (error) {
     const reason = (error as { data?: { reason?: unknown } })?.data?.reason
     throw rpcError('SEMANTIC_REJECTED', {

@@ -264,6 +264,7 @@ export async function runWebCommand(
     mounts = await fetchSurfaceMountProxy(linked)
     web = await makeServer({
       root: resources.webRoot,
+      cloudGateway: adminHandler.cloudGateway,
       pluginStreams: adminHandler.pluginStreams,
       historySearch: adminHandler.historySearch,
       triggers: adminHandler.triggers,

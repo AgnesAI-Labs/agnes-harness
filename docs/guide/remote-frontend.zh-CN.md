@@ -4,7 +4,27 @@
 
 [部署](deployment.zh-CN.md) · [插件](packages.zh-CN.md) · [Web 工作台](web.zh-CN.md)
 
-A、B 使用同一套完整标准 Harness。A 托管自己的页面，浏览器直接连接 B 的 HTTP/WebSocket 服务，不使用 SSH。A 的本地 BFF 只用于凭证交换，会话流量不经 A 转发。B 启用已安装的云端插件，A 不需要安装该插件。
+A、B 使用同一套完整标准 Harness。A 托管自己的页面，通常由浏览器直接连接 B 的 HTTP/WebSocket 服务，不使用 SSH。需要平台业务 Token 的腾讯云沙箱使用下述本机隔离转发通道；其余连接的本地 BFF 只用于凭证交换。B 启用已安装的云端插件，A 不需要安装该插件。
+
+## LLMSG 腾讯云沙箱连接
+
+用户仍在 LLMSG 开通沙箱，再在 A 配置沙箱地址并选择保存了 AGH Key 的本地凭证。不在 AGH 自动开通沙箱，也不要求用户填写腾讯云管理 Token。
+
+连接 `https://8443-<实例ID>.<地域>.tencentags.com` 时，A 的 daemon 使用同一个 AGH Key 调用 LLMSG `POST /llmsg/api/agh/connection`，请求体为 `{"sandbox_url":"<当前沙箱地址>"}`。LLMSG 校验 Key、用户和运行实例的绑定后，返回该实例的业务 Token；A 再携带该 Token 完成原有 Key 认证。
+
+A 的 daemon 环境变量 `AGH_LLMSG_API_BASE_URL` 指定 LLMSG API 根地址，默认 `https://api.llm.sg`。开发联调设置为 `https://api-llmsg-dev.agnes-dev.com`，并按本地启动流程重启自己的 daemon。此变量配置在用户运行 AGH 的本机，不属于 B 镜像要求的三个环境变量；旧版 LLMSG 没有上述接口时会明确连接失败，不降级绕过认证。
+
+平台业务 Token 只在 daemon 与本地 launcher 的可信通道内传递，浏览器只收到 AGH 临时连接凭证及是否使用转发的标识。HTTP、WebSocket 和插件资源通过 A 的隔离云端来源转发到本次授权的固定沙箱目标。该来源仍不能访问 A 的凭证库、管理 API 或本地 daemon；转发会剥离本地 Cookie 和 Authorization，并禁止跟随上游重定向。
+
+管理端口 49983 的平台鉴权保留。业务 Token 失效或实例不可用时连接失败；重新连接重新查询凭证，不自动重放失败的写请求，不重建实例。该适配只处理入口鉴权，模型网关出口被拒绝需单独处理。
+
+跨仓真实联调可复用 `tools/llmsg-connection-probe.ts`。在 LLMSG 源码根目录显式设置 `AGH_RUN_REAL_LIVE_TEST=1`、`AGH_LIVE_WITH_CFS=1`、运维提供的 AGS 配置，并设置 `AGH_CONNECTION_PROBE_SOURCE=<本仓库绝对路径>`、`AGH_CONNECTION_PROBE_NODE=<固定版本 node 可执行文件>`、`AGH_CONNECTION_PROBE_SCRIPT=<本仓库绝对路径>/tools/llmsg-connection-probe.ts`，运行 `go test ./controller -run '^TestLlmsgAghLiveManualHTTPAndRealAGS$' -count=1 -v -timeout 7m`。用例在隔离账本开通真实短时实例，自动把临时 Key 和本地接口地址交给子进程，在首次启动及暂停恢复后分别验证连接；不写共享账本。测试结束会为本次实例设置短时到期，仍需核实回收。
+
+已有专属测试实例可运行 LLMSG 的 `TestLlmsgAghLiveManualExistingConnection`：显式设置 `AGH_RUN_EXISTING_CONNECTION_TEST=1`，在测试进程环境提供 `AGH_PROBE_KEY`、`AGH_PROBE_ORIGIN`、`AGH_PROBE_SANDBOX_ID`、AGS 配置和上述探针路径。该用例只在隔离账本保存绑定，不创建、暂停或续期真实实例。另设 `AGH_PROBE_CONVERSATION=1`、`AGH_PROBE_READ_PATH=<自己创建的 /workspace/data/ 下测试文件>`、`AGH_PROBE_READ_EXPECTED=<文件完整文本>` 时，探针会新建标准权限会话，使用 `agnes-2-5-flash` 读取测试文件；会产生正常的真实模型费用。未设置对话开关时只验证连接，不能据此声称模型和工具已经通过。
+
+2026-11-18 联调记录：本次适配基于 GitHub `feat/agh-cloud` 的 `034202d96533a2e10d7d44f36843fa8d33b8a877`，交付至 CNB 独立分支 `codex/llmsg-sandbox-traffic-20261118`。真实上海沙箱 AGH `0.7.0` 已通过业务 HTTP、原生 WebSocket、标准权限会话、模型对话、读文件及插件自动上报；LLMSG 回读工具次数与模型扣费，并验证重复报告不重复入账。此结果包含本地 LLMSG 凭证接口，不等于共享环境已经部署该接口，也不等于新版客户端安装包已交付。联调 Key 和平台 Token 单独提供，不提交到仓库。
+
+检查环境为 Node `24.20.0`、pnpm `10.34.5`。类型检查、lint、生成检查、guards 与本次连接相关测试已通过；完整 fast 测试尚未全部通过。在未修改的上述基线上，`packages/core/test/announce.test.ts` 的 `keeps omitted, empty and false announce options byte-identical` 同样出现记录校验值不一致，实际 `c238957c…`、预设 `416868be…`。该断言保留，原因需继续确认；不得将本次分支当作全量测试通过或发布验收完成。
 
 ## Key 与发布合同
 

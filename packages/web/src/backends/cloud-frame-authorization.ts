@@ -1,4 +1,4 @@
-import { authorizeRemoteFrontend, forgetRemoteAccess } from '../remote-authorization.js'
+import { authorizeRemoteFrontend, forgetRemoteAccess, remoteUsesGateway } from '../remote-authorization.js'
 import { cloudFrameAppearance } from './cloud-frame-appearance.js'
 import { cloudFrameOrigin } from './frame-context.js'
 import { BACKEND_FRAME_MESSAGE } from './frame-contract.js'
@@ -45,10 +45,11 @@ export function installCloudFrameAuthorization(
     pending = { controller: request, frame, remote }
     forgetRemoteAccess(remote)
     void (async () => {
-      let authorization: { path: string } | { error: string }
+      let authorization: { path: string; proxied?: boolean } | { error: string }
       try {
         authorization = {
           path: await authorizeRemoteFrontend(remote, request.signal, window.fetch.bind(window)),
+          proxied: remoteUsesGateway(remote),
         }
       } catch (error) {
         authorization = {

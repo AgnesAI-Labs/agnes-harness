@@ -6,6 +6,7 @@ import type { AdminCloudAuthorization, AdminCloudAuthorize } from '@agnes/protoc
 export function cloudAuthorizationRelay(
   origin: string,
   invoke: (input: AdminCloudAuthorize) => Promise<AdminCloudAuthorization>,
+  register?: (origin: string, result: AdminCloudAuthorization) => boolean,
 ) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     const url = new URL(request.url ?? '/', origin)
@@ -39,7 +40,9 @@ export function cloudAuthorizationRelay(
       if (!validateMethod('_agnes/v1/admin.cloud.authorize', 'params', input).ok) throw Error('input')
       const result = await invoke(input as AdminCloudAuthorize)
       if (!validateMethod('_agnes/v1/admin.cloud.authorize', 'result', result).ok) throw Error('response')
-      reply(200, result)
+      const proxied = result.trafficToken ? register?.((input as AdminCloudAuthorize).origin, result) : false
+      if (result.trafficToken && !proxied) throw Error('sandbox transport unavailable')
+      reply(200, { token: result.token, expiresAt: result.expiresAt, ...(proxied ? { proxied: true } : {}) })
     } catch (error) {
       const reason = (error as { data?: { reason?: unknown } })?.data?.reason
       reply(400, {

@@ -5,9 +5,12 @@ import {
 } from '@agnes/protocol'
 import { requestCloudFrameAuthorization } from './backends/cloud-frame-transport.js'
 import { readCloudCredentialRef } from './backends/cloud-key.js'
-import { backendFrame } from './backends/frame-context.js'
+import { backendFrame, cloudFrameOrigin } from './backends/frame-context.js'
 
-const sessions = new Map<string, { token: string; expiresAt: number }>()
+const sessions = new Map<string, { token: string; expiresAt: number; proxied?: boolean }>()
+export const remoteUsesGateway = (remote: string): boolean => sessions.get(remote)?.proxied === true
+export const remoteTransportOrigin = (remote: string): string =>
+  remoteUsesGateway(remote) ? (backendFrame()?.remote ? location.origin : cloudFrameOrigin()) : remote
 export const remoteAccessPath = (remote: string): string => {
   const value = sessions.get(remote)
   return value ? remoteFrontendSessionPath(value.token) : ''
@@ -20,9 +23,12 @@ export async function authorizeRemoteFrontend(remote: string, signal: AbortSigna
   const existing = sessions.get(remote)
   if (existing && existing.expiresAt > Date.now() + 30_000) return remoteFrontendSessionPath(existing.token)
   if (backendFrame()?.remote) {
-    const path = await requestCloudFrameAuthorization(remote, signal)
+    let proxied = false
+    const path = await requestCloudFrameAuthorization(remote, signal, (value) => {
+      proxied = value
+    })
     const token = path.slice(REMOTE_FRONTEND_SESSION_PREFIX.length)
-    sessions.set(remote, { token, expiresAt: Number.parseInt(token.split('.')[0] ?? '', 36) })
+    sessions.set(remote, { token, expiresAt: Number.parseInt(token.split('.')[0] ?? '', 36), proxied })
     return path
   }
   const credentialRef = readCloudCredentialRef(remote)
@@ -42,15 +48,16 @@ export async function authorizeRemoteFrontend(remote: string, signal: AbortSigna
     if (failure.error === 'CONFIG_CREDENTIAL_NOT_FOUND') throw new Error('CLOUD_CREDENTIAL_NOT_FOUND')
     throw new Error('CLOUD_AUTH_UNAVAILABLE')
   }
-  const value = (await response.json()) as { token?: unknown; expiresAt?: unknown }
+  const value = (await response.json()) as { token?: unknown; expiresAt?: unknown; proxied?: unknown }
   if (
     typeof value.token !== 'string' ||
     typeof value.expiresAt !== 'number' ||
     !Number.isFinite(value.expiresAt) ||
-    value.expiresAt <= Date.now()
+    value.expiresAt <= Date.now() ||
+    (value.proxied !== undefined && typeof value.proxied !== 'boolean')
   )
     throw new Error('CLOUD_INVALID_AUTHORIZATION')
   const path = remoteFrontendSessionPath(value.token)
-  sessions.set(remote, { token: value.token, expiresAt: value.expiresAt })
+  sessions.set(remote, { token: value.token, expiresAt: value.expiresAt, proxied: value.proxied === true })
   return path
 }

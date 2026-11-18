@@ -12,7 +12,7 @@ import {
 } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import { bindCloudCredential, readCloudCredentialRef } from '../src/backends/cloud-key.js'
-import { forgetRemoteAccess } from '../src/remote-authorization.js'
+import { forgetRemoteAccess, remoteTransportOrigin } from '../src/remote-authorization.js'
 import {
   backendResourceUrl,
   readRemoteFrontendInfo,
@@ -91,6 +91,49 @@ it('requires the saved Key, exchanges it once and routes backend resources throu
   } finally {
     localStorage.removeItem(`agnes.cloud.credential.v1:${remote}`)
     forgetRemoteAccess(remote)
+  }
+})
+
+it('keeps sandbox tokens out of browser storage and routes all capability resources through the isolated transport', async () => {
+  const remote = 'https://8443-fixture.ap-shanghai.tencentags.com'
+  const token = `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`
+  const prefix = remoteFrontendSessionPath(token)
+  const frameOrigin = `http://${location.hostname}:49998`
+  const meta = document.createElement('meta')
+  meta.id = 'agnes-config'
+  meta.dataset.cloudOrigin = frameOrigin
+  document.head.append(meta)
+  localStorage.setItem(
+    `agnes.cloud.credential.v1:${remote}`,
+    'secret://generic/11111111-1111-1111-1111-111111111111',
+  )
+  const calls: string[] = []
+  try {
+    await readRemoteFrontendInfo(remote, new AbortController().signal, async (input) => {
+      const url = String(input)
+      calls.push(url)
+      return url.endsWith(CLOUD_AUTHORIZATION_PATH)
+        ? Response.json({ token, expiresAt: Date.now() + 60_000, proxied: true })
+        : Response.json({
+            version: REMOTE_FRONTEND_KEY_VERSION,
+            access: 'key-owner',
+            wsPath: REMOTE_FRONTEND_WS,
+            instanceId: 'fixture',
+          })
+    })
+    expect(remoteTransportOrigin(remote)).toBe(frameOrigin)
+    expect(calls.at(-1)).toBe(`${frameOrigin}${prefix}${REMOTE_FRONTEND_INFO}`)
+    expect(backendResourceUrl(`${remote}${prefix}/plugins/p/client.js`, remote)).toBe(
+      `${frameOrigin}${prefix}/plugins/p/client.js`,
+    )
+    expect(
+      backendResourceUrl(`${remote.replace('https:', 'wss:')}${prefix}${REMOTE_FRONTEND_WS}`, remote),
+    ).toBe(`${frameOrigin.replace('http:', 'ws:')}${prefix}${REMOTE_FRONTEND_WS}`)
+    expect(JSON.stringify(localStorage)).not.toContain(token)
+  } finally {
+    forgetRemoteAccess(remote)
+    localStorage.removeItem(`agnes.cloud.credential.v1:${remote}`)
+    meta.remove()
   }
 })
 

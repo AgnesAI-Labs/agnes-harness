@@ -1,21 +1,24 @@
 import { createServer } from 'node:http'
 import { createWebDocumentResponder } from './server-document.js'
 import { listen } from './server-http.js'
+import type { WebServerOptions } from './server-types.js'
 
 /** Separate origin, separate listener, static build assets only. No owner handlers are installed. */
 export async function createCloudFrameServer(
-  options: Omit<Parameters<typeof createWebDocumentResponder>[0], 'frameOrigin'>,
+  options: Omit<Parameters<typeof createWebDocumentResponder>[0], 'frameOrigin'> &
+    Pick<WebServerOptions, 'cloudGateway'>,
 ) {
   let serve: ReturnType<typeof createWebDocumentResponder> | undefined
   const server = createServer(async (request, response) => {
     try {
       const address = server.address()
-      if (
-        !address ||
-        typeof address === 'string' ||
-        request.headers.host !== `127.0.0.1:${address.port}` ||
-        (request.method !== 'GET' && request.method !== 'HEAD')
-      ) {
+      if (!address || typeof address === 'string' || request.headers.host !== `127.0.0.1:${address.port}`) {
+        request.resume()
+        response.writeHead(403).end()
+        return
+      }
+      if (await options.cloudGateway?.handleHttp(request, response)) return
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
         request.resume()
         response.writeHead(403).end()
         return
@@ -29,7 +32,19 @@ export async function createCloudFrameServer(
       response.writeHead(404).end()
     }
   })
-  server.on('upgrade', (_request, socket) => socket.destroy())
+  server.on('upgrade', (request, socket, head) => {
+    if (request.headers.host !== new URL(origin).host) {
+      socket.destroy()
+      return
+    }
+    void options.cloudGateway
+      ?.handleUpgrade(request, socket, head)
+      .then((handled) => {
+        if (!handled) socket.destroy()
+      })
+      .catch(() => socket.destroy())
+    if (!options.cloudGateway) socket.destroy()
+  })
   const bound = await listen(server, 0)
   const origin = `http://127.0.0.1:${bound.port}`
   serve = createWebDocumentResponder({ ...options, frameOrigin: origin })
@@ -37,6 +52,7 @@ export async function createCloudFrameServer(
     serve,
     close: () =>
       new Promise<void>((resolve, reject) => {
+        options.cloudGateway?.close()
         server.close((error) => (error ? reject(error) : resolve()))
         server.closeAllConnections()
       }),
