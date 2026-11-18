@@ -152,7 +152,7 @@ async function open(
     ...(o.storage ? { storage: o.storage, key: 'k' } : {}),
     ...(o.writerRunId ? { writerRunId: o.writerRunId } : {}),
     ...(o.clock ? { clock: o.clock } : {}),
-    refinement: deps(sw, o.refinement),
+    refinement: deps(sw, { provider: () => p.provider, ...o.refinement }),
     refinementEnabled: () => sw.enabled,
     logger: { debug() {}, info() {}, warn: (message: string) => warnings.push(message), error() {} },
   })
@@ -601,10 +601,14 @@ describe('scheduling plans', () => {
       refused: 'manual-mode',
     })
     t.sw.mode = 'auto'
-    // No planner target given: the session's primary model has no price, so nothing bounds the spend.
+    // Only an explicitly configured review route may be used, even with price consent.
     const { target: _target, ...untargeted } = deps(t.sw)
     t.session.d.refinement = untargeted
-    expect(await t.facade.request({ kind: 'compaction', seq })).toEqual({ refused: 'unpriced' })
+    expect(await t.facade.request({ kind: 'compaction', seq })).toEqual({ refused: 'unavailable' })
+    expect(await t.facade.request({ kind: 'manual', seq, allowUnpriced: true })).toEqual({
+      refused: 'unavailable',
+    })
+    t.session.d.refinement = deps(t.sw, { provider: () => ({ ...t.session.d.provider, models: () => [] }) })
     // The user's own request runs on an unknown price only once the user agreed to it.
     expect(await t.facade.request({ kind: 'manual', seq })).toEqual({ refused: 'unpriced' })
     const agreed = await t.facade.request({ kind: 'manual', seq, allowUnpriced: true })
@@ -740,7 +744,7 @@ describe('child sessions', () => {
       netFetch: async () => new Response(''),
       timers: noTimers,
       logger: { debug() {}, info() {}, warn() {}, error() {} },
-      refinement: deps(sw),
+      refinement: deps(sw, { provider: () => provider().provider }),
       refinementEnabled: () => sw.enabled,
       childRoles: {
         list: async () => [role],

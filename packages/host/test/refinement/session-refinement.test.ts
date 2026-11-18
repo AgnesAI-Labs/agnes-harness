@@ -9,6 +9,7 @@ import {
   saveEntryToWorkspace,
 } from '../../src/runtime/sessions/session-refinement.js'
 
+const service = { target: { route: 'rsi', model: 'review' }, provider: () => fakeProvider([]) }
 const planner = { buildPrompt: () => ({}) as never, parseOutput: () => ({ error: 'unused' }) }
 
 describe('a manual refinement request', () => {
@@ -16,7 +17,11 @@ describe('a manual refinement request', () => {
     let enabled = false
     const { session } = await openSession({
       provider: fakeProvider([textTurn('done')]),
-      refinement: { settings: () => ({ enabled, mode: 'manual', revision: 'r' }), planner: () => planner },
+      refinement: {
+        ...service,
+        settings: () => ({ enabled, mode: 'manual', revision: 'r' }),
+        planner: () => planner,
+      },
     })
     const host = session as unknown as HostSession
     await expect(requestRefinement(host, 'tests')).rejects.toMatchObject({
@@ -49,7 +54,11 @@ describe('withdrawing an applied refinement', () => {
     let enabled = true
     const { session } = await openSession({
       provider: fakeProvider([textTurn('done')]),
-      refinement: { settings: () => ({ enabled, mode: 'manual', revision: 'r' }), planner: () => planner },
+      refinement: {
+        ...service,
+        settings: () => ({ enabled, mode: 'manual', revision: 'r' }),
+        planner: () => planner,
+      },
     })
     const host = session as unknown as HostSession
     const facade = refinementFacade(session)
@@ -121,6 +130,7 @@ describe("saving to the workspace on the user's request", () => {
     const { session } = await openSession({
       provider: fakeProvider([textTurn('done')]),
       refinement: {
+        ...service,
         settings: () => ({ enabled: true, mode: 'manual', revision: 'r' }),
         planner: () => planner,
         workspace: path.workspace,
@@ -146,6 +156,7 @@ describe("saving to the workspace on the user's request", () => {
     const { session } = await openSession({
       provider,
       refinement: {
+        ...service,
         settings: () => ({ enabled, mode: 'manual', revision: 'r' }),
         planner: () => planner,
         workspace: path.workspace,

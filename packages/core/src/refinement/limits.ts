@@ -5,7 +5,6 @@ import {
   type RefinementRunState,
   TERMINAL_RUN_STATES,
 } from '@agnes/core-ledger/reduce/state'
-import { resolveModel } from '../execution/turn/inference.js'
 import { knownPrice } from '../maintenance/budget.js'
 import type { SessionImpl } from '../step/session.js'
 
@@ -93,7 +92,7 @@ export async function automaticRefusal(
   target: { route: string; model: string } | undefined,
   o: { run?: string; cooldown?: false; kind?: 'model' } = {},
 ): Promise<{ refused: LimitRefusal; retryAt?: number } | undefined> {
-  if (!priced(s, target ?? resolveModel(s, 'primary'))) return { refused: 'unpriced' }
+  if (!plannerPriced(s, target)) return { refused: 'unpriced' }
   const now = s.d.clock()
   const planned = await plannedRuns(s, o.run)
   if (o.kind === 'model')
@@ -115,14 +114,16 @@ export async function automaticRefusal(
   return undefined
 }
 
-/** Whether the planner model, the target or else the session's primary, has a known price. */
+/** Whether the dedicated catalogue has a known price for the planner model. */
 export function plannerPriced(s: SessionImpl, target: { route: string; model: string } | undefined): boolean {
-  return priced(s, target ?? resolveModel(s, 'primary'))
-}
-
-function priced(s: SessionImpl, target: { route: string; model: string }): boolean {
+  if (!target) return false
   try {
-    return knownPrice(s.d.provider.models().find((m) => m.route === target.route && m.id === target.model))
+    return knownPrice(
+      s.d.refinement
+        ?.provider?.()
+        ?.models()
+        .find((m) => m.route === target.route && m.id === target.model),
+    )
   } catch {
     return false
   }

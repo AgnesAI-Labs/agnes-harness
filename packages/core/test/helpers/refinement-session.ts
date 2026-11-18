@@ -153,6 +153,7 @@ export async function open(
     settings: () => ({ ...(o.sw ?? { enabled: true, mode: 'auto', revision: 'r1' }) }),
     planner: () => planner,
     target,
+    provider: () => provider,
     ...(o.workspace ? { workspace: o.workspace } : {}),
     ...(o.workspaceRefs ? { workspaceRefs: o.workspaceRefs } : {}),
     ...(o.taskScope === false

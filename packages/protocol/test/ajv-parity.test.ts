@@ -155,7 +155,7 @@ const VOICE_SETTINGS = {
   conversation: { pauseSeconds: 1.2 },
 }
 /** Valid refinement settings: on, automatic (not the default, so a default change cannot hide a regression). */
-const REFINEMENT_SETTINGS = { enabled: true, mode: 'auto' }
+const REFINEMENT_SETTINGS = { enabled: true, mode: 'auto', credentialRef: 'secret://generic/review' }
 /** Deep copy for fixture baselines whose nested fields need changing — fixture objects are shared
  * across several negative cases and must not be mutated in place. */
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T
@@ -717,6 +717,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionRefineSaveParams: AgnesGen.SessionRefineSaveParams,
   SessionRefineSaveResult: AgnesGen.SessionRefineSaveResult,
   RefinementSaveReceipt: AgnesGen.RefinementSaveReceipt,
+  RefinementCredentialRef: AgnesGen.RefinementCredentialRef,
   RefinementSettings: AgnesGen.RefinementSettings,
   RefinementSettingsSnapshot: AgnesGen.RefinementSettingsSnapshot,
   RefinementSettingsSaveParams: AgnesGen.RefinementSettingsSaveParams,
@@ -4551,9 +4552,22 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     ],
     note: 'withdrawal result: the row that records it',
   },
+  RefinementCredentialRef: {
+    valid: 'secret://generic/review-service',
+    invalid: [
+      'secret://generic/',
+      'secret://generic/.review',
+      'secret://chat/review',
+      'secret://generic/a/b',
+      `secret://generic/${'a'.repeat(129)}`,
+    ],
+    note: 'refinement service keys must refer to a generic credential by name',
+  },
   RefinementSettings: {
     valid: REFINEMENT_SETTINGS,
     invalid: [
+      { enabled: true, mode: 'auto' }, // enabled without a key
+      { ...REFINEMENT_SETTINGS, credentialRef: 'secret://chat/model' },
       { enabled: true }, // missing required mode
       { mode: 'auto' }, // missing required enabled
       { ...REFINEMENT_SETTINGS, enabled: 'yes' }, // wrong type
@@ -4566,6 +4580,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     valid: { revision: rep64, settings: REFINEMENT_SETTINGS },
     invalid: [
       { settings: REFINEMENT_SETTINGS }, // missing required revision
+      { revision: rep64, settings: REFINEMENT_SETTINGS, credentialMissing: false },
       { revision: 'A'.repeat(64), settings: REFINEMENT_SETTINGS }, // pattern: lowercase hex only
       { revision: 'a'.repeat(63), settings: REFINEMENT_SETTINGS }, // pattern: one short of 64
     ],

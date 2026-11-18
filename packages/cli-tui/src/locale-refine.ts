@@ -27,7 +27,7 @@ export const REFINE_DICT: Record<Locale, Record<RefineKey, string>> = {
       'Review this session in the background and keep the lessons as experience: /refine [--workspace|--user] [--unpriced] [focus]',
     'commands.refineSummary': 'Review session for lessons',
     'refine.off':
-      'Experience refinement (RSI) is not active in this session. Turn it on in settings; it applies to sessions opened after that, so start a new session.',
+      'Task experience is not active in this session. Save a service key and enable learning in Settings → General → Task experience, then start a new session.',
     'refine.workspace':
       'Experience review queued ({id}). What it keeps is also saved to this workspace, as your own save; each save shows in the timeline.',
     'refine.user':
@@ -52,7 +52,7 @@ export const REFINE_DICT: Record<Locale, Record<RefineKey, string>> = {
     'commands.refine': '在后台复盘本会话并把经验留下来：/refine [--workspace|--user] [--unpriced] [关注点]',
     'commands.refineSummary': '复盘本会话的经验',
     'refine.off':
-      'RSI（经验复盘）在本会话中未生效。请先在设置中开启；开启后对之后新开的会话生效，请新开一个会话。',
+      '本会话尚未启用任务经验。请在设置 → 通用 → 任务经验中保存服务密钥并开启学习，然后新开会话。',
     'refine.workspace':
       '已排队一次经验复盘（{id}）。留下的经验也会作为你自己的保存存到这个工作区；每次保存都会显示在时间线里。',
     'refine.user':

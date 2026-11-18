@@ -64,7 +64,7 @@ export function createWorkerRequests(
     ...managementClients,
     workspace: (key) => workspaces.get(key),
   })
-  const refinementSettings = new RefinementSettingsStore(o.config.dataDir, o.profile.name)
+  const refinementSettings = new RefinementSettingsStore(o.config.dataDir, o.profile.name, ownerHome)
   const refinementSkillRequests = createRefinementSkillRequests({
     dataDir: o.config.dataDir,
     profile: o.profile.name,

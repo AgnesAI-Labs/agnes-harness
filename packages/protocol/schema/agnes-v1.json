@@ -5785,14 +5785,33 @@
         "expectedRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
+    "RefinementCredentialRef": {
+      "type": "string",
+      "pattern": "^secret://generic/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
     "RefinementSettings": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["enabled", "mode"],
-      "properties": {
-        "enabled": { "type": "boolean" },
-        "mode": { "enum": ["manual", "auto"] }
-      }
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "mode"],
+          "properties": {
+            "enabled": { "const": false },
+            "mode": { "enum": ["manual", "auto"] },
+            "credentialRef": { "$ref": "#/$defs/RefinementCredentialRef" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "mode", "credentialRef"],
+          "properties": {
+            "enabled": { "const": true },
+            "mode": { "enum": ["manual", "auto"] },
+            "credentialRef": { "$ref": "#/$defs/RefinementCredentialRef" }
+          }
+        }
+      ]
     },
     "RefinementSettingsSnapshot": {
       "type": "object",
@@ -5800,7 +5819,11 @@
       "required": ["revision", "settings"],
       "properties": {
         "revision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "settings": { "$ref": "#/$defs/RefinementSettings" }
+        "settings": { "$ref": "#/$defs/RefinementSettings" },
+        "credentialMissing": {
+          "const": true,
+          "description": "The bound service key cannot be read. Learning is off until a key is saved."
+        }
       }
     },
     "RefinementSettingsSaveParams": {

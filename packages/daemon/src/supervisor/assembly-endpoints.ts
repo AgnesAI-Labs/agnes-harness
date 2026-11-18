@@ -337,7 +337,7 @@ function registerSessionEndpoints(
     log: console,
   })
   registerRefinement(ep, {
-    settings: new RefinementSettingsStore(o.config.dataDir, o.profile.name),
+    settings: new RefinementSettingsStore(o.config.dataDir, o.profile.name, state.ownerHome),
     switchedOn: () => state.savedSkills.switchedOn(),
     skills: (params, actor) => state.savedSkills.manage(params, actor),
   })

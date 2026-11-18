@@ -2,7 +2,7 @@
 export const refineLocaleCatalog = {
   en: {
     'app.refine.off':
-      'Experience refinement (RSI) is not active in this session. Turn it on in Settings; it applies to sessions opened after that, so start a new session.',
+      'Task experience is not active in this session. Save a service key and enable learning in Settings → General → Task experience, then start a new session.',
     'app.refine.workspace':
       'Experience review queued ({id}). What it keeps is also saved to this workspace, as your own save; each save shows in the conversation.',
     'app.refine.user':
@@ -23,7 +23,7 @@ export const refineLocaleCatalog = {
   },
   'zh-CN': {
     'app.refine.off':
-      'RSI（经验复盘）在本会话中未生效。请先在设置中开启；开启后对之后新开的会话生效，请新开一个会话。',
+      '本会话尚未启用任务经验。请在设置 → 通用 → 任务经验中保存服务密钥并开启学习，然后新开会话。',
     'app.refine.workspace':
       '已排队一次经验复盘（{id}）。留下的经验也会作为你自己的保存存到这个工作区；每次保存都会显示在对话里。',
     'app.refine.user':

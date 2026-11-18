@@ -4,6 +4,14 @@ export const REFINEMENT_SETTINGS_NAMESPACE = '@agnes/web-admin/refinement'
 
 export const refinementSettingsCatalog: LocaleCatalog = {
   en: {
+    'refinement.key': 'Service key',
+    'refinement.key.label': 'Task experience service key',
+    'refinement.key.hint': 'Save your company service key to enable learning from finished work.',
+    'refinement.key.ready': 'Service key configured.',
+    'refinement.key.missing': 'Service key missing. Enter and save a new key.',
+    'refinement.key.save': 'Save key',
+    'refinement.key.replace': 'Replace key',
+    'refinement.key.error': 'Could not save the service key. Try again.',
     'refinement.group.main': 'Task experience (RSI)',
     'refinement.enabled': 'Learn from finished work',
     'refinement.enabled.hint':
@@ -37,7 +45,7 @@ export const refinementSettingsCatalog: LocaleCatalog = {
       'A learned note reaches the model as untrusted text, so a turn that carries one may ask you to approve more commands.',
     'refinement.cost': 'Cost',
     'refinement.cost.hint':
-      'A review is a background model call on your account. The terminal lists its cost on its own “RSI cost” line in the usage details; the web counts it in the session’s usage totals.',
+      'Each review uses the company review service. The terminal lists its cost on its own “RSI cost” line in the usage details; the web counts it in the session’s usage totals.',
     'refinement.conflict':
       'The experience settings were changed somewhere else. They are shown again as they are now; make your change again.',
     'refinement.notice':
@@ -45,8 +53,16 @@ export const refinementSettingsCatalog: LocaleCatalog = {
     'refinement.notice.dismiss': 'Dismiss this notice',
   },
   'zh-CN': {
+    'refinement.key': '服务密钥',
+    'refinement.key.label': '任务经验服务密钥',
+    'refinement.key.hint': '先保存公司服务密钥，才能开启从已完成的工作中学习。',
+    'refinement.key.ready': '已配置服务密钥。',
+    'refinement.key.missing': '服务密钥缺失，请重新填写并保存。',
+    'refinement.key.save': '保存密钥',
+    'refinement.key.replace': '更换密钥',
+    'refinement.key.error': '服务密钥保存失败，请重试。',
     'refinement.group.main': '任务经验（RSI）',
-    'refinement.enabled': '从完成的工作中学习',
+    'refinement.enabled': '从已完成的工作中学习',
     'refinement.enabled.hint':
       '默认关闭。开启后，你或模型可以发起后台复盘，把有用的经验留给之后的轮次；关闭后不再复盘，也不提供经验工具。',
     'refinement.enabled.info':
@@ -77,10 +93,10 @@ export const refinementSettingsCatalog: LocaleCatalog = {
       '学到的经验会作为不受信任的文字交给模型，所以带着经验的那一轮可能会要求你批准更多命令。',
     'refinement.cost': '费用',
     'refinement.cost.hint':
-      '复盘是记在你账户上的一次后台模型调用。终端会在用量详情里单列“RSI 费用”一行；网页里它计入会话的用量合计。',
+      '每次复盘都会调用公司的复盘服务。终端会在用量详情里单列“RSI 费用”一行；网页里它计入会话的用量合计。',
     'refinement.conflict': '经验设置在别处被修改了。现在显示的是最新状态，请重新做一次你的修改。',
     'refinement.notice':
-      '本版本新增：开启任务经验后，经验现在也会保存到工作区记忆和工作区技能，这里不会再次询问。工作区记忆设置仍然有效，询问模式下每次保存仍会等你确认。适用于所有工作区的经验会自动写入用户记忆。要停止，请关闭上面的“从完成的工作中学习”。',
+      '本版本新增：开启任务经验后，经验现在也会保存到工作区记忆和工作区技能，这里不会再次询问。工作区记忆设置仍然有效，询问模式下每次保存仍会等你确认。适用于所有工作区的经验会自动写入用户记忆。要停止，请关闭上面的“从已完成的工作中学习”。',
     'refinement.notice.dismiss': '关闭此说明',
   },
 }

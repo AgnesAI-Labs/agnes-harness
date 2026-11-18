@@ -8,6 +8,7 @@ import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-s
 import type { ModelRecord, Provider } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRefinementHost } from '../../src/runtime/assemble/refinement.js'
+import { reviewCredential } from './service-key.js'
 
 const PROFILE = 'p'
 const dirs: string[] = []
@@ -22,7 +23,7 @@ const scratch = () => {
 }
 const save = (dataDir: string, settings: { enabled: boolean; mode: 'manual' | 'auto' }) => {
   const store = new RefinementSettingsStore(dataDir, PROFILE)
-  store.save(settings, store.read().revision)
+  store.save({ ...settings, credentialRef: reviewCredential(dataDir) }, store.read().revision)
 }
 const planner = { buildPrompt: () => ({}) as never, parseOutput: () => ({ error: 'unused' }) }
 
@@ -289,7 +290,11 @@ describe('switching refinement off and on again with the real settings store', (
     const p = provider(o)
     const { session } = await openSession({
       provider: p.provider,
-      refinement: bridge.kernelOptions.refinement,
+      refinement: {
+        ...bridge.kernelOptions.refinement,
+        provider: () => p.provider,
+        target: { route: primary.route, model: primary.id },
+      },
       refinementEnabled: bridge.kernelOptions.refinementEnabled,
     })
     const say = async (text: string) => {

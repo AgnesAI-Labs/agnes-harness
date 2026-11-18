@@ -183,6 +183,7 @@ async function request(s: SessionImpl, trigger: RefinementTrigger): Promise<Refi
   const unsaved = saveRefusal(s, trigger.saveTo, trigger.kind === 'manual' || trigger.kind === 'model')
   if (unsaved) return unsaved
   if (!plannerOf(s)) return { refused: 'unavailable' }
+  if (!s.d.refinement?.target || !s.d.refinement.provider?.()) return { refused: 'unavailable' }
   const busy = slotOf(s).planning !== undefined
   if (automatic) {
     // While a plan runs, an automatic trigger waits only if nothing but that plan's cooldown would

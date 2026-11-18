@@ -157,7 +157,7 @@ export async function openSessionServices(
   const selectedJobs = o.ports?.jobs ?? jobs
 
   // Saved skills: shared installers, the 30-day review when a session opens, the user's revocations.
-  const refinementSettings = new RefinementSettingsStore(o.config.dataDir, o.profile.name)
+  const refinementSettings = new RefinementSettingsStore(o.config.dataDir, o.profile.name, state.ownerHome)
   const savedSkills = createSavedSkills({
     dataDir: o.config.dataDir,
     profile: o.profile.name,

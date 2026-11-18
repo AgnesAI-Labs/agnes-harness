@@ -40,6 +40,23 @@ function appWith(
 }
 
 describe('session slash commands', () => {
+  it.each([
+    ['en', 'Settings → General → Task experience', 'service key'],
+    ['zh-CN', '设置 → 通用 → 任务经验', '服务密钥'],
+  ])(
+    '/refine shows the service key setup path when task experience is off (%s)',
+    async (locale, path, key) => {
+      const refine = vi.fn(async () => {
+        throw new JsonRpcError(rpcError('SEMANTIC_REJECTED', { reason: 'refinement-off' }))
+      })
+      const app = appWith({ session: { refine } }, {}, { locale })
+      const result = await runSlash(app, '/refine')
+      expect(refine).toHaveBeenCalledWith('cur', undefined)
+      expect(result.text).toContain(path)
+      expect(result.text).toContain(key)
+    },
+  )
+
   it('/pin /unpin /rename /archive call the session RPCs for the open session and report one line', async () => {
     const pin = vi.fn(async () => ({}))
     const rename = vi.fn(async () => ({ title: 'two\nwords' }))

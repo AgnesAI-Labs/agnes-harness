@@ -4,6 +4,9 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel } from '@agnes/ai/testkit'
 import { operations as codeOperations } from '@agnes/code'
+import { refinementFacade } from '@agnes/core'
+import { REFINEMENT_MODEL } from '@agnes/distribution'
+import { createCredentialStore } from '@agnes/host-infrastructure/adapters/credential-store'
 import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
 import { describe, expect, it, vi } from 'vitest'
@@ -22,6 +25,7 @@ import {
   normalizeForBaseline,
   runScriptedSession,
 } from './scripted-session.js'
+import { reviewCredential, routeReviewToLoopback } from './service-key.js'
 
 const baseDir = fileURLToPath(new URL('../../../base/', import.meta.url))
 const baselineFile = fileURLToPath(new URL('../fixtures/refinement/off-baseline.json', import.meta.url))
@@ -69,8 +73,6 @@ function gate() {
   })
   return { open, opened }
 }
-
-const isPlanner = (request: CapturedRequest) => request.raw.includes(PLANNER_MARK)
 
 /** The evidence lines of a planner request, as the planner prompt lists them (one JSON object a line). */
 function evidenceOf(body: unknown): Evidence[] {
@@ -145,13 +147,16 @@ type Fixture = {
 }
 
 const saveSwitch = (dataDir: string, enabled: boolean) => {
-  const store = new RefinementSettingsStore(dataDir, PROFILE)
-  store.save({ enabled, mode: 'auto' }, store.read().revision)
+  const store = new RefinementSettingsStore(dataDir, PROFILE, dataDir)
+  store.save(
+    { credentialRef: reviewCredential(dataDir, dataDir), enabled, mode: 'auto' },
+    store.read().revision,
+  )
 }
 
 /**
  * A real assembled host on a loopback provider. Conversation requests are answered by `steps` in
- * order; a planning call is answered by `plan`. The planner model is the session's priced primary.
+ * order; a planning call is answered by `plan`. The review service uses a separate loopback capture.
  */
 async function withHost(
   o: {
@@ -179,10 +184,12 @@ async function withHost(
   if (o.switchOn) saveSwitch(o.dataDir, true)
   let next = 0
   const capture = await startWireCapture(async (body) => {
-    if (JSON.stringify(body).includes(PLANNER_MARK)) return o.plan(body)
+    if (JSON.stringify(body).includes(PLANNER_MARK)) throw new Error('Review reached the chat provider')
     const step = o.steps[next++] ?? { text: 'Done.' }
     return typeof step === 'function' ? step() : step
   })
+  const service = await startWireCapture(o.plan)
+  const redirected = routeReviewToLoopback(service.baseUrl('openai-completions'))
   vi.stubEnv('AGH_HOME', o.dataDir)
   try {
     const baseUrl = capture.baseUrl(o.api)
@@ -215,12 +222,15 @@ async function withHost(
       },
     })
     try {
+      const catalogue = host.provider.models()
+      expect(catalogue.some(({ id, route }) => id === model.id && route === model.route)).toBe(true)
+      expect(catalogue.some(({ route }) => route === REFINEMENT_MODEL.route)).toBe(false)
       const session = await host.createSession({ cwd: workspace })
       expect(session.d.refinement?.settings().enabled).toBe(o.switchOn)
       await run({
         session,
-        main: () => capture.requests.filter((r) => !isPlanner(r)),
-        planner: () => capture.requests.filter(isPlanner),
+        main: () => capture.requests,
+        planner: () => service.requests,
         dataDir: o.dataDir,
       })
     } finally {
@@ -228,6 +238,8 @@ async function withHost(
     }
   } finally {
     vi.unstubAllEnvs()
+    redirected.mockRestore()
+    await service.close()
     await capture.close()
   }
 }
@@ -236,7 +248,7 @@ async function withDataDir(run: (dataDir: string) => Promise<void>): Promise<voi
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-refinement-loop-')))
   try {
     const dataDir = join(root, 'data')
-    mkdirSync(dataDir)
+    createPrivateDirectorySync(dataDir)
     await run(dataDir)
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -271,6 +283,40 @@ const entries = (session: Session) =>
 const turnEnds = async (session: Session) => (await scan(session, 'turn/end')).map((row) => row.seq)
 
 describe('the refinement loop in an assembled host', () => {
+  it('refuses manual, model and automatic requests after the service key is deleted', async () => {
+    await withDataDir(async (dataDir) => {
+      await withHost(
+        {
+          api: 'openai-completions',
+          dataDir,
+          switchOn: true,
+          steps: [{ text: 'Done.' }],
+          plan: () => NOTHING_TO_KEEP,
+        },
+        async ({ session, planner, main }) => {
+          await turn(session, 'Check the release notes.')
+          const store = new RefinementSettingsStore(dataDir, PROFILE, dataDir)
+          const { credentialRef } = store.read().settings
+          if (!credentialRef) throw new Error('Missing fixture credential')
+          await createCredentialStore({ root: dataDir }).remove(credentialRef)
+          expect(store.read()).toMatchObject({ settings: { enabled: false }, credentialMissing: true })
+          await expect(requestRefinement(session)).rejects.toMatchObject({
+            data: { reason: 'refinement-off' },
+          })
+          const refinement = refinementFacade(session)
+          for (const kind of ['model', 'compaction'] as const)
+            expect(await refinement.request({ kind, seq: session.lastSeq })).toEqual({
+              refused: 'refinement-off',
+            })
+          expect(await refinement.propose({} as never)).toEqual({ refused: 'refinement-off' })
+          expect(session.state.refinementRuns.size).toBe(0)
+          expect(planner()).toHaveLength(0)
+          expect(main()).toHaveLength(1)
+        },
+      )
+    })
+  })
+
   it.each(apis)(
     '%s: a corrected tool error is planned in the background, applied after the turn, read by the next request',
     async (api) => {

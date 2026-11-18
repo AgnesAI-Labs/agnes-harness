@@ -118,7 +118,9 @@ async function open(o: {
     },
   }
   const sw = { enabled: true, mode: 'manual' as const, revision: 'r1' }
+  const review = provider(o.plans)
   const refinement: RefinementDeps = {
+    provider: () => review,
     settings: () => ({ ...sw }),
     planner: () => planner,
     target,
@@ -126,7 +128,7 @@ async function open(o: {
     ...(o.references ? { references: o.references } : {}),
   }
   const opened = await openSession({
-    provider: provider(o.plans),
+    provider: review,
     refinement,
     refinementEnabled: () => sw.enabled,
   })

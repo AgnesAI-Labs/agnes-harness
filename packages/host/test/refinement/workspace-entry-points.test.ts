@@ -219,6 +219,7 @@ async function setup(o: {
     },
   }
   const refinement: RefinementDeps = {
+    provider: () => provider,
     settings: () => ({ ...switchState }),
     planner: () => planner,
     target: { route: 'rsi', model: 'planner' },

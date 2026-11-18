@@ -6,6 +6,7 @@ import { createPluginRow } from '@agnes/plugin-runtime/host'
 import type { InferenceEvent } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
+import { reviewCredential } from '../refinement/service-key.js'
 import {
   auditKinds,
   pluginHost,
@@ -28,7 +29,7 @@ const NOT_MIGRATED: string[] = []
 /** Saves the default profile's refinement switch through the same store the settings RPC uses. */
 const setRefinement = (dataDir: string, enabled: boolean): void => {
   const store = new RefinementSettingsStore(dataDir, 'local-dev')
-  store.save({ enabled, mode: 'manual' }, store.read().revision)
+  store.save({ credentialRef: reviewCredential(dataDir), enabled, mode: 'manual' }, store.read().revision)
 }
 /** A data directory whose default profile has refinement switched on. */
 const refinementOn = (): string => {

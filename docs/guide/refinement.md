@@ -6,11 +6,11 @@ English | [简体中文](refinement.zh-CN.md)
 
 Task experience lets AGH review a session in the background and keep short lessons, called **entries**, for the rest of that session: a command that needs a flag, a file that lives somewhere unexpected, a rule the user stated. Later turns of the same session get the entries as notes. Memory and prompt entries can also be saved to the workspace memory, and later sessions of the workspace get them back as entries (see [Save to the workspace](#save-to-the-workspace)).
 
-It is **off by default**. A review is a separate model call on your account. It has not yet been shown to improve results.
+It is **off by default**. Each review sends session evidence to the company's dedicated review service. It has not yet been shown to improve results.
 
 ## Turn it on
 
-The **Task experience** tab under **Settings → General** is currently hidden, including its saved-skills list. Hiding the tab does not change the profile's switch, saved configuration or history. The backend remains available, and profiles that already enabled task experience keep their existing behavior. The settings below describe that retained configuration; they cannot currently be changed from the Web settings dialog.
+Open **Settings → General → Task experience**. Enter the company service key, select **Save key**, then turn on **Learn from finished work** and choose a mode. The key stays in the local credential store. Use **Replace key** on this page to change it. If the key is missing, learning is disabled until you save a new key and enable it again. Profiles upgraded from a version without service keys keep their mode and start with learning off.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
@@ -24,7 +24,7 @@ The **Task experience** tab under **Settings → General** is currently hidden, 
 
 ### What turning it on allows
 
-An enabled profile allows:
+The settings panel lists what turning it on allows:
 
 1. Install proven skills in the workspace: a skill entry a review wrote is installed in the workspace as soon as it passes the checks, trusted and switched on, without the usual install confirmation. See [Saved skills](#saved-skills).
 2. Let the model save skills in the workspace without waiting for a second confirmation, if it cites evidence from the session and passes the static checks.
@@ -40,7 +40,6 @@ A **manual** review is one you ask for:
 - `/refine [focus]` in the TUI or the Web message box. The optional focus (at most 512 characters) tells the review what to look at. The reply says the review is queued; the result shows in the conversation.
 - `/refine --workspace [focus]` queues the same review, and what it keeps is also saved to the workspace as your own save (see below).
 - `/refine --user [focus]` queues the same review, and what it keeps is also saved to user memory as your own save, without waiting for a second confirmation (see [Save to user memory](#save-to-user-memory)). Use either `--workspace` or `--user`, not both.
-- `/refine --unpriced [focus]` (it combines with `--workspace` or `--user`) runs a review on a model with no known price. Without it, `/refine` on such a model is refused and says so; see [Cost](#cost).
 
 With **Manual and automatic**, a review can also start by itself:
 
@@ -58,7 +57,7 @@ Automatic reviews have limits. Manual reviews are not counted against them; they
 
 One review runs per session at a time. A newer request replaces one that is still waiting, but an automatic one never replaces a waiting manual one. A review plans in the background, so you can keep working. Its result is applied only between two turns: if a turn is running, it waits for the end of that turn.
 
-A review reads the session's last 5 turns: your requests, the model's replies, tool calls and results, and compaction summaries (up to about 24,000 tokens, and it may answer with up to 4,096). The model's own words are marked as untrusted, like tool output. It uses the session's current main model and gives it up to 60 seconds (90 seconds for a manual review).
+A review reads the session's last 5 turns: your requests, the model's replies, tool calls and results, and compaction summaries (up to about 24,000 tokens, and it may answer with up to 4,096). The model's own words are marked as untrusted, like tool output. It uses the company's fixed review model and gives it up to 60 seconds (90 seconds for a manual review).
 
 ## What a review saves
 
@@ -153,8 +152,8 @@ A skill entry saved to the workspace becomes a workspace skill. It is installed 
 - **Hand-off.** Once installed, the session entry hands off to the skill: it is no longer given to the model as an entry and no longer counts toward the 200-entry limit, and the model is told once to use the workspace skill instead. The entry stays in the session's record. The next session finds the skill in its skill catalogue like any other.
 - **30-day review.** Every saved skill has a review date 30 days on. A later review that confirms the skill with new evidence renews it. A skill not confirmed again is switched off (not removed) when a session opens after that date, or when you turn task experience on; it then shows as **awaiting review**. Switching it back on, on the Skills page, renews it for another 30 days. Switching off by the review is not taking it back.
 - **Updates.** A new version of a skill entry (written by a review, or saved by you or the model) updates a saved skill **of the same name**, from any session, only while nobody changed the skill since it was saved. Up to five earlier versions are kept, and you can roll back to the previous one. A skill switched off by the review stays off through an update.
-- **A person's skill is never overwritten.** When the skill was written by a person, or a person changed a saved skill (even between the decision and the write), the change is kept as a **draft** for you and the save is refused as `conflict`. A workspace keeps at most 20 drafts. The drafts remain stored while the task experience settings tab is hidden; its draft viewer is currently unavailable.
-- **Taking it back.** Uninstalling or rolling back a saved skill, removing it on the Skills page, or deleting its folder records that you took it back. The task experience settings tab's **Uninstall** and **Roll back to the previous version** controls are currently hidden. A deleted folder is noticed the next time a skill is saved in that workspace; until then its saved-skill record still reports it as on. After that, automatic and model saves of the same entry, of any skill entry with the same name, or of the same content under another name, are refused (`user-revoked`). Only your own save (`/refine --workspace`, or **Save … to workspace** on a review line) installs it again, and clears the record.
+- **A person's skill is never overwritten.** When the skill was written by a person, or a person changed a saved skill (even between the decision and the write), the change is kept as a **draft** for you and the save is refused as `conflict`. Drafts are listed under **Saved skills** in the task experience settings, as plain text with a whole-file diff; copy what you want by hand. A workspace keeps at most 20 drafts.
+- **Taking it back.** **Uninstall** or **Roll back to the previous version** under **Saved skills** in the task experience settings, removing the skill on the Skills page, or deleting its folder, records that you took it back. A deleted folder is noticed the next time a skill is saved in that workspace; until then **Saved skills** still shows the skill as on. After that, automatic and model saves of the same entry, of any skill entry with the same name, or of the same content under another name, are refused (`user-revoked`). Only your own save (`/refine --workspace`, or **Save … to workspace** on a review line) installs it again, and clears the record.
 
 Installing, updating, switching off or removing a saved skill changes the skill catalogue, and with it the system prompt of the next request. This is expected and recorded as a refinement prefix change (`skill-catalog`).
 
@@ -227,9 +226,8 @@ The TUI shows the same lines as text but has no withdraw action. A client can ca
 
 ## Cost
 
-- Each review is a model call billed to your account, from a token budget of its own: 524,288 tokens for all reviews of a session. It never draws on a turn's budget.
-- A model priced at zero (a free or local model) has a known price: reviews run on it, automatic ones included, cost nothing and are bounded by the token budget alone.
-- A model with no known price runs no automatic review. A review you ask for runs on it only once you agree to the unknown cost with `/refine --unpriced`; the token budget still bounds it, and its cost shows as unknown.
+- Each review uses the dedicated service and draws from a token budget of its own: 524,288 tokens for all reviews of a session. It never draws on a turn's budget.
+- The review service has a configured price, so manual and automatic reviews can start without a price confirmation.
 - In the TUI, the footer, `/status` and the `/usage` figures leave review spend out, and `/usage` lists it on its own **RSI cost** line (a free model shows a zero cost, a model with no known price shows "price unknown").
 - The Web counts review spend in the session's usage totals.
 - The guidance and entry notes add tokens to every request of a session where task experience is on.
@@ -264,7 +262,6 @@ Nothing is saved to the workspace or to user memory while it is off, and request
 - The checks on a save are about structure: the source, the length, secret-like text, the size of memory. They do not judge whether a lesson is right. Review what is saved on the memory page.
 - On a platform without a system sandbox (for example Windows under full access, or a container without bubblewrap under full access), the agent's shell can read and change the memory files directly, including paragraphs it is not shown. A shell that takes the two marker lines off a paragraph turns it into ordinary memory at the next session open. See [Learned memory](memory.md#approval-and-privacy).
 - A terminal started with `--standalone` runs its own embedded host, which does not serve `/refine`: it answers that the command is not supported. Automatic reviews still run there.
-- On a planning model with no known price, automatic reviews do not start, and a review you ask for needs `/refine --unpriced`. A model priced at zero counts as known. A model added in the model settings without a price is recorded with a zero price, so it counts as free.
 - Turns that carry an entry note may ask you to approve more commands. The note is untrusted content, so approval rules that would allow a command in a clean turn may not apply. The same is true for turns that read entries with `harness_inspect`.
 - Obvious credentials in tool output are masked before the review model sees it. The masking is not complete.
 

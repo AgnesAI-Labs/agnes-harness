@@ -19,6 +19,7 @@ import {
 } from '../../src/runtime/refinement/reconcile.js'
 import { registryView } from '../../src/runtime/refinement/registry-view.js'
 import { workspaceMemory } from '../../src/runtime/refinement/workspace-memory.js'
+import { reviewCredential } from './service-key.js'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -251,7 +252,7 @@ describe('reconciling saved paragraphs with the memory file', () => {
 describe('reconciling when a session opens', () => {
   const enable = (dataDir: string, enabled: boolean) => {
     const store = new RefinementSettingsStore(dataDir, 'p')
-    store.save({ enabled, mode: 'auto' }, store.read().revision)
+    store.save({ credentialRef: reviewCredential(dataDir), enabled, mode: 'auto' }, store.read().revision)
   }
 
   it('with refinement off no registry is read or written', async () => {

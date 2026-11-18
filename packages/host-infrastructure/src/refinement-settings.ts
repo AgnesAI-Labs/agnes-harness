@@ -1,9 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import type { RefinementSettings, RefinementSettingsSnapshot } from '@agnes/protocol'
 import { DEFAULT_REFINEMENT_SETTINGS, validateAgainst } from '@agnes/protocol'
 import { RefinementSettings as Schema } from '@agnes/protocol/gen/agnes-v1'
+import { credentialFileEnforcement, readApiKeyFileSync } from './adapters/credential-files.js'
+import { isGenericCredential } from './adapters/credential-store.js'
+import { createPlatform } from './adapters/platform.js'
+import { isUsableCredential } from './configuration-credential-availability.js'
 import { MAX_SETTINGS_BYTES } from './settings-file.js'
 
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex')
@@ -19,6 +23,7 @@ export const refinementSettingsRevision = (settings: RefinementSettings, nonce?:
     JSON.stringify({
       enabled: settings.enabled,
       mode: settings.mode,
+      credentialRef: settings.credentialRef,
       ...(nonce === undefined ? {} : { nonce }),
     }),
   )
@@ -44,15 +49,34 @@ export interface RefinementSettingsPort {
 export class RefinementSettingsStore implements RefinementSettingsPort {
   private readonly dir: string
   private readonly file: string
-  constructor(dataDir: string, profile: string) {
+  private readonly enforcement = credentialFileEnforcement(createPlatform())
+  constructor(
+    dataDir: string,
+    profile: string,
+    private readonly home = basename(dataDir) === 'data' ? dirname(dataDir) : dataDir,
+  ) {
     this.dir = join(dataDir, 'refinement')
     this.file = join(this.dir, `${sha256(profile)}.json`)
+  }
+
+  /** Local credential-store boundary. Only the private review adapter consumes the value. */
+  serviceKey(ref: string): string | undefined {
+    try {
+      const credential: unknown = JSON.parse(readApiKeyFileSync(this.home, ref, this.enforcement))
+      if (isGenericCredential(credential) && isUsableCredential(credential.value)) return credential.value
+    } catch {
+      // Missing, corrupt or inaccessible credentials all close the gate.
+    }
+    return undefined
   }
 
   read(): RefinementSettingsSnapshot {
     const stored = this.stored()
     const settings = stored?.settings ?? structuredClone(DEFAULT_REFINEMENT_SETTINGS)
-    return { settings, revision: refinementSettingsRevision(settings, stored?.nonce) }
+    const revision = refinementSettingsRevision(settings, stored?.nonce)
+    if (settings.credentialRef && !this.serviceKey(settings.credentialRef))
+      return { settings: { ...settings, enabled: false }, revision, credentialMissing: true }
+    return { settings, revision }
   }
 
   current(): RefinementSettingsSnapshot {
@@ -65,8 +89,14 @@ export class RefinementSettingsStore implements RefinementSettingsPort {
    * without yielding, so no other save in this process can slip between them.
    */
   save(settings: RefinementSettings, expectedRevision: string): { revision: string } {
-    if (!validateAgainst(Schema, settings).ok) throw failure('CONFIG_INVALID_INPUT')
-    const clean: RefinementSettings = { enabled: settings.enabled, mode: settings.mode }
+    if (
+      !validateAgainst(Schema, settings).ok ||
+      (settings.credentialRef && !this.serviceKey(settings.credentialRef))
+    )
+      throw failure('CONFIG_INVALID_INPUT')
+    const { enabled, mode, credentialRef } = settings
+    const clean: RefinementSettings =
+      credentialRef === undefined ? { enabled: false, mode } : { enabled, mode, credentialRef }
     const current = this.read()
     if (current.revision !== expectedRevision) throw failure('CONFIG_REVISION_CONFLICT', { current })
     mkdirSync(this.dir, { recursive: true, mode: 0o700 })
@@ -90,15 +120,25 @@ export class RefinementSettingsStore implements RefinementSettingsPort {
     try {
       if (statSync(this.file).size > MAX_SETTINGS_BYTES) return undefined
       const value = JSON.parse(readFileSync(this.file, 'utf8')) as Record<string, unknown> | null
+      let raw: unknown = value
+      let nonce: string | undefined
       if (value && typeof value === 'object' && 'nonce' in value) {
-        const keys = Object.keys(value)
-        if (keys.length !== 2 || typeof value.nonce !== 'string' || !NONCE.test(value.nonce)) return undefined
-        if (!validateAgainst(Schema, value.settings).ok) return undefined
-        return { settings: { ...(value.settings as RefinementSettings) }, nonce: value.nonce }
+        if (Object.keys(value).length !== 2 || typeof value.nonce !== 'string' || !NONCE.test(value.nonce))
+          return undefined
+        raw = value.settings
+        nonce = value.nonce
       }
-      return validateAgainst(Schema, value).ok
-        ? { settings: { ...(value as RefinementSettings) } }
-        : undefined
+      // Pre-service-key releases could persist an enabled switch without a binding.
+      if (
+        raw &&
+        typeof raw === 'object' &&
+        'enabled' in raw &&
+        raw.enabled === true &&
+        !('credentialRef' in raw)
+      )
+        raw = { ...raw, enabled: false }
+      if (!validateAgainst(Schema, raw).ok) return undefined
+      return { settings: raw as RefinementSettings, ...(nonce ? { nonce } : {}) }
     } catch {
       return undefined
     }

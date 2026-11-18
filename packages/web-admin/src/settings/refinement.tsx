@@ -3,12 +3,15 @@ import type {
   RefinementSettingsSaveResult,
   RefinementSettingsSnapshot,
 } from '@agnes/protocol'
+import { CREDENTIALS_CHANGED } from '@agnes/resource-control-web/credentials-api'
 import { settingsSections } from '@agnes/web-client'
 import {
   Banner,
+  Button,
   fallbackT,
   reportSuccess,
   SettingsBlock,
+  SettingsInput,
   SettingsItem,
   SettingsSelect,
   StateSwitch,
@@ -22,6 +25,7 @@ import { failureCode } from './side-models/model.js'
 
 /** The daemon's refinement switch: read it with its revision, save it against that revision. */
 export type RefinementSettingsApi = {
+  createKey(label: string, value: string): Promise<string>
   read(): Promise<RefinementSettingsSnapshot>
   save(settings: RefinementSettings, expectedRevision: string): Promise<RefinementSettingsSaveResult>
   /** The skills task experience saved in a workspace; absent where the connection cannot reach them. */
@@ -29,7 +33,7 @@ export type RefinementSettingsApi = {
 }
 
 const sameSettings = (a: RefinementSettings, b: RefinementSettings) =>
-  a.enabled === b.enabled && a.mode === b.mode
+  a.enabled === b.enabled && a.mode === b.mode && a.credentialRef === b.credentialRef
 
 /** This viewer has dismissed the one-time notice about saving to the workspace (browser storage only). */
 const NOTICE_KEY = 'agnes.refinement.workspace-notice'
@@ -62,6 +66,15 @@ export function RefinementSettingsPanel({ api }: { api: RefinementSettingsApi })
   // Shown once, to a profile that had refinement on when this section was first read: saving to the
   // workspace now takes effect without asking again. Turning it on here shows the grants instead.
   const [notice, setNotice] = useState<boolean>()
+  useEffect(() => {
+    const refresh = () => setReads((count) => count + 1)
+    window.addEventListener(CREDENTIALS_CHANGED, refresh)
+    window.addEventListener('focus', refresh)
+    return () => {
+      window.removeEventListener(CREDENTIALS_CHANGED, refresh)
+      window.removeEventListener('focus', refresh)
+    }
+  }, [])
   // biome-ignore lint/correctness/useExhaustiveDependencies: reads is an explicit retry.
   useEffect(() => {
     let live = true
@@ -80,7 +93,7 @@ export function RefinementSettingsPanel({ api }: { api: RefinementSettingsApi })
       live = false
     }
   }, [api, reads])
-  if (!snapshot)
+  if (!snapshot || failed)
     return (
       <div className="refinement-settings" data-testid="refinement-settings">
         <SettingsBlock state={failed ? 'error' : 'loading'} onReload={() => setReads((count) => count + 1)} />
@@ -107,7 +120,7 @@ export function RefinementSettingsPanel({ api }: { api: RefinementSettingsApi })
         </Banner>
       )}
       <RefinementFields
-        key={generation}
+        key={`${generation}-${snapshot.revision}-${Boolean(snapshot.credentialMissing)}`}
         api={api}
         snapshot={snapshot}
         t={t}
@@ -134,6 +147,11 @@ function RefinementFields(props: {
 }) {
   const { api, snapshot, t } = props
   const [stored, setStored] = useState(snapshot.settings)
+  const [keyInput, setKeyInput] = useState('')
+  const [editingKey, setEditingKey] = useState(false)
+  const [creatingKey, setCreatingKey] = useState(false)
+  const [keyError, setKeyError] = useState(false)
+  const [missing, setMissing] = useState(snapshot.credentialMissing === true)
   // Read when a save is sent, so a save queued behind another one uses the revision the first returned.
   const revision = useRef(snapshot.revision)
   const autosave = useAutosave<RefinementSettings>({
@@ -148,10 +166,16 @@ function RefinementFields(props: {
         const saved = await api.save(next, revision.current)
         revision.current = saved.revision
         setStored(next)
+        setMissing(false)
       } catch (error) {
         // The conflict error names no current state: read it again and show it. The edit that lost is
         // dropped, and the save ends as a failure, not a success: a success would clear the banner
         // just raised and say "Settings saved." about a change that was thrown away.
+        if (failureCode(error) === 'CONFIG_INVALID_INPUT') {
+          const fresh = await api.read()
+          if (fresh.credentialMissing) props.onConflict(fresh)
+          throw error
+        }
         if (failureCode(error) !== 'CONFIG_REVISION_CONFLICT') throw error
         props.onConflict(await api.read())
         throw error
@@ -159,7 +183,28 @@ function RefinementFields(props: {
     },
   })
   const settings = autosave.value ?? stored
-  const change = (patch: Partial<RefinementSettings>) => autosave.set({ ...settings, ...patch }, 'now')
+  const ready = Boolean(stored.credentialRef) && !missing
+  const binding = settings.credentialRef !== stored.credentialRef
+  const locked = creatingKey || binding
+  const change = (patch: { enabled?: boolean; mode?: RefinementSettings['mode'] }) => {
+    if (stored.credentialRef && ready && !locked)
+      autosave.set({ ...settings, ...patch, credentialRef: stored.credentialRef }, 'now')
+  }
+  const saveKey = async () => {
+    if (!keyInput.trim() || locked || autosave.busy) return
+    setCreatingKey(true)
+    setKeyError(false)
+    try {
+      const credentialRef = await api.createKey(t('refinement.key.label'), keyInput.trim())
+      setKeyInput('')
+      setEditingKey(false)
+      autosave.set({ ...settings, credentialRef }, 'now')
+    } catch {
+      setKeyError(true)
+    } finally {
+      setCreatingKey(false)
+    }
+  }
   return (
     <>
       <SettingsBlock
@@ -168,6 +213,35 @@ function RefinementFields(props: {
         failed={autosave.failed}
         onRetry={autosave.retry}
       >
+        <SettingsItem
+          label={t('refinement.key')}
+          description={t(
+            missing ? 'refinement.key.missing' : ready ? 'refinement.key.ready' : 'refinement.key.hint',
+          )}
+        >
+          {ready && !editingKey ? (
+            <Button disabled={locked || autosave.busy} onClick={() => setEditingKey(true)}>
+              {t('refinement.key.replace')}
+            </Button>
+          ) : (
+            <>
+              <SettingsInput
+                id="refinement-service-key"
+                type="password"
+                aria-label={t('refinement.key')}
+                autoComplete="new-password"
+                spellCheck={false}
+                value={keyInput}
+                disabled={locked}
+                onChange={(event) => setKeyInput(event.target.value)}
+              />
+              <Button disabled={locked || autosave.busy || !keyInput.trim()} onClick={() => void saveKey()}>
+                {t('refinement.key.save')}
+              </Button>
+            </>
+          )}
+        </SettingsItem>
+        {keyError && <Banner tone="error">{t('refinement.key.error')}</Banner>}
         <SettingsItem
           label={t('refinement.enabled')}
           description={t('refinement.enabled.hint')}
@@ -178,7 +252,7 @@ function RefinementFields(props: {
             testId="refinement-enabled"
             label={t('refinement.enabled')}
             checked={settings.enabled}
-            disabled={false}
+            disabled={!ready || locked}
             onToggle={(next) => change({ enabled: next })}
           />
         </SettingsItem>
@@ -187,6 +261,7 @@ function RefinementFields(props: {
             id="refinement-mode"
             data-testid="refinement-mode"
             aria-label={t('refinement.mode')}
+            disabled={!ready || !settings.enabled || locked}
             value={settings.mode}
             onChange={(event) => change({ mode: event.target.value === 'auto' ? 'auto' : 'manual' })}
           >

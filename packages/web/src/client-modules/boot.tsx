@@ -5,6 +5,8 @@
  * Without a real roster source, the reconciler stays idle and loads no modules (fail-closed).
  */
 import { Context } from '@agnes/cordis'
+import { CredentialsApi } from '@agnes/resource-control-web/credentials-api'
+import { registerRefinementSettingsSection } from '@agnes/web-admin/settings/refinement'
 import {
   type AgnesClient,
   AgnesClientService,
@@ -209,6 +211,20 @@ export async function startClientModules(options: {
     ctx.effect(() => voice.bindSession(session))
     ctx.effect(() => () => voice.dispose())
   }
+  // Credential writes use the Web admin endpoint; the browser SDK blocks this control plane.
+  const credentialStore = new CredentialsApi()
+  // The experience-refinement section reads and saves the daemon's switch over this connection.
+  ctx.effect(() =>
+    registerRefinementSettingsSection({
+      read: () => options.agnes.refinement.get(),
+      createKey: async (label, value) => (await credentialStore.create(label, value)).id,
+      save: (settings, expectedRevision) => options.agnes.refinement.save({ settings, expectedRevision }),
+      savedSkills: {
+        workspaces: async () => (await options.agnes.workspace.list()).items,
+        skills: (input) => options.agnes.refinement.skills(input),
+      },
+    }),
+  )
   const storedLocale = readLocalePreference(safeThemeStorage())
   applyDocumentLocale(document.documentElement, storedLocale)
   const locale = new LocaleService(ctx, storedLocale)

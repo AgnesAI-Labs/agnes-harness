@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CallContext } from '@agnes/daemon-foundation/local/endpoint'
 import { RefinementSettingsStore } from '@agnes/host'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { registerRefinement } from '../src/local/methods/refinement.js'
 
 type Handler = (params: unknown, c: CallContext) => Promise<unknown>
@@ -16,8 +16,10 @@ function setup(switchedOn?: () => void, skills?: Parameters<typeof registerRefin
   const dir = mkdtempSync(join(tmpdir(), 'agnes-refinement-rpc-'))
   dirs.push(dir)
   const handlers = new Map<string, Handler>()
+  const settings = new RefinementSettingsStore(dir, 'p')
+  vi.spyOn(settings, 'serviceKey').mockReturnValue('fixture')
   registerRefinement({ register: (name: string, fn: Handler) => handlers.set(name, fn) } as never, {
-    settings: new RefinementSettingsStore(dir, 'p'),
+    settings,
     ...(switchedOn ? { switchedOn } : {}),
     ...(skills ? { skills } : {}),
   })
@@ -36,13 +38,13 @@ describe('_agnes/v1/refinement.*', () => {
     expect(first.settings).toEqual({ enabled: false, mode: 'manual' })
 
     const saved = (await call('refinement.save', {
-      settings: { enabled: true, mode: 'auto' },
+      settings: { credentialRef: 'secret://generic/review', enabled: true, mode: 'auto' },
       expectedRevision: first.revision,
     })) as { revision: string }
     expect(saved.revision).toMatch(/^[0-9a-f]{64}$/)
     expect(Object.keys(saved)).toEqual(['revision'])
     expect(await call('refinement.get', {})).toEqual({
-      settings: { enabled: true, mode: 'auto' },
+      settings: { credentialRef: 'secret://generic/review', enabled: true, mode: 'auto' },
       revision: saved.revision,
     })
 
@@ -66,7 +68,7 @@ describe('_agnes/v1/refinement.*', () => {
       ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
     }
     expect((await call('refinement.get', {})) as { settings: unknown }).toMatchObject({
-      settings: { enabled: true, mode: 'auto' },
+      settings: { credentialRef: 'secret://generic/review', enabled: true, mode: 'auto' },
     })
   })
 
@@ -78,7 +80,10 @@ describe('_agnes/v1/refinement.*', () => {
     })
     const save = async (enabled: boolean, mode: 'manual' | 'auto' = 'manual') => {
       const { revision } = (await call('refinement.get', {})) as { revision: string }
-      return call('refinement.save', { settings: { enabled, mode }, expectedRevision: revision })
+      return call('refinement.save', {
+        settings: { enabled, mode, credentialRef: 'secret://generic/review' },
+        expectedRevision: revision,
+      })
     }
     await save(false)
     expect(told).toBe(0)
@@ -92,7 +97,10 @@ describe('_agnes/v1/refinement.*', () => {
     // A save that is refused tells nothing.
     await save(false)
     await expect(
-      call('refinement.save', { settings: { enabled: true, mode: 'manual' }, expectedRevision: 'stale' }),
+      call('refinement.save', {
+        settings: { credentialRef: 'secret://generic/review', enabled: true, mode: 'manual' },
+        expectedRevision: 'stale',
+      }),
     ).rejects.toMatchObject({ data: { code: 'SEMANTIC_REJECTED' } })
     expect(told).toBe(2)
   })
