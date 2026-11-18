@@ -170,58 +170,56 @@ it.each([
   ['revoked', 'button'],
   ['offline', 'button'],
   ['disposed', 'button'],
-] as const)(
-  'gates source submission through an inventory refresh: %s (%s)',
-  async (outcome, method) => {
-    const base = backend(() => Response.json({ operationId: 'inspect-1', profile: 'local-dev' }))
-    let finish!: (response: Response) => void
-    let refreshing = false
-    const fetcher = vi.fn<typeof fetch>((input, init) =>
-      refreshing && String(input).endsWith('/overview')
-        ? new Promise<Response>((resolve) => {
-            finish = resolve
-          })
-        : base(input, init),
-    )
-    const mounted = await mount(fetcher)
-    await openSourceDialog()
-    refreshing = true
-    const refresh = mounted.reload()
-    await vi.waitFor(() => expect(finish).toBeDefined())
+] as const)('gates source submission through an inventory refresh: %s (%s)', async (outcome, method) => {
+  const base = backend(() => Response.json({ operationId: 'inspect-1', profile: 'local-dev' }))
+  let finish!: (response: Response) => void
+  let refreshing = false
+  const fetcher = vi.fn<typeof fetch>((input, init) =>
+    refreshing && String(input).endsWith('/overview')
+      ? new Promise<Response>((resolve) => {
+          finish = resolve
+        })
+      : base(input, init),
+  )
+  const mounted = await mount(fetcher)
+  await openSourceDialog()
+  refreshing = true
+  const refresh = mounted.reload()
+  await vi.waitFor(() => expect(finish).toBeDefined())
+  await vi.waitFor(() => expect(sourceSubmit().disabled).toBe(true))
+  submit('file', '/path/to/my-plugin.tgz')
+  sourceRef().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  expect(inspectCalls(fetcher)).toHaveLength(0)
+  expect(sourceDialog().open).toBe(true)
+  if (outcome === 'disposed') mounted.dispose()
+  const response = await base('/overview')
+  const snapshot = await response.json()
+  if (outcome === 'revoked') snapshot.context.permissions = []
+  finish(outcome === 'offline' ? new Response('{}', { status: 503 }) : Response.json(snapshot))
+  await refresh
+  expect(inspectCalls(fetcher)).toHaveLength(0)
+  expect(sourceDialog().open).toBe(true)
+  if (outcome === 'disposed') return
+  if (outcome !== 'ready') {
     await vi.waitFor(() => expect(sourceSubmit().disabled).toBe(true))
-    submit('file', '/path/to/my-plugin.tgz')
+    sourceSubmit().click()
     sourceRef().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
     expect(inspectCalls(fetcher)).toHaveLength(0)
     expect(sourceDialog().open).toBe(true)
-    if (outcome === 'disposed') mounted.dispose()
-    const response = await base('/overview')
-    const snapshot = await response.json()
-    if (outcome === 'revoked') snapshot.context.permissions = []
-    finish(outcome === 'offline' ? new Response('{}', { status: 503 }) : Response.json(snapshot))
-    await refresh
-    expect(inspectCalls(fetcher)).toHaveLength(0)
-    expect(sourceDialog().open).toBe(true)
-    if (outcome === 'disposed') return
-    if (outcome !== 'ready') {
-      await vi.waitFor(() => expect(sourceSubmit().disabled).toBe(true))
-      sourceSubmit().click()
-      sourceRef().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
-      expect(inspectCalls(fetcher)).toHaveLength(0)
-      expect(sourceDialog().open).toBe(true)
-      return
-    }
-    await vi.waitFor(() => expect(sourceSubmit().disabled).toBe(false))
-    expect(inspectCalls(fetcher)).toHaveLength(0)
-    expect(sourceDialog().open).toBe(true)
-    expect(sourceRef().value).toBe('/path/to/my-plugin.tgz')
-    if (method === 'button') sourceSubmit().click()
-    else sourceRef().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
-    await vi.waitFor(() => expect(inspectCalls(fetcher)).toHaveLength(1))
-    const sent = JSON.parse(String(inspectCalls(fetcher)[0]?.[1]?.body)) as { source: unknown }
-    expect(sent.source).toEqual({ type: 'file', ref: 'file:/path/to/my-plugin.tgz' })
-    await vi.waitFor(() => expect(sourceDialog().open).toBe(false))
-  },
-)
+    return
+  }
+  await vi.waitFor(() => expect(sourceSubmit().disabled).toBe(false))
+  expect(inspectCalls(fetcher)).toHaveLength(0)
+  expect(sourceDialog().open).toBe(true)
+  expect(sourceRef().value).toBe('/path/to/my-plugin.tgz')
+  if (method === 'button') sourceSubmit().click()
+  else
+    sourceRef().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+  await vi.waitFor(() => expect(inspectCalls(fetcher)).toHaveLength(1))
+  const sent = JSON.parse(String(inspectCalls(fetcher)[0]?.[1]?.body)) as { source: unknown }
+  expect(sent.source).toEqual({ type: 'file', ref: 'file:/path/to/my-plugin.tgz' })
+  await vi.waitFor(() => expect(sourceDialog().open).toBe(false))
+})
 
 it('keeps the dialog open and shows the backend refusal inside it', async () => {
   const fetcher = backend(() =>
