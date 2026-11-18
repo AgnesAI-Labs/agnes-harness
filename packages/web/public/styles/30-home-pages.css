@@ -154,11 +154,14 @@
     font-size: var(--font-size-xs);
   }
   /* The home gallery is a feed, not a grid: every card keeps its own height and packs into
-     columns, so a short card leaves no empty row under it. Column order follows the DOM. */
+     columns, so a short card leaves no empty row under it. Column order follows the DOM.
+     The search field and the feed share one loading wrapper, so the page rhythm between them
+     has to come from here. */
   .agent-feed {
     display: block;
     columns: 16.875rem;
     column-gap: var(--s12);
+    margin-block-start: var(--s16);
   }
   .agent-feed > .agent-card {
     break-inside: avoid;
@@ -345,6 +348,21 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s16);
+  }
+  /* Records stack under the filter row that acts on them; without this grid the row and the
+     first record (or the empty state) touch. */
+  .schedule-records {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+  }
+  .schedule-records-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s8) var(--s12);
+    min-width: 0;
   }
   /* The list's own filters sit in a card, so they read as one control rather than as loose page copy. */
   .automation-toolbar {
