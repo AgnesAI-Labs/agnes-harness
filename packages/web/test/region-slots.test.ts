@@ -3,10 +3,10 @@
 import { Context } from '@agnes/cordis'
 import type { UINode } from '@agnes/protocol'
 import { ClientResourceService, SessionService, SlotRegistry } from '@agnes/web-client'
+import { getByRole } from '@testing-library/dom'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as frameContext from '../src/backends/frame-context.js'
-import * as sidebarProjection from '../src/backends/sidebar-projection.js'
 import {
   APPROVAL_SLOT,
   CONVERSATION_SLOT,
@@ -279,10 +279,19 @@ describe('migrated sidebar region', () => {
   })
 
   it('declares and renders the first DSH sidebar child slots without replacing the shell', async () => {
-    const projection = vi
-      .spyOn(sidebarProjection, 'useSidebarProjection')
-      .mockReturnValue({ active: 'cloud', cloud: 'https://cloud.test', states: {} })
     vi.spyOn(frameContext, 'backendFrame').mockReturnValue({ parentOrigin: location.origin })
+    const project = (active: 'local' | 'cloud') =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: window.parent,
+          origin: location.origin,
+          data: {
+            type: 'agh.backend.frame/v1',
+            kind: 'sidebar-projection',
+            projection: { active, cloud: 'https://cloud.test', states: {} },
+          },
+        }),
+      )
     const messages = vi.spyOn(window.parent, 'postMessage').mockImplementation(() => {})
     const slots = await registry()
     const sidebar = document.createElement('aside')
@@ -309,10 +318,12 @@ describe('migrated sidebar region', () => {
       { name: 'sidebar.footer.action', id: 'fixture-footer-action', owner: 'fixture' },
       () => createElement('button', { id: 'fixture-sidebar-action', type: 'button' }, '扩展动作'),
     )
+    project('cloud')
     await vi.waitFor(() => {
       expect(sidebar.querySelector('#new')).toBeTruthy()
       expect(sidebar.querySelector('#fixture-sidebar-action')?.textContent).toBe('扩展动作')
-      expect(sidebar.querySelector('[data-testid=backend-group-local]')).toBeTruthy()
+      expect(getByRole(sidebar, 'tab', { name: /Local|本地/ })).toBeTruthy()
+      expect(getByRole(sidebar, 'tab', { name: /Cloud|云端/ }).getAttribute('aria-selected')).toBe('true')
       expect(sidebar.querySelector('[data-testid=backend-group-cloud]')).toBeTruthy()
       expect(sidebar.querySelector('#fixture-sidebar-action')?.closest('.sidebar-footer')).toBeTruthy()
       expect(slots.entriesByOwner('fixture').map((entry) => entry.name)).toEqual(['sidebar.footer.action'])
@@ -330,7 +341,15 @@ describe('migrated sidebar region', () => {
       backend: 'cloud',
       command: { kind: 'new' },
     })
-    projection.mockRestore()
+    getByRole(sidebar, 'tab', { name: /Local|本地/ }).click()
+    expect(messages.mock.calls.at(-1)?.[0]).toMatchObject({ kind: 'sidebar-select', backend: 'local' })
+    project('local')
+    await vi.waitFor(() => {
+      const panel = getByRole(sidebar, 'tabpanel')
+      expect(panel.querySelector('.backend-session-native')).toBeTruthy()
+      expect(panel.querySelector('[data-section="workspaces"]')).toBeTruthy()
+      expect(sidebar.querySelector('.sidebar-section-heading')).toBeNull()
+    }, committed)
   })
 
   it('keeps the workspace directory flow as a nested DSH outlet', async () => {

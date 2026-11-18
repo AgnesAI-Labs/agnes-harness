@@ -126,7 +126,7 @@ function BackendWorkbench() {
     [setAddress],
   )
   const select = useCallback(
-    (backend: BackendId, sessionId?: string) => {
+    (backend: BackendId, sessionId?: string, keepSidebar = false) => {
       if (sessionId) {
         send(backend, { kind: 'session', sessionId })
         return
@@ -134,7 +134,7 @@ function BackendWorkbench() {
       setActive(backend)
       latest.current.active = backend
       setConfigure(false)
-      if (window.matchMedia('(max-width: 900px)').matches)
+      if (!keepSidebar && window.matchMedia('(max-width: 900px)').matches)
         frames.current.local?.contentDocument?.getElementById('sidebar-close')?.click()
       setAddress(backend, latest.current.states[backend]?.selected)
     },
@@ -216,6 +216,10 @@ function BackendWorkbench() {
       )
         return
       if (backend === 'local' && event.data?.type === BACKEND_FRAME_MESSAGE) {
+        if (event.data.kind === 'sidebar-select' && ['local', 'cloud'].includes(event.data.backend)) {
+          select(event.data.backend, undefined, true)
+          return
+        }
         if (event.data.kind === 'sidebar-layout') {
           if (Number.isFinite(event.data.right))
             setSidebarRight(Math.min(window.innerWidth, Math.max(0, event.data.right)))
