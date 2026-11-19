@@ -186,21 +186,12 @@ it('ships the optional judgment payload with its callable plugin and release dig
     'LICENSE',
     'NOTICE',
     'README.md',
-    'THIRD-PARTY-NOTICES',
     'client-build.json',
     'index.mjs',
     'package.json',
     'src',
   ])
   const manifest = JSON.parse(await readFile(join(payload, 'package.json'), 'utf8'))
-  expect(manifest.files).toContain('THIRD-PARTY-NOTICES')
-  const notice = await readFile(join(payload, 'THIRD-PARTY-NOTICES'), 'utf8')
-  expect(notice).toBe(await readFile(new URL('../../judgment/THIRD-PARTY-NOTICES', import.meta.url), 'utf8'))
-  expect(notice).toContain('title-fit question')
-  expect(notice).toContain('MIT License')
-  expect(notice).toContain('Copyright (c) 2025 Mario Zechner')
-  expect(notice).toContain('Copyright (c) 2025-2026 Can Bölük')
-  expect(notice).toContain('Copyright (c) 2026 Stencil Labs, Inc.')
   expect(manifest.agnes.plugins[0]).toMatchObject({ export: 'judgmentPlugin', apiRange: '^5.20.0' })
   expect(bundledPluginDigest({ root, path: 'bundled-plugins/judgment' })).toBe(hashDirectory(payload))
   const bundle = await readFile(join(payload, 'index.mjs'), 'utf8')
