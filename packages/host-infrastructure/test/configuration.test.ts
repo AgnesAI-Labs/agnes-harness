@@ -1925,3 +1925,39 @@ it('inherits official image defaults for an existing account without rewriting o
   expect((await reopened.profileInput()).provider?.routes?.[0]?.models?.[0]?.input).toEqual(['text', 'image'])
   expect(await readFile(file, 'utf8')).toBe(before)
 })
+
+it.each(['https://litellm-sa.agnes-ai.cn/sys1/v1', 'https://agrouter-sg.agnes-ai.com/sa/sys1/v1'])(
+  'probes Agnes Sys1 at %s with a typed synthetic question',
+  async (baseUrl) => {
+    const model = 'agnes-sys1-1.0'
+    const requests: Request[] = []
+    const request: typeof fetch = async (input, init) => {
+      requests.push(new Request(input, init))
+      return Response.json({
+        model,
+        answers: { ping: { type: 'noul', noul: 0.99 } },
+        usage: { input_tokens: 10, output_tokens: 0 },
+      })
+    }
+    await expect(
+      probePayloadRoute('agnes-sys1', {
+        baseUrl,
+        model,
+        request,
+        credential: 'sys1-test-key',
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toBe('ok')
+    expect(requests).toHaveLength(1)
+    const [sent] = requests
+    if (sent === undefined) throw new Error('probe sent no request')
+    expect(sent.method).toBe('POST')
+    expect(sent.url).toBe(`${baseUrl}/systemone`)
+    expect(sent.headers.get('authorization')).toBe('Bearer sys1-test-key')
+    expect(await sent.json()).toEqual({
+      model,
+      state: 'The system is ready.',
+      questions: { ping: { type: 'noul', instructions: 'Is it ready?' } },
+    })
+  },
+)

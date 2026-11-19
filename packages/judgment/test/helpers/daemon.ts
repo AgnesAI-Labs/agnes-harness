@@ -14,6 +14,7 @@ export const PROFILE = 'local-dev'
 export const PACKAGE = '@agnes/judgment'
 export const CALLER = 'ext:agnes.judgment/main'
 export const MODEL = 'typesafe/jev-1.13-20260917'
+export const SYS1_MODEL = 'agnes-sys1-1.0'
 export const PROMISE_REPLY = 'I will inspect the synthetic sample file now.'
 export const DONE_REPLY = 'The synthetic inspection is complete.'
 const sourceDaemon = fileURLToPath(
@@ -46,7 +47,7 @@ export type TurnCapture = {
 
 /** A real daemon/SDK fixture. Only synthetic text and a loopback credential enter its home. */
 export async function judgmentDaemon(
-  options: { tools?: boolean; scriptedTool?: boolean; modelServerUrl?: string } = {},
+  options: { tools?: boolean; scriptedTool?: boolean; modelServerUrl?: string; sys1?: boolean } = {},
 ) {
   await ensureJudgmentPayload()
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-judgment-e2e-')))
@@ -165,6 +166,17 @@ export async function judgmentDaemon(
           package: '@agnes/ai',
           catalog: { include: [] },
           routes: [
+            ...(options.sys1
+              ? [
+                  {
+                    route: 'sys1',
+                    api: 'agnes-sys1',
+                    baseUrl: fake.url,
+                    credentialRef: 'secret://jev/key',
+                    models: [model({ id: SYS1_MODEL, route: 'sys1', api: 'agnes-sys1', baseUrl: fake.url })],
+                  },
+                ]
+              : []),
             ...['jev-a', 'jev-b'].map((route) => ({
               route,
               api: 'typesafe-systemone',

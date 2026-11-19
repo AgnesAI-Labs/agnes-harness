@@ -64,6 +64,7 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 | [Webhook 触发器](guide/webhooks.zh-CN.md) | 通过认证的业务事件创建普通业务 Agent 会话 |
 | [无界面运行与回放](guide/headless.zh-CN.md) | JSONL 事件、固定模型回复比较和批量输入 |
 | [使用本地模型](guide/local-model.zh-CN.md) | 本地 OpenAI-compatible endpoint 和模型发现 |
+| [配置 Agnes Sys1 判断模型](guide/judgment.zh-CN.md#配置判断模型再打开检测) | 配置 AGH 默认的判断旁路模型，按需开启判断功能 |
 | [使用 TypeSafe Jev 做旁路模型调用](guide/typesafe-jev.zh-CN.md) | 配置内置的只接受 payload 的适配器，供循环插件在对话之外调用 |
 | [使用 Jev Agent Loop](guide/jev-loop.zh-CN.md) | 安装并配置由 TypeSafe Jev 选择每一步的可选循环 |
 | [判断插件](guide/judgment.zh-CN.md) | 手动开启意外收工检测，了解发送内容及限制 |
@@ -99,7 +100,7 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 
 - **场景与方法**：[FDE 与应用场景](guide/why-agh.zh-CN.md)。
 - **精确接口**：[命令参考](reference/cli.zh-CN.md) · [配置参考](reference/configuration.zh-CN.md) · [API 与 Schema](reference/api.zh-CN.md)。
-- **旁路模型调用**：[TypeSafe Jev 适配器](guide/typesafe-jev.zh-CN.md) · [Jev Agent Loop](guide/jev-loop.zh-CN.md) · [语音输入与朗读](guide/voice.zh-CN.md) · [编写循环插件](develop/plugins.zh-CN.md)。
+- **旁路模型调用**：[Agnes Sys1 判断](guide/judgment.zh-CN.md#配置判断模型再打开检测) · [TypeSafe Jev 适配器](guide/typesafe-jev.zh-CN.md) · [Jev Agent Loop](guide/jev-loop.zh-CN.md) · [语音输入与朗读](guide/voice.zh-CN.md) · [编写循环插件](develop/plugins.zh-CN.md)。
 - **支持与反馈**：[支持范围](reference/limitations.zh-CN.md) · [反馈与开发协作](develop/contributing.zh-CN.md) · [安全报告](../SECURITY.md)。
 - **更多开发主题**：[皮肤开发](develop/skins.zh-CN.md) · [主题](develop/ui-theme.zh-CN.md) · [构建恢复](guide/build-recovery.zh-CN.md) · [能力清单](reference/capabilities.zh-CN.md)。
 

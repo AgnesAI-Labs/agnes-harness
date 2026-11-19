@@ -25,11 +25,12 @@ function registered(): Registration[] {
 }
 
 describe('the built-in model adapter registrations', () => {
-  it('registers every pi protocol, openai, typesafe-systemone and openai-audio', () => {
+  it('registers every pi protocol and the three payload-only protocols', () => {
     expect(registered().map((r) => r.id)).toEqual([
       ...PI_ADAPTER_APIS,
       'openai',
       'typesafe-systemone',
+      'agnes-sys1',
       'openai-audio',
     ])
   })
@@ -39,7 +40,9 @@ describe('the built-in model adapter registrations', () => {
   })
 
   it('leaves the pi registrations as chat adapters with no payload keys', () => {
-    const pi = registered().filter((r) => r.id !== 'typesafe-systemone' && r.id !== 'openai-audio')
+    const pi = registered().filter(
+      (r) => !['typesafe-systemone', 'agnes-sys1', 'openai-audio'].includes(r.id),
+    )
     expect(pi.length).toBe(PI_ADAPTER_APIS.length + 1)
     for (const r of pi) {
       expect(r.capabilities).toEqual({ imageInput: true, tools: true, streaming: true })
@@ -47,6 +50,13 @@ describe('the built-in model adapter registrations', () => {
       expect(r.capabilities).not.toHaveProperty('payloadOnly')
       expect(r.version).toBe('0.0.0')
     }
+  })
+
+  it('registers Sys1 separately as a payload-only adapter', () => {
+    expect(registered().find((r) => r.id === 'agnes-sys1')).toMatchObject({
+      wireApi: 'agnes-sys1',
+      capabilities: { payload: true, payloadOnly: true },
+    })
   })
 
   it('registers typesafe-systemone as a payload-only adapter with its own version', () => {
