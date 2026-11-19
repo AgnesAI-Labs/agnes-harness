@@ -77,7 +77,10 @@ export function SideModelEditor(props: SideModelEditorProps) {
   }
   return (
     <div className="side-editor" data-testid="side-editor">
-      <SettingsSection title={t('side.basics')} description={t('side.basicsNote')}>
+      <SettingsSection
+        title={t('side.basics')}
+        description={t(voice ? 'side.voice.basicsNote' : 'side.basicsNote')}
+      >
         <div className="side-editor-fields">
           {props.providers.length > 1 && (
             <Field label={t('side.adapter')}>

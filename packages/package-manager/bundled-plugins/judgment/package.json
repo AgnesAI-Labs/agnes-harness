@@ -1,6 +1,6 @@
 {
   "name": "@agnes/judgment",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Optional detection of replies that promise to act but end early.",
   "type": "module",
   "license": "Apache-2.0",
@@ -37,10 +37,10 @@
         "configSchema": {
           "type": "object",
           "additionalProperties": false,
-          "description": "Configure an Agnes Sys1 or Jev side-model account to use judgment. Unexpected-stop detection is off by default.",
+          "description": "Configure an Agnes Sys1 or Jev decision-model account to use judgment. Unexpected-stop detection is off by default.",
           "x-locales": {
             "zh-CN": {
-              "description": "配置 Agnes Sys1 或 Jev 旁路模型账号即可使用判断。意外收工检测默认关闭。"
+              "description": "配置 Agnes Sys1 或 Jev 决策模型账号即可使用判断。意外收工检测默认关闭。"
             }
           },
           "properties": {
@@ -52,7 +52,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "description": "Configured side-model route."
+                  "description": "Configured decision-model route."
                 },
                 "model": {
                   "type": "string",
@@ -68,7 +68,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 128,
-                      "description": "Configured side-model route."
+                      "description": "Configured decision-model route."
                     },
                     "model": {
                       "type": "string",

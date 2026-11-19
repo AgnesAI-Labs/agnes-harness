@@ -818,6 +818,15 @@ it('opens the voice editor below its list even where the model page lends its pa
   expect(query(host, 'side-editor')).not.toBeNull()
 })
 
+it('says what a name is for on each page', async () => {
+  const voice = await openVoiceEditor(client([chatAccount]))
+  expect(voice.host.textContent).toContain('The name is what the Voice account choice below shows.')
+  expect(voice.host.textContent).not.toContain('loop plugins find this model by it')
+  const decision = await mount(client([chatAccount]), { accounts: [chatAccount] })
+  await click(decision.host, 'side-model-add')
+  expect(decision.host.textContent).toContain('loop plugins find this model by it')
+})
+
 it('names the voice list in zh-CN', async () => {
   await act(async () => {
     document.documentElement.lang = 'zh-CN'

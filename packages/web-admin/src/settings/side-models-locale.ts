@@ -43,6 +43,8 @@ export const sideModelsCatalog: LocaleCatalog = {
     'side.basics': 'Basics',
     'side.basicsNote':
       'The name sets the route name. The route name is fixed once saved; loop plugins find this model by it.',
+    'side.voice.basicsNote':
+      'The name is what the Voice account choice below shows. The route name comes from it and is fixed once saved.',
     'side.connection': 'Connection',
     'side.connectionNote': 'Requests go to this endpoint, authorized with the chosen credential.',
     'side.label': 'Name',
@@ -151,6 +153,7 @@ export const sideModelsCatalog: LocaleCatalog = {
     'side.prefillLabel.stepfun': '阶跃星辰',
     'side.basics': '基本信息',
     'side.basicsNote': '名称决定路由名。路由名保存后固定，循环插件靠它找到这个模型。',
+    'side.voice.basicsNote': '名称显示在下方「语音账户」的选项里。路由名由名称生成，保存后固定。',
     'side.connection': '连接',
     'side.connectionNote': '请求发往这个端点，用所选凭据鉴权。',
     'side.label': '名称',

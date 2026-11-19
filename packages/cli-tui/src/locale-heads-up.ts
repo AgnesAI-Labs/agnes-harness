@@ -13,7 +13,7 @@ export type HeadsUpKey =
 export const HEADS_UP_DICT: Record<Locale, Record<HeadsUpKey, string>> = {
   en: {
     'commands.headsUp':
-      'Let a side model review the agent work and hand it an advisory heads-up (off by default; costs extra model calls)',
+      'Let an auxiliary model (the verifier, or the fast model without one) review the agent work and hand it an advisory heads-up (off by default; costs extra model calls)',
     'commands.headsUpSummary': 'Side-review heads-ups',
     'headsUp.usage': 'Usage: /heads-up [on|off]',
     'headsUp.on':
@@ -23,7 +23,8 @@ export const HEADS_UP_DICT: Record<Locale, Record<HeadsUpKey, string>> = {
     'headsUp.label': 'Heads-up',
   },
   'zh-CN': {
-    'commands.headsUp': '让旁路模型审查 agent 的工作并递上一条仅供参考的提醒（默认关闭，会多花模型调用）',
+    'commands.headsUp':
+      '让辅助模型（验证模型，没有时用快速模型）审查 agent 的工作并递上一条仅供参考的提醒（默认关闭，会多花模型调用）',
     'commands.headsUpSummary': '旁路提醒',
     'headsUp.usage': '用法：/heads-up [on|off]',
     'headsUp.on':

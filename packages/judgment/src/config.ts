@@ -7,7 +7,7 @@ const modelSelection = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    route: { type: 'string', minLength: 1, maxLength: 128, description: 'Configured side-model route.' },
+    route: { type: 'string', minLength: 1, maxLength: 128, description: 'Configured decision-model route.' },
     model: { type: 'string', minLength: 1, maxLength: 256, description: 'Model id on the selected route.' },
   },
 }
@@ -15,9 +15,9 @@ export const CONFIG_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   description:
-    'Configure an Agnes Sys1 or Jev side-model account to use judgment. Unexpected-stop detection is off by default.',
+    'Configure an Agnes Sys1 or Jev decision-model account to use judgment. Unexpected-stop detection is off by default.',
   'x-locales': {
-    'zh-CN': { description: '配置 Agnes Sys1 或 Jev 旁路模型账号即可使用判断。意外收工检测默认关闭。' },
+    'zh-CN': { description: '配置 Agnes Sys1 或 Jev 决策模型账号即可使用判断。意外收工检测默认关闭。' },
   },
   properties: {
     judge: {
