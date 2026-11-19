@@ -12,7 +12,7 @@ A、B 使用同一套完整标准 Harness。A 托管自己的页面，普通连�
 
 A 的 daemon 使用所选 `agh_sk_` Key 请求 `POST /llmsg/api/agh/connection`，携带 `Authorization: Bearer <Key>` 和 `{}`。LLMSG 按 Key 返回当前绑定的 HTTPS `8443-<实例>.<地域>.tencentags.com` 来源及业务 Token；旧调用传入 `sandbox_url` 时仍要求地址完全一致。需要部署支持空请求体的 LLMSG 版本。原始 Key 和平台 Token 不保存在浏览器中。
 
-在 A 的 daemon 环境中显式配置 `AGH_LLMSG_API_BASE_URL` 为 LLMSG API 的**来源地址**，不要附 `/v1` 或接口路径，再按原有启动流程重启该 daemon。没有默认凭据服务地址。必须使用 HTTPS；隔离测试允许显式指定本机回环 HTTP 服务。这是 A 侧部署配置，不属于 B 云端插件原有三个变量。
+A 的 daemon 优先读取环境变量 `AGH_LLMSG_API_BASE_URL`；不存在时默认使用 `https://api.llm.sg`，请求 `POST https://api.llm.sg/llmsg/api/agh/connection`。已配置的变量始终优先：空值、无效地址、鉴权失败、超时或其他连接失败均保持原有错误处理，不会降级请求默认服务。自定义变量必须是 LLMSG API 的**来源地址**，不要附 `/v1` 或接口路径，修改后按原有启动流程重启该 daemon。必须使用 HTTPS；隔离测试允许显式指定本机回环 HTTP 服务。这是 A 侧部署配置，不属于 B 云端插件原有三个变量。
 
 自动连接只保存凭证引用和已发现地址；重新连接或恢复自动连接时重新查询绑定。断开会取消查询，迟到响应不覆盖新连接；显式 `?remote=` 仍优先。普通 API Key 不会发送到自动发现接口。平台 Token 刷新继续绑定首次解析的实例，不会将旧连接迁移到其他实例。
 

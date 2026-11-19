@@ -35,8 +35,8 @@ export async function cloudSandboxConnection(
   if (target && !/^8443-[a-z0-9-]+\.[a-z0-9-]+\.tencentags\.com$/u.test(target.hostname)) return
   if (target && (target.protocol !== 'https:' || target.port || (origin?.length ?? 0) > 512))
     throw rpcError('SEMANTIC_REJECTED', { reason: 'CLOUD_CONNECTION_INVALID' })
-  const configured = process.env.AGH_LLMSG_API_BASE_URL
-  if (!configured) throw rpcError('SEMANTIC_REJECTED', { reason: 'CLOUD_BROKER_REQUIRED' })
+  // An explicit override is authoritative, including when it is invalid or unavailable.
+  const configured = process.env.AGH_LLMSG_API_BASE_URL ?? 'https://api.llm.sg'
   const base = remoteFrontendOrigin(configured)
   const broker = new URL(base)
   if (broker.protocol !== 'https:' && !['127.0.0.1', '[::1]'].includes(broker.hostname))

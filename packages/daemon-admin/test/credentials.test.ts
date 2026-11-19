@@ -127,12 +127,45 @@ it('resolves managed cloud credentials privately, refuses rejected/missing crede
       await expect(
         authorizeCloudConnection(sandbox, store, async () => Response.json(body)),
       ).rejects.toMatchObject({ data: { reason: 'CONFIG_AUTH_UNAVAILABLE' } })
+    vi.stubEnv('AGH_LLMSG_API_BASE_URL', undefined)
+    const defaultAddresses: string[] = []
+    await expect(
+      authorizeCloudConnection({ credentialRef: id }, store, async (url, init) => {
+        defaultAddresses.push(String(url))
+        if (String(url).endsWith('/llmsg/api/agh/connection')) {
+          expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${key}`)
+          expect(JSON.parse(String(init?.body))).toEqual({})
+          return Response.json({
+            code: 200,
+            data: { sandbox_url: sandbox.origin, traffic_token: 'business-fixture' },
+          })
+        }
+        expect(new Headers(init?.headers).get('e2b-traffic-access-token')).toBe('business-fixture')
+        return Response.json({ token, expiresAt })
+      }),
+    ).resolves.toEqual({ origin: sandbox.origin, token, expiresAt, trafficToken: 'business-fixture' })
+    expect(defaultAddresses).toEqual([
+      'https://api.llm.sg/llmsg/api/agh/connection',
+      `${sandbox.origin}/_agnes/remote-frontend/auth`,
+    ])
+    for (const failure of ['network', 'http'] as const) {
+      vi.stubEnv('AGH_LLMSG_API_BASE_URL', 'https://broker.fixture')
+      const failedAddresses: string[] = []
+      await expect(
+        authorizeCloudConnection({ credentialRef: id }, store, async (url) => {
+          failedAddresses.push(String(url))
+          if (failure === 'network') throw Error('synthetic network failure')
+          return new Response('', { status: 500 })
+        }),
+      ).rejects.toMatchObject({ data: { reason: 'CONFIG_AUTH_UNAVAILABLE' } })
+      expect(failedAddresses).toEqual(['https://broker.fixture/llmsg/api/agh/connection'])
+    }
     vi.stubEnv('AGH_LLMSG_API_BASE_URL', '')
     await expect(
       authorizeCloudConnection(sandbox, store, async () => {
-        throw Error('must not contact a default broker')
+        throw Error('must not contact a default broker for an invalid explicit configuration')
       }),
-    ).rejects.toMatchObject({ data: { reason: 'CLOUD_BROKER_REQUIRED' } })
+    ).rejects.toMatchObject({ data: { reason: 'CONFIG_AUTH_UNAVAILABLE' } })
     vi.stubEnv('AGH_LLMSG_API_BASE_URL', 'http://broker.fixture')
     await expect(
       authorizeCloudConnection(sandbox, store, async () => {
