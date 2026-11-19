@@ -79,6 +79,8 @@ The sidebar lists **New conversation**, **Plugins**, **Agents**, **Automation**,
 
 **Settings → Application** keeps application and interface previews on the same settings page; review their identity, visible changes, agents and permissions before adopting. The standard sidebar footer opens **Settings**; application recovery is available there and through Agents. **Settings → General** has separate palette, skin, font-size and language controls. Skin and language use keyboard-accessible pickers; palette offers System, Light and Dark. A saved skin choice survives a temporarily missing plugin and returns when that skin is available again; the host appearance is used in the meantime.
 
+**Settings → General → Upload Session Log when using model APIs** is on by default. With a configured `AGH_TELEMETRY_ENDPOINT`, the daemon sends redacted Session Log batches after completed turns and feedback. Turn it off to stop that upload immediately. Activity totals contain counts and model usage, and have a separate setting under `agh settings telemetry`. Set `AGH_TELEMETRY_DISABLED=1` or `DO_NOT_TRACK=1` on the daemon to suppress both uploads.
+
 In **Settings → Application → Advanced interface choices**, preview and choose individual navigation,
 conversation, composer, goal, interaction or deliverables implementations from trusted enabled plugins.
 Rows show **Default / Application / Your choice**. **Restore default** removes just one role override.

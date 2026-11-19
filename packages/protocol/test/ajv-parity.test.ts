@@ -8688,6 +8688,34 @@ const AppSamples: Record<string, Sample> = {
     invalid: [null, { status: 'ok', queued: -1, dropped: 0, failures: 0 }],
     note: 'Bounded exporter health',
   },
+  TelemetrySettings: {
+    valid: { analyticsEnabled: true, traceUploadEnabled: false },
+    invalid: [
+      { traceUploadEnabled: false },
+      { analyticsEnabled: true },
+      { analyticsEnabled: true, traceUploadEnabled: true, other: true },
+    ],
+    note: 'Both settings are required in a snapshot',
+  },
+  AdminTelemetryParams: {
+    valid: { settings: { traceUploadEnabled: false } },
+    invalid: [{ settings: { traceUploadEnabled: 0 } }, { settings: { other: false } }, { other: false }],
+    note: 'Read or write a strict partial settings object',
+  },
+  AdminTelemetryResult: {
+    valid: {
+      settings: { analyticsEnabled: true, traceUploadEnabled: false },
+      status: { disabledByEnv: false, endpointConfigured: true },
+    },
+    invalid: [
+      { settings: { analyticsEnabled: true, traceUploadEnabled: false }, status: { disabledByEnv: false } },
+      {
+        settings: { analyticsEnabled: true, traceUploadEnabled: false },
+        status: { disabledByEnv: false, endpointConfigured: true, endpoint: 'https://collector.invalid' },
+      },
+    ],
+    note: 'Settings and reporting gates without exposing the destination',
+  },
   AdminObservabilityParams: {
     valid: {},
     invalid: [null, { settings: { enabled: true, redaction: 'raw' } }],
@@ -9565,6 +9593,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     fileId: 'https://agnes.ai/schema/app-server-v1',
     params: 'AdminSearchTest',
     result: 'AdminSearchResult',
+  },
+  '_agnes/v1/admin.telemetry': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminTelemetryParams',
+    result: 'AdminTelemetryResult',
   },
   '_agnes/v1/admin.observability': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
@@ -10985,6 +11018,11 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [null],
     note: 'App Server boundary shape',
   },
+  '_agnes/v1/admin.telemetry': {
+    valid: { settings: { analyticsEnabled: false } },
+    invalid: [{ settings: null }, { settings: { analyticsEnabled: 'false' } }],
+    note: 'Telemetry administrative patch',
+  },
   '_agnes/v1/admin.observability': {
     valid: {},
     invalid: [null, { settings: { enabled: false, headers: { authorization: 'plaintext' } } }],
@@ -11717,6 +11755,14 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/admin.search.get': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
   '_agnes/v1/admin.search.save': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
   '_agnes/v1/admin.search.test': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
+  '_agnes/v1/admin.telemetry': {
+    valid: {
+      settings: { analyticsEnabled: false, traceUploadEnabled: true },
+      status: { disabledByEnv: true, endpointConfigured: false },
+    },
+    invalid: [{ settings: { analyticsEnabled: false, traceUploadEnabled: true } }, null],
+    note: 'Telemetry administrative snapshot',
+  },
   '_agnes/v1/admin.observability': {
     valid: {
       settings: { enabled: false },

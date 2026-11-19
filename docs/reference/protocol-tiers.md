@@ -149,6 +149,7 @@ Package administration, resource control, configuration, scheduling, diagnostics
 - `_agnes/v1/admin.feedback`
 - `_agnes/v1/doctor.run`
 - `_agnes/v1/admin.observability`
+- `_agnes/v1/admin.telemetry`
 - `_agnes/v1/trace.clear`
 - `_agnes/v1/session.factChain`
 - `_agnes/v1/trace.request`

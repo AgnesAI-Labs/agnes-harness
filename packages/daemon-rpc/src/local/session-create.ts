@@ -192,5 +192,6 @@ export async function createSessionWithAdmission(
     if (environment && reservedNew) await cx.sessionEnvironment?.release(requestedKey).catch(() => undefined)
     throwSessionOpenRpcError(error, requestedKey)
   }
+  if (reservedNew && !hasSessionFact) cx.onSessionCreated?.(entry.key)
   return { sessionId: entry.key }
 }

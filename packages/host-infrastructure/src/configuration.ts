@@ -71,9 +71,11 @@ import { automaticFastModel } from './configuration-auto-slots.js'
 import * as compatible from './configuration-compatible.js'
 import {
   configurationCredentialAvailability,
+  configurationCredentialReader,
   effectiveDefaultAccount,
   isConfiguredCredential,
   isUsableCredential,
+  telemetryCredentialValues,
 } from './configuration-credential-availability.js'
 import { configurationCredentialFailure } from './configuration-credential-failure.js'
 import {
@@ -117,6 +119,8 @@ export interface ConfigurationService {
   modelSlots?(): Promise<ModelSlotsSnapshot>
   saveModelSlots?(input: ModelSlotsSnapshot): Promise<ModelSlotsSnapshot>
   oauth?(input: ConfigOAuthInput, owner: object, signal: AbortSignal): Promise<ConfigOAuthResult>
+  /** Local uploader only. Values are used to mask credentials in a transient trace copy. */
+  telemetrySecrets?(): Promise<readonly string[]>
   get(): Promise<ConfigSnapshot>
   providers(): Promise<ConfigProvidersResult>
   test(input: ConfigTestInput, signal?: AbortSignal): Promise<ConfigTestResult>
@@ -727,13 +731,7 @@ export function createConfigurationService(
   const catalogInputs = (api: string, address: string) =>
     catalogueInputs(API_KEY_PROVIDER_REGISTRY, staticCatalogue, api, address)
 
-  const readCredential = async (ref: string): Promise<StoredCredential | null> => {
-    try {
-      return await credentialStore.read(ref)
-    } catch (error) {
-      throw credentialFailure(error, 'read')
-    }
-  }
+  const readCredential = configurationCredentialReader(home, credentialStore)
 
   const credentialFailure = (error: unknown, operation: 'read' | 'write') =>
     configurationCredentialFailure(home, error, operation)
@@ -1460,6 +1458,8 @@ export function createConfigurationService(
         await persistState(next)
         return { revision: next.revision, engines: structuredClone(next.childEngines ?? engines) }
       }),
+    telemetrySecrets: async () =>
+      telemetryCredentialValues((await loadState())?.accounts ?? [], (ref) => credentialStore.read(ref)),
     async profileInput() {
       const state = await loadState()
       const secrets = { kind: 'file' as const, path: fileSecretsDir(home) }

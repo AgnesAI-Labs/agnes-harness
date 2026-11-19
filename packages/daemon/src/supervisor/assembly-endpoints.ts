@@ -62,6 +62,7 @@ import { registerManagedWorkspaceGrants } from './managed-workspace-grants.js'
 import { registerPluginRuntimeIngress } from './plugin-runtime-ingress.js'
 import { activateForkOwnership } from './registry-facade.js'
 import { registerSessionMethods } from './session-methods.js'
+import { telemetrySurface } from './telemetry/wire.js'
 import { workspaceDeployments } from './workspace-deployments.js'
 
 declare const AGNES_VERSION: string | undefined
@@ -264,6 +265,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
           sessionOwnership.activateFork(sessionId, created.key, ownerPrincipal, at),
         )
         await sessionPrefs.copyForkBookmarks(preferences, factRead(sessionId), sessionId, at, entry.key)
+        o.telemetry?.sessionCreated(entry.key, telemetrySurface(ep.conn, entry.key))
         return { result: { sessionId: entry.key } }
       } catch (error) {
         if ((error as { code?: unknown }).code === 'E_LANE_BUSY')
@@ -271,7 +273,12 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
         throw error
       }
     },
-    onPromptStart: (sessionId) => inflightConn.set(sessionId, ep.conn),
+    onPromptStart: (sessionId) => {
+      inflightConn.set(sessionId, ep.conn)
+      o.telemetry?.surface(sessionId, telemetrySurface(ep.conn, sessionId))
+    },
+    onSessionCreated: (sessionId) =>
+      o.telemetry?.sessionCreated(sessionId, telemetrySurface(ep.conn, sessionId)),
     onPromptEnd: (sessionId) => {
       inflightConn.delete(sessionId)
       registry.retireAtTurnBoundary(sessionId)
@@ -528,6 +535,7 @@ function registerAdminEndpoints(
   } = state
   const { cx } = context
   registerDiagnostics(ep, {
+    ...(o.telemetry ? { administerTelemetry: o.telemetry.admin } : {}),
     authority:
       transport === 'unix'
         ? (effectivePackageAdmin?.unixAuthority ?? localPackageAdminAuthority())

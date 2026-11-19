@@ -24,6 +24,7 @@ export interface AppServerMethods {
   "_agnes/v1/admin.mcp.oauth.logout": { params: Static<typeof import("./app-server.js").AdminMcpOAuthGet>; result: Static<typeof import("./app-server.js").AdminMcpOAuthLogoutResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/doctor.run": { params: Static<typeof import("./app-server.js").DoctorParams>; result: Static<typeof import("./app-server.js").DoctorResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.memory": { params: Static<typeof import("./app-server.js").AdminMemoryParams>; result: Static<typeof import("./app-server.js").AdminMemoryResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/admin.telemetry": { params: Static<typeof import("./app-server.js").AdminTelemetryParams>; result: Static<typeof import("./app-server.js").AdminTelemetryResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.observability": { params: Static<typeof import("./app-server.js").AdminObservabilityParams>; result: Static<typeof import("./app-server.js").AdminObservabilityResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.triggers": { params: Static<typeof import("./app-server.js").WebhookRequest>; result: Static<typeof import("./app-server.js").WebhookResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.managedWorkspaces.list": { params: Static<typeof import("./app-server.js").ManagedWorkspaceGrantsListParams>; result: Static<typeof import("./app-server.js").ManagedWorkspaceGrantsList>; direction: "c2s"; kind: "request" }

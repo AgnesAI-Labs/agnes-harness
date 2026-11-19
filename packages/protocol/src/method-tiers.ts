@@ -38,6 +38,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/doctor.run': 'admin',
   '_agnes/v1/admin.memory': 'admin',
   '_agnes/v1/admin.observability': 'admin',
+  '_agnes/v1/admin.telemetry': 'admin',
   '_agnes/v1/admin.triggers': 'admin',
   '_agnes/v1/admin.managedWorkspaces.list': 'admin',
   '_agnes/v1/admin.managedWorkspaces.grant': 'admin',

@@ -3481,6 +3481,46 @@
         }
       }
     },
+    "TelemetrySettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["analyticsEnabled", "traceUploadEnabled"],
+      "properties": {
+        "analyticsEnabled": { "type": "boolean" },
+        "traceUploadEnabled": { "type": "boolean" }
+      }
+    },
+    "AdminTelemetryParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "analyticsEnabled": { "type": "boolean" },
+            "traceUploadEnabled": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "AdminTelemetryResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["settings", "status"],
+      "properties": {
+        "settings": { "$ref": "#/$defs/TelemetrySettings" },
+        "status": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["disabledByEnv", "endpointConfigured"],
+          "properties": {
+            "disabledByEnv": { "type": "boolean" },
+            "endpointConfigured": { "type": "boolean" }
+          }
+        }
+      }
+    },
     "AdminObservabilityParams": {
       "type": "object",
       "additionalProperties": false,
@@ -4221,6 +4261,10 @@
     "_agnes/v1/admin.memory": {
       "params": "AdminMemoryParams",
       "result": "AdminMemoryResult"
+    },
+    "_agnes/v1/admin.telemetry": {
+      "params": "AdminTelemetryParams",
+      "result": "AdminTelemetryResult"
     },
     "_agnes/v1/admin.observability": {
       "params": "AdminObservabilityParams",

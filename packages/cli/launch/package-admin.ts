@@ -445,6 +445,7 @@ export function localPackageAdmin(
     (input) => client.request('_agnes/v1/admin.memory', input),
     (input) => client.request('_agnes/v1/admin.observability', input),
     (input) => client.request('_agnes/v1/admin.feedback', input),
+    (input) => client.request('_agnes/v1/admin.telemetry', input),
   )
   return {
     doctor: async () => {
