@@ -3,6 +3,9 @@ import { type AssistantMessage, isContextOverflow } from '@earendil-works/pi-ai'
 
 export type Classified = { code: AiErrorCode; message: string; retryable: boolean; retryAfterMs?: number }
 
+const QUOTA_TEXT =
+  /insufficient[_ ](?:user[_ ])?(?:credit|quota|balance)|quota[_ ]exceeded|exceeded your current quota|额度不足|余额不足/i
+
 /**
  * Failure text to a code and a verdict on asking again, in order. The order is the meaning: an
  * authentication failure whose text also mentions a 500 is an authentication failure, and reading it
@@ -10,12 +13,17 @@ export type Classified = { code: AiErrorCode; message: string; retryable: boolea
  * text; a 5xx response status is read before this table (see `classifyPiError`).
  */
 const TABLE: Array<[RegExp, AiErrorCode, boolean]> = [
+  // An account out of quota is read from its words before its status: gateways answer it with 403
+  // (llm.sg: "用户额度不足") or 429 (OpenAI: "You exceeded your current quota"), and calling it a
+  // rejected key or a busy server sends the reader to the wrong fix or retries a request that
+  // cannot succeed until someone tops the account up.
+  [QUOTA_TEXT, 'QUOTA', false],
   // `no api key` is the wire library refusing to send an unauthenticated request at all, which is a
   // route that was never going to work rather than a moment when the far end was busy. It used to
   // land in the unclassified bucket and be retried under backoff.
   [/\b(401|403)\b|invalid api key|no api key|missing api key|unauthorized|forbidden/i, 'AUTH', false],
   [/\b429\b|rate limit/i, 'RATE_LIMIT', true],
-  [/\b402\b|insufficient (credit|quota|balance)|quota exceeded/i, 'QUOTA', false],
+  [/\b402\b/, 'QUOTA', false],
   [/timed? ?out|ETIMEDOUT|deadline/i, 'TIMEOUT', true],
   [/overloaded|at capacity/i, 'TRANSPORT', true],
   [/\b404\b.*model|model .*not (found|exist)|unknown model/i, 'NO_MODEL', false],
@@ -52,7 +60,9 @@ export function classifyPiError(msg: AssistantMessage, contextWindow?: number, s
     return { code: 'TRANSPORT', message: redact(text), retryable: true }
   for (const [re, code, retryable] of TABLE) {
     if (re.test(text)) {
-      const c: Classified = { code, message: redact(text), retryable }
+      const note = code === 'QUOTA' ? quotaNote(text) : undefined
+      const message = note ? `${redact(text)} note=${JSON.stringify(note)}` : redact(text)
+      const c: Classified = { code, message, retryable }
       if (code === 'RATE_LIMIT') c.retryAfterMs = retryAfterMs(text)
       return c
     }
@@ -75,10 +85,31 @@ function retryAfterMs(text: string): number {
  */
 export function redact(text: string): string {
   const status = /\b([1-5]\d{2})\b/.exec(text)?.[1]
-  const reqId = /req[_-]?[A-Za-z0-9]{6,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/.exec(
-    text,
-  )?.[0]
+  const reqId =
+    /req[_-]?[A-Za-z0-9]{6,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/.exec(text)?.[0] ??
+    REQUEST_ID_LABEL.exec(text)?.[1]
   return [status ? `status=${status}` : 'status=?', reqId ? `requestId=${reqId}` : '']
     .filter(Boolean)
     .join(' ')
+}
+
+/** New API style gateways (Agnes, llm.sg) append "(request id: 2026…)" to their messages. */
+const REQUEST_ID_LABEL = /request id:\s*([A-Za-z0-9-]{6,64})/i
+const STATUS_PREFIX = /^\s*(?:error:?\s*)?[1-5]\d{2}\b[\s:]*/i
+const REQUEST_ID_NOTE = /\s*[(（]\s*request id:[^)）]*[)）]/gi
+/** Anything that could be key material, a bearer value or a URL carrying parameters. */
+const SECRETISH =
+  /\b(?:sk|pk|rk)-[A-Za-z0-9]{6,}|bearer\s+\S+|api[_ -]?key\s*[:=]|[A-Za-z0-9_-]{24,}|https?:\/\/\S*[?=&]/i
+const NOTE_MAX = 160
+
+/**
+ * A quota refusal is the far end's own account message, such as "用户额度不足，剩余额度: ＄0", and
+ * the reader needs those words to know what to fix. It is written by the gateway about the account
+ * rather than echoed from the request, so it is kept once it is short and carries nothing shaped like
+ * a credential; otherwise it is dropped. Every other failure stays reduced to its status and id.
+ */
+export function quotaNote(text: string): string | undefined {
+  const note = text.replace(STATUS_PREFIX, '').replace(REQUEST_ID_NOTE, '').replace(/\s+/g, ' ').trim()
+  if (!note || note.length > NOTE_MAX || SECRETISH.test(note)) return undefined
+  return note
 }

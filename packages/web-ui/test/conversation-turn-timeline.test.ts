@@ -385,6 +385,28 @@ describe('turn timeline', () => {
     expect(openSettings).toHaveBeenCalledWith('account')
   })
 
+  it("says an account is out of quota in the gateway's own words", async () => {
+    const nodes = [user, say('answer', 'Available answer.')]
+    await render(
+      nodes,
+      turn(nodes, {
+        status: 'failed',
+        reason: 'error',
+        error: {
+          code: 'QUOTA',
+          message: 'status=403 requestId=20261119130937 note="用户额度不足，剩余额度: ＄0.000000"',
+        },
+        finalAssistantId: 'answer',
+        endedAt: '2026-10-01T00:00:01.000Z',
+      }),
+      { turnErrorActions: { onRetry: vi.fn(), onOpenSettings: vi.fn() } },
+    )
+    expect(host.querySelector('.turn-error-sentence')?.textContent).toBe('模型账户的额度已用完。')
+    expect(host.querySelector('.turn-error-meta')?.textContent).toBe(
+      '服务商返回：用户额度不足，剩余额度: ＄0.000000 · 状态 403 · 请求 20261119130937',
+    )
+  })
+
   it.each([true, false])(
     'shows one collapsed recovery note and retains raw attempts (visual=%s)',
     async (visual) => {
