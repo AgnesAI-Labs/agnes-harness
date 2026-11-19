@@ -50,6 +50,19 @@ describe('classifyPiError', () => {
       message:
         'status=403 requestId=20261119130937288797826mFQ1ZSd8 note="用户额度不足，剩余额度: ＄0.000000"',
     })
+    // Passed through raw, the body is JSON; only its readable message is kept.
+    const raw = classifyPiError(
+      msg(
+        '403 {"message":"用户额度不足，剩余额度: ＄0.000000 (request id: 20261119133117)","type":"AgnesAI_error","param":"","code":"insufficient_user_quota"}',
+      ),
+    )
+    expect(raw.code).toBe('QUOTA')
+    expect(raw.message).toBe('status=403 requestId=20261119133117 note="用户额度不足，剩余额度: ＄0.000000"')
+    expect(
+      classifyPiError(
+        msg('429 {"error":{"message":"You exceeded your current quota.","code":"insufficient_quota"}}'),
+      ).message,
+    ).toBe('status=429 note="You exceeded your current quota."')
     // OpenAI's empty account is a 429 that retrying cannot fix.
     const openai = classifyPiError(
       msg('429 You exceeded your current quota, please check your plan and billing details.'),

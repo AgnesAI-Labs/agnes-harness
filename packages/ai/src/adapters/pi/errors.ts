@@ -109,7 +109,25 @@ const NOTE_MAX = 160
  * a credential; otherwise it is dropped. Every other failure stays reduced to its status and id.
  */
 export function quotaNote(text: string): string | undefined {
-  const note = text.replace(STATUS_PREFIX, '').replace(REQUEST_ID_NOTE, '').replace(/\s+/g, ' ').trim()
+  const body = text.replace(STATUS_PREFIX, '')
+  const note = (bodyMessage(body) ?? body).replace(REQUEST_ID_NOTE, '').replace(/\s+/g, ' ').trim()
   if (!note || note.length > NOTE_MAX || SECRETISH.test(note)) return undefined
   return note
+}
+
+/** A gateway whose body is passed through raw keeps its readable words in `message`. */
+function bodyMessage(body: string): string | undefined {
+  const start = body.indexOf('{')
+  const end = body.lastIndexOf('}')
+  if (start < 0 || end <= start) return undefined
+  try {
+    const parsed = JSON.parse(body.slice(start, end + 1)) as {
+      message?: unknown
+      error?: { message?: unknown }
+    }
+    const message = parsed.error?.message ?? parsed.message
+    return typeof message === 'string' ? message : undefined
+  } catch {
+    return undefined
+  }
 }
