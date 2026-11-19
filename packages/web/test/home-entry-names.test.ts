@@ -39,11 +39,15 @@ describe('home entry names', () => {
     dispose = registerBuiltinHomeEntries()
     expect(homeEntries.get('agents')?.subtitleKey).toBeUndefined()
   })
-  it('offers MHS as a primary bilingual page', () => {
-    expect(enT('home.entry.mhs')).toBe('MHS')
-    expect(zhT('home.entry.mhs')).toBe('MHS')
+  it.each([
+    ['mhs', 'MHS', 40, 'route'],
+    ['rsi', 'RSI', 50, 'refresh-cw'],
+  ])('offers %s as a primary bilingual page', (id, name, order, icon) => {
+    const titleKey = `home.entry.${id}`
+    expect(enT(titleKey)).toBe(name)
+    expect(zhT(titleKey)).toBe(name)
     dispose = registerBuiltinHomeEntries()
-    expect(homeEntries.get('mhs')?.placement).toBe('primary')
+    expect(homeEntries.get(id)).toMatchObject({ order, icon, titleKey, placement: 'primary' })
   })
   it('shows only the adopted application in primary navigation while keeping both installed pages reachable', async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -191,7 +195,7 @@ describe('home entry names', () => {
           await reconciler.reconcileNow()
           root.render(createElement(HomeEntriesNav, { t: (key, vars) => locale.t(key, vars) }))
         })
-        for (const id of ['plugins', 'agents', 'automation', 'console'])
+        for (const id of ['plugins', 'agents', 'automation', 'mhs', 'rsi', 'console'])
           expect(host.querySelector(`[data-testid="home-entry-${id}"]`)).toBeTruthy()
         expect(host.querySelector('[data-testid="home-entry-console"]')?.textContent).toBe(
           language === 'zh-CN' ? '控制台' : 'Console',
@@ -220,7 +224,13 @@ describe('home entry names', () => {
           [...host.querySelectorAll('[data-testid^="home-entry-"]')].map((node) =>
             node.getAttribute('data-testid'),
           ),
-        ).toEqual(['home-entry-console', 'home-entry-agents', 'home-entry-automation', 'home-entry-mhs'])
+        ).toEqual([
+          'home-entry-console',
+          'home-entry-agents',
+          'home-entry-automation',
+          'home-entry-mhs',
+          'home-entry-rsi',
+        ])
         expect(host.querySelector('[data-testid="home-entry-plugins"]')).toBeNull()
         await act(async () => applicationIdentity.set(undefined))
         expect(
@@ -233,6 +243,7 @@ describe('home entry names', () => {
           'home-entry-automation',
           'home-entry-console',
           'home-entry-mhs',
+          'home-entry-rsi',
         ])
         modules = []
         await act(async () => {

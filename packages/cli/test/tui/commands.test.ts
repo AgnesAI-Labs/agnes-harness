@@ -2044,7 +2044,7 @@ describe('runSlash', () => {
 
   describe('/refine', () => {
     const inactiveHintZh =
-      '本会话尚未启用任务经验。请在设置 → 通用 → 任务经验中保存服务密钥并开启学习，然后新开会话。'
+      '本会话尚未启用任务经验。请在左侧栏 RSI 页面中保存服务密钥并开启学习，然后新开会话。'
     const refusing = (reason: string) => () => {
       throw rpcError('SEMANTIC_REJECTED', { reason })
     }
@@ -2061,7 +2061,7 @@ describe('runSlash', () => {
           english.ep.on('_agnes/v1/session.refine', refusing(reason))
           const en = await runSlash(english.app, '/refine the build')
           expect(en.text).toBe(
-            'Task experience is not active in this session. Save a service key and enable learning in Settings → General → Task experience, then start a new session.',
+            'Task experience is not active in this session. Save a service key and enable learning on the RSI page, then start a new session.',
           )
         }
       } finally {

@@ -42,7 +42,7 @@ export function settingsRoute(id: string): { id: string; anchor?: string; termin
 
 /** Where a page that left the settings dialog lives now. */
 export type SettingsMoveTarget =
-  | Readonly<{ kind: 'page'; page: 'agents' | 'plugins' | 'automation'; tab?: string }>
+  | Readonly<{ kind: 'page'; page: 'agents' | 'plugins' | 'automation' | 'rsi'; tab?: string }>
   | Readonly<{ kind: 'session-search' }>
   | Readonly<{ kind: 'archived-sessions' }>
 
@@ -64,6 +64,7 @@ export const SETTINGS_MOVED: Readonly<Record<string, SettingsMoveTarget>> = {
   subagents: { kind: 'page', page: 'plugins', tab: 'plugins.subagents' },
   schedules: { kind: 'page', page: 'automation', tab: 'schedules' },
   triggers: { kind: 'page', page: 'automation', tab: 'triggers' },
+  refinement: { kind: 'page', page: 'rsi' },
   history: { kind: 'session-search' },
   archived: { kind: 'archived-sessions' },
 }

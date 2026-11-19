@@ -1,7 +1,6 @@
 /** @vitest-environment happy-dom */
 import { DEFAULT_REFINEMENT_SETTINGS, type RefinementSettings } from '@agnes/protocol'
 import { CREDENTIALS_CHANGED } from '@agnes/resource-control-web/credentials-api'
-import { settingsSections } from '@agnes/web-client'
 import {
   createDocumentLocaleSource,
   installFeedbackSink,
@@ -11,11 +10,7 @@ import {
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
-import {
-  type RefinementSettingsApi,
-  RefinementSettingsPanel,
-  registerRefinementSettingsSection,
-} from '../src/settings/refinement.js'
+import { type RefinementSettingsApi, RefinementSettingsPanel } from '../src/settings/refinement.js'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const roots: Root[] = []
@@ -484,17 +479,6 @@ it('shows the notice in Chinese', async () => {
   const host = await mount(fakeApi({ credentialRef, model, enabled: true, mode: 'auto' }))
   expect(field(host, 'refinement-workspace-notice').textContent).toContain('工作区记忆')
   expect(field(host, 'refinement-workspace-notice').textContent).toContain('自动写入用户记忆')
-})
-
-it('registers the section under General', () => {
-  const dispose = registerRefinementSettingsSection(fakeApi())
-  expect(settingsSections.get('refinement')).toMatchObject({
-    group: 'general',
-    titleKey: 'settings-shell.refinement',
-    runtimeCatalog: false,
-  })
-  dispose()
-  expect(settingsSections.get('refinement')).toBeUndefined()
 })
 
 it('shows the saved skills of the workspace when the connection reaches them', async () => {

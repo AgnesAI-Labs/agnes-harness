@@ -6,7 +6,6 @@ import type {
   RefinementSettingsSnapshot,
 } from '@agnes/protocol'
 import { CREDENTIALS_CHANGED } from '@agnes/resource-control-web/credentials-api'
-import { settingsSections } from '@agnes/web-client'
 import {
   Banner,
   Button,
@@ -432,18 +431,4 @@ function RefinementFields(props: {
       </SettingsBlock>
     </>
   )
-}
-
-/** Installed with the web client, which owns the settings calls; the section needs no runtime catalog. */
-export function registerRefinementSettingsSection(api: RefinementSettingsApi): () => void {
-  return settingsSections.register({
-    id: 'refinement',
-    group: 'general',
-    order: 21,
-    icon: 'sparkles',
-    runtimeCatalog: false,
-    titleKey: 'settings-shell.refinement',
-    groupTitleKey: 'settings-shell.group.general',
-    component: () => <RefinementSettingsPanel api={api} />,
-  })
 }

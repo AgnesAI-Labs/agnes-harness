@@ -41,8 +41,8 @@ function appWith(
 
 describe('session slash commands', () => {
   it.each([
-    ['en', 'Settings → General → Task experience', 'service key'],
-    ['zh-CN', '设置 → 通用 → 任务经验', '服务密钥'],
+    ['en', 'on the RSI page', 'service key'],
+    ['zh-CN', '左侧栏 RSI 页面', '服务密钥'],
   ])(
     '/refine shows the service key setup path when task experience is off (%s)',
     async (locale, path, key) => {

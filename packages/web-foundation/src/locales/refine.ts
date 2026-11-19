@@ -2,7 +2,7 @@
 export const refineLocaleCatalog = {
   en: {
     'app.refine.off':
-      'Task experience is not active in this session. Save a service key and enable learning in Settings → General → Task experience, then start a new session.',
+      'Task experience is not active in this session. Save a service key and enable learning on the RSI page, then start a new session.',
     'app.refine.workspace':
       'Experience review queued ({id}). What it keeps is also saved to this workspace, as your own save; each save shows in the conversation.',
     'app.refine.user':
@@ -22,8 +22,7 @@ export const refineLocaleCatalog = {
     'app.refine.reason.unpriced': 'the planning model has no known price',
   },
   'zh-CN': {
-    'app.refine.off':
-      '本会话尚未启用任务经验。请在设置 → 通用 → 任务经验中保存服务密钥并开启学习，然后新开会话。',
+    'app.refine.off': '本会话尚未启用任务经验。请在左侧栏 RSI 页面中保存服务密钥并开启学习，然后新开会话。',
     'app.refine.workspace':
       '已排队一次经验复盘（{id}）。留下的经验也会作为你自己的保存存到这个工作区；每次保存都会显示在对话里。',
     'app.refine.user':

@@ -46,7 +46,7 @@ describe('the composer /refine command', () => {
     expect(refine).toHaveBeenCalledWith('session-1', undefined)
     expect(lines).toHaveLength(1)
     expect(lines[0]).toBe(
-      'Task experience is not active in this session. Save a service key and enable learning in Settings → General → Task experience, then start a new session.',
+      'Task experience is not active in this session. Save a service key and enable learning on the RSI page, then start a new session.',
     )
     const chinese = setup(
       async () => {
@@ -56,7 +56,7 @@ describe('the composer /refine command', () => {
       zh,
     )
     await runRefineCommand(chinese.context, '/refine')
-    expect(chinese.lines[0]).toContain('设置 → 通用 → 任务经验中保存服务密钥')
+    expect(chinese.lines[0]).toContain('左侧栏 RSI 页面中保存服务密钥')
   })
 
   it('uses the same hint when refinement is not connected to the session', async () => {
