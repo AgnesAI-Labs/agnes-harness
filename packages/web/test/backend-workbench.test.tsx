@@ -3,8 +3,9 @@
 import { remoteFrontendSessionPath } from '@agnes/protocol'
 import { cloudCredentialUsage } from '@agnes/resource-control-web/credentials-api'
 import type { SettingsController } from '@agnes/web-admin/settings'
-import { mountApplication } from '@agnes/web-ui'
+import { mountApplication, unmountApplication } from '@agnes/web-ui'
 import { getByRole, queryByRole } from '@testing-library/dom'
+import type { Window as HappyWindow } from 'happy-dom'
 import { act, useState } from 'react'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import { RemoteFrontendFailure } from '../src/backend-selector.js'
@@ -27,6 +28,7 @@ import {
   localManagementCommand,
 } from '../src/backends/frame-contract.js'
 import { routeLocalSettings } from '../src/backends/local-management.js'
+import { mountBackendWorkbench } from '../src/backends/workbench.js'
 import { BackendSessionGroups } from '../src/backends/workbench-groups.js'
 import { workbenchCatalog } from '../src/backends/workbench-locale.js'
 import { initialWorkbench, workbenchAddress } from '../src/backends/workbench-state.js'
@@ -38,6 +40,39 @@ afterEach(async () => {
   await act(async () => dispose?.())
   document.body.innerHTML = ''
   dispose = undefined
+})
+
+it('delegates clipboard access only to the configured cloud frame while retaining its sandbox', async () => {
+  const previousLocation = location.href
+  const settings = (window as unknown as HappyWindow).happyDOM.settings
+  const previousIframeLoading = settings.disableIframePageLoading
+  settings.disableIframePageLoading = true
+  const remote = 'https://clipboard-cloud.test'
+  vi.stubGlobal('location', new URL(`http://127.0.0.1:4177/?remote=${encodeURIComponent(remote)}`))
+  const meta = document.createElement('meta')
+  meta.id = 'agnes-config'
+  meta.dataset.cloudOrigin = 'http://127.0.0.1:4178'
+  document.head.append(meta)
+  const host = document.createElement('div')
+  host.id = 'app-root'
+  document.body.append(host)
+  try {
+    await act(async () => mountBackendWorkbench())
+    const cloud = host.querySelector<HTMLIFrameElement>('[data-testid="backend-frame-cloud"]')
+    const local = host.querySelector<HTMLIFrameElement>('[data-testid="backend-frame-local"]')
+    expect(cloud?.getAttribute('allow')).toBe('clipboard-write')
+    expect(cloud?.getAttribute('sandbox')).toBe(
+      'allow-scripts allow-same-origin allow-forms allow-downloads allow-popups',
+    )
+    expect(new URL(cloud?.src ?? '').origin).toBe(meta.dataset.cloudOrigin)
+    expect(local?.hasAttribute('allow')).toBe(false)
+  } finally {
+    await act(async () => unmountApplication(document))
+    delete document.body.dataset.aghBackendWorkbench
+    meta.remove()
+    settings.disableIframePageLoading = previousIframeLoading
+    vi.stubGlobal('location', new URL(previousLocation))
+  }
 })
 
 it('projects browser credential usage only from the local parent and clears it on disconnect or disposal', () => {

@@ -412,6 +412,7 @@ function BackendWorkbench() {
             data-agh-backend-frame="1"
             data-backend-origin={backend === 'cloud' ? cloud : ''}
             data-testid={`backend-frame-${backend}`}
+            allow={backend === 'cloud' ? 'clipboard-write' : undefined}
             sandbox={
               backend === 'cloud'
                 ? 'allow-scripts allow-same-origin allow-forms allow-downloads allow-popups'

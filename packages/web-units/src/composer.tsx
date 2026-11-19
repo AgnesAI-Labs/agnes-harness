@@ -598,7 +598,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   pendingCount={pendingCount}
                   hint={imageHint}
                   disabled={view.sending}
-                  imagesAllowed={policy.supported}
                   onRemove={removeImage}
                   t={t}
                 />
