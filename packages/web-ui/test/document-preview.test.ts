@@ -100,16 +100,29 @@ it.each(['image', 'pdf'] as const)(
       expect(host.querySelector('img, iframe')).toBeNull()
     }
     const revoke = vi.spyOn(URL, 'revokeObjectURL')
-    await render({ kind, title: '文档', resourceUrl: 'blob:https://example.test/one' })
+    await render({
+      kind,
+      title: '文档',
+      resourceUrl: 'blob:https://example.test/one',
+      ...(kind === 'pdf' ? { content: 'JVBERi0xLjQK' } : {}),
+    })
     const element = host.querySelector('img, iframe')
-    expect(element?.getAttribute('src')).toBe('blob:https://example.test/one')
+    expect(element?.getAttribute('src')).toBe(
+      kind === 'pdf' ? '/__agnes/pdf-preview' : 'blob:https://example.test/one',
+    )
     expect(element?.getAttribute(kind === 'image' ? 'alt' : 'title')).toBe('文档')
-    if (kind === 'pdf') expect(element?.getAttribute('sandbox')).toBe('')
+    if (kind === 'pdf') expect(element?.getAttribute('sandbox')).toBe('allow-scripts')
     else expect(element?.getAttribute('decoding')).toBe('async')
     expect(host.querySelector('[data-preview-error]')).toBeNull()
-    await render({ kind, resourceUrl: 'blob:https://example.test/two' })
+    await render({
+      kind,
+      resourceUrl: 'blob:https://example.test/two',
+      ...(kind === 'pdf' ? { content: 'JVBERi0xLjQK' } : {}),
+    })
     expect(host.querySelector('img, iframe')).toBe(element)
-    expect(element?.getAttribute('src')).toBe('blob:https://example.test/two')
+    expect(element?.getAttribute('src')).toBe(
+      kind === 'pdf' ? '/__agnes/pdf-preview' : 'blob:https://example.test/two',
+    )
     expect(element?.getAttribute(kind === 'image' ? 'alt' : 'title')).toBe(
       kind === 'image' ? '文档图片' : 'PDF 文档',
     )
@@ -150,6 +163,66 @@ it('uses real static Markdown with stable copy controls, safe links, theme and i
   expect(onFragment).toHaveBeenCalledWith('notes')
   await render({ kind: 'markdown' })
   expect(host.textContent).toBe('')
+})
+
+it('times out an unavailable PDF renderer, cancels its wait on close, and never embeds native PDF content', async () => {
+  vi.useFakeTimers()
+  host.remove()
+  await render({ kind: 'pdf', resourceUrl: 'blob:https://example.test/pdf', content: 'JVBERi0xLjQK' })
+  expect(host.querySelector('iframe')?.getAttribute('src')).toBe('/__agnes/pdf-preview')
+  await act(async () => {
+    vi.advanceTimersByTime(15000)
+  })
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain('PDF 预览失败')
+  expect(host.querySelector('iframe,object,embed')).toBeNull()
+  await render({ kind: 'text', content: 'closed' })
+  await act(async () => {
+    vi.advanceTimersByTime(15000)
+  })
+  expect(host.textContent).toBe('closed')
+})
+
+it('loads blob-only PDF consumers into the isolated renderer and preserves caller URL ownership', async () => {
+  host.remove()
+  const text = '%PDF-1.4\n'
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(text))
+  const revoke = vi.spyOn(URL, 'revokeObjectURL')
+  await render({ kind: 'pdf', resourceUrl: 'blob:https://example.test/legacy' })
+  const iframe = host.querySelector('iframe')
+  expect(iframe?.getAttribute('src')).toBe('/__agnes/pdf-preview')
+  expect(iframe?.getAttribute('sandbox')).toBe('allow-scripts')
+  expect(fetcher).toHaveBeenCalledWith(
+    'blob:https://example.test/legacy',
+    expect.objectContaining({ credentials: 'omit', signal: expect.any(AbortSignal) }),
+  )
+  const target = { postMessage: vi.fn() }
+  Object.defineProperty(iframe, 'contentWindow', { configurable: true, value: target })
+  await act(async () =>
+    window.dispatchEvent(
+      new MessageEvent('message', { source: target as unknown as Window, data: { type: 'agnes-pdf-ready' } }),
+    ),
+  )
+  expect(target.postMessage).toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'agnes-pdf-data', base64: btoa(text) }),
+    '*',
+  )
+  await render({ kind: 'text', content: 'closed' })
+  expect(revoke).not.toHaveBeenCalled()
+})
+
+it('refuses oversized blob PDFs and aborts pending reads when the preview closes', async () => {
+  host.remove()
+  const fetcher = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(new Response('a'.repeat(1024 * 1024 + 1)))
+  await render({ kind: 'pdf', resourceUrl: 'blob:https://example.test/large' })
+  await vi.waitFor(() => expect(host.querySelector('[role=alert]')?.textContent).toContain('PDF 预览失败'))
+  expect(host.querySelector('iframe')).toBeNull()
+  fetcher.mockImplementationOnce(() => new Promise(() => {}))
+  await render({ kind: 'pdf', resourceUrl: 'blob:https://example.test/pending' })
+  const signal = fetcher.mock.calls.at(-1)?.[1]?.signal
+  await render({ kind: 'text', content: 'closed' })
+  expect(signal?.aborted).toBe(true)
 })
 
 it('keeps one React DOM owner through strict mount, parent replacement and return without lifecycle warnings', async () => {

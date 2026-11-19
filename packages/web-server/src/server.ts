@@ -3,8 +3,9 @@ import { readFile, stat } from 'node:fs/promises'
 import { createServer, type ServerResponse } from 'node:http'
 import { extname, isAbsolute } from 'node:path'
 import { FILE_UPLOAD_PATH } from '@agnes/protocol'
-import { DELIVERABLE_PREVIEW_PATH, deliverablePreviewFrame } from './deliverable-preview-frame.js'
+import { serveDeliverablePreview } from './deliverable-preview-frame.js'
 import { HISTORY_SEARCH_PATH, handleHistorySearch } from './history-route.js'
+import { servePdfPreview } from './pdf-preview-frame.js'
 import type { PluginRebuiltEvent, WebServer, WebServerOptions } from './server-types.js'
 import { UI_COMPONENT_MODULE_BYTES, uiComponentFrame } from './ui-component-frame.js'
 import { fileUploadRoute } from './upload-route.js'
@@ -211,22 +212,8 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       if (await options.pluginStreams?.handleHttp(request, response)) return
       if (await handleWebhook?.(request, response)) return
       const requestUrl = new URL(request.url ?? '/', expectedOrigin)
-      if (requestUrl.pathname === DELIVERABLE_PREVIEW_PATH) {
-        if (request.method !== 'GET' && request.method !== 'HEAD') {
-          response.writeHead(405).end()
-          return
-        }
-        const frame = deliverablePreviewFrame()
-        response.writeHead(200, {
-          'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'no-store',
-          'Content-Security-Policy': frame.csp,
-          'Referrer-Policy': 'no-referrer',
-          'X-Content-Type-Options': 'nosniff',
-        })
-        response.end(request.method === 'HEAD' ? undefined : frame.body)
-        return
-      }
+      if (serveDeliverablePreview(request, response)) return
+      if (servePdfPreview(request, response)) return
       if (requestUrl.pathname === FILE_UPLOAD_PATH) {
         await handleFileUpload(request, response)
         return

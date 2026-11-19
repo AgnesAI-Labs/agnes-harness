@@ -2,13 +2,13 @@ import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, vi } from 'vitest'
+import { prepareManagedChatRoot } from '../src/supervisor/managed-chat-root.js'
 
 vi.mock('node:crypto', async (original) => ({
   ...(await original<typeof import('node:crypto')>()),
   randomUUID: () => '00000000-0000-4000-8000-000000000001',
 }))
 test('an occupied random target is a conflict and remains untouched', async () => {
-  const { prepareManagedChatRoot } = await import('../src/supervisor/managed-chat-root.js')
   const base = await mkdtemp(join(tmpdir(), 'managed-collision-'))
   const documents = join(base, 'docs')
   const parent = join(documents, 'Agnes Harness')

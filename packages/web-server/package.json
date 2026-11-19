@@ -13,5 +13,8 @@
   "dependencies": {
     "@agnes/protocol": "workspace:*",
     "@agnes/history-index": "workspace:*"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
   }
 }

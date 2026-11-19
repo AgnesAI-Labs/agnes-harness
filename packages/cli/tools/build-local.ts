@@ -15,6 +15,7 @@ import {
 import { AGH_DIR } from '@agnes/protocol'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { checkGlibc } from '../../../tools/native/check-glibc.mjs'
+import { buildPdfPreview, copyPdfPreviewNotice } from '../../../tools/pdf-preview-build.mjs'
 import { buildPresentations, verifyPresentation } from '../../../tools/presentation-build.mjs'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { productionWebOptions } from '../../../tools/web-build-options.mjs'
@@ -413,7 +414,9 @@ export async function buildLocalWeb(webOut: string): Promise<readonly BuildResul
     join(webOut, 'style.css'),
     `\n${inCssLayer(`${core}\n${light}\n${dark}`, 'vendor')}\n${overrides}`,
   )
+  metafiles.push(await buildPdfPreview(webOut))
   await collectThirdPartyNotices(webRoot, webOut, metafiles)
+  await copyPdfPreviewNotice(webOut)
   return metafiles
 }
 

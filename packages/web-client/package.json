@@ -17,6 +17,7 @@
     "@agnes/web-slots": "workspace:*",
     "@agnes/protocol": "workspace:*",
     "@agnes/sdk": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
     "@agnes/web-units": "workspace:*"
   },
   "peerDependencies": {

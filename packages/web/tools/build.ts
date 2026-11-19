@@ -3,6 +3,7 @@ import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type BuildResult, build } from 'esbuild'
+import { buildPdfPreview, copyPdfPreviewNotice } from '../../../tools/pdf-preview-build.mjs'
 import { buildPresentations } from '../../../tools/presentation-build.mjs'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { productionWebOptions } from '../../../tools/web-build-options.mjs'
@@ -203,7 +204,9 @@ export async function buildWeb(
     join(out, 'style.css'),
     `\n${inCssLayer(`${core}\n${light}\n${dark}`, 'vendor')}\n${overrides}`,
   )
+  metafiles.push(await buildPdfPreview(out))
   await collectThirdPartyNotices(root, out, metafiles)
+  await copyPdfPreviewNotice(out)
   return metafiles
 }
 

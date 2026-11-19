@@ -2,6 +2,15 @@
   "scope": "External dependencies directly used for building, testing, type checking or development.",
   "packages": [
     {
+      "name": "pdfjs-dist",
+      "version": "6.5.438",
+      "license": "Apache-2.0",
+      "source": "https://github.com/mozilla/pdf.js",
+      "purpose": "Bundle an offline PDF viewer and its fonts/CMaps for sandboxed local and cloud previews.",
+      "rationale": "Render PDFs without the native PDF plugin blocked by inherited iframe sandbox restrictions; disable external resource fetching, script evaluation and WASM compilation.",
+      "consumers": ["packages/web-ui"]
+    },
+    {
       "name": "@hyzyla/pdfium",
       "version": "2.1.13",
       "license": "MIT",

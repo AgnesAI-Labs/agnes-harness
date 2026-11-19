@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import type { Duplex } from 'node:stream'
 import {
+  PLUGIN_STREAM_OPEN_PATH,
   REMOTE_FRONTEND_AUTH,
   REMOTE_FRONTEND_INFO,
   REMOTE_FRONTEND_WS,
@@ -18,6 +19,25 @@ it('verifies the deployment Key and gates HTTP, relative assets and WebSocket up
   const peers = new Set<Duplex>()
   let upgrades = 0
   const upstream = createServer((req, res) => {
+    if (req.url === '/api/partial') {
+      res.writeHead(200, { 'content-type': 'text/plain', 'content-length': '100' })
+      res.write('partial')
+      setTimeout(() => res.destroy(), 20)
+      return
+    }
+    if (req.url === '/api/before-headers') {
+      res.destroy()
+      return
+    }
+    if (req.url === PLUGIN_STREAM_OPEN_PATH) {
+      res.writeHead(req.headers['x-agnes-stream-open'] === '1' ? 200 : 403).end(
+        JSON.stringify({
+          proof: req.headers['x-agnes-stream-proof'] ?? null,
+          row: req.headers['x-agnes-stream-row'] ?? null,
+        }),
+      )
+      return
+    }
     seen.push({ path: req.url, authorization: req.headers.authorization, cookie: req.headers.cookie })
     res.writeHead(200).end('from B')
   })
@@ -99,6 +119,35 @@ it('verifies the deployment Key and gates HTTP, relative assets and WebSocket up
       ),
     ).toBe('from B!')
     expect(upgrades).toBe(1)
+    const admitted = await fetch(`${gateway.url}${prefix}${PLUGIN_STREAM_OPEN_PATH}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-agnes-stream-open': '1',
+        'x-agnes-stream-proof': 'forged-private-proof',
+        'x-agnes-stream-row': 'forged-private-row',
+      },
+      body: '{}',
+    })
+    expect(admitted.status).toBe(200)
+    expect(await admitted.json()).toEqual({ proof: null, row: null })
+    expect(socket.readyState).toBe(WebSocket.OPEN)
+    for (const marker of [undefined, 'spoofed']) {
+      const refused = await fetch(`${gateway.url}${prefix}${PLUGIN_STREAM_OPEN_PATH}`, {
+        method: 'POST',
+        headers: marker ? { 'x-agnes-stream-open': marker } : {},
+        body: '{}',
+      })
+      expect(refused.status).toBe(403)
+    }
+    const partial = await fetch(`${gateway.url}${prefix}/api/partial`, {
+      signal: AbortSignal.timeout(1000),
+    })
+    expect(partial.status).toBe(200)
+    await expect(partial.text()).rejects.toMatchObject({ name: 'TypeError' })
+    expect((await fetch(`${gateway.url}${prefix}/api/before-headers`)).status).toBe(502)
+    expect(await (await fetch(`${gateway.url}${prefix}/api/accounts`)).text()).toBe('from B')
+    expect(socket.readyState).toBe(WebSocket.OPEN)
     const now = vi.spyOn(Date, 'now').mockReturnValue(session.expiresAt + 1)
     try {
       expect((await fetch(`${gateway.url}${prefix}/api/accounts`)).status).toBe(401)

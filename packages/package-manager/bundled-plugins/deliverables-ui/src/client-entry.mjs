@@ -34,7 +34,8 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
         ? 'markdown'
         : mime === 'application/pdf'
           ? 'pdf'
-          : ['image/png', 'image/jpeg'].includes(mime)
+          : ['image/png', 'image/jpeg', 'image/svg+xml'].includes(mime) ||
+              (mime === 'application/octet-stream' && /\.svg$/i.test(file.name))
             ? 'image'
             : mime.startsWith('text/') || ['application/json', 'application/javascript'].includes(mime)
               ? 'text'
@@ -79,6 +80,8 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
         laneId: file.laneId,
         artifact: file.artifact,
         kind,
+        ...(kind === 'image' ? { name: file.name } : {}),
+        ...(kind === 'html' ? { source: file.source } : {}),
       })
       if (!owner.live) {
         resource.release()
@@ -87,7 +90,14 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
       owner.releases.add(resource.release)
       setPreview(resource)
     } catch (cause) {
-      if (owner.live) setError(String(cause.message ?? cause))
+      if (owner.live)
+        setError(
+          cause.code === 'HTML_PREVIEW_RESOURCE_UNAVAILABLE'
+            ? zh
+              ? 'HTML 预览所需的同目录资源未登记、不可用或超过限制，请将 HTML 和依赖文件一同交付后重试。'
+              : 'HTML preview resources are missing, unavailable, or exceed the limit. Present the HTML and its dependencies together, then retry.'
+            : String(cause.message ?? cause),
+        )
     } finally {
       if (owner.live) setBusy(false)
     }

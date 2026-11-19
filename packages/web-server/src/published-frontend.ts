@@ -73,6 +73,8 @@ export async function createPublishedFrontend(input: {
   const forwarded = (source: IncomingHttpHeaders, upgrade = false): IncomingHttpHeaders => {
     const result = headers(source)
     for (const key of Object.keys(result)) {
+      // This is the public stream admission marker, never a worker proof or caller identity.
+      if (!upgrade && key === 'x-agnes-stream-open' && source[key] === '1') continue
       if (/^(?:forwarded|x-forwarded-|x-agnes-|proxy-authorization|authorization|cookie|referer)/iu.test(key))
         delete result[key]
     }
@@ -158,6 +160,8 @@ export async function createPublishedFrontend(input: {
           headers: forwarded(req.headers),
         },
         (reply) => {
+          reply.on('error', () => res.destroy())
+          reply.once('aborted', () => res.destroy())
           const output = { ...headers(reply.headers), ...cors }
           // Do not send a browser back to B's loopback address after a local canonical redirect.
           if (typeof output.location === 'string' && output.location.startsWith(local.origin))

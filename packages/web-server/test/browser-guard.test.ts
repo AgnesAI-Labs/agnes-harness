@@ -4,6 +4,8 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
+import { DELIVERABLE_PREVIEW_PATH, deliverablePreviewFrame } from '../src/deliverable-preview-frame.js'
+import { PDF_PREVIEW_PATH, pdfPreviewFrame } from '../src/pdf-preview-frame.js'
 import { createWebServer, type WebServerOptions } from '../src/server.js'
 
 async function started(cloudGateway?: WebServerOptions['cloudGateway']) {
@@ -34,6 +36,48 @@ async function started(cloudGateway?: WebServerOptions['cloudGateway']) {
   })
   return { root, web, admin, port: address.port }
 }
+
+it('serves the same isolated preview bootstraps from local and cloud page origins', async () => {
+  const { root, web, admin } = await started()
+  try {
+    const html = await (await fetch(web.url)).text()
+    expect((await fetch(web.url)).headers.get('content-security-policy')).toMatch(/connect-src [^;]*blob:/)
+    writeFileSync(
+      join(root, 'admin.html'),
+      '<html><meta content="__AGNES_CSP_NONCE__"><script>"__AGNES_WS_URL__"</script></html>',
+    )
+    const adminPage = await fetch(web.url + '/admin.html')
+    expect(adminPage.status).toBe(200)
+    expect(adminPage.headers.get('content-security-policy')).not.toMatch(/connect-src [^;]*blob:/)
+    const cloudOrigin = /data-cloud-origin="([^"]+)"/u.exec(html)?.[1]
+    if (!cloudOrigin) throw Error('missing isolated origin')
+    for (const origin of [web.url, cloudOrigin]) {
+      for (const [path, frame] of [
+        [DELIVERABLE_PREVIEW_PATH, deliverablePreviewFrame()],
+        [PDF_PREVIEW_PATH, pdfPreviewFrame()],
+      ] as const) {
+        for (const method of ['GET', 'HEAD']) {
+          const response = await fetch(origin + path, { method })
+          expect(response.status, `${origin} ${method}`).toBe(200)
+          expect(response.headers.get('content-security-policy')).toBe(frame.csp)
+          expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
+          expect(response.headers.get('cache-control')).toBe('no-store')
+          expect(response.headers.get('referrer-policy')).toBe('no-referrer')
+          expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+          expect(await response.text()).toBe(method === 'HEAD' ? '' : frame.body)
+        }
+      }
+    }
+    expect((await fetch(`${cloudOrigin}/admin/api/credentials`)).status).toBe(404)
+    expect((await fetch(`${cloudOrigin}/admin/resources/api/mcp/trust`)).status).toBe(404)
+    expect((await fetch(cloudOrigin + DELIVERABLE_PREVIEW_PATH, { method: 'POST' })).status).toBe(403)
+    expect((await fetch(web.url + DELIVERABLE_PREVIEW_PATH, { method: 'POST' })).status).toBe(405)
+    expect(admin).toEqual([])
+  } finally {
+    await web.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
 /** Raw HTTP so the test controls Host, as a DNS-rebinding page's browser would send it. */
 function send(

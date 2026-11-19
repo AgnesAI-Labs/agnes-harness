@@ -7,6 +7,7 @@ import {
 import { request as httpsRequest } from 'node:https'
 import type { Duplex } from 'node:stream'
 import {
+  REMOTE_FRONTEND_INFO,
   REMOTE_FRONTEND_SESSION_PREFIX,
   remoteFrontendOrigin,
   remoteFrontendSessionPath,
@@ -22,6 +23,7 @@ export function createCloudGateway() {
     expiresAt: number
     refresh?: () => Promise<AdminCloudAuthorization>
     refreshing?: Promise<void>
+    checking?: Promise<void>
     rejected: boolean
     reconnect: boolean
     retryAt: number
@@ -127,9 +129,52 @@ export function createCloudGateway() {
     request.once('close', () => requests.delete(request))
     return request
   }
+  const checkForbidden = (prefix: string, grant: Grant): Promise<void> => {
+    if (grant.checking) return grant.checking
+    const trafficToken = grant.trafficToken
+    grant.checking = new Promise<number | undefined>((resolve) => {
+      // A stream/operation can be refused while the deployment credential remains valid.
+      // Verify the fixed owner-info endpoint rather than trusting an error body or proxy header.
+      const probe = own(
+        httpsRequest(
+          new URL(prefix + REMOTE_FRONTEND_INFO, grant.origin),
+          {
+            headers: { origin: grant.origin, 'e2b-traffic-access-token': trafficToken },
+            signal: AbortSignal.timeout(3000),
+          },
+          (response) => {
+            response.resume()
+            resolve(response.statusCode)
+          },
+        ),
+      )
+      probe.once('error', () => resolve(undefined))
+      probe.end()
+    })
+      .catch(() => undefined)
+      .then((status) => {
+        if (
+          grants.get(prefix) === grant &&
+          grant.trafficToken === trafficToken &&
+          (status === 401 || status === 403)
+        )
+          rejectGrant(prefix, grant)
+      })
+      .finally(() => {
+        delete grant.checking
+      })
+    return grant.checking
+  }
   const headers = (request: IncomingMessage, origin: string, trafficToken: string, upgrade = false) => {
     const result: Record<string, string> = { origin, 'e2b-traffic-access-token': trafficToken }
-    const allowed = ['accept', 'content-type', 'range', 'if-none-match', 'if-modified-since']
+    const allowed = [
+      'accept',
+      'content-type',
+      'range',
+      'if-none-match',
+      'if-modified-since',
+      'x-agnes-stream-open',
+    ]
     if (upgrade)
       allowed.push(
         'sec-websocket-key',
@@ -171,9 +216,16 @@ export function createCloudGateway() {
             method: request.method,
             headers: headers(request, route.grant.origin, route.grant.trafficToken),
           },
-          (incoming) => {
+          async (incoming) => {
+            incoming.on('error', () => response.destroy())
+            incoming.once('aborted', () => response.destroy())
             const status = incoming.statusCode ?? 502
-            if (status === 401 || status === 403) rejectGrant(route.prefix, route.grant)
+            if (status === 401) rejectGrant(route.prefix, route.grant)
+            else if (status === 403) await checkForbidden(route.prefix, route.grant)
+            if (response.destroyed) {
+              incoming.resume()
+              return
+            }
             if (status >= 300 && status < 400 && status !== 304) {
               incoming.resume()
               response.writeHead(502, { 'cache-control': 'no-store' }).end()
@@ -189,7 +241,6 @@ export function createCloudGateway() {
               if (typeof value === 'string') safe[name] = value
             }
             response.writeHead(status, safe)
-            incoming.on('error', () => response.destroy())
             incoming.pipe(response)
           },
         ),
@@ -265,9 +316,12 @@ export function createCloudGateway() {
         peer.on('error', close)
         socket.pipe(peer).pipe(socket)
       })
-      upstream.on('response', (incoming) => {
-        if ([401, 403].includes(incoming.statusCode ?? 0)) rejectGrant(route.prefix, route.grant)
+      upstream.on('response', async (incoming) => {
+        incoming.on('error', () => socket.destroy())
+        incoming.once('aborted', () => socket.destroy())
         incoming.resume()
+        if (incoming.statusCode === 401) rejectGrant(route.prefix, route.grant)
+        else if (incoming.statusCode === 403) await checkForbidden(route.prefix, route.grant)
         socket.destroy()
       })
       upstream.on('error', () => socket.destroy())

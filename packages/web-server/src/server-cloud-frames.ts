@@ -1,4 +1,6 @@
 import { createServer } from 'node:http'
+import { serveDeliverablePreview } from './deliverable-preview-frame.js'
+import { servePdfPreview } from './pdf-preview-frame.js'
 import { createWebDocumentResponder } from './server-document.js'
 import { listen } from './server-http.js'
 import type { WebServerOptions } from './server-types.js'
@@ -23,6 +25,8 @@ export async function createCloudFrameServer(
         response.writeHead(403).end()
         return
       }
+      if (serveDeliverablePreview(request, response)) return
+      if (servePdfPreview(request, response)) return
       if (!serve) {
         response.writeHead(503).end()
         return

@@ -85,10 +85,15 @@ export function createWebDocumentResponder(options: {
     // the base policy; CDN access does not extend to scripts or API connections.
     let documentCsp =
       file === 'index.html'
-        ? `${contentSecurityPolicy.replace(
-            "media-src 'self' blob:",
-            "media-src 'self' blob: https://cos-agent-default.agnes-ai.cn https://cos-agent-default.agnes-ai.com",
-          )}; img-src 'self' blob: https://cos-agent-default.agnes-ai.cn https://cos-agent-default.agnes-ai.com; frame-src 'self' blob: ${options.frameOrigin}`
+        ? `${contentSecurityPolicy
+            .replace(
+              "media-src 'self' blob:",
+              "media-src 'self' blob: https://cos-agent-default.agnes-ai.cn https://cos-agent-default.agnes-ai.com",
+            )
+            .replace(
+              /connect-src ([^;]+)/,
+              'connect-src $1 blob:',
+            )}; img-src 'self' blob: https://cos-agent-default.agnes-ai.cn https://cos-agent-default.agnes-ai.com; frame-src 'self' blob: ${options.frameOrigin}`
         : contentSecurityPolicy
     // This page's explicit backend selection grants only that exact HTTP(S)/WS(S) origin.
     // Local listeners and all local Host/Origin checks above retain their existing behavior.
@@ -98,7 +103,7 @@ export function createWebDocumentResponder(options: {
       documentCsp = documentCsp
         .replace(
           /connect-src [^;]+/,
-          `connect-src 'self' ${options.frameOrigin.replace(/^http/u, 'ws')} ${remote} ${remote.replace(/^http/u, 'ws')}`,
+          `connect-src 'self' ${options.frameOrigin.replace(/^http/u, 'ws')} ${remote} ${remote.replace(/^http/u, 'ws')} blob:`,
         )
         .replace(/frame-src [^;]+/, `frame-src 'self' blob: ${remote}`)
       documentCsp += `; frame-ancestors ${origin}; form-action 'none'; base-uri 'none'`
