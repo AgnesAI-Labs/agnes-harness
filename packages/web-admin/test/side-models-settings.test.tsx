@@ -185,6 +185,7 @@ it('lists only payload-only accounts as account-style cards with a counted headi
 it('opens the domestic Sys1 preset and allows choosing the international gateway', async () => {
   const { host } = await mount(client())
   await click(host, 'side-model-add')
+  expect(host.textContent).not.toContain('Defaults come from Jev 1.13')
   expect(input(host, 'side-adapter')?.value).toBe('agnes-sys1')
   expect(input(host, 'side-preset')?.value).toBe('sys1-cn')
   expect(input(host, 'side-base-url')?.value).toBe('https://litellm-sa.agnes-ai.cn/sys1/v1')
