@@ -43,6 +43,17 @@ export function compatibleModelsPanel(host: HTMLElement | undefined, changed: ()
       <div className="account-field account-compatible-models">
         <div className="account-field-head">
           <Field className="form-field account-group-heading" label={tr('accounts.compatible.models')} />
+          {listed.some((id) => !chosen.includes(id)) && (
+            <Button
+              appearance="link"
+              size="small"
+              htmlType="button"
+              disabled={disabled}
+              onClick={() => choose([...listed, ...manual])}
+            >
+              {tr('accounts.compatible.selectAll')}
+            </Button>
+          )}
           <Button appearance="link" size="small" htmlType="button" disabled={disabled} onClick={fetch}>
             {tr('accounts.compatible.fetch')}
           </Button>
@@ -96,10 +107,11 @@ export function compatibleModelsPanel(host: HTMLElement | undefined, changed: ()
       }
       listed = result.models.map((model) => model.id)
       error = result.catalogueError
-      // A draft with nothing chosen starts with the endpoint's first model: saving needs one
-      // declared model, and listing alone should leave the account ready. The rest stay one click away.
-      const first = listed[0]
-      if (first && chosen.length === 0) chosen = [first]
+      // A draft with nothing chosen offers everything the endpoint listed: the account is ready to
+      // save, and each model can be picked in a conversation without a trip back here. Models the
+      // person already chose, on a saved account or earlier in this draft, are left as they are;
+      // "Select all" adds the rest.
+      if (chosen.length === 0) chosen = [...listed]
       render()
     },
     /** Whether the endpoint has listed models in this draft, so the form can name the next step. */
