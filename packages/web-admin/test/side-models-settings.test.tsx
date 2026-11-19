@@ -177,9 +177,23 @@ it('lists only payload-only accounts as account-style cards with a counted headi
   // The adapter is the payload-only registration, never a chat provider.
   await click(host, 'side-model-add')
   const adapter = host.querySelector<HTMLSelectElement>('[data-testid="side-adapter"]')
-  expect(adapter?.value).toBe('typesafe-systemone')
+  expect(adapter?.value).toBe('agnes-sys1')
   expect(adapter?.textContent).toContain('TypeSafe System One')
   expect(adapter?.textContent).toContain('Voice')
+})
+
+it('opens the domestic Sys1 preset and allows choosing the international gateway', async () => {
+  const { host } = await mount(client())
+  await click(host, 'side-model-add')
+  expect(input(host, 'side-adapter')?.value).toBe('agnes-sys1')
+  expect(input(host, 'side-preset')?.value).toBe('sys1-cn')
+  expect(input(host, 'side-base-url')?.value).toBe('https://litellm-sa.agnes-ai.cn/sys1/v1')
+  expect(input(host, 'side-model-id-0')?.value).toBe('agnes-sys1-1.0')
+  await choose(host, 'side-credential', 'secret://generic/11111111-1111-4111-8111-111111111111')
+  await choose(host, 'side-preset', 'sys1-intl')
+  expect(input(host, 'side-credential')?.value).toBe('')
+  expect(input(host, 'side-base-url')?.value).toBe('https://agrouter-sg.agnes-ai.com/sa/sys1/v1')
+  expect(input(host, 'side-model-id-0')?.value).toBe('agnes-sys1-1.0')
 })
 
 it('tags a missing credential and a disabled entry, and summarizes several models by count', async () => {
@@ -239,6 +253,7 @@ it('prefills the Jev template for a new entry and keeps every prefilled field a 
   const api = client([chatAccount])
   const { host } = await mount(api, { accounts: [chatAccount] })
   await click(host, 'side-model-add')
+  await choose(host, 'side-adapter', 'typesafe-systemone')
   expect(input(host, 'side-base-url')?.value).toBe('https://openrouter.ai/api/v1')
   expect(input(host, 'side-model-id-0')?.value).toBe('typesafe/jev-1.13-20260917')
   expect(input(host, 'side-model-name-0')?.value).toBe('Jev 1.13 (2026-09-17)')
@@ -379,7 +394,7 @@ it('names the voice presets in zh-CN', async () => {
   expect(host.textContent).toContain('朗读模型')
 })
 
-it('adds an account through the editor: Jev by default, credential picked or created, five model fields', async () => {
+it('adds a Jev account through the editor with a picked or created credential', async () => {
   const api = client([chatAccount])
   const onSaved = vi.fn<(snapshot: ConfigSnapshot) => Promise<void>>(async () => undefined)
   const store = credentials()
@@ -388,6 +403,7 @@ it('adds an account through the editor: Jev by default, credential picked or cre
   expect(store.list).not.toHaveBeenCalled()
   await click(host, 'side-model-add')
   expect(store.list).toHaveBeenCalledTimes(1)
+  await choose(host, 'side-adapter', 'typesafe-systemone')
   expect(input(host, 'side-adapter')?.value).toBe('typesafe-systemone')
   expect(input(host, 'side-base-url')?.value).toBe('https://openrouter.ai/api/v1')
   await type(host, 'side-label', 'Jev')
@@ -559,6 +575,7 @@ it('derives the route from the label live and disambiguates collisions with exis
   const api = client()
   const { host } = await mount(api)
   await click(host, 'side-model-add')
+  await choose(host, 'side-adapter', 'typesafe-systemone')
   expect(input(host, 'side-label')?.value).toBe('Jev')
   // The label is prefilled, and account-jev is taken: the preview disambiguates with a suffix.
   expect(host.querySelector('[data-testid="side-route-preview"]')?.textContent).toContain('account-jev-2')
@@ -639,7 +656,7 @@ it('pushes the editor as a settings subpage and leaves it by cancel, back or sav
 
   await click(body, 'side-model-add')
   expect(page('add-side-model')?.querySelector('[data-testid="side-editor"]')).not.toBeNull()
-  expect(input(page('add-side-model') ?? body, 'side-label')?.value).toBe('Jev')
+  expect(input(page('add-side-model') ?? body, 'side-label')?.value).toBe('Agnes Sys1 (Domestic)')
   // The list is not where the editor is.
   expect(sideHost.querySelector('[data-testid="side-editor"]')).toBeNull()
   await click(body, 'side-cancel')
@@ -733,10 +750,11 @@ it.each(['saved', 'failed'] as const)(
   },
 )
 
-it('offers both adapters and fills the SiliconFlow preset as two voice model fields', async () => {
+it('offers Sys1, Jev and Voice and fills two model fields for SiliconFlow', async () => {
   const { host } = await openVoiceEditor(client([chatAccount]))
   const adapter = host.querySelector<HTMLSelectElement>('[data-testid="side-adapter"]')
   expect([...(adapter?.options ?? [])].map((option) => option.value)).toEqual([
+    'agnes-sys1',
     'typesafe-systemone',
     'openai-audio',
   ])

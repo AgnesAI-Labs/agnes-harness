@@ -216,7 +216,14 @@ function SideModels({
 
   const patch = (next: Partial<EditorDraft>) => {
     resetMessages()
-    setDraft((current) => (current ? { ...current, ...next } : current))
+    setDraft((current) => {
+      if (!current) return current
+      const changesSys1Endpoint =
+        next.baseUrl !== undefined &&
+        next.baseUrl !== current.baseUrl &&
+        (current.providerId === 'agnes-sys1' || next.providerId === 'agnes-sys1')
+      return { ...current, ...next, ...(changesSys1Endpoint ? { credentialRef: '' } : {}) }
+    })
   }
   const valid = (current: EditorDraft): { models: ConfigModel[]; model?: string } | undefined => {
     if (current.label.trim() === '' || current.label.length > 128) return undefined
