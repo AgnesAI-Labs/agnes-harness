@@ -77,4 +77,4 @@ Known Agnes image and video generation IDs are excluded from conversation model 
 
 ### Image-capable models
 
-In the model account, select a model and check **Input types → Image** if the endpoint supports images. Reported input types are filled automatically; an unknown model defaults to text. Each model keeps its own selection, including after fetching the model list again. Keep at least one input type selected. Saving follows the existing new-session configuration behavior.
+In the model account, select a model and check **Input types → Image** if the endpoint supports images. Input types the endpoint reports, or that a built-in catalogue records for the same model id, are filled automatically; any other model defaults to text. Each model keeps its own selection, including after fetching the model list again. Keep at least one input type selected. Saving follows the existing new-session configuration behavior.

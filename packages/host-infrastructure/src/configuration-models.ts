@@ -168,20 +168,41 @@ export function applyInputOverrides(models: ConfigModel[], value: unknown): Conf
   })
 }
 
-/** Only an exact endpoint and protocol match may supply an unknown account's catalogue defaults. */
+/**
+ * The input types an account's models start with, before the person changes them. An endpoint at a
+ * built-in provider's exact address and protocol takes that provider's catalogue. Any other endpoint,
+ * such as a gateway like llm.sg whose model list names models but not what they accept, takes for
+ * each id the built-in catalogues know what they agree on: an id two catalogues describe differently
+ * keeps only the types both allow. An id no catalogue knows keeps the text fallback.
+ */
 export async function catalogueInputs<T extends { api: string; baseUrl: string; capabilities?: unknown }>(
   providers: readonly T[],
   read: (provider: T) => Promise<{ records: ModelRecord[] }>,
   api: string,
   address: string,
 ): Promise<ReadonlyMap<string, ModelRecord['input']>> {
-  const provider = providers.find(
+  const catalogued = providers.filter((candidate) => !candidate.capabilities)
+  const records = (provider: T) =>
+    read(provider).then(
+      (catalogue) => catalogue.records,
+      () => [] as ModelRecord[],
+    )
+  const exact = catalogued.find(
     (candidate) =>
-      !candidate.capabilities &&
-      candidate.api === api &&
-      candidate.baseUrl.replace(/\/$/, '') === address.replace(/\/$/, ''),
+      candidate.api === api && candidate.baseUrl.replace(/\/$/, '') === address.replace(/\/$/, ''),
   )
-  if (!provider) return new Map()
-  const { records } = await read(provider).catch(() => ({ records: [] as ModelRecord[] }))
-  return new Map(records.map((record) => [record.id, record.input]))
+  if (exact) return new Map((await records(exact)).map((record) => [record.id, record.input]))
+  const agreed = new Map<string, ModelRecord['input']>()
+  for (const catalogue of await Promise.all(catalogued.map(records)))
+    for (const record of catalogue) {
+      const prior = agreed.get(record.id)
+      agreed.set(
+        record.id,
+        prior
+          ? (prior.filter((type) => record.input.includes(type)) as ModelRecord['input'])
+          : [...record.input],
+      )
+    }
+  for (const [id, input] of agreed) if (input.length === 0) agreed.delete(id)
+  return agreed
 }
