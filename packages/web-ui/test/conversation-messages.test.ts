@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 
-import { attachmentLink, type UINode } from '@agnes/protocol'
+import { attachmentLink, type UINode, type UITurn } from '@agnes/protocol'
 import {
   ConversationMarkdown,
   ConversationMessages,
@@ -340,20 +340,77 @@ describe('W3b projected message DOM', () => {
     expect(summary?.getAttribute('aria-expanded')).toBe('false')
     const details = document.getElementById(summary?.getAttribute('aria-controls') ?? '')
     expect(details?.hidden).toBe(true)
+    const saveNotices = '[data-testid="refinement-save-notice"]'
+    expect(host.querySelectorAll(saveNotices)).toHaveLength(reasons.length)
+    expect(details?.querySelectorAll(saveNotices)).toHaveLength(reasons.length)
     await act(async () => summary?.click())
     expect(summary?.getAttribute('aria-expanded')).toBe('true')
     expect(details?.hidden).toBe(false)
     expect(details?.textContent).toContain('技能ship-flow来自已完成的工作流')
     expect(details?.textContent).not.toContain('skill/ship-flow')
-    const lines = [...host.querySelectorAll('[data-testid="refinement-save-notice"]')].map(
-      (line) => line.textContent ?? '',
-    )
+    const lines = [...(details?.querySelectorAll(saveNotices) ?? [])].map((line) => line.textContent ?? '')
     for (const [at, reason] of reasons.entries())
       expect(lines[at]).toContain(
         t('timeline.refinement.reason', { reason: t(`timeline.refinementSave.reason.${reason}`) }),
       )
     expect(lines.join(' ')).not.toContain('timeline.refinement')
   })
+
+  it.each([undefined, 'review', 'save'] as const)(
+    'keeps a historical user save in its review details (turn member: %s)',
+    async (turnMember) => {
+      const nodes: UINode[] = [
+        {
+          kind: 'refinement-run',
+          id: 'review',
+          seq: 1,
+          runId: 'r',
+          state: 'applied',
+          trigger: 'manual',
+          edits: [{ op: 'upsert', kind: 'memory', id: 'build' }],
+        },
+        {
+          kind: 'refinement-save',
+          id: 'save',
+          seq: 2,
+          state: 'refused',
+          initiator: 'user',
+          reason: 'memory-off',
+        },
+      ]
+      const turns: UITurn[] = turnMember
+        ? [
+            {
+              id: 'turn:1',
+              turn: 1,
+              startSeq: 1,
+              startedAt: '2026-11-19T00:00:00.000Z',
+              status: 'completed',
+              nodeIds: [turnMember],
+              inherited: false,
+              forkable: false,
+              usage: {
+                totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+                reasoningComplete: true,
+                billingComplete: true,
+                calls: [],
+              },
+            },
+          ]
+        : []
+      await act(async () => root.render(createElement(ConversationMessages, { t, nodes, turns })))
+      const summary = host.querySelector<HTMLButtonElement>('button[data-testid="refinement-run-notice"]')
+      const details = document.getElementById(summary?.getAttribute('aria-controls') ?? '')
+      const saveNotice = '[data-testid="refinement-save-notice"]'
+      expect(summary?.getAttribute('aria-expanded')).toBe('false')
+      expect(host.querySelectorAll(saveNotice)).toHaveLength(1)
+      expect(details?.querySelector(saveNotice)?.closest('[hidden]')).toBe(details)
+      await act(async () => summary?.click())
+      expect(details?.hidden).toBe(false)
+      expect(details?.querySelector(saveNotice)?.closest('[hidden]')).toBeNull()
+      expect(details?.querySelector(saveNotice)?.textContent).toContain('原因：工作区记忆已关闭。')
+    },
+  )
 
   it('save rows render initiator, outcome and reason without text', async () => {
     const save = (id: string, extra: Partial<Extract<UINode, { kind: 'refinement-save' }>>): UINode => ({
@@ -476,8 +533,25 @@ describe('W3b projected message DOM', () => {
         return { kind: 'receipt' as const, state: 'refused' as const, reason: 'memory-full' }
       throw new Error('connection lost')
     })
+    const saveHistory: UINode[] = [
+      { kind: 'refinement-save', id: 'auto', seq: 5, state: 'saved', initiator: 'auto' },
+      {
+        kind: 'refinement-save',
+        id: 'history',
+        seq: 6,
+        state: 'refused',
+        initiator: 'user',
+        reason: 'memory-off',
+      },
+    ]
     await act(async () =>
-      root.render(createElement(ConversationMessages, { t, nodes: [node], saveRefinementEntry: saveEntry })),
+      root.render(
+        createElement(ConversationMessages, {
+          t,
+          nodes: [node, ...saveHistory],
+          saveRefinementEntry: saveEntry,
+        }),
+      ),
     )
     const summary = host.querySelector<HTMLButtonElement>('button[data-testid="refinement-run-notice"]')
     expect(summary?.textContent).toBe('经验复盘（你发起） · 已保存 4 项经验 · 已移除 1 项经验')
@@ -493,7 +567,14 @@ describe('W3b projected message DOM', () => {
       t('timeline.refinementSave.entry', { name: '技能 deploy' }),
     ])
     expect(buttons.every((button) => button.textContent === '保存到工作区')).toBe(true)
-    for (const button of buttons) await act(async () => button.click())
+    const saveNotices = () => host.querySelectorAll('[data-testid="refinement-save-notice"]')
+    expect(saveNotices()).toHaveLength(2)
+    await act(async () => buttons[0]?.click())
+    expect(saveNotices()).toHaveLength(1)
+    expect(saveNotices()[0]?.textContent).toContain(
+      t('timeline.refinementSave.by', { who: t('timeline.refinementSave.initiator.auto') }),
+    )
+    for (const button of buttons.slice(1)) await act(async () => button.click())
     expect(saveEntry.mock.calls).toEqual([
       ['memory', 'build'],
       ['prompt', 'style'],
@@ -522,12 +603,14 @@ describe('W3b projected message DOM', () => {
       root.render(
         createElement(ConversationMessages, {
           t,
-          nodes: [{ ...node, withdrawn: true }],
+          nodes: [{ ...node, withdrawn: true }, ...saveHistory],
           saveRefinementEntry: saveEntry,
         }),
       ),
     )
     expect(host.querySelector('[data-testid="refinement-save-entry"]')).toBeNull()
+    expect(saveNotices()).toHaveLength(2)
+    expect(host.querySelector('.refinement-details')).toBeNull()
   })
 
   it('keeps side-call cost rows out of the transcript, even with no turn', async () => {

@@ -12,7 +12,7 @@ import { AssistantMessage } from './assistant-message.js'
 import { type ApprovalNode, type ConversationMessagesProps, fallbackT } from './context.js'
 import { markdownState } from './markdown-state.js'
 import { RefinementRunNote } from './refinement-run.js'
-import { RefinementSaveNote } from './refinement-save.js'
+import { RefinementSaveNote, RefinementSavesByRun } from './refinement-save.js'
 import { ConversationToolCard, toolOutcome } from './tool-card.js'
 import { UserMessage } from './user-message.js'
 
@@ -160,12 +160,17 @@ export function nativeContent(
       )
     case 'refinement-run':
       return (
-        <RefinementRunNote
-          node={node}
-          t={t}
-          withdraw={props.withdrawRefinement}
-          save={props.saveRefinementEntry}
-        />
+        <RefinementSavesByRun.Consumer>
+          {(savesByRunId) => (
+            <RefinementRunNote
+              node={node}
+              t={t}
+              withdraw={props.withdrawRefinement}
+              save={props.saveRefinementEntry}
+              saves={savesByRunId.get(node.id)}
+            />
+          )}
+        </RefinementSavesByRun.Consumer>
       )
     case 'refinement-save':
       return <RefinementSaveNote node={node} t={t} />

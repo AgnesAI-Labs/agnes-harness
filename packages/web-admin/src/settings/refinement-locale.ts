@@ -5,8 +5,7 @@ export const REFINEMENT_SETTINGS_NAMESPACE = '@agnes/web-admin/refinement'
 export const refinementSettingsCatalog: LocaleCatalog = {
   en: {
     'refinement.endpoint': 'Service address',
-    'refinement.endpoint.hint':
-      'Choose the company review gateway. Switching pauses learning and reloads its models.',
+    'refinement.endpoint.hint': 'Switching pauses learning and reloads its models.',
     'refinement.key': 'Service key',
     'refinement.key.label': 'Task experience service key',
     'refinement.key.hint': 'Save your company service key to load the review models.',
@@ -67,7 +66,7 @@ export const refinementSettingsCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     'refinement.endpoint': '服务地址',
-    'refinement.endpoint.hint': '选择公司的复盘节点。切换后会暂停学习并重新读取该节点的模型。',
+    'refinement.endpoint.hint': '切换后会暂停学习并重新读取该节点的模型。',
     'refinement.key': '服务密钥',
     'refinement.key.label': '任务经验服务密钥',
     'refinement.key.hint': '保存公司服务密钥后即可读取复盘模型。',

@@ -5,6 +5,8 @@ import { Bubble, type BubbleItemType } from '../x/index.js'
 import type { ConversationMessagesProps } from './messages/context.js'
 import { delegationView } from './messages/delegation-card.js'
 import { isSystemInput, Message } from './messages/message.js'
+import { hasRefinementDetails } from './messages/refinement-run.js'
+import { type RefinementSave, RefinementSavesByRun } from './messages/refinement-save.js'
 import { SubtaskPages, Subtasks, type SubtaskView } from './messages/subtask-details.js'
 import { Turn } from './messages/turn.js'
 import { type ConversationNode, conversationNodes } from './projection.js'
@@ -108,6 +110,22 @@ export function ConversationMessages(props: ConversationMessagesProps) {
   const visible = props.visibleNodeIds ? new Set(props.visibleNodeIds) : undefined
   const nodes = conversationNodes(stable.nodes)
   if (visible) for (const id of [...nodes.keys()]) if (!visible.has(id)) nodes.delete(id)
+  // Receipt ownership follows projection order across turn members and unassigned nodes.
+  const savesByRunId = new Map<string, RefinementSave[]>()
+  let reviewSaves: RefinementSave[] | undefined
+  for (const [id, node] of nodes) {
+    if (node.kind === 'refinement-run' && hasRefinementDetails(node, props.withdrawRefinement)) {
+      reviewSaves = []
+      savesByRunId.set(id, reviewSaves)
+    } else if (
+      reviewSaves &&
+      node.kind === 'refinement-save' &&
+      (node.initiator === 'user' || node.initiator === 'auto')
+    ) {
+      reviewSaves.push(node)
+      nodes.delete(id)
+    }
+  }
   let items: BubbleItemType[]
   if (stable.turns.length) {
     const assigned = new Set(stable.turns.flatMap((turn) => turn.nodeIds))
@@ -162,9 +180,11 @@ export function ConversationMessages(props: ConversationMessagesProps) {
     <Subtasks.Provider value={delegationStates}>
       <ConversationXScope>
         <PushStack rootTitle={props.t('delegation.conversation')} historyKey="agnesConversationSubtask">
-          <section data-agnes-conversation-messages="">
-            <Bubble.List autoScroll={false} items={items} role={ROLES} />
-          </section>
+          <RefinementSavesByRun.Provider value={savesByRunId}>
+            <section data-agnes-conversation-messages="">
+              <Bubble.List autoScroll={false} items={items} role={ROLES} />
+            </section>
+          </RefinementSavesByRun.Provider>
           <SubtaskPages t={props.t} />
         </PushStack>
       </ConversationXScope>

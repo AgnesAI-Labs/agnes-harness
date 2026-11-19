@@ -159,6 +159,10 @@ it.each([true, false])('switches service addresses with the saved key (keeps mod
   const enable = field(host, 'refinement-enabled') as HTMLButtonElement
   expect(Array.from(endpointSelect.options, ({ value }) => value)).toEqual([baseUrl, alternateUrl])
   expect(endpointSelect.value).toBe(baseUrl)
+  expect(
+    endpointSelect.closest('.agnes-settings-item')?.querySelector('.agnes-settings-item-description')
+      ?.textContent,
+  ).toBe('Switching pauses learning and reloads its models.')
 
   await choose(host, 'refinement-endpoint', alternateUrl)
   const paused = { ...initial, enabled: false, baseUrl: alternateUrl }
@@ -378,7 +382,14 @@ it('tells a failed save and a failed read apart from a conflict', async () => {
 
 it('shows the section in Chinese', async () => {
   document.documentElement.lang = 'zh-CN'
-  const host = await mount(fakeApi())
+  const api = fakeApi()
+  api.read.mockResolvedValue({ revision: REV0, settings: OFF, endpoints: [baseUrl] })
+  const host = await mount(api)
+  expect(
+    field(host, 'refinement-endpoint')
+      .closest('.agnes-settings-item')
+      ?.querySelector('.agnes-settings-item-description')?.textContent,
+  ).toBe('切换后会暂停学习并重新读取该节点的模型。')
   const text = host.textContent ?? ''
   expect(switchHelp(host)?.getAttribute('aria-label')).toBe(
     '打开后，之后新开的会话生效；已经打开的会话不受影响。关闭立即对所有会话生效。要把经验留给之后的会话，还需打开工作区记忆（设置 → 通用 → 个性化 → 记忆：「先问我」或「自动」）；记忆为「关闭」时，经验只在学到它的会话里有效。',

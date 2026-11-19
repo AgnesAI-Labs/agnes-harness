@@ -221,7 +221,7 @@ With the switch on, the model has three tools:
 
 ## Withdraw a review
 
-In the Web conversation, each review has a summary that shows what started it and how it ended. Expand an applied review to see the names of the saved or removed entries and choose **Withdraw**.
+In the Web conversation, each review has a summary that shows what started it and how it ended. Expand an applied review to see the names of the saved or removed entries, see its save results, or choose **Withdraw**.
 
 - The entries go back to how they were before that review. The model is told in its next request that they were withdrawn.
 - If an entry changed after that review, nothing is withdrawn and the review details say which entries changed. Resolve it by hand.

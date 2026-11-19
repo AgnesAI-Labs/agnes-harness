@@ -3,7 +3,12 @@ import { useId, useState } from 'react'
 import type { Translate } from '../../locales/index.js'
 import { Button } from '../../ui/button.js'
 import { Icon } from '../../ui/icon.js'
-import { type RefinementSaveEntry, saveOutcomeText } from './refinement-save.js'
+import {
+  type RefinementSave,
+  type RefinementSaveEntry,
+  RefinementSaveNote,
+  saveOutcomeText,
+} from './refinement-save.js'
 
 type RefinementRun = Extract<UINode, { kind: 'refinement-run' }>
 
@@ -54,6 +59,14 @@ function changeCount(action: 'saved' | 'removed', count: number, t: Translate): 
   return count ? t(`timeline.refinement.count.${action}.${count === 1 ? 'one' : 'many'}`, { count }) : ''
 }
 
+export function hasRefinementDetails(node: RefinementRun, withdraw: RefinementWithdraw | undefined): boolean {
+  return (
+    node.state === 'applied' &&
+    !node.withdrawn &&
+    ((node.edits?.length ?? 0) > 0 || (!!withdraw && node.appliedSeq !== undefined))
+  )
+}
+
 /**
  * The review's status and its applied changes. The host owns each action and its receipt.
  */
@@ -62,22 +75,25 @@ export function RefinementRunNote({
   t,
   withdraw,
   save,
+  saves,
 }: {
   node: RefinementRun
   t: Translate
   withdraw?: RefinementWithdraw | undefined
   save?: RefinementSaveEntry | undefined
+  saves?: readonly RefinementSave[] | undefined
 }) {
   const detailsId = useId()
   const [expanded, setExpanded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<RefinementWithdrawOutcome>()
+  const [hasStartedSave, setHasStartedSave] = useState(false)
   const trigger = t(`timeline.refinement.trigger.${node.trigger}`)
   const withdrawn = node.withdrawn || result?.kind === 'withdrawn'
   const edits = node.edits ?? []
   const { appliedSeq } = node
   const canWithdraw = !!withdraw && appliedSeq !== undefined
-  const expandable = node.state === 'applied' && !withdrawn && (edits.length > 0 || canWithdraw)
+  const expandable = result?.kind !== 'withdrawn' && hasRefinementDetails(node, withdraw)
   const notice = { 'data-testid': 'refinement-run-notice', 'data-state': node.state }
   const reason = node.reason ? reviewReason(node.reason, t) : undefined
 
@@ -144,12 +160,24 @@ export function RefinementRunNote({
                     {workflow && <small>{t('timeline.refinement.workflow')}</small>}
                   </div>
                   {save && op === 'upsert' && kind !== 'subagent' && (
-                    <SaveEntry kind={kind} id={id} name={`${label} ${id}`} save={save} t={t} />
+                    <SaveEntry
+                      kind={kind}
+                      id={id}
+                      name={`${label} ${id}`}
+                      save={save}
+                      t={t}
+                      onSaveStart={() => setHasStartedSave(true)}
+                    />
                   )}
                 </li>
               )
             })}
           </ul>
+        )}
+        {saves?.map((receipt) =>
+          hasStartedSave && receipt.initiator === 'user' ? null : (
+            <RefinementSaveNote key={receipt.id} node={receipt} t={t} />
+          ),
         )}
         {canWithdraw && (
           <div className="refinement-actions">
@@ -181,13 +209,15 @@ function SaveEntry(props: {
   id: string
   name: string
   save: RefinementSaveEntry
+  onSaveStart: () => void
   t: Translate
 }) {
-  const { kind, id, name, save, t } = props
+  const { kind, id, name, save, onSaveStart, t } = props
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<string>()
   const onSave = async (target?: 'user') => {
     if (busy) return
+    onSaveStart()
     setBusy(true)
     try {
       setResult(saveOutcomeText(await (target ? save(kind, id, target) : save(kind, id)), t))

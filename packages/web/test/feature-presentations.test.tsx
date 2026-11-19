@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 import { Context } from '@agnes/cordis'
-import type { SessionRefineSaveResult, UITimeline } from '@agnes/protocol'
+import type { SessionRefineSaveResult, UINode, UITimeline } from '@agnes/protocol'
 import { createClient, type JsonRpcMessage, memoryJournal } from '@agnes/sdk'
 import {
   type ClientContext,
@@ -301,11 +301,32 @@ it('routes refinement actions from the official conversation to the session RPCs
   const host = document.createElement('div')
   document.body.append(host)
   const sessionId = 'refinement-session'
+  const nodes: UINode[] = [
+    {
+      kind: 'refinement-run',
+      id: 'review',
+      runId: 'run',
+      seq: 7,
+      appliedSeq: 7,
+      state: 'applied',
+      trigger: 'manual',
+      edits: [{ op: 'upsert', kind: 'memory', id: 'build' }],
+    },
+  ]
+  let runtime: Awaited<ReturnType<typeof startClientModules>> | undefined
   const requested = vi.fn((method: string, params: unknown) => {
     if (method === 'initialize') return { protocolVersion: 1, agentCapabilities: {} }
     if (method === '_agnes/v1/session.refine.rollback') return { seq: 10 }
     if (method === '_agnes/v1/session.refine.save') {
       const user = (params as { target?: 'user' }).target === 'user'
+      nodes.push({
+        kind: 'refinement-save',
+        id: user ? 'save-user' : 'save-workspace',
+        seq: user ? 9 : 8,
+        initiator: 'user',
+        ...(user ? { state: 'saved', target: 'user-memory' } : { state: 'refused', reason: 'memory-off' }),
+      })
+      runtime?.transcript?.render([...nodes])
       return {
         receipt: {
           receiptId: user ? 'receipt-user' : 'receipt-workspace',
@@ -354,7 +375,6 @@ it('routes refinement actions from the official conversation to the session RPCs
       },
     },
   })
-  let runtime: Awaited<ReturnType<typeof startClientModules>> | undefined
   const previousLanguage = document.documentElement.lang
   const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 503 }))
   try {
@@ -369,18 +389,7 @@ it('routes refinement actions from the official conversation to the session RPCs
       binding: { owner: 'refinement-conversation', lifetime: 'profile', availability: 'active' },
     } as never)
     runtime.session.setSession(sessionId)
-    runtime.transcript?.render([
-      {
-        kind: 'refinement-run',
-        id: 'review',
-        runId: 'run',
-        seq: 7,
-        appliedSeq: 7,
-        state: 'applied',
-        trigger: 'manual',
-        edits: [{ op: 'upsert', kind: 'memory', id: 'build' }],
-      },
-    ])
+    runtime.transcript?.render([...nodes])
     const button = (testId: string) =>
       host.querySelector<HTMLButtonElement>(`button[data-testid="${testId}"]`)
     await vi.waitFor(() =>
@@ -396,14 +405,30 @@ it('routes refinement actions from the official conversation to the session RPCs
     await vi.waitFor(() => {
       expect(saveFeedback()).toContain('未保存到工作区。')
       expect(saveFeedback()).toContain('原因：工作区记忆已关闭。')
+      expect(host.querySelector('[data-testid="refinement-save-notice"]')).toBeNull()
+      expect(host.querySelector('.refinement-details')?.textContent?.match(/未保存到工作区。/g)).toHaveLength(
+        1,
+      )
     })
     expect(requested).toHaveBeenCalledWith('_agnes/v1/session.refine.save', {
       sessionId,
       kind: 'memory',
       id: 'build',
     })
+    button('refinement-run-notice')?.click()
+    await vi.waitFor(() => {
+      expect(host.querySelector('[data-testid="refinement-save-result"]')?.closest('[hidden]')).not.toBeNull()
+      expect(host.querySelector('[data-testid="refinement-save-notice"]')).toBeNull()
+    })
+    button('refinement-run-notice')?.click()
+    await vi.waitFor(() =>
+      expect(host.querySelector('.refinement-details')?.hasAttribute('hidden')).toBe(false),
+    )
     button('refinement-save-entry-user')?.click()
-    await vi.waitFor(() => expect(saveFeedback()).toContain('已按你的要求保存到用户记忆'))
+    await vi.waitFor(() => {
+      expect(saveFeedback()).toContain('已按你的要求保存到用户记忆')
+      expect(host.querySelector('[data-testid="refinement-save-notice"]')).toBeNull()
+    })
     expect(requested).toHaveBeenCalledWith('_agnes/v1/session.refine.save', {
       sessionId,
       kind: 'memory',
