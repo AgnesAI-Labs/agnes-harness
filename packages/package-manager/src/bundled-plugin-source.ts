@@ -23,7 +23,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'plugin-helper',
     id: '@agnes/plugin-helper',
-    version: '0.2.44',
+    version: '0.2.45',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/plugin-helper',
   },
@@ -53,7 +53,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'browser',
     id: '@agnes/browser',
-    version: '0.1.19',
+    version: '0.1.20',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/browser',
     optionalUnderCeiling: true,

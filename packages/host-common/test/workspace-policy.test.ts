@@ -244,6 +244,7 @@ describe('Host workspace policy compiler', () => {
         '/installation/memory',
         '/installation/secrets',
         '/installation/profiles',
+        '/installation/cloud-key',
         '/data/daemon',
       ])
         expect(plan.backendOptions.denyPaths).toContain(path)
@@ -415,5 +416,21 @@ describe('extra directories in the session policy', () => {
           path === '/link' ? '/real' : posix.resolve(options?.base ?? '/', path),
       }),
     ).rejects.toMatchObject({ code: 'E_SANDBOX_WORKSPACE' })
+  })
+})
+
+describe('Explicit command network grant', () => {
+  it('keeps workspace writes scoped when network is explicitly open, including delegation', async () => {
+    const online = await compile('/work', { sandbox: { level: 'L1', network_allow: ['*'] } })
+    expect(online.backendOptions.network).toBe('allow')
+    const closed = await compile('/work', { sandbox: { level: 'L1' } })
+    expect(online.backendOptions.allowPaths).toEqual(closed.backendOptions.allowPaths)
+    expect(online.backendOptions.allowPaths).not.toContain('/')
+    expect(online.backendOptions.denyPaths).toContain('/work/.git')
+    expect(online.backendOptions.fullAccess).toBeUndefined()
+    expect(intersectWorkspacePlan(online, closed.policy).backendOptions.network).toBe('deny')
+    expect(intersectWorkspacePlan(online, online.policy).backendOptions.network).toBe('allow')
+    const hosts = await compile('/work', { sandbox: { network_allow: ['example.com'] } })
+    expect(intersectWorkspacePlan(online, hosts.policy).policy.networkAllow).toEqual(['example.com'])
   })
 })

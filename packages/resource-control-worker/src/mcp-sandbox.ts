@@ -6,7 +6,7 @@ import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep 
 import { promisify } from 'node:util'
 import type { McpServerConfig } from '@agnes/base'
 import { type BackendProbeExec, detectBackend } from '@agnes/base/sandbox'
-import { privateStateRoots } from '@agnes/host-common/paths'
+import { privateStateFiles, privateStateRoots } from '@agnes/host-common/paths'
 import { isOfficialMcpDefinition, readPackageSourceConfiguration } from '@agnes/package-manager'
 import type { McpServerDefinitionInput } from '@agnes/protocol'
 
@@ -119,11 +119,25 @@ async function hardDenyRoots(workspace: string, readPaths: string[], context: Mc
   const roots = privateStateRoots({ ...context, home: context.home as string, workspace })
   const grants = await Promise.all(readPaths.map(async (raw) => ({ raw, real: await realpath(raw) })))
   const denied: string[] = []
+  const fileDenyPaths: string[] = []
+  const files = new Set(
+    await Promise.all(privateStateFiles({ home: context.home as string }).map(protectedRoot)),
+  )
   for (const path of roots) {
     let canonical = await protectedRoot(path)
+    const file = files.has(canonical)
+    if (file && !grants.some(({ real }) => below(real, canonical))) continue
     // A missing mountpoint below a read-only bind cannot be prepared inside bubblewrap. Reserve
     // empty protected directories before confinement; inability to reserve them fails closed.
-    if (grants.some(({ real }) => below(real, dirname(canonical)))) {
+    if (file) {
+      const meta = await stat(canonical).catch((error) => {
+        if (error.code !== 'ENOENT') throw unavailable()
+        return undefined
+      })
+      if (meta && !meta.isFile()) throw unavailable()
+      if (meta) fileDenyPaths.push(canonical)
+      else canonical = dirname(canonical)
+    } else if (grants.some(({ real }) => below(real, dirname(canonical)))) {
       await mkdir(canonical, { recursive: true, mode: 0o700 }).catch(() => {
         throw unavailable()
       })
@@ -133,12 +147,17 @@ async function hardDenyRoots(workspace: string, readPaths: string[], context: Mc
     // Separate bind aliases expose the same inode at different namespace names. Mask every
     // declared grant spelling, rather than masking only the canonical name.
     for (const { raw, real } of grants)
-      if (below(real, canonical)) denied.push(join(raw, relative(real, canonical)))
+      if (below(real, canonical)) {
+        const alias = join(raw, relative(real, canonical))
+        denied.push(alias)
+        if (fileDenyPaths.includes(canonical)) fileDenyPaths.push(alias)
+      }
   }
   const unique = [...new Set(denied)]
   // An empty read-only mask hides descendants too. A second mask beneath it would need to create
   // a mountpoint inside that read-only empty filesystem and would make a valid profile unusable.
-  return unique.filter((path) => !unique.some((parent) => parent !== path && below(parent, path)))
+  const denyPaths = unique.filter((path) => !unique.some((parent) => parent !== path && below(parent, path)))
+  return { denyPaths, fileDenyPaths: [...new Set(fileDenyPaths)].filter((path) => denyPaths.includes(path)) }
 }
 
 /** Probe a harmless command through the same OS boundary that will own the MCP child. */
@@ -305,7 +324,7 @@ async function confinedMcpConfig(
     cwd: workspace,
     readPaths,
     allowPaths: config.sandboxProfile === 'workspace-write' ? [dataDir, workspace] : [dataDir],
-    denyPaths: await hardDenyRoots(workspace, readPaths, context),
+    ...(await hardDenyRoots(workspace, readPaths, context)),
     network: config.sandboxProfile === 'network' ? ('allow' as const) : ('deny' as const),
   }
   signal.throwIfAborted()

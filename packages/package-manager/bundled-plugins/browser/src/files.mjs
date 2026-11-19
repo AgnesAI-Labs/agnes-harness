@@ -3,52 +3,9 @@ import { realpath } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import types from './file-types.json' with { type: 'json' }
 import { failure } from './policy.mjs'
 
-// Content types describe bytes; rendering/codec support still belongs to the pinned Chromium.
-const types = {
-  html: 'text/html',
-  htm: 'text/html',
-  xhtml: 'application/xhtml+xml',
-  txt: 'text/plain',
-  log: 'text/plain',
-  md: 'text/plain',
-  csv: 'text/plain',
-  json: 'application/json',
-  xml: 'application/xml',
-  css: 'text/css',
-  js: 'text/javascript',
-  mjs: 'text/javascript',
-  svg: 'image/svg+xml',
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  gif: 'image/gif',
-  webp: 'image/webp',
-  avif: 'image/avif',
-  bmp: 'image/bmp',
-  ico: 'image/x-icon',
-  apng: 'image/apng',
-  pdf: 'application/pdf',
-  mp4: 'video/mp4',
-  m4v: 'video/mp4',
-  webm: 'video/webm',
-  ogv: 'video/ogg',
-  mp3: 'audio/mpeg',
-  m4a: 'audio/mp4',
-  wav: 'audio/wav',
-  ogg: 'audio/ogg',
-  oga: 'audio/ogg',
-  flac: 'audio/flac',
-  aac: 'audio/aac',
-  opus: 'audio/ogg',
-  woff: 'font/woff',
-  woff2: 'font/woff2',
-  ttf: 'font/ttf',
-  otf: 'font/otf',
-  wasm: 'application/wasm',
-  vtt: 'text/vtt',
-}
 export const uploadMime = (path) => types[extname(path).slice(1).toLowerCase()] ?? 'application/octet-stream'
 const inside = (root, target) => {
   const rel = relative(root, target)

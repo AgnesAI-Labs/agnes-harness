@@ -33,6 +33,7 @@ export function windowsDetachedCommand(executable: string, argv: readonly string
 export function windowsDetachedEnvironment(
   env: NodeJS.ProcessEnv,
   parent: NodeJS.ProcessEnv = process.env,
+  equal?: (left: string, right: string) => boolean,
 ): string {
   const selected: NodeJS.ProcessEnv = Object.create(null)
   for (const key in env) selected[key] = env[key]
@@ -42,12 +43,13 @@ export function windowsDetachedEnvironment(
   const keys: string[] = []
   for (const key in selected) keys.push(key)
   const seen = new Set<string>()
+  const names: string[] = []
   const entries: Array<[string, string]> = []
   for (const key of keys.sort()) {
     // Match Node's first-lexicographic-key behavior, even if that key is undefined.
-    const folded = key.toUpperCase()
-    if (seen.has(folded)) continue
-    seen.add(folded)
+    if (equal ? names.some((name) => equal(name, key)) : seen.has(key.toUpperCase())) continue
+    if (equal) names.push(key)
+    else seen.add(key.toUpperCase())
     const value = selected[key]
     if (value === undefined) continue
     text(key)

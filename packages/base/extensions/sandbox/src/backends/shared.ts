@@ -4,7 +4,9 @@ export type ClosedNetworkConfineOptions = Readonly<{
   cwd: string
   allowPaths: readonly string[]
   denyPaths: readonly string[]
-  /** A non-empty list is deliberately unsupported until a real host-filtering proxy exists. */
+  /** Existing regular files, masked as files rather than empty directories. */
+  fileDenyPaths?: readonly string[]
+  /** Empty closes the network; ['*'] opens it; host-filtered network enforcement is not implemented. */
   networkAllow?: readonly string[]
   readPaths?: readonly string[]
   network?: 'deny' | 'allow'
@@ -84,18 +86,26 @@ export function requireClosedNetwork(networkAllow: readonly string[] | undefined
     )
 }
 
+/** The existing wildcard grants unrestricted outbound access; named-host filtering stays refused. */
+export function requireSupportedNetwork(networkAllow: readonly string[] | undefined): void {
+  if (Array.isArray(networkAllow) && networkAllow.length === 1 && networkAllow[0] === '*') return
+  requireClosedNetwork(networkAllow)
+}
+
 export function validateClosedNetworkOptions(options: ClosedNetworkConfineOptions): {
   cwd: string
   allowPaths: string[]
   denyPaths: string[]
+  fileDenyPaths?: string[]
   readPaths?: string[]
   network?: 'deny' | 'allow'
   loopbackServe?: boolean
 } {
-  requireClosedNetwork(options.networkAllow)
+  requireSupportedNetwork(options.networkAllow)
   if (options.loopbackServe !== undefined && typeof options.loopbackServe !== 'boolean')
     throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'invalid loopback service grant')
-  if (options.loopbackServe && options.network === 'allow')
+  const network = options.network ?? (options.networkAllow?.includes('*') ? 'allow' : undefined)
+  if (options.loopbackServe && network === 'allow')
     throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'loopback service cannot grant outbound network')
   if (options.fullAccess && options.denyPaths.length === 0)
     throw backendCompileFault(
@@ -104,12 +114,17 @@ export function validateClosedNetworkOptions(options: ClosedNetworkConfineOption
     )
   const cwd = validateAbsolutePaths([options.cwd], 'deny')[0]
   if (!cwd) throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'missing cwd')
+  const denyPaths = validateAbsolutePaths(options.denyPaths, 'deny')
+  const fileDenyPaths = validateAbsolutePaths(options.fileDenyPaths ?? [], 'deny')
+  if (fileDenyPaths.some((path) => !denyPaths.includes(path)))
+    throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'file mask must name a denied path')
   return {
     cwd,
     ...(options.loopbackServe ? { loopbackServe: true } : {}),
     ...(options.readPaths ? { readPaths: validateAbsolutePaths(options.readPaths, 'deny') } : {}),
-    ...(options.network ? { network: options.network } : {}),
+    ...(network ? { network } : {}),
     allowPaths: validateAbsolutePaths(options.allowPaths, 'allow', options.fullAccess),
-    denyPaths: validateAbsolutePaths(options.denyPaths, 'deny'),
+    denyPaths,
+    ...(fileDenyPaths.length ? { fileDenyPaths } : {}),
   }
 }

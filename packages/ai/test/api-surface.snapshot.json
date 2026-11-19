@@ -32,6 +32,7 @@
   "VIDEO_ROUTE",
   "WireAdapter",
   "aggregateDeviations",
+  "bindModelAdapterExternal",
   "buildRegistry",
   "buildStamp",
   "classifyModelFailure",

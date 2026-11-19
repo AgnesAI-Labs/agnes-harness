@@ -120,6 +120,10 @@ export function ownStateRoots(paths: {
 /** Host-owned private state, shared by command/PTY and confined MCP policy compilers.
  * Callers supply the actual installation home; canonicalization and alias masks belong to their fence.
  */
+export function privateStateFiles(paths: { home: string }): string[] {
+  return [join(paths.home, 'cloud-key')]
+}
+
 export function privateStateRoots(paths: {
   home: string
   dataDir: string
@@ -131,6 +135,7 @@ export function privateStateRoots(paths: {
   return [
     ...new Set([
       ...['secrets', 'auth', 'profiles', 'daemon', 'memory'].map((leaf) => join(paths.home, leaf)),
+      ...privateStateFiles(paths),
       join(paths.dataDir, 'secrets'),
       join(paths.dataDir, 'daemon'),
       ...(workspace ? WORKSPACE_SECRET_DIRS.map((leaf) => join(workspace, leaf)) : []),

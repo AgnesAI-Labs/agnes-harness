@@ -141,10 +141,12 @@ async function bindLocal(workspace: SeamWorkspace): Promise<SandboxSeam> {
     network: Object.freeze({
       mode: policy.loopbackServe
         ? ('loopback-serve' as const)
-        : policy.networkAllow.length
-          ? ('hosts' as const)
-          : ('deny' as const),
-      hosts: policy.networkAllow,
+        : policy.networkAllow.includes('*')
+          ? ('allow' as const)
+          : policy.networkAllow.length
+            ? ('hosts' as const)
+            : ('deny' as const),
+      hosts: policy.networkAllow.includes('*') ? [] : policy.networkAllow,
     }),
     requiredEnforcement: workspace.enforcement,
   })

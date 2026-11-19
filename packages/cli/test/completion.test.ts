@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it } from 'vitest'
 import { COMMANDS, parseArgs } from '../src/args.js'
@@ -10,6 +10,9 @@ import { commandHelp } from '../src/command-help.js'
 import { completeSessions } from '../src/commands/complete.js'
 import { completionScript } from '../src/commands/completion.js'
 import { completionSpec, SHELLS } from '../src/completion-spec.js'
+// Transform the shared home resolver during collection, like the other CLI integration fixtures.
+// The no-daemon case below checks side effects, not Vitest's cold Host-module transformation time.
+import '../src/boot/inputs.js'
 
 const spec = completionSpec()
 const dirs: string[] = []
@@ -79,18 +82,31 @@ describe('agh completion', () => {
 })
 
 describe('real shells load the script', () => {
+  // Windows' system bash.exe can be the WSL launcher; this fixture needs Git for Windows Bash.
+  const gitPaths =
+    process.platform === 'win32'
+      ? spawnSync('where.exe', ['git.exe'], { encoding: 'utf8' }).stdout.split(/\r?\n/).filter(Boolean)
+      : []
+  const bashExecutable =
+    process.platform === 'win32'
+      ? (gitPaths
+          .flatMap((path) => [join(dirname(path), 'bash.exe'), join(dirname(path), '..', 'bin', 'bash.exe')])
+          .find(existsSync) ?? join(process.env.ProgramFiles ?? '', 'Git', 'bin', 'bash.exe'))
+      : 'bash'
   // `eval "$(...)"` rather than `source <(...)`: macOS ships bash 3.2, which cannot source a process substitution.
-  const bash = (line: string, extra = '') =>
-    spawnSync(
-      'bash',
+  const bash = (line: string, extra = '') => {
+    const result = spawnSync(
+      bashExecutable,
       [
         '-c',
         `${extra}\neval "$(cat)"\nCOMP_LINE='${line}'; COMP_POINT=\${#COMP_LINE}; _agh; printf '%s\\n' "\${COMPREPLY[@]}"`,
       ],
       { input: completionScript('bash'), encoding: 'utf8' },
     )
-      .stdout.split('\n')
-      .filter(Boolean)
+    expect(result.error).toBeUndefined()
+    expect(result.status, result.stderr).toBe(0)
+    return result.stdout.split('\n').filter(Boolean)
+  }
 
   it('bash completes commands, verbs, enum values and flags', () => {
     expect(bash('agh sess')).toEqual(['sessions'])

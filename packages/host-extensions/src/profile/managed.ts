@@ -14,6 +14,7 @@ import type { JsonValue, ManagedServiceDescriptor } from '@agnes/protocol'
 import { configurationRevision, rpcError } from '@agnes/protocol'
 import { compileExtensionSchema } from '../ext-host/json-schema.js'
 import { pluginRowSource } from '../ext-host/row-extension-host.js'
+import { SupersededProfileResourceError } from './activation.js'
 import { type BundledAppProvision, openBundledApp } from './bundled-app.js'
 import { type ChannelTargets, deniedChannelTargets } from './channel-targets.js'
 import { writeManagedConfiguration } from './managed-configuration.js'
@@ -147,19 +148,24 @@ export class ProfileManagedResources {
     if (!validate(input.definition.defaultConfig)) throw rpcError('INVALID_PARAMS')
     this.definitions.push(input as (typeof this.definitions)[number])
     const configKey = `managed-config:${input.definition.id}`
-    const resource = () => {
+    const resource = (reportSuperseded = false) => {
       input.assert()
-      if (this.current && !this.current(input.owner, input.integrity, input.revision))
+      const resources = profiles.get(this.key)?.resources
+      if (this.current && !this.current(input.owner, input.integrity, input.revision)) {
+        const replacement =
+          reportSuperseded &&
+          resources?.find((r) => !r.retired && r.owner === input.owner && r.id === input.definition.id)
+        if (replacement && this.current(replacement.owner, replacement.integrity, replacement.revision))
+          throw new SupersededProfileResourceError('The profile resource has a different active binding.')
         throw rpcError('CAPABILITY_DENIED')
-      const current = profiles
-        .get(this.key)
-        ?.resources.find(
-          (r) =>
-            r.owner === input.owner &&
-            r.revision === input.revision &&
-            r.integrity === input.integrity &&
-            r.id === input.definition.id,
-        )
+      }
+      const current = resources?.find(
+        (r) =>
+          r.owner === input.owner &&
+          r.revision === input.revision &&
+          r.integrity === input.integrity &&
+          r.id === input.definition.id,
+      )
       if (!current) throw rpcError('CAPABILITY_DENIED')
       return current
     }
@@ -170,9 +176,9 @@ export class ProfileManagedResources {
       },
       get: async (): Promise<T> => {
         await this.settle()
-        const r = resource(),
+        const r = resource(true),
           value = await r.value
-        if (resource() !== r || r.status.state !== 'ready' || r.lifetime.signal.aborted)
+        if (resource(true) !== r || r.status.state !== 'ready' || r.lifetime.signal.aborted)
           throw rpcError('CAPABILITY_DENIED')
         return value as T
       },

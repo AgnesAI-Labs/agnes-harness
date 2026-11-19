@@ -37,6 +37,24 @@ const executionPolicy = (value: SeamWorkspace) => ({
 })
 
 describe('Host-bound sandbox seam', () => {
+  it('passes an explicit network wildcard as unrestricted network, keeping the file fence', async () => {
+    const w = workspace()
+    const policy = { ...w.value.policy, networkAllow: ['*'] }
+    const seam = await createSandboxSeam().forWorkspace({ ...w.value, policy })
+    await seam.exec(['printf', 'ok'], { cwd: w.value.root })
+    expect(w.exec).toHaveBeenCalledWith(
+      expect.arrayContaining(['printf', 'ok']),
+      expect.objectContaining({
+        sandbox: expect.objectContaining({
+          policy: expect.objectContaining({
+            network: { mode: 'allow', hosts: [] },
+            fsWrite: expect.objectContaining({ allow: ['/work/proj'] }),
+          }),
+        }),
+      }),
+    )
+  })
+
   it('keeps the package seam inert until Host supplies a workspace', async () => {
     const factory = createSandboxSeam()
     await expect(factory.confine(['echo'])).rejects.toMatchObject({ code: 'E_WORKSPACE_REQUIRED' })

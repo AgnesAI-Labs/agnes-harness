@@ -11,6 +11,7 @@ import {
   validateMethod,
 } from '@agnes/protocol'
 import { Actor } from '@agnes/protocol/gen/authz'
+import { SupersededProfileResourceError } from '../profile/activation.js'
 import { frozenJson } from './frozen-json.js'
 import { serviceControls } from './service-controls.js'
 import type { ServiceRegistration, ServiceRegistry } from './services.js'
@@ -222,7 +223,15 @@ export function serviceInvoker(deps: ServiceInvocationDeps) {
       outcome = mode.kind === 'inspect' ? 'inspected' : 'ok'
     } catch (error) {
       const code = error && typeof error === 'object' ? failures.get(error) : undefined
-      const safe = code ?? (combined.aborted ? 'REQUEST_TIMEOUT' : 'INTERNAL_ERROR')
+      // A query may report the resource mismatch. An effect handler has already been dispatched
+      // by this point, so the journal must still treat its outcome as uncertain.
+      const safe =
+        code ??
+        (combined.aborted
+          ? 'REQUEST_TIMEOUT'
+          : cap.kind === 'query' && error instanceof SupersededProfileResourceError
+            ? 'GENERATION_STALE'
+            : 'INTERNAL_ERROR')
       outcome = safe
       failure = rpcError(safe)
       if (!admitted) markServicePreDispatchFailure(failure)
