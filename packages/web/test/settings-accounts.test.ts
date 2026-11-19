@@ -203,6 +203,63 @@ it('offers Agnes AI International as the Agnes provider at the international add
   h.controller.close()
 })
 
+it('offers llm.sg after the Agnes gateways and links each gateway to the page that issues its keys', async () => {
+  const agnes = {
+    id: 'agnes-ai',
+    label: 'Agnes AI',
+    api: 'openai-completions',
+    baseUrl: 'https://api.agnes-ai.cn/v1',
+  }
+  const compatible = {
+    id: 'openai-compatible',
+    label: 'OpenAI-compatible endpoint',
+    api: 'openai-completions',
+    baseUrl: 'https://endpoint.invalid/v1',
+  }
+  const h = await setup(undefined, [agnes, OPENAI, compatible])
+  const consoleLink = () => h.doc.getElementById('config-key-console') as unknown as HTMLAnchorElement
+  const helpToggle = () => h.doc.getElementById('config-key-help-toggle') as unknown as HTMLButtonElement
+  const choose = (provider: string, baseUrl?: string) => {
+    h.input('config-provider').value = provider
+    h.input('config-provider').dispatchEvent(
+      new (window as Window).Event('change', { bubbles: true }) as unknown as Event,
+    )
+    if (baseUrl === undefined) return
+    h.input('config-base-url').value = baseUrl
+    h.input('config-base-url').dispatchEvent(
+      new (window as Window).Event('input', { bubbles: true }) as unknown as Event,
+    )
+  }
+  await h.click('#config-add-account')
+  const tiles = [
+    ...h.doc.querySelectorAll('.account-provider-groups > .account-provider-choices > button'),
+  ].map((tile) => (tile as unknown as HTMLElement).dataset.provider)
+  expect(tiles.slice(0, 3)).toEqual(['agnes-ai', 'agnes-ai:international', 'preset:llm-sg'])
+
+  // llm.sg is an OpenAI-compatible gateway: the preset fills its address and name.
+  await h.click('[data-provider="preset:llm-sg"]')
+  expect(h.input('config-provider').value).toBe('openai-compatible')
+  expect(h.input('config-base-url').value).toBe('https://api.llm.sg/v1')
+  expect(h.input('config-account-name').value).toBe('llm.sg')
+  expect(consoleLink().hidden).toBe(false)
+  expect(consoleLink().getAttribute('href')).toBe('https://www.llm.sg/')
+  expect(consoleLink().getAttribute('target')).toBe('_blank')
+  expect(consoleLink().getAttribute('rel')).toBe('noopener noreferrer')
+  expect(helpToggle().hidden).toBe(true)
+
+  // Agnes AI links to its China console by default and to the international one at that address.
+  choose('agnes-ai')
+  expect(consoleLink().getAttribute('href')).toBe('https://api.agnes-ai.cn/')
+  choose('agnes-ai', 'https://apihub.agnes-ai.com/v1')
+  expect(consoleLink().getAttribute('href')).toBe('https://apihub.agnes-ai.com/')
+
+  // Any other provider keeps the general help in place of a link.
+  choose('openai')
+  expect(consoleLink().hidden).toBe(true)
+  expect(helpToggle().hidden).toBe(false)
+  h.controller.close()
+})
+
 it('uses the visible Provider picker to update connection fields and locks existing accounts', async () => {
   const h = await setup()
   h.controller.close()

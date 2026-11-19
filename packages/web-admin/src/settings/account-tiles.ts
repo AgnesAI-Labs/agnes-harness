@@ -29,6 +29,43 @@ const RELAY_PROVIDERS = ['openrouter'] as const
  * issued per gateway, so the international choice is the same provider with its own address filled in.
  */
 const AGNES_INTERNATIONAL_BASE_URL = 'https://apihub.agnes-ai.com/v1'
+/** llm.sg serves many vendors' models behind one OpenAI-compatible address; its key lists them all. */
+const LLM_SG_BASE_URL = 'https://api.llm.sg/v1'
+
+/** Where to create a key for each gateway that has a console of its own, matched by address. */
+const KEY_CONSOLES = [
+  ['llm.sg', 'https://www.llm.sg/'],
+  ['agnes-ai.com', 'https://apihub.agnes-ai.com/'],
+  ['agnes-ai.cn', 'https://api.agnes-ai.cn/'],
+] as const
+
+/**
+ * The page that issues keys for the account being set up, from the address it connects to. An
+ * Agnes AI account without a usable address uses the China gateway, the provider's default. Any
+ * other provider has none, and the form explains where keys come from instead.
+ */
+export function keyConsoleUrl(provider: string, baseUrl: string): string | undefined {
+  let host = ''
+  try {
+    host = new URL(baseUrl).hostname
+  } catch {
+    // An address still being typed matches no gateway.
+  }
+  const found = KEY_CONSOLES.find(([domain]) => host === domain || host.endsWith(`.${domain}`))
+  if (found) return found[1]
+  return provider === 'agnes-ai' ? 'https://api.agnes-ai.cn/' : undefined
+}
+
+/** A gateway with a key console of its own gets a link to it in place of the general key help. */
+export function syncKeyConsole(provider: string, baseUrl: string): void {
+  const link = document.getElementById('config-key-console')
+  const help = document.getElementById('config-key-help-toggle')
+  if (!(link instanceof HTMLAnchorElement) || !help) return
+  const url = keyConsoleUrl(provider, baseUrl)
+  if (url) link.href = url
+  link.hidden = !url
+  help.hidden = !!url
+}
 
 /** A relay is not a provider of its own: it fills the compatible form's address and account name. */
 export type RelayPreset = Readonly<{ label: string; baseUrl: string }>
@@ -56,9 +93,9 @@ export function groupProviders<T extends { id: string }>(
 }
 
 /**
- * The first step of adding an account: a tile per popular provider (Agnes AI first), each saying
- * how it connects, then any OpenAI-compatible address; a row of relays; every other provider the
- * backend offers sits in a fold below.
+ * The first step of adding an account: a tile per popular provider (Agnes AI first, then its
+ * international gateway and llm.sg), each saying how it connects, then any OpenAI-compatible
+ * address; a row of relays; every other provider the backend offers sits in a fold below.
  */
 export function providerTiles(
   providers: readonly Provider[],
@@ -94,6 +131,13 @@ export function providerTiles(
   }
   const { popular, relay, more } = groupProviders(providers)
   const compatible = !quick && providers.some((provider) => provider.id === COMPATIBLE_PROVIDER)
+  /** llm.sg is an OpenAI-compatible gateway, so it is offered only where that form is. */
+  const llmSg = () => {
+    const preset = { label: tr('accounts.llmSg'), baseUrl: LLM_SG_BASE_URL }
+    return tile('preset:llm-sg', preset.label, tr('accounts.llmSgHint'), () =>
+      select(COMPATIBLE_PROVIDER, preset),
+    )
+  }
   const presets = compatible
     ? RELAY_PRESETS.map(([id, baseUrl]) => {
         const preset = { label: tr(`accounts.preset.${id}`), baseUrl }
@@ -110,7 +154,7 @@ export function providerTiles(
       { className: 'account-provider-choices' },
       ...(quick ? popular.slice(0, 4) : popular).flatMap((provider) =>
         provider.id === 'agnes-ai' && !quick
-          ? [providerTile(provider), agnesInternational()]
+          ? [providerTile(provider), agnesInternational(), ...(compatible ? [llmSg()] : [])]
           : [providerTile(provider)],
       ),
       ...(quick ? [tile('more', tr('accounts.moreProviders'), '…', () => select(''))] : []),

@@ -98,8 +98,25 @@ function SettingsFixture() {
                     <label className="form-field" htmlFor="config-api-key">
                       <span>{text('settings-shell.apiKeyLabel', 'API Key')}</span>
                     </label>
-                    <Button htmlType="button" appearance="link" size="small" aria-controls="config-key-help">
+                    <Button
+                      id="config-key-help-toggle"
+                      htmlType="button"
+                      appearance="link"
+                      size="small"
+                      aria-controls="config-key-help"
+                    >
                       <span>{text('accounts.keyHelp', '在哪里获取？')}</span>
+                    </Button>
+                    <Button
+                      id="config-key-console"
+                      appearance="link"
+                      size="small"
+                      href="https://api.agnes-ai.cn/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      hidden
+                    >
+                      {text('accounts.keyHelp', '在哪里获取？')}
                     </Button>
                   </div>
                   <p id="config-key-help" className="account-help" hidden>
