@@ -52,6 +52,7 @@ export const webFetchTool = defineTool({
         truncation: { ...response.truncation, output: guarded.truncated },
       }
       return {
+        ...(nonSuccess ? { isError: true } : {}),
         content: [{ type: 'text', text: guarded.text }, ...(guarded.ref ? [refBlock(guarded.ref)] : [])],
         details,
       }
