@@ -252,22 +252,27 @@ export class Settings {
       }
     }
     rules.guard?.(current, candidate, origin)
-    if (setupChanged(current, candidate)) await this.host.setup.checkAccounts(block, candidate)
+    if (setupChanged(current, candidate) || block === 'source:feishu')
+      await this.host.setup.checkAccounts(block, candidate)
     if (stale()) throw new SettingsConflict('Settings changed during the checks. Reload before saving.')
     // Re-read current settings after async checks in case unrelated blocks were saved concurrently.
     const old = store.settings()
     const settings = rules.merge(old, parsed, id)
     if (JSON.stringify(SettingsSchema.parse(settings)) === JSON.stringify(old)) {
-      const delivery = await sessions.delivery(`settings:${block}`)
+      // An operator may repair the wrapper's authentication without changing its saved path.
+      const restarting = block === 'source:feishu' && origin === 'panel'
+      const delivery = restarting ? 'pending' : await sessions.delivery(`settings:${block}`)
+      if (restarting) this.host.setup.restart()
       return {
         saved: true,
         revision: store.blockRevision(block),
         policy_changed: false,
-        restarting: false,
+        restarting,
         context_delivery: delivery,
       }
     }
-    const restarting = setupChanged(old, settings) || !this.host.setup.configured()
+    const restarting =
+      setupChanged(old, settings) || block === 'source:feishu' || !this.host.setup.configured()
     const before = policyVersion(old),
       after = policyVersion(settings)
     const scope = (version: SettingsValue) => ({
@@ -375,7 +380,7 @@ export class Settings {
     }
   }
   /**
-   * Rereads a Source's display names (such as Feishu chat names) and its field choices (such as channel instances)
+   * Rereads a Source's display names (such as Feishu chat names) and its field choices
    * immediately.
    * @returns Sorted display names (`{ added }`) that were not present in the stored label map before this read.
    * @throws UserError (`noLabels`) when the Source has neither; rethrows a failed read, keeping the stored list.

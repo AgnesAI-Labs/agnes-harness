@@ -1,7 +1,6 @@
 // Adapted from dsh-superagent (MIT)
 /** Host and context interfaces connecting Source plugins to the application; also imported by the web panel, so it must not import Node-only modules. */
 import type {
-  ChannelRef,
   OutboundMessage,
   ReceiveResult,
   Thread,
@@ -21,27 +20,6 @@ import type { SourceRegistry } from './registry.js'
 export const HEALTH_TEXT = {
   setupPending: 'Waiting for the deployment check',
   sourceOff: 'Off',
-  feishuDedicatedBot:
-    "Direct messages and other chats need a Feishu bot instance of Superagent's own; only the listed chats are received",
-  feishuWaiting: 'Waiting for the channel subscription',
-  feishuChannelUnset: 'Setup required: the Source is on, and its channel instance is not set',
-  feishuChatsUnset: 'Setup required: no chat is listed to receive',
-  feishuChannelRefused:
-    'Setup required: the channel instance {channel} refused the chats ({reason}); retrying',
-  feishuPluginUnset:
-    'Setup required: to claim the whole instance, name it with its channel row, as <channel row id>/<instance id>',
-  feishuInstanceShared:
-    'Setup required: the channel instance {channel} already serves the owner or another feature, or a pairing code for it is still unused (it expires within an hour); use a dedicated bot instance',
-  feishuInstanceReleasing:
-    'Setup required: the channel instance {channel} is in use; waiting for a previous Superagent run to release it',
-  feishuInstanceRefused:
-    'Setup required: the channel instance {channel} refused the claim ({reason}); retrying',
-  feishuNoHistory:
-    'The channel cannot read chat history, so nothing is recovered after a restart or disconnect',
-  feishuNoMembers:
-    'The channel cannot list chat members, so the allowlist is not synced and the allowlist in the settings applies',
-  feishuNoReads:
-    'The channel cannot read messages or threads, so orchestrator_feishu_read and context reads are unavailable',
   pollFailures: '{count} consecutive failed polls; last: {error}',
 } as const
 export type HealthCode = keyof typeof HEALTH_TEXT

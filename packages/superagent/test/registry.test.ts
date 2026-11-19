@@ -7,13 +7,12 @@ import { Commands } from '../src/infra/commands.js'
 import { HealthBoard } from '../src/infra/health.js'
 import { SettingsSchema } from '../src/policy.js'
 import { feishuKind, feishuKindFor } from '../src/sources/feishu.js'
-import { feishuLink } from '../src/sources/feishu-io.js'
 import { feishuChannel, feishuTrigger, feishuTriggerId } from '../src/sources/feishu-trigger.js'
 import { githubKind } from '../src/sources/github.js'
 import type { ImageSink, SourceKind } from '../src/sources/kind.js'
 import { SourceRegistry } from '../src/sources/registry.js'
 import { testDeployment } from './fixtures/deployment.js'
-import { configOnly, fakeChannels } from './sources/fake-channels.js'
+import { bound, fakeCli, message } from './sources/fake-cli.js'
 
 const probe: SourceKind<{ interval: number }> = {
   kind: 'probe',
@@ -260,9 +259,8 @@ describe('Source registry', () => {
     expect(sources.channelAllowed({ source: 'github', address: { number: '7' } })).toBe(true)
   })
   it('delivers a reply to a direct message under the default settings', async () => {
-    const fake = fakeChannels()
-    const link = feishuLink(fake.channels)
-    link.context = configOnly()
+    const fake = fakeCli({ history: [message('om_dm', { chat: 'oc_dm', direct: true })] })
+    const link = fake.link
     const sources = new SourceRegistry(() => SettingsSchema.parse({}))
     sources.register(feishuKindFor(link))
     const trigger = feishuTrigger(
@@ -278,16 +276,12 @@ describe('Source registry', () => {
       'ou_bot',
       'cli_bot',
     )!
-    const channel = trigger.channel!
-    expect(channel.address).toEqual({ chatId: 'oc_dm', messageId: 'om_dm', direct: 'true' })
+    const channel = bound(trigger).channel!
+    expect(channel.address).toMatchObject({ chatId: 'oc_dm', messageId: 'om_dm', direct: 'true' })
     expect(sources.channelAllowed(channel)).toBe(true)
     const commands = new Commands(() => testDeployment(), {}, new AbortController().signal)
     const reply: OutboundMessage = { id: 'reply-1', channel, text: 'Done', kind: 'reply' }
     expect(await sources.send(reply, commands)).toBe('sent')
-    expect(fake.sent[0]).toMatchObject({
-      channel: 'feishu',
-      target: { chatType: 'dm', chatId: 'oc_dm', threadId: 'om_dm', deliveryKey: 'reply-1' },
-      message: { replyTo: { chatId: 'oc_dm', messageId: 'om_dm', chatType: 'dm' } },
-    })
+    expect(fake.sent[0]?.input).toBe('Done')
   })
 })

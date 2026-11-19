@@ -34,7 +34,7 @@ same managed configuration service. The standard plugin settings UI and `agh plu
 commands can supply the initial value.
 
 One plugin can run several instances, each with its own platform app. A bundled app with channel
-access (Superagent) can claim one instance whole: that instance's group and direct messages then
+access can claim one instance whole: that instance's group and direct messages then
 go only to the bundled app, never to session bindings or [pairings](channel-targets.md), until it
 stops. An instance already bound to a session or paired cannot be claimed, so give the bundled app
 an instance of its own; the other instances are not affected.
@@ -67,9 +67,9 @@ fails shutdown confirmation and uses native managed-resource recovery; never bli
 an unknown external operation.
 
 Use fake gateways for lifecycle and refusal tests, then independently verify each real platform.
-See [architecture and compatibility](../develop/channel-plugins.md). In Extension API 5.6, use
-the composer’s Channels dialog to configure instances through native approval. The trigger appears only after an existing session is loaded, editable and connected and its initial channel overview is available; it is hidden for loading, read-only, disconnected and draft states. Bound connections show the channel icon/name/status and open their existing configuration directly. Plugins → Channels
-provides a multi-channel management overview. Collapsible channel groups preview three connections
+See [architecture and compatibility](../develop/channel-plugins.md). Plugins → Channels, introduced
+in Extension API 5.6, provides a multi-channel management overview and configures instances through
+native approval. Collapsible channel groups preview three connections
 each, with controls to show more or expand/collapse all groups. Compact rows show session and
 connection status; Details reveals the workspace, instance ID, unbind and move actions. Search
 matches sessions, chats, instance IDs and workspaces, showing all matches regardless of the preview limit.
@@ -79,11 +79,11 @@ bot a message, then refresh and select its verified chat target. Only the same w
 Only future messages are exported; unbound chats never create sessions. Reconnect requires inbound
 confirmation. Pending transitions stay paused until explicitly unbound. Handle native approvals in AGH.
 
-The composer’s Channels button opens a compact dialog. Enabled channel plugins are discovered dynamically. Choose a channel, select stored credentials and platform options, approve the native configuration operation, then confirm an observed chat target in the same dialog. The backend derives the instance ID, workspace and agent from the authorized session. Plugins → Channels summarizes connections by provider and shows session titles, chat targets and connection status, with configure, unbind and move actions. Moving a connection replaces its old routing metadata and requires fresh target confirmation. New plugins require no frontend vendor list.
+In Plugins → Channels, choose **Add connection** for a channel to open its compact configuration dialog. Enabled channel plugins are discovered dynamically. Select a session, stored credentials and platform options, approve the native configuration operation, then confirm an observed chat target in the same dialog. The backend derives the instance ID, workspace and agent from the authorized session. Plugins → Channels summarizes connections by provider and shows session titles, chat targets and connection status, with configure, unbind and move actions. Moving a connection replaces its old routing metadata and requires fresh target confirmation. New plugins require no frontend vendor list.
 
 Bound sessions mirror new AGH user text, labeled as an AGH user message, alongside assistant replies through the same durable outbound queue. Channel ingress uses a `channel:<sha256>` command correlation, preserved from the native inbox into `user/message.commandId` and the projected user node. All channel inputs are suppressed on outbound to prevent echoes. Correlation is presentation and deduplication metadata, never authorization. Only messages after the binding baseline are eligible; legacy user nodes without correlation are not backfilled. System inputs and reference material are omitted. User attachments produce an open-in-AGH notice rather than exporting their contents. Existing logs need no migration, and adapter interfaces and plugin permissions are unchanged.
 
-For bound sessions the composer displays each channel name and its current sharing, confirmation or connection status. Each binding opens its exact saved connection for editing. Unbound sessions retain the Channels picker; merely configuring an instance does not count as a session binding.
+Session composers have no channel-binding entry, including the SuperAgent main session. Manage connection status and saved bindings in **Plugins → Channels**. Removing the session entry preserves existing bindings and message forwarding. Merely configuring an instance does not count as a session binding.
 
 ## Channel icon
 

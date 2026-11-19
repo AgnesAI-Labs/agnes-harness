@@ -4,6 +4,24 @@ import { fill } from './infra/text.js'
 
 export type SetupPlace = 'deployment' | 'github' | 'feishu'
 export const SETUP_PROBLEMS = {
+  feishuCliUnset: [
+    'feishu',
+    'Enter the absolute path of an already configured bot lark-cli wrapper in the Feishu Source. Old channel instances cannot supply a CLI.',
+  ],
+  feishuCliMissing: ['feishu', 'The Feishu CLI must be an absolute path to an executable wrapper.'],
+  feishuCliFailed: [
+    'feishu',
+    'The Feishu CLI could not verify its authenticated app. Check the wrapper with auth status.',
+  ],
+  feishuBotNotReady: [
+    'feishu',
+    'The Feishu CLI bot identity is not ready. Configure bot authentication first.',
+  ],
+  feishuUserIdentity: [
+    'feishu',
+    'The Feishu CLI must use strict-mode bot. User or automatic identity is refused.',
+  ],
+  feishuNoBot: ['feishu', 'The Feishu CLI did not return a valid bot identity.'],
   foreignFile: [
     'deployment',
     '{file} was not written by Superagent; move it, or choose another state directory.',

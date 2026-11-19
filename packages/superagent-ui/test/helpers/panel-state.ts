@@ -153,8 +153,7 @@ export function initial(): PanelServer {
       feishu: {
         enabled: true,
         config: {
-          instance: 'feishu-bot',
-          claim: 'groups',
+          cli: '/bin/false',
           chats: [{ chatId: 'oc_team', listen: 'mentions' }],
           directMessages: true,
         },

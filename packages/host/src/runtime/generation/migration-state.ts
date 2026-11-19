@@ -10,6 +10,8 @@ import {
 } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { DEFERRED_INVOCATION_EVENT } from '@agnes/host-providers/assemble/deferred-invocations'
+import { unreconciled } from './migration-reconciliation.js'
+import { classifyUnknown, safeCancelledEffects } from './migration-safe-cancel.js'
 
 type Reason = { kind: string; id: string; sessionKey: string; seq?: number }
 type Fact = {
@@ -71,6 +73,7 @@ export async function assertMigrationSettled(
     const [head] = await storage.scan(key, { order: 'desc', limit: 1 })
     const rows = await scanAll((query) => storage.scan(key, query), { order: 'asc', toSeq: head?.seq ?? 0 })
     const state = foldEvents(rows)
+    const registers = await storage.registers(key)
     const add = (kind: string, id: string, seq?: number) =>
       reasons.push({ kind, id, sessionKey: key, ...(seq === undefined ? {} : { seq }) })
     for (const [id, { value, seq }] of state.registers.decisionStates)
@@ -212,27 +215,8 @@ export async function assertMigrationSettled(
         }
       }
     }
-    const receiptFor = (effectId: string) => {
-      const toolUseId = intents.get(effectId)?.toolUseId
-      return toolUseId ? results.get(toolUseId) : undefined
-    }
-    const toolEffect = (effectId: string) => {
-      const intent = intents.get(effectId)
-      return intent?.kind === 'tool' || typeof intent?.toolUseId === 'string'
-    }
-    for (const event of settlements) {
-      const receipt = receiptFor(event.effectId)
-      const sentCancel = receipt?.code === 'CANCELLED' && receipt?.partial === true
-      // A CANCELLED receipt without partial is the not-sent proof. Anything weaker may have run.
-      const neverSent = receipt?.code === 'CANCELLED' && receipt?.partial !== true
-      if (event.outcome === 'unknown') unknown.set(event.effectId, event.seq)
-      else if ((event.outcome === 'ok' || event.outcome === 'error') && !sentCancel)
-        unknown.delete(event.effectId)
-      else if (event.outcome === 'aborted' && toolEffect(event.effectId) && !neverSent)
-        unknown.set(event.effectId, event.seq)
-    }
-    for (const [toolUseId, receipt] of results)
-      if (receipt.code === 'CANCELLED' && receipt.partial) unknown.set(`tool:${toolUseId}`, receipt.seq)
+    const safeCancelled = safeCancelledEffects(rows, state, registers, intents, results, settlements)
+    const classifiedUnknown = classifyUnknown(unknown, intents, results, settlements, safeCancelled)
     for (const id of openSurfaces) add('open-surface', id)
     for (const [id, action] of uiActions) {
       if (['received', 'pending-approval', 'executing'].includes(action.status) || action.outcomeUnknown)
@@ -240,7 +224,8 @@ export async function assertMigrationSettled(
       else if (['rejected', 'succeeded', 'failed'].includes(action.status) && !action.delivered)
         add('undelivered-ui-receipt', id, action.seq)
     }
-    for (const [id, seq] of unknown) add('unknown-external-outcome', id, seq)
+    for (const [id, seq] of unreconciled(rows, state, key, classifiedUnknown))
+      add('unknown-external-outcome', id, seq)
     for (const [id, call] of deferred)
       if (!['succeeded', 'failed'].includes(call.state)) add('unfinished-deferred-invocation', id, call.seq)
     for (const [id, job] of jobs)
@@ -250,7 +235,7 @@ export async function assertMigrationSettled(
       const surface = 'card-' + createHash('sha256').update(id).digest('hex').slice(0, 48)
       if (!closedSurfaces.has(surface)) add('pending-user-answer', id, seq)
     }
-    for (const cell of await storage.registers(key)) {
+    for (const cell of registers) {
       if (cell.register !== 'op.state' || cell.data === null) continue
       const op = cell.data as OpStateObj
       if (op.phase.kind === 'deferred') add('unfinished-background-job', cell.key, cell.seq)

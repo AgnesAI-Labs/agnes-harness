@@ -222,7 +222,7 @@ describe('worker sessions', () => {
 })
 
 describe('main session and pending inputs', () => {
-  it('opens the main session with the router bundle in the state directory', async () => {
+  it('opens the main session with the router bundle in its supplied workspace', async () => {
     const { fake, sessions, registry, models } = setup()
     const id = await sessions.ensureOrchestrator()
     expect(fake.sessions.get(id)?.options).toMatchObject({
@@ -237,6 +237,7 @@ describe('main session and pending inputs', () => {
     // The main session keeps its own name; only workers carry the role in theirs.
     expect(fake.renamed).toEqual([[id, 'Superagent orchestrator']])
     expect(await sessions.ensureOrchestrator()).toBe(id)
+    expect(fake.workspaces).toEqual([join(temp.dir, 'state')])
   })
 
   it('reads the real session state and removes the named pending items only', async () => {

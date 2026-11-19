@@ -9,6 +9,7 @@
  */
 import { mkdir } from 'node:fs/promises'
 import { resolveDeployment } from '../deployment.js'
+import { resolveFeishuBot } from '../feishu-setup.js'
 import { SetupError } from '../setup.js'
 import { registerGithub } from '../sources/github.js'
 import { health as sourceHealth } from '../sources/host.js'
@@ -42,6 +43,19 @@ export function appRun(deps: AppDeps, state: AppState, core: Core, parts: Engine
       const github = store.settings().sources.github?.config
       // A start right after the lifecycle's own check takes what that check resolved: the agent's CLI is probed once.
       const deployment = deps.resolved?.(github) ?? (await resolveDeployment(machine, github, probe))
+      if (closing()) return false
+      const feishu = store.settings().sources.feishu
+      // Feishu setup failure pauses only this optional source; GitHub continues.
+      state.feishuProblem = undefined
+      delete deployment.feishu
+      if (feishu?.enabled) {
+        try {
+          deployment.feishu = await resolveFeishuBot(machine, feishu.config, probe)
+        } catch (error) {
+          if (!(error instanceof SetupError)) throw error
+          state.feishuProblem = error.problem
+        }
+      }
       if (closing()) return false
       state.deployment = deployment
       state.problem = undefined

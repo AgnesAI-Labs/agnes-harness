@@ -2,6 +2,8 @@
 
 English | [简体中文](remote-frontend.zh-CN.md)
 
+The current branch pairs with cloud plugin 0.9.0. Billing uses trusted Core sideband evidence only; legacy result payload phases do not count. Core and plugin must be deployed together; the source update alone does not upgrade an existing sandbox.
+
 [Deployment](deployment.md) · [Plugins](packages.md) · [Web workbench](web.md)
 
 A and B run the same complete standard Harness. A hosts the frontend. Ordinary connections use B's HTTP/WebSocket service directly, without SSH; LLMSG sandboxes use the isolated local ingress relay below. The BFF handles only credential exchange for direct connections. B enables an installed cloud plugin; A needs no cloud plugin.

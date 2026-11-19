@@ -43,6 +43,7 @@ async function start(
   let shutdown: ((reason: 'disable' | 'upgrade' | 'exit') => Promise<unknown>) | undefined
   const init = {
     bundledApp: {
+      prepareSessionUpgrade: async () => {},
       stateDirectory,
       client: {
         ...fakeClient().client,

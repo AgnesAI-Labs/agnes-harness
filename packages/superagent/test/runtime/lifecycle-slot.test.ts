@@ -37,6 +37,7 @@ async function startWith(lifecycle: Partial<LifecycleDeps> = {}) {
   }
   const init = {
     bundledApp: {
+      prepareSessionUpgrade: async () => {},
       stateDirectory: directory,
       client,
       channels: { subscribe: () => () => {} },

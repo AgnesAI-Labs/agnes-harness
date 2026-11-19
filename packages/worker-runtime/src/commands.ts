@@ -27,6 +27,7 @@ import {
 import { readDeliverablesPage } from './deliverables.js'
 import { sessionFileUpload } from './file-upload.js'
 import type { SessionCommandFrame, WorkerCommandFrame } from './frames.js'
+import { migrateSessionGeneration } from './generation-migration.js'
 import { GRANT_COMMANDS, grantCommand } from './grant-commands.js'
 import type { McpRowRuntime } from './mcp-row-runtime.js'
 import { noticeConnectingMcp } from './mcp-turn-notice.js'
@@ -895,24 +896,7 @@ export async function handleServiceCommand(
       if (!host) throw new Error('Publication status requires an assembled Host')
       return { publication: host.compositionPublicationStatus?.() ?? null }
     case 'pluginGenerations.migrate':
-      if (!host?.migrateSessionGeneration) throw new Error('Session generation migration is unavailable')
-      if (typeof p.sessionId !== 'string' || !p.sessionId || p.sessionId.length > 512)
-        throw new TypeError('invalid session key')
-      if (resourceRecoveryRequired?.())
-        throw new HostError(
-          'E_GENERATION_EXECUTION_UNSETTLED',
-          'generation migration refused: recovery-required',
-          {
-            detail: { reasons: [{ kind: 'recovery-required', id: p.sessionId, sessionKey: p.sessionId }] },
-          },
-        )
-      return host.migrateSessionGeneration(p.sessionId, {
-        ...(resourceRecoveryRequired === undefined ? {} : { recoveryRequired: resourceRecoveryRequired }),
-        ...(Array.isArray(p.repin) && p.repin.every((kind) => typeof kind === 'string')
-          ? { repin: p.repin as string[] }
-          : {}),
-        ...(typeof p.operator === 'string' ? { operator: p.operator } : {}),
-      })
+      return migrateSessionGeneration(host, p, resourceRecoveryRequired)
     case 'pluginGenerations.collect':
       if (!host?.collectPluginGenerations) throw new Error('Plugin generation collection is unavailable')
       await host.collectPluginGenerations()

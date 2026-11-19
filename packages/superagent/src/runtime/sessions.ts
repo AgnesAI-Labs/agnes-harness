@@ -229,9 +229,7 @@ export class Sessions implements SessionAdapter {
   }
 
   async ensureOrchestrator(): Promise<string> {
-    const dir = this.deps.orchestratorDir()
-    await mkdir(dir, { recursive: true })
-    return this.ensure({ kind: 'orchestrator' }, dir, 'Superagent orchestrator')
+    return this.ensure({ kind: 'orchestrator' }, this.deps.orchestratorDir(), 'Superagent orchestrator')
   }
   /**
    * Prepares the ticket directory unless it is prepared, and opens the ticket's worker session in it. The directory is
@@ -304,7 +302,7 @@ export class Sessions implements SessionAdapter {
   private async ensure(role: SessionRole, dir: string, title: string, ticket?: Ticket): Promise<string> {
     const { client, registry } = this.deps
     const key = role.kind === 'orchestrator' ? ORCHESTRATOR_KEY : workerKey(role.ticketId)
-    await client.workspace.add(dir)
+    if (role.kind === 'worker') await client.workspace.add(dir)
     const known = registry.id(role)
     if (known) this.handles.delete(known)
     const found = await (known ? this.handle(known) : client.session.load(key, this.openOptions())).catch(
@@ -314,6 +312,11 @@ export class Sessions implements SessionAdapter {
       },
     )
     if (found && !known && !registry.intended(role, key)) throw new SessionTaken(key)
+    // Register the main workspace only when creating its session; loading one needs no new project.
+    if (!found && role.kind === 'orchestrator') {
+      await mkdir(dir, { recursive: true })
+      await client.workspace.add(dir)
+    }
     const session = found ?? (await this.create(role, key, dir, ticket, !!known))
     if (!known || !found) {
       this.handles.set(session.id, Promise.resolve(session))

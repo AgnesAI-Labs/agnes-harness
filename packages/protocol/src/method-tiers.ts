@@ -14,6 +14,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/applications.adopt': 'admin',
   '_agnes/v1/applications.clear': 'admin',
   '_agnes/v1/pluginRuntime.status': 'admin',
+  '_agnes/v1/superagent.sessions.upgrade': 'admin',
   '_agnes/v1/pluginStreams.endpoint': 'admin',
   '_agnes/v1/admin.feedback': 'admin',
   '_agnes/v1/admin.credentials.list': 'admin',

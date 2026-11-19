@@ -13,6 +13,7 @@ import { type SourceContextDeps, sourceContextOf } from '../app/source-context.j
 import { evalsHealth } from '../app/views/overview.js'
 import { Engine, type EngineForSettings } from '../core/index.js'
 import { resolveDeployment } from '../deployment.js'
+import { resolveFeishuBot } from '../feishu-setup.js'
 import { settingsPolicy } from '../policy.js'
 import { SetupError } from '../setup.js'
 import { pullEndNotices } from '../sources/github-pull.js'
@@ -124,6 +125,9 @@ function buildSettings(deps: AppDeps, state: AppState, core: Core, restart: () =
   const setup: SettingsSetup = {
     configured: () => state.deployment !== undefined,
     checkAccounts: async (block, value) => {
+      if (block === 'source:feishu' && value.sources.feishu?.enabled) {
+        await resolveFeishuBot(machine, value.sources.feishu.config, probe)
+      }
       if (block !== 'source:github') return
       await resolveDeployment(machine, value.sources.github?.config, probe).catch((error: unknown) => {
         if (!(error instanceof SetupError) || error.place === 'github') throw error
@@ -152,7 +156,7 @@ function buildSettings(deps: AppDeps, state: AppState, core: Core, restart: () =
       return state.problem
     },
     get feishuProblem() {
-      return undefined
+      return state.feishuProblem
     },
     receive: (trigger) => built('passes').receive(trigger),
   }

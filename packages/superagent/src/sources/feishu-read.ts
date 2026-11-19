@@ -1,9 +1,10 @@
 // Adapted from dsh-superagent (MIT)
-/** Trigger-scoped Feishu context reader over the channel's reads; what it reads goes to the model, never to intake. */
+/** Trigger-scoped Feishu context reader over the bot CLI; what it reads goes to the model, never to intake. */
 import type { MessageEvent } from '@agnes/extension-api/channel-contract'
 import type { Trigger } from '../core/index.js'
+import { fetchMessages, historyPages, nextPage, resolveTopic, topicPage } from './feishu-client.js'
 import { admissionImageKeys, readAdmissionImage } from './feishu-image.js'
-import { channelRead, type FeishuIo, withSignal } from './feishu-io.js'
+import { type FeishuIo, requireIdentity, withSignal } from './feishu-io.js'
 import { channelText, feishuRef, feishuTime } from './feishu-trigger.js'
 import type { ContextMessage, ThreadContext } from './kind.js'
 
@@ -86,9 +87,7 @@ export async function fetchFeishu(
   ids: readonly string[],
 ): Promise<MessageEvent[]> {
   if (ids.length === 0) return []
-  const events = await channelRead(io, 'messages', (channels, channel) =>
-    channels.fetchMessages(channel, chatId, ids),
-  )
+  const events = await fetchMessages(io, chatId, ids)
   if (events.some((event) => event.chat.id !== chatId))
     throw new Error('Feishu returned a message outside the requested chat')
   return events.filter((event) => ids.includes(event.messageId))
@@ -108,16 +107,17 @@ export async function readTopic(
   limit: number,
   order: 'asc' | 'desc' = 'asc',
 ): Promise<MessageEvent[]> {
-  const events = await channelRead(io, 'threads', (channels, channel) =>
-    channels.listThread(channel, chatId, threadId, { order, limit }),
-  )
-  const outside = events.some(
-    (event) => event.chat.id !== chatId || (event.chat.threadId && event.chat.threadId !== threadId),
-  )
-  if (outside) throw new Error('Feishu returned messages outside the source thread')
-  return events
+  const events: MessageEvent[] = []
+  const seen = new Set<string>()
+  let cursor: string | undefined
+  do {
+    const result = await topicPage(io, chatId, threadId, Math.min(50, limit - events.length), order, cursor)
+    events.push(...result.messages)
+    cursor = nextPage(result, seen)
+  } while (cursor && events.length < limit)
+  return events.slice(0, limit)
 }
-/** A page of a topic; the channel joins its own pages, so the cursor is the number of messages read before. */
+/** A bounded topic page; the CLI cursor is carried opaquely back to the caller. */
 async function threadPage(
   io: FeishuIo,
   ref: FeishuRef,
@@ -125,15 +125,13 @@ async function threadPage(
   cursor: string | undefined,
   pageSize: number,
 ): Promise<FeishuPage<ContextMessage>> {
-  const offset = cursor === undefined ? 0 : Number(cursor)
-  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Follow the returned next_resource')
-  const events = await readTopic(io, ref.chatId, threadId, offset + pageSize + 1)
-  const more = events.length > offset + pageSize
+  const result = await topicPage(io, ref.chatId, threadId, pageSize, 'asc', cursor)
+  const next = nextPage(result, new Set(cursor ? [cursor] : []))
   return {
     status: 'available',
-    thread_id: threadId,
-    messages: events.slice(offset, offset + pageSize).map(feishuView),
-    next_resource: more ? `feishu/${ref.triggerId}/thread/${offset + pageSize}` : null,
+    thread_id: result.thread_id,
+    messages: result.messages.map(feishuView),
+    next_resource: next ? `feishu/${ref.triggerId}/thread/${encodeURIComponent(next)}` : null,
   }
 }
 
@@ -145,12 +143,11 @@ export async function readHistory(
   start: number,
   end: number,
 ): Promise<MessageEvent[]> {
-  const events = await channelRead(io, 'history', (channels, channel) =>
-    channels.listHistory(channel, chatId, {
-      start: new Date(start).toISOString(),
-      end: new Date(end).toISOString(),
-    }),
-  )
+  const events: MessageEvent[] = []
+  for await (const page of historyPages(io, chatId, start, end)) {
+    events.push(...page)
+    if (events.length > 10_000) throw new Error('Feishu context history exceeds the message limit')
+  }
   if (events.some((event) => event.chat.id !== chatId))
     throw new Error('Feishu history returned a message outside the requested chat')
   return [...events].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
@@ -201,10 +198,12 @@ export async function feishuRead(
   switch (request.section) {
     case 'around':
       return chatAround(io, ref, request.cursor)
-    case 'thread':
-      return ref.threadId
-        ? threadPage(io, ref, ref.threadId, request.cursor, pageSize)
+    case 'thread': {
+      const topic = ref.threadId ?? (await resolveTopic(io, ref.chatId, ref.rootId ?? ref.messageId))
+      return topic
+        ? threadPage(io, ref, topic, request.cursor, pageSize)
         : { status: 'no_thread', messages: [], next_resource: null }
+    }
     case 'root':
       return ref.rootId ? one(io, ref.chatId, ref.rootId) : { status: 'no_root', message: null }
     case 'parent':
@@ -218,12 +217,13 @@ function sourceRef(trigger: Trigger): FeishuRef {
   if (!ref) throw new Error('A Feishu source trigger is required')
   return ref
 }
-/** The Feishu kind's context reader over the io of the Source's current channel. */
+/** The Feishu kind's context reader over the Source's currently verified bot CLI. */
 export const feishuThreadContext = (io: () => FeishuIo): ThreadContext<{ readPageSize: number }> => ({
   messageId: (trigger) => String(trigger.meta.messageId ?? ''),
   read: async (_commands, trigger, part, cursor, config) => {
     const ref = sourceRef(trigger)
     const reader = io()
+    requireIdentity(reader, trigger.meta.botIdentity)
     const resource = `feishu/${trigger.id}/${part}${cursor ? '/' + encodeURIComponent(cursor) : ''}`
     const body = await feishuRead(reader, ref, resource, config.readPageSize)
     if (part === 'thread' && body.status === 'no_thread') {
@@ -243,12 +243,14 @@ export const feishuThreadContext = (io: () => FeishuIo): ThreadContext<{ readPag
     return { messages, next, body: { ...body }, status: body.status }
   },
   images: admissionImageKeys,
-  image: (sink, _commands, trigger, message, key, _stateDir, signal) =>
-    readAdmissionImage(
+  image: (sink, _commands, trigger, message, key, _stateDir, signal) => {
+    requireIdentity(io(), trigger.meta.botIdentity)
+    return readAdmissionImage(
       sink,
       withSignal(io(), signal),
       { ...sourceRef(trigger), messageId: message.id },
       message.text,
       key,
-    ),
+    )
+  },
 })

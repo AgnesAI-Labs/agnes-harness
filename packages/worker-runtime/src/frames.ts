@@ -91,6 +91,7 @@ export type WorkerMethod =
   | 'boundWake.read'
   | 'boundWake.require'
   | 'profileManaged.status'
+  | 'profileManaged.superagentUpgradeSessions'
   | 'sessionEnvironment.write'
   | 'sessionEnvironment.release'
   | 'profileStreams.endpoint'

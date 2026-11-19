@@ -27,8 +27,8 @@ header.
 | `src/app/migrations/` | Schema version, the migration registry and one `v<N>.ts` per schema step. |
 | `src/app/store-retention.ts` | `archiveExpired`: moves conversations that ended more than 14 days ago into archive tables. |
 | `src/app/subprocess.ts` | `runCommand`: child processes without stdin or credential-shaped environment variables. |
-| `src/sources/` | The Source contract (`kind.ts`, `host.ts`, `registry.ts`), the GitHub Source and the Feishu Source, which receives, replies and reads through an AGH Feishu channel instance. |
-| `src/infra/commands.ts`, `src/infra/health.ts` | `Commands` (the `gh` and `git` calls of the Sources, on `runCommand`) and the health board. |
+| `src/sources/` | The Source contract (`kind.ts`, `host.ts`, `registry.ts`), the GitHub Source and the Feishu Source, which receives, replies and reads through its configured bot lark-cli wrapper in the trusted backend. |
+| `src/infra/commands.ts`, `src/infra/health.ts` | `Commands` (the `gh`, `git` and bot-only `lark-cli` calls of the Sources, on `runCommand`) and the health board. |
 | `src/app/` (other files) | Effect queue, outbox, notices, passes, assessment, settings, prompts, links and the read models in `views/`. |
 | `src/app/skill-files.ts` | Loads the packaged `prompts/`, `skills/` and `locale/` folders. |
 | `src/runtime/` | The plugin row `superagentPlugin`: its profile-managed service, which needs the bundled-app grant, the snapshot its `context` and `tool_call` hooks read (`hook-state.ts`) and the narrowing of the grant's SDK client (`sdk.ts`). |
@@ -51,3 +51,23 @@ header.
   package (`pnpm --filter @agnes/package-manager build:superagent-payload`); `package.json` here declares the same plugin
   row and bundles the payload declares.
 - Imports use `.js` suffixes, the code is formatted by Biome, and it compiles with `exactOptionalPropertyTypes`.
+
+## Feishu CLI boundary
+
+The Feishu Source accepts an already authenticated wrapper's absolute path and validates `auth status`,
+`config strict-mode` (`bot`) and `/open-apis/bot/v3/info`. The panel displays the app and bot identity.
+No IM plugin, channel instance or claim is needed. Events, paginated reads, images and replies stay in this
+package's trusted backend; workers use the scoped `orchestrator_feishu_read` tool, never a Feishu CLI shim.
+
+The event consumer has bounded lines/queues, a readiness deadline, process-tree cleanup and reconnect backoff.
+History cursors are bound to bot identity. Existing tickets, policies, triggers and legacy cursors remain stored;
+old channel-only configuration opens with its chat policy intact and a path-required setup state. Old unstamped
+work cannot perform external reads or replies as a newly configured bot; start a new request to authorize new work.
+Changing the wrapper path checks the new bot before saving; reconnects and each read/write also verify identity.
+A pending reply with an uncertain outcome is retained for operator reconciliation instead of silently resent.
+Its durable marker and the outbox receipt must be reconciled together after checking the external message;
+there is no panel action to override an uncertain delivery in this version.
+
+CLI adapter validation uses synthetic executable fixtures. Actual bot event availability, grants and permissions,
+and platform-specific wrapper configuration require a coordinated real-bot check. Public CLI help was checked
+against lark-cli 1.0.100; no account credentials are packaged or imported from an IM plugin.

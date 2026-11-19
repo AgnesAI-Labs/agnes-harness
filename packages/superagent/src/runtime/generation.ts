@@ -26,7 +26,7 @@ import { ORCHESTRATOR_KEY, type SessionRegistry } from './sessions.js'
 export const STOPPED = 'Superagent is not running; its sessions can use tools again once it runs'
 
 export interface GenerationInput {
-  grant: Pick<BundledAppGrant, 'stateDirectory' | 'client'>
+  grant: Pick<BundledAppGrant, 'stateDirectory' | 'client' | 'prepareSessionUpgrade'>
   store: Store
   machine: Machine
   holder: HookStateHolder
@@ -113,6 +113,11 @@ export function composeGeneration(input: GenerationInput): Generation {
     registeredSessions: () => runtime.registry.ids(),
     startingState: () => built.hookState(new Set()),
     refusingState: (reason) => built.stoppedState(reason),
+    async prepareSessionUpgrade() {
+      if (!grant.prepareSessionUpgrade)
+        throw new Error('Superagent session upgrade requires an updated daemon')
+      await grant.prepareSessionUpgrade()
+    },
     async environment(signal) {
       const settings = store.settings()
       const github = settings.sources.github?.config
@@ -185,7 +190,9 @@ function panelParts(
     get setupProblem() {
       return lifecycleProblem() ?? parts.setupProblem()
     },
-    feishuProblem: undefined,
+    get feishuProblem() {
+      return parts.feishuProblem()
+    },
     configured: () => parts.deployment() !== undefined && lifecycleProblem() === undefined,
     links() {
       const deployment = parts.deployment()
@@ -199,7 +206,8 @@ function panelParts(
     checkSetup() {
       const current = lifecycle()
       // As the setup check always did: nothing to check once everything is set up.
-      if (current?.status().state === 'running' && !parts.setupProblem()) throw new UserError('setupComplete')
+      if (current?.status().state === 'running' && !parts.setupProblem() && !parts.feishuProblem())
+        throw new UserError('setupComplete')
       current?.recheck()
     },
     requestPass: () => parts.passes.request(),

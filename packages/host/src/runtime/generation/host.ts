@@ -934,6 +934,14 @@ export async function createRuntimeGenerationHost(
         if (!pin) throw generationError('E_GENERATION_PIN_MISSING', 'session is not bound')
         const head = await ensureCurrent()
         // Validate both immutable archives and the exact saved loop before changing durable facts.
+        const expected = context?.expectedPackage
+        if (
+          expected &&
+          !head.snapshot.sources.some(
+            ({ snapshot }) => snapshot.packageId === expected.id && snapshot.integrity === expected.integrity,
+          )
+        )
+          throw generationError('E_GENERATION_INCOMPATIBLE', 'migration target is not the published payload')
         if (store.read(pin.generationId).compatibility !== head.snapshot.compatibility)
           throw generationError(
             'E_GENERATION_INCOMPATIBLE',
