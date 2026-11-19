@@ -1,4 +1,4 @@
-# 使用 TypeSafe Jev 做旁路模型调用
+# 使用 TypeSafe Jev 做决策模型调用
 
 [English](typesafe-jev.md) | 简体中文
 
@@ -6,18 +6,18 @@
 
 `@agnes/ai` 内置了 TypeSafe Jev 的模型适配器，注册为 `typesafe-systemone`。它一次回答一个结构化请求：一份 JSON `state` 和一组 `questions`，厂商为每个问题返回一个答案。循环插件用它做不必经过对话模型的快速决策。
 
-Jev **不是对话模型**。适配器只接收载荷（payload），不接收 messages、system prompt 和 tools，也不做流式输出。它声明的能力是 `payload: true` 和 `payloadOnly: true`，所以由它服务的模型不会出现在任何模型选择器里，不能被选作会话、默认、fast、verifier 或子代理模型，客户端直接按名字请求也会被拒绝。循环插件通过旁路模型调用使用它。
+Jev **不是对话模型**。适配器只接收载荷（payload），不接收 messages、system prompt 和 tools，也不做流式输出。它声明的能力是 `payload: true` 和 `payloadOnly: true`，所以由它服务的模型不会出现在任何模型选择器里，不能被选作会话、默认、fast、verifier 或子代理模型，客户端直接按名字请求也会被拒绝。循环插件通过决策模型调用使用它。
 
 ## 设置页面配置
 
-在 设置 → 模型与账户 页面，展开「高级：旁路模型与任务模型」，在其中的「旁路模型」分组里添加条目。同一页面还提供**语音**适配器，用于对话框里的听写和朗读，见[和智能体说话](voice.zh-CN.md)。添加 Jev 条目时：
+在 设置 → 模型与账户 页面，展开「高级：决策模型与任务模型」，在其中的「决策模型」分组里添加条目。用于对话框里听写和朗读的语音模型改在语音设置页配置，见[和智能体说话](voice.zh-CN.md)。添加 Jev 条目时：
 
 1. 适配器固定为 `typesafe-systemone`。
 2. 端点默认 `https://openrouter.ai/api/v1`，可改为直连 `https://api.typesafe.ai/v1`。端点规则与适配器一致：不允许模板、账号信息、query 和 fragment，明文 `http` 只接受环回地址。
 3. 凭据从[通用凭据](credentials.zh-CN.md)里选择，或就地新建一个；条目保存的是 `secret://generic/<UUID>` 引用，不是密钥本身。
 4. 模型列表每条只需填 `id`、`name`、`contextWindow`、`maxTokens` 和可选的 `cost`；其余字段按适配器模板固定（`reasoning: false`、`input: [text]`、`toolCallFormats: []`、`thinkingReplay: drop`、`contract_id: null`）。
 5. 测试按钮向端点发一个固定的最小载荷 `{state: {}, questions: {ping: 'ping'}}`：成功或限流都视为可达，凭据被拒会单独标出。探测发送的内容暂定，可以跳过测试直接保存。
-6. 保存对新会话生效；条目可启用、禁用或删除。旁路模型不能成为默认账户，也不出现在 fast、verifier 槽位里。
+6. 保存对新会话生效；条目可启用、禁用或删除。决策模型不能成为默认账户，也不出现在 fast、verifier 槽位里。
 
 页面创建的路由名为 `account-<id>`，条目的摘要行显示这个名字；循环插件按这个名字指定路由。声明在用户 profile 里的路由（下一节）只在设置页面没有管理任何账户时生效：一旦保存了页面条目或其他任何账户，设置服务就会提供整个 `provider` 块，profile 里的路由不再使用。从 profile 路由迁移到页面时，先保存页面条目，把循环指向它的路由名，再删掉 profile 里的路由。工作区文件 `.agh/profile.local.yaml` 不能声明路由：本版本中它只接受 `extensionIsolation`，写了其他键时运行时以 `E_DEP_MISSING` 拒绝启动。
 
@@ -62,7 +62,7 @@ provider:
 
 - Web 模型选择器、CLI 的 `/model` 列表和 `apis.list` 返回的列表都不含 Jev 模型，新会话不会默认使用它。
 - 新会话的管理默认值以及 fast、verifier 槽位都不提供它，定时任务也不能指向它。
-- 子代理不能选择它：`list_subagent_models` 不列出这些模型，在其上启动子代理会被当作未知模型拒绝（`E_MODEL_UNKNOWN`）。旁路模型调用不受影响，循环插件仍可指向这条路由。
+- 子代理不能选择它：`list_subagent_models` 不列出这些模型，在其上启动子代理会被当作未知模型拒绝（`E_MODEL_UNKNOWN`）。决策模型调用不受影响，循环插件仍可指向这条路由。
 - 客户端直接发送同样的选择时，服务端同样拒绝：把会话切换到 Jev 模型会得到 `PRESET_SWITCH_REJECTED`，把它保存为默认值或槽位会得到 `CONFIG_MODEL_UNAVAILABLE`。
 - 如果带 messages、tools 或 system prompt 的请求仍然到了适配器，它会在联网前以 `CONTRACT_MISMATCH` 拒绝。
 - Web 设置里仍会列出这个适配器，标注为 **仅载荷请求，不用于对话**；技术详情里显示 `payload` 和 `payloadOnly` 两项能力。

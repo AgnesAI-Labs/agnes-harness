@@ -403,10 +403,11 @@ describe('voice button state', () => {
     expect(statusCalls(call)).toBe(5)
   })
 
-  it('registers the voice settings section while installed and routes its link inside the settings page', async () => {
+  it('registers the voice settings section while installed, with the voice models listed on it', async () => {
     const [mine] = pair()
     const call = vi.fn(async () => ready())
-    const voice = installVoice({ call: call as never, config: { get: async () => ({}) as never } } as never, {
+    const get = vi.fn(async () => ({ revision: 1, accounts: [] }) as never)
+    const voice = installVoice({ call: call as never, config: { get } } as never, {
       channel: mine,
       tabId: 'tab-a',
     })
@@ -415,11 +416,7 @@ describe('voice button state', () => {
       group: 'general',
       titleKey: 'settings-shell.voice',
     })
-    const form = document.body.appendChild(document.createElement('form'))
-    form.id = 'config-form'
-    const routed: unknown[] = []
-    form.addEventListener('agnes:settings-route', (event) => routed.push((event as CustomEvent).detail))
-    // The panel the section renders reaches the link through the registered api.
+    // The panel the section renders lists the voice models through the configuration client.
     const Section = settingsSections.get('voice')?.component
     if (!Section) throw new Error('missing section')
     call.mockImplementation((async (method: string) =>
@@ -430,10 +427,10 @@ describe('voice button state', () => {
     const root = createRoot(host)
     await act(async () => root.render(createElement(Section, { context: { t: (key: string) => key } })))
     await act(async () => {})
-    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="voice-configure"]')?.click())
-    expect(routed).toEqual(['side-models'])
+    expect(host.querySelector('[data-testid="voice-models"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="voice-configure"]')).toBeNull()
+    expect(get).toHaveBeenCalled()
     await act(async () => root.unmount())
-    form.remove()
     voice.dispose()
     expect(settingsSections.get('voice')).toBeUndefined()
   })
@@ -487,13 +484,11 @@ describe('voice button state', () => {
     expect(statusCalls(call)).toBe(2)
   })
 
-  it('lists the enabled voice accounts and opens the side-model settings from the configure link', async () => {
+  it('lists the enabled voice accounts and opens the voice settings, where voice models are set up', async () => {
     const { controller, openSettings } = setup()
     expect(await controller.settingsApi.accounts()).toEqual([{ route: 'account-a', label: '硅基流动' }])
     controller.openSettings()
-    expect(openSettings).toHaveBeenCalledWith('side-models')
-    controller.settingsApi.openSideModels()
-    expect(openSettings).toHaveBeenLastCalledWith('side-models')
+    expect(openSettings).toHaveBeenCalledWith('voice')
   })
 
   it('disables the conversation in this tab while another tab holds one', async () => {

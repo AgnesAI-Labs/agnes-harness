@@ -23,18 +23,20 @@ export function installVoice(
     ...overrides,
   })
   const refresh = () => voice.refresh()
-  // Inside the settings page the link routes there directly; elsewhere it opens settings first.
-  const openSideModels = () => {
-    const form = document.getElementById('config-form')
-    if (!form) return voice.settingsApi.openSideModels()
-    form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'side-models', bubbles: true }))
+  // The voice page lists and edits voice model accounts; a change there refreshes the voice buttons.
+  const config = client.config
+  const models = {
+    get: () => config.get(),
+    test: (input: Parameters<typeof config.test>[0]) => config.test(input),
+    save: (input: Parameters<typeof config.save>[0]) => config.save(input).finally(refresh),
+    account: (input: Parameters<typeof config.account>[0]) => config.account(input).finally(refresh),
   }
   window.addEventListener('agnes:settings-route', refresh, true)
   const stops = [
     () => window.removeEventListener('agnes:settings-route', refresh, true),
     onBroadcast('agnes:session-configuration-changed', refresh),
     onWindowFocus(refresh),
-    registerVoiceSettingsSection({ ...voice.settingsApi, openSideModels }),
+    registerVoiceSettingsSection(voice.settingsApi, models),
   ]
   const dispose = voice.dispose
   voice.dispose = () => {

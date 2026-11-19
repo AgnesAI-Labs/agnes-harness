@@ -11,6 +11,15 @@ import type {
 /** The payload-only adapters the account store serves; the first is the default for a new entry. */
 export const SIDE_PROVIDERS = ['agnes-sys1', 'typesafe-systemone', 'openai-audio'] as const
 export type SideProviderId = (typeof SIDE_PROVIDERS)[number]
+/**
+ * Which settings page lists an adapter's accounts: decision models (Agnes Sys1, Jev) on the model
+ * page, voice models on the voice page.
+ */
+export type SideModelKind = 'decision' | 'voice'
+export const KIND_PROVIDERS: Readonly<Record<SideModelKind, readonly SideProviderId[]>> = {
+  decision: ['agnes-sys1', 'typesafe-systemone'],
+  voice: ['openai-audio'],
+}
 export type AudioRole = NonNullable<ConfigModel['audioRole']>
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
 /** Voice models have no context window or output cap of their own; these fixed values stand in. */

@@ -74,7 +74,7 @@ What it is not, so you can choose the right trial:
 
 <h2 id="architecture">Architecture: brain, cerebellum, memory and body</h2>
 
-AGH brings together model reasoning, structured judgments, persistent task context and physical capabilities. **Agnes Sys1** is Agnes's own judgment model and the default choice when adding a side model in AGH. Configure it and enable the judgment features you want, such as checking whether a session title still fits or whether a reply ended before carrying out a promised step. [Set up Agnes Sys1](docs/guide/judgment.md#configure-a-judgment-model-then-enable-detection).
+AGH brings together model reasoning, structured judgments, persistent task context and physical capabilities. **Agnes Sys1** is Agnes's own judgment model and the default choice when adding a decision model in AGH. Configure it and enable the judgment features you want, such as checking whether a session title still fits or whether a reply ended before carrying out a promised step. [Set up Agnes Sys1](docs/guide/judgment.md#configure-a-judgment-model-then-enable-detection).
 
 ![AGH architecture with LLM as the brain, Agnes Sys1 as the cerebellum, Harness as the memory, and MHS as the body. One runtime supports enterprise FDE delivery and MHS device integration.](docs/assets/architecture.svg)
 

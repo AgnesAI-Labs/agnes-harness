@@ -74,7 +74,7 @@ AGH 是面向 Forward Deployed Engineering（FDE）的开源智能体框架：�
 
 <h2 id="architecture">架构：大脑、小脑、记忆与身体</h2>
 
-AGH 把模型推理、结构化判断、持久任务上下文和物理能力接到同一套运行时。**Agnes Sys1** 是 Agnes 自研的判断模型，也是 AGH 新增旁路模型时的默认选择。配置后可按需开启判断功能，例如检查标题是否仍贴合当前任务，以及检测回复是否在执行承诺的操作前就结束了。[配置 Agnes Sys1](docs/guide/judgment.zh-CN.md#配置判断模型再打开检测)。
+AGH 把模型推理、结构化判断、持久任务上下文和物理能力接到同一套运行时。**Agnes Sys1** 是 Agnes 自研的判断模型，也是 AGH 新增决策模型时的默认选择。配置后可按需开启判断功能，例如检查标题是否仍贴合当前任务，以及检测回复是否在执行承诺的操作前就结束了。[配置 Agnes Sys1](docs/guide/judgment.zh-CN.md#配置判断模型再打开检测)。
 
 ![AGH 架构中，LLM 是大脑、Agnes Sys1 是小脑、Harness 是记忆、MHS 是身体。同一套运行时支撑企业 FDE 交付与 MHS 设备接入。](docs/assets/architecture.zh-CN.svg)
 

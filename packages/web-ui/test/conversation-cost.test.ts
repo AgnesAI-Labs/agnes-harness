@@ -161,10 +161,10 @@ it('uses credit-only zero and interrupted values without inventing dollar or tok
 
 it('names a side model call in the record range, in both languages', () => {
   // A side-call row is never a transcript row; the turn usage details show it with this range.
-  expect(costDetails({ ...call, purpose: 'side-call' }, zhT)[0]).toEqual(['记录范围', '旁路模型调用'])
+  expect(costDetails({ ...call, purpose: 'side-call' }, zhT)[0]).toEqual(['记录范围', '决策模型调用'])
   expect(costDetails({ ...call, purpose: 'side-call' }, fallbackT)[0]).toEqual([
     'Record range',
-    'Side model call',
+    'Decision model call',
   ])
 })
 

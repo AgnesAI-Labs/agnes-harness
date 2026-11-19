@@ -102,7 +102,9 @@ describe('web-ui public component layer', () => {
       )
       const advanced = host.querySelector('[data-testid=advanced-models]')
       expect(advanced?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false')
-      expect(advanced?.textContent).toContain(locale === 'en' ? 'Advanced: side models' : '高级：旁路模型')
+      expect(advanced?.textContent).toContain(
+        locale === 'en' ? 'Advanced: decision models' : '高级：决策模型',
+      )
       expect(advanced?.querySelector('#config-side-models')).not.toBeNull()
       expect(host.querySelector('#config-accounts')?.getAttribute('data-empty-text')).toBe(empty)
       expect(host.querySelector('#config-accounts')?.getAttribute('data-loading-text')).toBe(loading)

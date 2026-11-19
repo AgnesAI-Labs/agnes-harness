@@ -101,6 +101,7 @@ async function mount(
     canSave?: boolean
     onSaved?: ReturnType<typeof vi.fn<(snapshot: ConfigSnapshot) => Promise<void>>>
     credentials?: SideModelsCredentials
+    kind?: 'decision' | 'voice'
   } = {},
 ) {
   const host = document.createElement('div')
@@ -111,6 +112,7 @@ async function mount(
   await act(async () =>
     root.render(
       createElement(SideModelsPanel, {
+        ...(options.kind ? { kind: options.kind } : {}),
         client: api,
         configuration: snapshot(options.accounts ?? [chatAccount, sideAccount]),
         canSave: options.canSave ?? true,
@@ -157,7 +159,7 @@ async function menuItem(host: HTMLElement, accountId: string, testid: string) {
 
 it('lists only payload-only accounts as account-style cards with a counted heading', async () => {
   const { host } = await mount(client())
-  expect(host.querySelector('[data-testid="side-models-title"]')?.textContent).toBe('Side models')
+  expect(host.querySelector('[data-testid="side-models-title"]')?.textContent).toBe('Decision models')
   expect(host.querySelector('[data-testid="side-models-count"]')?.textContent).toBe('· 1')
   expect(host.querySelector('[data-testid="side-models-note"]')?.textContent).toContain(
     'A payload request is structured data',
@@ -179,7 +181,8 @@ it('lists only payload-only accounts as account-style cards with a counted headi
   const adapter = host.querySelector<HTMLSelectElement>('[data-testid="side-adapter"]')
   expect(adapter?.value).toBe('agnes-sys1')
   expect(adapter?.textContent).toContain('TypeSafe System One')
-  expect(adapter?.textContent).toContain('Voice')
+  // Voice models live on the voice page, not among the decision models.
+  expect(adapter?.textContent).not.toContain('Voice')
 })
 
 it('opens the domestic Sys1 preset and allows choosing the international gateway', async () => {
@@ -230,7 +233,7 @@ it('tags a missing credential and a disabled entry, and summarizes several model
 it('shows an empty state with the shared dashed add row and no route hint', async () => {
   const { host } = await mount(client([chatAccount]), { accounts: [chatAccount] })
   const empty = host.querySelector('[data-testid="side-models-empty"]')
-  expect(empty?.textContent).toContain('No side models yet')
+  expect(empty?.textContent).toContain('No decision models yet')
   expect(empty?.textContent).toContain('loop plugin, which controls each step of a task')
   // The add action is the same dashed row the account list uses, not a primary button.
   const add = host
@@ -294,7 +297,7 @@ it('shows the saved route name with a copy button and the route hint', async () 
   const row = host.querySelector('[data-testid="side-model-jev"]')
   expect(row?.textContent).toContain('account-jev')
   expect(host.querySelector('[data-testid="side-model-route-hint"]')?.textContent).toBe(
-    'Features find a side model by its route name.',
+    'Features find a decision model by its route name.',
   )
   await click(host, 'side-model-copy-jev')
   expect(written).toEqual(['account-jev'])
@@ -328,12 +331,12 @@ it('offers edit, copy, test and remove in the row menu and tests the saved entry
 it('shows the group copy in zh-CN when the document is zh-CN', async () => {
   document.documentElement.lang = 'zh-CN'
   const { host } = await mount(client())
-  expect(host.querySelector('[data-testid="side-models-title"]')?.textContent).toBe('旁路模型')
+  expect(host.querySelector('[data-testid="side-models-title"]')?.textContent).toBe('决策模型')
   expect(host.querySelector('[data-testid="side-models-note"]')?.textContent).toBe(
-    '旁路模型处理独立于聊天的专门请求。载荷请求是插件提交的结构化数据；循环插件控制智能体每一步的执行，例如 Jev 循环。',
+    '决策模型处理独立于聊天的专门请求。载荷请求是插件提交的结构化数据；循环插件控制智能体每一步的执行，例如 Jev 循环。',
   )
   expect(host.querySelector('[data-testid="side-model-route-hint"]')?.textContent).toBe(
-    '功能通过路由名找到旁路模型。',
+    '功能通过路由名找到决策模型。',
   )
   await menuItem(host, 'jev', 'side-model-remove-jev')
   expect(host.querySelector('[data-testid="side-model-remove-strip-jev"]')?.textContent).toContain(
@@ -376,10 +379,10 @@ const voiceAccount: ConfigAccount = {
   authType: 'api-key',
 }
 
+/** The voice page's panel: voice models only, the editor opening below the list. */
 async function openVoiceEditor(api: FakeClient) {
-  const mounted = await mount(api, { accounts: [chatAccount] })
-  await click(mounted.host, 'side-model-add')
-  await choose(mounted.host, 'side-adapter', 'openai-audio')
+  const mounted = await mount(api, { accounts: [chatAccount], kind: 'voice' })
+  await click(mounted.host, 'voice-model-add')
   return mounted
 }
 
@@ -751,15 +754,10 @@ it.each(['saved', 'failed'] as const)(
   },
 )
 
-it('offers Sys1, Jev and Voice and fills two model fields for SiliconFlow', async () => {
+it('offers only voice on the voice page and fills two model fields for SiliconFlow', async () => {
   const { host } = await openVoiceEditor(client([chatAccount]))
-  const adapter = host.querySelector<HTMLSelectElement>('[data-testid="side-adapter"]')
-  expect([...(adapter?.options ?? [])].map((option) => option.value)).toEqual([
-    'agnes-sys1',
-    'typesafe-systemone',
-    'openai-audio',
-  ])
-  expect(adapter?.disabled).toBe(false)
+  // One adapter needs no choice.
+  expect(query(host, 'side-adapter')).toBeNull()
   expect(input(host, 'side-label')?.value).toBe('SiliconFlow')
   expect(input(host, 'side-base-url')?.value).toBe('https://api.siliconflow.cn/v1')
   expect(input(host, 'side-voice-model-transcribe')?.value).toBe(SENSE)
@@ -774,6 +772,17 @@ it('offers Sys1, Jev and Voice and fills two model fields for SiliconFlow', asyn
       (o) => o.value,
     ),
   ).toEqual(['siliconflow', 'openai', 'stepfun'])
+})
+
+it('offers Sys1 and Jev among the decision models, and switching fills the Jev template', async () => {
+  const { host } = await mount(client([chatAccount]), { accounts: [chatAccount] })
+  await click(host, 'side-model-add')
+  const adapter = host.querySelector<HTMLSelectElement>('[data-testid="side-adapter"]')
+  expect([...(adapter?.options ?? [])].map((option) => option.value)).toEqual([
+    'agnes-sys1',
+    'typesafe-systemone',
+  ])
+  expect(adapter?.disabled).toBe(false)
   await choose(host, 'side-adapter', 'typesafe-systemone')
   expect(query(host, 'side-preset')).toBeNull()
   expect(input(host, 'side-label')?.value).toBe('Jev')
@@ -781,15 +790,50 @@ it('offers Sys1, Jev and Voice and fills two model fields for SiliconFlow', asyn
   expect(query(host, 'side-voice-model-transcribe')).toBeNull()
 })
 
-it('keeps the credential and clears messages when the adapter or preset changes', async () => {
+it('keeps decision and voice models on their own pages', async () => {
+  const accounts = [chatAccount, sideAccount, voiceAccount]
+  const decision = await mount(client(accounts), { accounts })
+  expect(query(decision.host, 'side-model-jev')).not.toBeNull()
+  expect(query(decision.host, 'side-model-siliconflow')).toBeNull()
+  const voice = await mount(client(accounts), { accounts, kind: 'voice' })
+  expect(query(voice.host, 'voice-models-title')?.textContent).toBe('Voice models')
+  expect(query(voice.host, 'voice-models-count')?.textContent).toBe('· 1')
+  expect(query(voice.host, 'side-model-siliconflow')).not.toBeNull()
+  expect(query(voice.host, 'side-model-jev')).toBeNull()
+  // The voice page picks its account by name, so it shows no route hint; both anchors stay distinct.
+  expect(query(voice.host, 'side-model-route-hint')).toBeNull()
+  expect(document.getElementById('voice-models')).toBe(query(voice.host, 'voice-models'))
+  expect(document.getElementById('side-models')).toBe(query(decision.host, 'side-models'))
+})
+
+it('opens the voice editor below its list even where the model page lends its pages', async () => {
+  // The model page's add-page row is in the document; the voice panel must not drive it.
+  const drill = document.createElement('button')
+  drill.dataset.settingsDrill = 'add-side-model'
+  const clicked = vi.fn()
+  drill.addEventListener('click', clicked)
+  document.body.append(drill)
+  const { host } = await openVoiceEditor(client([chatAccount]))
+  expect(clicked).not.toHaveBeenCalled()
+  expect(query(host, 'side-editor')).not.toBeNull()
+})
+
+it('names the voice list in zh-CN', async () => {
+  await act(async () => {
+    document.documentElement.lang = 'zh-CN'
+  })
+  const { host } = await mount(client([chatAccount]), { accounts: [chatAccount], kind: 'voice' })
+  expect(query(host, 'voice-models-empty')?.textContent).toContain('还没有语音模型')
+  expect(query(host, 'voice-model-add')?.textContent).toBe('添加语音模型')
+})
+
+it('keeps the credential and clears messages when the preset changes', async () => {
   const { host } = await openVoiceEditor(client([chatAccount]))
   await choose(host, 'side-credential', GENERIC)
   await click(host, 'side-test')
   expect(query(host, 'side-test-status')?.textContent).toBe('Endpoint reachable')
   await choose(host, 'side-preset', 'openai')
   expect(query(host, 'side-test-status')).toBeNull()
-  expect(host.querySelector<HTMLSelectElement>('[data-testid="side-credential"]')?.value).toBe(GENERIC)
-  await choose(host, 'side-adapter', 'typesafe-systemone')
   expect(host.querySelector<HTMLSelectElement>('[data-testid="side-credential"]')?.value).toBe(GENERIC)
 })
 
@@ -876,7 +920,10 @@ it('refuses a voice entry with no model or the same model twice', async () => {
 })
 
 it('opens a saved voice entry with each model in its field', async () => {
-  const { host } = await mount(client([chatAccount, voiceAccount]), { accounts: [chatAccount, voiceAccount] })
+  const { host } = await mount(client([chatAccount, voiceAccount]), {
+    accounts: [chatAccount, voiceAccount],
+    kind: 'voice',
+  })
   expect(query(host, 'side-model-siliconflow')?.textContent).toContain('Voice')
   await click(host, 'side-model-edit-siliconflow')
   expect(input(host, 'side-voice-model-transcribe')?.value).toBe(SENSE)
@@ -887,23 +934,30 @@ it('opens a saved voice entry with each model in its field', async () => {
 })
 
 it('keeps a saved entry on its adapter with the select disabled', async () => {
-  const api = client([chatAccount, voiceAccount])
-  const { host } = await mount(api, { accounts: [chatAccount, voiceAccount] })
-  await click(host, 'side-model-edit-siliconflow')
+  const api = client([chatAccount, sideAccount])
+  const { host } = await mount(api, { accounts: [chatAccount, sideAccount] })
+  await click(host, 'side-model-edit-jev')
   const adapter = host.querySelector<HTMLSelectElement>('[data-testid="side-adapter"]')
-  expect(adapter?.value).toBe('openai-audio')
+  expect(adapter?.value).toBe('typesafe-systemone')
   expect(adapter?.disabled).toBe(true)
-  await click(host, 'side-save')
-  expect(api.save.mock.calls[0]?.[0]).toMatchObject({
+  // A saved voice entry stays a voice entry: its page offers no other adapter.
+  const voice = client([chatAccount, voiceAccount])
+  const voiceHost = (await mount(voice, { accounts: [chatAccount, voiceAccount], kind: 'voice' })).host
+  await click(voiceHost, 'side-model-edit-siliconflow')
+  expect(query(voiceHost, 'side-adapter')).toBeNull()
+  await click(voiceHost, 'side-save')
+  expect(voice.save.mock.calls[0]?.[0]).toMatchObject({
     providerId: 'openai-audio',
     accountId: 'siliconflow',
     model: SENSE,
   })
+  await click(host, 'side-save')
+  expect(api.save.mock.calls[0]?.[0]).toMatchObject({ providerId: 'typesafe-systemone', accountId: 'jev' })
 })
 
 it('tests a voice entry through its own adapter', async () => {
   const api = client([chatAccount, voiceAccount])
-  const { host } = await mount(api, { accounts: [chatAccount, voiceAccount] })
+  const { host } = await mount(api, { accounts: [chatAccount, voiceAccount], kind: 'voice' })
   await menuItem(host, 'siliconflow', 'side-model-menu-test-siliconflow')
   expect(api.test).toHaveBeenCalledWith({
     providerId: 'openai-audio',

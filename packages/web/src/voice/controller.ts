@@ -563,7 +563,6 @@ export function createVoiceController(deps: VoiceControllerDeps): VoiceControlle
         .filter((account) => account.providerId === VOICE_PROVIDER && account.enabled)
         .map(({ route, label }) => ({ route, label }))
     },
-    openSideModels: () => deps.openSettings('side-models'),
   }
 
   player.state.subscribe(emit)
@@ -642,7 +641,7 @@ export function createVoiceController(deps: VoiceControllerDeps): VoiceControlle
     resumePlayback() {
       void player.resume()
     },
-    openSettings: () => deps.openSettings('side-models'),
+    openSettings: () => deps.openSettings('voice'),
     refresh,
     settingsApi,
     dispose() {

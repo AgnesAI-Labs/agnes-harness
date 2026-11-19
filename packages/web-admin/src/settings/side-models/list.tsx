@@ -14,6 +14,7 @@ import {
 } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
 import { SIDE_MODELS_NAMESPACE, sideModelsCatalog } from '../side-models-locale.js'
+import type { SideModelKind } from './model.js'
 
 /** The endpoint as the row shows it: its host (with a port), or the address when it does not parse. */
 function endpointHost(baseUrl: string): string {
@@ -24,7 +25,34 @@ function endpointHost(baseUrl: string): string {
   }
 }
 
+/** The words and anchors of each page's list: decision models on the model page, voice on the voice page. */
+const LIST = {
+  decision: {
+    id: 'side-models',
+    add: 'side-model-add',
+    icon: 'git-branch',
+    heading: 'side.title',
+    note: 'side.note',
+    emptyTitle: 'side.emptyTitle',
+    emptyNote: 'side.emptyNote',
+    addLabel: 'side.add',
+    removeAfter: 'side.removeAfter',
+  },
+  voice: {
+    id: 'voice-models',
+    add: 'voice-model-add',
+    icon: 'mic',
+    heading: 'side.voiceList.title',
+    note: 'side.voiceList.note',
+    emptyTitle: 'side.voiceList.emptyTitle',
+    emptyNote: 'side.voiceList.emptyNote',
+    addLabel: 'side.voiceList.add',
+    removeAfter: 'side.voiceList.removeAfter',
+  },
+} as const
+
 export type SideModelListProps = {
+  kind: SideModelKind
   accounts: readonly ConfigAccount[]
   canSave: boolean
   busy: boolean
@@ -50,31 +78,32 @@ export type SideModelListProps = {
 export function SideModelList(props: SideModelListProps) {
   const { t } = useUiText(SIDE_MODELS_NAMESPACE, sideModelsCatalog)
   const { accounts, canSave, busy, editing } = props
+  const words = LIST[props.kind]
   const empty = accounts.length === 0 && !editing
   const addRow = (
     <Button
       type="text"
       className="config-account-add"
-      data-testid="side-model-add"
+      data-testid={words.add}
       disabled={!canSave || busy}
       onClick={props.onAdd}
     >
       <Icon name="plus" />
-      {t('side.add')}
+      {t(words.addLabel)}
     </Button>
   )
   return (
     <SettingsBlock
       bare
-      id="side-models"
+      id={words.id}
       tabIndex={-1}
       className="side-models"
-      data-testid="side-models"
+      data-testid={words.id}
       label={
         <>
-          <span data-testid="side-models-title">{t('side.title')}</span>
+          <span data-testid={`${words.id}-title`}>{t(words.heading)}</span>
           {accounts.length > 0 && (
-            <span className="side-models-count" data-testid="side-models-count">
+            <span className="side-models-count" data-testid={`${words.id}-count`}>
               {t('side.count', { count: accounts.length })}
             </span>
           )}
@@ -83,17 +112,17 @@ export function SideModelList(props: SideModelListProps) {
     >
       {/* The empty state explains the same thing in its own description. */}
       {!empty && (
-        <p className="side-models-note" data-testid="side-models-note">
-          {t('side.note')}
+        <p className="side-models-note" data-testid={`${words.id}-note`}>
+          {t(words.note)}
         </p>
       )}
       {empty ? (
         <SettingsGroup className="side-models-empty">
           <EmptyState
-            data-testid="side-models-empty"
-            icon={<Icon name="git-branch" />}
-            title={t('side.emptyTitle')}
-            description={t('side.emptyNote')}
+            data-testid={`${words.id}-empty`}
+            icon={<Icon name={words.icon} />}
+            title={t(words.emptyTitle)}
+            description={t(words.emptyNote)}
           />
           {addRow}
         </SettingsGroup>
@@ -106,7 +135,8 @@ export function SideModelList(props: SideModelListProps) {
         </SettingsGroup>
       )}
       {props.children}
-      {accounts.length > 0 && (
+      {/* The voice page picks its account by name; only decision models are found by route. */}
+      {accounts.length > 0 && props.kind === 'decision' && (
         <p className="side-models-note" data-testid="side-model-route-hint">
           {t('side.hint')}
         </p>
@@ -117,6 +147,7 @@ export function SideModelList(props: SideModelListProps) {
 }
 
 function SideModelRow({
+  kind,
   account,
   canSave,
   busy,
@@ -255,7 +286,7 @@ function SideModelRow({
           <span>
             {t('side.removeBefore', { label: account.label })}
             <code translate="no">{account.route}</code>
-            {t('side.removeAfter')}
+            {t(LIST[kind].removeAfter)}
           </span>
           <Button
             size="small"
