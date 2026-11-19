@@ -40,6 +40,7 @@ export async function realRuntime(label, existingRoot) {
     TMPDIR: temp,
     TEMP: temp,
     TMP: temp,
+    AGH_TELEMETRY_DISABLED: '1',
     AGH_HOME: home,
     AGNES_PROFILE: 'local-dev',
     AGNES_WEB_ORIGIN: url,

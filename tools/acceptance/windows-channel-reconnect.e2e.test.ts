@@ -42,7 +42,7 @@ it.skipIf(!windows || !entry)(
         ],
         {
           cwd: root,
-          env: { ...process.env, AGH_HOME: home, AGNES_PROFILE: 'local-dev' },
+          env: { ...process.env, AGH_HOME: home, AGNES_PROFILE: 'local-dev', AGH_TELEMETRY_DISABLED: '1' },
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true,
         },

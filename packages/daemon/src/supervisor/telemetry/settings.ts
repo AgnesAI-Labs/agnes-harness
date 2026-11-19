@@ -5,14 +5,16 @@ import { join } from 'node:path'
 import type { AdminTelemetryParams, TelemetrySettings } from '@agnes/protocol/gen/app-server'
 import { windowsReadPrivateFileSync, windowsWritePrivateFile } from '@agnes/system-node'
 
+export const DEFAULT_TELEMETRY_ENDPOINT = 'https://agh-telemetry.agnes-ai.cn'
+
 const DEFAULTS: TelemetrySettings = { analyticsEnabled: true, traceUploadEnabled: true }
 const OFF: TelemetrySettings = { analyticsEnabled: false, traceUploadEnabled: false }
 const UUID_V4 = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
 
 export function telemetryEnvironment(env: NodeJS.ProcessEnv, allowInTest = false) {
   let endpoint: URL | undefined
-  const candidate = env.AGH_TELEMETRY_ENDPOINT?.trim()
-  if (candidate && /^https?:\/\//i.test(candidate)) {
+  const candidate = (env.AGH_TELEMETRY_ENDPOINT ?? DEFAULT_TELEMETRY_ENDPOINT).trim()
+  if (/^https?:\/\//i.test(candidate)) {
     try {
       const url = new URL(candidate)
       if (!url.username && !url.password && !url.search && !url.hash) endpoint = url

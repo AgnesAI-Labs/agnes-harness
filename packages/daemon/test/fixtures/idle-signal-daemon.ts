@@ -39,6 +39,8 @@ idle.onStartup(async () => {
   }
 })
 
+process.env.AGH_TELEMETRY_DISABLED ??= '1'
+
 await runAgnesd(
   { home, workspace, profile: 'local-dev' },
   {

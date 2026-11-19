@@ -268,6 +268,7 @@ describe('built CLI managed MCP lifecycle', () => {
       Object.entries(process.env).filter(([name]) => !name.startsWith('VITEST_') && name !== 'NODE_OPTIONS'),
     ) as NodeJS.ProcessEnv
     env.AGH_HOME = home
+    env.AGH_TELEMETRY_DISABLED = '1'
     // The legacy preset keeps its deployment grant; this new path must be granted by MCP enable.
     env.AGNES_MCP_STDIO_ALLOWLIST = nodePath
     const legacy = await setupMcpLegacySentinel({ home, workspace, nodePath })

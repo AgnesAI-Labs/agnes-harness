@@ -11,7 +11,7 @@ import type { ConfigAccount, EventEnvelope } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { adaptHostTables } from '../src/supervisor/storage-adapters.js'
 import { openTelemetry } from '../src/supervisor/telemetry/service.js'
-import { telemetryInstallId } from '../src/supervisor/telemetry/settings.js'
+import { telemetryEnvironment, telemetryInstallId } from '../src/supervisor/telemetry/settings.js'
 
 const cleanups: (() => unknown)[] = []
 afterEach(async () => {
@@ -122,7 +122,7 @@ const accounts = [
   },
 ] as const satisfies readonly ConfigAccount[]
 
-async function fixture(env: NodeJS.ProcessEnv = {}, allowInTest = true) {
+async function fixture(env: NodeJS.ProcessEnv = { VITEST: 'true' }, allowInTest = true) {
   const home = await homeDir()
   const sessionCwd = await mkdtemp(join(tmpdir(), 'agh-telemetry-workspace-'))
   cleanups.push(() => rm(sessionCwd, { recursive: true, force: true }))
@@ -158,7 +158,6 @@ async function fixture(env: NodeJS.ProcessEnv = {}, allowInTest = true) {
     home,
     allowInTest,
     env: {
-      VITEST: 'true',
       AGH_TELEMETRY_ENDPOINT: server.endpoint,
       AGH_TELEMETRY_FLUSH_MS: '60000',
       AGH_TELEMETRY_TRACE_DEBOUNCE_MS: '5',
@@ -436,17 +435,33 @@ it('requires an affirmative ACK and retries the complete range on a later bounda
   })
 })
 
+it('configures the production collector when no endpoint is supplied', () => {
+  const { endpoint, endpointConfigured, disabledByEnv } = telemetryEnvironment({}, false)
+  expect(endpoint?.href).toBe('https://agh-telemetry.agnes-ai.cn/')
+  expect(endpointConfigured).toBe(true)
+  expect(disabledByEnv).toBe(false)
+})
+
 it.each([
-  [{ AGH_TELEMETRY_DISABLED: '1' }, true, true],
-  [{ AGH_TELEMETRY_DISABLED: 'true' }, true, true],
-  [{ DO_NOT_TRACK: '1' }, true, true],
-  [{ CI: 'true' }, false, true],
-  [{ VITEST: 'true' }, false, true],
-  [{ AGH_TELEMETRY_ENDPOINT: 'file:///invalid' }, true, false],
-  [{ AGH_TELEMETRY_ENDPOINT: '' }, true, false],
-  [{ AGH_TELEMETRY_ENDPOINT: 'http:missing-slashes.invalid' }, true, false],
-] as const)('stays silent with env override %j', async (env, allowInTest, disabledByEnv) => {
-  const { telemetry, row, server, scan } = await fixture(env, allowInTest)
+  [{ AGH_TELEMETRY_DISABLED: '1' }, true],
+  [{ AGH_TELEMETRY_DISABLED: 'true' }, true],
+  [{ AGH_TELEMETRY_DISABLED: 'TrUe' }, true],
+  [{ DO_NOT_TRACK: '1' }, true],
+  [{ CI: 'true' }, true],
+  [{ VITEST: 'true' }, true],
+  [{ AGH_TELEMETRY_ENDPOINT: '' }, false],
+  [{ AGH_TELEMETRY_ENDPOINT: '   ' }, false],
+  [{ AGH_TELEMETRY_ENDPOINT: 'file:///invalid' }, false],
+  [{ AGH_TELEMETRY_ENDPOINT: 'http:missing-slashes.invalid' }, false],
+  [{ AGH_TELEMETRY_ENDPOINT: 'https://[' }, false],
+  [{ AGH_TELEMETRY_ENDPOINT: 'https://u:p@agh-telemetry.agnes-ai.cn' }, false],
+  [{ AGH_TELEMETRY_ENDPOINT: 'https://agh-telemetry.agnes-ai.cn?a=1' }, false],
+  [{ AGH_TELEMETRY_ENDPOINT: 'https://agh-telemetry.agnes-ai.cn#x' }, false],
+] as const)('stays silent with env override %j', async (env, disabledByEnv) => {
+  const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Unexpected telemetry request'))
+  cleanups.push(() => fetch.mockRestore())
+  const { home, telemetry, row, scan } = await fixture({ AGH_TELEMETRY_ENDPOINT: undefined, ...env }, false)
+  telemetry.sessionCreated(KEY, 'web')
   row('session/start', { key: KEY })
   row('turn/start', { trigger: 'prompt' })
   row('turn/end', { reason: 'completed' })
@@ -455,9 +470,9 @@ it.each([
     disabledByEnv,
     endpointConfigured: disabledByEnv,
   })
-  expect(server.traces).toHaveLength(0)
-  expect(server.reports).toHaveLength(0)
+  expect(fetch).not.toHaveBeenCalled()
   expect(scan).not.toHaveBeenCalled()
+  await expect(stat(join(home, 'telemetry-id'))).rejects.toMatchObject({ code: 'ENOENT' })
 })
 
 it('reuses a private UUID across daemon opens', async () => {

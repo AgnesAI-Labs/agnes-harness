@@ -45,7 +45,7 @@ const home = join(root, 'home')
 const workspace = join(root, 'workspace')
 mkdirSync(home, { mode: 0o700 })
 mkdirSync(workspace)
-const env = { ...process.env, AGH_HOME: home, HOME: root, LANG: 'en_US.UTF-8' }
+const env = { ...process.env, AGH_HOME: home, AGH_TELEMETRY_DISABLED: '1', HOME: root, LANG: 'en_US.UTF-8' }
 for (const name of ['AGH_TIMING', 'AGH_TIMING_ORIGIN', 'NODE_OPTIONS']) delete env[name]
 
 const sorted = (values) => [...values].sort((a, b) => a - b)

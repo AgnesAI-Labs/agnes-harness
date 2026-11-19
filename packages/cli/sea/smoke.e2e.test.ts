@@ -49,7 +49,14 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       [fileURLToPath(new URL('./fixtures/openai-server.mjs', import.meta.url))],
       { stdio: ['ignore', 'pipe', 'inherit'] },
     )
-    const env = { ...process.env, AGH_HOME: home, HOME: home, NODE_PATH: '', NODE_OPTIONS: '' }
+    const env = {
+      ...process.env,
+      AGH_HOME: home,
+      AGH_TELEMETRY_DISABLED: '1',
+      HOME: home,
+      NODE_PATH: '',
+      NODE_OPTIONS: '',
+    }
     try {
       // Run outside the checkout so native dependency lookup cannot fall back to its node_modules.
       cpSync(dirname(resolve(bin as string)), distributionRoot, { recursive: true, dereference: true })

@@ -63,6 +63,7 @@ it.skipIf(!entry)(
     const env = {
       ...process.env,
       HOME: home,
+      AGH_TELEMETRY_DISABLED: '1',
       AGH_HOME: home,
       AGNES_PROFILE: 'local-dev',
       AGNES_WEB_ORIGIN: origin,

@@ -107,6 +107,7 @@ async function startDaemon(version: '5.1' | '7'): Promise<Daemon> {
     ),
   )
   Object.assign(env, {
+    AGH_TELEMETRY_DISABLED: '1',
     AGH_HOME: home,
     AGNES_PROFILE: 'local-dev',
     LOCALAPPDATA: localAppData,
