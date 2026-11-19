@@ -1837,8 +1837,12 @@ it('inherits image input from the matching official catalogue, else from the cat
     baseUrl: 'https://gateway.invalid/v1',
   })
   expect(gateway.models[0]?.input).toEqual(['text', 'image'])
-  // An id no catalogue knows keeps the text fallback.
+  // Its capacity comes from the same catalogue entry rather than the 128K default.
+  expect(gateway.models[0]).toMatchObject({ contextWindow: model.contextWindow, maxTokens: model.maxTokens })
+  expect(model.contextWindow).not.toBe(128_000)
+  // An id no catalogue knows keeps the text fallback and the default capacity.
   expect(gateway.models[1]).not.toHaveProperty('input')
+  expect(gateway.models[1]).toMatchObject({ contextWindow: 128_000, maxTokens: 8_192 })
 })
 
 it('projects installed input types and permits only named per-model input overrides', async () => {

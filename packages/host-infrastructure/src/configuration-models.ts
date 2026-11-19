@@ -168,41 +168,66 @@ export function applyInputOverrides(models: ConfigModel[], value: unknown): Conf
   })
 }
 
+/** What the built-in catalogues say about one model id: the input types it accepts and its limits. */
+export type CatalogueFacts = Readonly<{
+  input?: ModelRecord['input']
+  contextWindow: number
+  maxTokens: number
+}>
+
 /**
- * The input types an account's models start with, before the person changes them. An endpoint at a
- * built-in provider's exact address and protocol takes that provider's catalogue. Any other endpoint,
- * such as a gateway like llm.sg whose model list names models but not what they accept, takes for
- * each id the built-in catalogues know what they agree on: an id two catalogues describe differently
- * keeps only the types both allow. An id no catalogue knows keeps the text fallback.
+ * What an account's models start with, before the person changes them: input types and capacity.
+ * An endpoint at a built-in provider's exact address and protocol takes that provider's catalogue.
+ * Any other endpoint, such as a gateway like llm.sg whose model list names models but not what they
+ * accept or hold, takes for each id what the built-in catalogues that know it agree on: only the input
+ * types every one allows, and the smallest context window and output allowance. An id no catalogue
+ * knows has no facts and keeps the text fallback and default capacity.
  */
-export async function catalogueInputs<T extends { api: string; baseUrl: string; capabilities?: unknown }>(
+export async function catalogueFacts<T extends { api: string; baseUrl: string; capabilities?: unknown }>(
   providers: readonly T[],
   read: (provider: T) => Promise<{ records: ModelRecord[] }>,
   api: string,
   address: string,
-): Promise<ReadonlyMap<string, ModelRecord['input']>> {
+): Promise<ReadonlyMap<string, CatalogueFacts>> {
   const catalogued = providers.filter((candidate) => !candidate.capabilities)
   const records = (provider: T) =>
     read(provider).then(
       (catalogue) => catalogue.records,
       () => [] as ModelRecord[],
     )
+  const facts = (record: ModelRecord): CatalogueFacts => ({
+    input: [...record.input],
+    contextWindow: record.contextWindow,
+    maxTokens: record.maxTokens,
+  })
   const exact = catalogued.find(
     (candidate) =>
       candidate.api === api && candidate.baseUrl.replace(/\/$/, '') === address.replace(/\/$/, ''),
   )
-  if (exact) return new Map((await records(exact)).map((record) => [record.id, record.input]))
-  const agreed = new Map<string, ModelRecord['input']>()
+  if (exact) return new Map((await records(exact)).map((record) => [record.id, facts(record)]))
+  const agreed = new Map<string, CatalogueFacts>()
   for (const catalogue of await Promise.all(catalogued.map(records)))
     for (const record of catalogue) {
       const prior = agreed.get(record.id)
-      agreed.set(
-        record.id,
-        prior
-          ? (prior.filter((type) => record.input.includes(type)) as ModelRecord['input'])
-          : [...record.input],
-      )
+      if (!prior) {
+        agreed.set(record.id, facts(record))
+        continue
+      }
+      const input = (prior.input ?? []).filter((type) => record.input.includes(type)) as ModelRecord['input']
+      agreed.set(record.id, {
+        ...(input.length ? { input } : {}),
+        contextWindow: Math.min(prior.contextWindow, record.contextWindow),
+        maxTokens: Math.min(prior.maxTokens, record.maxTokens),
+      })
     }
-  for (const [id, input] of agreed) if (input.length === 0) agreed.delete(id)
   return agreed
+}
+
+/** The input types part of `catalogueFacts`, for ids whose catalogues agree on at least one. */
+export function factsInputs(
+  facts: ReadonlyMap<string, CatalogueFacts>,
+): ReadonlyMap<string, ModelRecord['input']> {
+  const inputs = new Map<string, ModelRecord['input']>()
+  for (const [id, fact] of facts) if (fact.input) inputs.set(id, fact.input)
+  return inputs
 }

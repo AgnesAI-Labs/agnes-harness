@@ -88,9 +88,10 @@ import { ConfigurationError, type ConfigurationErrorCode } from './configuration
 import {
   applyInputOverrides,
   applyModelConfiguration,
-  catalogueInputs,
+  catalogueFacts,
   configModel,
   configModels,
+  factsInputs,
   normalizeConfigModel,
   normalizeModelSettings,
   supportsModelSettings,
@@ -728,8 +729,9 @@ export function createConfigurationService(
     return next
   }
 
-  const catalogInputs = (api: string, address: string) =>
-    catalogueInputs(API_KEY_PROVIDER_REGISTRY, staticCatalogue, api, address)
+  const catalogFacts = (api: string, address: string) =>
+    catalogueFacts(API_KEY_PROVIDER_REGISTRY, staticCatalogue, api, address)
+  const catalogInputs = (api: string, address: string) => catalogFacts(api, address).then(factsInputs)
 
   const readCredential = configurationCredentialReader(home, credentialStore)
 
@@ -934,7 +936,7 @@ export function createConfigurationService(
     if (compatible.isCompatibleEntry(parsed.entry))
       return chatModels.testCompatibleAccount(
         { entry: parsed.entry, baseUrl, apiKey: parsed.apiKey, row },
-        { list, readCredential, catalogInputs },
+        { list, readCredential, catalogFacts },
       )
     const storedCredential =
       row && parsed.apiKey === undefined ? await readCredential(row.credentialRef) : null

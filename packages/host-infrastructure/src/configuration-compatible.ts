@@ -8,7 +8,7 @@ import type {
   SessionDefaults,
 } from '@agnes/protocol'
 import { ConfigurationError } from './configuration-error.js'
-import { applyModelConfiguration, normalizeConfigModel } from './configuration-models.js'
+import { applyModelConfiguration, type CatalogueFacts, normalizeConfigModel } from './configuration-models.js'
 import { isPayloadOnlyEntry } from './configuration-payload-only.js'
 
 type CompatibleEntry = Readonly<{
@@ -129,7 +129,7 @@ async function testCompatibleAccount(
   deps: {
     chatModelAllowed: (id: string) => boolean
     knownModel: KnownModels
-    catalogInputs?: (api: string, baseUrl: string) => Promise<ReadonlyMap<string, ModelRecord['input']>>
+    catalogFacts?: (api: string, baseUrl: string) => Promise<ReadonlyMap<string, CatalogueFacts>>
     list: (api: string, baseUrl: string, credential: string | undefined) => Promise<Listing>
     readCredential: (ref: string) => Promise<{ kind: string; provider: string; value?: string } | null>
   },
@@ -146,12 +146,14 @@ async function testCompatibleAccount(
   const contexts = new Map(Object.entries(listing.contextWindows ?? {}))
   const outputs = new Map(Object.entries(listing.maxTokens ?? {}))
   const inputs = new Map(Object.entries(listing.inputs ?? {}))
-  const catalog = (await deps.catalogInputs?.(entry.api, args.baseUrl)) ?? new Map()
+  const catalog: ReadonlyMap<string, CatalogueFacts> =
+    (await deps.catalogFacts?.(entry.api, args.baseUrl)) ?? new Map()
   return {
     models: listing.ids.filter(deps.chatModelAllowed).map((id) => {
-      const contextWindow = contexts.get(id)
-      const maxTokens = outputs.get(id)
-      const input = row?.models.find((m) => m.id === id)?.input ?? inputs.get(id) ?? catalog.get(id)
+      // What the endpoint reports wins, then what the catalogues know about the same id.
+      const contextWindow = contexts.get(id) ?? catalog.get(id)?.contextWindow
+      const maxTokens = outputs.get(id) ?? catalog.get(id)?.maxTokens
+      const input = row?.models.find((m) => m.id === id)?.input ?? inputs.get(id) ?? catalog.get(id)?.input
       return {
         ...(structuredClone(row?.models.find((m) => m.id === id)) ?? declared(id, deps.knownModel)),
         ...(contextWindow === undefined ? {} : { contextWindow }),
