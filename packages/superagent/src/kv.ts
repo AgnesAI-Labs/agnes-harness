@@ -82,7 +82,7 @@ export const KV = {
   /** Per-Source resolved display names mapping a named ID (such as a Feishu chat ID) to its display name. */
   sources: {
     labels: family<Record<string, string>, [source: string]>('source-labels:'),
-    /** Per-Source values that text fields with `choices` may take, by field key (such as Feishu channel instances). */
+    /** Per-Source values that text fields with `choices` may take, by field key. */
     choices: family<Record<string, Choice[]>, [source: string]>('source-choices:'),
   },
   /**
@@ -107,6 +107,8 @@ export const KV = {
    * Source's health entries as last changed, which outlive the running generation for setup checks and diagnosis.
    */
   feishu: {
+    delivery: family<'sending' | 'uncertain' | 'sent', [id: string]>('feishu-delivery:'),
+    botChats: family<Record<string, boolean>, [bot: string]>('feishu-bot-chats:'),
     chats: record<Record<string, boolean>>('feishu-chats'),
     roots: record<Record<string, string>>('feishu-topic-roots'),
     sent: record<Record<string, string>>('feishu-sent'),

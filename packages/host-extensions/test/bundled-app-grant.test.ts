@@ -19,7 +19,7 @@ import {
   type RuntimePluginSnapshot,
 } from '@agnes/package-manager'
 import type { RowOrigin } from '@agnes/plugin-runtime/host'
-import { AGNES_ERRORS, type ManagedServiceDescriptor } from '@agnes/protocol'
+import { AGNES_ERRORS, type ManagedServiceDescriptor, sha256Hex } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { pinOptionalBundledRowGrants } from '../src/assemble/host-grants.js'
 import { createRowServiceHost } from '../src/ext-host/row-services.js'
@@ -312,6 +312,12 @@ it('package with the bundledApp host grant gets bundledApp with a platform-chose
     clientId: expect.stringContaining(SUPERAGENT.id),
   })
   expect(() => grant.assertCurrent()).not.toThrow()
+  const identity = app.leases[0]!.context
+  expect(identity).toMatchObject({ integrity: expect.any(String), incarnation: expect.any(String) })
+  const owner = `plugin/${sha256Hex(SUPERAGENT.row).slice(0, 16)}`
+  await expect(
+    app.managed.currentValue(owner, 'app', identity.integrity!, identity.incarnation),
+  ).resolves.toEqual(await app.handle.get())
   // Channel access is wired by the channel runtime; until then every call is refused.
   denied(() => grant.channels.subscribe('feishu', ['chat'], () => {}))
   await expect(grant.channels.listChats('feishu')).rejects.toMatchObject({
@@ -327,6 +333,9 @@ it('package with the bundledApp host grant gets bundledApp with a platform-chose
   await app.managed.publish('upgrade', true)
   await app.handle.get()
   expect(app.init().bundledApp?.stateDirectory).toBe(grant.stateDirectory)
+  await expect(
+    app.managed.currentValue(owner, 'app', identity.integrity!, identity.incarnation),
+  ).rejects.toMatchObject({ code: AGNES_ERRORS.CAPABILITY_DENIED })
 })
 
 it('in-process plugins without the grant get no bundledApp', async () => {

@@ -1,6 +1,6 @@
 # Agnes Harness
 
-本仓库用于 AGH Windows 云端联调，入口见[Windows 云端测试文档](docs/guide/windows-cloud-qa.zh-CN.md)。包含上游与本地修复，当前同步不代表已部署云端。
+云端连接与联调请参阅[云端对接文档](docs/guide/remote-frontend.zh-CN.md)和[Windows 源码启动说明](docs/guide/windows-cloud-qa.zh-CN.md)。
 
 [English](README.md) | 简体中文
 

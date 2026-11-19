@@ -566,6 +566,21 @@ export const SETTINGS_TEXT = {
     USER_ERRORS.nothingToSync[1],
   ],
   // Setup problems and health codes; English reuses the host's own text read by the log and main Session
+  'setup.feishuCliUnset': [
+    '请在飞书来源填写已配置认证的机器人 lark-cli 包装程序绝对路径；旧渠道实例不能提供 CLI。',
+    SETUP_PROBLEMS.feishuCliUnset[1],
+  ],
+  'setup.feishuCliMissing': ['飞书 CLI 必须是可执行包装程序的绝对路径。', SETUP_PROBLEMS.feishuCliMissing[1]],
+  'setup.feishuCliFailed': [
+    '无法验证飞书 CLI 的应用，请检查包装程序的 auth status。',
+    SETUP_PROBLEMS.feishuCliFailed[1],
+  ],
+  'setup.feishuBotNotReady': [
+    '飞书 CLI 的机器人身份未就绪，请先配置认证。',
+    SETUP_PROBLEMS.feishuBotNotReady[1],
+  ],
+  'setup.feishuUserIdentity': ['飞书 CLI 必须使用 strict-mode bot。', SETUP_PROBLEMS.feishuUserIdentity[1]],
+  'setup.feishuNoBot': ['飞书 CLI 没有返回有效的机器人身份。', SETUP_PROBLEMS.feishuNoBot[1]],
   'setup.repositoryUnset': ['GitHub 来源没有设置监听的仓库。', SETUP_PROBLEMS.repositoryUnset[1]],
   'setup.foreignFile': [
     '{file} 不是 Superagent 写入的文件；移走它，或换一个状态目录。',
@@ -630,44 +645,5 @@ export const SETTINGS_TEXT = {
   ],
   'healthCode.setupPending': ['等待部署检查', HEALTH_TEXT.setupPending],
   'healthCode.sourceOff': ['已关闭', HEALTH_TEXT.sourceOff],
-  'healthCode.feishuDedicatedBot': [
-    '私聊和其他群需要 Superagent 专用的飞书机器人实例；现在只接收列出的群',
-    HEALTH_TEXT.feishuDedicatedBot,
-  ],
-  'healthCode.feishuWaiting': ['等待渠道订阅', HEALTH_TEXT.feishuWaiting],
-  'healthCode.feishuChannelUnset': [
-    '需要设置：来源已打开，还没有设置渠道实例',
-    HEALTH_TEXT.feishuChannelUnset,
-  ],
-  'healthCode.feishuChatsUnset': ['需要设置：没有列出要接收的群', HEALTH_TEXT.feishuChatsUnset],
-  'healthCode.feishuChannelRefused': [
-    '需要设置：渠道实例 {channel} 拒绝了这些群（{reason}）；正在重试',
-    HEALTH_TEXT.feishuChannelRefused,
-  ],
-  'healthCode.feishuPluginUnset': [
-    '需要设置：要整个认领实例，请连同渠道行写成 <渠道行 id>/<实例 id>',
-    HEALTH_TEXT.feishuPluginUnset,
-  ],
-  'healthCode.feishuInstanceShared': [
-    '需要设置：渠道实例 {channel} 已在为主人或其他功能服务，或它有一个尚未使用的配对码（一小时内过期）；请用专用的机器人实例',
-    HEALTH_TEXT.feishuInstanceShared,
-  ],
-  'healthCode.feishuInstanceReleasing': [
-    '需要设置：渠道实例 {channel} 正被占用；等待 Superagent 上一次运行释放它',
-    HEALTH_TEXT.feishuInstanceReleasing,
-  ],
-  'healthCode.feishuInstanceRefused': [
-    '需要设置：渠道实例 {channel} 拒绝了认领（{reason}）；正在重试',
-    HEALTH_TEXT.feishuInstanceRefused,
-  ],
-  'healthCode.feishuNoHistory': ['渠道不能读取群历史，重启或断线后不补收消息', HEALTH_TEXT.feishuNoHistory],
-  'healthCode.feishuNoMembers': [
-    '渠道不能列出群成员，名单不同步，使用设置里的名单',
-    HEALTH_TEXT.feishuNoMembers,
-  ],
-  'healthCode.feishuNoReads': [
-    '渠道不能读取消息或话题，orchestrator_feishu_read 和上下文读取不可用',
-    HEALTH_TEXT.feishuNoReads,
-  ],
   'healthCode.pollFailures': ['连续 {count} 次轮询失败，最近一次：{error}', HEALTH_TEXT.pollFailures],
 } as const satisfies Record<string, readonly [string, string]>

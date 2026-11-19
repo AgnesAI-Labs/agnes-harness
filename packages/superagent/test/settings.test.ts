@@ -9,6 +9,7 @@ import { Settings, SettingsConflict, type SettingsHost } from '../src/app/settin
 import { Store } from '../src/app/store.js'
 import { UserError } from '../src/core/index.js'
 import { HealthBoard } from '../src/infra/health.js'
+import { feishuKind } from '../src/sources/feishu.js'
 import { githubKind } from '../src/sources/github.js'
 import type { SourceKind } from '../src/sources/kind.js'
 import { SourceRegistry } from '../src/sources/registry.js'
@@ -63,6 +64,7 @@ beforeEach(() => {
   const sources = new SourceRegistry(() => store.settings(), board)
   sources.register(githubKind)
   sources.register(roster)
+  sources.register(feishuKind)
   host = {
     resolveModel: vi.fn(async () => ({})),
     setup: {
@@ -185,4 +187,47 @@ it('tells the main session of a pause once, and of nothing that a tool saved its
   await settings.pause(false, 'tool')
   expect(host.notify).toHaveBeenCalledTimes(1)
   expect(store.settings().paused).toBe(false)
+})
+
+it('validates a bot CLI before saving, preserves old chat policy and restricts account changes to the panel', async () => {
+  const saved = store.settings()
+  store.saveSettings({
+    ...saved,
+    sources: {
+      ...saved.sources,
+      feishu: {
+        enabled: true,
+        config: {
+          instance: 'old-channel',
+          claim: 'groups',
+          chats: [{ chatId: 'oc_team', listen: 'mentions' }],
+          directMessages: false,
+        },
+      },
+    },
+  })
+  const old = settings.block('source:feishu')
+  expect(old.value).toMatchObject({
+    config: { cli: '', chats: [{ chatId: 'oc_team', listen: 'mentions' }], directMessages: false },
+  })
+  const value = {
+    enabled: true,
+    config: { ...(old.value as { config: object }).config, cli: '/synthetic/bot' },
+  }
+  await expect(settings.save('source:feishu', value, old.revision, 'tool')).rejects.toThrow('only')
+  host.setup.checkAccounts.mockRejectedValueOnce(new Error('invalid bot'))
+  await expect(settings.save('source:feishu', value, old.revision, 'panel')).rejects.toThrow('invalid bot')
+  expect(store.settings().sources.feishu?.config).not.toHaveProperty('cli')
+  expect(await settings.save('source:feishu', value, old.revision, 'panel')).toMatchObject({
+    restarting: true,
+  })
+  expect(store.settings().sources.feishu?.config).toMatchObject({
+    cli: '/synthetic/bot',
+    directMessages: false,
+  })
+  const same = settings.block('source:feishu')
+  expect(await settings.save('source:feishu', same.value, same.revision, 'panel')).toMatchObject({
+    revision: same.revision,
+    restarting: true,
+  })
 })

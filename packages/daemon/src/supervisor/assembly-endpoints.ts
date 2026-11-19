@@ -42,8 +42,10 @@ import {
   VoiceSettingsStore,
 } from '@agnes/host'
 import { telemetrySnapshot } from '@agnes/observability'
+import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import { rpcError } from '@agnes/protocol'
 import { sessionEnvironmentAuthority } from '../superagent/sessions.js'
+import { registerSuperagentUpgrade } from '../superagent/upgrade.js'
 import type { DispatchState } from './assembly-client-dispatch.js'
 import type { ClientsState } from './assembly-client-services.js'
 import type { AssemblyLifetime } from './assembly-lifetime.js'
@@ -73,6 +75,7 @@ type EndpointInput = AssemblyBase &
 
 export function createEndpoints(state: EndpointInput, _lifetime: AssemblyLifetime) {
   const { o, clock, pool, conns } = state
+  const generations = new RuntimeGenerationSnapshotStore(o.profileDir)
   const endpoint = (transport: 'unix' | 'ws'): { ep: LocalEndpoint; onClose: () => void } => {
     const ep = new LocalEndpoint({
       clock,
@@ -81,6 +84,7 @@ export function createEndpoints(state: EndpointInput, _lifetime: AssemblyLifetim
       ...(o.audit ? { audit: o.audit } : {}),
     })
     registerPluginRuntimeIngress(ep, pool, transport)
+    registerSuperagentUpgrade(ep, transport, pool, state.registry, state.sessionOwnership, generations)
     ep.register('_agnes/v1/channels.catalog', async (_params, call) => {
       if (call.conn.authKind !== 'local' || call.conn.credentialKind !== 'local')
         throw rpcError('CAPABILITY_DENIED')

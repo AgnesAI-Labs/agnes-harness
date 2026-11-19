@@ -13,10 +13,17 @@ export type BundledAppClientContext = Readonly<{
   scope: BundledAppScope
   stateDirectory: string
   clientId: string
+  /** The verified code identity of the managed service receiving this lease. */
+  integrity?: string
+  incarnation?: string
   signal: AbortSignal
   assertCurrent(): void
 }>
-export type BundledAppClientLease = Readonly<{ client: unknown; close(): Promise<void> }>
+export type BundledAppClientLease = Readonly<{
+  client: unknown
+  close(): Promise<void>
+  prepareSessionUpgrade?(): Promise<void>
+}>
 /** Backend composition only; never a plugin-supplied factory or transport address. */
 export type BundledAppClientFactory = (context: BundledAppClientContext) => BundledAppClientLease
 /** Assembly-owned inputs: where application state lives and how the owner client is built. */
@@ -53,6 +60,8 @@ export const deniedBundledAppChannels: BundledAppChannels = Object.freeze({
 export function openBundledApp(
   provision: BundledAppProvision,
   fence: Readonly<{ signal: AbortSignal; assertCurrent(): void }>,
+  integrity: string,
+  incarnation: string,
 ): { grant: BundledAppGrant; close(): Promise<void> } {
   const { host, packageId, service } = provision
   const key = createHash('sha256').update(`${host.scope.profile}\0${packageId}\0${service}`).digest('hex')
@@ -71,14 +80,26 @@ export function openBundledApp(
     scope: host.scope,
     stateDirectory,
     clientId: `bundled-app:${packageId}/${service}`,
+    integrity,
+    incarnation,
     signal: fence.signal,
     assertCurrent,
   })
+  const prepareSessionUpgrade = lease.prepareSessionUpgrade
   let closing: Promise<void> | undefined
   return {
     grant: Object.freeze({
       stateDirectory,
       client: lease.client,
+      ...(prepareSessionUpgrade
+        ? {
+            async prepareSessionUpgrade() {
+              assertCurrent()
+              await prepareSessionUpgrade.call(lease)
+              assertCurrent()
+            },
+          }
+        : {}),
       channels: host.channels
         ? bundledAppChannels(host.channels, { assertCurrent, signal: fence.signal })
         : deniedBundledAppChannels,

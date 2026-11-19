@@ -26,5 +26,30 @@ export const bundledAppClient: NonNullable<HostOptions['bundledAppClient']> = (c
     unavailable: 'Bundled application backend is unavailable',
     bundledAppKey,
   })
-  return { client, close: () => client.close() }
+  return {
+    client,
+    close: () => client.close(),
+    ...(context.clientId === 'bundled-app:@agnes/superagent/superagent' &&
+    context.integrity &&
+    context.incarnation
+      ? {
+          async prepareSessionUpgrade() {
+            context.assertCurrent()
+            await client.call(
+              '_agnes/v1/superagent.sessions.upgrade',
+              {
+                integrity: context.integrity,
+                incarnation: context.incarnation,
+              },
+              {
+                // The daemon keeps its fence until the worker finishes; a caller timeout is not a rollback.
+                timeoutMs: null,
+                signal: context.signal,
+              },
+            )
+            context.assertCurrent()
+          },
+        }
+      : {}),
+  }
 }

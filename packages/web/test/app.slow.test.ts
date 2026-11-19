@@ -35,8 +35,7 @@ async function renderUI(work: () => void | Promise<void>): Promise<void> {
 }
 
 async function bootApp(): Promise<void> {
-  // Reload hints and the composer's channel overview are independent of each case's admin/upload
-  // HTTP fixtures, whose catch-all body is not a channel overview.
+  // Reload hints are independent of each case's admin/upload HTTP fixtures.
   const fetcher = globalThis.fetch
   vi.stubGlobal(
     'fetch',
@@ -44,8 +43,6 @@ async function bootApp(): Promise<void> {
       const path = new URL(String(input), location.href).pathname
       if (path === '/plugins/changes')
         return Promise.resolve(Response.json({ epoch: 'fixture', cursor: 0, reset: false, events: [] }))
-      // No channel plugin is installed: the launcher's overview lists no channels.
-      if (path === '/api/channels') return Promise.resolve(Response.json({ channels: [], sessions: [] }))
       return fetcher(input, init)
     }),
   )

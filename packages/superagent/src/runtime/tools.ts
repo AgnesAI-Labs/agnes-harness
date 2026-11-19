@@ -149,7 +149,18 @@ export function registerTools(
       parameters: toolParameters(item.schema) as never,
       meta: toolMeta(item.name),
       async execute(args, ctx) {
-        const service = await handle.get()
+        let service: Awaited<ReturnType<typeof handle.get>>
+        try {
+          service = await handle.get()
+        } catch (error) {
+          const refusal = error as { code?: unknown; data?: { code?: unknown } } | undefined
+          if ((refusal?.data?.code ?? refusal?.code) !== 'CAPABILITY_DENIED') throw error
+          // No handler has been entered: this is a definite refusal, not an uncertain external effect.
+          return {
+            ...failure('Superagent is upgrading or unavailable; the tool handler was not called'),
+            details: { code: 'SUPERAGENT_UNAVAILABLE' },
+          }
+        }
         return service.handleTool({
           sessionId: ctx.session.key,
           toolName: item.name,

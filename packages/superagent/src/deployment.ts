@@ -92,11 +92,11 @@ export const GithubAccountsSchema = z.object({
 })
 /**
  * Source configuration keys that affect deployment setup and trigger a restart when changed; the Feishu Source follows
- * a changed channel instance without one.
+ * a changed CLI through the same settings lifecycle.
  */
 export const SETUP_FIELDS: Readonly<Record<string, readonly string[]>> = {
   github: Object.keys(GithubAccountsSchema.shape),
-  feishu: [],
+  feishu: ['cli'],
 }
 
 export interface Deployment extends Machine {
@@ -185,7 +185,7 @@ export function workerProbe(
   return async (argv) => {
     const { code, stdout, stderr } = await runCommand(argv, {
       cwd,
-      env: { PATH: path },
+      env: { PATH: path, LARKSUITE_CLI_NO_UPDATE_NOTIFIER: '1', LARKSUITE_CLI_NO_SKILLS_NOTIFIER: '1' },
       platform,
       signal,
       timeoutMs: 60_000,

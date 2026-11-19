@@ -5,7 +5,7 @@ import { basename, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { key, type OutboundMessage } from '../src/core/index.js'
-import { CliError, Commands, commandError } from '../src/infra/commands.js'
+import { CliError, Commands, commandError, FeishuRefusal } from '../src/infra/commands.js'
 import { programName } from '../src/infra/platform.js'
 import { SettingsSchema } from '../src/policy.js'
 import { feishuKind } from '../src/sources/feishu.js'
@@ -130,7 +130,7 @@ describe('account-isolated operations', () => {
   })
 })
 
-it('reports Feishu failures with their code and without command arguments', () => {
+it('reports Feishu failures with their code and without command arguments', async () => {
   const membership = commandError({
     stderr:
       '[page 1] fetching...\n' +
@@ -140,6 +140,19 @@ it('reports Feishu failures with their code and without command arguments', () =
   expect(
     commandError({ stderr: JSON.stringify({ error: { code: 999, message: 'scope missing' } }) }).message,
   ).toBe('scope missing (999)')
+  for (const code of ['NETWORK_ERROR', null, {}, 1.5]) {
+    const failure = commandError({
+      stderr: JSON.stringify({ error: { code, message: 'private diagnostic' } }),
+    })
+    expect(failure).toMatchObject({ code: undefined })
+    const commands = new Commands(() => deployment, {}, new AbortController().signal)
+    vi.spyOn(commands, 'run')
+      .mockResolvedValueOnce(JSON.stringify({ bot: { open_id: 'ou_bot' } }))
+      .mockRejectedValueOnce(failure)
+    const failed = commands.lark(['im', '+messages-reply'])
+    await expect(failed).rejects.not.toBeInstanceOf(FeishuRefusal)
+    await expect(failed).rejects.toThrow('delivery may be uncertain')
+  }
 })
 describe('Channels', () => {
   // The arguments a POSIX daemon passes; on Windows a reply's text goes through standard input.

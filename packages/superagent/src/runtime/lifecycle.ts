@@ -97,6 +97,8 @@ export interface LifecycleDeps {
    */
   environment(signal: AbortSignal): Promise<EnvironmentPlan>
   createApp(signal: AbortSignal): SuperagentApp
+  /** Runs after publication, before the app can open sessions or accept work. Failure keeps it paused. */
+  prepareSessionUpgrade?(): Promise<void>
   log?: { warn(message: string): void }
   writeEnvironment?: typeof writeEnvironment
   verifyEnvironment?: (
@@ -461,6 +463,8 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
         { login: plan.account.login, ...(plan.account.cli ? { cli: plan.account.cli } : {}) },
         signal,
       )
+      if (stopping) return
+      await deps.prepareSessionUpgrade?.()
       if (stopping) return
       // The runtime's own git, gh and prepare commands act as the agent too.
       setAgentVariables(agentCommandVariables(plan.stateDir, process.env.PATH ?? '', platform))

@@ -27,7 +27,7 @@ export function apply(ctx: ClientContext) {
   const offEntry = ctx.homeEntries.register({
     id: 'superagent',
     placement: 'primary',
-    icon: 'split',
+    icon: 'sparkles',
     titleKey: 'superagent.nav',
     order: 20,
     component: () => <Panel ctx={ctx} />,

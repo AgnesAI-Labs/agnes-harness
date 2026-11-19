@@ -2,7 +2,6 @@
 // The Source status and settings.
 import { act } from 'react'
 import { expect, it, onTestFinished, vi } from 'vitest'
-import { OWNER_BUSY } from '../../superagent/src/sources/feishu-instances.js'
 import { zh } from '../src/locales.js'
 import {
   all,
@@ -183,8 +182,8 @@ it('shows the account each CLI signs in as, and keeps a saved CLI on screen whil
     )!,
   )
   expect(labels()).toEqual(['监听的仓库', '智能体的 GitHub CLI', '轮询间隔 / 秒', '连续失败几次后报告异常'])
-  // The Feishu Source names its channel instance; it has no bot of its own to show.
-  expect(all('.dt-card')[0]!.textContent).toContain('飞书渠道实例')
+  // The Feishu Source displays the bot identity verified through its configured wrapper.
+  expect(all('.dt-card')[0]!.textContent).toContain('Widgets Bot · cli_bot · ou_bot')
   await type(field<HTMLInputElement>('智能体的 GitHub CLI'), '/opt/bin/gh-agent')
   expect(github.textContent).toContain(
     '保存会重启 Superagent：2 个进行中的派工会中断，并带恢复说明重新开始。',
@@ -409,49 +408,19 @@ it('reads the settings again as soon as Superagent answers after a save restarte
   expect(field<HTMLInputElement>('智能体的 GitHub CLI').value).toBe('/opt/bin/gh-agent')
 })
 
-it('picks the Feishu instance from the running channel instances, and not the owner’s for a whole-instance claim', async () => {
-  server.choices = {
-    feishu: {
-      instance: [
-        { value: 'ext:acme/feishu/main/owner-bot', label: 'Feishu · owner-bot', busy: OWNER_BUSY },
-        { value: 'ext:acme/feishu/main/superagent-bot', label: 'Feishu · superagent-bot' },
-      ],
-    },
-  }
+it('accepts a bot CLI path and displays the verified identity without a channel instance or claim field', async () => {
   await mount()
   await click(zh['tab.source'])
   await click(find(zh['tab.settings'], '.dt-status-head button'))
   const feishu = all('.dt-card')[0]!
-  const pick = field<HTMLSelectElement>('飞书渠道实例')
-  // The saved value the list does not hold stays visible as it is.
-  expect([...pick.options].map((option) => [option.textContent, option.disabled])).toEqual([
-    ['选择渠道实例', false],
-    ['feishu-bot', false],
-    ['Feishu · owner-bot (主人在用（已配对私聊或绑定会话），不能整个认领)', false],
-    ['Feishu · superagent-bot', false],
-  ])
-  // Claiming the whole instance, the owner's instance cannot be chosen.
-  await type(field<HTMLSelectElement>('认领'), 'instance')
-  expect([...field<HTMLSelectElement>('飞书渠道实例').options].map((option) => option.disabled)).toEqual([
-    false,
-    false,
-    true,
-    false,
-  ])
-  await type(field<HTMLSelectElement>('飞书渠道实例'), 'ext:acme/feishu/main/superagent-bot')
+  expect(feishu.textContent).not.toContain('飞书渠道实例')
+  expect(feishu.textContent).not.toContain('认领')
+  await type(field<HTMLInputElement>('机器人 CLI 路径'), '/opt/bin/lark-bot')
   await act(async () => {
     feishu.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
   })
   await settle()
   expect(server.requests.find((request) => request.path === 'settings/source:feishu')).toMatchObject({
-    body: { value: { config: { instance: 'ext:acme/feishu/main/superagent-bot', claim: 'instance' } } },
+    body: { value: { config: { cli: '/opt/bin/lark-bot' } } },
   })
-})
-
-it('keeps the Feishu instance a text field while no instance list could be read', async () => {
-  await mount()
-  await click(zh['tab.source'])
-  await click(find(zh['tab.settings'], '.dt-status-head button'))
-  expect(field<HTMLInputElement>('飞书渠道实例').tagName).toBe('INPUT')
-  expect(field<HTMLInputElement>('飞书渠道实例').value).toBe('feishu-bot')
 })

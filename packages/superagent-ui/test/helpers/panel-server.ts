@@ -119,7 +119,10 @@ function sourceSettings(): SourceView[] {
     }
     const sync = kind.policy?.sync && {
       label: kind.policy.sync.label,
-      ready: kind.policy.sync.ready(kind.policy.schema.parse(part)),
+      ready:
+        kind.kind === 'feishu'
+          ? !!part.syncChat && !!resolved()?.feishu && !problem
+          : kind.policy.sync.ready(kind.policy.schema.parse(part)),
       health: server.health[`sync:${kind.kind}`],
     }
     const policy = kind.policy && {

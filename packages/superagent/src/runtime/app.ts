@@ -4,6 +4,7 @@
  * part is built at once and does nothing until `start()` (see `app-run.ts`); `stop()` stops it again and leaves sessions,
  * turns and jobs to the lifecycle that owns cancelling them.
  */
+import { join } from 'node:path'
 import type { BundledAppGrant } from '@agnes/extension-api'
 import type { TextCache } from '../app/cache.js'
 import type { Effects } from '../app/effects.js'
@@ -77,6 +78,7 @@ export interface SuperagentApp {
   reconfigure(): Promise<void>
   /** Why the started app waits for setup; undefined when it does not. */
   setupProblem(): SetupProblem | undefined
+  feishuProblem(): SetupProblem | undefined
   /**
    * Shows on the runtime health, which the panel lists, why a start failed and when it is tried again; undefined takes
    * that back, unless the app has reported its own state since.
@@ -112,6 +114,7 @@ export interface AppParts {
   readonly notices: SessionNotices
   deployment(): Deployment | undefined
   setupProblem(): SetupProblem | undefined
+  feishuProblem(): SetupProblem | undefined
   models(): Promise<ModelCatalog>
   ticketEnvironment(ticket: Ticket): ReturnType<typeof ticketEnvironment>
   sourceHost: SourceHost
@@ -207,6 +210,7 @@ export function createSuperagentApp(given: AppDeps): SuperagentApp {
       notices: core.notices,
       deployment: () => state.deployment,
       setupProblem: () => state.problem,
+      feishuProblem: () => state.feishuProblem,
       models: tools.models,
       ticketEnvironment: core.environmentOfTicket,
       sourceHost: parts.sourceHost,
@@ -214,6 +218,7 @@ export function createSuperagentApp(given: AppDeps): SuperagentApp {
     unavailable,
     reconfigure: () => running.reconfigure(),
     setupProblem: () => state.problem,
+    feishuProblem: () => state.feishuProblem,
     reportStart(problem) {
       if (problem) {
         core.runtimeHealth.set({
@@ -281,7 +286,7 @@ export function createRuntimeParts(input: {
   const sessions = new Sessions({
     client,
     registry,
-    orchestratorDir: () => machine.stateDir,
+    orchestratorDir: () => join(machine.stateDir, 'Superagent'),
     prepareCommand: () => store.settings().executor.prepare,
     environment: (ticket) => input.environment?.(ticket) ?? {},
     sessionEnvironment: agentSessionEnvironment(machine.stateDir),

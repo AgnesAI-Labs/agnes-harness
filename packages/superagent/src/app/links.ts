@@ -18,7 +18,7 @@ export interface LinkHost {
 }
 
 /**
- * A trigger's external message URL, or the resource that reads its message: the Feishu channel delivers no message
+ * A trigger's external message URL, or the resource that reads its message: the Feishu CLI delivers no message
  * links, so a Feishu message is referred to by that resource.
  */
 export async function sourceLink(

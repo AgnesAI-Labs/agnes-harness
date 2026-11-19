@@ -981,7 +981,7 @@ it.each([false, true])(
         join(directory, 'package.json'),
         JSON.stringify({
           name: id,
-          version,
+          version: '0.2.2',
           exports: './index.mjs',
           agnes: {
             plugins: [{ apiRange: '^5.0.0', export: 'main', id: 'ext:composition-code', inject: ['tools'] }],
@@ -993,7 +993,7 @@ it.each([false, true])(
         snapshot: {
           profile: 'local-dev',
           packageId: id,
-          version,
+          version: '0.2.2',
           snapshotId: integrity,
           integrity,
           treeIntegrity: integrity,
@@ -1078,6 +1078,11 @@ it.each([false, true])(
       }
       host = (await createTestHost(options)).host
       const old = await host.createSession({ key: 'old-code', cwd: root })
+      const oldWorker = await host.createSession({ key: 'old-worker', preset: 'observer', cwd: root })
+      const hotRoles = await Promise.all([
+        host.createSession({ key: 'hot-main', cwd: root }),
+        host.createSession({ key: 'hot-worker', preset: 'observer', cwd: root }),
+      ])
       const base = host.runtimeTargetSnapshot?.()
       if (!base) throw new Error('missing published target')
       const nextTarget = buildCompleteRuntimeTarget({
@@ -1096,6 +1101,16 @@ it.each([false, true])(
         resources: base.resource.resources,
       }).target
       await host.applyRuntimeTarget(nextTarget)
+      for (const session of hotRoles) {
+        await session.close()
+        const result = await host.migrateSessionGeneration!(session.key, {
+          expectedPackage: { id, integrity: two.snapshot.integrity },
+        })
+        const migrated = await host.createSession({ key: session.key, cwd: root })
+        expect(migrated.pluginGenerationId).toBe(result.generationId)
+        expect(migrated.currentTools().resolve('code_version')?.description).toBe('2.0.0')
+        await migrated.close()
+      }
       available = [two]
       rmSync(one.snapshot.directory, { recursive: true, force: true })
       const current = await host.createSession({ key: 'new-composition', preset: 'observer', cwd: root })
@@ -1132,6 +1147,7 @@ it.each([false, true])(
       })
       const pin = old.pluginGenerationId
       await old.close()
+      await oldWorker.close()
       await current.close()
       await host.close()
       host = (
@@ -1180,6 +1196,24 @@ it.each([false, true])(
         expect(reopened.currentTools().resolve('code_version')?.description).toBe('1.0.0')
         expect(fresh.currentTools().resolve('code_version')?.description).toBe('2.0.0')
         expect((await host.applyRuntimeTarget(nextTarget)).ok).toBe(true)
+        // Both role compositions must migrate to the published bytes, even at the same semver.
+        for (const session of [reopened, await host.createSession({ key: oldWorker.key, cwd: root })]) {
+          expect(session.currentTools().resolve('code_version')?.description).toBe('1.0.0')
+          await session.close()
+          await expect(
+            host.migrateSessionGeneration!(session.key, {
+              expectedPackage: { id, integrity: one.snapshot.integrity },
+            }),
+          ).rejects.toThrow('migration target is not the published payload')
+          const migration = await host.migrateSessionGeneration!(session.key, {
+            expectedPackage: { id, integrity: two.snapshot.integrity },
+          })
+          expect(migration.changed).toBe(true)
+          const migrated = await host.createSession({ key: session.key, cwd: root })
+          expect(migrated.pluginGenerationId).toBe(migration.generationId)
+          expect(migrated.currentTools().resolve('code_version')?.description).toBe('2.0.0')
+          await migrated.close()
+        }
       }
     } finally {
       await host?.close()

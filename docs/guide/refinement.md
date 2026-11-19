@@ -10,7 +10,7 @@ It is **off by default**. A review is a separate model call on your account. It 
 
 ## Turn it on
 
-Open **Settings → General → Task experience** in the Web workbench.
+The **Task experience** tab under **Settings → General** is currently hidden, including its saved-skills list. Hiding the tab does not change the profile's switch, saved configuration or history. The backend remains available, and profiles that already enabled task experience keep their existing behavior. The settings below describe that retained configuration; they cannot currently be changed from the Web settings dialog.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
@@ -24,7 +24,7 @@ Open **Settings → General → Task experience** in the Web workbench.
 
 ### What turning it on allows
 
-The settings panel lists what turning it on allows:
+An enabled profile allows:
 
 1. Install proven skills in the workspace: a skill entry a review wrote is installed in the workspace as soon as it passes the checks, trusted and switched on, without the usual install confirmation. See [Saved skills](#saved-skills).
 2. Let the model save skills in the workspace without waiting for a second confirmation, if it cites evidence from the session and passes the static checks.
@@ -32,8 +32,6 @@ The settings panel lists what turning it on allows:
 4. Write lessons that hold everywhere to user memory: a lesson that holds in every workspace is written to user memory **automatically, without asking** (see [Save to user memory](#save-to-user-memory)).
 
 None of them brings back something you uninstalled, rolled back or deleted.
-
-If task experience was already on before this release, the panel shows a one-time notice that saving to the workspace memory and as workspace skills now takes effect without asking again here, that lessons holding in every workspace are written to user memory automatically, and that turning off **Learn from finished work** stops it. Dismissing the notice is remembered by that browser only; nothing is saved to your profile.
 
 ## Manual and automatic reviews
 
@@ -155,8 +153,8 @@ A skill entry saved to the workspace becomes a workspace skill. It is installed 
 - **Hand-off.** Once installed, the session entry hands off to the skill: it is no longer given to the model as an entry and no longer counts toward the 200-entry limit, and the model is told once to use the workspace skill instead. The entry stays in the session's record. The next session finds the skill in its skill catalogue like any other.
 - **30-day review.** Every saved skill has a review date 30 days on. A later review that confirms the skill with new evidence renews it. A skill not confirmed again is switched off (not removed) when a session opens after that date, or when you turn task experience on; it then shows as **awaiting review**. Switching it back on, on the Skills page, renews it for another 30 days. Switching off by the review is not taking it back.
 - **Updates.** A new version of a skill entry (written by a review, or saved by you or the model) updates a saved skill **of the same name**, from any session, only while nobody changed the skill since it was saved. Up to five earlier versions are kept, and you can roll back to the previous one. A skill switched off by the review stays off through an update.
-- **A person's skill is never overwritten.** When the skill was written by a person, or a person changed a saved skill (even between the decision and the write), the change is kept as a **draft** for you and the save is refused as `conflict`. Drafts are listed under **Saved skills** in the task experience settings, as plain text with a whole-file diff; copy what you want by hand. A workspace keeps at most 20 drafts.
-- **Taking it back.** **Uninstall** or **Roll back to the previous version** under **Saved skills** in the task experience settings, removing the skill on the Skills page, or deleting its folder, records that you took it back. A deleted folder is noticed the next time a skill is saved in that workspace; until then **Saved skills** still shows the skill as on. After that, automatic and model saves of the same entry, of any skill entry with the same name, or of the same content under another name, are refused (`user-revoked`). Only your own save (`/refine --workspace`, or **Save … to workspace** on a review line) installs it again, and clears the record.
+- **A person's skill is never overwritten.** When the skill was written by a person, or a person changed a saved skill (even between the decision and the write), the change is kept as a **draft** for you and the save is refused as `conflict`. A workspace keeps at most 20 drafts. The drafts remain stored while the task experience settings tab is hidden; its draft viewer is currently unavailable.
+- **Taking it back.** Uninstalling or rolling back a saved skill, removing it on the Skills page, or deleting its folder records that you took it back. The task experience settings tab's **Uninstall** and **Roll back to the previous version** controls are currently hidden. A deleted folder is noticed the next time a skill is saved in that workspace; until then its saved-skill record still reports it as on. After that, automatic and model saves of the same entry, of any skill entry with the same name, or of the same content under another name, are refused (`user-revoked`). Only your own save (`/refine --workspace`, or **Save … to workspace** on a review line) installs it again, and clears the record.
 
 Installing, updating, switching off or removing a saved skill changes the skill catalogue, and with it the system prompt of the next request. This is expected and recorded as a refinement prefix change (`skill-catalog`).
 

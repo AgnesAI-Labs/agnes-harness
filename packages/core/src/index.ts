@@ -317,7 +317,13 @@ export { HookRegistry, type HookSnapshot } from './registry/hooks.js'
 export { type RegisteredResource, ResourceRegistry } from './registry/resources.js'
 export { type RuntimeSlotFill, SlotRegistry } from './registry/slots.js'
 export type { ResolvedToolPolicyEnvelope } from './registry/tool-policy.js'
-export { resolveValidatedToolCallPolicy } from './registry/tool-policy.js'
+export {
+  hasAuthenticToolPolicyHash,
+  hasCompleteToolPolicyEnvelope,
+  hasTrustedToolCallProvenance,
+  resolveValidatedToolCallPolicy,
+  toolPolicyBindingProblem,
+} from './registry/tool-policy.js'
 export type {
   ExecutionDomain,
   RegisteredTool,

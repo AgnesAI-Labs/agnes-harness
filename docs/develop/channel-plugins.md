@@ -35,7 +35,7 @@ Profile activation publication lives in `assemble/profile-publication.ts`; extra
 owner operation keeps the runtime-target assembler within its stage budget. The architecture
 guard records the exact moved `RuntimeTarget` references rather than relaxing any size ceiling.
 
-Extension API 5.6 adds Plugins → Channels and a Channels button beside the composer. Configuration
+Extension API 5.6 adds Plugins → Channels for configuring and managing connections. Configuration
 uses native `channel.configure` approval; provider `configSchema` renders non-sensitive options.
 Packages must declare `channelServiceCapabilities()` for Host-owned session query/bind/unbind services.
 Only authenticated, observed chat targets in the session's canonical workspace can be bound.

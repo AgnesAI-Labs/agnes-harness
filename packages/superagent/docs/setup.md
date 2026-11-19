@@ -98,18 +98,15 @@ steps, and the defaults. Ask for one confirmation.
 
 1. **Operator steps first.** One message with what only the operator can do, as the dedicated system user: create the
    agent GitHub account and add it to the repository with write access; accept the invitation as the agent account; and
-   turn on the branch protection above. For Feishu, give Superagent a bot of its own:
-   1. Create a second Feishu app (bot) on the Feishu open platform, besides the one the team already uses with AGH.
-   2. Add it as another instance of the AGH Feishu channel: on the Channels page choose **Add dedicated connection**,
-      pick Feishu and enter the new app's credentials (**New credential** beside each field saves a value write-only).
-      This creates an instance that no session is bound to. Do not pair any direct chat of this instance with a plugin
-      service, and do not bind its chats to a session: Superagent claims the whole instance, and an instance already in
-      use is refused.
-   3. Note the new instance's id. Superagent's settings list the running channel instances by plugin name and
-      instance id, so the instance is chosen there.
+   turn on the branch protection above. For Feishu, provide an already configured bot lark-cli wrapper:
+   1. Configure the dedicated bot's authentication outside AGH and set the wrapper's strict-mode to `bot`.
+   2. Verify that the wrapper executable is accessible to the AGH service user and record its absolute path.
+      Keep credentials in the wrapper/CLI's own private configuration; do not put them in Superagent settings.
+   3. Enable `im.message.receive_v1` and the message/history/member/resource permissions needed by the bot,
+      then add the bot to the chats it should receive. Coordinate the event consumer handover before enabling it.
 
-   With only one bot, Superagent can instead share it and receive only the listed chats (claim **Only these chats**);
-   direct messages and other chats are then not received.
+   Superagent uses this CLI directly in its trusted backend. It does not require an AGH Feishu plugin,
+   channel instance, pairing or instance/group claim.
    The agent account is signed in in step 5. Wait until the operator says it is done.
 2. **A separate AGH home.** Pick a directory for it and use it for every `agh` command and for the daemon:
 
@@ -197,15 +194,12 @@ steps, and the defaults. Ask for one confirmation.
    setup agent, through the services in [Settings services](#settings-services). The agent's own tools cannot change the
    account or execution-environment fields, only the panel and these services can. In this order:
    1. **Sources:** the GitHub Source: the repository, and the absolute path of the `gh-agent` wrapper as its CLI; then
-      the Feishu Source if used: the dedicated bot's instance, chosen from the list of running channel instances, claim
-      **Whole instance**, the chats, and whether direct messages and other chats are received. An instance where the
-      owner paired a direct chat or bound a session is marked and cannot be chosen to claim whole. A setup agent saving
-      through the services takes the value from `choices.instance` of the Feishu Source in `superagent.settings.get`; it
-      has the form `<channel row id>/<instance id>`, for example `ext:agnes.feishu/main/superagent-bot`, and is typed by
-      hand only when that list is empty. If the Source reports that the instance already serves the owner or another
-      feature, choose the dedicated instance instead; Superagent never takes over the owner's direct messages. An unused
-      pairing code for the instance holds it the same way until the code expires (within an hour).
-   2. **Policy:** the allowed lists, and for Feishu the chat ids, chosen from the chats the channel lists.
+      the Feishu Source if used: the absolute **Bot CLI path**, chats and each chat's mention/all-message policy,
+      direct messages and other chats. Saving verifies authentication, strict-mode bot and the bot's identity;
+      the saved field displays its name, app ID and open ID. The service field is `config.cli`.
+      Old channel-instance settings open with existing chat choices preserved, but need this path before listening.
+   2. **Policy:** the requester allowlist; optionally sync it from a chat the bot has joined. Incomplete member
+      reads do not replace the existing list. Only listed people can originate explicit work.
    3. **Execution:** the ticket directory root and the prepare command from question 7, for example
       `git clone "https://github.com/$DSH_SUPERAGENT_GITHUB_REPOSITORY.git" repo`. The command runs with `sh -c`, and on
       Windows with Windows PowerShell (`powershell -NoProfile -NonInteractive -Command`), where the same command reads

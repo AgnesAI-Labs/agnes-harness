@@ -5,7 +5,7 @@ English | [简体中文](superagent.zh-CN.md)
 [Documentation](../README.md) · [Plugins](packages.md) · [Security](security.md) · [Network deployment](deployment.md)
 
 Superagent is an official plugin installed and enabled by default with AGH. It watches one GitHub repository (and, optionally, Feishu chats
-through an AGH Feishu channel instance), turns requests from allowed people into tickets, and gives each ticket its own
+through an already configured bot lark-cli wrapper), turns requests from allowed people into tickets, and gives each ticket its own
 session. That session works in the ticket's directory, pushes its own branch and opens a pull request; the main session
 answers people. Its sidebar entry opens the existing panel. Until configured, it waits for setup without listening to
 external sources, accepting work, starting sessions or calling models. Default installation authorizes no external
@@ -47,6 +47,7 @@ service account.
 | --- | --- |
 | `/srv/superagent/agh` | `AGH_HOME`: the daemon's home, its model configuration, sessions and the Superagent skills it lists |
 | `/srv/superagent/state` | Superagent's state directory (the plugin setting `stateDir`): `superagent.sqlite`, the ticket directories in `work/` |
+| `/srv/superagent/state/Superagent` | The workspace directory for a new main session; the sidebar displays its actual directory name, `Superagent` |
 | `/srv/superagent/state/worker-bin` | Shims, written by Superagent on every start: `gh` runs the agent's GitHub CLI; blocked commands fail |
 | `/srv/superagent/state/worker-gitconfig` | The agent's git configuration, written by Superagent on every start |
 | `/srv/superagent/bin/gh-agent` | The agent's GitHub CLI: a `gh` wrapper with its own configuration directory |
@@ -54,6 +55,9 @@ service account.
 
 Without a `stateDir` setting Superagent uses a directory under the AGH data directory, `bundled-apps/<hash>`, which the
 panel's **Deployment** page names. Setting it explicitly before the service starts keeps the unit files below fixed.
+New main sessions use `<stateDir>/Superagent`, including when `stateDir` is configured explicitly. The database,
+agent environment and ticket directories keep their paths under `stateDir`; an explicit executor directory is unchanged.
+This default does not move an existing session's workspace.
 
 ## Install and enable
 
@@ -228,12 +232,24 @@ time it opens them.
 ## Settings and first use
 
 Open the **Superagent** entry on the AGH home page and save, in order, the Sources (repository and the agent's GitHub
-CLI, `/srv/superagent/bin/gh-agent`; the Feishu channel instance if used), the Policy (who may ask), the Execution settings (the ticket directory root and
+CLI, `/srv/superagent/bin/gh-agent`; the bot CLI wrapper path if Feishu is used), the Policy (who may ask), the Execution settings (the ticket directory root and
 the prepare command, for example `git clone "https://github.com/<owner>/<name>.git" repo`) and the team prompt sections.
 The [setup guide](../../packages/superagent/docs/setup.md) explains each field. On a fresh install the overview reports
 that the GitHub Source names no repository: the **Source** settings list GitHub from the first start, and once its
 repository and CLI are saved, setup goes on by itself, without a restart. Then, from an allowed account, comment
 `@<agent login> <request>` on an Issue: a ticket appears on the overview within about a minute.
+
+For Feishu, enter the absolute path of an already authenticated lark-cli wrapper in **Sources → Feishu → Bot CLI path**.
+Its strict-mode must be `bot`. Saving verifies and displays the app/bot identity. Configure the chat list,
+mention policy, direct messages and **Policy** requester allowlist, then enable the Source. No AGH Feishu plugin,
+channel instance or claim is required. The backend owns CLI events, context reads, image downloads and replies;
+workers use `orchestrator_feishu_read` scoped to their ticket's bot, chats and topics.
+
+Old instance settings retain chat policies and allowlists but require a CLI path. Existing tickets and message dedupe
+records are kept. Work without a verified bot identity, or belonging to another bot, cannot read or reply through the
+new bot; initiate a new request instead. Restart recovery uses bot-scoped cursors. A timeout/crash with unknown reply
+outcome leaves its receipt pending for operator reconciliation; it is not silently resent. The panel has no override
+for that state. Coordinate real-bot validation and consumer handover separately from synthetic CLI tests.
 
 In the Web sidebar each ticket session is titled `Worker · <ticket title>` and sits under its ticket directory's project;
 the main session keeps its own name, and a ticket's link still opens its session. What Superagent delivers into its
@@ -324,6 +340,16 @@ refuse a line break in an argument to a batch file. The prompt is not a boundary
   jobs are stopped, so a `git push` or a test run in progress is cut off. Once Superagent is back, the interrupted
   tickets resume as after a daemon restart: each interrupted assignment is dispatched again with a recovery note.
   Change plugins in this home when the overview shows no ticket running.
+- **Superagent code upgrades.** Before accepting work, the published service moves its registered main session and
+  resumable ticket sessions to its exact payload, including completed tickets a person's reply can reopen and updates
+  that keep the same version number. Tickets stopped by a person or retired by retention keep their bindings. Only sessions
+  whose code differs are closed and migrated; an ordinary restart keeps current bindings. Other sessions keep their pins.
+  Busy sessions or unsettled effects leave startup paused and are retried; **Check again** retries after the cause is
+  resolved. This requires the daemon shipped with this Superagent update.
+- **Unknown tool outcomes.** An upgrade does not discard history or replay an uncertain call. Migration can recognize a
+  formal human answer to that exact call only after Core consumed the answer and recorded its checkpoint; system or
+  agent answers do not qualify. This is a person's reconciliation, not proof that the system observed the effect.
+  Unanswered or unrelated unknown outcomes continue to block migration.
 - **Stored work.** Every outward action (a reply, a launch, a delivery) is stored before it runs and removed only once it
   succeeded, and retried with backoff. While processing is paused, Sources keep recording.
 - **A delivery whose outcome is unknown** is looked up by its command id; when that cannot be confirmed it is recorded as

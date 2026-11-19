@@ -1,8 +1,9 @@
 // Adapted from dsh-superagent (MIT)
-/** Subprocess wrapper for running gh and git commands under the deployment's configured accounts. */
+/** Trusted-backend subprocess wrapper for gh, git and bot-only lark-cli under the configured accounts. */
 import { z } from 'zod'
 import { runCommand } from '../app/subprocess.js'
 import type { Deployment } from '../deployment.js'
+import { BotInfo } from '../feishu-setup.js'
 import { HOST_PLATFORM, isWindows, programName } from './platform.js'
 
 const TIMEOUT_MS = 90_000
@@ -17,10 +18,15 @@ export class CliError extends Error {
     message: string,
     readonly code?: number,
     readonly exitCode?: number,
+    readonly response = false,
   ) {
     super(message)
   }
 }
+/** A structured Feishu API refusal, not a timeout, process error or HTTP proxy diagnostic. */
+export class FeishuRefusal extends CliError {}
+/** A preflight failed before a write command could be invoked. */
+export class FeishuNotDispatched extends Error {}
 /**
  * Extracts a sanitized error from a failed subprocess without echoing argv, which may contain message text. `error` is
  * shaped like the failure of `child_process.execFile`: `stderr`, a numeric exit `code` or a string error code, `killed`
@@ -39,15 +45,16 @@ export function commandError(
       : undefined
   if (error && typeof error === 'object' && 'stderr' in error && typeof error.stderr === 'string') {
     const stderr = error.stderr.trim()
-    let parsed: { error?: { code?: number; message?: string } } | undefined
+    let parsed: { error?: { code?: unknown; message?: unknown } } | undefined
     try {
       parsed = JSON.parse(stderr.slice(stderr.indexOf('{'))) as typeof parsed
     } catch {
       /* Non-JSON CLI diagnostics are retained below. */
     }
-    const code = parsed?.error?.code
-    if (parsed?.error?.message)
-      return new CliError(`${parsed.error.message}${code ? ` (${code})` : ''}`, code, exitCode)
+    const rawCode = parsed?.error?.code
+    const code = typeof rawCode === 'number' && Number.isInteger(rawCode) ? rawCode : undefined
+    if (typeof parsed?.error?.message === 'string')
+      return new CliError(`${parsed.error.message}${code ? ` (${code})` : ''}`, code, exitCode, true)
     // `gh` exits non-zero on HTTP errors (such as `gh: Not Found (HTTP 404)`) and on `gh: HTTP 304`, which ETag polling relies on.
     if (stderr)
       return new CliError(
@@ -85,7 +92,7 @@ export function validItems<T>(item: z.ZodType<T>, list: readonly unknown[], tall
   return items
 }
 /**
- * Executes gh and git subprocesses with deployment account credentials, timeouts, and abort signals.
+ * Executes account-bound CLI subprocesses with timeouts and abort signals.
  * Restricts GitHub API calls to the configured repository and translates CLI failures into CliError instances for Sources, MasterAssessor, Outbox, and Settings.
  */
 export class Commands {
@@ -133,6 +140,8 @@ export class Commands {
       env: {
         ...this.environment,
         GH_PROMPT_DISABLED: '1',
+        LARKSUITE_CLI_NO_UPDATE_NOTIFIER: '1',
+        LARKSUITE_CLI_NO_SKILLS_NOTIFIER: '1',
       },
     }).catch((error: unknown) => {
       throw commandError(error, program, this.timeoutMs, this.platform)
@@ -201,6 +210,59 @@ export class Commands {
     const outside = /^\/|^[a-z]+:|(^|\/)\.\.?(\/|\?|$)/i.test(path)
     if (outside) throw new Error('GitHub calls are restricted to the configured repository')
     return path ? `repos/${this.repository}/${path}` : `repos/${this.repository}`
+  }
+  /** Runs only as the resolved bot. Rechecks its open_id before every read/write, detecting wrapper changes. */
+  async lark<T>(args: string[], cwd?: string, input?: string): Promise<T> {
+    const bot = this.deployment.feishu
+    if (!bot) throw new Error('The Feishu Source has no verified bot CLI')
+    try {
+      const info = BotInfo.parse(
+        JSON.parse(
+          await this.run(bot.cli, [
+            'api',
+            'GET',
+            '/open-apis/bot/v3/info',
+            '--as',
+            'bot',
+            '--format',
+            'ndjson',
+          ]),
+        ),
+      )
+      if (info.bot.open_id !== bot.botId) throw new Error('identity')
+    } catch {
+      throw new FeishuNotDispatched(
+        'Feishu bot identity could not be verified; check the source CLI settings',
+      )
+    }
+    let output: string
+    try {
+      output = await this.run(bot.cli, [...args, '--as', 'bot', '--format', 'json'], cwd, input)
+    } catch (error) {
+      // Never retain a wrapper's stdout/stderr, which can contain authentication material.
+      if (error instanceof CliError && error.response && error.code !== undefined)
+        throw new FeishuRefusal(`Feishu command refused (${error.code})`, error.code)
+      throw new Error('Feishu CLI failed; delivery may be uncertain')
+    }
+    let value: { ok?: boolean; data?: T; error?: { code?: number } }
+    try {
+      value = JSON.parse(output) as typeof value
+    } catch {
+      throw new Error('Feishu CLI returned invalid JSON; delivery may be uncertain')
+    }
+    if (value.ok !== true) {
+      const code =
+        typeof value.error?.code === 'number' && Number.isInteger(value.error.code)
+          ? value.error.code
+          : undefined
+      throw new FeishuRefusal(
+        code === 232011
+          ? 'Feishu bot is not in this chat (232011)'
+          : `Feishu command refused${code ? ` (${code})` : ''}`,
+        code,
+      )
+    }
+    return value.data as T
   }
   /** Runs `git` on PATH using the agent's isolated git environment and credential helper. */
   async git(args: string[], cwd: string): Promise<string> {

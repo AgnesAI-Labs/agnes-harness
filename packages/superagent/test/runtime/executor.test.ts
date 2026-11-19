@@ -130,7 +130,7 @@ function setup(prepare = '') {
 
 describe('the executor', () => {
   it("launches a ticket's worker session in its ticket directory and starts the assignment", async () => {
-    const { accept, effects, worker, engine, stop } = setup()
+    const { accept, effects, worker, engine, stop, fake } = setup()
     const ticketId = accept()
     await effects.idle('launch')
     const ticket = ticketOf(ticketId)
@@ -145,6 +145,27 @@ describe('the executor', () => {
       title: 'Fix login',
       trigger: { trigger_id: '1', text: 'please fix 1' },
     })
+    // A completed ticket can receive another person's message: wake starts a new assignment
+    // while ensureWorker reopens the same registered session and keeps its conversation.
+    engine.report(ticketId, { state: 'ready', summary: 'First request completed' })
+    expect(ticketOf(ticketId).ended?.outcome).toBe('completed')
+    engine.receive(message('2'))
+    await effects.idle('launch')
+    await effects.idle('delivery')
+    expect(ticketOf(ticketId).ended).toBeUndefined()
+    expect(ticketOf(ticketId).assignments.map((item) => item.state)).toEqual(['ended', 'running'])
+    expect(ticketOf(ticketId).assignments[0]?.id).toBe(ticket.assignments[0]?.id)
+    expect(worker(ticketId)).toBe(session)
+    expect(fake.loads).toContain(session.id)
+    expect([...fake.sessions.keys()]).toEqual([session.id])
+    const deliveries = session.calls.filter((call) => call.method === 'followUp').map((call) => call.args[1])
+    expect(deliveries).toEqual(
+      expect.arrayContaining([
+        first.args[1],
+        { commandId: `superagent:${key(`assignment:${ticketId}:${ticketOf(ticketId).assignments[1]!.id}`)}` },
+      ]),
+    )
+    expect(new Set(deliveries.map((item) => JSON.stringify(item))).size).toBe(deliveries.length)
     await stop()
   })
 

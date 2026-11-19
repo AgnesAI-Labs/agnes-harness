@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { createTestHost } from '@agnes/host/testkit'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { UserError } from '../../src/core/index.js'
 import { SessionRegistry } from '../../src/runtime/sessions.js'
@@ -165,12 +167,52 @@ describe('tool calls', () => {
       additionalProperties: false,
     })
     const ctx = { session: { key: 'superagent:worker:t1' }, signal }
-    // No service: the handle's refusal reaches the caller unchanged.
-    await expect(
-      registered.get('orchestrator_report')!.execute({ state: 'ready' }, ctx),
-    ).rejects.toMatchObject({
-      code: 'CAPABILITY_DENIED',
+    // Every role's tool refuses deterministically before entering the service.
+    for (const tool of registered.values())
+      expect(await tool.execute({}, ctx)).toMatchObject({
+        isError: true,
+        details: { code: 'SUPERAGENT_UNAVAILABLE' },
+      })
+    expect(calls).toEqual([])
+    // Run the refusal through Core too: a malformed "error" result would still become unknown.
+    const { host } = await createTestHost({
+      dataDir: join(temp.dir, 'host'),
+      workspaceRoot: temp.dir,
+      script: [
+        [
+          {
+            type: 'toolcall_end',
+            via: 'native',
+            call: {
+              toolUseId: '',
+              name: 'orchestrator_report',
+              args: { state: 'ready', summary: 'fixture' },
+              ordinal: 0,
+            },
+          },
+          { type: 'done', reason: 'toolUse' },
+        ],
+        [{ type: 'text_delta', delta: 'refused' }],
+      ],
     })
+    try {
+      const session = await host.createSession({ key: 'refused', cwd: temp.dir })
+      session
+        .currentTools()
+        .add(registered.get('orchestrator_report') as never, { source: 'fixture', trust: 'builtin' })
+      await session.enqueue('next-turn', {
+        actor: session.d.actor,
+        content: [{ type: 'text', text: 'report' }],
+      })
+      await session.run({ until: 'turn-end', signal })
+      const results = await session.scan({ type: 'tool/result', limit: 10 })
+      expect(results).toHaveLength(1)
+      expect(results[0]?.data).toMatchObject({ isError: true })
+      expect(JSON.stringify(results)).toContain('the tool handler was not called')
+      expect(JSON.stringify(results)).not.toContain('TOOL_OUTCOME_UNKNOWN')
+    } finally {
+      await host.close()
+    }
     current = {
       handleTool: async (forwarded: unknown) => {
         calls.push(forwarded)
@@ -188,6 +230,15 @@ describe('tool calls', () => {
         signal,
       },
     ])
+    // A failure after entering the handler still propagates: its external outcome may be unknown.
+    current = {
+      handleTool: async () => {
+        throw new Error('response lost after dispatch')
+      },
+    }
+    await expect(registered.get('orchestrator_report')!.execute({}, ctx)).rejects.toThrow(
+      'response lost after dispatch',
+    )
     for (const dispose of disposers) dispose()
     expect(registered.size).toBe(0)
   })

@@ -1,8 +1,9 @@
 // The app's start and stop: a stop that comes while the start awaits wins, so nothing polls, sends or dispatches after a
 // disable; and a session the owner holds under the main session's key leaves Superagent waiting for setup.
-import { join } from 'node:path'
+import { mkdirSync, statSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { type Deployment, machineOf } from '../../src/deployment.js'
+import { type Deployment, type Machine, machineOf } from '../../src/deployment.js'
 import { SettingsSchema } from '../../src/policy.js'
 import { createRuntimeParts, createSuperagentApp, type SuperagentApp } from '../../src/runtime/app.js'
 import { SessionRegistry } from '../../src/runtime/sessions.js'
@@ -23,13 +24,22 @@ const GITHUB = { enabled: true, config: { repository: 'acme/app', cli: process.e
 function setup(
   fresh = false,
   hold?: () => Promise<void> | undefined,
-  more: { probes?: string[][]; resolved?: (github: unknown) => Deployment | undefined } = {},
+  more: {
+    probes?: string[][]
+    resolved?: (github: unknown) => Deployment | undefined
+    machine?: Machine
+  } = {},
 ) {
   if (!fresh) temp.store.saveSettings(SettingsSchema.parse({ sources: { github: GITHUB } }))
   const fake = fakeClient()
   const lifetime = new AbortController()
   const grant = { stateDirectory: join(temp.dir, 'state'), client: fake.client }
-  const runtime = createRuntimeParts({ store: temp.store, grant, lifetime: lifetime.signal })
+  const runtime = createRuntimeParts({
+    store: temp.store,
+    grant,
+    lifetime: lifetime.signal,
+    ...(more.machine ? { machine: more.machine } : {}),
+  })
   const app = createSuperagentApp({
     store: temp.store,
     grant,
@@ -97,17 +107,39 @@ describe('the app', () => {
     await unchecked.app.stop('disable')
   })
 
-  it('starts and becomes ready on a configured deployment', async () => {
-    const { app, fake } = setup()
-    const starts = watchStarts(app)
-    await app.start()
-    expect(app.unavailable()).toBeUndefined()
-    expect(starts.passes).toHaveBeenCalledOnce()
-    expect(starts.effects).toHaveBeenCalledOnce()
-    expect(starts.sources).toHaveBeenCalled()
-    expect(fake.sessions.has('superagent:orchestrator')).toBe(true)
-    await app.stop('disable')
-  })
+  it.each(['granted', 'configured'])(
+    'starts with a real Superagent workspace inside the %s state directory',
+    async (location) => {
+      const stateDir = join(temp.dir, location === 'granted' ? 'state' : 'custom-state')
+      const { app, fake, runtime } = setup(false, undefined, {
+        ...(location === 'configured' ? { machine: machineOf({ stateDir }) } : {}),
+      })
+      const ordinaryDir = join(temp.dir, 'ordinary-project')
+      mkdirSync(ordinaryDir)
+      await fake.client.workspace.add(ordinaryDir)
+      const ordinary = await fake.client.session.new({ cwd: ordinaryDir, sessionKey: 'ordinary' })
+      const starts = watchStarts(app)
+      await app.start()
+      expect(app.unavailable()).toBeUndefined()
+      expect(starts.passes).toHaveBeenCalledOnce()
+      expect(starts.effects).toHaveBeenCalledOnce()
+      expect(starts.sources).toHaveBeenCalled()
+      const workspace = join(stateDir, 'Superagent')
+      expect(statSync(workspace).isDirectory()).toBe(true)
+      expect(basename(workspace)).toBe('Superagent')
+      expect(fake.workspaces).toEqual([ordinaryDir, workspace])
+      expect(fake.sessions.get('superagent:orchestrator')?.options).toMatchObject({
+        cwd: workspace,
+        environment: {
+          pathPrepend: [join(stateDir, 'worker-bin')],
+          set: { GIT_CONFIG_GLOBAL: join(stateDir, 'worker-gitconfig') },
+        },
+      })
+      expect(runtime.machine.stateDir).toBe(stateDir)
+      expect(fake.sessions.get(ordinary.id)?.options?.cwd).toBe(ordinaryDir)
+      await app.stop('disable')
+    },
+  )
 
   it('starts again after a start that failed before its Sources started, and only then', async () => {
     const { app, fake } = setup()

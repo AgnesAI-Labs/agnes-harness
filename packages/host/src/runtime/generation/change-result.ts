@@ -2,6 +2,17 @@ import { PINNED_SEAM_KINDS } from '@agnes/extension-api/seams'
 import type { SeamBinding } from '@agnes/host-providers/assemble/seam-rows'
 import type { PinnedSeam, SessionGenerationPin } from '@agnes/package-manager'
 
+/** Admission and target requirements supplied by the privileged session migration coordinator. */
+export interface GenerationMigrationContext {
+  recoveryRequired?: () => boolean
+  /** Coordinator's exact published payload requirement; checked before any pin write. */
+  expectedPackage?: { id: string; integrity: string }
+  /** Pinned seam kinds the administrator agrees to replace; any other pinned change is refused. */
+  repin?: readonly string[]
+  /** Who asked, for the audit record. */
+  operator?: string
+}
+
 /** A built generation container, with the implementation each seam kind was bound to. */
 export type ContainerHandle = Readonly<{
   generationId: string

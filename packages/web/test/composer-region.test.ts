@@ -4,7 +4,7 @@ import { type UsageView, userImagePolicy } from '@agnes/protocol'
 import type { DshSlotProps } from '@agnes/web-client'
 import { setDisclosureOpen } from '@agnes/web-ui'
 import type { ComposerView, ModelPickerProps } from '@agnes/web-units'
-import { createElement, type ReactNode } from 'react'
+import { act, createElement, type ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COMPOSER_SLOT } from '../src/region-slots.js'
 import { fakeVoice } from './helpers/fake-voice.js'
@@ -61,6 +61,7 @@ describe('rendered composer region', () => {
     runtime = undefined
     localStorage.clear()
     resetWebDom()
+    vi.restoreAllMocks()
     if (originalCreateObjectURL) Object.defineProperty(URL, 'createObjectURL', originalCreateObjectURL)
     else Reflect.deleteProperty(URL, 'createObjectURL')
     if (originalRevokeObjectURL) Object.defineProperty(URL, 'revokeObjectURL', originalRevokeObjectURL)
@@ -74,6 +75,25 @@ describe('rendered composer region', () => {
       publishCatalog = vi.fn()
     let catalogValue: unknown
     let renderNative: (() => ReactNode) | undefined
+    // Saved bindings remain managed in Plugins → Channels, outside every session composer.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      Response.json({
+        sessions: [],
+        channels: [
+          {
+            provider: { manifest: { id: 'fixture', displayName: 'Fixture channel' } },
+            instances: [
+              {
+                id: 'fixture-bot',
+                connection: { channel: 'connected', daemon: 'connected' },
+                bindings: [{ sessionId: 'existing-session', targetId: 'chat', state: 'active' }],
+              },
+            ],
+          },
+        ],
+      }),
+    )
+
     runtime = await mountRenderedIndex({
       composer: {
         onDraftChange: (value) => drafts.push(value),
@@ -84,7 +104,10 @@ describe('rendered composer region', () => {
     })
     const handle = runtime.composer
     expect(handle).toBeDefined()
-    handle?.render(readyView)
+    await act(async () => {
+      runtime?.session.setSession('existing-session')
+      handle?.render(readyView)
+    })
 
     const composer = document.querySelector<HTMLFormElement>('#composer')
     const prompt = document.querySelector<HTMLTextAreaElement>('#prompt')
@@ -95,6 +118,8 @@ describe('rendered composer region', () => {
     expect(document.querySelector('#composer-workspace')).toBeTruthy()
     expect(document.querySelector('#composer-permission')).toBeTruthy()
     expect(document.querySelector('#model')).toBeTruthy()
+    expect(composer?.querySelector('[data-testid="composer-channel-binding"]')).toBeNull()
+    expect(composer?.textContent).not.toContain('Fixture channel')
     const fileInput = document.querySelector<HTMLInputElement>('[data-testid="attachment-file-input"]')
     expect(fileInput?.type).toBe('file')
     expect(fileInput?.hidden).toBe(true)

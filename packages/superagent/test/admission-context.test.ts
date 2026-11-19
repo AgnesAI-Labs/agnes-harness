@@ -5,11 +5,10 @@ import { Commands } from '../src/infra/commands.js'
 import { SettingsSchema } from '../src/policy.js'
 import { admissionContext, threadWindow } from '../src/sources/admission-context.js'
 import { feishuKindFor, messageTrigger } from '../src/sources/feishu.js'
-import { feishuLink } from '../src/sources/feishu-io.js'
 import type { ContextMessage } from '../src/sources/kind.js'
 import { SourceRegistry } from '../src/sources/registry.js'
 import { testDeployment } from './fixtures/deployment.js'
-import { configOnly, fakeChannels, message as feishuMessage } from './sources/fake-channels.js'
+import { bound, fakeCli, message as feishuMessage } from './sources/fake-cli.js'
 
 const message = (index: number): ContextMessage => ({
   id: `om_${index}`,
@@ -42,9 +41,8 @@ it('deduplicates overlapping windows and reports an absent source without invent
 })
 /** The Feishu kind on fake channels holding `history`, registered with its context reading `readPageSize`. */
 function registered(history: MessageEvent[], readPageSize = 20) {
-  const fake = fakeChannels({ history })
-  const link = feishuLink(fake.channels)
-  link.context = configOnly({ readPageSize })
+  const fake = fakeCli({ history })
+  const link = fake.link
   const sources = new SourceRegistry(() =>
     SettingsSchema.parse({
       sources: { feishu: { enabled: true, config: { instance: 'feishu', claim: 'groups', readPageSize } } },
@@ -56,7 +54,7 @@ function registered(history: MessageEvent[], readPageSize = 20) {
 const commands = () => new Commands(() => testDeployment(), {}, new AbortController().signal)
 it('retains pagination limits and exact loaded counts rather than claiming complete history', async () => {
   const at = (n: number) => new Date(Date.parse('2026-11-14T08:00:00.000Z') + n * 1000).toISOString()
-  const { fake, sources } = registered(
+  const { sources } = registered(
     [0, 1, 2].map((n) => feishuMessage(`om_${n}`, { chat: 'oc_chat', at: at(n), thread: 'omt_thread' })),
     2,
   )
@@ -64,15 +62,12 @@ it('retains pagination limits and exact loaded counts rather than claiming compl
     feishuMessage('om_9', { chat: 'oc_chat', at: at(9), thread: 'omt_thread' }),
     'om_0',
   )!
-  const result = await admissionContext(sources.threadContext(trigger)!, commands(), 1)
+  const result = await admissionContext(sources.threadContext(bound(trigger))!, commands(), 1)
   expect(result).toMatchObject({
     complete: false,
     next: '2',
     window: { loaded_messages: 2, source_found: false },
   })
-  expect(fake.calls('listThread').map((call) => call.args)).toEqual([
-    ['oc_chat', 'omt_thread', { order: 'asc', limit: 3 }],
-  ])
 })
 it('gives a message outside a topic the five chat messages before it, and says it read the chat', async () => {
   const at = Date.parse('2026-09-11T12:00:00Z')
@@ -82,12 +77,12 @@ it('gives a message outside a topic the five chat messages before it, and says i
     ),
   )
   const trigger = messageTrigger(feishuMessage('om_0', { chat: 'oc_chat', at, text: 'message 0' }), 'om_0')!
-  const result = await admissionContext(sources.threadContext(trigger)!, commands(), 3)
+  const result = await admissionContext(sources.threadContext(bound(trigger))!, commands(), 3)
   expect(result).toMatchObject({
     status: 'chat_neighbours',
     complete: true,
     window: { source_found: true, loaded_messages: 6 },
   })
   expect(result.messages.map((item) => item.id)).toEqual([-5, -4, -3, -2, -1, 0].map((n) => `om_${n}`))
-  expect(fake.calls('listHistory')).toHaveLength(1)
+  expect(fake.calls.some((args) => args[2] === '/open-apis/im/v1/messages')).toBe(true)
 })

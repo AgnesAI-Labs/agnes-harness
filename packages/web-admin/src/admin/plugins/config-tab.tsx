@@ -41,7 +41,13 @@ export function PluginConfigTab({
         if (next === 'config') setConfigOpened(true)
       }}
       items={[
-        { key: 'details', label: <span data-testid="plugin-details-tab">{t('details')}</span>, children },
+        {
+          key: 'details',
+          label: <span data-testid="plugin-details-tab">{t('details')}</span>,
+          // The tab body is plain flow; the stack gives its sections the same vertical rhythm as
+          // the settings pages instead of the margins each part happens to carry.
+          children: <div className="plugin-detail-stack">{children}</div>,
+        },
         ...(installed
           ? [
               {

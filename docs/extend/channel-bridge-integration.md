@@ -253,13 +253,13 @@ Use ChatTarget.deliveryKey for platform idempotency where available. MessageRef 
 
 ## 11. User configuration and binding flow
 
-1. Install, review, trust and enable. The provider appears dynamically in overview and session picker.
-2. Create a real session; send the first message for a draft. Open Channels beside the composer.
+1. Install, review, trust and enable. The provider appears dynamically in Plugins → Channels.
+2. Create a real session; send the first message for a draft. Open **Plugins → Channels** and choose **Add connection** for the channel.
 3. Backend derives instance ID, workspace and agent. The plugin requests credentials and non-sensitive platform parameters only.
 4. Saved secret references are resolved by the backend under reviewed grants. Namespace grants must match the references users actually selected.
 5. Save through native approval; message the bot, with a mention when required, to confirm a target.
 6. Refresh and explicitly confirm/bind the target. Workspace must match and no pre-binding history is exported.
-7. Bound composer controls show channel status and open the existing connection editor. The grouped overview shows instances, session titles and targets, with unbind/move actions.
+7. The grouped overview shows channel status, instances, session titles and targets, with configure, unbind and move actions. Session composers have no channel-binding entry; existing bindings and forwarding are preserved.
 
 Configured, connected and bound are different states. Confirmed active bindings with verified account and chat type are restored after reconnect; older bindings without that context require a fresh trusted target message. Interrupted binding transitions remain pending and require native recovery/unbind. Successful uninstall clears this plugin's current-profile channel overrides, targets and bindings; credentials and conversation history remain. Disable, restart and update preserve configuration. Other profiles/namespaces and remote app state are not automatically deleted.
 

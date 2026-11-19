@@ -20,6 +20,7 @@ export function SourceDialogContent({
   placeholder,
   error,
   busy,
+  submitDisabled = false,
   onTypeChange,
   onRefChange,
   onSubmit,
@@ -33,6 +34,7 @@ export function SourceDialogContent({
   placeholder: string
   error: string
   busy: boolean
+  submitDisabled?: boolean
   onTypeChange(type: string): void
   onRefChange(ref: string): void
   onSubmit(): void
@@ -79,7 +81,7 @@ export function SourceDialogContent({
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault()
-              if (!busy) onSubmit()
+              if (!busy && !submitDisabled) onSubmit()
             }
           }}
         />
@@ -91,7 +93,7 @@ export function SourceDialogContent({
         <Button id="source-cancel" htmlType="button" appearance="secondary" onClick={onCancel}>
           {t('cancel')}
         </Button>
-        <Button htmlType="button" appearance="primary" disabled={busy} onClick={onSubmit}>
+        <Button htmlType="button" appearance="primary" disabled={busy || submitDisabled} onClick={onSubmit}>
           {busy ? t('source.checking') : t('source.check')}
         </Button>
       </div>

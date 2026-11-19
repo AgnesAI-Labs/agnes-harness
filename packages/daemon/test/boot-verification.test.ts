@@ -90,14 +90,26 @@ it('closes the boundary when a boot step fails', async () => {
   )
 })
 
-it('hashes each installed tree once across runAgnesd boot reads, while gates and later tasks re-hash', async () => {
+it('reuses installed tree hashes between recovery and boot reads, while gates and later tasks re-hash', async () => {
   const home = mkdtempSync(join(tmpdir(), 'agh-boot-hash-'))
   roots.push(home)
   createPrivateDirectorySync(join(home, 'home'))
   const args = { profile: 'local-dev', home: join(home, 'home'), workspace: join(home, 'home') }
   const handle = { socketPath: join(home, 'unused.sock'), owner: { pid: process.pid, generation: 1 } }
-  const boot = (onBoot: (options: Parameters<typeof startProductionSupervisor>[0]) => Promise<void>) =>
+  const boot = (
+    onBoot: (options: Parameters<typeof startProductionSupervisor>[0]) => Promise<void>,
+    afterProfile?: () => void,
+  ) =>
     runAgnesd(args, {
+      ...(afterProfile
+        ? {
+            resolveProfile: async (...input: Parameters<typeof resolveDaemonProfile>) => {
+              const result = await resolveDaemonProfile(...input)
+              afterProfile()
+              return result
+            },
+          }
+        : {}),
       startProduction: (async (options) => {
         await onBoot(options)
         return { ...handle, reclaimNow: async () => [], close: async () => undefined } as never
@@ -129,36 +141,53 @@ it('hashes each installed tree once across runAgnesd boot reads, while gates and
   })
   let late!: Promise<unknown>
   let installed!: string
-  await boot(async (options) => {
-    const runtime = options.packageRuntime!
-    const profileDir = await runtime.profileDirectory('local-dev')
-    // startSupervisor's own boot reads (skill inventory, surfaces, pins, client modules) join too.
-    const inventory = await runtime.manager.inventory(profileDir)
-    await runtime.manager.inventory(profileDir)
-    expect(inventory.packages.length).toBeGreaterThan(0)
-    expect(trees.size).toBeGreaterThanOrEqual(inventory.packages.length)
-    expect([...trees.values()].every((calls) => calls === 1)).toBe(true)
-    const pkg = inventory.packages.find((row) => row.directory && row.trusted && !row.blockers.length)!
-    installed = realpathSync(pkg.directory!)
-    // A runtime snapshot pin is a copy gate: it hashes its source again inside the boundary.
-    await runtime.manager.pinRuntimeSnapshot(profileDir, {
-      pinId: 'boot-gate',
-      operationId: 'boot-gate',
-      purpose: 'turn',
-      packageId: pkg.id,
-      selector: {
-        kind: 'installed',
-        expectedIntegrity: pkg.entry.integrity,
-        expectedTreeIntegrity: pkg.entry.treeIntegrity!,
-      },
-    })
-    expect(trees.get(installed)).toBeGreaterThan(1)
-    trees.clear()
-    // A timer created during boot that fires after it must observe the tree again.
-    late = afterBoot
-      .then(() => new Promise((resolve) => setTimeout(resolve, 0)))
-      .then(() => runtime.manager.inventory(profileDir))
-  })
+  let beforeRecovery!: Map<string, number>
+  await boot(
+    async (options) => {
+      const runtime = options.packageRuntime!
+      const profileDir = await runtime.profileDirectory('local-dev')
+      // startSupervisor's own boot reads (skill inventory, surfaces, pins, client modules) join too.
+      const inventory = await runtime.manager.inventory(profileDir)
+      expect(inventory.packages.length).toBeGreaterThan(0)
+      // Transaction recovery is a write boundary and invalidates profile-resolution observations.
+      // Each installed tree is hashed once after recovery and reused by the next boot read.
+      const installedTrees = inventory.packages.map((row) => realpathSync(row.directory!))
+      for (const tree of installedTrees) {
+        const before = beforeRecovery.get(tree) ?? 0
+        const after = trees.get(tree) ?? 0
+        const observation = `${tree}: beforeRecovery=${before}, afterRecovery=${after}`
+        expect(before, observation).toBeLessThanOrEqual(1)
+        expect(after, observation).toBe(before + 1)
+      }
+      const afterRecovery = new Map(trees)
+      await runtime.manager.inventory(profileDir)
+      expect(trees).toEqual(afterRecovery)
+      const pkg = inventory.packages.find((row) => row.directory && row.trusted && !row.blockers.length)!
+      installed = realpathSync(pkg.directory!)
+      // A runtime snapshot pin is a copy gate: it hashes its source again inside the boundary.
+      const beforePin = trees.get(installed)!
+      await runtime.manager.pinRuntimeSnapshot(profileDir, {
+        pinId: 'boot-gate',
+        operationId: 'boot-gate',
+        purpose: 'turn',
+        packageId: pkg.id,
+        selector: {
+          kind: 'installed',
+          expectedIntegrity: pkg.entry.integrity,
+          expectedTreeIntegrity: pkg.entry.treeIntegrity!,
+        },
+      })
+      expect(trees.get(installed), `${installed}: beforePin=${beforePin}`).toBeGreaterThan(beforePin)
+      trees.clear()
+      // A timer created during boot that fires after it must observe the tree again.
+      late = afterBoot
+        .then(() => new Promise((resolve) => setTimeout(resolve, 0)))
+        .then(() => runtime.manager.inventory(profileDir))
+    },
+    () => {
+      beforeRecovery = new Map(trees)
+    },
+  )
   booted()
   await late
   expect(trees.get(installed)).toBe(1)
