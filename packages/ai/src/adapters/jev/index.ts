@@ -43,11 +43,9 @@ export type JevAdapterOptions = PayloadAdapterOptions
  * call. Redirects are refused so the key cannot be sent anywhere else, a reply is capped at 1 MiB,
  * and no error message quotes the reply, the key or the vendor's account fields.
  */
-export class JevAdapter extends PayloadWireAdapter<JevPayload> {
-  override readonly version = JEV_ADAPTER_VERSION
-
-  constructor(opts: JevAdapterOptions) {
-    super({ api: JEV_WIRE_API, target: endpointFor, keepAliveMs: KEEP_ALIVE_MS }, opts)
+export abstract class SystemOneAdapter extends PayloadWireAdapter<JevPayload> {
+  protected constructor(api: string, opts: PayloadAdapterOptions) {
+    super({ api, target: endpointFor, keepAliveMs: KEEP_ALIVE_MS }, opts)
   }
 
   protected readPayload(req: RequestBody): JevPayload | string {
@@ -93,5 +91,13 @@ export class JevAdapter extends PayloadWireAdapter<JevPayload> {
       },
       { type: 'done', reason: 'stop' },
     ]
+  }
+}
+
+export class JevAdapter extends SystemOneAdapter {
+  override readonly version = JEV_ADAPTER_VERSION
+
+  constructor(opts: JevAdapterOptions) {
+    super(JEV_WIRE_API, opts)
   }
 }

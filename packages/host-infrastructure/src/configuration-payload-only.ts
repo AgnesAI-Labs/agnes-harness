@@ -1,4 +1,6 @@
 import {
+  AGNES_SYS1_WIRE_API,
+  AgnesSys1Adapter,
   API_KEY_PROVIDER_REGISTRY,
   getApiKeyProvider,
   JEV_WIRE_API,
@@ -211,23 +213,29 @@ const PROBE_TIMEOUT_MS = 30_000
 
 export type PayloadProbeOutcome = 'ok' | 'throttled' | 'auth' | 'failed'
 
-/**
- * One real call through the payload adapter with a fixed `{state: {}, questions: {ping}}` body: an
- * answer or a rate limit proves reachability, a rejected key is told apart, and everything else —
- * a contract mismatch, a transport failure, a timeout — is just "not reachable". The fixed body
- * carries no user data, and no reply content leaves the adapter.
- */
-async function probePayloadOnlyRoute(args: {
+type PayloadProbeArgs = {
   baseUrl: string
   model: string
   credential: string
   request: typeof globalThis.fetch
   signal: AbortSignal
-}): Promise<PayloadProbeOutcome> {
-  let adapter: JevAdapter
+}
+
+/**
+ * One real call through the payload adapter with a fixed, provider-specific question: an
+ * answer or a rate limit proves reachability, a rejected key is told apart, and everything else —
+ * a contract mismatch, a transport failure, a timeout — is just "not reachable". The fixed body
+ * carries no user data, and no reply content leaves the adapter.
+ */
+async function probePayloadOnlyRoute(
+  api: typeof JEV_WIRE_API | typeof AGNES_SYS1_WIRE_API,
+  args: PayloadProbeArgs,
+): Promise<PayloadProbeOutcome> {
+  let adapter: JevAdapter | AgnesSys1Adapter
+  const Adapter = api === AGNES_SYS1_WIRE_API ? AgnesSys1Adapter : JevAdapter
   try {
-    adapter = new JevAdapter({
-      routes: [{ route: 'probe', api: JEV_WIRE_API, baseUrl: args.baseUrl, models: [] }],
+    adapter = new Adapter({
+      routes: [{ route: 'probe', api, baseUrl: args.baseUrl, models: [] }],
       network: () => ({ fetch: args.request, close: () => Promise.resolve() }),
     })
   } catch {
@@ -246,7 +254,13 @@ async function probePayloadOnlyRoute(args: {
       system: '',
       messages: [],
       tools: [],
-      payload: { state: {}, questions: { ping: 'ping' } },
+      payload:
+        api === AGNES_SYS1_WIRE_API
+          ? {
+              state: 'The system is ready.',
+              questions: { ping: { type: 'noul', instructions: 'Is it ready?' } },
+            }
+          : { state: {}, questions: { ping: 'ping' } },
     }
     let terminal: WireEvent | undefined
     for await (const event of adapter.stream('probe', request, {
@@ -264,14 +278,12 @@ async function probePayloadOnlyRoute(args: {
   }
 }
 
-type PayloadProbeArgs = Parameters<typeof probePayloadOnlyRoute>[0]
-
 /**
- * The connection probe of a payload-only account, chosen by its wire api. Jev answers a fixed
- * payload; the voice adapter lists the endpoint's models, which costs nothing and needs no model.
+ * The connection probe of a payload-only account, chosen by its wire api. Jev and Sys1 answer fixed
+ * questions. The voice adapter lists the endpoint's models without an inference request.
  */
 export async function probePayloadRoute(api: string, args: PayloadProbeArgs): Promise<PayloadProbeOutcome> {
-  if (api === JEV_WIRE_API) return probePayloadOnlyRoute(args)
+  if (api === JEV_WIRE_API || api === AGNES_SYS1_WIRE_API) return probePayloadOnlyRoute(api, args)
   if (api !== OPENAI_AUDIO_WIRE_API) throw new ConfigurationError('CONFIG_INVALID_INPUT')
   // The caller's signal may never abort, so the voice probe carries its own deadline like Jev's.
   const limit = new AbortController()

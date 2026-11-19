@@ -1,5 +1,10 @@
 import type { ModelAdapterConfig, ProviderPluginContext } from '@agnes/extension-api'
 import { modelAdapterKind } from '@agnes/extension-api'
+import {
+  AGNES_SYS1_ADAPTER_VERSION,
+  AGNES_SYS1_WIRE_API,
+  AgnesSys1Adapter,
+} from './adapters/agnes-sys1/index.js'
 import { JEV_ADAPTER_VERSION, JEV_WIRE_API, JevAdapter } from './adapters/jev/index.js'
 import {
   OPENAI_AUDIO_ADAPTER_VERSION,
@@ -45,6 +50,17 @@ const jevRegistration = {
   },
 }
 
+const sys1Registration = {
+  ...jevRegistration,
+  id: AGNES_SYS1_WIRE_API,
+  wireApi: AGNES_SYS1_WIRE_API,
+  version: AGNES_SYS1_ADAPTER_VERSION,
+  create: (config: ModelAdapterConfig, signal?: AbortSignal) => {
+    signal?.throwIfAborted()
+    return new AgnesSys1Adapter({ routes: config.routes })
+  },
+}
+
 /** Speech to text and text to speech take a payload and answer with text: no messages, no tools. */
 const openAiAudioRegistration = {
   id: OPENAI_AUDIO_WIRE_API,
@@ -63,6 +79,7 @@ export const modelAdaptersPlugin = {
   apply(ctx: ProviderPluginContext) {
     for (const adapter of registrations) ctx.providers.register(modelAdapterKind, adapter)
     ctx.providers.register(modelAdapterKind, jevRegistration)
+    ctx.providers.register(modelAdapterKind, sys1Registration)
     ctx.providers.register(modelAdapterKind, openAiAudioRegistration)
   },
 }
