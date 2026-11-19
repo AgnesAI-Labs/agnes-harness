@@ -32,7 +32,7 @@ const translations = {
     subtitle: 'One execution foundation for field delivery and the physical world',
     roles: [
       ['LLM', 'Brain', 'Reasoning and actions', 'Via AI providers'],
-      ['Jev', 'Cerebellum', 'Decisions and routing', 'Works with the agent loop'],
+      ['Sys1', 'Cerebellum', 'Structured judgments', 'Default judgment model'],
       ['Harness', 'Memory', 'State, history, methods', 'Sessions, records, Skills'],
       ['MHS', 'Body', 'Physical devices', 'Devices via AgnesHub'],
     ],
@@ -44,7 +44,7 @@ const translations = {
     llm: ['Model reasoning', 'LLM via AI providers'],
     loop: ['AGENT LOOP', 'until the task is done'],
     steps: ['Reason', 'Act', 'Call tool', 'Result', 'Continue'],
-    jev: 'Jev routing',
+    judgment: 'Sys1 judgment',
     memory: 'HARNESS MEMORY',
     memoryLayers: ['Sessions', 'Task state', 'Event records', 'Skills'],
     governance: ['CONTROLLED EXECUTION', 'Tool approvals · command sandbox · execution policy · recovery'],
@@ -66,14 +66,14 @@ const translations = {
     footer:
       'FDE delivers at enterprise sites. MHS connects the physical world. Both run on the same foundation.',
     description:
-      'Animated AGH architecture. LLM is the brain, Jev the cerebellum, Harness the memory and MHS the body; devices connect through AgnesHub over MHS. Clients reach the App Server, the Agent Runtime runs the agent loop with Harness memory and controlled execution, plugins extend the runtime, and the same foundation serves enterprise FDE delivery and physical-world integration.',
+      'Animated AGH architecture with LLM reasoning, Agnes Sys1 judgment, Harness memory and MHS devices connected through AgnesHub. Clients reach the App Server. The Agent Runtime runs the agent loop with controlled execution and extends it through plugins. The same foundation supports enterprise FDE delivery and device integration.',
   },
   'zh-CN': {
     title: 'Agnes Harness',
     subtitle: '一套执行底座，连接企业现场与物理世界',
     roles: [
       ['LLM', '大脑', '理解、推理与动作建议', '经 AI Provider 接入'],
-      ['Jev', '小脑', '结构化决策与路由', '与 Agent 循环协同'],
+      ['Sys1', '小脑', '结构化判断', '默认判断模型'],
       ['Harness', '记忆', '状态、历史与可复用方法', '会话、执行记录、Skills'],
       ['MHS', '身体', '连接物理设备的能力', '经 AgnesHub 接入设备'],
     ],
@@ -85,7 +85,7 @@ const translations = {
     llm: ['模型推理', '经 AI Provider 接入 LLM'],
     loop: ['AGENT LOOP', '循环推进，直到完成'],
     steps: ['推理', '决定动作', '调用工具', '返回结果', '继续 / 完成'],
-    jev: 'Jev 路由',
+    judgment: 'Sys1 判断',
     memory: 'HARNESS 记忆',
     memoryLayers: ['会话', '任务状态', '事件记录', 'Skills'],
     governance: ['受控执行', '工具审批 · 命令沙箱 · 执行策略 · 中断恢复'],
@@ -106,7 +106,7 @@ const translations = {
     mhsNote: '设备仅为示意 · 互锁与急停由设备负责',
     footer: 'FDE 服务企业现场，MHS 连接物理世界；两者运行在同一套底座上。',
     description:
-      'AGH 架构动画：LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体，设备经 AgnesHub 以 MHS 接入。客户端经 App Server 接入，Agent Runtime 以 Harness 记忆和受控执行运行 Agent 循环，插件扩展运行时，同一底座支撑企业 FDE 交付与物理世界接入。',
+      'AGH 架构动画展示 LLM 推理、Agnes Sys1 判断、Harness 记忆与通过 AgnesHub 接入的 MHS 设备。客户端经 App Server 接入，运行时负责受控执行 Agent 循环，并通过插件扩展。同一套底座支撑企业 FDE 交付与设备接入。',
   },
 }
 
@@ -359,13 +359,13 @@ function render(t, lang) {
       4.5,
     )
 
-    // Jev: structured-decision helper beside the loop.
+    // Sys1 provides structured judgment alongside the loop.
     push(
       `<circle cx="806" cy="590" r="27" fill="rgba(251,191,36,0.08)" stroke="${c.amber}" stroke-width="1.6"` +
         ' stroke-dasharray="4 5" class="spin"/>',
     )
     icon('nodes', 806, 590, 24, c.amber)
-    text(806, 550, t.jev, { size: 12, weight: 600, fill: c.amber, anchor: 'middle' })
+    text(806, 550, t.judgment, { size: 12, weight: 600, fill: c.amber, anchor: 'middle' })
     push(
       `<path d="M 784 606 L 716 636" stroke="${c.amber}" stroke-width="1.6" stroke-dasharray="4 5" class="march"` +
         ' fill="none"/>',
