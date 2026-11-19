@@ -35,6 +35,7 @@ export const refinementSettingsCatalog: LocaleCatalog = {
       'On demand: use /refine, or let the model request a review for this session. With automatic triggers: the system also considers reviews after a successful summary compaction or repeated tool failures, subject to budget, cooldown and frequency limits. The model needs automatic triggers enabled to save lessons beyond this session; memory settings still apply.',
     'refinement.mode.manual': 'On demand',
     'refinement.mode.auto': 'On demand + automatic triggers',
+    'refinement.note.separator': ': ',
     'refinement.group.allows': 'What turning it on allows',
     'refinement.allows.install': 'Install proven skills in the workspace',
     'refinement.allows.install.hint':
@@ -96,6 +97,7 @@ export const refinementSettingsCatalog: LocaleCatalog = {
       '按需：你用 /refine，或由模型主动发起当前会话的复盘。开启自动触发后：系统还会在摘要压缩成功、同类工具错误重复出现时尝试复盘，受预算、冷却时间和次数限制。模型主动把经验保存到工作区或用户记忆，需要开启自动触发；记忆设置仍然有效。',
     'refinement.mode.manual': '按需复盘',
     'refinement.mode.auto': '按需＋自动触发',
+    'refinement.note.separator': '：',
     'refinement.group.allows': '开启即表示允许',
     'refinement.allows.install': '把已证实的技能安装到工作区',
     'refinement.allows.install.hint':

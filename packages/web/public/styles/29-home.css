@@ -212,6 +212,10 @@
   .refinement-settings .agnes-settings-note {
     padding: var(--s8) var(--s16);
   }
+  .refinement-note-lead {
+    color: var(--agnes-text-secondary);
+    font-weight: var(--font-weight-medium);
+  }
   .refinement-settings pre.agnes-settings-note {
     white-space: pre-wrap;
     overflow-wrap: anywhere;

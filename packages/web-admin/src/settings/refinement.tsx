@@ -403,31 +403,22 @@ function RefinementFields(props: {
         </SettingsItem>
       </SettingsBlock>
       <SettingsBlock label={t('refinement.group.allows')} data-testid="refinement-permissions">
-        {(['install', 'skill', 'memory', 'user'] as const).map((name) => (
-          <SettingsItem
-            key={name}
-            data-testid={`refinement-allows-${name}`}
-            label={t(`refinement.allows.${name}`)}
-            description={t(`refinement.allows.${name}.hint`)}
-          />
+        {(['install', 'skill', 'memory', 'user', 'undo'] as const).map((name) => (
+          <p key={name} className="agnes-settings-note" data-testid={`refinement-allows-${name}`}>
+            <span className="refinement-note-lead">{t(`refinement.allows.${name}`)}</span>
+            {t('refinement.note.separator')}
+            {t(`refinement.allows.${name}.hint`)}
+          </p>
         ))}
-        <SettingsItem
-          data-testid="refinement-allows-undo"
-          label={t('refinement.allows.undo')}
-          description={t('refinement.allows.undo.hint')}
-        />
       </SettingsBlock>
       <SettingsBlock label={t('refinement.group.notes')}>
-        <SettingsItem
-          data-testid="refinement-approvals"
-          label={t('refinement.approvals')}
-          description={t('refinement.approvals.hint')}
-        />
-        <SettingsItem
-          data-testid="refinement-cost"
-          label={t('refinement.cost')}
-          description={t('refinement.cost.hint')}
-        />
+        {(['approvals', 'cost'] as const).map((name) => (
+          <p key={name} className="agnes-settings-note" data-testid={`refinement-${name}`}>
+            <span className="refinement-note-lead">{t(`refinement.${name}`)}</span>
+            {t('refinement.note.separator')}
+            {t(`refinement.${name}.hint`)}
+          </p>
+        ))}
       </SettingsBlock>
     </>
   )
