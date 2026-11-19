@@ -134,6 +134,7 @@ export interface ComposerView {
   input: {
     disabled: boolean
     placeholder: string
+    commands?: readonly ('plan' | 'goal' | 'refine')[]
     exampleHint?: boolean
     hintScope?: import('./hint.js').HintScope
   }

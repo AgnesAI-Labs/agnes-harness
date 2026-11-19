@@ -4496,7 +4496,12 @@ describe('session that cannot continue on this build', () => {
       },
       workspace: { list: vi.fn(async () => ({ items: [] })) },
       session: {
-        list: vi.fn(async () => ({ items: [{ sessionId: 'old', title: 'Old' }] })),
+        list: vi.fn(async () => ({
+          items: [
+            { sessionId: 'old', title: 'Old' },
+            { sessionId: 'next', title: 'Next' },
+          ],
+        })),
         view: vi.fn(async (id: string) => (id === 'old' ? stored(id) : nextView.promise)),
       },
     })
@@ -4508,11 +4513,12 @@ describe('session that cannot continue on this build', () => {
     expect(document.body.classList.contains('session-switching')).toBe(false)
     expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
     expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
-    // The pending read-only preview states itself on the composer, which is what admission retires.
-    expect((document.getElementById('prompt') as HTMLTextAreaElement).placeholder).toContain('只读')
+    expect((document.getElementById('prompt') as HTMLTextAreaElement).placeholder).toBe(
+      '描述你想完成的事，@ 引用文件',
+    )
     opening.resolve({ session: old, offPermission: vi.fn() })
     await vi.waitFor(() =>
-      expect((document.getElementById('prompt') as HTMLTextAreaElement).placeholder).not.toContain('只读'),
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).placeholder).toContain('/ 调用指令'),
     )
     expect(document.querySelector('[data-testid="session-read-only"]')).toBeNull()
     expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
@@ -4532,7 +4538,9 @@ describe('session that cannot continue on this build', () => {
     expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
     nextOpening.resolve({ session: next, offPermission: vi.fn() })
     await switched
-    expect((document.getElementById('prompt') as HTMLTextAreaElement).placeholder).not.toContain('只读')
+    await vi.waitFor(() =>
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).placeholder).toContain('/ 调用指令'),
+    )
     expect(document.body.classList.contains('session-switching')).toBe(false)
   })
 

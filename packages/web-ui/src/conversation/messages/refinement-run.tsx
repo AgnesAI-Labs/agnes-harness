@@ -1,7 +1,8 @@
 import type { UINode } from '@agnes/protocol'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import type { Translate } from '../../locales/index.js'
 import { Button } from '../../ui/button.js'
+import { Icon } from '../../ui/icon.js'
 import { type RefinementSaveEntry, saveOutcomeText } from './refinement-save.js'
 
 type RefinementRun = Extract<UINode, { kind: 'refinement-run' }>
@@ -21,10 +22,11 @@ export type RefinementWithdraw = (appliedSeq: number) => Promise<RefinementWithd
 
 const REFUSALS = new Set(['not-found', 'not-applied', 'is-rollback', 'rejected', 'child-session', 'closing'])
 
-function outcomeText(outcome: RefinementWithdrawOutcome, t: Translate): string {
+function outcomeText(
+  outcome: Exclude<RefinementWithdrawOutcome, { kind: 'withdrawn' }>,
+  t: Translate,
+): string {
   switch (outcome.kind) {
-    case 'withdrawn':
-      return t('timeline.refinement.withdraw.done')
     case 'changed-since':
       return outcome.changed && outcome.changed.length > 0
         ? t('timeline.refinement.withdraw.changedNames', { names: outcome.changed.join(', ') })
@@ -40,30 +42,20 @@ function outcomeText(outcome: RefinementWithdrawOutcome, t: Translate): string {
   }
 }
 
-/** The entries a run changed, by name only; the entries' text is never part of the timeline. */
-function changes(node: RefinementRun, t: Translate): string {
-  const named = (op: 'upsert' | 'delete') =>
-    (node.edits ?? []).filter((edit) => edit.op === op).map((edit) => `${edit.kind}/${edit.id}`)
-  const saved = named('upsert')
-  const removed = named('delete')
-  const workflow = (node.edits ?? [])
-    .filter((edit) => edit.workflow === true)
-    .map((edit) => `${edit.kind}/${edit.id}`)
-  return [
-    saved.length > 0 ? t('timeline.refinement.saved', { names: saved.join(', ') }) : '',
-    removed.length > 0 ? t('timeline.refinement.removed', { names: removed.join(', ') }) : '',
-    workflow.length > 0 ? t('timeline.refinement.workflow', { names: workflow.join(', ') }) : '',
-  ]
-    .filter(Boolean)
-    .join(' ')
+function reviewReason(reason: string, t: Translate): string {
+  const key = `timeline.refinement.runReason.${reason}`
+  const label = t(key)
+  return t('timeline.refinement.reason', {
+    reason: label === key ? t('timeline.refinement.runReason.other') : label,
+  })
+}
+
+function changeCount(action: 'saved' | 'removed', count: number, t: Translate): string {
+  return count ? t(`timeline.refinement.count.${action}.${count === 1 ? 'one' : 'many'}`, { count }) : ''
 }
 
 /**
- * One background experience review as a line in the conversation: what asked for it, how it stands
- * or ended and why, which saved entries it changed, and whether that was withdrawn since. An applied
- * run not yet withdrawn offers to withdraw it when the host can, and says how that ended; it also
- * offers to save each memory, prompt or skill entry it kept to the workspace, and each memory or prompt
- * entry to user memory, as the user's own save.
+ * The review's status and its applied changes. The host owns each action and its receipt.
  */
 export function RefinementRunNote({
   node,
@@ -76,68 +68,110 @@ export function RefinementRunNote({
   withdraw?: RefinementWithdraw | undefined
   save?: RefinementSaveEntry | undefined
 }) {
+  const detailsId = useId()
+  const [expanded, setExpanded] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<string>()
-  const text = [
-    t(`timeline.refinement.state.${node.state}`, {
-      trigger: t(`timeline.refinement.trigger.${node.trigger}`),
-    }),
-    node.reason ? t('timeline.refinement.reason', { reason: node.reason }) : '',
-    changes(node, t),
-    node.withdrawn ? t('timeline.refinement.withdrawn') : '',
-  ]
-    .filter(Boolean)
-    .join(' ')
-  const appliedSeq = node.appliedSeq
-  const offer = withdraw && node.state === 'applied' && appliedSeq !== undefined && !node.withdrawn
+  const [result, setResult] = useState<RefinementWithdrawOutcome>()
+  const trigger = t(`timeline.refinement.trigger.${node.trigger}`)
+  const withdrawn = node.withdrawn || result?.kind === 'withdrawn'
+  const edits = node.edits ?? []
+  const { appliedSeq } = node
+  const canWithdraw = !!withdraw && appliedSeq !== undefined
+  const expandable = node.state === 'applied' && !withdrawn && (edits.length > 0 || canWithdraw)
+  const notice = { 'data-testid': 'refinement-run-notice', 'data-state': node.state }
+  const reason = node.reason ? reviewReason(node.reason, t) : undefined
+
   const onWithdraw = async () => {
     if (!withdraw || appliedSeq === undefined || busy) return
     setBusy(true)
     try {
-      setResult(outcomeText(await withdraw(appliedSeq), t))
+      setResult(await withdraw(appliedSeq))
     } catch (error) {
-      setResult(
-        outcomeText({ kind: 'failed', message: error instanceof Error ? error.message : String(error) }, t),
-      )
+      setResult({ kind: 'failed', message: error instanceof Error ? error.message : String(error) })
     } finally {
       setBusy(false)
     }
   }
-  return (
-    <>
-      <div className="node-body" role="status" data-testid="refinement-run-notice" data-state={node.state}>
-        {text}
+
+  if (!expandable) {
+    return (
+      <div className="node-body" role="status" {...notice}>
+        {withdrawn
+          ? t('timeline.refinement.withdrawn', { trigger })
+          : [t(`timeline.refinement.state.${node.state}`, { trigger }), reason].filter(Boolean).join(' ')}
       </div>
-      {offer && (
-        <Button
-          htmlType="button"
-          appearance="ghost"
-          size="small"
-          loading={busy}
-          data-testid="refinement-withdraw"
-          onClick={() => void onWithdraw()}
-        >
-          {t('timeline.refinement.withdraw')}
-        </Button>
-      )}
-      {result && (
-        <div className="node-body" role="status" data-testid="refinement-withdraw-result">
-          {result}
-        </div>
-      )}
-      {save &&
-        node.state === 'applied' &&
-        !node.withdrawn &&
-        (node.edits ?? [])
-          .filter(
-            (edit): edit is typeof edit & { kind: 'memory' | 'prompt' | 'skill' } =>
-              edit.op === 'upsert' &&
-              (edit.kind === 'memory' || edit.kind === 'prompt' || edit.kind === 'skill'),
-          )
-          .map((edit) => (
-            <SaveEntry key={`${edit.kind}/${edit.id}`} kind={edit.kind} id={edit.id} save={save} t={t} />
-          ))}
-    </>
+    )
+  }
+
+  const saved = edits.filter((edit) => edit.op === 'upsert').length
+  const summary = edits.length
+    ? [
+        t('timeline.refinement.title', { trigger }),
+        changeCount('saved', saved, t),
+        changeCount('removed', edits.length - saved, t),
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : t('timeline.refinement.state.applied', { trigger })
+  return (
+    <div className="refinement-run">
+      <Button
+        htmlType="button"
+        appearance="ghost"
+        size="small"
+        className="refinement-summary"
+        {...notice}
+        aria-expanded={expanded}
+        aria-controls={detailsId}
+        title={summary}
+        onClick={() => setExpanded((open) => !open)}
+      >
+        <Icon name={expanded ? 'chevron-down' : 'chevron-right'} />
+        <span>{summary}</span>
+      </Button>
+      <div className="refinement-details" id={detailsId} hidden={!expanded}>
+        {reason && <p>{reason}</p>}
+        {edits.length > 0 && (
+          <ul className="refinement-edits">
+            {edits.map(({ kind, id, op, workflow }) => {
+              const label = t(`timeline.refinement.entryKind.${kind}`)
+              return (
+                <li key={`${kind}/${id}`}>
+                  <div className="refinement-entry">
+                    <span className="refinement-entry-kind">{label}</span>
+                    <span translate="no">{id}</span>
+                    {op === 'delete' && <small>{t('timeline.refinement.entryRemoved')}</small>}
+                    {workflow && <small>{t('timeline.refinement.workflow')}</small>}
+                  </div>
+                  {save && op === 'upsert' && kind !== 'subagent' && (
+                    <SaveEntry kind={kind} id={id} name={`${label} ${id}`} save={save} t={t} />
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+        {canWithdraw && (
+          <div className="refinement-actions">
+            <Button
+              htmlType="button"
+              appearance="ghost"
+              size="small"
+              loading={busy}
+              data-testid="refinement-withdraw"
+              onClick={() => void onWithdraw()}
+            >
+              {t('timeline.refinement.withdraw')}
+            </Button>
+          </div>
+        )}
+        {result && (
+          <div className="node-body" role="status" data-testid="refinement-withdraw-result">
+            {outcomeText(result, t)}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -145,10 +179,11 @@ export function RefinementRunNote({
 function SaveEntry(props: {
   kind: 'memory' | 'prompt' | 'skill'
   id: string
+  name: string
   save: RefinementSaveEntry
   t: Translate
 }) {
-  const { kind, id, save, t } = props
+  const { kind, id, name, save, t } = props
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<string>()
   const onSave = async (target?: 'user') => {
@@ -169,28 +204,32 @@ function SaveEntry(props: {
   }
   return (
     <>
-      <Button
-        htmlType="button"
-        appearance="ghost"
-        size="small"
-        loading={busy}
-        data-testid="refinement-save-entry"
-        onClick={() => void onSave()}
-      >
-        {t('timeline.refinementSave.entry', { name: `${kind}/${id}` })}
-      </Button>
-      {kind !== 'skill' && (
+      <div className="refinement-actions">
         <Button
           htmlType="button"
           appearance="ghost"
           size="small"
           loading={busy}
-          data-testid="refinement-save-entry-user"
-          onClick={() => void onSave('user')}
+          data-testid="refinement-save-entry"
+          aria-label={t('timeline.refinementSave.entry', { name })}
+          onClick={() => void onSave()}
         >
-          {t('timeline.refinementSave.entryUser', { name: `${kind}/${id}` })}
+          {t('timeline.refinementSave.workspaceAction')}
         </Button>
-      )}
+        {kind !== 'skill' && (
+          <Button
+            htmlType="button"
+            appearance="ghost"
+            size="small"
+            loading={busy}
+            data-testid="refinement-save-entry-user"
+            aria-label={t('timeline.refinementSave.entryUser', { name })}
+            onClick={() => void onSave('user')}
+          >
+            {t('timeline.refinementSave.userAction')}
+          </Button>
+        )}
+      </div>
       {result && (
         <div className="node-body" role="status" data-testid="refinement-save-result">
           {result}

@@ -187,7 +187,7 @@ describe('W3b projected message DOM', () => {
     ])
   })
 
-  it('shows each experience review with its state, reason and changed entries, never their text', async () => {
+  it('shows withdrawn reviews and friendly rejection reasons as single status lines', async () => {
     const store = createConversationProjectionStore({
       sessionId: 'session',
       nodes: [
@@ -219,18 +219,12 @@ describe('W3b projected message DOM', () => {
     await mount(store)
     const notes = [...host.querySelectorAll('[data-testid="refinement-run-notice"]')]
     expect(notes.map((note) => note.getAttribute('data-state'))).toEqual(['applied', 'rejected'])
-    expect(notes[0]?.textContent).toBe(
-      [
-        t('timeline.refinement.state.applied', { trigger: t('timeline.refinement.trigger.manual') }),
-        t('timeline.refinement.saved', { names: 'memory/build' }),
-        t('timeline.refinement.removed', { names: 'skill/old' }),
-        t('timeline.refinement.withdrawn'),
-      ].join(' '),
-    )
+    expect(notes[0]?.textContent).toBe('经验复盘（你发起） · 已撤回')
+    expect(host.querySelector('[aria-expanded]')).toBeNull()
     expect(notes[1]?.textContent).toBe(
       [
         t('timeline.refinement.state.rejected', { trigger: t('timeline.refinement.trigger.model') }),
-        t('timeline.refinement.reason', { reason: 'no-evidence' }),
+        t('timeline.refinement.reason', { reason: t('timeline.refinement.runReason.no-evidence') }),
       ].join(' '),
     )
     expect(notes[1]?.textContent).not.toContain('timeline.refinement')
@@ -258,7 +252,11 @@ describe('W3b projected message DOM', () => {
       root.render(createElement(ConversationMessages, { t, nodes, withdrawRefinement: withdraw })),
     )
     const buttons = () => [...host.querySelectorAll<HTMLButtonElement>('[data-testid="refinement-withdraw"]')]
-    // A review withdrawn since offers nothing more.
+    const summaries = [
+      ...host.querySelectorAll<HTMLButtonElement>('button[data-testid="refinement-run-notice"]'),
+    ]
+    expect(summaries).toHaveLength(3)
+    for (const summary of summaries) await act(async () => summary.click())
     expect(buttons()).toHaveLength(3)
     expect(buttons()[0]?.textContent).toBe(t('timeline.refinement.withdraw'))
     for (const button of buttons()) await act(async () => button.click())
@@ -267,10 +265,12 @@ describe('W3b projected message DOM', () => {
       (n) => n.textContent,
     )
     expect(results).toEqual([
-      t('timeline.refinement.withdraw.done'),
       t('timeline.refinement.withdraw.changedNames', { names: 'memory/build' }),
       t('timeline.refinement.withdraw.failed', { message: 'connection lost' }),
     ])
+    expect(host.querySelector('[data-testid="refinement-run-notice"]')?.textContent).toBe(
+      '经验复盘（你发起） · 已撤回',
+    )
     expect(results.join(' ')).not.toContain('timeline.refinement')
   })
 
@@ -289,6 +289,9 @@ describe('W3b projected message DOM', () => {
     const withdraw = vi.fn(async () => ({ kind: 'refused' as const, reason: 'closing' }))
     await act(async () =>
       root.render(createElement(ConversationMessages, { t, nodes: [node], withdrawRefinement: withdraw })),
+    )
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('button[data-testid="refinement-run-notice"]')?.click(),
     )
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="refinement-withdraw"]')?.click(),
@@ -332,9 +335,16 @@ describe('W3b projected message DOM', () => {
       ),
     ]
     await act(async () => root.render(createElement(ConversationMessages, { t, nodes })))
-    expect(host.querySelector('[data-testid="refinement-run-notice"]')?.textContent).toContain(
-      t('timeline.refinement.workflow', { names: 'skill/ship-flow' }),
-    )
+    const summary = host.querySelector<HTMLButtonElement>('button[data-testid="refinement-run-notice"]')
+    expect(summary?.textContent).toBe('经验复盘（你发起） · 已保存 2 项经验')
+    expect(summary?.getAttribute('aria-expanded')).toBe('false')
+    const details = document.getElementById(summary?.getAttribute('aria-controls') ?? '')
+    expect(details?.hidden).toBe(true)
+    await act(async () => summary?.click())
+    expect(summary?.getAttribute('aria-expanded')).toBe('true')
+    expect(details?.hidden).toBe(false)
+    expect(details?.textContent).toContain('技能ship-flow来自已完成的工作流')
+    expect(details?.textContent).not.toContain('skill/ship-flow')
     const lines = [...host.querySelectorAll('[data-testid="refinement-save-notice"]')].map(
       (line) => line.textContent ?? '',
     )
@@ -453,6 +463,7 @@ describe('W3b projected message DOM', () => {
         { op: 'upsert', kind: 'memory', id: 'build' },
         { op: 'upsert', kind: 'prompt', id: 'style' },
         { op: 'upsert', kind: 'skill', id: 'deploy' },
+        { op: 'upsert', kind: 'subagent', id: 'check' },
         { op: 'delete', kind: 'memory', id: 'old' },
       ],
       appliedSeq: 4,
@@ -468,13 +479,20 @@ describe('W3b projected message DOM', () => {
     await act(async () =>
       root.render(createElement(ConversationMessages, { t, nodes: [node], saveRefinementEntry: saveEntry })),
     )
+    const summary = host.querySelector<HTMLButtonElement>('button[data-testid="refinement-run-notice"]')
+    expect(summary?.textContent).toBe('经验复盘（你发起） · 已保存 4 项经验 · 已移除 1 项经验')
+    await act(async () => summary?.click())
+    const list = host.querySelector('.refinement-edits')
+    expect(list?.textContent).toContain('子智能体check')
+    expect(list?.textContent).toContain('记忆old已移除')
     const buttons = [...host.querySelectorAll<HTMLButtonElement>('[data-testid="refinement-save-entry"]')]
     // Every memory, prompt and skill entry a review kept is offered; a removal is not.
-    expect(buttons.map((button) => button.textContent)).toEqual([
-      t('timeline.refinementSave.entry', { name: 'memory/build' }),
-      t('timeline.refinementSave.entry', { name: 'prompt/style' }),
-      t('timeline.refinementSave.entry', { name: 'skill/deploy' }),
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      t('timeline.refinementSave.entry', { name: '记忆 build' }),
+      t('timeline.refinementSave.entry', { name: '提示 style' }),
+      t('timeline.refinementSave.entry', { name: '技能 deploy' }),
     ])
+    expect(buttons.every((button) => button.textContent === '保存到工作区')).toBe(true)
     for (const button of buttons) await act(async () => button.click())
     expect(saveEntry.mock.calls).toEqual([
       ['memory', 'build'],
@@ -485,10 +503,11 @@ describe('W3b projected message DOM', () => {
     const userButtons = [
       ...host.querySelectorAll<HTMLButtonElement>('[data-testid="refinement-save-entry-user"]'),
     ]
-    expect(userButtons.map((button) => button.textContent)).toEqual([
-      t('timeline.refinementSave.entryUser', { name: 'memory/build' }),
-      t('timeline.refinementSave.entryUser', { name: 'prompt/style' }),
+    expect(userButtons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      t('timeline.refinementSave.entryUser', { name: '记忆 build' }),
+      t('timeline.refinementSave.entryUser', { name: '提示 style' }),
     ])
+    expect(userButtons.every((button) => button.textContent === '保存到用户记忆')).toBe(true)
     saveEntry.mockClear()
     await act(async () => userButtons[0]?.click())
     expect(saveEntry.mock.calls).toEqual([['memory', 'build', 'user']])

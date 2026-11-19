@@ -102,7 +102,7 @@ There are four ways in, and all go through the same checks:
 | Automatic: an entry a review wrote or confirmed | automatic | **Manual and automatic** mode; it is saved the first time the review applies it, once per version of the entry |
 | `/refine --workspace [focus]` in the TUI or the Web message box | you | The review's applied result; each entry it wrote is saved |
 | `/refine --user [focus]` in the TUI or the Web message box | you | The review's applied result; each memory or prompt entry it wrote is saved to user memory |
-| **Save … to workspace** or **Save … to user memory** on an applied review line in the Web conversation | you | Nothing else; no model is called |
+| **Save to workspace** or **Save to user memory** inside an expanded review in the Web conversation | you | Nothing else; no model is called |
 | The model, with `target: 'workspace'` or `target: 'user'` on `harness_propose` or `harness_refine` | the model | **Manual and automatic** mode; evidence from this session |
 
 Only **session** entries of the **memory**, **prompt** and **skill** kinds are saved. Task entries stay in their session, and subagent entries are not saved to the workspace. A forked or child session saves nothing. An entry must rest on what happened in this session; a model save without evidence from the session is refused.
@@ -159,7 +159,7 @@ A skill entry saved to the workspace becomes a workspace skill. It is installed 
 - **30-day review.** Every saved skill has a review date 30 days on. A later review that confirms the skill with new evidence renews it. A skill not confirmed again is switched off (not removed) when a session opens after that date, or when you turn task experience on; it then shows as **awaiting review**. Switching it back on, on the Skills page, renews it for another 30 days. Switching off by the review is not taking it back.
 - **Updates.** A new version of a skill entry (written by a review, or saved by you or the model) updates a saved skill **of the same name**, from any session, only while nobody changed the skill since it was saved. Up to five earlier versions are kept, and you can roll back to the previous one. A skill switched off by the review stays off through an update.
 - **A person's skill is never overwritten.** When the skill was written by a person, or a person changed a saved skill (even between the decision and the write), the change is kept as a **draft** for you and the save is refused as `conflict`. Drafts are listed under **Saved skills** in the task experience settings, as plain text with a whole-file diff; copy what you want by hand. A workspace keeps at most 20 drafts.
-- **Taking it back.** **Uninstall** or **Roll back to the previous version** under **Saved skills** in the task experience settings, removing the skill on the Skills page, or deleting its folder, records that you took it back. A deleted folder is noticed the next time a skill is saved in that workspace; until then **Saved skills** still shows the skill as on. After that, automatic and model saves of the same entry, of any skill entry with the same name, or of the same content under another name, are refused (`user-revoked`). Only your own save (`/refine --workspace`, or **Save … to workspace** on a review line) installs it again, and clears the record.
+- **Taking it back.** **Uninstall** or **Roll back to the previous version** under **Saved skills** in the task experience settings, removing the skill on the Skills page, or deleting its folder, records that you took it back. A deleted folder is noticed the next time a skill is saved in that workspace; until then **Saved skills** still shows the skill as on. After that, automatic and model saves of the same entry, of any skill entry with the same name, or of the same content under another name, are refused (`user-revoked`). Only your own save (`/refine --workspace`, or **Save to workspace** in an expanded review) installs it again, and clears the record.
 
 Installing, updating, switching off or removing a saved skill changes the skill catalogue, and with it the system prompt of the next request. This is expected and recorded as a refinement prefix change (`skill-catalog`).
 
@@ -187,7 +187,7 @@ Some lessons hold in every workspace: a preference you stated yourself, such as 
 - It passes the same checks as a save to the workspace (session level, evidence from this session, no secret-like text), and you have not taken the same content back, from user memory or from this workspace.
 - It fits in the file: the user memory file keeps its size limits (16 KiB, 200 lines). Lessons are not shown in the user memory part of the memory note (they reach the model as entries, see [How entries reach the model](#how-entries-reach-the-model)), so they never take the room of your own text. A file without room is not written (`user-memory-budget`) and nothing is trimmed, merged or removed.
 
-**Saving it yourself.** `/refine --user [focus]` (TUI or Web message box) and **Save … to user memory** on a review line in the Web conversation save a lesson to user memory as your own save. They skip the second confirmation and the suggestion from the review; the other checks above still apply: the text must name no workspace (if it does, it is saved to the workspace instead, and the line says so), it must fit the user memory budget, pass the same checks as a save to the workspace, and not be something you took back from user memory or from this workspace (a withdrawn lesson is not saved again, even by you). Only **memory** and **prompt** entries can go to user memory. The line in the conversation says it was saved to user memory at your request, and whether this workspace reads user memory.
+**Saving it yourself.** `/refine --user [focus]` (TUI or Web message box) and **Save to user memory** in an expanded review in the Web conversation save a lesson to user memory as your own save. They skip the second confirmation and the suggestion from the review; the other checks above still apply: the text must name no workspace (if it does, it is saved to the workspace instead, and the line says so), it must fit the user memory budget, pass the same checks as a save to the workspace, and not be something you took back from user memory or from this workspace (a withdrawn lesson is not saved again, even by you). Only **memory** and **prompt** entries can go to user memory. The line in the conversation says it was saved to user memory at your request, and whether this workspace reads user memory.
 
 **The model.** The model can ask for it too, with `target: 'user'` on `harness_refine` or `harness_propose`, only in **Manual and automatic** mode (as for `target: 'workspace'`). It is saved as the model's save, with the same checks and without waiting for a second confirmation. A **memory** or **prompt** lesson held for the session goes to user memory only if it cites at least one request of your own or one finished tool result; otherwise it is saved to the workspace at most. It should use this only for lasting facts or preferences that apply in every workspace of yours.
 
@@ -221,12 +221,12 @@ With the switch on, the model has three tools:
 
 ## Withdraw a review
 
-In the Web conversation, each review has a line that shows what started it, how it ended and the names of the entries it saved or removed (never their text). An applied review has a **Withdraw** action:
+In the Web conversation, each review has a summary that shows what started it and how it ended. Expand an applied review to see the names of the saved or removed entries and choose **Withdraw**.
 
 - The entries go back to how they were before that review. The model is told in its next request that they were withdrawn.
-- If an entry changed after that review, nothing is withdrawn and the line says which entries changed. Resolve it by hand.
+- If an entry changed after that review, nothing is withdrawn and the review details say which entries changed. Resolve it by hand.
 - Withdrawing works while task experience is off, and at any time, also during a turn.
-- The line then shows "Withdrawn since".
+- The summary then shows **Withdrawn**.
 
 The TUI shows the same lines as text but has no withdraw action. A client can call `_agnes/v1/session.refine.rollback` ([API and schemas](../reference/api.md)).
 
@@ -247,7 +247,7 @@ Nothing is saved to the workspace or to user memory while it is off, and request
 ## Compared with Prime Agent
 
 - Prime Agent keeps session entries and global entries for every session (`/refine --global`). AGH keeps entries in the session and saves them to the current workspace only: memory and prompt entries as paragraphs of the workspace memory, skill entries as workspace skills, each with a 30-day review date, on your request (`/refine --workspace`, per entry) or the model's, and automatically when a review applies a lesson in **Manual and automatic** mode.
-- Prime Agent's global library is written on your request (`/refine --global`) or by the model. AGH writes a lesson to user memory (read in every workspace that turns it on) on your request (`/refine --user`, or **Save … to user memory**), on the model's (`target: 'user'`), or automatically when a review applies a lesson from your own words that holds in every workspace; it has a 30-day review date.
+- Prime Agent's global library is written on your request (`/refine --global`) or by the model. AGH writes a lesson to user memory (read in every workspace that turns it on) on your request (`/refine --user`, or **Save to user memory**), on the model's (`target: 'user'`), or automatically when a review applies a lesson from your own words that holds in every workspace; it has a 30-day review date.
 - Prime Agent's self-written skills can be Python functions run in its own kernel. AGH's saved skills are instructions only; the agent writes and runs any script itself, under its usual permissions.
 - Prime Agent applies a review edit by edit, and so does AGH: an edit that breaks a rule is left out and the others are applied.
 - Prime Agent starts automatic reviews only after a compaction, with a 20-minute cooldown. AGH also starts them after repeated failures and on the model's request, within the limits above (the model's own requests have only a high cap).

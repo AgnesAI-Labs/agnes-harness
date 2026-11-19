@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 import { Context } from '@agnes/cordis'
-import type { UITimeline } from '@agnes/protocol'
+import type { SessionRefineSaveResult, UITimeline } from '@agnes/protocol'
+import { createClient, type JsonRpcMessage, memoryJournal } from '@agnes/sdk'
 import {
   type ClientContext,
   composerCommands,
@@ -21,6 +22,7 @@ import { expect, it, vi } from 'vitest'
 import * as goal from '../../package-manager/bundled-plugins/goal-ui/src/client.js'
 // @ts-expect-error Generated shipped ESM is exercised directly without a release build.
 import * as interaction from '../../package-manager/bundled-plugins/interaction-ui/src/client.js'
+import { composerSlashCommands } from '../src/app/composer-controller.js'
 import { expectLocalizedDom } from './helpers/localized-dom.js'
 
 it.each([
@@ -71,10 +73,20 @@ it.each([
     document.body.append(host)
     try {
       expect(workbenchPanels.get(panelId)).toBeDefined()
-      if (role === 'goal')
+      const commands = (sessionId?: string, plan = true) =>
+        composerSlashCommands({
+          plan,
+          sessionId,
+          sessions: [{ sessionId: 'history' }, { sessionId: 'fork', parent: 'history' }],
+        })
+      if (role === 'goal') {
         expect(
           composerCommands.get('goal')?.route({ text: '/goal pause', sessionId: 'history', busy: true }),
         ).toBe('steer')
+        expect(commands('history')).toEqual(['plan', 'goal', 'refine'])
+        expect(commands('fork')).toEqual(['plan', 'goal'])
+        expect(commands(undefined, false)).toEqual([])
+      }
       expect(conversationCards.get(cardId)).toBeDefined()
       if (role === 'goal') {
         // Historical node input, with no live slots, uses the public reader.
@@ -131,7 +143,7 @@ it.each([
         },
       })
       expect(workbenchPanels.get(panelId)).toBeUndefined()
-      if (role === 'goal') expect(composerCommands.get('goal')).toBeUndefined()
+      if (role === 'goal') expect(commands('history')).toEqual(['plan', 'refine'])
       else
         for (const id of ['question-dock', 'question-turn-actions', 'question-answer-node'])
           expect(conversationCards.get(id)).toBeUndefined()
@@ -141,6 +153,7 @@ it.each([
       stopReplacement = undefined
       expect(workbenchPanels.get(panelId)).toBeDefined()
       expect(conversationCards.get(cardId)).toBeDefined()
+      if (role === 'goal') expect(commands('history')).toEqual(['plan', 'goal', 'refine'])
       if (role === 'interaction') expect(slots.entriesOfSlot('conversation.view')).toHaveLength(1)
       stop()
       expect(workbenchPanels.get(panelId)).toBeUndefined()
@@ -280,3 +293,137 @@ it.each(['interaction-first', 'conversation-first'] as const)(
     }
   },
 )
+
+it('routes refinement actions from the official conversation to the session RPCs', async () => {
+  const { clientModule } = await import('@agnes/web-client')
+  const { startClientModules } = await import('../src/client-modules/boot.js')
+  const { apply } = await import('../../package-manager/bundled-plugins/conversation-ui/src/presentation.js')
+  const host = document.createElement('div')
+  document.body.append(host)
+  const sessionId = 'refinement-session'
+  const requested = vi.fn((method: string, params: unknown) => {
+    if (method === 'initialize') return { protocolVersion: 1, agentCapabilities: {} }
+    if (method === '_agnes/v1/session.refine.rollback') return { seq: 10 }
+    if (method === '_agnes/v1/session.refine.save') {
+      const user = (params as { target?: 'user' }).target === 'user'
+      return {
+        receipt: {
+          receiptId: user ? 'receipt-user' : 'receipt-workspace',
+          commandId: user ? 'command-user' : 'command-workspace',
+          source: {
+            sessionKey: sessionId,
+            kind: 'memory',
+            entryId: 'build',
+            contentHash: 'hash',
+            initiator: 'user',
+          },
+          initiator: 'user',
+          outcome: user ? 'saved' : 'refused',
+          ...(user ? { layer: 'user' } : { reason: 'memory-off' }),
+          steps: [],
+          at: 1_795_046_400_000,
+        },
+      } satisfies SessionRefineSaveResult
+    }
+    throw new Error(`Unexpected RPC: ${method}`)
+  })
+  let end!: () => void
+  const closed = new Promise<void>((resolve) => {
+    end = resolve
+  })
+  const client = createClient({
+    journal: memoryJournal('conversation-refinement-test'),
+    transport: {
+      kind: 'inproc',
+      endpoint: {
+        notifications: {
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                await closed
+                return { done: true as const, value: undefined }
+              },
+            }
+          },
+        },
+        close: async () => end(),
+        async handle(message: JsonRpcMessage) {
+          if (!('method' in message) || !('id' in message) || message.id === undefined) return undefined
+          return { jsonrpc: '2.0', id: message.id, result: requested(message.method, message.params) }
+        },
+      },
+    },
+  })
+  let runtime: Awaited<ReturnType<typeof startClientModules>> | undefined
+  const previousLanguage = document.documentElement.lang
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 503 }))
+  try {
+    runtime = await startClientModules({ agnes: client, conversationContainer: host })
+    runtime.locale.setLocale('zh-CN')
+    await runtime.ctx.plugin(clientModule({ apply }), {
+      packageId: '@agnes/conversation-ui',
+      clientId: 'conversation-ui',
+      revision: 'fixture',
+      presentationRoles: ['conversation', 'composer'],
+      slotCatalogVersion: 'dsh-client-slots/v1',
+      binding: { owner: 'refinement-conversation', lifetime: 'profile', availability: 'active' },
+    } as never)
+    runtime.session.setSession(sessionId)
+    runtime.transcript?.render([
+      {
+        kind: 'refinement-run',
+        id: 'review',
+        runId: 'run',
+        seq: 7,
+        appliedSeq: 7,
+        state: 'applied',
+        trigger: 'manual',
+        edits: [{ op: 'upsert', kind: 'memory', id: 'build' }],
+      },
+    ])
+    const button = (testId: string) =>
+      host.querySelector<HTMLButtonElement>(`button[data-testid="${testId}"]`)
+    await vi.waitFor(() =>
+      expect(button('refinement-run-notice')?.getAttribute('aria-expanded')).toBe('false'),
+    )
+    button('refinement-run-notice')?.click()
+    await vi.waitFor(() =>
+      expect(button('refinement-run-notice')?.getAttribute('aria-expanded')).toBe('true'),
+    )
+
+    button('refinement-save-entry')?.click()
+    const saveFeedback = () => host.querySelector('[data-testid="refinement-save-result"]')?.textContent
+    await vi.waitFor(() => {
+      expect(saveFeedback()).toContain('未保存到工作区。')
+      expect(saveFeedback()).toContain('原因：工作区记忆已关闭。')
+    })
+    expect(requested).toHaveBeenCalledWith('_agnes/v1/session.refine.save', {
+      sessionId,
+      kind: 'memory',
+      id: 'build',
+    })
+    button('refinement-save-entry-user')?.click()
+    await vi.waitFor(() => expect(saveFeedback()).toContain('已按你的要求保存到用户记忆'))
+    expect(requested).toHaveBeenCalledWith('_agnes/v1/session.refine.save', {
+      sessionId,
+      kind: 'memory',
+      id: 'build',
+      target: 'user',
+    })
+
+    button('refinement-withdraw')?.click()
+    await vi.waitFor(() =>
+      expect(host.querySelector('[data-testid="refinement-run-notice"]')?.textContent).toBe(
+        '经验复盘（你发起） · 已撤回',
+      ),
+    )
+    expect(requested).toHaveBeenCalledWith('_agnes/v1/session.refine.rollback', { sessionId, appliedSeq: 7 })
+    expect(button('refinement-withdraw')).toBeNull()
+  } finally {
+    await runtime?.dispose()
+    await client.close()
+    fetcher.mockRestore()
+    document.documentElement.lang = previousLanguage
+    host.remove()
+  }
+})
