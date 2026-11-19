@@ -11,6 +11,7 @@ import {
   serviceInvoker,
 } from '../../src/ext-host/service-invocation.js'
 import { ServiceRegistry } from '../../src/ext-host/services.js'
+import { SupersededProfileResourceError } from '../../src/profile/activation.js'
 
 const actor: Actor = { id: 'subject', org: 'org', role: 'user', deptPath: [], attrs: {} }
 const log = { debug() {}, info() {}, warn() {}, error() {} }
@@ -558,6 +559,25 @@ describe('S3 Service registration and invocation', () => {
       .catch((error: unknown) => error)
     expect(afterError).toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
     expect(isServicePreDispatchFailure(afterError)).toBe(false)
+  })
+
+  it.each(['query', 'effect'] as const)('classifies a superseded resource during a %s', async (kind) => {
+    const h = setup({
+      kind,
+      async handler() {
+        throw new SupersededProfileResourceError('private resource details')
+      },
+    })
+    const result = await h
+      .call(
+        { value: 1 },
+        { commandId: 'stale' },
+        undefined,
+        kind === 'effect' ? { commandId: 'stale' } : undefined,
+      )
+      .catch((error: unknown) => error)
+    expect(result).toMatchObject({ data: { code: kind === 'query' ? 'GENERATION_STALE' : 'INTERNAL_ERROR' } })
+    expect(isServicePreDispatchFailure(result)).toBe(false)
   })
 
   it.each(['schema', 'size', 'cycle', 'throw', 'hostile-error'])(

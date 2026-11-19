@@ -51,12 +51,7 @@ import type {
   UITurn,
   WorkspaceEntry,
 } from '@agnes/protocol'
-import {
-  JsonRpcError,
-  type PermissionOutcome,
-  type PermissionRequest,
-  type Session,
-} from '@agnes/sdk/browser'
+import type { PermissionOutcome, PermissionRequest, Session } from '@agnes/sdk/browser'
 import { type PermissionMode, permissionLabel, yoloEnabled } from '@agnes/web-admin/permission-picker'
 import { loadAuxiliaryModelDefaults, loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
 import { settingsCatalog } from '@agnes/web-admin/settings/locales'
@@ -77,6 +72,7 @@ import { type ClaimResolver, startClientModules } from './client-modules/boot.js
 import { startPluginHotReload } from './client-modules/hot-reload.js'
 import { bindJobsClient } from './client-modules/jobs.js'
 import type { RosterSource } from './client-modules/reconcile.js'
+import { clientSessionServices } from './client-modules/session-services.js'
 import { readWebComposerMemory, rememberWebComposer, selectionFromMemory } from './composer-memory.js'
 import { composerReferences, composerSkills } from './composer-references.js'
 import { createDiagnosticsDialog } from './diagnostics-dialog.js'
@@ -786,53 +782,7 @@ const clientModules = await startClientModules({
     if (!response.ok) throw new Error(t('app.plugin.serviceUnavailable'))
     return response.json()
   },
-  clientServiceCaller: async (module, sessionId, service, input) => {
-    const response = await fetch('/api/client-modules/service', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({ rowId: module.rowId ?? module.packageId, sessionId, service, input }),
-    })
-    if (!response.ok) throw new Error(t('app.plugin.serviceUnavailable'))
-    const body: unknown = await response.json().catch(() => undefined)
-    if (!body || typeof body !== 'object' || !('output' in body))
-      throw new Error(t('app.plugin.serviceInvalid'))
-    return (body as { output: unknown }).output
-  },
-  clientEffectCaller: async (module, sessionId, service, commandId, input) => {
-    const response = await fetch('/api/client-modules/effect', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        rowId: module.rowId ?? module.packageId,
-        sessionId,
-        service,
-        commandId,
-        input,
-      }),
-    })
-    const body: unknown = await response.json().catch(() => undefined)
-    if (!response.ok) {
-      const failure = (body as { error?: { code?: unknown; data?: { code?: unknown } } } | null)?.error
-      if (typeof failure?.code === 'number' && typeof failure.data?.code === 'string')
-        throw new JsonRpcError({
-          code: failure.code,
-          message: t('app.plugin.effectUnavailable'),
-          data: { code: failure.data.code },
-        })
-      throw new Error(t('app.plugin.effectUnavailable'))
-    }
-    if (!body || typeof body !== 'object' || !('output' in body))
-      throw new Error(t('app.plugin.effectInvalid'))
-    return (body as { output: unknown }).output
-  },
+  ...clientSessionServices((key) => t(key)),
   authorizeCommand: ({ owner, command }) =>
     window.confirm(
       t('app.plugin.authorize', {

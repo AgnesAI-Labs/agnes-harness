@@ -51,6 +51,7 @@ export class BrowserRuntime {
       capabilities: ['ai-snapshot', 'hover', 'drag', 'select', 'dialog', 'upload', 'pointer'],
       epoch: this.epoch,
       error: this.error ?? null,
+      errorCode: this.errorCode ?? null,
       cleanupRequired: !!this.cleanupRequired,
     }
   }
@@ -80,6 +81,8 @@ export class BrowserRuntime {
     if (!this.starting) {
       const epoch = this.epoch
       this.state = 'preparing'
+      this.error = undefined
+      this.errorCode = undefined
       this.notify()
       this.starting = this.launch()
         .then(async (browser) => {
@@ -110,11 +113,20 @@ export class BrowserRuntime {
           this.notify()
           return browser
         })
-        .catch((error) => {
+        .catch((cause) => {
+          // This fails before a page can be opened. Playwright's launch error includes
+          // local paths and command-line arguments and must stay out of public results.
+          const error = isBrowserRefusal(cause)
+            ? cause
+            : failure(
+                'LAUNCH_FAILED',
+                'The built-in browser could not start. Turn it off and back on in Plugins, then try again.',
+              )
           this.starting = undefined
           if (this.enabled && epoch === this.epoch) {
             this.state = 'failed'
-            this.error = String(error.message).slice(0, 500)
+            this.error = error.message
+            this.errorCode = error.code
             this.notify()
           }
           throw error
@@ -501,8 +513,15 @@ export class BrowserRuntime {
     if (input.action === 'status') return { ...this.status(), pages: this.list(identity) }
     if (input.action === 'open') {
       const epoch = this.epoch
+      const address = input.url ?? input.path
+      if (!address)
+        throw failure('INVALID_URL', 'Enter a website address or an authorized workspace file path.')
       // Validate schemes before allocating a tab. Files remain fenced by session authority.
-      if (!localFile(input.url)) browserUrl(input.url, this.protectedOrigins)
+      const file = localFile(address)
+      if (!file) {
+        if (input.url === undefined) throw failure('FILE_DENIED', 'The path must identify a workspace file.')
+        browserUrl(address, this.protectedOrigins)
+      }
       const session = await this.session(identity)
       if (fileAccess?.files) session.fileAccess = fileAccess
       this.guard(epoch)
@@ -531,7 +550,7 @@ export class BrowserRuntime {
       }
       let url
       try {
-        url = await this.fileUrl(identity, item, input.url, input.previewRoot)
+        url = await this.fileUrl(identity, item, address, input.previewRoot)
       } catch (error) {
         if (!input.pageId) await item.page.close().catch(() => {})
         if (!session.pages.size && !session.opening) await this.closeSession(identity.key)
@@ -547,7 +566,7 @@ export class BrowserRuntime {
               item.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20_000 }),
             )
           } catch (error) {
-            if (item.downloaded && localFile(input.url))
+            if (item.downloaded && file)
               throw failure('UNSUPPORTED_FILE', 'This file type cannot be rendered by the pinned browser.')
             throw error
           }
@@ -923,6 +942,7 @@ export class BrowserRuntime {
       this.cleanupRequired = false
       this.state = 'stopped'
       this.error = undefined
+      this.errorCode = undefined
     } catch {
       this.cleanupRequired = true
       this.state = 'failed'

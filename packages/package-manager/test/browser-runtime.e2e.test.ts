@@ -393,7 +393,12 @@ it.skipIf(process.env.AGH_BROWSER_TEST_CACHED !== '1')(
           `trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`,
       )
       await writeFile(join(root, 'document.pdf'), parts.join(''))
-      const opened = await runtime.act(session, { action: 'open', url: 'index.html' }, undefined, access)
+      const opened = await runtime.act(
+        session,
+        { action: 'open', path: join(root, 'index.html') },
+        undefined,
+        access,
+      )
       expect(opened.url).toContain('file:///')
       const page = runtime.get(session, opened.pageId).page
       const failedResources: string[] = []

@@ -20,8 +20,11 @@ export type BrowserState = {
   enabled: boolean
   state: string
   error?: string | null | undefined
+  errorCode?: string | null | undefined
+  cleanupRequired?: boolean | undefined
   pages: BrowserPage[]
   pagesUnavailable?: boolean
+  incompatible?: boolean
   sessionId?: string | undefined
 }
 export class BrowserClient {
@@ -62,7 +65,12 @@ export class BrowserClient {
     // Queries are recovery only. Healthy streams carry status and session-owned pages.
     this.#timer = setInterval(() => {
       const selected = this.ctx.session.readiness.getSnapshot()
-      if (!this.#profileLive || (selected.status === 'ready' && !this.#pagesLive)) void this.refresh()
+      if (
+        this.#snapshot.incompatible ||
+        (this.#profileLive && (selected.status !== 'ready' || this.#pagesLive))
+      )
+        return
+      void this.refresh()
     }, 3000)
     return () => this.#stopWatching()
   }
@@ -81,6 +89,8 @@ export class BrowserClient {
       enabled: value.enabled,
       state: value.state,
       error: typeof value.error === 'string' ? value.error : null,
+      errorCode: typeof value.errorCode === 'string' ? value.errorCode : null,
+      cleanupRequired: value.cleanupRequired === true,
     }
     this.#profileLive = true
     this.update({ ...this.#snapshot, ...this.#status })
@@ -171,7 +181,6 @@ export class BrowserClient {
         if (!Array.isArray(value.pages)) return
         this.#pagesLive = true
         this.#pagesVersion++
-        if (this.#profileLive) this.update({ ...this.#snapshot, error: this.#status?.error })
         this.#updatePages(value.pages as BrowserPage[], selected.sessionId)
       },
       () => {
@@ -181,10 +190,16 @@ export class BrowserClient {
     )
   }
   #updatePages(pages: BrowserPage[], sessionId: string | undefined) {
-    this.update({ ...this.#snapshot, pages, sessionId, pagesUnavailable: false })
+    this.update({ ...this.#snapshot, pages, sessionId, pagesUnavailable: false, incompatible: false })
+  }
+  #markIncompatible(sessionId: string) {
+    this.#pageWatch?.abort()
+    this.#pagesLive = false
+    this.#pagesVersion++
+    this.update({ ...this.#snapshot, pages: [], sessionId, incompatible: true })
   }
   async refresh() {
-    if (this.#stopped) return
+    if (this.#stopped || this.#snapshot.incompatible) return
     if (this.#refreshing) {
       if (this.#refreshEpoch !== this.ctx.session.readiness.getSnapshot().epoch) this.#refreshAgain = true
       return
@@ -207,31 +222,36 @@ export class BrowserClient {
         try {
           const value = (await this.ctx.agnes.services.call('browser.pages', {})) as { pages: BrowserPage[] }
           pages = value.pages
-        } catch {
+        } catch (error) {
+          if (this.ctx.session.readiness.getSnapshot().epoch !== selected.epoch) return
+          if (selected.sessionId && serviceFailureCode(error) === 'GENERATION_STALE') {
+            this.#markIncompatible(selected.sessionId)
+            return
+          }
           pages = this.#snapshot.sessionId === selected.sessionId ? this.#snapshot.pages : []
-          // The bridge does not preserve a typed refusal here. Do not guess a plugin
-          // version mismatch or present a failed read as a successfully empty page list.
           pagesUnavailable = true
         }
       }
-      if (this.ctx.session.readiness.getSnapshot().epoch !== selected.epoch) return
+      if (this.ctx.session.readiness.getSnapshot().epoch !== selected.epoch || this.#snapshot.incompatible)
+        return
       if (this.#profileLive && this.#status) state = this.#status
       if (this.#pagesLive && pagesVersion !== this.#pagesVersion) {
         this.update({ ...this.#snapshot, ...state })
         return
       }
       this.update({ ...state, pages, sessionId: selected.sessionId, pagesUnavailable })
-    } catch (error) {
-      // A failed read does not prove that the backend feature was disabled.
-      if (this.ctx.session.readiness.getSnapshot().epoch !== selected.epoch) return
+    } catch {
+      // A transient status read leaves the last verified state and pages in place.
+      if (this.ctx.session.readiness.getSnapshot().epoch !== selected.epoch || this.#snapshot.incompatible)
+        return
       if (this.#profileLive && this.#pagesLive) return
-      this.update({
-        ...this.#snapshot,
-        sessionId: selected.sessionId,
-        pages: this.#snapshot.sessionId === selected.sessionId ? this.#snapshot.pages : [],
-        state: 'failed',
-        error: String(error),
-      })
+      if (this.#snapshot.sessionId !== selected.sessionId)
+        this.update({
+          enabled: this.#snapshot.enabled,
+          state: 'preparing',
+          pages: [],
+          sessionId: selected.sessionId,
+        })
     } finally {
       this.#refreshing = false
       if (this.#refreshAgain) {
@@ -240,24 +260,25 @@ export class BrowserClient {
       }
     }
   }
-  pendingEffect() {
-    const id = this.ctx.session.sessionId
-    return id && !this.#inFlight.has(id) ? this.#pending.get(id) : undefined
-  }
   async effect(service: string, input: Record<string, unknown>) {
     const selected = this.ctx.session.readiness.getSnapshot()
     if (selected.status !== 'ready' || !selected.sessionId) throw new Error('A ready session is required.')
-    const pending = this.#pending.get(selected.sessionId)
-    if (pending && (pending.service !== service || JSON.stringify(pending.input) !== JSON.stringify(input)))
-      throw new Error('A previous browser action has an uncertain outcome. Check it before another action.')
-    const operation = pending ?? { service, input: structuredClone(input), operationId: crypto.randomUUID() }
-    this.#pending.set(selected.sessionId, operation)
+    if (this.#snapshot.incompatible)
+      throw Object.assign(new Error('The browser plugin changed.'), { code: 'GENERATION_STALE' })
     if (this.#inFlight.has(selected.sessionId)) throw new Error('Browser action is still running.')
+    const previous = this.#pending.get(selected.sessionId)
+    const pending =
+      previous?.service === service && JSON.stringify(previous.input) === JSON.stringify(input)
+        ? previous
+        : undefined
+    const operation = pending ?? { service, input: structuredClone(input), operationId: crypto.randomUUID() }
     this.#inFlight.add(selected.sessionId)
+    let received = false
     try {
       const result = (await this.ctx.agnes.services.effect(service, input, {
         operationId: operation.operationId,
       })) as Record<string, unknown>
+      received = true
       if (this.#pending.get(selected.sessionId) === operation) this.#pending.delete(selected.sessionId)
       if (this.ctx.session.readiness.getSnapshot().epoch !== selected.epoch)
         throw new Error('The result belongs to the previous conversation; it was not applied to this view.')
@@ -288,20 +309,27 @@ export class BrowserClient {
       if (!this.#pagesLive && service !== 'browser.control') void this.refresh()
       return { result, operationId: operation.operationId }
     } catch (error) {
-      const failure = error as { kind?: string; data?: { code?: string } }
-      if (
-        !pending &&
-        failure?.kind === 'json-rpc' &&
-        ['CAPABILITY_DENIED', 'INVALID_PARAMS', 'AUTH_INVALID', 'OVERLOADED', 'SESSION_NOT_FOUND'].includes(
-          failure.data?.code ?? '',
-        ) &&
-        this.#pending.get(selected.sessionId) === operation
-      )
-        this.#pending.delete(selected.sessionId)
+      if (received) throw error
+      const code = serviceFailureCode(error)
+      const stillSelected = this.ctx.session.readiness.getSnapshot().epoch === selected.epoch
+      if (code === 'GENERATION_STALE') {
+        if (stillSelected) this.#markIncompatible(selected.sessionId)
+      } else if (code === 'OUTCOME_UNKNOWN') {
+        // The journal cannot confirm the result. Refresh the page list without resending the action.
+        if (pending) this.#pending.delete(selected.sessionId)
+        if (stillSelected) void this.refresh()
+      } else if (
+        !['CAPABILITY_DENIED', 'INVALID_PARAMS', 'AUTH_INVALID', 'OVERLOADED', 'SESSION_NOT_FOUND'].includes(
+          code ?? '',
+        )
+      ) {
+        // A lost response retains its original ID only for an explicit resubmission of the same action.
+        this.#pending.set(selected.sessionId, operation)
+        if (stillSelected) void this.refresh()
+      }
       throw error
     } finally {
       this.#inFlight.delete(selected.sessionId)
-      this.update({ ...this.#snapshot })
     }
   }
   clearSession() {
@@ -322,4 +350,9 @@ export class BrowserClient {
     this.#abort.abort()
     this.#listeners.clear()
   }
+}
+
+function serviceFailureCode(error: unknown): string | undefined {
+  const failure = error as { kind?: string; data?: { code?: string } } | null
+  return failure?.kind === 'json-rpc' ? failure.data?.code : undefined
 }
