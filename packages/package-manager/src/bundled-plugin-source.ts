@@ -86,7 +86,7 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly BundledPackage[] = Object.freez
   {
     name: 'judgment',
     id: '@agnes/judgment',
-    version: '0.1.3',
+    version: '0.1.4',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/judgment',
     sourcePath: 'package-manager/bundled-plugins/judgment',
