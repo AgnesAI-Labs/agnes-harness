@@ -35,7 +35,7 @@ export type SideModelEditorProps = {
   /** The save outcome line. */
   status: ReactNode
   onPatch(next: Partial<EditorDraft>): void
-  /** A new entry switches adapter or preset: label, endpoint and models are replaced, the credential kept. */
+  /** A new entry switches adapter or preset. The parent applies any credential re-selection rules. */
   onPreset(preset: AdapterPreset): void
   onModels(update: (models: ModelDraft[]) => ModelDraft[]): void
   /** Creates a credential and selects it; resolves whether it was created. */

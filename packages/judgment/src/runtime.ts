@@ -1,6 +1,6 @@
 import type { HookContext, PluginContextFacets } from '@agnes/extension-api'
 import { createAnswerCache } from './cache.js'
-import { type JudgeTarget, resolveJudgeChain } from './config.js'
+import { type JudgeTarget, judgmentCandidates, resolveJudgeChain } from './config.js'
 import { within } from './deadline.js'
 import { createJudge, createRouteCooldown, type Judge } from './judge.js'
 import { object } from './questions.js'
@@ -68,13 +68,7 @@ export function createJudgmentRuntime(plugin: PluginContextFacets, config: unkno
       const next = resolveJudgeChain(config, models)
       const selected = object(config) && object(config.judge) ? config.judge : {}
       const explicit = typeof selected.route === 'string' || typeof selected.model === 'string'
-      const eligible = models.filter(
-        (model) =>
-          (typeof selected.route === 'string'
-            ? model.route === selected.route
-            : model.api === 'typesafe-systemone') &&
-          (typeof selected.model !== 'string' || model.model === selected.model),
-      )
+      const eligible = judgmentCandidates(selected, models)
       reason = next
         ? 'none'
         : eligible.length

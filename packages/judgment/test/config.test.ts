@@ -4,6 +4,26 @@ import { resolveJudgeChain, resolveStopConfig, resolveToolConfig } from '../src/
 
 const native = { route: 'jev', model: 'j', api: 'typesafe-systemone' }
 const chat = { route: 'chat', model: 'c', api: 'openai-completions' }
+const sys1 = { route: 'sys1', model: 'agnes-sys1-1.0', api: 'agnes-sys1' }
+
+it('prioritizes configured Sys1 only for automatic selection', () => {
+  const routes = [native, chat, sys1]
+  expect(resolveJudgeChain({}, routes)).toEqual([{ route: 'sys1', model: sys1.model, native: true }])
+  expect(resolveJudgeChain({ judge: { model: 'j' } }, routes)).toEqual([
+    { route: 'jev', model: 'j', native: true },
+  ])
+  expect(resolveJudgeChain({ judge: { route: 'jev' } }, routes)).toEqual([
+    { route: 'jev', model: 'j', native: true },
+  ])
+})
+
+it('leaves multiple Sys1 routes unresolved and accepts configured native fallbacks', () => {
+  expect(resolveJudgeChain({}, [native, sys1, { ...sys1, route: 'sys1-intl' }])).toBeNull()
+  expect(resolveJudgeChain({ judge: { fallback: { route: 'jev', model: 'j' } } }, [native, sys1])).toEqual([
+    { route: 'sys1', model: sys1.model, native: true },
+    { route: 'jev', model: 'j', native: true },
+  ])
+})
 it('auto-selects the only Jev route', () =>
   expect(resolveJudgeChain({}, [native, chat])).toEqual([{ route: 'jev', model: 'j', native: true }]))
 it('does not choose an arbitrary model on the sole native route', () =>
@@ -13,6 +33,11 @@ it('uses an explicit model on the sole native route without a route setting', ()
     { route: 'jev', model: 'other', native: true },
   ]))
 it('returns null when nothing is configured', () => expect(resolveJudgeChain({}, [])).toBeNull())
+it('refuses to select a voice route for judgment even when explicitly named', () => {
+  expect(
+    resolveJudgeChain({ judge: { route: 'voice' } }, [{ route: 'voice', model: 'asr', api: 'openai-audio' }]),
+  ).toBeNull()
+})
 it('does not fall back to a chat model unless chosen', () => {
   expect(resolveJudgeChain({}, [chat])).toBeNull()
   expect(resolveJudgeChain({ judge: { route: 'chat', model: 'c' } }, [chat])).toEqual([
