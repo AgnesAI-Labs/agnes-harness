@@ -88,7 +88,7 @@ describe('API-key provider registry', () => {
       API_KEY_PROVIDER_REGISTRY.filter((entry) => entry.capabilities?.payloadOnly === true).map(
         (entry) => entry.id,
       ),
-    ).toEqual(['typesafe-systemone', 'openai-audio'])
+    ).toEqual(['typesafe-systemone', 'agnes-sys1', 'openai-audio'])
   })
 
   it('offers an OpenAI-compatible endpoint whose models the account declares, outside the pi catalogue', async () => {
@@ -539,4 +539,12 @@ it('retains pi image input limits in the public model catalogue', () => {
     { ...source, inputLimits: { maxRequestBytes: undefined, images: { maxPerRequest: 3 } } },
   )
   expect(sparse.inputLimits).toStrictEqual({ images: { maxPerRequest: 3 } })
+})
+
+it('registers the domestic default URL and credential namespace for Agnes Sys1', () => {
+  expect(getApiKeyProvider('agnes-sys1')).toMatchObject({
+    api: 'agnes-sys1',
+    baseUrl: 'https://litellm-sa.agnes-ai.cn/sys1/v1',
+    credentialRef: 'secret://agnes-sys1/default',
+  })
 })
