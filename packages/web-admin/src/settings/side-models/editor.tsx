@@ -266,7 +266,9 @@ export function SideModelEditor(props: SideModelEditorProps) {
         <SettingsSection
           title={t('side.models')}
           description={
-            draft.isNew ? `${t('side.modelsNote')}${t('side.modelsPrefill')}` : t('side.modelsNote')
+            draft.isNew && draft.providerId === 'typesafe-systemone'
+              ? `${t('side.modelsNote')}${t('side.modelsPrefill')}`
+              : t('side.modelsNote')
           }
         >
           <div className="side-editor-fields">
