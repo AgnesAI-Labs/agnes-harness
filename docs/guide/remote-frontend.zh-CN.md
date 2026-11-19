@@ -115,11 +115,11 @@ export LLMSG_TRACK_URL='https://api-llmsg-dev.agnes-dev.com/llmsg/api/track/tool
 
 该变量是完整上报地址，不追加 `/v1/`；未配置时使用模型网关同源的 `/llmsg/api/track/tool_calls`。上报以 HTTP POST 和调用模型时同一个 Bearer Key 发送，仅含 `request_id` 及工具名到次数的 `tool_calls`。
 
-仅统计云端主模型路由产生的工具：复用 `request/sent`、`tool/call`、`effect/intent`、`tool/result` 和 `cost/ledger`；读取响应头 `X-Oneapi-Request-Id`，不使用响应体 ID 或自行生成 ID。获准派发的成功、失败调用各计一次；明确未发送、审批拒绝及未执行的调用不计；同一调用内部重试去重。异步工具返回作业句柄即计一次，后续轮询不重复计费。父子会话独立计数，不累计复制子会话记录。
+仅统计云端主模型路由产生的工具：复用 `request/sent`、`tool/call`、`effect/intent`、`tool/result` 和 `cost/ledger`；读取响应头 `X-Oneapi-Request-Id`，不使用响应体 ID 或自行生成 ID。仅成功完成的调用计一次；明确未发送、审批拒绝、未执行、HTTP 非 2xx 响应及超时失败均不计；成功空结果仍计一次；同一调用内部重试去重。异步工具受理后保持待定，仅在收到同 lane、system 来源且精确关联原调用的最终成功结果后计一次；最终失败、取消及结果未知不计，重复结果不重复计数。父子会话独立计数，不累计复制子会话记录。
 
 派发阶段写入独立的 `x/core/tool-dispatch` 附注，标记 `ignorable: true`，不再写入新的 `tool/result`。附注与结果在同一事务中提交，并先于结果，数据为 `{version: 1, toolUseId, phase}`；`phase` 仍为 `not_sent`、`may_have_sent` 或 `responded`，通过 `sourceEventSeqs` 关联原工具调用。Core 内部恢复状态保持原样。旧客户端可跳过附注，工具结果继续使用原格式；协议仍接受历史 `tool/result.dispatchPhase`，不能直接删除历史读取能力。
 
-配套 0.9.0 计费插件只接受同一调用、同一 lane 的 Core 可信附注，不再采用旧结果中的阶段；投影缓存版本为 4，按新规则回放历史，既有入队收据和上报幂等标识保持不变。Core 与插件须配套升级，不能用旧 0.7.0 插件读取新 Core，也不能用没有新证据的旧账本验证新版计数。此调整不改变 LLMSG 上报参数、价格、数据库结构或 Key 重置策略。
+配套 `0.9.2-successful-tools.20261119.1` 计费插件只接受同一调用、同一 lane 的 Core 可信附注，不再采用旧结果中的阶段；投影缓存版本为 6，按新规则回放历史，既有入队请求体、收据和上报幂等标识保持不变，不追溯改写历史请求。`web_fetch` 非 2xx 响应保留正文并标记 `isError: true`；普通调用仅在可信 `responded` 且 `isError` 不为 `true` 时计数。Core 与插件须配套升级，不能用旧 0.7.0 插件读取新 Core，也不能用没有新证据的旧账本验证新版计数。此调整不改变 LLMSG 上报参数、价格、数据库结构或 Key 重置策略。
 
 恢复或关闭中断会话时，仅在调用策略及 effect 绑定校验通过后复用已落盘的派发阶段，附注仍与合成结果同事务提交。没有可信阶段的旧记录、尚未校验的嵌套中断和 Host `dispatch_pending` 不根据错误码推算为已派发；本次不保证补齐全部历史费用。
 
