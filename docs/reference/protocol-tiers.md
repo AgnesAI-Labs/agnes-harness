@@ -306,6 +306,7 @@ Package administration, resource control, configuration, scheduling, diagnostics
 - `_agnes/v1/voice.settings.get`
 - `_agnes/v1/voice.settings.save`
 - `_agnes/v1/refinement.get`
+- `_agnes/v1/refinement.models`
 - `_agnes/v1/refinement.save`
 - `_agnes/v1/refinement.skills`
 

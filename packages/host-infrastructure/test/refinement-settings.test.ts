@@ -2,6 +2,10 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import {
+  DEFAULT_REFINEMENT_BASE_URL as baseUrl,
+  REFINEMENT_ENDPOINTS,
+} from '@agnes/distribution/refinement-model'
 import { DEFAULT_REFINEMENT_SETTINGS } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createCredentialStore } from '../src/adapters/credential-store.js'
@@ -13,6 +17,7 @@ import {
 
 const dirs: string[] = []
 const model = 'company/review'
+const retiredUrl = 'https://retired-review.example/v1'
 const credentialRef = 'secret://generic/00000000-0000-4000-8000-000000000001'
 const dataDir = async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-refinement-'))
@@ -39,7 +44,7 @@ describe('RefinementSettingsStore', () => {
     const dir = await dataDir()
     const off = { enabled: false, mode: 'manual' }
     expect(DEFAULT_REFINEMENT_SETTINGS).toEqual(off)
-    expect(new RefinementSettingsStore(dir, 'p').read().settings).toEqual(off)
+    expect(new RefinementSettingsStore(dir, 'p').read().settings).toEqual({ ...off, baseUrl })
     const bad = [
       '{not json',
       '',
@@ -52,7 +57,7 @@ describe('RefinementSettingsStore', () => {
     ]
     for (const text of bad) {
       plant(dir, 'p', text)
-      expect(new RefinementSettingsStore(dir, 'p').read().settings).toEqual(off)
+      expect(new RefinementSettingsStore(dir, 'p').read().settings).toEqual({ ...off, baseUrl })
     }
     plant(
       dir,
@@ -62,7 +67,11 @@ describe('RefinementSettingsStore', () => {
         nonce: '0e6f4c1a-6a46-4fb0-9a8b-0f5e9b1c2d3e',
       }),
     )
-    expect(new RefinementSettingsStore(dir, 'p').read().settings).toEqual({ enabled: false, mode: 'auto' })
+    expect(new RefinementSettingsStore(dir, 'p').read().settings).toEqual({
+      enabled: false,
+      mode: 'auto',
+      baseUrl,
+    })
     for (const partial of [{}, { credentialRef }, { model }]) {
       const settings = { ...partial, enabled: true, mode: 'auto' }
       for (const body of [settings, { settings, nonce: '0e6f4c1a-6a46-4fb0-9a8b-0f5e9b1c2d3e' }]) {
@@ -70,6 +79,7 @@ describe('RefinementSettingsStore', () => {
         expect(new RefinementSettingsStore(dir, 'p').read().settings).toEqual({
           ...settings,
           enabled: false,
+          baseUrl,
         })
       }
     }
@@ -85,6 +95,8 @@ describe('RefinementSettingsStore', () => {
       { enabled: true, mode: 'auto', credentialRef },
       { enabled: true, mode: 'auto', model },
       { enabled: true, mode: 'auto', credentialRef, model: 'two ids' },
+      { enabled: true, mode: 'auto', credentialRef, model, baseUrl: 'https://third-party.example/v1' },
+      { enabled: false, mode: 'auto', baseUrl: `${baseUrl}/` },
     ])
       expect(() => store.save(invalid as never, first.revision)).toThrowError(
         expect.objectContaining({ code: 'CONFIG_INVALID_INPUT' }),
@@ -92,13 +104,14 @@ describe('RefinementSettingsStore', () => {
     const saved = store.save({ credentialRef, model, enabled: true, mode: 'auto' }, first.revision)
     expect(saved.revision).not.toBe(first.revision)
     expect(store.read()).toEqual({
-      settings: { credentialRef, model, enabled: true, mode: 'auto' },
+      settings: { credentialRef, model, enabled: true, mode: 'auto', baseUrl },
       revision: saved.revision,
+      endpoints: REFINEMENT_ENDPOINTS,
     })
     expect(() => store.save({ enabled: false, mode: 'manual' }, first.revision)).toThrowError(
       expect.objectContaining({ code: 'CONFIG_REVISION_CONFLICT' }),
     )
-    expect(store.read().settings).toEqual({ credentialRef, model, enabled: true, mode: 'auto' })
+    expect(store.read().settings).toEqual({ credentialRef, model, enabled: true, mode: 'auto', baseUrl })
     expect(() => store.save({ enabled: 1, mode: 'auto' } as never, saved.revision)).toThrowError(
       expect.objectContaining({ code: 'CONFIG_INVALID_INPUT' }),
     )
@@ -114,7 +127,7 @@ describe('RefinementSettingsStore', () => {
       `${createHash('sha256').update('a').digest('hex')}.json`,
     ])
     expect(JSON.parse(readFileSync(fileOf(dir, 'a'), 'utf8'))).toEqual({
-      settings: { credentialRef, model, enabled: true, mode: 'manual' },
+      settings: { credentialRef, model, enabled: true, mode: 'manual', baseUrl },
       nonce: expect.stringMatching(/^[0-9a-f-]{36}$/),
     })
   })
@@ -135,7 +148,7 @@ describe('RefinementSettingsStore', () => {
 
   it('a saved file with a bad nonce or extra keys reads as the default, and a file from before the nonce still reads', async () => {
     const dir = await dataDir()
-    const off = { enabled: false, mode: 'manual' }
+    const off = { enabled: false, mode: 'manual', baseUrl }
     const settings = { credentialRef, model, enabled: true, mode: 'auto' }
     for (const body of [
       { settings, nonce: 'short' },
@@ -147,7 +160,29 @@ describe('RefinementSettingsStore', () => {
       expect(new RefinementSettingsStore(dir, 'p').read().settings, JSON.stringify(body)).toEqual(off)
     }
     plant(dir, 'p', JSON.stringify(settings))
-    expect(new RefinementSettingsStore(dir, 'p').read().settings).toEqual(settings)
+    expect(new RefinementSettingsStore(dir, 'p').read().settings).toEqual({ ...settings, baseUrl })
+  })
+
+  it('falls back to the default without enabling a profile whose gateway was removed', async () => {
+    const dir = await dataDir()
+    const previous = new RefinementSettingsStore(dir, 'p', dir, [baseUrl, retiredUrl])
+    const selected = { credentialRef, model, enabled: true, mode: 'auto', baseUrl: retiredUrl } as const
+    const { revision } = previous.save(selected, previous.read().revision, {
+      id: model,
+      name: 'Review',
+      contextWindow: 100_000,
+      maxTokens: 2048,
+    })
+    const current = new RefinementSettingsStore(dir, 'p', dir, [baseUrl])
+    expect(current.current()).toEqual({
+      settings: { ...selected, enabled: false, baseUrl },
+      revision: expect.any(String),
+      endpoints: [baseUrl],
+    })
+    expect(current.read().revision).not.toBe(revision)
+    expect(refinementSettingsRevision({ ...selected, baseUrl })).not.toBe(
+      refinementSettingsRevision(selected),
+    )
   })
 
   it('a profile cannot inherit enabled from any legacy key', async () => {
@@ -159,12 +194,13 @@ describe('RefinementSettingsStore', () => {
     expect(new RefinementSettingsStore(dir, 'legacy').read().settings).toEqual({
       enabled: false,
       mode: 'manual',
+      baseUrl,
     })
   })
 
   it('invalidates a deleted key, rejects an empty replacement and binds a new revision', async () => {
     const dir = await dataDir()
-    const store = new RefinementSettingsStore(dir, 'p')
+    const store = new RefinementSettingsStore(dir, 'p', dir, [baseUrl, retiredUrl])
     const credentials = createCredentialStore({ root: dir })
     const nextRef = 'secret://generic/00000000-0000-4000-8000-000000000002'
     const original = { credentialRef, model, enabled: true, mode: 'auto' } as const
@@ -177,16 +213,26 @@ describe('RefinementSettingsStore', () => {
     await credentials.remove(credentialRef)
     expect(store.read()).toEqual({
       revision: saved.revision,
-      settings: { ...original, enabled: false },
+      settings: { ...original, enabled: false, baseUrl },
+      endpoints: [baseUrl, retiredUrl],
+      credentialMissing: true,
+    })
+    const switched = store.save({ ...original, enabled: false, baseUrl: retiredUrl }, saved.revision)
+    expect(store.read()).toMatchObject({
+      settings: { ...original, enabled: false, baseUrl: retiredUrl },
       credentialMissing: true,
     })
     const metadata = { label: 'Replacement', createdAt: new Date(0).toISOString() }
     await credentials.putGeneric(nextRef, '\u200b', metadata)
-    expect(() => store.save(next, saved.revision)).toThrow('CONFIG_INVALID_INPUT')
+    expect(() => store.save(next, switched.revision)).toThrow('CONFIG_INVALID_INPUT')
     await credentials.putGeneric(nextRef, 'fixture-replacement-key', metadata)
-    const replacement = store.save(next, saved.revision)
+    const replacement = store.save(next, switched.revision)
     expect(replacement.revision).not.toBe(saved.revision)
-    expect(store.read()).toEqual({ ...replacement, settings: next })
+    expect(store.read()).toEqual({
+      ...replacement,
+      settings: { ...next, baseUrl },
+      endpoints: [baseUrl, retiredUrl],
+    })
   })
 
   it('serves the port: current() is the store snapshot', async () => {
@@ -194,7 +240,7 @@ describe('RefinementSettingsStore', () => {
     const port: RefinementSettingsPort = store
     const before = port.current()
     store.save({ credentialRef, model, enabled: true, mode: 'auto' }, before.revision)
-    expect(port.current().settings).toEqual({ credentialRef, model, enabled: true, mode: 'auto' })
+    expect(port.current().settings).toEqual({ credentialRef, model, enabled: true, mode: 'auto', baseUrl })
     expect(port.current().revision).not.toBe(before.revision)
   })
 })

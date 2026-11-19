@@ -21,7 +21,10 @@ export function refinementModel(store: RefinementSettingsStore, clock: () => num
         if (!value) throw new Error('Task experience service key unavailable')
         return value
       }
-      const provider = createRefinementProvider(clock, key, { ...modelOption, modelId: settings.model })
+      const provider = createRefinementProvider(clock, key, settings.baseUrl, {
+        ...modelOption,
+        modelId: settings.model,
+      })
       cached = { revision, provider }
       return provider
     },

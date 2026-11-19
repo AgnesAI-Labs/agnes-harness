@@ -140,6 +140,7 @@ export type {
   PluginRuntimeStatusResult,
   PluginStreamsEndpointParams,
   PluginStreamsEndpointResult,
+  RefinementBaseUrl,
   RefinementCredentialRef,
   RefinementModelId,
   RefinementModelOption,

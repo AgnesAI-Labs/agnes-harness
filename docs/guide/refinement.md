@@ -10,12 +10,15 @@ It is **off by default**. Each review sends session evidence to the company's de
 
 ## Turn it on
 
-Open **Settings → General → Task experience**. Enter the company service key and select **Save key**. The workbench loads chat models from the company service and saves the first available model if your profile has no available selection. Choose another under **Review model** at any time. Once the key and model are ready, turn on **Learn from finished work** and choose a mode.
+Open **Settings → General → Task experience** and choose a company review gateway under **Service address**. Enter a service key with access to that gateway and select **Save key**. The workbench loads chat models from the selected gateway and saves the first available model if your profile has no available selection. Choose another under **Review model** at any time. Once the key and model are ready, turn on **Learn from finished work** and choose a mode.
 
-The key stays in the local credential store. If the service rejects it, check it and use **Replace key**. Replacing the key pauses learning until you turn it on again. If the model list is unavailable, select **Reload models**. Upgraded profiles keep their mode and any saved binding, and learning is off when a key or model is missing.
+Switching addresses pauses learning and reloads the model list with your saved key. The workbench keeps your review model if the new gateway offers it and otherwise saves the first available model. You can turn learning back on once the model is ready. The key stays in the local credential store. If the gateway rejects it, use **Replace key** to save a key with access. Replacing the key also pauses learning. If the model list is unavailable, select **Reload models**.
+
+Upgraded profiles without a saved address use the default gateway. If a saved gateway is removed, the profile falls back to the default with learning paused and keeps its mode and saved key.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
+| Service address | First company gateway | The workbench lists the available company gateways |
 | Review model | First available model | Used for background reviews |
 | Learn from finished work | Off | Requires a valid service key and a saved review model |
 | How reviews start | Manual only | **Manual only** or **Manual and automatic** |

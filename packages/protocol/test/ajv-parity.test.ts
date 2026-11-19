@@ -732,6 +732,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
   RefinementModelId: AgnesGen.RefinementModelId,
   RefinementModelOption: AgnesGen.RefinementModelOption,
   RefinementModelsResult: AgnesGen.RefinementModelsResult,
+  RefinementBaseUrl: AgnesGen.RefinementBaseUrl,
   RefinementSettings: AgnesGen.RefinementSettings,
   RefinementSettingsSnapshot: AgnesGen.RefinementSettingsSnapshot,
   RefinementSettingsSaveParams: AgnesGen.RefinementSettingsSaveParams,
@@ -4597,6 +4598,20 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     invalid: [{}, { models: [{ id: 'review' }] }, { models: [], credentials: [] }],
     note: 'the private model catalogue can be empty',
   },
+  RefinementBaseUrl: {
+    valid: 'https://review.example/v1',
+    invalid: [
+      'https://',
+      'ftp://review.example/v1',
+      'https://review.example/v1?query',
+      'https://review.example/v1#fragment',
+      'https://review.example/contains space',
+      'https://review.example/contains\u0085control',
+      'https://review.example/contains\u2003separator',
+      `https://${rep(251)}`,
+    ],
+    note: 'the gateway address has a bounded URL shape while the allowlist is runtime-owned',
+  },
   RefinementSettings: {
     valid: REFINEMENT_SETTINGS,
     invalid: [
@@ -4605,6 +4620,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { enabled: true, mode: 'auto', model: REFINEMENT_SETTINGS.model },
       { ...REFINEMENT_SETTINGS, model: '' },
       { ...REFINEMENT_SETTINGS, credentialRef: 'secret://chat/model' },
+      { ...REFINEMENT_SETTINGS, baseUrl: 'review.example' },
       { enabled: true }, // missing required mode
       { mode: 'auto' }, // missing required enabled
       { ...REFINEMENT_SETTINGS, enabled: 'yes' }, // wrong type
@@ -4614,10 +4630,20 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'refinement settings: the on/off switch and whether planning is manual or automatic',
   },
   RefinementSettingsSnapshot: {
-    valid: { revision: rep64, settings: REFINEMENT_SETTINGS },
+    valid: {
+      revision: rep64,
+      settings: { ...REFINEMENT_SETTINGS, baseUrl: 'https://review.example/v1' },
+      endpoints: ['https://review.example/v1'],
+    },
     invalid: [
       { settings: REFINEMENT_SETTINGS }, // missing required revision
       { revision: rep64, settings: REFINEMENT_SETTINGS, credentialMissing: false },
+      { revision: rep64, settings: REFINEMENT_SETTINGS, endpoints: [] },
+      {
+        revision: rep64,
+        settings: REFINEMENT_SETTINGS,
+        endpoints: ['https://api.example', 'https://api.example'],
+      },
       { revision: 'A'.repeat(64), settings: REFINEMENT_SETTINGS }, // pattern: lowercase hex only
       { revision: 'a'.repeat(63), settings: REFINEMENT_SETTINGS }, // pattern: one short of 64
     ],

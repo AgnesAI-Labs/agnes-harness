@@ -2,9 +2,20 @@ import { createProvider, NullContractStore, PiAdapter } from '@agnes/ai'
 import { type RefinementModelOption, validateAgainst } from '@agnes/protocol'
 import { RefinementModelId } from '@agnes/protocol/gen/agnes-v1'
 
+/** The review gateways available to this deployment, in default-first order. */
+export const REFINEMENT_ENDPOINTS: readonly [string, ...string[]] = Object.freeze([
+  'https://api.llm.sg/v1',
+  'https://api-llmsg-dev.agnes-dev.com/v1',
+] as const)
+export const DEFAULT_REFINEMENT_BASE_URL = REFINEMENT_ENDPOINTS[0]
+
+export const isAllowedRefinementBaseUrl = (
+  baseUrl: string,
+  endpoints: readonly string[] = REFINEMENT_ENDPOINTS,
+): boolean => endpoints.includes(baseUrl)
+
 /** Deployment-owned review service. This route belongs only to the private maintenance provider. */
 export const REFINEMENT_SERVICE = Object.freeze({
-  baseUrl: 'https://api.llm.sg/v1',
   route: 'task-experience',
   api: 'openai-completions',
   contextWindow: 65_536,
@@ -15,9 +26,10 @@ export const REFINEMENT_SERVICE = Object.freeze({
 export function createRefinementProvider(
   clock: () => number,
   key: () => string,
+  baseUrl: string,
   model: { modelId: string; name?: string; contextWindow?: number; maxTokens?: number },
 ) {
-  const { route, api, baseUrl, cost } = REFINEMENT_SERVICE
+  const { route, api, cost } = REFINEMENT_SERVICE
   const {
     modelId,
     name = modelId,
@@ -91,6 +103,7 @@ async function readCatalogue(response: Response): Promise<unknown> {
 
 /** Private gateway discovery. Only normalized chat model metadata crosses the RPC boundary. */
 export async function fetchRefinementModels(
+  baseUrl: string,
   key: string,
   signal: AbortSignal,
 ): Promise<RefinementModelOption[]> {
@@ -98,7 +111,7 @@ export async function fetchRefinementModels(
   const secret = key.trim()
   let response: Response
   try {
-    const url = new URL(REFINEMENT_SERVICE.baseUrl)
+    const url = new URL(baseUrl)
     url.pathname = `${url.pathname.replace(/\/$/, '')}/models`
     response = await fetch(url, {
       method: 'GET',

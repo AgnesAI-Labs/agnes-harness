@@ -6,6 +6,7 @@ import { fakeModel } from '@agnes/ai/testkit'
 import { operations as codeOperations } from '@agnes/code'
 import { refinementFacade } from '@agnes/core'
 import { fetchRefinementModels, REFINEMENT_SERVICE } from '@agnes/distribution'
+import { DEFAULT_REFINEMENT_BASE_URL } from '@agnes/distribution/refinement-model'
 import { createCredentialStore } from '@agnes/host-infrastructure/adapters/credential-store'
 import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
@@ -26,6 +27,12 @@ import {
   runScriptedSession,
 } from './scripted-session.js'
 import { reviewCredential, reviewModel, routeReviewToLoopback, syntheticKey } from './service-key.js'
+
+const { alternateUrl } = vi.hoisted(() => ({ alternateUrl: 'https://alternate-review.example/v1' }))
+vi.mock(import('@agnes/distribution/refinement-model'), async (original) => {
+  const service = await original()
+  return { ...service, REFINEMENT_ENDPOINTS: [service.DEFAULT_REFINEMENT_BASE_URL, alternateUrl] as const }
+})
 
 const baseDir = fileURLToPath(new URL('../../../base/', import.meta.url))
 const baselineFile = fileURLToPath(new URL('../fixtures/refinement/off-baseline.json', import.meta.url))
@@ -143,6 +150,7 @@ type Fixture = {
   main: () => CapturedRequest[]
   /** Planning calls the maintenance invocation sent. */
   planner: () => CapturedRequest[]
+  alternatePlanner: () => CapturedRequest[]
   dataDir: string
 }
 
@@ -166,6 +174,11 @@ async function withHost(
     steps: Step[]
     plan: (body: unknown) => WireReply | Promise<WireReply>
     models?: Parameters<typeof startWireCapture>[1]
+    alternate?: {
+      baseUrl: string
+      key: string
+      models: NonNullable<Parameters<typeof startWireCapture>[1]>
+    }
   },
   run: (t: Fixture) => Promise<void>,
 ): Promise<void> {
@@ -190,7 +203,13 @@ async function withHost(
     return typeof step === 'function' ? step() : step
   })
   const service = await startWireCapture(o.plan, o.models)
-  const redirected = routeReviewToLoopback(service.baseUrl('openai-completions'))
+  const alternate = o.alternate && (await startWireCapture(o.plan, o.alternate.models))
+  const redirected = routeReviewToLoopback(
+    service.baseUrl('openai-completions'),
+    o.alternate && alternate
+      ? { ...o.alternate, loopback: alternate.baseUrl('openai-completions') }
+      : undefined,
+  )
   vi.stubEnv('AGH_HOME', o.dataDir)
   try {
     const baseUrl = capture.baseUrl(o.api)
@@ -232,6 +251,7 @@ async function withHost(
         session,
         main: () => capture.requests,
         planner: () => service.requests,
+        alternatePlanner: () => alternate?.requests ?? [],
         dataDir: o.dataDir,
       })
     } finally {
@@ -240,6 +260,7 @@ async function withHost(
   } finally {
     vi.unstubAllEnvs()
     redirected.mockRestore()
+    await alternate?.close()
     await service.close()
     await capture.close()
   }
@@ -284,12 +305,13 @@ const entries = (session: Session) =>
 const turnEnds = async (session: Session) => (await scan(session, 'turn/end')).map((row) => row.seq)
 
 describe('the refinement loop in an assembled host', () => {
-  it('discovers private review models and uses newly saved choices in the same session', async () => {
+  it('switches private review gateways and cancels work queued for the old gateway', async () => {
     const nextModel = 'company/review-b'
     const fallback = { id: reviewModel, name: reviewModel, contextWindow: 65_536, maxTokens: 4096 }
     const advertised = { id: nextModel, name: 'Review B', contextWindow: 96_000, maxTokens: 2048 }
     const signal = new AbortController().signal
     const pending = gate()
+    const alternateKey = 'synthetic-alternate-review-key'
     await withDataDir(async (dataDir) => {
       await withHost(
         {
@@ -301,16 +323,29 @@ describe('the refinement loop in an assembled host', () => {
             if ((body as { model: string }).model === reviewModel) await pending.opened
             return NOTHING_TO_KEEP
           },
+          alternate: {
+            baseUrl: alternateUrl,
+            key: alternateKey,
+            models: (auth) =>
+              auth === `Bearer ${alternateKey}`
+                ? {
+                    status: 200,
+                    body: {
+                      data: [
+                        { id: nextModel, name: 'Review B', context_length: 96_000, max_output_tokens: 2048 },
+                      ],
+                    },
+                  }
+                : { status: 403, body: {} },
+          },
           models: (auth) => {
             if (auth === 'Bearer unauthorized') return { status: 401, body: {} }
-            if (auth === 'Bearer forbidden') return { status: 403, body: {} }
             if (auth === 'Bearer unavailable') return { status: 503, body: {} }
-            expect(auth).toBe(`Bearer ${syntheticKey}`)
+            if (auth !== `Bearer ${syntheticKey}`) return { status: 403, body: {} }
             return {
               status: 200,
               body: {
                 data: [
-                  { id: nextModel, name: 'Review B', context_length: 96_000, max_output_tokens: 2048 },
                   { id: reviewModel },
                   { id: reviewModel },
                   { id: 'text-embedding-3' },
@@ -324,7 +359,7 @@ describe('the refinement loop in an assembled host', () => {
             }
           },
         },
-        async ({ session, planner, main }) => {
+        async ({ session, planner, main, alternatePlanner }) => {
           await turn(session, 'Check the release notes.')
           const store = new RefinementSettingsStore(dataDir, PROFILE, dataDir)
           const credentialRef = reviewCredential(dataDir, dataDir)
@@ -337,14 +372,19 @@ describe('the refinement loop in an assembled host', () => {
           })
           expect(planner()).toEqual([])
           for (const key of ['unauthorized', 'forbidden'])
-            await expect(fetchRefinementModels(key, signal)).rejects.toThrow('REFINEMENT_KEY_INVALID')
-          await expect(fetchRefinementModels('unavailable', signal)).rejects.toThrow(
-            'REFINEMENT_MODELS_UNAVAILABLE',
-          )
-          const key = store.serviceKey(credentialRef)
-          if (!key) throw new Error('Missing fixture key')
-          const models = await fetchRefinementModels(key, signal)
-          expect(models).toEqual([fallback, advertised])
+            await expect(fetchRefinementModels(DEFAULT_REFINEMENT_BASE_URL, key, signal)).rejects.toThrow(
+              'REFINEMENT_KEY_INVALID',
+            )
+          await expect(
+            fetchRefinementModels(DEFAULT_REFINEMENT_BASE_URL, 'unavailable', signal),
+          ).rejects.toThrow('REFINEMENT_MODELS_UNAVAILABLE')
+          const savedModels = () => {
+            const { baseUrl, credentialRef } = store.current().settings
+            const key = credentialRef && store.serviceKey(credentialRef)
+            if (!key) throw new Error('Missing fixture key')
+            return fetchRefinementModels(baseUrl, key, signal)
+          }
+          expect(await savedModels()).toEqual([fallback])
           const first = store.save(
             { enabled: true, mode: 'manual', credentialRef, model: fallback.id },
             revision,
@@ -356,9 +396,27 @@ describe('the refinement loop in an assembled host', () => {
             await until('the first review reaches the gateway', () => planner().length === 1)
             queued = await requestRefinement(session)
             expect(session.state.refinementRuns.get(queued.runId)?.state).toBe('queued')
+            // The test key is already in the local store when the owner changes addresses.
+            await createCredentialStore({ root: dataDir }).putGeneric(credentialRef, alternateKey, {
+              label: 'Fixture alternate gateway key',
+              createdAt: new Date(0).toISOString(),
+            })
+            await expect(savedModels()).rejects.toThrow('REFINEMENT_KEY_INVALID')
+            const paused = { ...store.read().settings, baseUrl: alternateUrl, enabled: false } as const
+            const switched = store.save(paused, first.revision)
+            expect(store.read().settings).toEqual({ ...paused, credentialRef })
+            await expect(requestRefinement(session)).rejects.toMatchObject({
+              data: { reason: 'refinement-off' },
+            })
+            expect(await savedModels()).toEqual([advertised])
+            const { revision } = store.save(
+              { ...paused, model: advertised.id },
+              switched.revision,
+              advertised,
+            )
             store.save(
-              { enabled: true, mode: 'manual', credentialRef, model: advertised.id },
-              first.revision,
+              { ...paused, enabled: true, credentialRef, model: advertised.id },
+              revision,
               advertised,
             )
           } finally {
@@ -381,6 +439,8 @@ describe('the refinement loop in an assembled host', () => {
           )
           expect(planner().map(({ body }) => body)).toMatchObject([
             { model: fallback.id, max_completion_tokens: fallback.maxTokens },
+          ])
+          expect(alternatePlanner().map(({ body }) => body)).toMatchObject([
             { model: advertised.id, max_completion_tokens: advertised.maxTokens },
           ])
           expect(main().map(({ body }) => body)).toMatchObject([{ model: 'fixture' }, { model: 'fixture' }])

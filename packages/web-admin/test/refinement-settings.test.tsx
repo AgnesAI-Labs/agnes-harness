@@ -30,6 +30,8 @@ afterEach(async () => {
 const credentialRef = 'secret://generic/review'
 const model = 'company/review-a'
 const another = 'company/review-b'
+const baseUrl = 'https://review.example/v1'
+const alternateUrl = 'https://alternate-review.example/v1'
 const catalogue = {
   models: [
     { id: model, name: 'Company Review A', contextWindow: 65536, maxTokens: 4096 },
@@ -139,6 +141,55 @@ it('the settings panel saves with revision and shows the permission text', async
   await toggle(host, 'refinement-enabled')
   expect(api.save).toHaveBeenLastCalledWith({ credentialRef, model, enabled: false, mode: 'auto' }, REV2)
   expect(host.textContent).not.toMatch(/restart/i)
+})
+
+it.each([true, false])('switches service addresses with the saved key (keeps model: %s)', async (keep) => {
+  const initial = { credentialRef, model, mode: 'manual', enabled: true, baseUrl } as const
+  const api = fakeApi(initial)
+  api.read.mockResolvedValue({ revision: REV0, settings: initial, endpoints: [baseUrl, alternateUrl] })
+  const selected = keep ? model : another
+  let release = () => {}
+  const nextCatalogue = new Promise<typeof catalogue>((resolve) => {
+    release = () => resolve({ models: catalogue.models.filter(({ id }) => id === selected) })
+  })
+  api.models.mockResolvedValueOnce(catalogue).mockReturnValueOnce(nextCatalogue)
+  const host = await mount(api)
+  const endpointSelect = field(host, 'refinement-endpoint') as HTMLSelectElement
+  const modelSelect = field(host, 'refinement-model') as HTMLSelectElement
+  const enable = field(host, 'refinement-enabled') as HTMLButtonElement
+  expect(Array.from(endpointSelect.options, ({ value }) => value)).toEqual([baseUrl, alternateUrl])
+  expect(endpointSelect.value).toBe(baseUrl)
+
+  await choose(host, 'refinement-endpoint', alternateUrl)
+  const paused = { ...initial, enabled: false, baseUrl: alternateUrl }
+  expect(endpointSelect.value).toBe(alternateUrl)
+  expect(api.save).toHaveBeenLastCalledWith(paused, REV0)
+  expect(api.models).toHaveBeenCalledTimes(2)
+  expect(api.createKey).not.toHaveBeenCalled()
+  expect(enable.getAttribute('aria-checked')).toBe('false')
+  expect(enable.disabled).toBe(true)
+  expect(modelSelect.disabled).toBe(true)
+
+  await act(async () => release())
+  expect(modelSelect.value).toBe(selected)
+  expect(enable.disabled).toBe(false)
+  if (keep) expect(api.save).toHaveBeenCalledTimes(1)
+  else expect(api.save).toHaveBeenLastCalledWith({ ...paused, model: selected }, REV1)
+  await toggle(host, 'refinement-enabled')
+  expect(api.save).toHaveBeenLastCalledWith({ ...paused, enabled: true, model: selected }, keep ? REV1 : REV2)
+})
+
+it('shows the sole service address before a key is saved', async () => {
+  const api = fakeApi(DEFAULT_REFINEMENT_SETTINGS)
+  api.read.mockResolvedValue({
+    revision: REV0,
+    settings: { ...DEFAULT_REFINEMENT_SETTINGS, baseUrl },
+    endpoints: [baseUrl],
+  })
+  const select = field(await mount(api), 'refinement-endpoint') as HTMLSelectElement
+  expect(select.value).toBe(baseUrl)
+  expect(select.disabled).toBe(true)
+  expect(api.models).not.toHaveBeenCalled()
 })
 
 it('requires a saved service key, recovers a missing key and can rotate it without showing its value', async () => {

@@ -1,6 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
+import {
+  DEFAULT_REFINEMENT_BASE_URL,
+  isAllowedRefinementBaseUrl,
+  REFINEMENT_ENDPOINTS,
+} from '@agnes/distribution/refinement-model'
 import type { RefinementModelOption, RefinementSettings, RefinementSettingsSnapshot } from '@agnes/protocol'
 import { DEFAULT_REFINEMENT_SETTINGS, validateAgainst } from '@agnes/protocol'
 import {
@@ -28,6 +33,7 @@ export const refinementSettingsRevision = (settings: RefinementSettings, nonce?:
       mode: settings.mode,
       credentialRef: settings.credentialRef,
       model: settings.model,
+      baseUrl: settings.baseUrl ?? DEFAULT_REFINEMENT_BASE_URL,
       ...(nonce === undefined ? {} : { nonce }),
     }),
   )
@@ -45,6 +51,11 @@ export interface RefinementSettingsPort {
 }
 
 type StoredSettings = { settings: RefinementSettings; nonce?: string; modelOption?: RefinementModelOption }
+type Endpoints = [string, ...string[]]
+type EffectiveSnapshot = RefinementSettingsSnapshot & {
+  settings: RefinementSettings & { baseUrl: string }
+  endpoints: Endpoints
+}
 
 /**
  * The refinement settings of one profile, in `<dataDir>/refinement/<sha256(profile)>.json`. Refinement is
@@ -55,14 +66,17 @@ type StoredSettings = { settings: RefinementSettings; nonce?: string; modelOptio
 export class RefinementSettingsStore implements RefinementSettingsPort {
   private readonly dir: string
   private readonly file: string
+  private readonly endpoints: Readonly<Endpoints>
   private readonly enforcement = credentialFileEnforcement(createPlatform())
   constructor(
     dataDir: string,
     profile: string,
     private readonly home = basename(dataDir) === 'data' ? dirname(dataDir) : dataDir,
+    endpoints: Readonly<Endpoints> = REFINEMENT_ENDPOINTS,
   ) {
     this.dir = join(dataDir, 'refinement')
     this.file = join(this.dir, `${sha256(profile)}.json`)
+    this.endpoints = [...endpoints]
   }
 
   /** Local credential-store boundary for review discovery and inference. */
@@ -76,18 +90,35 @@ export class RefinementSettingsStore implements RefinementSettingsPort {
     return undefined
   }
 
-  read(): RefinementSettingsSnapshot {
+  read(): EffectiveSnapshot {
     const { modelOption: _modelOption, ...snapshot } = this.current()
     return snapshot
   }
 
-  current(): RefinementSettingsSnapshot & { modelOption?: RefinementModelOption } {
+  current(): EffectiveSnapshot & { modelOption?: RefinementModelOption } {
     const stored = this.stored()
-    const settings = stored?.settings ?? structuredClone(DEFAULT_REFINEMENT_SETTINGS)
+    const raw = stored?.settings ?? DEFAULT_REFINEMENT_SETTINGS
+    const baseUrl = raw.baseUrl ?? this.endpoints[0]
+    const retired = !isAllowedRefinementBaseUrl(baseUrl, this.endpoints)
+    const settings = retired
+      ? { ...raw, enabled: false as const, baseUrl: this.endpoints[0] }
+      : { ...raw, baseUrl }
     const revision = refinementSettingsRevision(settings, stored?.nonce)
+    const endpoints: Endpoints = [...this.endpoints]
     if (settings.credentialRef && !this.serviceKey(settings.credentialRef))
-      return { settings: { ...settings, enabled: false }, revision, credentialMissing: true }
-    return { settings, revision, ...(stored?.modelOption ? { modelOption: stored.modelOption } : {}) }
+      return { settings: { ...settings, enabled: false }, revision, endpoints, credentialMissing: true }
+    return {
+      settings,
+      revision,
+      endpoints,
+      ...(!retired && stored?.modelOption ? { modelOption: stored.modelOption } : {}),
+    }
+  }
+
+  /** Resolve a save target before catalogue validation can send credentials to it. */
+  resolveBaseUrl(baseUrl = this.endpoints[0]): string {
+    if (!isAllowedRefinementBaseUrl(baseUrl, this.endpoints)) throw failure('CONFIG_INVALID_INPUT')
+    return baseUrl
   }
 
   /**
@@ -102,18 +133,29 @@ export class RefinementSettingsStore implements RefinementSettingsPort {
   ): { revision: string } {
     if (
       !validateAgainst(Schema, settings).ok ||
-      (settings.credentialRef && !this.serviceKey(settings.credentialRef)) ||
       (modelOption &&
         (!validateAgainst(ModelOptionSchema, modelOption).ok || modelOption.id !== settings.model))
     )
       throw failure('CONFIG_INVALID_INPUT')
+    const baseUrl = this.resolveBaseUrl(settings.baseUrl)
     const current = this.current()
     if (current.revision !== expectedRevision) throw failure('CONFIG_REVISION_CONFLICT', { current })
-    const { enabled, mode, credentialRef, model } = settings
-    const clean = { enabled, mode, credentialRef, model } as RefinementSettings
+    const { credentialRef, model } = settings
+    // A disabled profile may switch gateways while retaining a key reference that needs recovery.
+    if (
+      credentialRef &&
+      !this.serviceKey(credentialRef) &&
+      (settings.enabled ||
+        credentialRef !== current.settings.credentialRef ||
+        baseUrl === current.settings.baseUrl)
+    )
+      throw failure('CONFIG_INVALID_INPUT')
+    const clean = { ...settings, baseUrl }
     const option =
       modelOption ??
-      (current.settings.credentialRef === credentialRef && current.settings.model === model
+      (current.settings.baseUrl === baseUrl &&
+      current.settings.credentialRef === credentialRef &&
+      current.settings.model === model
         ? current.modelOption
         : undefined)
     mkdirSync(this.dir, { recursive: true, mode: 0o700 })

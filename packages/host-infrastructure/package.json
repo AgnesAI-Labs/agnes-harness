@@ -74,6 +74,7 @@
     "@agnes/ai": "workspace:*",
     "@agnes/cordis": "workspace:*",
     "@agnes/core": "workspace:*",
+    "@agnes/distribution": "workspace:*",
     "@agnes/extension-api": "workspace:*",
     "@agnes/git-worktree-contract": "workspace:*",
     "@agnes/host-common": "workspace:*",

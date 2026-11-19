@@ -36,7 +36,11 @@ export type RefinementSettingsApi = {
 }
 
 const sameSettings = (a: RefinementSettings, b: RefinementSettings) =>
-  a.enabled === b.enabled && a.mode === b.mode && a.credentialRef === b.credentialRef && a.model === b.model
+  a.enabled === b.enabled &&
+  a.mode === b.mode &&
+  a.credentialRef === b.credentialRef &&
+  a.model === b.model &&
+  a.baseUrl === b.baseUrl
 
 /** This viewer has dismissed the one-time notice about saving to the workspace (browser storage only). */
 const NOTICE_KEY = 'agnes.refinement.workspace-notice'
@@ -148,7 +152,10 @@ const modelFailureText = {
   REFINEMENT_MODELS_UNAVAILABLE: 'refinement.model.error',
 } as const
 
-type ModelCatalogue = { ref: string } & ({ models: RefinementModelOption[] } | { error: string })
+type ModelCatalogue = { ref: string; baseUrl: string | undefined } & (
+  | { models: RefinementModelOption[] }
+  | { error: string }
+)
 
 function modelFailure(error: unknown): string | undefined {
   const code = failureCode(error)
@@ -172,6 +179,8 @@ function RefinementFields(props: {
   const [keyError, setKeyError] = useState(false)
   const [missing, setMissing] = useState(snapshot.credentialMissing === true)
   const credentialRef = missing ? undefined : stored.credentialRef
+  const { baseUrl } = stored
+  const endpoints = snapshot.endpoints ?? []
   const [catalogue, setCatalogue] = useState<ModelCatalogue>()
   const [modelReads, setModelReads] = useState(0)
   // biome-ignore lint/correctness/useExhaustiveDependencies: modelReads retries; a fresh snapshot rechecks credential changes.
@@ -181,16 +190,21 @@ function RefinementFields(props: {
     setCatalogue(undefined)
     void api.models().then(
       ({ models }) => {
-        if (live) setCatalogue({ ref: credentialRef, models })
+        if (live) setCatalogue({ ref: credentialRef, baseUrl, models })
       },
       (error) => {
-        if (live) setCatalogue({ ref: credentialRef, error: modelFailure(error) ?? 'refinement.model.error' })
+        if (live)
+          setCatalogue({
+            ref: credentialRef,
+            baseUrl,
+            error: modelFailure(error) ?? 'refinement.model.error',
+          })
       },
     )
     return () => {
       live = false
     }
-  }, [api, credentialRef, modelReads, snapshot])
+  }, [api, credentialRef, baseUrl, modelReads, snapshot])
   // Read when a save is sent, so a save queued behind another one uses the revision the first returned.
   const revision = useRef(snapshot.revision)
   const autosave = useAutosave<RefinementSettings>({
@@ -205,7 +219,7 @@ function RefinementFields(props: {
         const saved = await api.save(next, revision.current)
         revision.current = saved.revision
         setStored(next)
-        setMissing(false)
+        if (next.credentialRef !== stored.credentialRef) setMissing(false)
       } catch (error) {
         // The conflict error names no current state: read it again and show it. The edit that lost is
         // dropped, and the save ends as a failure, not a success: a success would clear the banner
@@ -216,7 +230,7 @@ function RefinementFields(props: {
           throw error
         }
         const feedback = modelFailure(error)
-        if (feedback && credentialRef) setCatalogue({ ref: credentialRef, error: feedback })
+        if (feedback && credentialRef) setCatalogue({ ref: credentialRef, baseUrl, error: feedback })
         if (failureCode(error) !== 'CONFIG_REVISION_CONFLICT') throw error
         props.onConflict(await api.read())
         throw error
@@ -226,7 +240,7 @@ function RefinementFields(props: {
   const settings = autosave.value ?? stored
   const binding = settings.credentialRef !== stored.credentialRef
   const locked = creatingKey || binding
-  const result = catalogue?.ref === credentialRef ? catalogue : undefined
+  const result = catalogue?.ref === credentialRef && catalogue?.baseUrl === baseUrl ? catalogue : undefined
   const models = result && 'models' in result ? result.models : undefined
   const modelError = result && 'error' in result ? result.error : undefined
   const canEnable = models?.some(({ id }) => id === stored.model) === true
@@ -248,9 +262,9 @@ function RefinementFields(props: {
     if (!credentialRef || locked || busy) return
     const { enabled = stored.enabled, mode = stored.mode, model = stored.model } = patch
     if (enabled) {
-      if (model) saveSettings({ enabled, mode, credentialRef, model }, 'now')
+      if (model) saveSettings({ ...stored, enabled, mode, credentialRef, model }, 'now')
     } else {
-      saveSettings({ enabled, mode, credentialRef, ...(model ? { model } : {}) }, 'now')
+      saveSettings({ ...stored, enabled, mode, credentialRef, ...(model ? { model } : {}) }, 'now')
     }
   }
   const saveKey = async () => {
@@ -277,6 +291,31 @@ function RefinementFields(props: {
         failed={autosave.failed}
         onRetry={autosave.retry}
       >
+        {endpoints.length > 0 && (
+          <SettingsItem label={t('refinement.endpoint')} description={t('refinement.endpoint.hint')}>
+            <SettingsSelect
+              id="refinement-endpoint"
+              data-testid="refinement-endpoint"
+              aria-label={t('refinement.endpoint')}
+              value={settings.baseUrl ?? endpoints[0]}
+              disabled={locked || busy || endpoints.length === 1}
+              onChange={(event) => {
+                const next = event.target.value
+                if (!locked && !busy && endpoints.includes(next))
+                  saveSettings(
+                    next === baseUrl ? stored : { ...stored, baseUrl: next, enabled: false },
+                    'now',
+                  )
+              }}
+            >
+              {endpoints.map((url) => (
+                <option key={url} value={url}>
+                  {url}
+                </option>
+              ))}
+            </SettingsSelect>
+          </SettingsItem>
+        )}
         <SettingsItem
           label={t('refinement.key')}
           description={t(
