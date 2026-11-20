@@ -1,4 +1,3 @@
-import { homedir } from 'node:os'
 import type { TableHandle } from '@agnes/daemon-foundation/storage/table'
 import type { ConfigurationService, ScanRead } from '@agnes/host'
 import type { EventEnvelope } from '@agnes/protocol'
@@ -6,7 +5,8 @@ import type { AdminTelemetryParams, AdminTelemetryResult } from '@agnes/protocol
 import { ACTIVITY_EVENTS, ActivityWindow, activityObserver, sendActivityReport } from './activity.js'
 import { telemetryAccounts } from './routes.js'
 import { openTelemetrySettings, telemetryEnvironment, telemetryInstallId } from './settings.js'
-import { type TraceSession, traceWatermarks, uploadTrace } from './traces.js'
+import { MAX_PENDING, traceUploads } from './trace-uploads.js'
+import type { TraceSession } from './traces.js'
 import { channelSession, record, type Surface, telemetryRuntime } from './wire.js'
 
 type Options = {
@@ -22,9 +22,7 @@ type Options = {
 }
 
 type Workspace = Pick<TraceSession, 'cwd' | 'extraRoots'>
-type PendingTrace = Pick<TraceSession, 'key' | 'seq' | 'surface'> & { workspace?: () => Workspace }
 
-const MAX_PENDING = 1024
 const TRACE_EVENTS = new Set(['turn/end', 'x/feedback/item'])
 
 function interval(value: string | undefined, fallback: number, minimum: number): number {
@@ -72,18 +70,29 @@ export async function openTelemetry(options: Options) {
   const lifecycle = new AbortController()
   const analytics = activityObserver()
   const privateSessions = new Set<string>()
-  const pending = new Map<string, PendingTrace>()
   const surfaceBySession = new Map<string, Surface>()
   const reportInterval = interval(env.AGH_TELEMETRY_FLUSH_MS, 300_000, 100)
-  const traceDelay = interval(env.AGH_TELEMETRY_TRACE_DEBOUNCE_MS, 250, 1)
   const installId =
     !disabledByEnv && endpoint ? await telemetryInstallId(options.home).catch(() => undefined) : undefined
-  let watermarks: ReturnType<typeof traceWatermarks> | undefined
-  let traceCancellation = new AbortController()
+  const uploads = traceUploads({
+    home: options.home,
+    endpoint,
+    installId,
+    clock,
+    runtime,
+    lifecycle: lifecycle.signal,
+    debounce: interval(env.AGH_TELEMETRY_TRACE_DEBOUNCE_MS, 250, 1),
+    retry: interval(env.AGH_TELEMETRY_RETRY_MS, 30_000, 1),
+    configuration: options.configuration,
+    scan: options.scan,
+    table: options.table,
+    paths: options.paths,
+    credentials: options.credentials,
+  })
+  // A daemon start is a new window too: rows committed while no daemon was uploading stay local.
+  if (settings.read().traceUploadEnabled) uploads.enable(true)
   let reportCancellation = new AbortController()
-  let traceTimer: ReturnType<typeof setTimeout> | undefined
   let reportTimer: ReturnType<typeof setTimeout> | undefined
-  let traceRun: Promise<void> | undefined
   let reportRun: Promise<void> | undefined
   let window: ActivityWindow | undefined
   let daemonStarts = 1
@@ -128,66 +137,6 @@ export async function openTelemetry(options: Options) {
     reportTimer.unref()
   }
 
-  function traces(): void {
-    if (traceRun || !pending.size || !endpoint || !installId || !options.scan || !options.table) return
-    const { scan, table } = options
-    const signal = AbortSignal.any([lifecycle.signal, traceCancellation.signal])
-    traceRun = (async () => {
-      watermarks ??= traceWatermarks(table())
-      const accounts = await telemetryAccounts(options.configuration)
-      signal.throwIfAborted()
-      const credentialValues = (await options.credentials?.()) ?? []
-      for (const [key, item] of pending) {
-        signal.throwIfAborted()
-        pending.delete(key)
-        const session = { ...item, ...item.workspace?.() }
-        const { privatePaths = [], workspacePaths = [] } = options.paths?.(session.cwd) ?? {}
-        await uploadTrace({
-          session,
-          scan: scan(key),
-          watermarks,
-          accounts,
-          installId,
-          endpoint,
-          clock,
-          runtime,
-          signal,
-          privatePaths: [options.home, ...privatePaths, homedir()],
-          workspacePaths: [
-            ...workspacePaths,
-            ...(session.cwd ? [session.cwd] : []),
-            ...(session.extraRoots ?? []),
-          ],
-          credentialValues,
-        }).catch(() => undefined)
-      }
-    })()
-      .catch(() => {
-        if (!signal.aborted) pending.clear()
-      })
-      .finally(() => {
-        traceRun = undefined
-        if (pending.size && !closing) scheduleTraces()
-      })
-  }
-
-  function scheduleTraces(): void {
-    if (traceTimer || traceRun || !options.scan || !options.table) return
-    traceTimer = setTimeout(() => {
-      traceTimer = undefined
-      traces()
-    }, traceDelay)
-    traceTimer.unref()
-  }
-
-  function cancelTraces(): void {
-    clearTimeout(traceTimer)
-    traceTimer = undefined
-    pending.clear()
-    traceCancellation.abort()
-    traceCancellation = new AbortController()
-  }
-
   function cancelReport(): void {
     clearTimeout(reportTimer)
     reportTimer = undefined
@@ -208,7 +157,8 @@ export async function openTelemetry(options: Options) {
     async admin({ settings: patch }: AdminTelemetryParams): Promise<AdminTelemetryResult> {
       if (patch !== undefined)
         await settings.update(patch, (next) => {
-          if (!next.traceUploadEnabled) cancelTraces()
+          if (next.traceUploadEnabled) uploads.enable()
+          else uploads.disable()
           if (!next.analyticsEnabled) cancelReport()
         })
       return { settings: settings.read(), status: { disabledByEnv, endpointConfigured } }
@@ -238,28 +188,18 @@ export async function openTelemetry(options: Options) {
         analytics.observe(window, key, surface, event)
         scheduleReport()
       }
-      if (current.traceUploadEnabled && TRACE_EVENTS.has(event.type)) {
-        const previous = pending.get(key)
-        if (!previous && pending.size >= MAX_PENDING) return
-        if (!previous || event.seq > previous.seq)
-          pending.set(key, {
-            key,
-            seq: event.seq,
-            surface,
-            ...(workspace ? { workspace } : {}),
-          })
-        scheduleTraces()
-      }
+      if (current.traceUploadEnabled && TRACE_EVENTS.has(event.type))
+        uploads.observe(key, event.seq, surface, workspace)
     },
     async dispose(): Promise<void> {
       closing = true
-      clearTimeout(traceTimer)
+      uploads.close()
       clearTimeout(reportTimer)
       await drainTelemetry(lifecycle, [
         { active: () => reportRun, flush: report },
-        { active: () => traceRun, flush: traces },
+        { active: uploads.active, flush: uploads.flush },
       ])
-      pending.clear()
+      uploads.clear()
     },
   }
 }
