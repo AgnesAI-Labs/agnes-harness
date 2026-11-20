@@ -29,7 +29,7 @@ export function apply(ctx: ClientContext) {
     placement: 'primary',
     icon: 'sparkles',
     titleKey: 'superagent.nav',
-    order: 20,
+    order: 35,
     component: () => <Panel ctx={ctx} />,
   })
   return () => {

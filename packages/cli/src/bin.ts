@@ -162,6 +162,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
   let ladderInstalled = false
   const eph = p.ephemeral ? ephemeralHome(io, () => ladderInstalled, makeEphemeralHome) : undefined
   const home = eph?.home ?? resolveHome(io.env)
+  if (eph) io = { ...io, env: { ...io.env, AGH_HOME: home, AGH_TELEMETRY_DISABLED: '1' } }
   const { recoveryCommand } = await import('./commands/app.js')
   const recovery = await recoveryCommand(p, io, home)
   if (recovery !== undefined) return recovery

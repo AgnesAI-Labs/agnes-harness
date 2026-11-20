@@ -2,13 +2,13 @@
 
 [English](jev-loop.md) | 简体中文
 
-[文档](../README.zh-CN.md) · [TypeSafe Jev 旁路模型调用](typesafe-jev.zh-CN.md) · [通用凭据](credentials.zh-CN.md) · [组合包与配置](../extend/bundles-and-profiles.zh-CN.md) · [编写插件](../develop/plugins.zh-CN.md)
+[文档](../README.zh-CN.md) · [TypeSafe Jev 决策模型调用](typesafe-jev.zh-CN.md) · [通用凭据](credentials.zh-CN.md) · [组合包与配置](../extend/bundles-and-profiles.zh-CN.md) · [编写插件](../develop/plugins.zh-CN.md)
 
 Jev Agent Loop（`agnes.jev@0.1.0`）是可选的 Agent Loop。它作为随发行版附带的可选包 `@agnes/jev-loop` 提供，默认没有安装；默认循环仍是 `agnes.default`。需要时从市场安装。
 
 ## 它做什么
 
-每一步，循环都通过[旁路模型调用](typesafe-jev.zh-CN.md)询问 TypeSafe Jev 下一步做什么：任务处在哪个阶段、用哪个工具、参数怎么填，或者是否作答。Jev 有把握时，循环直接执行工具，不发对话模型请求。只有三件事会调用对话模型：
+每一步，循环都通过[决策模型调用](typesafe-jev.zh-CN.md)询问 TypeSafe Jev 下一步做什么：任务处在哪个阶段、用哪个工具、参数怎么填，或者是否作答。Jev 有把握时，循环直接执行工具，不发对话模型请求。只有三件事会调用对话模型：
 
 - **补参数**：Jev 选了工具，但参数需要撰写，例如文件内容。
 - **复核**：Jev 没有把握，或上一步的结果需要判断，由对话模型决定下一次调用。
@@ -20,7 +20,7 @@ Jev 在默认循环于同一会话中会提供的工具之间选择，但不包�
 
 ## 配置 Jev 路由
 
-**在设置页面配置（推荐）。** 在 设置 → 模型与账户 → **高级：旁路模型与任务模型** 的「**旁路模型**」分组里添加 Jev 端点，步骤见[设置页面配置](typesafe-jev.zh-CN.md#设置页面配置)。页面创建的路由名为 `account-<id>`，条目的摘要行在适配器名之后显示完整路由名。把这个名字填进插件的 `jev.route` 配置（见下一节）。插件的 `jev.route` 默认是 `jev`，与页面条目对不上。同时确认 `jev.model` 是条目里保存的某个模型 id；默认值是 `typesafe/jev-1.13-20260917`。
+**在设置页面配置（推荐）。** 在 设置 → 模型与账户 → **高级：决策模型与任务模型** 的「**决策模型**」分组里添加 Jev 端点，步骤见[设置页面配置](typesafe-jev.zh-CN.md#设置页面配置)。页面创建的路由名为 `account-<id>`，条目的摘要行在适配器名之后显示完整路由名。把这个名字填进插件的 `jev.route` 配置（见下一节）。插件的 `jev.route` 默认是 `jev`，与页面条目对不上。同时确认 `jev.model` 是条目里保存的某个模型 id；默认值是 `typesafe/jev-1.13-20260917`。
 
 **在用户 profile 里声明（无界面或脚本使用）。** 在 `AGH_HOME/profiles/<profile>/profile.yaml` 的 `provider.routes` 下声明路由，写法见[配置档路由](typesafe-jev.zh-CN.md#配置档路由)。路由名用 `jev` 时，插件默认的 `jev.route` 就能对上。这只适用于设置页面没有管理任何账户的 home：一旦在设置里保存了账户，设置服务就会提供整个 `provider` 块，`profile.yaml` 里的路由不再生效，插件找不到它的路由。这种情况请用设置页面。
 
@@ -102,7 +102,7 @@ composition:
 - 管理端的循环列表和新会话的循环选择器里，`agnes.jev@0.1.0` 出现在默认循环旁边。有两个及以上循环可用时才显示选择器。
 - **插件** 页列出已安装的包，它的 **设置** 页就是配置页。提供方面板把 `typesafe-systemone` 标为「**仅载荷请求，不用于对话**」。
 - 对话看起来与默认循环一样，有两点不同：循环附加到对话模型请求上的附注显示为运行时上下文；Jev 直接选定的工具调用前面是一条没有文字的助手消息。对话模型在调用之前写的文字，记录里最多保留 8 KiB。
-- 成本明细里每次 Jev 调用一行「**旁路模型调用**」。没有报告用量的调用标为估算。
+- 成本明细里每次 Jev 调用一行「**决策模型调用**」。没有报告用量的调用标为估算。
 - 循环自己的遥测事件（`jev.decide`、`jev.step`、`jev.metrics`）保存在会话历史和导出里，对话界面不显示。
 
 ## Jev 不可用时

@@ -49,6 +49,11 @@ function managedCommandRules(
   return (key: string) => managedLineage(ports, records.opening, key)
 }
 
+function traceWorkspace({ workspaces, workspaceCatalog }: StoresState, key: string) {
+  const cwd = workspaces.get(key)
+  return { ...(cwd ? { cwd } : {}), extraRoots: workspaceCatalog.extraRoots(key) }
+}
+
 export async function openWorkers(state: AssemblyBase & StoresState, lifetime: AssemblyLifetime) {
   const {
     o,
@@ -131,6 +136,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
         automationEvents.observe(sessionKey, e)
         sessionActivity.observe(sessionKey, e)
         observeSessionRequests(pool, sessionKey, e)
+        o.telemetry?.observe(sessionKey, e, () => traceWorkspace(state, sessionKey))
       }),
     onPreview: (sessionKey, p) => registry.deliverPreview(sessionKey, p),
     onDecisionsChanged: (detail) => {

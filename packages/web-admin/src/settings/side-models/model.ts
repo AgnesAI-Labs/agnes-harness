@@ -9,8 +9,17 @@ import type {
 } from '@agnes/protocol'
 
 /** The payload-only adapters the account store serves; the first is the default for a new entry. */
-export const SIDE_PROVIDERS = ['typesafe-systemone', 'openai-audio'] as const
+export const SIDE_PROVIDERS = ['agnes-sys1', 'typesafe-systemone', 'openai-audio'] as const
 export type SideProviderId = (typeof SIDE_PROVIDERS)[number]
+/**
+ * Which settings page lists an adapter's accounts: decision models (Agnes Sys1, Jev) on the model
+ * page, voice models on the voice page.
+ */
+export type SideModelKind = 'decision' | 'voice'
+export const KIND_PROVIDERS: Readonly<Record<SideModelKind, readonly SideProviderId[]>> = {
+  decision: ['agnes-sys1', 'typesafe-systemone'],
+  voice: ['openai-audio'],
+}
 export type AudioRole = NonNullable<ConfigModel['audioRole']>
 const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
 /** Voice models have no context window or output cap of their own; these fixed values stand in. */
@@ -211,7 +220,7 @@ export function voiceModels(
  * being its default; the voice presets differ in label, so their routes never collide.
  */
 export type AdapterPreset = Readonly<{
-  id: 'jev' | 'siliconflow' | 'openai' | 'stepfun'
+  id: 'sys1-cn' | 'sys1-intl' | 'jev' | 'siliconflow' | 'openai' | 'stepfun'
   provider: SideProviderId
   nameKey: string
   labelKey: string
@@ -238,7 +247,26 @@ const voicePreset = (
   ],
 })
 
+const sys1Preset = (id: 'sys1-cn' | 'sys1-intl', baseUrl: string): AdapterPreset => ({
+  id,
+  provider: 'agnes-sys1',
+  nameKey: `side.preset.${id}`,
+  labelKey: `side.prefillLabel.${id}`,
+  baseUrl,
+  models: () => [
+    {
+      ...blankModel(),
+      id: 'agnes-sys1-1.0',
+      name: 'Agnes Sys1 1.0',
+      contextWindow: '8192',
+      maxTokens: '1024',
+    },
+  ],
+})
+
 export const ADAPTER_PRESETS: readonly AdapterPreset[] = [
+  sys1Preset('sys1-cn', 'https://litellm-sa.agnes-ai.cn/sys1/v1'),
+  sys1Preset('sys1-intl', 'https://agrouter-sg.agnes-ai.com/sa/sys1/v1'),
   {
     id: 'jev',
     provider: 'typesafe-systemone',

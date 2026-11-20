@@ -32,10 +32,10 @@
         "configSchema": {
           "type": "object",
           "additionalProperties": false,
-          "description": "Configure a Jev key to make judgment available; unexpected-stop detection requires separate opt-in and is off by default.",
+          "description": "Configure an Agnes Sys1 or Jev decision-model account to use judgment. Unexpected-stop detection is off by default.",
           "x-locales": {
             "zh-CN": {
-              "description": "填上 Jev 的 key 即可启用判断模型；意外收工检测默认关闭，需要另外手动开启。"
+              "description": "配置 Agnes Sys1 或 Jev 决策模型账号即可使用判断。意外收工检测默认关闭。"
             }
           },
           "properties": {
@@ -47,7 +47,7 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 128,
-                  "description": "Configured side-model route."
+                  "description": "Configured decision-model route."
                 },
                 "model": {
                   "type": "string",
@@ -63,7 +63,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 128,
-                      "description": "Configured side-model route."
+                      "description": "Configured decision-model route."
                     },
                     "model": {
                       "type": "string",

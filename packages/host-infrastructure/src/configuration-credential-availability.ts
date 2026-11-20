@@ -1,5 +1,10 @@
 import type { ConfigAccount } from '@agnes/protocol'
-import { isSubscriptionCredential, type StoredCredential } from './adapters/credential-store.js'
+import {
+  type CredentialStore,
+  isSubscriptionCredential,
+  type StoredCredential,
+} from './adapters/credential-store.js'
+import { configurationCredentialFailure } from './configuration-credential-failure.js'
 import { ConfigurationError } from './configuration-error.js'
 
 export const isUsableCredential = (value: string): boolean => /\P{C}/u.test(value.trim())
@@ -40,4 +45,31 @@ export function effectiveDefaultAccount(
 ): ConfigAccount | undefined {
   const usable = accounts.filter((row) => row.enabled && row.credentialConfigured && conversation(row))
   return usable.find((row) => row.accountId === preferred) ?? usable[0]
+}
+
+export function configurationCredentialReader(home: string, store: Pick<CredentialStore, 'read'>) {
+  return async (ref: string): Promise<StoredCredential | null> => {
+    try {
+      return await store.read(ref)
+    } catch (error) {
+      throw configurationCredentialFailure(home, error, 'read')
+    }
+  }
+}
+
+/** These values stay in the local redactor; they are never projected onto the account RPC. */
+export async function telemetryCredentialValues(
+  accounts: readonly { credentialRef: string }[],
+  read: (ref: string) => Promise<StoredCredential | null>,
+): Promise<readonly string[]> {
+  const credentials = await Promise.all(accounts.map((row) => read(row.credentialRef)))
+  return credentials.flatMap((credential) => {
+    if (!credential) return []
+    if (credential.kind === 'api-key') return [credential.value]
+    if (isSubscriptionCredential(credential))
+      return [credential.access, credential.refresh, credential.accountId, credential.enterpriseUrl].filter(
+        (value): value is string => typeof value === 'string',
+      )
+    return [credential.accessToken, credential.refreshToken, credential.grantId]
+  })
 }

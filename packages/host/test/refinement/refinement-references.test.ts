@@ -10,6 +10,7 @@ import type { ModelRecord, Provider } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRefinementHost } from '../../src/runtime/assemble/refinement.js'
 import { createRefinementReferences } from '../../src/runtime/refinement/references.js'
+import { reviewCredential, reviewModel } from './service-key.js'
 
 const at = { key: 'k', lane: 'main' }
 const ID = 'skill:workspace-agnes:notes'
@@ -153,7 +154,10 @@ describe('a skill hidden from the model, through the real host bridge', () => {
     const dataDir = mkdtempSync(join(tmpdir(), 'agnes-refinement-refs-'))
     dirs.push(dataDir)
     const store = new RefinementSettingsStore(dataDir, 'p')
-    store.save({ enabled: true, mode: 'auto' }, store.read().revision)
+    store.save(
+      { credentialRef: reviewCredential(dataDir), model: reviewModel, enabled: true, mode: 'auto' },
+      store.read().revision,
+    )
     let flags: Flags = USER_ONLY
     const bridge = createRefinementHost(dataDir, 'p', Date.now, {
       skills: () => discovery([skill()], () => flags).view,
@@ -176,7 +180,11 @@ describe('a skill hidden from the model, through the real host bridge', () => {
     }
     const { session } = await openSession({
       provider,
-      refinement: bridge.kernelOptions.refinement,
+      refinement: {
+        ...bridge.kernelOptions.refinement,
+        provider: () => provider,
+        target: () => ({ route: primary.route, model: primary.id }),
+      },
       refinementEnabled: bridge.kernelOptions.refinementEnabled,
     })
     bridge.bindKernel({ sessions: new Map([[session.key, session]]) } as unknown as Kernel)

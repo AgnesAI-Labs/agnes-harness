@@ -87,6 +87,7 @@ export type LocalContext = {
    * public hook signature.
    */
   onPromptStart?: (sessionId: string) => void
+  onSessionCreated?: (sessionId: string) => void
   onPromptEnd?: (sessionId: string) => void
   continueFollowUps?: ReturnType<typeof createFollowUpRunner>
 }

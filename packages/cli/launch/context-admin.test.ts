@@ -131,3 +131,51 @@ it('validates diagnostic probes behind the same-origin boundary and keeps upstre
     body: { error: { data: { code: 'E_HOST_CLOSED', messageKey: 'appServer.errors.unavailable' } } },
   })
 })
+
+it('forwards only same-origin telemetry reads and valid partial updates', async () => {
+  const origin = 'http://127.0.0.1:7049'
+  const forwarded: unknown[] = []
+  const handler = contextAdmin(
+    origin,
+    async () => {
+      throw new Error('unexpected context request')
+    },
+    undefined,
+    undefined,
+    undefined,
+    async (input) => {
+      forwarded.push(input)
+      return {
+        settings: { analyticsEnabled: false, traceUploadEnabled: input.settings?.traceUploadEnabled ?? true },
+        status: { disabledByEnv: false, endpointConfigured: true },
+      }
+    },
+  )
+  async function request(body: unknown, requestOrigin = origin) {
+    const input = Readable.from([JSON.stringify(body)]) as IncomingMessage
+    Object.assign(input, {
+      method: 'POST',
+      url: '/api/telemetry',
+      headers: { host: '127.0.0.1:7049', origin: requestOrigin, 'content-type': 'application/json' },
+    })
+    let status = 0
+    let json: unknown
+    await handler(input, {
+      writeHead(code: number) {
+        status = code
+      },
+      end(body: string) {
+        json = JSON.parse(body) as unknown
+      },
+    } as unknown as ServerResponse)
+    return { status, json }
+  }
+  expect((await request({}, 'https://outside.invalid')).status).toBe(403)
+  expect((await request({ settings: { endpoint: 'https://outside.invalid' } })).status).toBe(400)
+  expect(await request({})).toMatchObject({ status: 200, json: { settings: { traceUploadEnabled: true } } })
+  expect(await request({ settings: { traceUploadEnabled: false } })).toMatchObject({
+    status: 200,
+    json: { settings: { analyticsEnabled: false, traceUploadEnabled: false } },
+  })
+  expect(forwarded).toEqual([{}, { settings: { traceUploadEnabled: false } }])
+})

@@ -481,6 +481,7 @@ async function createRuntime(entry) {
   const env = {
     ...process.env,
     HOME: home,
+    AGH_TELEMETRY_DISABLED: '1',
     AGH_HOME: home,
     // D31 is the evidence namespace, not a production profile template. The local CLI ships
     // `local-dev`; using an invented profile here makes the real launcher fail before a browser

@@ -1,21 +1,14 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { appendFile, chmod, copyFile, cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, chmod, copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import {
-  BUNDLED_EXAMPLES,
-  BUNDLED_PLUGIN_DIGESTS,
-  DEFAULT_ENABLED_BUNDLED_PACKAGES,
-  hashDirectory,
-  OPTIONAL_BUNDLED_PACKAGES,
-} from '@agnes/package-manager'
+import { parseSemver } from '@agnes/extension-api'
 import { AGH_DIR } from '@agnes/protocol'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { checkGlibc } from '../../../tools/native/check-glibc.mjs'
-import { buildPresentations, verifyPresentation } from '../../../tools/presentation-build.mjs'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { productionWebOptions } from '../../../tools/web-build-options.mjs'
 import { clientPlatformExternals } from '../../../tools/web-client-externals.mjs'
@@ -31,21 +24,14 @@ import { tabsAria } from '../../../tools/web-tabs-aria.mjs'
 import { consumeVendorCss } from '../../../tools/web-vendor-css.mjs'
 import { xSurface } from '../../../tools/web-x-surface.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
-import { buildJevPayload } from '../../package-manager/tools/build-jev-payload.mjs'
-import { buildJudgmentPayload } from '../../package-manager/tools/build-judgment-payload.mjs'
-import {
-  buildSuperagentPayload,
-  SUPERAGENT_RESOURCE_FOLDERS,
-} from '../../package-manager/tools/build-superagent-payload.mjs'
-import { prepareBrowser } from './browser.js'
 import { bundledManifests } from './bundled-manifests.mjs'
-import { bundledPackageVersion, stampBundledPackageVersion } from './bundled-version.js'
-import { checkPackagedClientModules } from './client-module-check.js'
-import { prepareDocumentReader } from './document-reader.js'
-import { copyExamplePayload } from './example-payload.js'
+import { copyBundledExamples, copyBundledPlugins } from './bundled-payload.js'
 import { copyPluginPackRuntime } from './plugin-pack-runtime.js'
+import { PUBLIC_PACKAGE_VERSION } from './release-version.mjs'
 import { copyRipgrep } from './ripgrep.js'
 import { copySystemRuntime, withBuiltSystemRuntime } from './windows-runtime.js'
+
+export { copyBundledExamples, copyBundledPlugins } from './bundled-payload.js'
 
 const cliRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const repoPackages = join(cliRoot, '..')
@@ -67,57 +53,6 @@ export async function copyJevLoopNotice(outputDirectory: string): Promise<void> 
   const destination = join(outputDirectory, jevLoopNoticeRelative)
   await mkdir(dirname(destination), { recursive: true })
   await copyFile(jevLoopNoticeSource, destination)
-}
-
-/** Copy only runtime payload, never repository tests or personal working files. */
-export async function copyBundledPlugins(outputDirectory: string, version = '0.0.0'): Promise<void> {
-  const presentations = await buildPresentations()
-  for (const { name: helper } of [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES]) {
-    const destination = join(outputDirectory, 'bundled-plugins', helper)
-    const source = join(repoPackages, 'package-manager', 'bundled-plugins', helper)
-    await mkdir(destination, { recursive: true })
-    // The Jev payload entry is generated from packages/loop-jev and is not committed.
-    if (helper === 'jev-loop') await buildJevPayload(source)
-    if (helper === 'judgment') await buildJudgmentPayload(source)
-    // The Superagent entry reads its generated prompts, skills and locale folders next to it.
-    if (helper === 'superagent') await buildSuperagentPayload(source)
-    for (const name of [
-      'package.json',
-      'index.mjs',
-      ...(existsSync(join(source, 'src')) ? ['src'] : []),
-      ...(helper === 'superagent' ? SUPERAGENT_RESOURCE_FOLDERS : []),
-      'README.md',
-      'LICENSE',
-    ])
-      await cp(join(source, name), join(destination, name), {
-        recursive: true,
-        force: false,
-        errorOnExist: true,
-      })
-    if (existsSync(join(source, 'README.zh-CN.md')))
-      await cp(join(source, 'README.zh-CN.md'), join(destination, 'README.zh-CN.md'))
-    if (existsSync(join(source, 'NOTICE'))) await cp(join(source, 'NOTICE'), join(destination, 'NOTICE'))
-    // Licenses of adapted third-party code (THIRD-PARTY-NOTICES, LICENSE.<name>) travel with the code they cover.
-    for (const name of await readdir(source))
-      if (/^(THIRD-PARTY-NOTICES|LICENSE\..+)$/.test(name))
-        await cp(join(source, name), join(destination, name))
-    if (presentations.some((record) => record.name === helper)) {
-      await cp(join(source, 'client-build.json'), join(destination, 'client-build.json'))
-      await verifyPresentation(destination)
-    }
-    if (helper === 'document-reader') await prepareDocumentReader(destination)
-    if (helper === 'browser') await prepareBrowser(destination)
-    await stampBundledPackageVersion(destination, version)
-    await checkPackagedClientModules(destination)
-  }
-  // Boot compares installed defaults with these final-payload digests instead of re-hashing them.
-  const digests = Object.fromEntries(
-    [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].map(({ name }) => [
-      `bundled-plugins/${name}`,
-      hashDirectory(join(outputDirectory, 'bundled-plugins', name)),
-    ]),
-  )
-  await writeFile(join(outputDirectory, BUNDLED_PLUGIN_DIGESTS), `${JSON.stringify(digests, null, 2)}\n`)
 }
 
 const bundleJitiTransform: Plugin = {
@@ -142,27 +77,6 @@ const bundleJitiTransform: Plugin = {
       }
     })
   },
-}
-
-/** Ship the curated example payload independently of the user's workspace. */
-export async function copyBundledExamples(outputDirectory: string, version = '0.0.0'): Promise<void> {
-  const parentVersions = new Map<string, string>()
-  for (const pkg of [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES]) {
-    const parent = JSON.parse(await readFile(join(repoPackages, pkg.sourcePath, 'package.json'), 'utf8'))
-    parentVersions.set(pkg.id, bundledPackageVersion(parent.version, version))
-  }
-  for (const { family, name } of BUNDLED_EXAMPLES) {
-    const source = join(repoPackages, '..', 'examples', family, name)
-    if (!existsSync(join(source, 'package.json'))) continue
-    const destination = join(outputDirectory, 'bundled-examples', family, name)
-    await copyExamplePayload(source, destination)
-    const manifestPath = join(destination, 'package.json')
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-    for (const [id, parentVersion] of parentVersions)
-      if (manifest.dependencies?.[id]) manifest.dependencies[id] = parentVersion
-    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
-    await checkPackagedClientModules(destination)
-  }
 }
 
 async function bundle(
@@ -208,7 +122,7 @@ async function textMap(directory: string, extension: string): Promise<Record<str
 const extensionManifests = async (packageDirectory: string): Promise<readonly unknown[]> =>
   bundledManifests(packageDirectory)
 
-async function runtimeDefines(version: string): Promise<Record<string, string>> {
+async function runtimeDefines(version: string, distribution: string): Promise<Record<string, string>> {
   const base = join(repoPackages, 'base')
   const code = join(repoPackages, 'code')
   const ai = join(repoPackages, 'ai')
@@ -233,6 +147,7 @@ async function runtimeDefines(version: string): Promise<Record<string, string>> 
   ])
   return {
     AGNES_VERSION: JSON.stringify(version),
+    AGNES_DISTRIBUTION: JSON.stringify(distribution),
     AGNES_BUNDLED_RIPGREP_PATH: JSON.stringify(`./ripgrep/${process.platform === 'win32' ? 'rg.exe' : 'rg'}`), // guards-allow-platform: target native executable
     AGNES_COMPOSED_WORKER: 'true',
     AGNES_PACKAGED_BUILTINS: 'true',
@@ -421,13 +336,15 @@ async function buildLocal(out: string, nativeOutput?: string, versionOverride?: 
   const webOut = join(out, 'web')
   await mkdir(join(out, 'native'), { recursive: true })
   await copyRipgrep(out)
-  const packageJson = JSON.parse(await readFile(join(cliRoot, 'package.json'), 'utf8')) as {
-    version?: unknown
-  }
-  const version = versionOverride ?? (typeof packageJson.version === 'string' ? packageJson.version : '0.0.0')
-  await copyBundledPlugins(out, version)
-  await copyBundledExamples(out, version)
-  const defines = await runtimeDefines(version)
+  const { version: packageVersion } = JSON.parse(await readFile(join(cliRoot, 'package.json'), 'utf8'))
+  const declaredVersion = typeof packageVersion === 'string' ? packageVersion : '0.0.0'
+  const workspaceBuild = versionOverride === undefined && declaredVersion === '0.0.0'
+  const payloadVersion = versionOverride ?? declaredVersion
+  const version = workspaceBuild ? PUBLIC_PACKAGE_VERSION : payloadVersion
+  const distribution = process.env.AGNES_BUILD_DISTRIBUTION?.trim() || (workspaceBuild ? 'dev' : 'npm')
+  await copyBundledPlugins(out, payloadVersion)
+  await copyBundledExamples(out, payloadVersion)
+  const defines = await runtimeDefines(version, distribution)
   await copyPluginPackRuntime(out, { define: defines, plugins: [bundleJitiTransform] })
 
   // This is the normal package executable. SEA keeps its own build path and embedded-manifest
@@ -486,7 +403,7 @@ function parseBuildArgs(args: readonly string[]): { out?: string; version?: stri
     }
     if (arg === '--version') {
       const value = args[index + 1]
-      if (value === undefined || !/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(value))
+      if (value === undefined || !parseSemver(value))
         throw new Error('Expected --version with a SemVer version')
       version = value
       index += 1

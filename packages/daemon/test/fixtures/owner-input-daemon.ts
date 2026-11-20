@@ -20,6 +20,8 @@ const crashAt = (point: string) => () => {
   process.kill(process.pid, 'SIGKILL')
 }
 
+process.env.AGH_TELEMETRY_DISABLED ??= '1'
+
 await runAgnesd(
   { home, workspace, profile: 'local-dev' },
   {

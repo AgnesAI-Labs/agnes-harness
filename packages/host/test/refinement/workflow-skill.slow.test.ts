@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { ecosystem } from '@agnes/base'
 import { type Kernel, ProjectionRegistry, type RefinementPlanner, type SaveReceipt } from '@agnes/core'
 import { actor, fakeProvider, openSession, sent, textTurn } from '@agnes/core/testkit'
+import { createCredentialStore } from '@agnes/host-infrastructure/adapters/credential-store'
 import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import type { InferenceEvent, ModelRecord, Provider, RequestBody } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -23,6 +24,8 @@ const dirs: string[] = []
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
+
+import { reviewModel } from './service-key.js'
 
 const PROFILE = 'workflow-skill'
 const NAME = 'ship-in-stages'
@@ -68,9 +71,17 @@ type Tool = { execute(args: unknown, ctx: unknown): Promise<{ isError?: boolean;
  */
 async function world(answer: (runId: () => string, userRequest: string) => unknown) {
   const w = skillWorkspace(dirs)
-  const store = new RefinementSettingsStore(w.dataDir, PROFILE)
-  store.save({ enabled: true, mode: 'auto' }, store.read().revision)
-  const bridge = createRefinementHost(w.dataDir, PROFILE, Date.now, { refinementSave: w.request })
+  const store = new RefinementSettingsStore(w.dataDir, PROFILE, w.home)
+  const credentialRef = 'secret://generic/00000000-0000-4000-8000-000000000001'
+  await createCredentialStore({ root: w.home }).putGeneric(credentialRef, 'fixture-review-key', {
+    label: 'Fixture',
+    createdAt: new Date(0).toISOString(),
+  })
+  store.save({ credentialRef, model: reviewModel, enabled: true, mode: 'auto' }, store.read().revision)
+  const bridge = createRefinementHost(w.dataDir, PROFILE, Date.now, {
+    refinementSave: w.request,
+    home: w.home,
+  })
   const projections = new ProjectionRegistry()
 
   let latestRun = ''
@@ -117,7 +128,11 @@ async function world(answer: (runId: () => string, userRequest: string) => unkno
       key: `k${++opened}`,
       provider,
       cwd: w.workspace,
-      refinement: { ...bridge.kernelOptions.refinement, target: { route: 'rsi', model: 'planner' } },
+      refinement: {
+        ...bridge.kernelOptions.refinement,
+        provider: () => provider,
+        target: () => ({ route: 'rsi', model: 'planner' }),
+      },
       refinementEnabled: () => true,
     })
     return session

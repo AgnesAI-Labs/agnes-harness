@@ -10,13 +10,14 @@ const AutomationPage = deferHomePage(async () => ({
 }))
 const PluginsPage = deferHomePage(async () => ({ default: (await import('./plugins-page.js')).PluginsPage }))
 const MhsPage = deferHomePage(async () => ({ default: (await import('./mhs-page.js')).MhsPage }))
+const RsiPage = deferHomePage(async () => ({ default: (await import('./rsi-page.js')).RsiPage }))
 
 /** The entries this file registered; every other page is plugin code and gets the plugin view of `data`. */
 const builtinEntries = new WeakSet<object>()
 export const isBuiltinHomeEntry = (entry: object): boolean => builtinEntries.has(entry)
 
 /** Built-in IDs for callers that need labels; placement follows the shared registry. */
-export const BUILTIN_HOME_ENTRIES: readonly string[] = ['plugins', 'agents', 'automation', 'mhs']
+export const BUILTIN_HOME_ENTRIES: readonly string[] = ['plugins', 'agents', 'automation', 'mhs', 'rsi']
 
 /** Drafts waiting for review: the count beside the plugins entry. */
 function pendingReviewBadge(): HomeEntryBadge & { refresh(): void } {
@@ -92,6 +93,14 @@ export function registerBuiltinHomeEntries(ownerCall?: OwnerInputCall): () => vo
       icon: 'route',
       titleKey: 'home.entry.mhs',
       component: MhsPage,
+    }),
+    homeEntries.register({
+      id: 'rsi',
+      order: 50,
+      placement: 'primary',
+      icon: 'refresh-cw',
+      titleKey: 'home.entry.rsi',
+      component: RsiPage,
     }),
     // Reviewing happens on a page, so leaving any page is when the count may have changed.
     homeNavigation.subscribe(pending.refresh),

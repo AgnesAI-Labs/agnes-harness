@@ -67,6 +67,69 @@
     white-space: pre-wrap;
   }
 
+  [data-agnes-conversation-messages] .refinement-summary {
+    display: inline-flex;
+    justify-content: flex-start;
+    gap: var(--s8);
+    max-width: 100%;
+    color: var(--agnes-text-secondary);
+    text-align: start;
+  }
+  [data-agnes-conversation-messages] .refinement-summary > svg {
+    flex: none;
+  }
+  [data-agnes-conversation-messages] .refinement-summary > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  [data-agnes-conversation-messages] .refinement-details {
+    margin-block-start: var(--s4);
+    padding: var(--s8) var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-card);
+    font-size: var(--font-size-sm);
+  }
+  [data-agnes-conversation-messages] .refinement-details > p,
+  [data-agnes-conversation-messages] .refinement-edits {
+    margin: 0;
+  }
+  [data-agnes-conversation-messages] .refinement-edits {
+    padding: 0;
+    list-style: none;
+  }
+  [data-agnes-conversation-messages] .refinement-entry,
+  [data-agnes-conversation-messages] .refinement-actions,
+  [data-agnes-conversation-messages] .refinement-edits > li {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s4) var(--s8);
+    min-width: 0;
+  }
+  [data-agnes-conversation-messages] .refinement-edits > li,
+  [data-agnes-conversation-messages] .refinement-details > .refinement-actions {
+    column-gap: var(--s12);
+    padding-block: var(--s4);
+  }
+  [data-agnes-conversation-messages] .refinement-edits > :where(li + li),
+  [data-agnes-conversation-messages] .refinement-edits + .refinement-actions {
+    border-block-start: 1px solid var(--agnes-line-primary);
+  }
+  [data-agnes-conversation-messages] .refinement-entry > span {
+    overflow-wrap: anywhere;
+  }
+  [data-agnes-conversation-messages] .refinement-entry-kind,
+  [data-agnes-conversation-messages] .refinement-entry > small,
+  [data-agnes-conversation-messages] .refinement-details [role="status"] {
+    color: var(--agnes-text-secondary);
+  }
+  [data-agnes-conversation-messages] .refinement-edits [role="status"] {
+    flex-basis: 100%;
+  }
+
   /* Explicit skill invocations remain plain `$name` text on the wire, but are recognisable in a
      sent message just as they are while being composed. */
   [data-agnes-conversation-messages] .agh-skill-mention {

@@ -27,6 +27,7 @@ it.each([
   ['subagents', '?page=plugins&tab=plugins.subagents'],
   ['schedules', '?page=automation&tab=schedules'],
   ['triggers', '?page=automation&tab=triggers'],
+  ['refinement', '?page=rsi'],
 ])('opens the new home of an old settings link (%s)', (id, search) => {
   history.replaceState(null, '', `/?settings=${id}#settings-subsection-${id}`)
   expect(rewriteMovedSettingsLink()?.kind).toBe('page')
@@ -80,7 +81,7 @@ it('opens the sidebar search or the archived list for an old history or archive 
 
 it('opens a moved page by its target: a home page with its tab, the search, or the archived list', () => {
   const actions = { openPage: vi.fn(), searchSessions: vi.fn(), showArchived: vi.fn() }
-  for (const id of ['search', 'schedules', 'examples', 'history', 'archived']) {
+  for (const id of ['search', 'schedules', 'examples', 'refinement', 'history', 'archived']) {
     const target = movedSettingsTarget(id)
     if (target) openMovedSettings(target, actions)
   }
@@ -88,6 +89,7 @@ it('opens a moved page by its target: a home page with its tab, the search, or t
     ['plugins', 'plugins.search'],
     ['automation', 'schedules'],
     ['agents', undefined],
+    ['rsi', undefined],
   ])
   expect(actions.searchSessions).toHaveBeenCalledOnce()
   expect(actions.showArchived).toHaveBeenCalledOnce()

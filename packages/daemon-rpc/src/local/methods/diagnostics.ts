@@ -27,7 +27,12 @@ import {
   type EventEnvelope,
   rpcError,
 } from '@agnes/protocol'
-import type { AdminObservabilityParams, AdminObservabilityResult } from '@agnes/protocol/gen/app-server'
+import type {
+  AdminObservabilityParams,
+  AdminObservabilityResult,
+  AdminTelemetryParams,
+  AdminTelemetryResult,
+} from '@agnes/protocol/gen/app-server'
 import type { SessionEntry } from '../sessions.js'
 
 // Injected into the daemon bundle by cli/tools/build-local.ts and sea/build.mjs; absent from source runs.
@@ -131,6 +136,7 @@ export function registerDiagnostics(
   deps: {
     authority: PackageAdminAuthorityResolver
     readOnly(context: CallContext): Promise<boolean>
+    administerTelemetry?: (input: AdminTelemetryParams) => Promise<AdminTelemetryResult>
     requireSessionOwner: (method: string, sessionId: string, c: CallContext) => void
     registry: Pick<Registry<SessionEntry>, 'require' | 'get'>
     sessionSnapshot?: (
@@ -148,6 +154,17 @@ export function registerDiagnostics(
       | readonly { name: string; status: string }[]
   },
 ): void {
+  const administerTelemetry = deps.administerTelemetry
+  if (administerTelemetry)
+    endpoint.register('_agnes/v1/admin.telemetry', async (params, c) => {
+      const input = params as AdminTelemetryParams
+      const write = input.settings !== undefined
+      requireLocalAdminAuthority(c, deps.authority, write)
+      if (write && (await deps.readOnly(c)))
+        throw rpcError('SEMANTIC_REJECTED', { reason: 'E_ADMIN_READ_ONLY' })
+      return administerTelemetry(input)
+    })
+
   endpoint.register('_agnes/v1/admin.observability', async (params, c) => {
     const input = params as AdminObservabilityParams
     requireLocalAdminAuthority(c, deps.authority, false)

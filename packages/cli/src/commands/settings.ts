@@ -11,6 +11,7 @@ import {
   AdminObservabilityParams,
   AdminSearchSave,
   AdminSearchTest,
+  AdminTelemetryParams,
 } from '@agnes/protocol/gen/app-server'
 import type { NodeClient } from '@agnes/sdk'
 import type { TSchema } from '@sinclair/typebox'
@@ -34,7 +35,7 @@ type Section = {
     drop?: string[]
     /** Fills keys the file left out. */
     defaults?: (p: ParsedArgs) => Params
-    /** admin.memory / admin.observability read and write with one method: a write names one of these. */
+    /** Some admin sections read and write with one method: a write names one of these. */
     needs?: string[]
   }
   /** `set --text <text>` shortcut: builds the save params from the stored value. */
@@ -85,6 +86,16 @@ const SECTIONS: Record<string, Section> = {
     summary: 'telemetry exporter settings',
     get: { method: '_agnes/v1/admin.observability' },
     save: { method: '_agnes/v1/admin.observability', schema: AdminObservabilityParams, needs: ['settings'] },
+  },
+  telemetry: {
+    summary: 'activity statistics and Session Log upload',
+    get: { method: '_agnes/v1/admin.telemetry' },
+    save: {
+      method: '_agnes/v1/admin.telemetry',
+      schema: AdminTelemetryParams,
+      drop: ['status'],
+      needs: ['settings'],
+    },
   },
   search: {
     summary: 'web search providers; test runs one query (--text <query> [<provider>])',

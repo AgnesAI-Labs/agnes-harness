@@ -1,8 +1,7 @@
-import type { VoiceSettings, VoiceSettingsSnapshot } from '@agnes/protocol'
+import type { ConfigSnapshot, VoiceSettings, VoiceSettingsSnapshot } from '@agnes/protocol'
 import { settingsSections, type VoiceSettingsApi } from '@agnes/web-client'
 import {
   Banner,
-  Button,
   type ConfigIssue,
   configIssues,
   fallbackT,
@@ -17,7 +16,8 @@ import {
 } from '@agnes/web-ui'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { voiceConfigSchema } from './config-schemas.js'
-import { failureCode } from './side-models/model.js'
+import { failureCode, type SideModelsClient } from './side-models/model.js'
+import { sideModelsPanel } from './side-models.js'
 import { VOICE_SETTINGS_NAMESPACE, voiceSettingsCatalog } from './voice-locale.js'
 
 type Form = {
@@ -79,7 +79,7 @@ const MESSAGE: Record<TextField, string> = {
  * The voice settings section: the account, voice input, read-aloud and conversation settings.
  * Every change saves itself against the revision last read; a conflicting save reloads the page.
  */
-export function VoiceSettingsPanel({ api }: { api: VoiceSettingsApi }) {
+export function VoiceSettingsPanel({ api, models }: { api: VoiceSettingsApi; models?: SideModelsClient }) {
   const { t } = useUiText(VOICE_SETTINGS_NAMESPACE, voiceSettingsCatalog)
   const [snapshot, setSnapshot] = useState<VoiceSettingsSnapshot>()
   const [accounts, setAccounts] = useState<readonly Account[]>([])
@@ -87,6 +87,7 @@ export function VoiceSettingsPanel({ api }: { api: VoiceSettingsApi }) {
   const [reads, setReads] = useState(0)
   const [conflict, setConflict] = useState(false)
   const [generation, setGeneration] = useState(0)
+  const [accountReads, setAccountReads] = useState(0)
   // biome-ignore lint/correctness/useExhaustiveDependencies: reads is an explicit retry.
   useEffect(() => {
     let live = true
@@ -99,7 +100,15 @@ export function VoiceSettingsPanel({ api }: { api: VoiceSettingsApi }) {
         if (live) setFailed(true)
       },
     )
-    // Without the account list the section still works; the route in use stays visible.
+    return () => {
+      live = false
+    }
+  }, [api, reads])
+  // Without the account list the section still works; the route in use stays visible. A voice model
+  // saved on this page lists again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: accountReads is an explicit refresh.
+  useEffect(() => {
+    let live = true
     void api.accounts().then(
       (rows) => {
         if (live) setAccounts(rows)
@@ -109,7 +118,7 @@ export function VoiceSettingsPanel({ api }: { api: VoiceSettingsApi }) {
     return () => {
       live = false
     }
-  }, [api, reads])
+  }, [api, reads, accountReads])
   if (!snapshot)
     return (
       <div className="voice-settings" data-testid="voice-settings">
@@ -118,6 +127,7 @@ export function VoiceSettingsPanel({ api }: { api: VoiceSettingsApi }) {
     )
   return (
     <div className="voice-settings" data-testid="voice-settings">
+      {models && <VoiceModels client={models} onChanged={() => setAccountReads((count) => count + 1)} />}
       {conflict && (
         <Banner tone="warning" data-testid="voice-conflict">
           {t('voice.conflict')}
@@ -283,11 +293,6 @@ function VoiceFields(props: {
             ))}
           </SettingsSelect>
         </SettingsItem>
-        <SettingsItem label={t('voice.configure.title')} description={t('voice.configure.hint')}>
-          <Button type="text" data-testid="voice-configure" onClick={() => api.openSideModels()}>
-            {t('voice.configure')}
-          </Button>
-        </SettingsItem>
         <SettingsItem label={t('voice.privacy.title')}>
           <span data-testid="voice-privacy">{t('voice.privacy')}</span>
         </SettingsItem>
@@ -311,8 +316,38 @@ function VoiceFields(props: {
   )
 }
 
-/** Installed by the voice controller, which owns the settings calls; the section needs no install. */
-export function registerVoiceSettingsSection(api: VoiceSettingsApi): () => void {
+/** The voice model accounts, listed and edited here; a save lists the accounts to choose from again. */
+function VoiceModels({ client, onChanged }: { client: SideModelsClient; onChanged(): void }) {
+  const [configuration, setConfiguration] = useState<ConfigSnapshot>()
+  useEffect(() => {
+    let live = true
+    void client.get().then(
+      (snapshot) => {
+        if (live) setConfiguration(snapshot)
+      },
+      () => undefined,
+    )
+    return () => {
+      live = false
+    }
+  }, [client])
+  return sideModelsPanel({
+    kind: 'voice',
+    client,
+    configuration,
+    canSave: configuration !== undefined,
+    onSaved: (saved) => {
+      setConfiguration(saved)
+      onChanged()
+    },
+  })
+}
+
+/**
+ * Installed by the voice controller, which owns the settings calls; the section needs no install.
+ * With the configuration client the page also lists and edits the voice model accounts.
+ */
+export function registerVoiceSettingsSection(api: VoiceSettingsApi, models?: SideModelsClient): () => void {
   return settingsSections.register({
     id: 'voice',
     group: 'general',
@@ -321,6 +356,6 @@ export function registerVoiceSettingsSection(api: VoiceSettingsApi): () => void 
     runtimeCatalog: false,
     titleKey: 'settings-shell.voice',
     groupTitleKey: 'settings-shell.group.general',
-    component: () => <VoiceSettingsPanel api={api} />,
+    component: () => <VoiceSettingsPanel api={api} {...(models ? { models } : {})} />,
   })
 }

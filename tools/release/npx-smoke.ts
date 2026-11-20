@@ -44,6 +44,7 @@ const env: NodeJS.ProcessEnv = {
   PATH: process.env.PATH ?? '',
   HOME: home,
   USERPROFILE: home,
+  AGH_TELEMETRY_DISABLED: '1',
   AGH_HOME: aghHome,
   TMPDIR: root,
   TEMP: root,

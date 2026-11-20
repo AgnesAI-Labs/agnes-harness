@@ -26,6 +26,7 @@ import {
   startWireCapture,
   type WireReply,
 } from '../../testkit/index.js'
+import { reviewCredential, reviewModel, routeReviewToLoopback } from './service-key.js'
 
 // The whole promotion path in an assembled host: the refine plugin's planner on a loopback model, Core's
 // reach and automatic offer, the Host's promotion, user registry and validity view, and the bundled file
@@ -181,8 +182,11 @@ async function twoWorkspaces(
   } finally {
     closeSync(credential)
   }
-  const settings = new RefinementSettingsStore(dataDir, PROFILE)
-  settings.save({ enabled, mode: 'auto' }, settings.read().revision)
+  const settings = new RefinementSettingsStore(dataDir, PROFILE, dataDir)
+  settings.save(
+    { credentialRef: reviewCredential(dataDir, dataDir), model: reviewModel, enabled, mode: 'auto' },
+    settings.read().revision,
+  )
   const planner = [lesson, confirm(AGAIN), confirm(ONCE_MORE)]
   let reviews = 0
   const capture = await startWireCapture(async (body) =>
@@ -190,6 +194,7 @@ async function twoWorkspaces(
       ? (planner[reviews++ % planner.length] as (b: unknown) => WireReply)(body)
       : { text: 'Done.' },
   )
+  const redirected = routeReviewToLoopback(capture.baseUrl('openai-completions'))
   vi.stubEnv('AGH_HOME', dataDir)
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(T0)
@@ -246,6 +251,7 @@ async function twoWorkspaces(
   } finally {
     vi.useRealTimers()
     vi.unstubAllEnvs()
+    redirected.mockRestore()
     await capture.close()
   }
 }

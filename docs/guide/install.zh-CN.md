@@ -18,7 +18,7 @@
 | --- | --- |
 | 公共包名 | `@agnes/harness` |
 | 命令 | `agh` |
-| 版本方案 | `0.1.0-alpha.N`（当前候选为 `0.1.0-alpha.0`） |
+| 版本方案 | 语义化版本（当前候选为 `0.1.0`） |
 | Node.js | `>=24.10` |
 | 平台 | macOS arm64 与 x64、Linux arm64 与 x64、Windows x64 |
 

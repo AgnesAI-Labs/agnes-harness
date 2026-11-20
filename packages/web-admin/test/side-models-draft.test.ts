@@ -1,6 +1,16 @@
 import type { ConfigAccount } from '@agnes/protocol'
 import { expect, it } from 'vitest'
-import { presetsFor, savedDraft } from '../src/settings/side-models/model.js'
+import { presetsFor, SIDE_PROVIDERS, savedDraft } from '../src/settings/side-models/model.js'
+
+it('puts Sys1 first with a domestic default and a separate international preset', () => {
+  expect(SIDE_PROVIDERS[0]).toBe('agnes-sys1')
+  const sys1 = presetsFor(SIDE_PROVIDERS[0])
+  expect(sys1.map((p) => p.baseUrl)).toEqual([
+    'https://litellm-sa.agnes-ai.cn/sys1/v1',
+    'https://agrouter-sg.agnes-ai.com/sa/sys1/v1',
+  ])
+  expect(sys1.map((p) => p.models()[0]?.id)).toEqual(['agnes-sys1-1.0', 'agnes-sys1-1.0'])
+})
 
 const fixed = { contextWindow: 65536, maxTokens: 4096 }
 const voiceAccount: ConfigAccount = {

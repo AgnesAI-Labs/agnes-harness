@@ -7,7 +7,7 @@ const modelSelection = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    route: { type: 'string', minLength: 1, maxLength: 128, description: 'Configured side-model route.' },
+    route: { type: 'string', minLength: 1, maxLength: 128, description: 'Configured decision-model route.' },
     model: { type: 'string', minLength: 1, maxLength: 256, description: 'Model id on the selected route.' },
   },
 }
@@ -15,9 +15,9 @@ export const CONFIG_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   description:
-    'Configure a Jev key to make judgment available; unexpected-stop detection requires separate opt-in and is off by default.',
+    'Configure an Agnes Sys1 or Jev decision-model account to use judgment. Unexpected-stop detection is off by default.',
   'x-locales': {
-    'zh-CN': { description: '填上 Jev 的 key 即可启用判断模型；意外收工检测默认关闭，需要另外手动开启。' },
+    'zh-CN': { description: '配置 Agnes Sys1 或 Jev 决策模型账号即可使用判断。意外收工检测默认关闭。' },
   },
   properties: {
     judge: {
@@ -129,24 +129,42 @@ export function resolveJudgeChain(
   sideModels: readonly SideModelEntry[],
 ): readonly JudgeTarget[] | null {
   const cfg = object(config) && object(config.judge) ? config.judge : {}
-  const native = (entry: SideModelEntry) => entry.api === 'typesafe-systemone'
   const targets = [
     ...new Map(sideModels.map((entry) => [JSON.stringify([entry.route, entry.model]), entry])).values(),
   ]
-  let choices =
-    typeof cfg.route === 'string' ? targets.filter((e) => e.route === cfg.route) : targets.filter(native)
-  if (typeof cfg.route !== 'string' && new Set(choices.map((e) => e.route)).size !== 1) return null
-  if (typeof cfg.model === 'string') choices = choices.filter((e) => e.model === cfg.model)
+  const choices = judgmentCandidates(cfg, targets)
   if (choices.length !== 1) return null
   const primary = choices[0]!
-  const chain: JudgeTarget[] = [{ route: primary.route, model: primary.model, native: native(primary) }]
+  const chain: JudgeTarget[] = [
+    { route: primary.route, model: primary.model, native: isNativeJudge(primary) },
+  ]
   const fallback = cfg.fallback
-  if (native(primary) && object(fallback)) {
-    const hit = targets.find((e) => e.route === fallback.route && e.model === fallback.model && native(e))
+  if (isNativeJudge(primary) && object(fallback)) {
+    const hit = targets.find(
+      (e) => e.route === fallback.route && e.model === fallback.model && isNativeJudge(e),
+    )
     if (hit && (hit.route !== primary.route || hit.model !== primary.model))
       chain.push({ route: hit.route, model: hit.model, native: true })
   }
   return chain
+}
+
+const isNativeJudge = (entry: SideModelEntry) =>
+  entry.api === 'agnes-sys1' || entry.api === 'typesafe-systemone'
+
+export function judgmentCandidates(
+  cfg: Readonly<Record<string, unknown>>,
+  targets: readonly SideModelEntry[],
+): SideModelEntry[] {
+  const choices = targets.filter(
+    (entry) =>
+      entry.api !== 'openai-audio' &&
+      (typeof cfg.route === 'string' ? entry.route === cfg.route : isNativeJudge(entry)) &&
+      (typeof cfg.model !== 'string' || entry.model === cfg.model),
+  )
+  if (typeof cfg.route === 'string' || typeof cfg.model === 'string') return choices
+  const sys1 = choices.filter((entry) => entry.api === 'agnes-sys1')
+  return sys1.length ? sys1 : choices
 }
 
 export function resolveToolConfig(config: unknown): { find: boolean; batch: boolean } {

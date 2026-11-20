@@ -1,6 +1,6 @@
 import type { AssistantMessage } from '@earendil-works/pi-ai'
 import { describe, expect, it, vi } from 'vitest'
-import { classifyPiError } from '../src/adapters/pi/errors.js'
+import { classifyPiError, quotaNote } from '../src/adapters/pi/errors.js'
 import { PiAdapter } from '../src/adapters/pi/index.js'
 import { networkEvent, networkFailure, watchResponse } from '../src/adapters/pi/network.js'
 import { AGNES_AI_BASE_URL, buffersToolCalls } from '../src/adapters/pi/providers/agnes-ai.js'
@@ -37,6 +37,57 @@ const msg = (
 })
 
 describe('classifyPiError', () => {
+  it('reads an account out of quota from its words, whatever status the gateway chose', () => {
+    // llm.sg and other New API gateways answer an empty account with 403 and a Chinese message.
+    const gateway = classifyPiError(
+      msg('403 用户额度不足，剩余额度: ＄0.000000 (request id: 20261119130937288797826mFQ1ZSd8)'),
+      undefined,
+      403,
+    )
+    expect(gateway).toEqual({
+      code: 'QUOTA',
+      retryable: false,
+      message:
+        'status=403 requestId=20261119130937288797826mFQ1ZSd8 note="用户额度不足，剩余额度: ＄0.000000"',
+    })
+    // Passed through raw, the body is JSON; only its readable message is kept.
+    const raw = classifyPiError(
+      msg(
+        '403 {"message":"用户额度不足，剩余额度: ＄0.000000 (request id: 20261119133117)","type":"AgnesAI_error","param":"","code":"insufficient_user_quota"}',
+      ),
+    )
+    expect(raw.code).toBe('QUOTA')
+    expect(raw.message).toBe('status=403 requestId=20261119133117 note="用户额度不足，剩余额度: ＄0.000000"')
+    expect(
+      classifyPiError(
+        msg('429 {"error":{"message":"You exceeded your current quota.","code":"insufficient_quota"}}'),
+      ).message,
+    ).toBe('status=429 note="You exceeded your current quota."')
+    // OpenAI's empty account is a 429 that retrying cannot fix.
+    const openai = classifyPiError(
+      msg('429 You exceeded your current quota, please check your plan and billing details.'),
+    )
+    expect(openai.code).toBe('QUOTA')
+    expect(openai.retryable).toBe(false)
+    expect(openai.message).toContain('note="You exceeded your current quota')
+    // A plain refusal is still a rejected credential, and its text is still not forwarded.
+    expect(classifyPiError(msg('403 Forbidden: key sk-abcdefgh rejected'))).toEqual({
+      code: 'AUTH',
+      retryable: false,
+      message: 'status=403',
+    })
+  })
+
+  it('keeps a quota note only when it is short and carries nothing shaped like a credential', () => {
+    expect(quotaNote('402 insufficient_user_quota')).toBe('insufficient_user_quota')
+    expect(quotaNote('403 insufficient quota for sk-live1234567890')).toBeUndefined()
+    expect(quotaNote('403 额度不足 Bearer abc.def')).toBeUndefined()
+    expect(quotaNote('403 额度不足，充值: https://pay.example/topup?token=x')).toBeUndefined()
+    expect(quotaNote(`403 insufficient quota ${'很长'.repeat(100)}`)).toBeUndefined()
+    expect(quotaNote('403 额度不足 c2stbGl2ZS1hYmNkZWZnaGlqa2xtbm9wcXJzdHV2')).toBeUndefined()
+    expect(classifyPiError(msg('403 insufficient quota for sk-live1234567890')).message).toBe('status=403')
+  })
+
   it.each([
     ['401 Unauthorized: invalid api key sk-abc', 'AUTH', false, undefined],
     ['429 Too Many Requests, retry-after: 7', 'RATE_LIMIT', true, 7000],

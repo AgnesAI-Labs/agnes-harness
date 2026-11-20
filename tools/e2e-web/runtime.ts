@@ -69,6 +69,7 @@ export async function isolatedRuntime(
     AGH_HOME: home,
     AGNES_PROFILE: 'local-dev',
     AGNES_WEB_ORIGIN: url,
+    AGH_TELEMETRY_DISABLED: '1',
     ...options.extraEnv,
   }
   // Seed the reviewed test archive before enabling the default plugin; no startup network race.

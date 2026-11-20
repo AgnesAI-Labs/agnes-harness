@@ -38,7 +38,7 @@
 | `agh triggers add --file RULE.json\|-` / `edit RULE --file RULE.json\|-` / `configure --file CONFIG.json\|-` | 用 JSON 保存规则或配置（`-` 读标准输入）；发送前先按协议 schema 校验 |
 | `agh triggers test RULE [--payload FILE\|-]` | 用模拟投递跑一次规则；投递未被接受时打印状态并以 1 退出。`deliver` 仅限 webhook 入站，CLI 不提供 |
 | `agh settings [--json]` | 列出全部设置 section 及一行说明 |
-| `agh settings SECTION [get] [--json]` | 每个值一行输出一个 section（`model-slots`、`child-engines`、`auto-review`、`system-prompt`、`memory`、`observability`、`search`、`session-defaults`），`--json` 输出 daemon 返回；`memory` 使用 `--cwd` |
+| `agh settings SECTION [get] [--json]` | 每个值一行输出一个 section（`model-slots`、`child-engines`、`auto-review`、`system-prompt`、`memory`、`observability`、`telemetry`、`search`、`session-defaults`），`--json` 输出 daemon 返回；`memory` 使用 `--cwd` |
 | `agh settings SECTION set --file FILE\|-` | 用 JSON 保存 section（`-` 读标准输入）；发送前先按协议 schema 校验。`system-prompt` 还接受 `--text TEXT`（替换整个提示词，需要 `--yes`；为空则移除） |
 | `agh settings search test --text QUERY [PROVIDER]` | 用某个提供商（默认用默认提供商）跑一次搜索；测试失败时打印原因并以 1 退出 |
 | `agh credentials [list] [--json]` / `agh credentials rename ID NAME...` | 列出通用凭据（id、名称、类型、创建时间、引用；从不含密钥）/改名 |

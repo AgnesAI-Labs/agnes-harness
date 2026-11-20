@@ -13,6 +13,7 @@ import type { HostDecisionOwner } from '@agnes/host-extensions/profile/runtime'
 import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import type { RefinementSettingsSnapshot } from '@agnes/protocol'
 import { createRefinementApprovals, REFINEMENT_DECISION_OWNER } from '../refinement/approvals.js'
+import { refinementModel } from '../refinement/model.js'
 import { offeredSources } from '../refinement/offered-sources.js'
 import { createRefinementReferences } from '../refinement/references.js'
 import { savedParagraphs } from '../refinement/saved-paragraphs.js'
@@ -52,7 +53,7 @@ export function createRefinementHost(
     home?: string
   } = {},
 ) {
-  const store = new RefinementSettingsStore(dataDir, profile)
+  const store = new RefinementSettingsStore(dataDir, profile, sources.home)
   const read = (): RefinementSettingsSnapshot => {
     try {
       return store.current()
@@ -164,6 +165,7 @@ export function createRefinementHost(
   // Skills and roles a skill or subagent entry is bound to, as the session can use them now.
   const references = createRefinementReferences({ session: sessionOf, skills: () => sources.skills?.() })
   const refinement: RefinementDeps = {
+    ...refinementModel(store, clock),
     settings,
     planner: () => planner,
     taskScope,

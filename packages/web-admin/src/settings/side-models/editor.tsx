@@ -16,7 +16,6 @@ import {
   type EditorDraft,
   type ModelDraft,
   presetsFor,
-  SIDE_PROVIDERS,
   type SideProviderId,
   type VoiceError,
   voiceRows,
@@ -24,6 +23,8 @@ import {
 
 export type SideModelEditorProps = {
   draft: EditorDraft
+  /** The adapters this page offers; a single one needs no choice. */
+  providers: readonly SideProviderId[]
   /** The route the entry is called by: derived from the name while new, fixed once saved. */
   route: string
   canSave: boolean
@@ -35,7 +36,7 @@ export type SideModelEditorProps = {
   /** The save outcome line. */
   status: ReactNode
   onPatch(next: Partial<EditorDraft>): void
-  /** A new entry switches adapter or preset: label, endpoint and models are replaced, the credential kept. */
+  /** A new entry switches adapter or preset. The parent applies any credential re-selection rules. */
   onPreset(preset: AdapterPreset): void
   onModels(update: (models: ModelDraft[]) => ModelDraft[]): void
   /** Creates a credential and selects it; resolves whether it was created. */
@@ -76,25 +77,30 @@ export function SideModelEditor(props: SideModelEditorProps) {
   }
   return (
     <div className="side-editor" data-testid="side-editor">
-      <SettingsSection title={t('side.basics')} description={t('side.basicsNote')}>
+      <SettingsSection
+        title={t('side.basics')}
+        description={t(voice ? 'side.voice.basicsNote' : 'side.basicsNote')}
+      >
         <div className="side-editor-fields">
-          <Field label={t('side.adapter')}>
-            <SettingsSelect
-              data-testid="side-adapter"
-              value={draft.providerId}
-              disabled={busy || !draft.isNew}
-              onChange={(event) => {
-                const preset = presetsFor(event.target.value as SideProviderId)[0]
-                if (preset) props.onPreset(preset)
-              }}
-            >
-              {SIDE_PROVIDERS.map((id) => (
-                <option key={id} value={id}>
-                  {t(`side.adapter.${id}`)}
-                </option>
-              ))}
-            </SettingsSelect>
-          </Field>
+          {props.providers.length > 1 && (
+            <Field label={t('side.adapter')}>
+              <SettingsSelect
+                data-testid="side-adapter"
+                value={draft.providerId}
+                disabled={busy || !draft.isNew}
+                onChange={(event) => {
+                  const preset = presetsFor(event.target.value as SideProviderId)[0]
+                  if (preset) props.onPreset(preset)
+                }}
+              >
+                {props.providers.map((id) => (
+                  <option key={id} value={id}>
+                    {t(`side.adapter.${id}`)}
+                  </option>
+                ))}
+              </SettingsSelect>
+            </Field>
+          )}
           {draft.isNew && presets.length > 1 && (
             <Field label={t('side.preset')}>
               <SettingsSelect
@@ -266,7 +272,9 @@ export function SideModelEditor(props: SideModelEditorProps) {
         <SettingsSection
           title={t('side.models')}
           description={
-            draft.isNew ? `${t('side.modelsNote')}${t('side.modelsPrefill')}` : t('side.modelsNote')
+            draft.isNew && draft.providerId === 'typesafe-systemone'
+              ? `${t('side.modelsNote')}${t('side.modelsPrefill')}`
+              : t('side.modelsNote')
           }
         >
           <div className="side-editor-fields">

@@ -31,7 +31,13 @@ export async function connect(source, home) {
 }
 
 export async function runtime(distribution, home, cwd) {
-  const env = { PATH: process.env.PATH, HOME: home, AGH_HOME: home, AGNES_PROFILE: 'local-dev' }
+  const env = {
+    PATH: process.env.PATH,
+    HOME: home,
+    AGH_HOME: home,
+    AGNES_PROFILE: 'local-dev',
+    AGH_TELEMETRY_DISABLED: '1',
+  }
   const entry = join(distribution, 'agnes.mjs')
   const command = (args) => run(process.execPath, [entry, ...args], { cwd, env, timeout: 120_000 })
   await command(['sessions', '--json'])

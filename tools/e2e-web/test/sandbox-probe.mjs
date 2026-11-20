@@ -47,7 +47,13 @@ const backend = await detectBackend({
       cwd: options.cwd,
       timeout: options.timeoutMs,
       maxBuffer: options.maxOutputBytes,
-      env: { PATH: process.env.PATH ?? '', HOME: home, TMPDIR: '/tmp', AGH_HOME: homeRoot },
+      env: {
+        PATH: process.env.PATH ?? '',
+        HOME: home,
+        TMPDIR: '/tmp',
+        AGH_HOME: homeRoot,
+        AGH_TELEMETRY_DISABLED: '1',
+      },
     })
     return { ...result, code: 0, truncated: false, timedOut: false }
   },

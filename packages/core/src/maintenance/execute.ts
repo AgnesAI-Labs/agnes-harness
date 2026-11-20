@@ -10,6 +10,7 @@ import {
   type AiErrorCode,
   type InferenceEvent,
   type ModelRecord,
+  type Provider,
   type RequestBody,
   validateAgainst,
   validateEvent,
@@ -123,9 +124,9 @@ async function recorded(s: SessionImpl, effectId: string): Promise<boolean> {
   return intents.some((event) => (event.data as { effectId?: unknown } | null)?.effectId === effectId)
 }
 
-function catalogued(s: SessionImpl, target: MaintenanceRequest['target']): ModelRecord | undefined {
+function catalogued(provider: Provider, target: MaintenanceRequest['target']): ModelRecord | undefined {
   try {
-    return s.d.provider.models().find((item) => item.route === target.route && item.id === target.model)
+    return provider.models().find((item) => item.route === target.route && item.id === target.model)
   } catch {
     return undefined
   }
@@ -165,11 +166,11 @@ const codeOf = (value: unknown): AiErrorCode =>
   AI_ERROR_CODES.includes(value as AiErrorCode) ? (value as AiErrorCode) : 'TRANSPORT'
 
 /** Reads the provider's stream to its end, or until the call is cut. Never throws. */
-async function read(s: SessionImpl, wire: RequestBody, signal: AbortSignal, seen: Seen): Promise<void> {
+async function read(provider: Provider, wire: RequestBody, signal: AbortSignal, seen: Seen): Promise<void> {
   let iterator: AsyncIterator<InferenceEvent> | undefined
   try {
     const source = await raced(
-      Promise.resolve().then(() => s.d.provider.infer(wire, { signal, toolNames: [], retry: false })),
+      Promise.resolve().then(() => provider.infer(wire, { signal, toolNames: [], retry: false })),
       signal,
     )
     iterator = source[Symbol.asyncIterator]()
@@ -277,6 +278,7 @@ export async function invokeMaintenance(
   signal: AbortSignal,
   budgetTokens: number,
   unavailable: () => MaintenanceReason | undefined,
+  getProvider: () => Provider | undefined,
 ): Promise<MaintenanceResult> {
   checkRequest(req)
   const effectId = maintenanceEffectId(req.runId)
@@ -297,7 +299,9 @@ export async function invokeMaintenance(
     const why = unavailable()
     if (why) return refused(why)
     if (await recorded(s, effectId)) return refused('duplicate')
-    const record = catalogued(s, req.target)
+    const provider = getProvider()
+    if (!provider) return refused('unavailable')
+    const record = catalogued(provider, req.target)
     if (!record) return refused('target-unknown')
     const messages = structuredClone([...req.messages])
     const target = { route: record.route, model: record.id }
@@ -373,10 +377,16 @@ export async function invokeMaintenance(
       await releaseMaintenance(s, hold)
       throw error
     }
-    return await dispatch(s, req, { effectId, wire, record, inputTokens, projected, hold }, controller, {
-      cut: () => cut,
-      deadline: () => stop('deadline'),
-    })
+    return await dispatch(
+      s,
+      req,
+      { effectId, provider, wire, record, inputTokens, projected, hold },
+      controller,
+      {
+        cut: () => cut,
+        deadline: () => stop('deadline'),
+      },
+    )
   } finally {
     signal.removeEventListener('abort', onAbort)
     claim.release()
@@ -388,6 +398,7 @@ async function dispatch(
   req: MaintenanceRequest,
   call: {
     effectId: string
+    provider: Provider
     wire: RequestBody
     record: ModelRecord
     inputTokens: number
@@ -404,7 +415,7 @@ async function dispatch(
   const disarm = armTimeout(cuts.deadline, req.deadlineMs)
   const seen: Seen = { dispatched: false, sent: false, done: false, text: '' }
   try {
-    await read(s, call.wire, controller.signal, seen)
+    await read(call.provider, call.wire, controller.signal, seen)
     disarm()
     const build = (observed: Seen) => {
       const end = ending(observed, cuts.cut())

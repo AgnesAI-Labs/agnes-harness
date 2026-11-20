@@ -37,6 +37,7 @@ export async function runtime(check, limits = {}) {
     TMP: root,
     HOME: root,
     TMPDIR: tmpdir(),
+    AGH_TELEMETRY_DISABLED: '1',
     AGH_HOME: home,
     AGNES_PROFILE: 'local-dev',
   }

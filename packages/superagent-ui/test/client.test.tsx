@@ -39,7 +39,12 @@ it('registers one localized primary home entry that shows the panel, and withdra
   }
   const dispose = apply(ctx as never)
   expect(entries).toHaveLength(1)
-  expect(entries[0]).toMatchObject({ id: 'superagent', placement: 'primary', titleKey: 'superagent.nav' })
+  expect(entries[0]).toMatchObject({
+    id: 'superagent',
+    placement: 'primary',
+    titleKey: 'superagent.nav',
+    order: 35,
+  })
   expect(catalogs['@agnes/superagent']).toEqual({
     en: { 'superagent.nav': 'Superagent' },
     'zh-CN': { 'superagent.nav': 'Superagent' },

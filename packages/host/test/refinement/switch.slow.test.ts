@@ -7,6 +7,7 @@ import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-s
 import { afterAll, describe, expect, it } from 'vitest'
 import type { Host } from '../../src/runtime/lifecycle/host.js'
 import { createTestHost } from '../../testkit/index.js'
+import { reviewCredential, reviewModel } from './service-key.js'
 
 const baseDir = fileURLToPath(new URL('../../../base/', import.meta.url))
 const REFINEMENT_TOOLS = ['harness_inspect', 'harness_propose', 'harness_refine']
@@ -53,7 +54,10 @@ const LEGACY_PRESET = {
 
 function enable(dataDir: string): void {
   const store = new RefinementSettingsStore(dataDir, PROFILE)
-  store.save({ enabled: true, mode: 'auto' }, store.read().revision)
+  store.save(
+    { credentialRef: reviewCredential(dataDir), model: reviewModel, enabled: true, mode: 'auto' },
+    store.read().revision,
+  )
 }
 
 async function refinementTools(dataDir: string) {
@@ -106,7 +110,10 @@ describe('the refinement switch at host assembly', () => {
   it('a settings file for another profile does not turn the tools on', async () => {
     const dataDir = scratch()
     const other = new RefinementSettingsStore(dataDir, 'another-profile')
-    other.save({ enabled: true, mode: 'auto' }, other.read().revision)
+    other.save(
+      { credentialRef: reviewCredential(dataDir), model: reviewModel, enabled: true, mode: 'auto' },
+      other.read().revision,
+    )
     expect((await refinementTools(dataDir)).offered).toEqual([])
   })
 })
@@ -119,7 +126,10 @@ describe('what Core reads of the switch in a running host', () => {
   }
   const save = (dataDir: string, enabled: boolean) => {
     const store = new RefinementSettingsStore(dataDir, PROFILE)
-    store.save({ enabled, mode: 'auto' }, store.read().revision)
+    store.save(
+      { credentialRef: reviewCredential(dataDir), model: reviewModel, enabled, mode: 'auto' },
+      store.read().revision,
+    )
   }
 
   it('on at assembly: Core has the planner and sees a switch-off at once, the tools stay', async () => {

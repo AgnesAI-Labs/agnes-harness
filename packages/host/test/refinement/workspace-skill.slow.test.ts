@@ -161,9 +161,10 @@ async function session(w: Workspace, answers: Answer[]) {
     },
   }
   const refinement: RefinementDeps = {
+    provider: () => provider,
     settings: w.settings,
     planner: () => planner,
-    target: { route: 'rsi', model: 'planner' },
+    target: () => ({ route: 'rsi', model: 'planner' }),
     workspace: w.saves,
     workspaceRefs: createWorkspaceRefs({
       dataDir: w.dataDir,

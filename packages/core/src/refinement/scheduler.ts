@@ -6,6 +6,7 @@ import type {
   RefinementRunRecord,
   RefinementTrigger,
 } from '@agnes/core-ledger/reduce/state'
+import type { Provider } from '@agnes/protocol'
 import { createMaintenancePort } from '../maintenance/port.js'
 import { type ApplyProposal, applyRefine, entryKey } from '../refine/apply.js'
 import type { SessionImpl } from '../step/session.js'
@@ -34,8 +35,9 @@ export type RefinementDeps = {
   settings(): RefinementSettingsView
   /** The plugin's planner, once it has been handed over; absent means no plan can be made yet. */
   planner(): RefinementPlanner | undefined
-  /** The planner model; absent means the session's current primary model, frozen for each run. */
-  target?: { route: string; model: string }
+  /** Private planner catalogue and transport. Without a target and transport no review can run. */
+  provider?: () => Provider | undefined
+  target?: () => { route: string; model: string } | undefined
   /**
    * The session's current task, read through the task-scope reader the goal plugin provides; null
    * when it has no goal, undefined (or a throw) when it cannot be read now. Absent means no task
@@ -186,8 +188,9 @@ async function start(s: SessionImpl, run: RefinementRunRecord): Promise<boolean>
   }
   // A manual request queued after the queue was read is left for the next start, as everywhere else.
   await supersedeQueued(s, run.runId, automatic)
+  const target = deps.target?.()
   if (automatic) {
-    const why = await automaticRefusal(s, deps.target, {
+    const why = await automaticRefusal(s, target, {
       run: run.runId,
       ...(run.trigger.kind === 'model' ? { kind: 'model' as const } : {}),
     })
@@ -202,13 +205,15 @@ async function start(s: SessionImpl, run: RefinementRunRecord): Promise<boolean>
     }
   }
   const runDeps: RefinementRunDeps = {
-    maintenance: createMaintenancePort(s),
+    maintenance: createMaintenancePort(s, {
+      provider: () => (settingsOf(s)?.revision === run.settingsRevision ? deps.provider?.() : undefined),
+    }),
     planner,
     settings: () => {
       const view = settingsOf(s)
       return { enabled: view !== undefined, revision: view?.revision ?? '' }
     },
-    ...(deps.target ? { target: deps.target } : {}),
+    ...(target ? { target } : {}),
     // Only the user's own request carries the agreement to an unknown price, recorded when it was queued.
     ...(run.trigger.kind === 'manual' && run.trigger.allowUnpriced === true ? { allowUnpriced: true } : {}),
   }

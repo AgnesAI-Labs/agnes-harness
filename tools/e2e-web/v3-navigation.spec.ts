@@ -82,6 +82,17 @@ test('v3 home entries, deep links and browser back/forward retain the selected p
   await page.reload()
   await expect(page.getByRole('tab', { name: 'Triggers', exact: true })).toHaveCount(0)
   await expect(page.getByTestId('schedules-new')).toBeVisible()
+
+  await homePage(page, 'rsi')
+  await expect(page.getByRole('heading', { name: 'RSI', exact: true })).toBeVisible()
+  await expect(page.getByTestId('refinement-saved-skills')).toBeVisible()
+  await page.goto(`${runtime.url}/?settings=refinement`)
+  await expect(page).toHaveURL(/\?page=rsi$/)
+  await expect(page.getByTestId('refinement-saved-skills')).toBeVisible()
+
+  await section(page, 'general')
+  await expect(page.locator('#settings-section-tabs').getByRole('tab')).toHaveText(['General', 'Voice'])
+  await expect(page.getByTestId('settings-nav-refinement-tab')).toHaveCount(0)
 })
 
 test('v3 command-K searches durable session text and opens the matching session', async ({

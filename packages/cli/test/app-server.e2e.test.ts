@@ -1,5 +1,5 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -68,6 +68,7 @@ it('embeds JSONL on the shared daemon, streams a turn, answers approval, and lea
     TMP: root,
     HOME: root,
     AGH_HOME: home,
+    AGH_TELEMETRY_DISABLED: '1',
     AGNES_PROFILE: 'local-dev',
     TMPDIR: tmpdir(),
   }
@@ -220,6 +221,7 @@ it('embeds JSONL on the shared daemon, streams a turn, answers approval, and lea
     else second.child.kill('SIGTERM')
     expect(await signalled).toBe(143)
     expect((await cli(['daemon', 'status'])).stdout).toContain(String(owner.pid))
+    await expect(stat(join(home, 'telemetry-id'))).rejects.toMatchObject({ code: 'ENOENT' })
   } finally {
     await Promise.all(
       children.map(async (child) => {

@@ -9,12 +9,12 @@ import { guardPackedFiles } from './pack-guard.js'
 import { guardTarEntries } from './packed-tarball.js'
 
 describe('publishable npx manifest', () => {
-  it('ships @agnes/harness with the alpha version and no install-time dependencies', () => {
+  it('ships @agnes/harness at 0.1.0 with no install-time dependencies', () => {
     const manifest = publishableManifest('darwin-arm64')
     expect(manifest.name).toBe(PUBLIC_PACKAGE_NAME)
     expect(manifest.name).toBe('@agnes/harness')
     expect(manifest.version).toBe(PUBLIC_PACKAGE_VERSION)
-    expect(manifest.version).toMatch(/^0\.1\.0-alpha\.\d+$/)
+    expect(manifest.version).toBe('0.1.0')
     expect(manifest.bin).toEqual({ agh: './bin/agh' })
     expect(manifest.exports).toEqual({ './package.json': './package.json' })
     expect(manifest.engines).toEqual({ node: '>=24.10' })

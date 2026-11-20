@@ -80,7 +80,7 @@ it('declares the browser panel: one descriptor for the plugin row, copied into t
     lifetime: 'profile',
     services: PANEL_SERVICES,
     requiresBackendRows: ['ext:agnes.superagent/main'],
-    homeEntries: [{ id: 'superagent', placement: 'primary', navigation: { title: 'Superagent' } }],
+    homeEntries: [{ id: 'superagent', placement: 'primary', navigation: { title: 'Superagent', order: 35 } }],
   })
 })
 

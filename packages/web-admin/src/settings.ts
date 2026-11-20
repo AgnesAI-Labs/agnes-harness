@@ -33,6 +33,7 @@ import {
   providerTiles,
   type RelayPreset,
   settledTest,
+  syncKeyConsole,
 } from './settings/account-tiles.js'
 import {
   configurationReason,
@@ -375,8 +376,10 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     )
   }
 
-  const renderKeyHint = (): void =>
+  const renderKeyHint = (): void => {
     renderAccountKeyHint(ui, savedProvider(), providerId(), connected, isOAuth())
+    syncKeyConsole(providerId(), ui.baseUrl.value)
+  }
 
   const renderProviders = (): void => {
     renderAccountProviders(ui, providers, savedProvider()?.id)
