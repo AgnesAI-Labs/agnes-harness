@@ -291,7 +291,12 @@ function RefinementFields(props: {
         onRetry={autosave.retry}
       >
         {endpoints.length > 0 && (
-          <SettingsItem label={t('refinement.endpoint')} description={t('refinement.endpoint.hint')}>
+          <SettingsItem
+            label={t('refinement.endpoint')}
+            description={t(
+              endpoints.length === 1 ? 'refinement.endpoint.singleHint' : 'refinement.endpoint.hint',
+            )}
+          >
             <SettingsSelect
               id="refinement-endpoint"
               data-testid="refinement-endpoint"

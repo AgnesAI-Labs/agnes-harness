@@ -199,6 +199,9 @@ it('shows the sole service address before a key is saved', async () => {
   const select = field(await mount(api), 'refinement-endpoint') as HTMLSelectElement
   expect(select.value).toBe(baseUrl)
   expect(select.disabled).toBe(true)
+  expect(
+    select.closest('.agnes-settings-item')?.querySelector('.agnes-settings-item-description')?.textContent,
+  ).toBe('Dedicated company review gateway.')
   expect(api.models).not.toHaveBeenCalled()
 })
 
@@ -395,7 +398,7 @@ it('shows the section in Chinese', async () => {
     field(host, 'refinement-endpoint')
       .closest('.agnes-settings-item')
       ?.querySelector('.agnes-settings-item-description')?.textContent,
-  ).toBe('切换后会暂停学习并重新读取该节点的模型。')
+  ).toBe('公司的专用复盘服务节点。')
   const text = host.textContent ?? ''
   expect(switchHelp(host)?.getAttribute('aria-label')).toBe(
     '打开后，之后新开的会话生效；已经打开的会话不受影响。关闭立即对所有会话生效。要把经验留给之后的会话，还需打开工作区记忆（设置 → 通用 → 个性化 → 记忆：「先问我」或「自动」）；记忆为「关闭」时，经验只在学到它的会话里有效。',

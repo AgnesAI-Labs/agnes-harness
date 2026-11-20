@@ -164,6 +164,7 @@ describe('RefinementSettingsStore', () => {
   })
 
   it('falls back to the default without enabling a profile whose gateway was removed', async () => {
+    expect(REFINEMENT_ENDPOINTS).toEqual(['https://api.llm.sg/v1'])
     const dir = await dataDir()
     const previous = new RefinementSettingsStore(dir, 'p', dir, [baseUrl, retiredUrl])
     const selected = { credentialRef, model, enabled: true, mode: 'auto', baseUrl: retiredUrl } as const
@@ -173,7 +174,7 @@ describe('RefinementSettingsStore', () => {
       contextWindow: 100_000,
       maxTokens: 2048,
     })
-    const current = new RefinementSettingsStore(dir, 'p', dir, [baseUrl])
+    const current = new RefinementSettingsStore(dir, 'p', dir)
     expect(current.current()).toEqual({
       settings: { ...selected, enabled: false, baseUrl },
       revision: expect.any(String),

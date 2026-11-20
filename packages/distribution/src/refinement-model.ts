@@ -5,7 +5,6 @@ import { RefinementModelId } from '@agnes/protocol/gen/agnes-v1'
 /** The review gateways available to this deployment, in default-first order. */
 export const REFINEMENT_ENDPOINTS: readonly [string, ...string[]] = Object.freeze([
   'https://api.llm.sg/v1',
-  'https://api-llmsg-dev.agnes-dev.com/v1',
 ] as const)
 export const DEFAULT_REFINEMENT_BASE_URL = REFINEMENT_ENDPOINTS[0]
 

@@ -6,6 +6,7 @@ export const refinementSettingsCatalog: LocaleCatalog = {
   en: {
     'refinement.endpoint': 'Service address',
     'refinement.endpoint.hint': 'Switching pauses learning and reloads its models.',
+    'refinement.endpoint.singleHint': 'Dedicated company review gateway.',
     'refinement.key': 'Service key',
     'refinement.key.label': 'Task experience service key',
     'refinement.key.hint': 'Save your company service key to load the review models.',
@@ -68,6 +69,7 @@ export const refinementSettingsCatalog: LocaleCatalog = {
   'zh-CN': {
     'refinement.endpoint': '服务地址',
     'refinement.endpoint.hint': '切换后会暂停学习并重新读取该节点的模型。',
+    'refinement.endpoint.singleHint': '公司的专用复盘服务节点。',
     'refinement.key': '服务密钥',
     'refinement.key.label': '任务经验服务密钥',
     'refinement.key.hint': '保存公司服务密钥后即可读取复盘模型。',
