@@ -22,6 +22,8 @@ declare const AGNES_BASE_EXTENSION_MANIFESTS: NonNullable<PackageModule['embedde
 declare const AGNES_CODE_EXTENSION_MANIFESTS: NonNullable<PackageModule['embeddedExtensions']> | undefined
 declare const AGNES_VERSION: string | undefined
 
+// Lock defaults use 0.0.0 to match the daemon. The Host uses it to preserve saved generation digests.
+// The jiti compile cache is scoped to the release version.
 const agnesVersion = typeof AGNES_VERSION === 'string' ? AGNES_VERSION : '0.0.0'
 
 /**
@@ -270,7 +272,7 @@ export function readPackagedBuiltinExports(
 export function packagedPackages(profile: ResolvedProfile, home: string, entryFile: string) {
   const profileDir = join(home, 'profiles', profile.name)
   const hostRoot = dirname(entryFile)
-  const lock = readLock(profileDir, { profile: profile.name, agnesVersion })
+  const lock = readLock(profileDir, { profile: profile.name, agnesVersion: '0.0.0' })
   verifyLockIntegrity(lock, { dataDir: profile.dataDir, profile: profile.name })
   const jiti = createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion })
   const external = createJitiPackageLoader(jiti)
@@ -350,7 +352,7 @@ export async function createPackagedHost(
     profileDir: join(home, 'profiles', profile.name),
     workspaceRoot: cwd,
     hostRoot: dirname(entryFile),
-    agnesVersion,
+    agnesVersion: '0.0.0',
     prompter,
     log: { debug() {}, info() {}, warn() {}, error() {} },
     ...packagedPackages(profile, home, entryFile),

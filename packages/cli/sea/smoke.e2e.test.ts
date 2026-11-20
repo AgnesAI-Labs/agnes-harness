@@ -125,7 +125,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
         agnes: { plugins: [{ id: 'ext:test/hello', export: 'default', apiRange: '^5.0.0' }] },
       })
       writeLock(profileDir, {
-        ...emptyLock('local-dev', version),
+        ...emptyLock('local-dev', '0.0.0'),
         resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
         seams: Object.fromEntries(
           ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map(
@@ -137,7 +137,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       const manager = createPackageManager({
         dataDir: layout.ledger,
         cwd: temporary,
-        agnesVersion: version,
+        agnesVersion: '0.0.0',
         references: async () => [],
       })
       const source = parseSource('file:./hello-ext')
