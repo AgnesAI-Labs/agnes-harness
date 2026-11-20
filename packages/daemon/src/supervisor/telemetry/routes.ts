@@ -1,3 +1,4 @@
+import { REFINEMENT_SERVICE } from '@agnes/distribution/refinement-model'
 import { looksLikeSecret } from '@agnes/error-sanitization'
 import type { ConfigurationService } from '@agnes/host'
 import type { ConfigAccount } from '@agnes/protocol'
@@ -18,6 +19,7 @@ const PROVIDERS = new Set([
   'openai-codex',
   'github-copilot',
   'openai-compatible',
+  'llm-sg',
   'local',
   'demo',
   'other',
@@ -42,6 +44,15 @@ export async function telemetryAccounts(configuration: Pick<ConfigurationService
   return (await configuration?.get())?.accounts ?? []
 }
 
+function isLlmSg(baseUrl: string): boolean {
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase()
+    return host === 'llm.sg' || host.endsWith('.llm.sg')
+  } catch {
+    return false
+  }
+}
+
 export function telemetryRoute(accounts: readonly ConfigAccount[], route: string): RouteProvider {
   // Configuration can append a six-hex API variant suffix to the same account route.
   const account =
@@ -49,7 +60,10 @@ export function telemetryRoute(accounts: readonly ConfigAccount[], route: string
     accounts.find(
       (row) => route.startsWith(`${row.route}-`) && /^[a-f0-9]{6}$/.test(route.slice(row.route.length + 1)),
     )
-  const id = account?.providerId ?? route
+  let id = account?.providerId ?? route
+  if (account?.providerId === 'openai-compatible' && isLlmSg(account.baseUrl)) id = 'llm-sg'
+  // Dedicated task experience reviews use a synthetic llm.sg route recorded on cost/ledger.
+  if (!account && route === REFINEMENT_SERVICE.route) id = 'llm-sg'
   const provider_id = PROVIDERS.has(id) ? id : 'other'
   return {
     provider_id,

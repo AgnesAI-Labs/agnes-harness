@@ -149,7 +149,11 @@ const accounts = [
   },
 ] as const satisfies readonly ConfigAccount[]
 
-async function fixture(env: NodeJS.ProcessEnv = { VITEST: 'true' }, allowInTest = true) {
+async function fixture(
+  env: NodeJS.ProcessEnv = { VITEST: 'true' },
+  allowInTest = true,
+  configuredAccounts: readonly ConfigAccount[] = accounts,
+) {
   const home = await homeDir()
   const sessionCwd = await mkdtemp(join(tmpdir(), 'agh-telemetry-workspace-'))
   cleanups.push(() => rm(sessionCwd, { recursive: true, force: true }))
@@ -194,7 +198,7 @@ async function fixture(env: NodeJS.ProcessEnv = { VITEST: 'true' }, allowInTest 
     table,
     configuration: {
       get: async () => ({
-        accounts: [...accounts],
+        accounts: [...configuredAccounts],
         provider: null,
         profile: 'test',
         configured: true,
@@ -207,7 +211,7 @@ async function fixture(env: NodeJS.ProcessEnv = { VITEST: 'true' }, allowInTest 
   }
   const telemetry = await openTelemetry(options)
   cleanups.push(() => telemetry.dispose())
-  function row(type: string, data: EventEnvelope['data'] = {}, key = KEY) {
+  function row(type: string, data: EventEnvelope['data'] = {}, key = KEY, lane = 'main') {
     let rows = ledger.get(key)
     if (!rows) {
       rows = []
@@ -223,7 +227,7 @@ async function fixture(env: NodeJS.ProcessEnv = { VITEST: 'true' }, allowInTest 
       origin: 'system',
       trust: 'trusted',
       actor,
-      lane: 'main',
+      lane,
     } as EventEnvelope
     rows.push(entry)
     telemetry.observe(key, entry, () => ({ cwd: sessionCwd }))
@@ -414,6 +418,105 @@ it('uploads complete gzip ranges, scrubs the trace copy, and hot-disables trace 
   await reopened.dispose()
   if (process.platform !== 'win32')
     expect((await stat(join(home, 'telemetry.json'))).mode & 0o777).toBe(0o600)
+})
+
+const relayAccountId = 'fixture-relay-id'
+const relayLabel = 'fixture-relay-label'
+const relayRoute = `account-${relayAccountId}`
+const apiUrl = 'https://api.llm.sg/v1'
+const vendorModel = 'anthropic/claude-sonnet-4-6'
+const minimaxModel = 'minimax/minimax-m2.5'
+
+it.each([
+  [apiUrl, relayRoute, undefined, vendorModel, 'llm-sg', vendorModel, 'api_key'],
+  [apiUrl, `${relayRoute}-a1b2c3`, 'api-key', minimaxModel, 'llm-sg', minimaxModel, 'api_key'],
+  ['https://llm.sg/v1', relayRoute, 'api-key', 'openai/gpt-5.4', 'llm-sg', 'openai/gpt-5.4', 'api_key'],
+  ['https://API.LLM.SG/v1', relayRoute, 'oauth', vendorModel, 'llm-sg', vendorModel, 'oauth'],
+  ['https://notllm.sg/v1', relayRoute, 'api-key', vendorModel, 'openai-compatible', 'custom', 'api_key'],
+  [
+    'http://private-second.invalid',
+    relayRoute,
+    'api-key',
+    minimaxModel,
+    'openai-compatible',
+    'custom',
+    'api_key',
+  ],
+  ['invalid-url', relayRoute, 'api-key', vendorModel, 'openai-compatible', 'custom', 'api_key'],
+  [apiUrl, relayRoute, 'api-key', 'sk-fixture-123456789abcdef', 'llm-sg', 'custom', 'api_key'],
+  [apiUrl, relayRoute, 'api-key', relayLabel, 'llm-sg', 'custom', 'api_key'],
+  [apiUrl, relayRoute, 'api-key', relayAccountId, 'llm-sg', 'custom', 'api_key'],
+  [apiUrl, relayRoute, 'api-key', 'C:/fixture/model', 'llm-sg', 'custom', 'api_key'],
+] as const)(
+  'reports relay %s via %s (%s) with model %s as %s/%s (%s)',
+  async (baseUrl, route, authType, model, provider_id, model_id, auth_type) => {
+    const account = {
+      accountId: relayAccountId,
+      label: relayLabel,
+      route: relayRoute,
+      providerId: 'openai-compatible',
+      ...(authType ? { authType } : {}),
+      baseUrl,
+      model,
+      models: [],
+      enabled: true,
+      credentialConfigured: true,
+    } satisfies ConfigAccount
+    const { home, server, table, telemetry, row } = await fixture(undefined, undefined, [account])
+    telemetry.sessionCreated(KEY, 'web')
+    row('session/start', { key: KEY })
+    row('turn/start', { trigger: 'prompt' })
+    const request = row('request/sent', { baseUrl, model: { route, id: model } })
+    const cost = row('cost/ledger', { route, model, purpose: 'inference', tokens: { input: 1 } })
+    const end = row('turn/end', { reason: 'completed' })
+    await vi.waitFor(() => expect(acked(table())).toBe(end))
+    await telemetry.dispose()
+
+    const install = (await readFile(join(home, 'telemetry-id'), 'utf8')).trim()
+    const safeRoute = `account-${createHash('sha256').update(`${install}:${route}`).digest('hex').slice(0, 8)}`
+    const trace = traceAt(server.traces, 0)
+    const provider = { provider_id, auth_type }
+    expect(trace.route_providers).toEqual({ [safeRoute]: provider })
+    expect(trace.events.find((event) => event.seq === request)?.data).toMatchObject({
+      baseUrl: '<redacted>',
+      model: { route: safeRoute, id: model_id },
+    })
+    expect(trace.events.find((event) => event.seq === cost)?.data).toMatchObject({
+      route: safeRoute,
+      model: model_id,
+    })
+    expect(server.reports[0]?.body).toMatchObject({
+      models: [{ ...provider, model_id, turns: 1, input_tokens: 1 }],
+    })
+  },
+)
+
+it('attributes dedicated task experience costs to llm.sg without an account or request receipt', async () => {
+  const { server, table, telemetry, row } = await fixture()
+  const route = 'task-experience'
+  row('session/start', { key: KEY })
+  row('turn/start', { trigger: 'prompt' })
+  row(
+    'cost/ledger',
+    { route, model: minimaxModel, purpose: 'side-call', tokens: { input: 12, output: 3 } },
+    KEY,
+    'refinement',
+  )
+  const end = row('turn/end', { reason: 'completed' })
+  await vi.waitFor(() => expect(acked(table())).toBe(end))
+  await telemetry.dispose()
+
+  const trace = traceAt(server.traces, 0)
+  const provider = { provider_id: 'llm-sg', auth_type: 'api_key' }
+  expect(trace.route_providers).toEqual({ [route]: provider })
+  expect(trace.events.find((event) => event.type === 'cost/ledger')?.data).toMatchObject({
+    route,
+    model: minimaxModel,
+    purpose: 'side-call',
+  })
+  expect(server.reports[0]?.body).toMatchObject({
+    models: [{ ...provider, model_id: minimaxModel, turns: 1, input_tokens: 12, output_tokens: 3 }],
+  })
 })
 
 it('splits an oversized backlog at complete turn boundaries and acknowledges each batch', async () => {

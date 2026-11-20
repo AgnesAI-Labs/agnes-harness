@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { isAbsolute, win32 } from 'node:path'
+import { REFINEMENT_SERVICE } from '@agnes/distribution/refinement-model'
 import { DEFAULT_RULES, looksLikeSecret, redactText } from '@agnes/error-sanitization'
 import type { ConfigAccount, EventEnvelope } from '@agnes/protocol'
 import { type RouteProvider, telemetryModel, telemetryRoute } from './routes.js'
@@ -121,7 +122,8 @@ export function traceRedaction(options: {
   function route(raw: string): string {
     const provider = telemetryRoute(accounts, raw)
     if (!raw.startsWith('account-')) {
-      if (!PROVIDER_ROUTE.test(raw) || provider.provider_id !== raw) return 'other'
+      const publicRoute = raw === provider.provider_id || raw === REFINEMENT_SERVICE.route
+      if (!PROVIDER_ROUTE.test(raw) || !publicRoute) return 'other'
       routes.set(raw, provider)
       return raw
     }
