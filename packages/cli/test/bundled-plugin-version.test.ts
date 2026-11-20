@@ -26,13 +26,14 @@ it.each([...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES])(
       const original = await readFile(join(source.root, source.path, 'package.json'), 'utf8')
       await mkdir(root, { recursive: true })
       const file = join(root, 'package.json')
-      for (const version of ['0.0.0', '0.1.0-alpha.0', '1.2.3', '1.2.4-alpha.1']) {
+      const preserved = ['0.0.0', '0.1.0-alpha.0', PUBLIC_PACKAGE_VERSION]
+      for (const version of [...preserved, '1.2.3', '1.2.4-alpha.1']) {
         await copyFile(join(source.root, source.path, 'package.json'), file)
         await stampBundledPackageVersion(root, version)
         const stamped = JSON.parse(await readFile(file, 'utf8'))
         expect(stamped).toEqual({
           ...JSON.parse(original),
-          version: ['0.0.0', '0.1.0-alpha.0'].includes(version) ? helper.version : version,
+          version: preserved.includes(version) ? helper.version : version,
         })
         expect(stamped.version).not.toBe('0.0.0')
       }
@@ -46,6 +47,7 @@ it.each([...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES])(
 
 it.each([
   ['0.0.0', '0.0.0', PUBLIC_PACKAGE_VERSION],
+  ['0.0.0', PUBLIC_PACKAGE_VERSION, PUBLIC_PACKAGE_VERSION],
   ['0.0.0', '1.2.3', '1.2.3'],
   ['0.0.0', '1.2.3-alpha.1', '1.2.3-alpha.1'],
   ['0.0.1-alpha.0', '0.0.0', '0.0.1-alpha.0'],
@@ -82,7 +84,7 @@ it.each([
   }
 })
 
-it.each(['0.0.0', '0.1.0-alpha.0', '1.2.3'])(
+it.each(['0.0.0', '0.1.0-alpha.0', PUBLIC_PACKAGE_VERSION, '1.2.3'])(
   'pins a copied synthetic example to its shipped parent version for build %s',
   async (version) => {
     const root = await mkdtemp(join(tmpdir(), 'agh-bundle-parent-'))

@@ -4,6 +4,7 @@ import { isSea } from 'node:sea'
 import type { ConnectionState } from '@agnes/daemon-foundation/local/endpoint'
 
 declare const AGNES_VERSION: string | undefined
+declare const AGNES_DISTRIBUTION: string | undefined
 
 export type Surface = 'cli' | 'web' | 'desktop' | 'channel' | 'sdk' | 'unknown'
 
@@ -19,23 +20,30 @@ export function telemetrySurface(conn: ConnectionState, key: string): Surface {
   return conn.localListener === 'unix' ? 'cli' : 'sdk'
 }
 
-export function telemetryRuntime(distribution?: string) {
+function knownDistribution(value: string | undefined) {
+  return value === 'sea' || value === 'desktop' || value === 'npm' || value === 'dev' ? value : undefined
+}
+
+export function telemetryRuntime(
+  distribution?: string,
+  compiled: { version?: string | undefined; distribution?: string | undefined } = {
+    version: typeof AGNES_VERSION === 'string' ? AGNES_VERSION : undefined,
+    distribution: typeof AGNES_DISTRIBUTION === 'string' ? AGNES_DISTRIBUTION : undefined,
+  },
+) {
   const os = platform()
-  const version = typeof AGNES_VERSION === 'string' ? AGNES_VERSION : 'dev'
+  const version = compiled.version ?? 'dev'
   return {
     app_version: version,
     os: ['darwin', 'linux', 'win32'].includes(os) ? os : 'other',
     arch: arch(),
     os_release: release(),
     node_version: process.versions.node,
-    distribution:
-      isSea() || distribution === 'sea'
-        ? 'sea'
-        : distribution === 'desktop'
-          ? 'desktop'
-          : version === 'dev' || version === '0.0.0' || distribution === 'dev'
-            ? 'dev'
-            : 'npm',
+    distribution: isSea()
+      ? 'sea'
+      : (knownDistribution(distribution) ??
+        knownDistribution(compiled.distribution) ??
+        (version === 'dev' || version === '0.0.0' ? 'dev' : 'npm')),
   }
 }
 

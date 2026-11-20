@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { isSea } from 'node:sea'
 import { setTimeout as delay } from 'node:timers/promises'
 import { gunzipSync } from 'node:zlib'
 import type { TableHandle } from '@agnes/daemon-foundation/storage/table'
@@ -12,6 +13,32 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { adaptHostTables } from '../src/supervisor/storage-adapters.js'
 import { openTelemetry } from '../src/supervisor/telemetry/service.js'
 import { telemetryEnvironment, telemetryInstallId } from '../src/supervisor/telemetry/settings.js'
+import { telemetryRuntime } from '../src/supervisor/telemetry/wire.js'
+
+vi.mock('node:sea', { spy: true })
+
+it.each([
+  [undefined, { version: '0.1.0', distribution: 'dev' }, '0.1.0', 'dev'],
+  [undefined, { version: '0.1.0', distribution: 'npm' }, '0.1.0', 'npm'],
+  [undefined, { version: '0.1.0', distribution: 'sea' }, '0.1.0', 'sea'],
+  ['desktop', { version: '0.1.0', distribution: 'dev' }, '0.1.0', 'desktop'],
+  ['npm', { version: '0.1.0', distribution: 'dev' }, '0.1.0', 'npm'],
+  ['unknown', { version: '0.1.0', distribution: 'dev' }, '0.1.0', 'dev'],
+  [undefined, { version: '0.1.0', distribution: 'unknown' }, '0.1.0', 'npm'],
+  [undefined, { version: '0.1.0' }, '0.1.0', 'npm'],
+  [undefined, { version: '0.0.0' }, '0.0.0', 'dev'],
+  [undefined, {}, 'dev', 'dev'],
+] as const)('resolves override %s and build %j to %s/%s', (override, compiled, version, distribution) => {
+  expect(telemetryRuntime(override, compiled)).toMatchObject({ app_version: version, distribution })
+})
+
+it('identifies a running SEA executable even with a runtime override', () => {
+  vi.mocked(isSea).mockReturnValueOnce(true)
+  expect(telemetryRuntime('desktop', { version: '0.1.0', distribution: 'npm' })).toMatchObject({
+    app_version: '0.1.0',
+    distribution: 'sea',
+  })
+})
 
 const cleanups: (() => unknown)[] = []
 afterEach(async () => {

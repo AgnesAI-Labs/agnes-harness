@@ -20,6 +20,9 @@ import { AGNES_BASE_PLUGIN_METADATA } from './base-plugin-metadata.js'
 
 declare const AGNES_BASE_EXTENSION_MANIFESTS: NonNullable<PackageModule['embeddedExtensions']> | undefined
 declare const AGNES_CODE_EXTENSION_MANIFESTS: NonNullable<PackageModule['embeddedExtensions']> | undefined
+declare const AGNES_VERSION: string | undefined
+
+const agnesVersion = typeof AGNES_VERSION === 'string' ? AGNES_VERSION : '0.0.0'
 
 /**
  * SEA workers cannot read workspace package.json files at runtime. Keep the normalized form of
@@ -267,9 +270,9 @@ export function readPackagedBuiltinExports(
 export function packagedPackages(profile: ResolvedProfile, home: string, entryFile: string) {
   const profileDir = join(home, 'profiles', profile.name)
   const hostRoot = dirname(entryFile)
-  const lock = readLock(profileDir, { profile: profile.name, agnesVersion: '0.0.0' })
+  const lock = readLock(profileDir, { profile: profile.name, agnesVersion })
   verifyLockIntegrity(lock, { dataDir: profile.dataDir, profile: profile.name })
-  const jiti = createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion: '0.0.0' })
+  const jiti = createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion })
   const external = createJitiPackageLoader(jiti)
   const builtin = async (id: string): Promise<Record<string, unknown>> => {
     if (id === '@agnes/ai') return import('@agnes/ai')
@@ -347,7 +350,7 @@ export async function createPackagedHost(
     profileDir: join(home, 'profiles', profile.name),
     workspaceRoot: cwd,
     hostRoot: dirname(entryFile),
-    agnesVersion: '0.0.0',
+    agnesVersion,
     prompter,
     log: { debug() {}, info() {}, warn() {}, error() {} },
     ...packagedPackages(profile, home, entryFile),
