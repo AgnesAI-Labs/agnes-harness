@@ -1,15 +1,37 @@
 import { randomUUID } from 'node:crypto'
-import { closeSync, fsyncSync, lstatSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  fsyncSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
-import { createPrivateFileSync, renameWriteThroughSync } from '@agnes/system-node'
+import { setTimeout as delay } from 'node:timers/promises'
+import { createPrivateFileSync, hasPrivateDaclSync, renameWriteThroughSync } from '@agnes/system-node'
 import { withConfigurationLock } from './configuration-lock.js'
 import { HOME_LAYOUT_VERSION, homeVersionFault, inspectHome } from './home-layout.js'
 import { createHomeDirectory, prepareHomeLock, prepareWindowsHomeDirectories } from './home-private.js'
+import {
+  ensureLlmsgKey,
+  hasLlmsgKey,
+  LLMSG_KEY_FILE,
+  type LlmsgKeyEnvironment,
+  llmsgFallbackKey,
+} from './llmsg-home-key.js'
 
 const MARKER = 'home-layout.json'
+const LLMSG_PENDING_MARKER = '.llmsg-home-layout.pending'
+const LLMSG_MARKER_PREFIX = `{"version":${HOME_LAYOUT_VERSION},"instanceId":"`
 const windows = process.platform === 'win32' // guards-allow-platform: private Windows home initialization uses native ACLs.
+const linux = process.platform === 'linux' // guards-allow-platform: LLMSG image bootstrap is Linux-only.
 /** Windows daemon startup also validates its explicitly resolved data directory before any writes. */
 type InitializeOptions = { dataDir?: string }
+type LlmsgBootstrap = { env: LlmsgKeyEnvironment; phase: 'layout' | 'persist-key' }
 const homeFault = (code: string) => Object.assign(new Error(code), { code })
 const present = (path: string): boolean => {
   try {
@@ -32,9 +54,34 @@ function directory(path: string, boundary?: string): void {
   if (!present(dirname(path))) directory(dirname(path))
   mkdirSync(path, { mode: 0o700 })
 }
-function publishMarker(home: string): void {
-  const temporary = join(home, `.home-layout-${randomUUID()}.tmp`)
+
+function discardInterruptedLlmsgMarker(path: string): void {
+  if (!present(path)) return
+  const stat = lstatSync(path)
+  if (!stat.isFile() || stat.nlink !== 1 || stat.size > 128 || !hasPrivateDaclSync(path))
+    throw homeFault('E_HOME_UNSAFE')
+  const bytes = readFileSync(path, 'utf8')
+  // A crash during the write can leave a prefix of the marker. Leave other content untouched.
+  if (
+    !LLMSG_MARKER_PREFIX.startsWith(bytes) &&
+    !(
+      bytes.startsWith(LLMSG_MARKER_PREFIX) &&
+      /^[0-9a-f-]{0,36}(?:"(?:\}\n?)?)?$/u.test(bytes.slice(LLMSG_MARKER_PREFIX.length))
+    )
+  )
+    throw homeFault('E_HOME_UNSAFE')
+  unlinkSync(path)
+}
+
+function publishMarker(home: string, llmsg = false): void {
+  const temporary = join(home, llmsg ? LLMSG_PENDING_MARKER : `.home-layout-${randomUUID()}.tmp`)
   const bytes = `${JSON.stringify({ version: HOME_LAYOUT_VERSION, instanceId: randomUUID() })}\n`
+  if (llmsg) {
+    discardInterruptedLlmsgMarker(temporary)
+    writeFileSync(temporary, bytes, { flag: 'wx', mode: 0o600, flush: true })
+    renameWriteThroughSync(temporary, join(home, MARKER))
+    return
+  }
   if (!windows) {
     writeFileSync(temporary, bytes, { flag: 'wx', mode: 0o600 })
     renameSync(temporary, join(home, MARKER))
@@ -83,15 +130,79 @@ export async function initializeHomeLocked(
   profile = 'local-dev',
   options: InitializeOptions = {},
 ) {
+  return initializeWithLock(home, profile, options)
+}
+
+/** LLMSG's Linux entrypoint prepares the layout before installation and persists the fallback after it. */
+export async function initializeLlmsgHomeLocked(
+  home: string,
+  profile: string,
+  env: LlmsgKeyEnvironment,
+  phase: LlmsgBootstrap['phase'] = 'layout',
+) {
+  if (!linux) throw homeFault('E_HOME_UNSAFE')
+  const deadline = performance.now() + 1_000
+  for (;;) {
+    try {
+      return await initializeWithLock(home, profile, {}, { env, phase })
+    } catch (error) {
+      if (
+        phase !== 'layout' ||
+        performance.now() >= deadline ||
+        !(
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'E_HOME_VERSION' &&
+          'reason' in error &&
+          error.reason === 'unversioned'
+        ) ||
+        !lstatSync(join(home, LLMSG_KEY_FILE), { throwIfNoEntry: false })?.isFile()
+      )
+        throw error
+      // A provider rotation may have a second directory entry until its atomic rename completes.
+      // Reinspect under the lock on each attempt; the layout's accepted contents stay the same.
+      await delay(100)
+    }
+  }
+}
+
+function llmsgBootstrapContents(home: string): boolean {
+  return readdirSync(home).every((name) => name === LLMSG_KEY_FILE || name === LLMSG_PENDING_MARKER)
+}
+
+async function initializeWithLock(
+  home: string,
+  profile: string,
+  options: InitializeOptions,
+  llmsg?: LlmsgBootstrap,
+) {
   const initial = inspectHome(home, profile)
   const canonicalHome = resolve(home)
   const lock = join(dirname(canonicalHome), `.${basename(canonicalHome)}.initialize.sqlite`)
   // An existing initializer may have created directories without publishing its marker yet.
   // Wait for that lock and inspect again; unknown homes without a lock remain untouched.
-  if (initial.state === 'unsupported' && !present(lock)) throw homeVersionFault(home, 'unversioned')
+  if (initial.state === 'unsupported' && !present(lock) && !(llmsg && llmsgBootstrapContents(canonicalHome)))
+    throw homeVersionFault(home, 'unversioned')
   // Keep the lock outside a fresh home so inspection cannot mistake it for unknown user data.
   if (windows) createHomeDirectory(dirname(canonicalHome))
   else directory(dirname(canonicalHome))
   if (windows) prepareHomeLock(lock)
-  return withConfigurationLock(lock, async () => initializeHome(canonicalHome, profile, options))
+  return withConfigurationLock(lock, async () => {
+    if (!llmsg) return initializeHome(canonicalHome, profile, options)
+    const info = inspectHome(canonicalHome, profile)
+    if (llmsg.phase === 'persist-key' && info.state !== 'current')
+      throw homeVersionFault(canonicalHome, 'unversioned')
+    if (info.state === 'unsupported' && !llmsgBootstrapContents(canonicalHome))
+      throw homeVersionFault(canonicalHome, 'unversioned')
+    if (!hasPrivateDaclSync(canonicalHome)) throw homeFault('E_HOME_UNSAFE')
+    if (llmsg.phase === 'layout' && !hasLlmsgKey(canonicalHome)) llmsgFallbackKey(llmsg.env)
+    if (info.state !== 'current') {
+      // Publish before creating Core directories: a killed initializer can retry either side of the rename.
+      if (!llmsgBootstrapContents(canonicalHome)) throw homeVersionFault(canonicalHome, 'unversioned')
+      publishMarker(canonicalHome, true)
+    }
+    const initialized = initializeHome(canonicalHome, profile)
+    if (llmsg.phase === 'persist-key') ensureLlmsgKey(canonicalHome, initialized.paths.credentials, llmsg.env)
+    return initialized
+  })
 }

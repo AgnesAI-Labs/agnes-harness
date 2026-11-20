@@ -37,7 +37,11 @@ export {
 } from '@agnes/host-common/assemble/provider-registry'
 export * from '@agnes/host-common/command-policy'
 export * from '@agnes/host-common/errors'
-export { initializeHome, initializeHomeLocked } from '@agnes/host-common/home-initialize'
+export {
+  initializeHome,
+  initializeHomeLocked,
+  initializeLlmsgHomeLocked,
+} from '@agnes/host-common/home-initialize'
 export {
   HOME_LAYOUT_VERSION,
   homeLayout,

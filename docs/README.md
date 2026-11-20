@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-For cloud connections and the matching billing-sideband contract, see the [integration guide](guide/remote-frontend.md).
+For deployments with cloud connection support, see the [cloud workbench integration preview](guide/remote-frontend.md).
 
 Coming from the previous `main` release? Start with [Upgrading from the previous version](guide/upgrade-from-previous.md) to back up, clean up and configure a fresh environment.
 

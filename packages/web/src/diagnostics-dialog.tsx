@@ -40,17 +40,20 @@ type SaveFilePicker = (o: {
   createWritable(): Promise<{ write(d: Blob): Promise<void>; close(): Promise<void>; abort(): Promise<void> }>
 }>
 
+type SaveZipOutcome = 'saved' | 'canceled' | 'download-requested'
+
 export type DiagnosticsDialogDeps = {
   call: RpcCall
   context(): Pick<CollectInput, 'sessionId' | 'sessionTitle' | 'projection' | 'projectionHasEarlier'>
   collect?: typeof collectDiagnostics
-  save?: (zip: Uint8Array, fileName: string) => Promise<'saved' | 'canceled'>
+  save?: (zip: Uint8Array, fileName: string) => Promise<SaveZipOutcome>
 }
 
 const TITLE_KEY = {
   menu: 'diagnostics.title.menu',
   share: 'diagnostics.title.share',
   ready: 'diagnostics.title.ready',
+  'download-requested': 'diagnostics.title.downloadRequested',
   saved: 'diagnostics.title.saved',
 } as const
 const titleFor = (step: DiagnosticsStep) => diagnosticsText(TITLE_KEY[step])
@@ -71,6 +74,18 @@ const browserInfo = () => ({
   origin: location.origin,
 })
 
+function hasCrossOriginTop(win: Window): boolean {
+  const top = win.top
+  if (!top || top === win) return false
+  try {
+    void top.document
+    return false
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'SecurityError') return true
+    throw error
+  }
+}
+
 /**
  * Must be called straight from the click handler: the picker call happens before the first await,
  * while the click's user activation is still valid.
@@ -79,11 +94,13 @@ export async function saveZip(
   zip: Uint8Array,
   fileName: string,
   win: Window = window,
-): Promise<'saved' | 'canceled'> {
+): Promise<SaveZipOutcome> {
   const blob = new Blob([zip as Uint8Array<ArrayBuffer>], { type: 'application/zip' })
   const picker = (win as Window & { showSaveFilePicker?: SaveFilePicker }).showSaveFilePicker
-  if (!picker) {
+  // Chromium exposes the picker in cross-origin frames but rejects calls from them.
+  if (!picker || hasCrossOriginTop(win)) {
     const url = URL.createObjectURL(blob)
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
     const host = createRegionHost(win.document.body, 'span')
     const root = createRegionRenderer(host)
     let link: HTMLAnchorElement | null = null
@@ -105,13 +122,13 @@ export async function saveZip(
         ),
       )
       const anchor = link as HTMLAnchorElement | null
-      anchor?.click()
+      if (!anchor) throw new Error('Could not create the ZIP download link')
+      anchor.click()
     } finally {
       root.unmount()
       host.remove()
     }
-    setTimeout(() => URL.revokeObjectURL(url), 60_000)
-    return 'saved'
+    return 'download-requested'
   }
   let handle: Awaited<ReturnType<SaveFilePicker>>
   try {
@@ -198,9 +215,11 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
     )
   }
   const focusStep = () => {
-    dialog
-      .querySelector<HTMLElement>(`[data-step="${snapshot.step}"] :is(button, input):not(:disabled)`)
-      ?.focus()
+    const selector =
+      snapshot.step === 'download-requested'
+        ? '#diagnostics-heading'
+        : `[data-step="${snapshot.step}"] :is(button, input):not(:disabled)`
+    dialog.querySelector<HTMLElement>(selector)?.focus()
   }
   const show = (step: DiagnosticsStep, title = titleFor(step)) => {
     snapshot = { ...snapshot, step, title, error: '' }
@@ -281,17 +300,27 @@ export function createDiagnosticsDialog(deps: DiagnosticsDialogDeps): {
     },
     save: () => {
       const current = result
-      if (disposed || !current || snapshot.saving || snapshot.step !== 'ready') return
+      if (
+        disposed ||
+        !current ||
+        snapshot.saving ||
+        (snapshot.step !== 'ready' && snapshot.step !== 'download-requested')
+      )
+        return
       const currentGeneration = generation
       snapshot = { ...snapshot, saving: true, error: '' }
-      // saveZip calls the native picker before its first await, inside this click callback.
+      // Start the native picker or download while this click still has user activation.
       const pending = save(current.zip, current.fileName)
       render()
       void pending
         .then(
           (outcome) => {
             if (disposed || generation !== currentGeneration || result !== current) return
-            if (outcome !== 'saved') return
+            if (outcome === 'canceled') return
+            if (outcome === 'download-requested') {
+              show(outcome)
+              return
+            }
             snapshot = { ...snapshot, savedName: current.fileName }
             show(
               'saved',

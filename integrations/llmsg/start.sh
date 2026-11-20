@@ -2,7 +2,6 @@
 set -euo pipefail
 
 # 用户身份由 LLMSG 创建实例时注入，不能固化在镜像或模板中。
-: "${AGH_CLOUD_KEY:?缺少第三方注入的 AGH_CLOUD_KEY}"
 : "${AGH_CLOUD_API_BASE_URL:?缺少第三方注入的 AGH_CLOUD_API_BASE_URL}"
 : "${LLMSG_TRACK_URL:?缺少第三方注入的 LLMSG_TRACK_URL}"
 
@@ -25,6 +24,11 @@ for name in AGH_HOME WORKSPACE_DIR; do
   esac
 done
 
+export AGH_HOME="${AGH_HOME%/}"
+if [ "$(realpath -m -- "$AGH_HOME")" != "$AGH_HOME" ]; then
+  printf 'AGH_HOME must not traverse a symbolic link\n' >&2
+  exit 64
+fi
 umask 077
 mkdir -p -- "$AGH_HOME" "$WORKSPACE_DIR"
 
@@ -45,31 +49,10 @@ if [ -L "$AGH_HOME" ]; then
   exit 64
 fi
 chmod 0700 -- "$AGH_HOME"
-
-# 已有 Key 在服务启动前校验；缺失时保留空 home 供 Core 正常初始化。
-key_file="$AGH_HOME/cloud-key"
-validate_cloud_key() {
-  if [ -L "$key_file" ] || [ ! -f "$key_file" ] || [ ! -s "$key_file" ]; then
-    printf 'cloud-key must be a nonempty regular file, not a symbolic link\n' >&2
-    exit 78
-  fi
-  chmod 0600 -- "$key_file"
-}
-if [ -e "$key_file" ] || [ -L "$key_file" ]; then
-  validate_cloud_key
-fi
-initialize_cloud_key() {
-  # Core 初始化前由插件的现有环境变量回退提供 Key；不伪造布局标记。
-  # 重启保留已轮换的新 Key，不用旧环境变量修复异常文件。
-  if [ ! -e "$key_file" ] && [ ! -L "$key_file" ]; then
-    if ! (set -o noclobber; printf '%s\n' "$AGH_CLOUD_KEY" > "$key_file"); then
-      printf 'Cannot initialize private cloud Key file\n' >&2
-      exit 78
-    fi
-  fi
-  validate_cloud_key
-}
 cd -- "$WORKSPACE_DIR"
+
+# Core 在安装插件前完成布局初始化。平台提供的 Key 始终留在原路径。
+node /opt/agh/runtime/agnes.mjs home --llmsg-init
 
 # 保留集成镜像的有界清理，避免子进程忽略 TERM 后一直等待。
 envd_pid=""
@@ -108,7 +91,8 @@ envd_pid=$!
 node /opt/agh/runtime/agnes.mjs plugins add \
   /opt/agh/plugins/cloud.tgz --yes
 
-initialize_cloud_key
+# 安装成功后才落盘环境 Key。已有文件或平台刚轮换的文件优先。
+node /opt/agh/runtime/agnes.mjs home --llmsg-persist-key
 
 node /opt/agh/runtime/agnes.mjs serve &
 harness_pid=$!

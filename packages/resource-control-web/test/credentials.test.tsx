@@ -2,10 +2,10 @@
 
 import type { AdminCredentialMetadata } from '@agnes/protocol/gen/app-server'
 
-import { mountRegion, SettingsPage } from '@agnes/web-ui'
+import { emptyFeedback, enqueueFeedback, installFeedbackSink, mountRegion, SettingsPage } from '@agnes/web-ui'
 import { act } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { CredentialsPage } from '../src/credentials.js'
+import { CREDENTIALS_CHANGED, CredentialsPage } from '../src/credentials.js'
 import { CredentialError, CredentialsApi, cloudCredentialUsage } from '../src/credentials-api.js'
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true })
@@ -46,25 +46,49 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-it('creates and renames write-only values without an inline replacement; reviews references and confirms forced deletion', async () => {
+it('creates, replaces and renames write-only credentials; reviews references and confirms forced deletion', async () => {
   let items: AdminCredentialMetadata[] = []
   let referenced = false
+  let listUnavailable = false
+  let holdListReply: ((response: Response) => Promise<Response>) | undefined
+  let replacementResponse: 'refused' | 'lost' | 'saved' = 'refused'
+  const feedback = vi.fn()
   const writes: Array<{ path: string; force?: boolean; confirm?: boolean }> = []
+  const replacementRequests: Array<{ method?: string; id: unknown; hasValue: boolean }> = []
   const responses: string[] = []
-  const fetcher: typeof fetch = vi.fn(async (input, init) => {
+  const fetcher: typeof fetch = async (input, init) => {
     const path = String(input)
     const body = init?.body ? JSON.parse(String(init.body)) : {}
     let response: Response
     if (path.endsWith('/context')) response = Response.json(context)
-    else if (path === '/admin/api/credentials') response = Response.json({ items })
-    else {
+    else if (path === '/admin/api/credentials') {
+      response = listUnavailable
+        ? Response.json({ error: { code: 'E_ADMIN_CATALOG_UNAVAILABLE' } }, { status: 503 })
+        : Response.json({ items })
+      const hold = holdListReply
+      holdListReply = undefined
+      if (hold) response = await hold(response)
+    } else {
       // Deliberately retain only non-secret request facts, including in failed assertions.
       writes.push({ path, ...(body.force ? { force: body.force, confirm: body.confirm } : {}) })
       if (path.endsWith('/create')) {
         items = [{ ...item, label: body.label }]
         response = Response.json(items[0])
-      } else if (path.endsWith('/set')) response = Response.json(items[0])
-      else if (path.endsWith('/rename')) {
+      } else if (path.endsWith('/set')) {
+        replacementRequests.push({
+          ...(init?.method ? { method: init.method } : {}),
+          id: body.id,
+          hasValue: body.value === canary,
+        })
+        if (replacementResponse === 'lost') throw new Error(canary)
+        response =
+          replacementResponse === 'refused'
+            ? Response.json(
+                { error: { data: { cause: { code: 'CONFIG_CREDENTIAL_UNAVAILABLE' } } } },
+                { status: 503 },
+              )
+            : Response.json(items[0])
+      } else if (path.endsWith('/rename')) {
         items = [{ ...items[0]!, label: body.label }]
         response = Response.json(items[0])
       } else if (referenced && !body.force) {
@@ -80,7 +104,7 @@ it('creates and renames write-only values without an inline replacement; reviews
     }
     responses.push(await response.clone().text())
     return response
-  })
+  }
   const host = document.createElement('div')
   const owner = document.createElement('dialog')
   owner.id = 'config'
@@ -109,6 +133,7 @@ it('creates and renames write-only values without an inline replacement; reviews
   await act(async () => {
     dispose = mountRegion(host, <CredentialsPage api={new CredentialsApi(fetcher)} />)
   })
+  const restoreFeedback = installFeedbackSink({ publish: feedback, resolve: () => {} })
   try {
     node<HTMLButtonElement>('credential-create').focus()
     await click('credential-create')
@@ -134,8 +159,43 @@ it('creates and renames write-only values without an inline replacement; reviews
       })
     }
     await menu()
-    expect(document.querySelector('[data-testid="credential-replace"]')).toBeNull()
-    expect(node('credential-delete')).not.toBeNull()
+    expect(node('credential-replace')).not.toBeNull()
+    await click('credential-replace')
+    const replacement = node<HTMLInputElement>('credential-value')
+    expect(replacement.type).toBe('password')
+    expect(replacement.value).toBe('')
+    expect(document.querySelector('[data-testid="credential-label"]')).toBeNull()
+    await fill('credential-value', canary)
+    feedback.mockClear()
+    await click('credential-save')
+    expect(node('credential-error').textContent).toContain('unavailable')
+    expect(cleanDom()).toBe(true)
+    expect(feedback).not.toHaveBeenCalled()
+
+    replacementResponse = 'lost'
+    await fill('credential-value', canary)
+    await click('credential-save')
+    expect(feedback.mock.lastCall?.[0]).toMatchObject({
+      outcome: 'unknown',
+      message: expect.stringContaining('A replacement for Service key could not be confirmed.'),
+    })
+    expect(cleanDom()).toBe(true)
+
+    replacementResponse = 'saved'
+    await fill('credential-value', canary)
+    await click('credential-save')
+    expect(replacementRequests).toEqual([
+      { method: 'POST', id: item.id, hasValue: true },
+      { method: 'POST', id: item.id, hasValue: true },
+      { method: 'POST', id: item.id, hasValue: true },
+    ])
+    expect(replacement.value === '').toBe(true)
+    expect(cleanDom()).toBe(true)
+    expect(node('credential-row').dataset.credentialId).toBe(item.id)
+    expect(node('credential-row').textContent).toContain(item.label)
+    expect(feedback.mock.lastCall?.[0]).toMatchObject({ message: 'Credential value replaced.' })
+    expect(feedback.mock.lastCall?.[0]).not.toHaveProperty('effect')
+    await menu()
     await click('credential-rename')
     await fill('credential-label', 'Renamed key')
     await click('credential-save')
@@ -144,6 +204,8 @@ it('creates and renames write-only values without an inline replacement; reviews
     await menu()
     await click('credential-delete')
     await click('credential-delete-confirm')
+    expect(node('credential-delete-error').textContent).toContain('not deleted')
+    await act(async () => window.dispatchEvent(new Event(CREDENTIALS_CHANGED)))
     expect(node('credential-delete-error').textContent).toContain('not deleted')
     expect(owner.matches(':modal')).toBe(true)
     expect(node<HTMLButtonElement>('credential-delete-cancel').disabled).toBe(false)
@@ -154,12 +216,63 @@ it('creates and renames write-only values without an inline replacement; reviews
     await menu()
     await click('credential-delete')
     await click('credential-force-confirm')
+    const original = items[0]!.references[0]!
+    const added = { kind: 'mcp', profile: 'default', configId: 'service-b' } as const
+    const refreshReferences = async (references: AdminCredentialMetadata['references']) => {
+      items = [{ ...items[0]!, references }]
+      await act(async () => window.dispatchEvent(new Event(CREDENTIALS_CHANGED)))
+    }
+    listUnavailable = true
+    await refreshReferences([original])
+    expect(node('credential-delete-refresh-error')?.textContent).toContain('Could not refresh')
+    expect(node<HTMLInputElement>('credential-force-confirm').checked).toBe(false)
+    expect(node<HTMLInputElement>('credential-force-confirm').disabled).toBe(true)
+    expect(node('credential-delete-confirm').textContent).toBe('Delete')
+    listUnavailable = false
+    await act(async () => node('credential-delete-refresh-error').querySelector('button')?.click())
+    expect(node('credential-delete-refresh-error')).toBeNull()
+    expect(node<HTMLInputElement>('credential-force-confirm').checked).toBe(false)
+    expect(node<HTMLInputElement>('credential-force-confirm').disabled).toBe(false)
+    await click('credential-force-confirm')
+    let releaseOldList!: () => void
+    holdListReply = (response) =>
+      new Promise((resolve) => {
+        releaseOldList = () => resolve(response)
+      })
+    await refreshReferences([original])
+    expect(node<HTMLInputElement>('credential-force-confirm').disabled).toBe(true)
+    await refreshReferences([original, added])
+    await act(async () => releaseOldList())
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('service-b')
+    expect(node<HTMLInputElement>('credential-force-confirm').checked).toBe(false)
+    await refreshReferences([original])
+    expect(node<HTMLInputElement>('credential-force-confirm').checked).toBe(false)
+    await refreshReferences([original, added])
+    await click('credential-force-confirm')
+    await refreshReferences([added, original])
+    expect(node<HTMLInputElement>('credential-force-confirm').checked).toBe(true)
+    items = [{ ...items[0]!, references: [original] }]
+    await click('credential-delete-confirm')
+    expect(writes.filter((write) => write.path.endsWith('/delete'))).toHaveLength(1)
+    expect(node<HTMLInputElement>('credential-force-confirm').checked).toBe(false)
+    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('service-b')
+    await click('credential-force-confirm')
+    listUnavailable = true
+    await click('credential-delete-confirm')
+    expect(writes.filter((write) => write.path.endsWith('/delete'))).toHaveLength(1)
+    expect(node('credential-delete-refresh-error')?.textContent).toContain('Could not refresh')
+    expect(node<HTMLInputElement>('credential-force-confirm').disabled).toBe(true)
+    listUnavailable = false
+    await act(async () => node('credential-delete-refresh-error').querySelector('button')?.click())
+    expect(node<HTMLInputElement>('credential-force-confirm').checked).toBe(false)
+    await click('credential-force-confirm')
     await click('credential-delete-confirm')
     expect(writes.at(-1)).toEqual({ path: '/admin/api/credentials/delete', force: true, confirm: true })
     expect(document.querySelector('[data-testid="credential-row"]')).toBeNull()
     expect(cleanDom()).toBe(true)
     expect(responses.every((value) => !value.includes(canary))).toBe(true)
   } finally {
+    restoreFeedback()
     await act(async () => dispose())
     owner.remove()
   }
@@ -207,6 +320,7 @@ it('rejects value echoes and reduces permission, storage and read-only failures 
   })
   await expect(echo.context()).resolves.toEqual(context)
   await expect(echo.create('Service key', canary)).rejects.toEqual(new CredentialError('unavailable'))
+  await expect(echo.set(item.id, canary)).rejects.toEqual(new CredentialError('unconfirmed'))
   for (const [status, code, reason] of [
     [403, 'E_ADMIN_FORBIDDEN', 'denied'],
     [409, 'E_ADMIN_READ_ONLY', 'readOnly'],
@@ -223,6 +337,21 @@ it('rejects value echoes and reduces permission, storage and read-only failures 
       expect(String(error).includes(canary)).toBe(false)
     }
   }
+  for (const [status, code, reason] of [
+    [403, 'E_ADMIN_FORBIDDEN', 'denied'],
+    [409, 'E_ADMIN_READ_ONLY', 'readOnly'],
+    [409, 'CONFIG_CREDENTIAL_NOT_FOUND', 'missing'],
+    [503, 'E_ADMIN_CATALOG_UNAVAILABLE', 'unavailable'],
+    [502, 'E_ADMIN_BACKEND', 'unconfirmed'],
+    [409, 'CONFIG_CREDENTIAL_STORE', 'unconfirmed'],
+  ] as const) {
+    const api = new CredentialsApi(async () =>
+      Response.json({ error: { data: { cause: { code } }, message: canary } }, { status }),
+    )
+    await expect(api.set(item.id, canary)).rejects.toEqual(new CredentialError(reason))
+  }
+  const unreadable = new CredentialsApi(async () => new Response(canary))
+  await expect(unreadable.set(item.id, canary)).rejects.toEqual(new CredentialError('unconfirmed'))
   const host = document.createElement('div')
   document.body.append(host)
   let dispose!: () => void
@@ -291,6 +420,156 @@ it('opens the editor as a page of the settings page it is part of, closes it on 
     await click('credential-create')
     expect(node<HTMLInputElement>('credential-label').value).toBe('')
   } finally {
+    await act(async () => dispose())
+  }
+})
+
+it('blocks overlapping writes across settings remounts and clears only the deleted credential’s feedback', async () => {
+  const metadata: AdminCredentialMetadata = {
+    ...item,
+    references: [{ kind: 'mcp', profile: 'default', configId: 'service-a' }],
+  }
+  const other: AdminCredentialMetadata = {
+    ...metadata,
+    id: 'secret://generic/12345678-1234-1234-1234-123456789013',
+    label: 'Other key',
+  }
+  let items = [metadata, other]
+  const writes: { id: string; action: string; reply(response: Response): void }[] = []
+  const api = new CredentialsApi(async (input, init) => {
+    const path = String(input)
+    if (path.endsWith('/context')) return Response.json(context)
+    if (path === '/admin/api/credentials') return Response.json({ items })
+    const action = path.split('/').at(-1)!
+    const { id } = JSON.parse(String(init?.body)) as { id: string }
+    const response = await new Promise<Response>((reply) => writes.push({ id, action, reply }))
+    if (action === 'delete' && response.ok) items = items.filter((item) => item.id !== id)
+    return response
+  })
+  let feedback = emptyFeedback
+  const restore = installFeedbackSink({
+    publish: (result) => {
+      feedback = enqueueFeedback(feedback, result)
+    },
+    resolve: (scope) => {
+      feedback = { ...feedback, notices: feedback.notices.filter((notice) => notice.scope !== scope) }
+    },
+  })
+  const host = document.body.appendChild(document.createElement('div'))
+  let dispose!: () => void
+  const mount = () =>
+    act(async () => {
+      dispose = mountRegion(
+        host,
+        <SettingsPage title="Permissions & security">
+          <CredentialsPage api={api} section />
+        </SettingsPage>,
+      )
+    })
+  const menu = async (credential = metadata) => {
+    await act(async () => {
+      const row = [...document.querySelectorAll<HTMLElement>('[data-testid="credential-row"]')].find(
+        (row) => row.dataset.credentialId === credential.id,
+      )!
+      const actions = row.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')!
+      actions.focus()
+      actions.click()
+    })
+  }
+  const menuItem = (action: string, credential = metadata) =>
+    document.querySelector<HTMLElement>(
+      `[role="menu"][aria-label="Actions for ${credential.label}"] [data-testid="credential-${action}"]`,
+    )!
+  const select = (action: string, credential = metadata) =>
+    act(async () => menuItem(action, credential).click())
+  const closeMenu = () =>
+    act(async () => {
+      menuItem('replace').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+  const submitAndGoBack = async (credential = metadata) => {
+    await menu(credential)
+    await select('replace', credential)
+    await fill('credential-value', canary)
+    await click('credential-save')
+    await click('settings-subpage-back')
+    await act(async () => window.dispatchEvent(new PopStateEvent('popstate', { state: {} })))
+    expect(node('credential-editor')).toBeNull()
+    expect(cleanDom()).toBe(true)
+    const { reply } = writes.at(-1)!
+    return async (response: Response) => act(async () => reply(response))
+  }
+  const unavailableReply = () => Response.json({ error: { code: 'E_ADMIN_BACKEND' } }, { status: 502 })
+  const unknown = () => feedback.notices.find((notice) => notice.outcome === 'unknown')
+  await mount()
+  try {
+    const first = await submitAndGoBack()
+    await act(async () => dispose())
+    await mount()
+    await menu()
+    expect(menuItem('replace').getAttribute('aria-disabled')).toBe('true')
+    expect(menuItem('delete').getAttribute('aria-disabled')).toBe('true')
+    await select('replace')
+    await select('delete')
+    expect(node('credential-editor')).toBeNull()
+    expect(node('credential-delete-confirm')).toBeNull()
+    expect(writes).toMatchObject([{ id: metadata.id, action: 'set' }])
+    await closeMenu()
+
+    const otherReply = await submitAndGoBack(other)
+    await first(unavailableReply())
+    const warning = unknown()
+    expect(warning?.message).toContain('could not be confirmed')
+
+    const next = await submitAndGoBack()
+    await next(Response.json(metadata))
+    expect(feedback.queue.at(-1)?.message).toBe('Credential value replaced.')
+    expect(feedback.notices.some((notice) => notice.effect?.kind === 'reconnect-required')).toBe(true)
+    expect(unknown()).toBe(warning)
+
+    const refused = await submitAndGoBack()
+    await refused(Response.json({ error: { code: 'E_ADMIN_FORBIDDEN' } }, { status: 403 }))
+    expect(feedback.notices.find((notice) => notice.outcome === 'error')?.message).toContain('permission')
+    expect(unknown()).toBe(warning)
+
+    await menu()
+    await select('delete')
+    await click('credential-force-confirm')
+    await click('credential-delete-confirm')
+    const deletion = writes.at(-1)!
+    expect(deletion).toMatchObject({ id: metadata.id, action: 'delete' })
+    expect(node<HTMLButtonElement>('credential-delete-cancel').disabled).toBe(true)
+
+    await otherReply(Response.json(other))
+    expect(node<HTMLButtonElement>('credentials-refresh').disabled).toBe(false)
+    expect(node<HTMLButtonElement>('credential-delete-cancel').disabled).toBe(true)
+    expect(node<HTMLButtonElement>('credential-delete-confirm').disabled).toBe(true)
+    expect(node<HTMLInputElement>('credential-force-confirm').disabled).toBe(true)
+    await click('credential-delete-cancel')
+    expect(node('credential-delete-confirm')).not.toBeNull()
+    const reconnectNotices = feedback.notices.filter((notice) => notice.effect?.kind === 'reconnect-required')
+    expect(reconnectNotices).toHaveLength(2)
+    const otherNotice = reconnectNotices.at(-1)
+
+    await act(async () => dispose())
+    await mount()
+    await menu()
+    expect(menuItem('replace').getAttribute('aria-disabled')).toBe('true')
+    await select('replace')
+    expect(node('credential-editor')).toBeNull()
+    expect(writes.at(-1)).toBe(deletion)
+    await act(async () => deletion.reply(Response.json({})))
+    expect(
+      [...document.querySelectorAll<HTMLElement>('[data-testid="credential-row"]')].map(
+        (row) => row.dataset.credentialId,
+      ),
+    ).toEqual([other.id])
+    expect(feedback.notices).toEqual([otherNotice])
+    expect(feedback.queue.map((result) => result.message)).toEqual([
+      'Credential value replaced.',
+      'Credential deleted.',
+    ])
+  } finally {
+    restore()
     await act(async () => dispose())
   }
 })

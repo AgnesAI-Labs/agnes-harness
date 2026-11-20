@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto'
+import { mkdir, realpath } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { expect, test } from './fixtures.js'
 import { accessible, translated } from './quality.js'
 import {
-  advanced,
   chooseView,
   chooseWorkspace,
   closeSettings,
@@ -62,41 +64,422 @@ test('v3 home entries, deep links and browser back/forward retain the selected p
   page,
   runtime,
 }) => {
+  test.setTimeout(180_000)
   await preferences(page)
-  await page.goto(runtime.url)
-  await chooseWorkspace(page, runtime)
-  for (const id of ['agents', 'plugins', 'automation']) {
-    await homePage(page, id)
-    expect(new URL(page.url()).searchParams.get('page')).toBe(id)
+  const client = await runtime.connect()
+  const session = await client.session.new({
+    sessionKey: randomUUID(),
+    cwd: runtime.workspace,
+    preset: 'standard',
+    permission: 'full-access',
+  })
+  const local = page.getByTestId('backend-frame-local').contentFrame()
+  const localTab = local.getByRole('tab', { name: 'Local', exact: true })
+  const query = (name: string) => new URL(page.url()).searchParams.get(name)
+  const automation = local.getByTestId('schedules-new')
+  const rsi = local.getByTestId('refinement-saved-skills')
+  const model = local.locator('#model-settings-pane')
+  for (const [name, value, surface] of [
+    ['page', 'rsi', rsi],
+    ['page', 'automation', automation],
+    ['settings', 'model', model],
+  ] as const) {
+    const selected = name === 'settings' ? `&session=${encodeURIComponent(session.id)}` : ''
+    await page.goto(`${runtime.url}/?${name}=${value}${selected}`)
+    await expect(surface).toBeVisible()
+    // Let the frame publish its sidebar snapshot before checking that it kept the deep link.
+    await expect(localTab).toBeVisible()
+    expect(query(name)).toBe(value)
+    await page.reload()
+    await expect(surface).toBeVisible()
+    await expect(localTab).toBeVisible()
+    expect(query(name)).toBe(value)
   }
-  await page.goBack()
-  await expect(page.getByTestId('home-page-plugins')).toBeVisible()
-  await page.goBack()
-  await expect(page.getByTestId('home-page-agents')).toBeVisible()
-  await page.goForward()
-  await expect(page.getByTestId('home-page-plugins')).toBeVisible()
-  await page.goto(`${runtime.url}/?page=automation&tab=triggers`)
-  await expect(page.getByTestId('home-page-automation')).toBeVisible()
-  // The automation page intentionally exposes schedules only, including legacy trigger links.
-  await expect(page.getByRole('tab', { name: 'Triggers', exact: true })).toHaveCount(0)
-  await expect(page.getByTestId('schedules-new')).toBeVisible()
+
+  await local.locator('#config-close').click()
+  await expect.poll(() => query('settings')).toBeNull()
+  expect(query('session')).toBe(session.id)
   await page.reload()
-  await expect(page.getByRole('tab', { name: 'Triggers', exact: true })).toHaveCount(0)
-  await expect(page.getByTestId('schedules-new')).toBeVisible()
-
-  await homePage(page, 'rsi')
-  await expect(page.getByRole('heading', { name: 'RSI', exact: true })).toBeVisible()
-  for (const note of ['allows-install', 'allows-undo', 'approvals', 'cost']) {
-    await expect(page.getByTestId(`refinement-${note}`)).toHaveCSS('margin-block-end', '0px')
+  await expect(localTab).toBeVisible()
+  await expect(model).toBeHidden()
+  for (const id of ['agents', 'plugins', 'automation', 'rsi']) {
+    await local.getByTestId(`home-entry-${id}`).click()
+    await expect(local.getByTestId(`home-page-${id}`)).toBeVisible()
+    await expect.poll(() => query('page')).toBe(id)
+    if (id === 'rsi' || id === 'automation') {
+      await page.reload()
+      await expect(local.getByTestId(`home-page-${id}`)).toBeVisible()
+    }
   }
-  await expect(page.getByTestId('refinement-saved-skills')).toBeVisible()
-  await page.goto(`${runtime.url}/?settings=refinement`)
-  await expect(page).toHaveURL(/\?page=rsi$/)
-  await expect(page.getByTestId('refinement-saved-skills')).toBeVisible()
+  await page.goBack()
+  await expect(automation).toBeVisible()
+  expect(query('page')).toBe('automation')
+  await page.goBack()
+  await expect(local.getByTestId('home-page-plugins')).toBeVisible()
+  await page.goForward()
+  await expect(automation).toBeVisible()
+  await local.locator('#settings').click()
+  await expect(model).toBeVisible()
+  await expect.poll(() => query('settings')).toBe('model')
+  expect(query('page')).toBe('automation')
+  await page.reload()
+  await expect(model).toBeVisible()
+  await local.locator('#config-close').click()
+  await expect.poll(() => query('settings')).toBeNull()
+  await expect(automation).toBeVisible()
 
-  await section(page, 'general')
-  await expect(page.locator('#settings-section-tabs').getByRole('tab')).toHaveText(['General', 'Voice'])
-  await expect(page.getByTestId('settings-nav-refinement-tab')).toHaveCount(0)
+  await page.goto(`${runtime.url}/?page=automation&tab=triggers`)
+  // The automation page intentionally exposes schedules only, including legacy trigger links.
+  await expect(automation).toBeVisible()
+  await expect(local.getByRole('tab', { name: 'Triggers', exact: true })).toHaveCount(0)
+  await page.reload()
+  await expect(automation).toBeVisible()
+  await expect(local.getByRole('tab', { name: 'Triggers', exact: true })).toHaveCount(0)
+
+  await local.getByTestId('home-entry-rsi').click()
+  await expect(local.getByRole('heading', { name: 'RSI', exact: true })).toBeVisible()
+  for (const note of ['allows-install', 'allows-undo', 'approvals', 'cost']) {
+    await expect(local.getByTestId(`refinement-${note}`)).toHaveCSS('margin-block-end', '0px')
+  }
+  await expect(rsi).toBeVisible()
+  await page.goto(`${runtime.url}/?settings=refinement`)
+  await expect.poll(() => query('page'), { timeout: 30_000 }).toBe('rsi')
+  expect(query('settings')).toBeNull()
+  await expect(rsi).toBeVisible()
+
+  await local.locator('#settings').click()
+  await local.getByTestId('settings-nav-general').click()
+  await expect(local.locator('#settings-section-tabs').getByRole('tab')).toHaveText(['General', 'Voice'])
+  await expect(local.getByTestId('settings-nav-refinement-tab')).toHaveCount(0)
+})
+
+test('v3 home entries preserve local routes across cloud and session switches', async ({ page, runtime }) => {
+  test.setTimeout(180_000)
+  await preferences(page)
+  const client = await runtime.connect()
+  const alternateWorkspace = join(dirname(runtime.workspace), 'alternate-workspace')
+  await mkdir(alternateWorkspace)
+  const { workspace: alternate } = await client.workspace.add(alternateWorkspace)
+  const newSession = () =>
+    client.session.new({
+      sessionKey: randomUUID(),
+      cwd: runtime.workspace,
+      preset: 'standard',
+      permission: 'full-access',
+    })
+  const older = await newSession()
+  const newer = await newSession()
+  const link = (session: string) => `${runtime.url}/?session=${encodeURIComponent(session)}`
+  const query = (name: string) => new URL(page.url()).searchParams.get(name)
+  const local = page.getByTestId('backend-frame-local').contentFrame()
+  const cloudFrame = page.getByTestId('backend-frame-cloud')
+  const cloud = cloudFrame.contentFrame()
+  const tabs = local.locator('.backend-session-tabs')
+  const cloudTab = tabs.getByRole('tab', { name: /^Cloud\b/ })
+  const localTab = tabs.getByRole('tab', { name: 'Local', exact: true })
+  let holdSettings = false
+  let releaseSettings: (() => void) | undefined
+  await page.routeWebSocket('**', (socket) => {
+    const server = socket.connectToServer()
+    const held = new Set()
+    socket.onMessage((raw) => {
+      const message = JSON.parse(raw.toString())
+      if (holdSettings && message.method === '_agnes/v1/config.providers') held.add(message.id)
+      server.send(raw)
+    })
+    server.onMessage((raw) => {
+      const message = JSON.parse(raw.toString())
+      if (held.delete(message.id)) releaseSettings = () => socket.send(raw)
+      else socket.send(raw)
+    })
+  })
+  await page.goto(`${link(older.id)}&page=rsi`)
+  await expect(local.getByTestId('home-page-rsi')).toBeVisible()
+  await expect(localTab).toBeVisible({ timeout: 30_000 })
+  const cloudOrigin = await page.locator('#agnes-config').getAttribute('data-cloud-origin')
+  const remote = 'http://127.0.0.1:1'
+  let cloudLoads = 0
+  let holdCloudStartup = false
+  // Use the real isolated cloud origin with a synthetic session projection. This exercises
+  // Window/origin checks in Chromium without a cloud credential or a deployed backend.
+  await page.route(
+    (url) => url.origin === cloudOrigin && url.searchParams.has('remote'),
+    async (route) => {
+      cloudLoads++
+      await route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html><button id="report">Report local route</button>
+        <button id="disconnect">Disconnect on next selection</button>
+        <button id="resume">Complete cloud startup</button><output></output><script>
+        const origin = ${JSON.stringify(runtime.url)}
+        const post = (message) => parent.postMessage({ type: 'agh.backend.frame/v1', ...message }, origin)
+        const rows = [
+          { sessionId: 'cloud-a', title: 'Cloud conversation A' },
+          { sessionId: 'cloud-b', title: 'Cloud conversation B' }
+        ]
+        const boot = new URL(location.href).searchParams
+        let selected = boot.get('new') === '1' ? undefined : boot.get('session') ?? 'cloud-a'
+        let connected = ${!holdCloudStartup}
+        let advertised = connected ? selected : undefined
+        let disconnectOnSelection = false
+        const snapshot = () => {
+          document.querySelector('output').textContent = selected ?? 'New conversation'
+          post({ kind: 'state', snapshot: {
+            ready: true, connected, selected: advertised, page: 'agents', rows, activity: [], more: false
+          } })
+        }
+        const completed = new Set()
+        window.addEventListener('message', ({ origin: sender, source, data }) => {
+          if (sender !== origin || source !== parent || data?.type !== 'agh.backend.command/v1') return
+          if (data.kind !== 'session' && data.kind !== 'new') return
+          if (!completed.has(data.commandId)) {
+            // An old selection may be projected while the cloud is still processing the command.
+            snapshot()
+            selected = data.kind === 'session' ? data.sessionId : undefined
+            const url = new URL(location.href)
+            if (selected) {
+              url.searchParams.set('session', selected)
+              url.searchParams.delete('new')
+            } else {
+              url.searchParams.delete('session')
+              url.searchParams.set('new', '1')
+            }
+            history.replaceState({}, '', url)
+            completed.add(data.commandId)
+            if (disconnectOnSelection) connected = false
+            if (connected) advertised = selected
+          }
+          post({ kind: 'ack', commandId: data.commandId })
+          snapshot()
+        })
+        document.querySelector('#resume').onclick = () => {
+          connected = true
+          advertised = selected
+          snapshot()
+        }
+        document.querySelector('#disconnect').onclick = () => { disconnectOnSelection = true }
+        document.querySelector('#report').onclick = () => {
+          history.replaceState({}, '', '/?page=agents')
+          post({ kind: 'local-route', operation: 'push', route: '/?page=agents&settings=model' })
+          snapshot()
+        }
+        snapshot()
+      </script>`,
+      })
+    },
+  )
+  await page.evaluate((origin) => localStorage.setItem('agnes.cloud.origin.v1', origin), remote)
+  holdCloudStartup = true
+  await page.reload()
+  await expect(cloudTab).toBeVisible({ timeout: 30_000 })
+  await page.evaluate((origin) => {
+    window.addEventListener('message', (event) => {
+      if (event.origin === origin && event.data?.kind === 'local-route')
+        document.body.dataset.cloudRouteAttempt = 'received'
+    })
+  }, cloudOrigin)
+  await cloudTab.click()
+  await expect(tabs.getByTestId('cloud-connection-status')).toHaveAttribute('data-state', 'disconnected')
+  expect(query('remote')).toBe(remote)
+  expect(query('session')).toBeNull()
+  expect(query('new')).toBeNull()
+  await localTab.click()
+  await expect(cloudFrame).toBeHidden()
+  await page.goBack()
+  await expect(cloudFrame).toBeVisible()
+  expect(query('session')).toBeNull()
+  expect(query('new')).toBeNull()
+  await page.goForward()
+  await expect(cloudFrame).toBeHidden()
+  holdCloudStartup = false
+  await cloud.locator('#resume').evaluate((button: HTMLButtonElement) => button.click())
+  await expect(tabs.getByTestId('cloud-connection-status')).toHaveAttribute('data-state', 'ready')
+  await page.goBack()
+  await expect(cloud.locator('output')).toHaveText('cloud-a')
+  await expect.poll(() => query('session')).toBe('cloud-a')
+  expect(query('new')).toBeNull()
+  await page.goForward()
+  await expect(local.getByTestId('home-page-rsi')).toBeVisible()
+  await expect(cloudFrame).toBeHidden()
+  await page.goBack()
+
+  await expect(cloud.getByRole('button', { name: 'Report local route' })).toBeVisible()
+  await expect.poll(() => query('session')).toBe('cloud-a')
+  await cloud.getByRole('button', { name: 'Report local route' }).click()
+  await expect(page.locator('body')).toHaveAttribute('data-cloud-route-attempt', 'received')
+  expect(query('remote')).toBe(remote)
+  expect(query('page')).toBeNull()
+  expect(query('settings')).toBeNull()
+  // One click from Cloud to local Settings adds exactly one browser-history entry.
+  holdSettings = true
+  try {
+    await local.locator('#settings').click()
+    await expect.poll(() => typeof releaseSettings).toBe('function')
+    await expect(cloudFrame).toBeHidden()
+    await expect(local.locator('#model-settings-pane')).toBeVisible()
+    await expect.poll(() => query('settings')).toBe('model')
+    await page.goBack()
+    await expect(cloudFrame).toBeVisible()
+    await expect(cloud.locator('output')).toHaveText('cloud-a')
+  } finally {
+    holdSettings = false
+    releaseSettings?.()
+  }
+  expect(query('session')).toBe('cloud-a')
+  await page.goBack()
+  await expect(cloudFrame).toBeHidden()
+  await expect(local.getByTestId('home-page-rsi')).toBeVisible()
+  await expect(local.locator('#config[open]')).toHaveCount(0)
+  expect(query('session')).toBe(older.id)
+  await page.goForward()
+  await expect(cloudFrame).toBeVisible()
+  expect(query('remote')).toBe(remote)
+  await localTab.click()
+  await expect(cloudFrame).toBeHidden()
+  await expect(local.getByTestId('home-page-rsi')).toBeVisible()
+  expect(query('page')).toBe('rsi')
+  expect(query('remote')).toBeNull()
+
+  await cloudTab.click()
+  await expect(cloudFrame).toBeVisible()
+  await local.getByTestId('backend-session-cloud').filter({ hasText: 'Cloud conversation B' }).click()
+  await expect(cloud.locator('output')).toHaveText('cloud-b')
+  holdCloudStartup = true
+  await page.reload()
+  await expect(cloudTab.getByTestId('cloud-connection-status')).toHaveAttribute(
+    'data-state',
+    'disconnected',
+    {
+      timeout: 30_000,
+    },
+  )
+  expect(query('session')).toBe('cloud-b')
+  holdCloudStartup = false
+  await cloud.getByRole('button', { name: 'Complete cloud startup' }).click()
+  await expect(cloud.locator('output')).toHaveText('cloud-b')
+  await page.goBack()
+  await expect(cloud.locator('output')).toHaveText('cloud-a')
+  expect(query('session')).toBe('cloud-a')
+  await page.goForward()
+  await expect(cloud.locator('output')).toHaveText('cloud-b')
+  expect(query('session')).toBe('cloud-b')
+  await page.goBack()
+  await expect(cloud.locator('output')).toHaveText('cloud-a')
+  await page.goBack()
+  await expect(cloudFrame).toBeHidden()
+  await expect(local.getByTestId('home-page-rsi')).toBeVisible()
+
+  await page.reload()
+  await expect(local.getByTestId('home-page-rsi')).toBeVisible()
+  await cloudTab.click()
+  await expect(cloud.locator('output')).toHaveText('cloud-a')
+  await cloud.getByRole('button', { name: 'Disconnect on next selection' }).click()
+  await local.getByTestId('backend-session-cloud').filter({ hasText: 'Cloud conversation B' }).click()
+  await expect(cloud.locator('output')).toHaveText('cloud-b')
+  await expect.poll(() => query('session')).toBe('cloud-b')
+  await local.locator('#settings').click()
+  await expect(local.locator('#model-settings-pane')).toBeVisible()
+  await local.getByTestId('settings-nav-cloud-connection').click()
+  const previousCloudLoads = cloudLoads
+  await local.getByRole('button', { name: 'Reconnect', exact: true }).click()
+  await expect.poll(() => cloudLoads).toBeGreaterThan(previousCloudLoads)
+  await local.locator('#config-close').click()
+  await cloudTab.click()
+  await expect(cloud.locator('output')).toHaveText('cloud-b')
+  expect(query('session')).toBe('cloud-b')
+  await localTab.click()
+  await expect(local.getByTestId('home-page-rsi')).toBeVisible()
+
+  await local.locator(`.session[data-session="${newer.id}"]`).click()
+  await expect.poll(() => query('session')).toBe(newer.id)
+  await expect(local.getByTestId('home-page-rsi')).toBeHidden()
+  expect(query('page')).toBeNull()
+  await local.locator(`.session[data-session="${older.id}"]`).click()
+  await expect.poll(() => query('session')).toBe(older.id)
+  await local.locator('#new').click()
+  await expect.poll(() => query('new')).toBe('1')
+  expect(query('session')).toBeNull()
+  await page.goto(`${runtime.url}/?new=1&workspaceId=${alternate.workspaceId}`)
+  const workspaceChip = local.locator('#composer-workspace')
+  const alternatePath = await realpath(alternateWorkspace)
+  await expect(workspaceChip).toHaveAttribute('title', alternatePath)
+  await local.getByTestId('home-entry-rsi').click()
+  await expect.poll(() => query('page')).toBe('rsi')
+  await page.reload()
+  await expect(local.getByTestId('home-page-rsi')).toBeVisible()
+  await expect(localTab).toBeVisible({ timeout: 30_000 })
+  await expect(workspaceChip).toHaveAttribute('title', alternatePath)
+  expect(query('new')).toBe('1')
+  expect(query('workspaceId')).toBe(alternate.workspaceId)
+  expect(query('session')).toBeNull()
+
+  await cloudTab.click()
+  await expect(cloud.locator('output')).toHaveText('cloud-a')
+  await expect.poll(() => query('session')).toBe('cloud-a')
+  await local.getByRole('button', { name: 'New cloud conversation', exact: true }).click()
+  await expect(cloud.locator('output')).toHaveText('New conversation')
+  await expect.poll(() => query('new')).toBe('1')
+  expect(query('session')).toBeNull()
+  expect(query('workspaceId')).toBeNull()
+  await page.reload()
+  await expect(cloud.locator('output')).toHaveText('New conversation')
+  await page.goBack()
+  await expect(cloud.locator('output')).toHaveText('cloud-a')
+  expect(query('new')).toBeNull()
+  await page.goForward()
+  await expect(cloud.locator('output')).toHaveText('New conversation')
+  expect(query('new')).toBe('1')
+})
+
+test('v3 home entries restore the draft when Back interrupts a pending session load', async ({
+  page,
+  runtime,
+}) => {
+  test.setTimeout(180_000)
+  await preferences(page)
+  const client = await runtime.connect()
+  const session = await client.session.new({
+    sessionKey: randomUUID(),
+    cwd: runtime.workspace,
+    preset: 'standard',
+    permission: 'full-access',
+  })
+  const local = page.getByTestId('backend-frame-local').contentFrame()
+  const query = (key: string) => new URL(page.url()).searchParams.get(key)
+  let release: (() => void) | undefined
+  let cancelled = false
+  await page.routeWebSocket('**', (socket) => {
+    const server = socket.connectToServer()
+    const pending = new Set()
+    socket.onMessage((raw) => {
+      const message = JSON.parse(raw.toString())
+      if (message.params?.sessionId === session.id) {
+        if (message.method === '_agnes/v1/session.open') pending.add(message.id)
+        if (message.method === '_agnes/v1/session.loadingCancel') cancelled = true
+      }
+      server.send(raw)
+    })
+    server.onMessage((raw) => {
+      const message = JSON.parse(raw.toString())
+      if (pending.delete(message.id)) release = () => socket.send(raw)
+      else socket.send(raw)
+    })
+  })
+  await page.goto(`${runtime.url}/?new=1`)
+  await expect(local.getByRole('tab', { name: 'Local', exact: true })).toBeVisible({ timeout: 30_000 })
+  await local.getByTestId('home-entry-rsi').click()
+  await expect.poll(() => query('page')).toBe('rsi')
+  await local.locator(`.session[data-session="${session.id}"]`).click()
+  await expect.poll(() => typeof release).toBe('function')
+  await expect.poll(() => query('page')).toBeNull()
+  await page.goBack()
+  await expect(local.getByTestId('home-page-rsi')).toBeVisible()
+  await expect.poll(() => cancelled).toBe(true)
+  release?.()
+  await expect(local.locator('#new')).toBeEnabled()
+  expect(query('new')).toBe('1')
+  expect(query('session')).toBeNull()
+  expect(query('page')).toBe('rsi')
 })
 
 test('v3 command-K searches durable session text and opens the matching session', async ({
@@ -170,69 +553,84 @@ test('v3 settings exposes four everyday pages, persistent advanced settings and 
   page,
   runtime,
 }) => {
+  test.setTimeout(180_000)
   await preferences(page, 'zh-CN')
-  await page.goto(runtime.url)
-  await chooseWorkspace(page, runtime, 'zh-CN')
-  await fresh(page, 'zh-CN')
-  await turn(page, 'Keep the settings navigation session across reloads')
-  await settings(page, 'zh-CN')
+  const client = await runtime.connect()
+  const session = await client.session.new({
+    sessionKey: randomUUID(),
+    cwd: runtime.workspace,
+    preset: 'standard',
+    permission: 'full-access',
+  })
+  const local = page.getByTestId('backend-frame-local').contentFrame()
+  const setSection = (id: string) => local.getByTestId(`settings-nav-${id}`).click()
+  const route = () => new URL(page.url()).searchParams.get('settings')
+  const advancedGroup = local.getByTestId('settings-advanced')
+  const advancedSwitch = local.getByTestId('settings-advanced-switch')
+  await page.goto(`${runtime.url}/?session=${session.id}&settings=model`)
   // A browser that never chose shows the advanced group; turning it off is remembered.
   expect(await page.evaluate(() => localStorage.getItem('agnes.settings.advanced'))).toBeNull()
-  await expect(page.getByTestId('settings-advanced')).toBeVisible()
-  await section(page, 'general')
-  await page.getByTestId('settings-advanced-switch').click()
-  await expect(page.getByTestId('settings-advanced-switch')).toHaveAttribute('aria-checked', 'false')
+  await expect(advancedGroup).toBeVisible()
+  await setSection('general')
+  await advancedSwitch.click()
+  await expect(advancedSwitch).toHaveAttribute('aria-checked', 'false')
   expect(await page.evaluate(() => localStorage.getItem('agnes.settings.advanced'))).toBe('0')
   await page.reload()
   // A persisted settings URL restores its dialog after the session binding finishes.
-  await expect(page.locator('#config[open]')).toBeVisible()
-  await settings(page, 'zh-CN')
-  await expect(page.getByTestId('settings-navigation').locator('[data-settings-section]')).toHaveCount(4)
-  await expect(page.getByTestId('settings-advanced')).toHaveCount(0)
-  for (const id of ['general', 'model', 'security', 'application']) await section(page, id)
-  await expect(page.getByTestId('auto-review-customize')).toHaveCount(0)
-  await advanced(page)
-  await expect(page.getByTestId('settings-advanced')).toBeVisible()
-  await section(page, 'security')
-  await expand(page.getByTestId('auto-review-customize'))
-  await expect(page.getByTestId('auto-review-tools')).toBeVisible()
+  await expect(local.locator('#config[open]')).toBeVisible()
+  await expect(local.getByTestId('settings-navigation').locator('[data-settings-section]')).toHaveCount(4)
+  await expect(advancedGroup).toHaveCount(0)
+  for (const id of ['general', 'model', 'security', 'application']) {
+    await setSection(id)
+    await expect.poll(route).toBe(id)
+  }
+  await expect(local.getByTestId('auto-review-customize')).toHaveCount(0)
+  await setSection('general')
+  await advancedSwitch.click()
+  await expect(advancedGroup).toBeVisible()
+  await setSection('security')
+  await expand(local.getByTestId('auto-review-customize'))
+  const reviewTools = local.getByTestId('auto-review-tools')
+  await expect(reviewTools).toBeVisible()
+  await expect.poll(route).toBe('security/auto-review')
   expect(await page.evaluate(() => localStorage.getItem('agnes.settings.advanced'))).toBe('1')
   const subpage = page.url()
-  expect(new URL(subpage).searchParams.get('settings')).toBe('security/auto-review')
   await page.goBack()
-  await expect(page.getByTestId('auto-review-tools')).toBeHidden()
-  expect(new URL(page.url()).searchParams.get('settings')).toBe('security')
+  await expect(reviewTools).toBeHidden()
+  expect(route()).toBe('security')
   await page.goForward()
-  await expect(page.getByTestId('auto-review-tools')).toBeVisible()
+  await expect(reviewTools).toBeVisible()
   await page.reload()
-  await expect(page.getByTestId('auto-review-tools')).toBeVisible()
+  await expect(reviewTools).toBeVisible()
   expect(page.url()).toBe(subpage)
   await page.goto(subpage)
-  await expect(page.getByTestId('auto-review-tools')).toBeVisible()
+  await expect(reviewTools).toBeVisible()
   await page.reload()
-  await expect(page.getByTestId('auto-review-tools')).toBeVisible()
-  await settings(page, 'zh-CN')
-  await expect(page.getByTestId('settings-advanced')).toBeVisible()
-  await closeSettings(page, 'zh-CN')
+  await expect(reviewTools).toBeVisible()
+  await local.getByTestId('settings-subpage-header').getByRole('button').first().click()
+  await expect(advancedGroup).toBeVisible()
+  await local.locator('#config-close').click()
+  await expect.poll(route).toBeNull()
   await page.goto(`${runtime.url}/?settings=plugins`)
-  await expect(page.getByTestId('home-page-plugins')).toBeVisible()
-  expect(new URL(page.url()).searchParams.get('settings')).toBeNull()
-  expect(new URL(page.url()).searchParams.get('page')).toBe('plugins')
+  await expect(local.getByTestId('home-page-plugins')).toBeVisible()
+  await expect.poll(() => new URL(page.url()).searchParams.get('page')).toBe('plugins')
+  expect(route()).toBeNull()
   await page.goto(`${runtime.url}/?settings=model/add-account`)
-  await expect(page.getByTestId('account-page-add')).toBeVisible()
-  await page.locator('#config-account-cancel').click()
-  await expect(page.locator('#config-account-discard')).toBeVisible()
-  await page.locator('#config-account-discard-confirm').click()
-  await expect.poll(() => new URL(page.url()).searchParams.get('settings')).toBe('model')
-  await expect(page.getByTestId('account-page-add')).toHaveCount(0)
+  const addAccount = local.getByTestId('account-page-add')
+  await expect(addAccount).toBeVisible()
+  await local.locator('#config-account-cancel').click()
+  await expect(local.locator('#config-account-discard')).toBeVisible()
+  await local.locator('#config-account-discard-confirm').click()
+  await expect.poll(route).toBe('model')
+  await expect(addAccount).toHaveCount(0)
   await page.reload()
-  await expect(page.locator('#model-settings-pane')).toBeVisible()
-  await expect(page.getByTestId('account-page-add')).toHaveCount(0)
-  await page.locator('.config-accounts-welcome [data-provider="deepseek"]').click()
-  await expect(page.getByTestId('account-page-add')).toBeVisible()
+  await expect(local.locator('#model-settings-pane')).toBeVisible()
+  await expect(addAccount).toHaveCount(0)
+  await local.locator('.config-accounts-welcome [data-provider="deepseek"]').click()
+  await expect(addAccount).toBeVisible()
   await page.goBack()
-  await expect.poll(() => new URL(page.url()).searchParams.get('settings')).toBe('model')
-  await expect(page.getByTestId('account-page-add')).toHaveCount(0)
+  await expect.poll(route).toBe('model')
+  await expect(addAccount).toHaveCount(0)
 })
 
 for (const locale of ['en', 'zh-CN'])

@@ -1,3 +1,5 @@
+import { localWorkbenchRoute } from './local-route.js'
+
 export const BACKEND_FRAME_MESSAGE = 'agh.backend.frame/v1'
 export const BACKEND_FRAME_COMMAND = 'agh.backend.command/v1'
 export type BackendId = 'local' | 'cloud'
@@ -39,6 +41,7 @@ export type BackendCommand =
   | { kind: 'session-action'; action: BackendSessionAction; sessionId: string; title: string }
   | { kind: 'settings'; section: string }
   | { kind: 'home'; page: 'plugins' | 'agents' | 'automation' | 'mhs' }
+  | { kind: 'restore-local-route'; route: string }
 
 const record = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -73,6 +76,10 @@ export function backendCommand(value: unknown): BackendCommand | undefined {
     return { kind: value.kind, section: value.section }
   if (value.kind === 'home' && ['plugins', 'agents', 'automation', 'mhs'].includes(String(value.page)))
     return { kind: value.kind, page: value.page as Extract<BackendCommand, { kind: 'home' }>['page'] }
+  if (value.kind === 'restore-local-route') {
+    const route = localWorkbenchRoute(value.route)
+    if (route) return { kind: value.kind, route }
+  }
 }
 
 /** Messages are still bound to the exact frame Window and same-origin parent by the receiver. */

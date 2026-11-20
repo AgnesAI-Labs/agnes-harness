@@ -1,5 +1,6 @@
-import { readFile, realpath, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { installDeveloperExample } from './developer-example.js'
 import { expect, test } from './fixtures.js'
@@ -562,4 +563,263 @@ test('automation keeps a task under the same switch coordinates after toggling',
   }
   for (const [i, task] of tasks.entries())
     expect(result.schedules.find((row) => row.id === task.id)?.status).toBe(i === 0 ? 'paused' : 'active')
+})
+
+test('v3 home entries keep the selected workspace in a default draft', async ({ page, runtime }) => {
+  test.setTimeout(180_000)
+  await preferences(page)
+  const client = await runtime.connect()
+  const workspace = join(dirname(runtime.workspace), 'alternate-workspace')
+  await mkdir(workspace)
+  await client.workspace.add(workspace)
+  const { items: workspaces } = await client.workspace.list()
+  const local = page.getByTestId('backend-frame-local').contentFrame()
+  const workspaceChip = local.locator('#composer-workspace')
+  const query = (key: string) => new URL(page.url()).searchParams.get(key)
+
+  await page.goto(`${runtime.url}/?settings=model`)
+  await expect(local.locator('#model-settings-pane')).toBeVisible({ timeout: 30_000 })
+  await local.locator('#config-close').click()
+  await expect(workspaceChip).toBeVisible()
+  expect(query('new')).toBeNull()
+  const before = await workspaceChip.getAttribute('title')
+  const selected = workspaces.find((item) => item.available && item.path !== before && item.workspaceId)
+  if (!selected) throw new Error('Expected another registered workspace')
+  await workspaceChip.click()
+  await local
+    .getByRole('region', { name: 'Select workspace', exact: true })
+    .getByTitle(selected.path, { exact: true })
+    .click()
+  await expect(workspaceChip).toHaveAttribute('title', selected.path)
+  await expect.poll(() => query('new')).toBe('1')
+  expect(query('workspaceId')).toBe(selected.workspaceId)
+  await local.getByTestId('home-entry-rsi').click()
+  await expect.poll(() => query('page')).toBe('rsi')
+  await page.reload()
+  await expect(local.getByTestId('home-page-rsi')).toBeVisible()
+  await expect(workspaceChip).toHaveAttribute('title', selected.path)
+  expect(query('session')).toBeNull()
+
+  const [other, named] = workspaces.filter((item) => item.available && item.kind !== 'chats')
+  const linked = named?.workspaceId
+  if (!linked || !other?.workspaceId) throw new Error('Expected two registered workspaces')
+  const requestedWorkspaces: (string | undefined)[] = []
+  const skillsPath = '/admin/resources/api/skills/list'
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === skillsPath)
+      requestedWorkspaces.push(request.postDataJSON()?.workspaceId)
+  })
+  const skillsRead = () =>
+    page.waitForRequest(
+      (request) =>
+        new URL(request.url()).pathname === skillsPath && request.postDataJSON()?.workspaceId === linked,
+      { timeout: 30_000 },
+    )
+  await Promise.all([skillsRead(), page.goto(`${runtime.url}/admin/resources?workspaceId=${linked}`)])
+  await expect.poll(() => query('tab')).toBe('skills')
+  expect(query('workspaceId')).toBe(linked)
+  expect(query('new')).toBeNull()
+  await Promise.all([skillsRead(), page.reload()])
+  await local.getByTestId('home-entry-rsi').click()
+  await expect.poll(() => query('page')).toBe('rsi')
+  expect(query('workspaceId')).toBeNull()
+  await Promise.all([skillsRead(), page.goBack()])
+  expect(query('workspaceId')).toBe(linked)
+
+  const session = await client.session.new({
+    sessionKey: randomUUID(),
+    cwd: other.path,
+    preset: 'standard',
+    permission: 'full-access',
+  })
+  let holdOpen = true
+  let releaseOpen: (() => void) | undefined
+  const releaseSession = () => {
+    holdOpen = false
+    const release = releaseOpen
+    releaseOpen = undefined
+    release?.()
+  }
+  await page.routeWebSocket('**', (socket) => {
+    const server = socket.connectToServer()
+    const pending = new Set()
+    socket.onMessage((raw) => {
+      const message = JSON.parse(raw.toString())
+      if (holdOpen && message.method === '_agnes/v1/session.open' && message.params?.sessionId === session.id)
+        pending.add(message.id)
+      server.send(raw)
+    })
+    server.onMessage((raw) => {
+      if (pending.delete(JSON.parse(raw.toString()).id)) releaseOpen = () => socket.send(raw)
+      else socket.send(raw)
+    })
+  })
+  requestedWorkspaces.length = 0
+  try {
+    await Promise.all([skillsRead(), page.goto(`${runtime.url}/admin/resources?workspaceId=${linked}`)])
+    await expect.poll(() => typeof releaseOpen).toBe('function')
+    expect(query('workspaceId')).toBe(linked)
+    expect(requestedWorkspaces.every((id) => id === linked)).toBe(true)
+  } finally {
+    releaseSession()
+  }
+  await expect.poll(() => query('session')).toBe(session.id)
+  await expect(local.locator('#new')).toBeEnabled()
+  expect(requestedWorkspaces.every((id) => id === linked)).toBe(true)
+  requestedWorkspaces.length = 0
+  await Promise.all([skillsRead(), page.reload()])
+  await expect(local.locator('#new')).toBeEnabled()
+  expect(query('session')).toBe(session.id)
+  expect(query('workspaceId')).toBe(linked)
+  expect(requestedWorkspaces.every((id) => id === linked)).toBe(true)
+
+  await local.getByTestId('home-entry-rsi').click()
+  await expect.poll(() => query('page')).toBe('rsi')
+  expect(query('workspaceId')).toBeNull()
+  await local.getByTestId('home-entry-plugins').click()
+  await expect(local.getByTestId('home-page-plugins')).toBeVisible()
+  const ordinaryRead = page.waitForRequest(
+    (request) =>
+      new URL(request.url()).pathname === skillsPath &&
+      request.postDataJSON()?.workspaceId === other.workspaceId,
+  )
+  await local.getByTestId('plugins-tab-skills').click()
+  await ordinaryRead
+  expect(query('workspaceId')).toBeNull()
+
+  await page.goto(`${runtime.url}/?new=1&workspaceId=${linked}`)
+  await expect(local.getByRole('tab', { name: 'Local', exact: true })).toBeVisible({ timeout: 30_000 })
+  expect(query('workspaceId')).toBe(linked)
+  holdOpen = true
+  requestedWorkspaces.length = 0
+  let sessionSkillsRead: Promise<unknown> | undefined
+  try {
+    await local.locator(`.session[data-session="${session.id}"]`).click()
+    await expect.poll(() => typeof releaseOpen).toBe('function')
+    await local.getByTestId('home-entry-plugins').click()
+    await local.getByTestId('plugins-tab-skills').click()
+    await expect.poll(() => query('tab')).toBe('skills')
+    await expect(local.locator('[data-resource-tab="skills"]')).toHaveCount(0)
+    expect(requestedWorkspaces).toEqual([])
+    sessionSkillsRead = page.waitForRequest(
+      (request) =>
+        new URL(request.url()).pathname === skillsPath &&
+        request.postDataJSON()?.workspaceId === other.workspaceId,
+      { timeout: 45_000 },
+    )
+  } finally {
+    releaseSession()
+  }
+  await sessionSkillsRead
+  await expect.poll(() => query('session')).toBe(session.id)
+  expect(query('new')).toBeNull()
+  expect(query('workspaceId')).toBeNull()
+  expect(requestedWorkspaces.every((id) => id === other.workspaceId)).toBe(true)
+})
+
+test('v3 home entries resolve the Skills scope before the first startup read', async ({ page, runtime }) => {
+  test.setTimeout(240_000)
+  await preferences(page)
+  const client = await runtime.connect()
+  const { items } = await client.workspace.list()
+  const workspaceId = items.find((row) => row.available && row.kind !== 'chats')?.workspaceId
+  if (!workspaceId) throw new Error('Expected the registered workspace')
+  const alternate = join(dirname(runtime.workspace), 'linked-skills-workspace')
+  await mkdir(alternate)
+  const { workspace: linked } = await client.workspace.add(alternate)
+  let roster: 'normal' | 'empty' | 'failed' = 'normal'
+  let rejectStartup = false
+  const startup: { release?: () => void } = {}
+  await page.routeWebSocket('**', (socket) => {
+    const server = socket.connectToServer()
+    const workspaceReads = new Set()
+    let configId: number | string | undefined
+    socket.onMessage((raw) => {
+      const message = JSON.parse(raw.toString())
+      if (message.method === '_agnes/v1/config.get' && configId === undefined) configId = message.id
+      if (roster !== 'normal' && message.method === '_agnes/v1/workspace.list') workspaceReads.add(message.id)
+      server.send(raw)
+    })
+    server.onMessage((raw) => {
+      const { id } = JSON.parse(raw.toString())
+      if (id !== undefined && id === configId) {
+        startup.release = () =>
+          socket.send(
+            rejectStartup
+              ? JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32603, message: 'Failed startup' } })
+              : raw,
+          )
+      } else if (workspaceReads.delete(id)) {
+        const payload =
+          roster === 'failed'
+            ? { error: { code: -32603, message: 'Workspace list failed' } }
+            : { result: { items: [] } }
+        socket.send(JSON.stringify({ jsonrpc: '2.0', id, ...payload }))
+      } else socket.send(raw)
+    })
+  })
+  const requests: (string | undefined)[] = []
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/admin/resources/api/skills/list')
+      requests.push(request.postDataJSON()?.workspaceId)
+  })
+  const local = page.getByTestId('backend-frame-local').contentFrame()
+  const route = `${runtime.url}/?page=plugins&tab=skills`
+  const open = async (url?: string) => {
+    delete startup.release
+    requests.length = 0
+    if (url) await page.goto(url)
+    else await page.reload()
+    await expect(local.getByTestId('home-page-plugins')).toBeVisible({ timeout: 30_000 })
+    await expect.poll(() => typeof startup.release).toBe('function')
+  }
+  const assertRead = async (id: string | undefined) => {
+    await expect.poll(() => requests.includes(id), { timeout: 30_000 }).toBe(true)
+    expect(requests.every((workspace) => workspace === id)).toBe(true)
+  }
+  roster = 'empty'
+  await open(route)
+  expect(requests).toEqual([])
+  startup.release?.()
+  await assertRead(undefined)
+
+  roster = 'normal'
+  rejectStartup = true
+  await open(route)
+  startup.release?.()
+  await expect(local.getByText('This list could not be opened. Reload the page and try again.')).toBeVisible()
+  expect(requests).toEqual([])
+
+  rejectStartup = false
+  const session = await client.session.new({
+    sessionKey: randomUUID(),
+    cwd: runtime.workspace,
+    preset: 'standard',
+    permission: 'full-access',
+  })
+  await open(route)
+  expect(requests).toEqual([])
+  startup.release?.()
+  await assertRead(workspaceId)
+  await expect.poll(() => new URL(page.url()).searchParams.get('session')).toBe(session.id)
+  roster = 'failed'
+  await open()
+  startup.release?.()
+  await expect(local.getByText('This list could not be opened. Reload the page and try again.')).toBeVisible()
+  await expect(local.locator('#new')).toBeEnabled()
+  expect(requests).toEqual([])
+
+  roster = 'normal'
+  await open()
+  expect(requests).toEqual([])
+  startup.release?.()
+  await assertRead(workspaceId)
+
+  if (!linked.workspaceId) throw new Error('Expected a linked workspace')
+  roster = 'failed'
+  await open(`${route}&session=${session.id}&workspaceId=${linked.workspaceId}`)
+  await assertRead(linked.workspaceId)
+  startup.release?.()
+  await expect(local.locator('#new')).toBeEnabled()
+  expect(requests.every((id) => id === linked.workspaceId)).toBe(true)
 })

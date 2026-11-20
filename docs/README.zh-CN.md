@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-云端连接、地址自动发现与计费旁路配套说明见[云端对接文档](guide/remote-frontend.zh-CN.md)。
+使用支持云端连接的部署时，请参阅[云端工作台对接预览](guide/remote-frontend.zh-CN.md)。
 
 从旧版 `main` 升级请先看[旧版升级指南](guide/upgrade-from-previous.zh-CN.md)：备份、清理旧环境，再重新配置。
 

@@ -12,6 +12,8 @@ import {
   type BackendSnapshot,
   backendCommand,
 } from './frame-contract.js'
+import { installLocalFrameRouting } from './local-frame-routing.js'
+import { isDraftRoute } from './local-route.js'
 import { publishSidebarLayout } from './sidebar-projection.js'
 
 export function backendFrameStartup(op: () => Promise<void>): () => Promise<void> {
@@ -29,9 +31,11 @@ export function installBackendFrameBridge(
   client: Client,
   label?: (id: string) => string | undefined,
   sessionAction?: (action: BackendSessionAction, id: string, title: string, trigger: HTMLElement) => void,
+  openSettings?: (section: string) => void,
 ): () => void {
   const context = backendFrame()
   if (!context) return () => {}
+  const routing = context.remote ? undefined : installLocalFrameRouting(context.parentOrigin)
   let disposed = false
   let ready = false
   let reading = false
@@ -122,22 +126,26 @@ export function installBackendFrameBridge(
     }
   }
   const invoke = (command: BackendCommand) => {
-    if (command.kind === 'session') {
-      homeNavigation.close()
+    if (command.kind === 'restore-local-route') {
+      routing?.restore(command.route)
+    } else if (command.kind === 'session' || command.kind === 'new') {
+      if (!context.remote && command.kind === 'session') homeNavigation.close()
       const url = new URL(location.href)
-      url.searchParams.delete('new')
       url.searchParams.delete('view')
       url.searchParams.delete('settings')
-      url.searchParams.set('session', command.sessionId)
-      history.pushState({}, '', url)
-      window.dispatchEvent(new PopStateEvent('popstate'))
-    } else if (command.kind === 'new') {
-      const url = new URL(location.href)
-      url.searchParams.delete('session')
-      url.searchParams.delete('view')
-      url.searchParams.delete('settings')
-      history.replaceState({}, '', url)
-      requestNewSession()
+      if (context.remote) {
+        // The workbench owns cloud conversation history. Clear the old page before running its router.
+        for (const key of ['page', 'pagePackage', 'tab', 'account']) url.searchParams.delete(key)
+        if (url.hash.startsWith('#settings-subsection-')) url.hash = ''
+      }
+      if (command.kind === 'session') {
+        if (!context.remote && isDraftRoute(url.searchParams)) url.searchParams.delete('workspaceId')
+        url.searchParams.delete('new')
+        url.searchParams.set('session', command.sessionId)
+      } else url.searchParams.delete('session')
+      if (context.remote || command.kind === 'new') history.replaceState({}, '', url)
+      else history.pushState({}, '', url)
+      if (command.kind === 'new') requestNewSession()
       window.dispatchEvent(new PopStateEvent('popstate'))
     } else if (command.kind === 'search') {
       document.dispatchEvent(new CustomEvent(SESSION_SEARCH_EVENT))
@@ -150,26 +158,27 @@ export function installBackendFrameBridge(
         command.title,
         document.getElementById('prompt') ?? document.body,
       )
-    } else if (command.kind === 'settings') {
-      document.dispatchEvent(new CustomEvent('agnes:open-settings', { detail: { section: command.section } }))
     } else if (command.kind === 'home') homeNavigation.open(command.page)
     else if (command.kind === 'more') count = Math.min(5000, count + 100)
     void refresh()
   }
   const accept = (entry: { command: BackendCommand; commandId: string }) => {
-    if (!ready) {
+    if (!ready && entry.command.kind !== 'restore-local-route') {
       queued = entry
       return
     }
-    if (!completed.has(entry.commandId)) {
-      invoke(entry.command)
-      completed.add(entry.commandId)
+    const { command, commandId } = entry
+    const acknowledge = () => {
+      if (disposed) return
+      completed.add(commandId)
       if (completed.size > 256) completed.delete(completed.values().next().value ?? '')
+      window.parent.postMessage({ type: BACKEND_FRAME_MESSAGE, kind: 'ack', commandId }, context.parentOrigin)
     }
-    window.parent.postMessage(
-      { type: BACKEND_FRAME_MESSAGE, kind: 'ack', commandId: entry.commandId },
-      context.parentOrigin,
-    )
+    if (!completed.has(commandId)) {
+      if (command.kind === 'settings' && openSettings) openSettings(command.section)
+      else invoke(command)
+    }
+    acknowledge()
   }
   const receive = (event: MessageEvent) => {
     if (event.source !== window.parent || event.origin !== backendFrame()?.parentOrigin) return
@@ -180,11 +189,6 @@ export function installBackendFrameBridge(
   window.addEventListener('message', receive)
   const homeOff = homeNavigation.subscribe(() => {
     const page = homeNavigation.getSnapshot()?.id
-    if (page && !context.remote)
-      window.parent.postMessage(
-        { type: BACKEND_FRAME_MESSAGE, kind: 'local-navigation' },
-        context.parentOrigin,
-      )
     if (
       page &&
       ['plugins', 'agents', 'automation', 'mhs'].includes(page) &&
@@ -196,11 +200,6 @@ export function installBackendFrameBridge(
       homeNavigation.close()
   })
   const localSettings = (event: Event) => {
-    if (!context.remote)
-      window.parent.postMessage(
-        { type: BACKEND_FRAME_MESSAGE, kind: 'local-navigation' },
-        context.parentOrigin,
-      )
     const section = (event as CustomEvent<{ section?: unknown }>).detail?.section
     if (
       typeof section !== 'string' ||
@@ -216,6 +215,7 @@ export function installBackendFrameBridge(
 
   const readyOff = onBroadcast('agnes:backend-frame-ready', () => {
     ready = true
+    routing?.sync()
     const command = queued
     queued = undefined
     if (command) accept(command)
@@ -244,6 +244,7 @@ export function installBackendFrameBridge(
   }, 2000)
   return () => {
     disposed = true
+    routing?.dispose()
     layoutObserver.disconnect()
     layoutChanges.disconnect()
     window.removeEventListener('resize', publishSidebarLayout)

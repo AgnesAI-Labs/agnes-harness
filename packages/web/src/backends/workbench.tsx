@@ -27,6 +27,7 @@ import {
   commandBackend,
   localManagementCommand,
 } from './frame-contract.js'
+import { localWorkbenchRoute } from './local-route.js'
 import { workbenchCatalog } from './workbench-locale.js'
 import {
   backendFrameSource,
@@ -37,13 +38,26 @@ import {
   workbenchAddress,
 } from './workbench-state.js'
 
-function initialFrameSource(remote: string | undefined, selected: boolean, search: string): string {
+function initialFrameSource(
+  remote: string | undefined,
+  selected: boolean,
+  search: string,
+  hash: string,
+): string {
   const url = new URL(backendFrameSource(remote), remote ? cloudFrameOrigin() : location.origin)
-  if (selected)
-    for (const [key, value] of new URLSearchParams(search)) {
-      if (key !== 'remote' && key !== 'connection') url.searchParams.append(key, value)
-    }
-  return remote ? url.href : `${url.pathname}${url.search}`
+  if (selected) {
+    // Preserve encoded route levels verbatim when passing the initial address to the frame.
+    const rest = search
+      .slice(1)
+      .split('&')
+      .filter((part) => {
+        const params = new URLSearchParams(part)
+        return part && !params.has('remote') && !params.has('connection')
+      })
+    url.search = [url.search.slice(1), ...rest].filter(Boolean).join('&')
+    if (!remote) url.hash = hash
+  }
+  return remote ? url.href : `${url.pathname}${url.search}${url.hash}`
 }
 
 function BackendWorkbench() {
@@ -61,7 +75,7 @@ function BackendWorkbench() {
   const connectionRequest = useRef<AbortController | undefined>(undefined)
   const [discovering, setDiscovering] = useState(false)
   const [states, setStates] = useState<Partial<Record<BackendId, BackendSnapshot>>>({})
-  const [revisions, setRevisions] = useState({ local: 0, cloud: 0 })
+  const [cloudFrame, setCloudFrame] = useState({ revision: 0, search: undefined as string | undefined })
   const [sidebarRight, setSidebarRight] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const language = useDocumentLanguage()
@@ -88,7 +102,12 @@ function BackendWorkbench() {
   useEffect(() => () => connectionRequest.current?.abort(), [])
   const frames = useRef<Partial<Record<BackendId, HTMLIFrameElement>>>({})
   const pending = useRef<Partial<Record<BackendId, { command: BackendCommand; commandId: string }>>>({})
-  const intent = useRef<Partial<Record<BackendId, string>>>({})
+  // An empty session names a cloud draft. Undefined means no cloud selection is known yet.
+  const cloudSelection = useRef({
+    session: initial.active === 'cloud' ? initial.session : undefined,
+    awaiting: initial.active === 'cloud' && initial.session !== undefined,
+  })
+  const localManagementActivation = useRef<string | undefined>(undefined)
   const latest = useRef({ active, cloud, states, configure })
   latest.current = { active, cloud, states, configure }
   useEffect(
@@ -97,32 +116,56 @@ function BackendWorkbench() {
     [],
   )
   const initialSearch = useRef(location.search)
-  const setAddress = useCallback((backend: BackendId, sessionId?: string) => {
-    const href = workbenchAddress(backend, latest.current.cloud, sessionId)
-    if (`${location.pathname}${location.search}` !== href) history.replaceState({}, '', href)
+  const initialHash = useRef(location.hash)
+  const localRoute = useRef(
+    (initial.active === 'local' && localWorkbenchRoute(`/${initialSearch.current}${initialHash.current}`)) ||
+      '/',
+  )
+  const setAddress = useCallback((backend: BackendId, sessionId?: string, push = false) => {
+    const href =
+      backend === 'local' || !latest.current.cloud
+        ? localRoute.current
+        : workbenchAddress(backend, latest.current.cloud, sessionId)
+    if (`${location.pathname}${location.search}${location.hash}` === href) return
+    if (push) history.pushState({}, '', href)
+    else history.replaceState({}, '', href)
   }, [])
   const send = useCallback(
-    (backend: BackendId, command: BackendCommand) => {
+    (backend: BackendId, command: BackendCommand, restoring = false) => {
       backend = commandBackend(backend, command)
       if (backend === 'cloud' && !latest.current.cloud) {
         setConfigure(true)
         return
       }
-      if (command.kind !== 'more' && command.kind !== 'refresh') {
+      const switching = latest.current.active !== backend
+      const changesCloudSession =
+        backend === 'cloud' && (command.kind === 'session' || command.kind === 'new')
+      const localManagement =
+        switching && backend === 'local' && (command.kind === 'settings' || command.kind === 'home')
+      if (command.kind !== 'more' && command.kind !== 'refresh') localManagementActivation.current = undefined
+      if (!localManagement && command.kind !== 'more' && command.kind !== 'refresh') {
         setActive(backend)
         latest.current.active = backend
         setConfigure(false)
+        latest.current.configure = false
+        if (switching && !restoring && !changesCloudSession)
+          setAddress(backend, backend === 'cloud' ? cloudSelection.current.session : undefined, true)
         if (window.matchMedia('(max-width: 900px)').matches)
           frames.current.local?.contentDocument?.getElementById('sidebar-close')?.click()
       }
-      if (command.kind === 'session' || command.kind === 'new') {
-        intent.current[backend] = command.kind === 'new' ? '' : command.sessionId
-        setAddress(backend, command.kind === 'session' ? command.sessionId : undefined)
+      if (changesCloudSession) {
+        const sessionId = command.kind === 'session' ? command.sessionId : ''
+        cloudSelection.current = { session: sessionId, awaiting: true }
+        if (!restoring) setAddress('cloud', sessionId, true)
       }
       const frame = frames.current[backend]
       const entry = { command, commandId: crypto.randomUUID() }
+      if (localManagement) localManagementActivation.current = entry.commandId
       pending.current[backend] = entry
-      if (frame?.contentWindow && latest.current.states[backend]?.ready)
+      if (
+        frame?.contentWindow &&
+        (command.kind === 'restore-local-route' || latest.current.states[backend]?.ready)
+      )
         frame.contentWindow.postMessage(
           { type: BACKEND_FRAME_COMMAND, ...command, commandId: entry.commandId },
           new URL(frame.src, location.origin).origin,
@@ -131,20 +174,43 @@ function BackendWorkbench() {
     [setAddress],
   )
   const select = useCallback(
-    (backend: BackendId, sessionId?: string, keepSidebar = false) => {
-      if (sessionId) {
-        send(backend, { kind: 'session', sessionId })
-        return
-      }
+    (
+      backend: BackendId,
+      { keepSidebar = false, restoring = false }: { keepSidebar?: boolean; restoring?: boolean } = {},
+    ) => {
+      localManagementActivation.current = undefined
+      const switching = latest.current.active !== backend
       setActive(backend)
       latest.current.active = backend
       setConfigure(false)
+      latest.current.configure = false
       if (!keepSidebar && window.matchMedia('(max-width: 900px)').matches)
         frames.current.local?.contentDocument?.getElementById('sidebar-close')?.click()
-      setAddress(backend, latest.current.states[backend]?.selected)
+      const selected =
+        backend === 'cloud' ? cloudSelection.current.session : latest.current.states.local?.selected
+      setAddress(backend, selected, switching && !restoring)
     },
-    [send, setAddress],
+    [setAddress],
   )
+  const clearCloudFrame = useCallback(() => {
+    delete frames.current.cloud
+    delete pending.current.cloud
+    const { cloud: _previous, ...rest } = latest.current.states
+    latest.current.states = rest
+    setStates((current) => {
+      const { cloud: _previous, ...other } = current
+      return other
+    })
+  }, [])
+  const restartCloudFrame = useCallback(() => {
+    // A command can be acknowledged before a successful read confirms its selection.
+    const selected = cloudSelection.current.session
+    const search =
+      selected === undefined ? undefined : selected ? `?session=${encodeURIComponent(selected)}` : '?new=1'
+    clearCloudFrame()
+    cloudSelection.current.awaiting = selected !== undefined
+    setCloudFrame(({ revision }) => ({ revision: revision + 1, search }))
+  }, [clearCloudFrame])
   const connect = useCallback(
     async (value: string | undefined, activate = true, credentialRef?: string) => {
       const revision = ++connectionRevision.current
@@ -189,33 +255,16 @@ function BackendWorkbench() {
       }
       safeThemeStorage().setItem(CLOUD_ORIGIN_KEY, next)
       if (next !== latest.current.cloud) {
-        setStates((current) => {
-          const { cloud: _previous, ...rest } = current
-          return rest
-        })
-        delete pending.current.cloud
-        delete intent.current.cloud
+        clearCloudFrame()
+        cloudSelection.current = { session: undefined, awaiting: false }
+        setCloudFrame({ revision: 0, search: undefined })
         setCloud(next)
         latest.current.cloud = next
-      } else if (credentialRef !== undefined || !latest.current.states.cloud?.connected) {
-        setStates((current) => {
-          const { cloud: _previous, ...rest } = current
-          return rest
-        })
-        setRevisions((current) => ({ ...current, cloud: current.cloud + 1 }))
-      }
+      } else if (credentialRef !== undefined || !latest.current.states.cloud?.connected) restartCloudFrame()
       if (activate) select('cloud')
     },
-    [select, t],
+    [clearCloudFrame, restartCloudFrame, select, t],
   )
-  const retry = useCallback((backend: BackendId) => {
-    setStates((current) => {
-      const next = { ...current }
-      delete next[backend]
-      return next
-    })
-    setRevisions((current) => ({ ...current, [backend]: current[backend] + 1 }))
-  }, [])
   const disconnect = useCallback(() => {
     connectionRevision.current++
     connectionRequest.current?.abort()
@@ -225,14 +274,11 @@ function BackendWorkbench() {
     safeThemeStorage().removeItem(CLOUD_DISCOVERY_KEY)
     setCloud(undefined)
     latest.current.cloud = undefined
-    delete pending.current.cloud
-    delete intent.current.cloud
-    setStates((current) => {
-      const { cloud: _previous, ...rest } = current
-      return rest
-    })
+    clearCloudFrame()
+    cloudSelection.current = { session: undefined, awaiting: false }
+    setCloudFrame({ revision: 0, search: undefined })
     select('local')
-  }, [select])
+  }, [clearCloudFrame, select])
   useEffect(() => {
     const receive = (event: MessageEvent) => {
       const backend = (['local', 'cloud'] as const).find(
@@ -246,7 +292,7 @@ function BackendWorkbench() {
         return
       if (backend === 'local' && event.data?.type === BACKEND_FRAME_MESSAGE) {
         if (event.data.kind === 'sidebar-select' && ['local', 'cloud'].includes(event.data.backend)) {
-          select(event.data.backend, undefined, true)
+          select(event.data.backend, { keepSidebar: true })
           return
         }
         if (event.data.kind === 'sidebar-layout') {
@@ -260,9 +306,17 @@ function BackendWorkbench() {
           if (command && ['local', 'cloud'].includes(event.data.backend)) send(event.data.backend, command)
           return
         }
-        if (event.data.kind === 'local-navigation') {
-          setActive('local')
-          latest.current.active = 'local'
+        if (event.data.kind === 'local-route') {
+          const route = localWorkbenchRoute(event.data.route)
+          const operation = event.data.operation
+          if (!route || (operation !== 'push' && operation !== 'replace')) return
+          localRoute.current = route
+          if (
+            latest.current.active === 'local' &&
+            !latest.current.configure &&
+            pending.current.local?.command.kind !== 'restore-local-route'
+          )
+            setAddress('local', undefined, operation === 'push')
           return
         }
       }
@@ -281,7 +335,7 @@ function BackendWorkbench() {
         else if (latest.current.cloud) {
           const ref = safeThemeStorage().getItem(CLOUD_DISCOVERY_KEY)
           if (ref && readCloudCredentialRef(latest.current.cloud) === ref) connect(undefined, false, ref)
-          else retry('cloud')
+          else restartCloudFrame()
         }
         return
       }
@@ -296,18 +350,24 @@ function BackendWorkbench() {
             new URL(frames.current[backend]?.src ?? '/', location.origin).origin,
           )
         }
-        const desired = intent.current[backend]
-        if (desired === undefined || desired === (snapshot.selected ?? '')) {
-          delete intent.current[backend]
-          if (latest.current.active === backend && !latest.current.configure)
-            setAddress(backend, snapshot.selected)
+        if (backend === 'cloud' && snapshot.ready && snapshot.connected) {
+          const selection = cloudSelection.current
+          const session = snapshot.selected || (selection.session === undefined ? undefined : '')
+          const pendingSelection = command?.command.kind === 'session' || command?.command.kind === 'new'
+          if (!selection.awaiting || (!pendingSelection && selection.session === session)) {
+            cloudSelection.current = { session, awaiting: false }
+            if (latest.current.active === 'cloud' && !latest.current.configure) setAddress('cloud', session)
+          }
         }
       } else if (
         event.data?.type === BACKEND_FRAME_MESSAGE &&
         event.data.kind === 'ack' &&
         pending.current[backend]?.commandId === event.data.commandId
       ) {
+        const restoring = pending.current[backend]?.command.kind === 'restore-local-route'
         delete pending.current[backend]
+        if (backend === 'local' && localManagementActivation.current === event.data.commandId) select('local')
+        if (restoring && latest.current.active === 'local') setAddress('local')
       } else if (
         event.data?.type === BACKEND_FRAME_MESSAGE &&
         event.data.kind === 'error' &&
@@ -333,9 +393,32 @@ function BackendWorkbench() {
         else select('local')
       }
     }
+    const restoreAddress = () => {
+      const target = initialWorkbench(location.search)
+      if (target.active === 'cloud' && target.remote === latest.current.cloud) {
+        // An address recorded before the first cloud snapshot has no selection to replay.
+        if (target.session === undefined) select('cloud', { restoring: true })
+        else
+          send(
+            'cloud',
+            target.session ? { kind: 'session', sessionId: target.session } : { kind: 'new' },
+            true,
+          )
+        return
+      }
+      const route =
+        target.active === 'local'
+          ? localWorkbenchRoute(`/${location.search}${location.hash}`)
+          : localRoute.current
+      if (route) send('local', { kind: 'restore-local-route', route }, true)
+    }
     window.addEventListener('message', receive)
-    return () => window.removeEventListener('message', receive)
-  }, [connect, disconnect, retry, select, setAddress, loadCredentials, send])
+    window.addEventListener('popstate', restoreAddress)
+    return () => {
+      window.removeEventListener('message', receive)
+      window.removeEventListener('popstate', restoreAddress)
+    }
+  }, [connect, disconnect, restartCloudFrame, select, setAddress, loadCredentials, send])
   const restoredCloud = useRef(false)
   useEffect(() => {
     if (restoredCloud.current || !states.local?.ready) return
@@ -380,9 +463,6 @@ function BackendWorkbench() {
       location.origin,
     )
   }, [active, cloud, states])
-  useEffect(() => {
-    if (cloud) frames.current.cloud?.toggleAttribute('inert', sidebarOpen)
-  }, [sidebarOpen, cloud])
   const stage = useRef<HTMLElement>(null)
   useLayoutEffect(() => {
     stage.current?.style.setProperty('--backend-sidebar-right', `${sidebarRight}px`)
@@ -402,10 +482,12 @@ function BackendWorkbench() {
       {(['local', 'cloud'] as const).map((backend) =>
         backend === 'cloud' && !cloud ? null : (
           <iframe
-            key={`${backend}:${backend === 'cloud' ? cloud : ''}:${revisions[backend]}`}
+            key={backend === 'cloud' ? `cloud:${cloud}:${cloudFrame.revision}` : 'local'}
             ref={(node) => {
-              if (node) frames.current[backend] = node
-              else delete frames.current[backend]
+              if (node) {
+                frames.current[backend] = node
+                if (backend === 'cloud') node.toggleAttribute('inert', sidebarOpen)
+              } else delete frames.current[backend]
             }}
             title={t(backend)}
             className="backend-workbench-frame"
@@ -421,8 +503,10 @@ function BackendWorkbench() {
             hidden={backend === 'cloud' && (active !== 'cloud' || sidebarOpen)}
             src={initialFrameSource(
               backend === 'cloud' ? cloud : undefined,
-              initial.active === backend && (backend === 'local' || cloud === initial.remote),
-              initialSearch.current,
+              (backend === 'cloud' && cloudFrame.search !== undefined) ||
+                (initial.active === backend && (backend === 'local' || cloud === initial.remote)),
+              (backend === 'cloud' ? cloudFrame.search : undefined) ?? initialSearch.current,
+              initialHash.current,
             )}
           />
         ),

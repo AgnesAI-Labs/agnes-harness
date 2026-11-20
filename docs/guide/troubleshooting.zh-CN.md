@@ -22,6 +22,8 @@ node agnes.mjs doctor provider --json
 
 Web 诊断 ZIP 勾选日志后，`logs/daemon-runtime.jsonl` 包含当前及上一代轮转文件的有界运行输出，与 `logs/daemon-request-audit.jsonl` 请求审计及 Host 日志分开保存。缺失日志会明确标出；只有旧 daemon 拒绝 runtime 参数时，才会用旧参数重试。
 
+Web 会话诊断 ZIP 会遮盖云 Key 和云连接路径里的票据段，导出文件与离线查看页仍保留路由和接口信息。完整的 JSON 记录会先解析，再脱敏并写回为 JSON，保留原文中的数字写法。
+
 | 现象 | 核对与处理 |
 | --- | --- |
 | Node 太旧/SQLite 模块错误 | 确认 Node >=24.10；默认 shell 与构建使用的 Node 可能不同 |

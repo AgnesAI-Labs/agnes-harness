@@ -28,6 +28,7 @@ import {
   localManagementCommand,
 } from '../src/backends/frame-contract.js'
 import { routeLocalSettings } from '../src/backends/local-management.js'
+import { localWorkbenchRoute, skillsWorkspaceId } from '../src/backends/local-route.js'
 import { mountBackendWorkbench } from '../src/backends/workbench.js'
 import { BackendSessionGroups } from '../src/backends/workbench-groups.js'
 import { workbenchCatalog } from '../src/backends/workbench-locale.js'
@@ -384,6 +385,48 @@ it('restores configured cloud independently from the selected local route and ac
   expect(initialWorkbench('', 'not a URL').remote).toBeUndefined()
   expect(workbenchAddress('local', 'http://cloud.test:8443', 'same-id')).toBe('/?session=same-id')
   expect(workbenchAddress('cloud', 'http://cloud.test:8443', 'same-id')).toContain('remote=')
+  const cloudDraft = workbenchAddress('cloud', 'http://cloud.test:8443', '')
+  expect(cloudDraft).toBe('/?remote=http%3A%2F%2Fcloud.test%3A8443&new=1')
+  expect(initialWorkbench(new URL(cloudDraft, 'http://localhost').search)).toMatchObject({
+    active: 'cloud',
+    session: '',
+  })
+  expect(workbenchAddress('cloud', 'http://cloud.test:8443')).toBe('/?remote=http%3A%2F%2Fcloud.test%3A8443')
+  expect(initialWorkbench('?remote=http%3A%2F%2Fcloud.test%3A8443&session=').session).toBeUndefined()
+  expect(
+    localWorkbenchRoute(
+      '/?remote=http://cloud.test:8443&session=old&new=1&page=plugins&tab=plugins.search&view=%40scope%2Fpkg/review&settings=model/account&account=account-1&prompt=private&workspaceId=w#settings-subsection-auxiliary-models',
+    ),
+  ).toBe(
+    '/?session=old&page=plugins&tab=plugins.search&view=%40scope%2Fpkg/review&settings=model/account&account=account-1#settings-subsection-auxiliary-models',
+  )
+  expect(localWorkbenchRoute('/?new=1&tab=orphan&view=orphan&account=orphan#other')).toBe('/?new=1')
+  const workspaceId = 'a'.repeat(64)
+  expect(localWorkbenchRoute(`/?workspaceId=${workspaceId}&new=1&page=rsi`)).toBe(
+    `/?new=1&workspaceId=${workspaceId}&page=rsi`,
+  )
+  expect(localWorkbenchRoute(`/?workspaceId=${workspaceId}&session=old&new=1`)).toBe('/?session=old')
+  expect(localWorkbenchRoute(`/?workspaceId=${workspaceId}&settings=skills`)).toBe(
+    `/?workspaceId=${workspaceId}&settings=skills`,
+  )
+  expect(localWorkbenchRoute(`/?workspaceId=${workspaceId}&page=plugins&tab=skills`)).toBe(
+    `/?workspaceId=${workspaceId}&page=plugins&tab=skills`,
+  )
+  const draftSkills = `?new=1&workspaceId=${workspaceId}&page=plugins&tab=skills`
+  expect(localWorkbenchRoute(`/${draftSkills}`)).toBe(`/${draftSkills}`)
+  expect(skillsWorkspaceId(new URLSearchParams(draftSkills))).toBeUndefined()
+  expect(
+    skillsWorkspaceId(new URLSearchParams(`session=s&workspaceId=${workspaceId}&page=plugins&tab=skills`)),
+  ).toBe(workspaceId)
+  expect(localWorkbenchRoute(`/?workspaceId=${workspaceId}&page=plugins&tab=mcp`)).toBe(
+    '/?page=plugins&tab=mcp',
+  )
+  expect(localWorkbenchRoute('/?workspaceId=../workspace&page=plugins&tab=skills')).toBe(
+    '/?page=plugins&tab=skills',
+  )
+  expect(localWorkbenchRoute('/?new=1&workspaceId=../workspace')).toBe('/?new=1')
+  expect(localWorkbenchRoute('//example.test/?page=rsi')).toBeUndefined()
+  expect(localWorkbenchRoute('/?page=%00rsi&settings=%0am')).toBe('/')
   expect(
     backendCommand({ type: 'agh.backend.command/v1', kind: 'execute', code: 'anything' }),
   ).toBeUndefined()

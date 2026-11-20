@@ -48,7 +48,13 @@ AGH 可以查看当前元素、点击、填写、发送按键、滚动、导航�
 
 ## 兼容性与边界
 
-已登记并核验 Windows x64、macOS Apple Silicon、macOS Intel 的浏览器安装包。macOS 两种架构均需要 macOS 13 Ventura 或更高版本。只有在两个 Mac 架构上完成真机验收后，才能称对应发布版本已测试。Windows ARM64 和 Linux 暂无此插件认可的安装包。准备固定版本的 Playwright 和配套浏览器需要网络和足够容纳安装包及解压文件的磁盘空间。
+已登记并核验 Windows x64、macOS Apple Silicon、macOS Intel 和 Linux x64（amd64）的浏览器安装包。macOS 两种架构均需要 macOS 13 Ventura 或更高版本，发布前需在对应架构上做原生验收。Windows ARM64 和 Linux ARM64 暂不支持。准备固定版本的 Playwright 和配套浏览器需要网络和足够容纳安装包及解压文件的磁盘空间。
+
+在 Linux 上，请安装固定浏览器所需的系统库，并以具备创建用户命名空间权限的非 root 用户运行 AGH。容器必须允许 Chromium 沙箱所需的命名空间操作。若 `XDG_CACHE_HOME` 是绝对路径，缓存位于 `$XDG_CACHE_HOME/Agnes/browser`，否则位于 `~/.cache/Agnes/browser`。请使用真实目录和文件，并确保其他账号无法改写缓存。如果浏览器无法启动，请先检查系统库和容器沙箱配置，再重试。
+
+在 Linux 镜像中预装浏览器缓存时，请使用最终运行账号及其缓存路径。若缓存归 root 所有，运行账号必须能进入缓存目录、读取安装标记和浏览器文件，并运行可执行文件。缓存写权限应只授予所有者。
+
+如果面板提示缓存不完整或无法执行，请先停止共用该缓存的 AGH 实例，移开受影响的浏览器版本目录，再重新启用插件。Windows 默认缓存为 `%LOCALAPPDATA%\Agnes\browser`，macOS 默认缓存为 `~/Library/Caches/Agnes/browser`。
 
 专用浏览器开启 Chromium 沙箱，不使用个人浏览器配置，也不向 WebUI 暴露调试端口。不提供任意 JavaScript 执行、自选可执行文件、不受限的文件系统访问、自动下载或 Service Worker。仅在 PDF 文档中允许固定 Chromium 的内置 PDF 查看器及其内部静态资源。已知 AGH 管理地址与云元数据地址会被阻止。此插件用于可信的本地开发；网址路由规则不等于操作系统级网络沙箱。准确版本和许可见 [运行时来源](../../third-party/browser-runtime.md)。
 

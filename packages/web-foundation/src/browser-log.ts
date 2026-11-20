@@ -1,5 +1,5 @@
 import type { BrowserLog, BrowserLogEntry } from '@agnes/web-units/shell'
-import { redactDiagnosticText } from './diagnostics-redact.js'
+import { redactDiagnosticArguments } from './diagnostics-redact.js'
 
 const MAX_ENTRIES = 1000
 const MAX_ENTRY_LENGTH = 8000
@@ -20,7 +20,7 @@ function stringifyValue(value: unknown): string {
     return stack?.includes(message) ? stack : `${name}: ${message}\n${stack ?? ''}`
   }
   try {
-    return JSON.stringify(value)
+    return JSON.stringify(value) ?? ''
   } catch {
     return String(value)
   }
@@ -32,8 +32,7 @@ function stringifyValue(value: unknown): string {
 // a null-prototype object has no inherited toString) must not stop `original(...args)` from running.
 function appendEntry(level: BrowserLogEntry['level'], args: unknown[]): void {
   try {
-    const rawText = args.map(stringifyValue).join(' ')
-    const text = redactDiagnosticText(rawText).slice(0, MAX_ENTRY_LENGTH)
+    const text = redactDiagnosticArguments(args.map(stringifyValue)).slice(0, MAX_ENTRY_LENGTH)
     entries.push({ ts: new Date().toISOString(), level, text })
     while (entries.length > MAX_ENTRIES) {
       entries.shift()
