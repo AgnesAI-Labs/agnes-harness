@@ -2692,6 +2692,11 @@
     font-size: var(--font-size-xs);
     line-height: 1.6;
   }
+  /* A block's content is one loading wrapper with no rhythm of its own, so a note would sit flush
+     on what it explains (the permission cards, another note, a row). Give the note room below. */
+  .agnes-settings-block .agh-loadable-content > .agnes-settings-note {
+    margin-block-end: var(--s12);
+  }
   /* A value that is text the user wrote: one line, cut with an ellipsis. */
   .agnes-settings-value-text {
     display: inline-block;

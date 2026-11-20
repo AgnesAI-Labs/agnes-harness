@@ -80,4 +80,12 @@
   .voice-read[data-phase="loading"] {
     color: var(--agnes-brand-primary);
   }
+  /* The voice settings are several cards in one wrapper. The wrapper is a single item of the
+     settings page stack, so it has to repeat the page rhythm between its cards itself. */
+  .voice-settings {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s24);
+  }
 }
