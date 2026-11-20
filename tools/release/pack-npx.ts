@@ -78,7 +78,7 @@ function readme(triple: string): string {
     'Release candidate. This package is not published to the npm registry yet.',
     '',
     '- Command: `agh`',
-    `- Version scheme: \`0.1.0-alpha.N\` (this tarball is \`${PUBLIC_PACKAGE_VERSION}\`)`,
+    `- Version: \`${PUBLIC_PACKAGE_VERSION}\``,
     '- Node.js: `>=24.10`',
     `- Native prebuild in this tarball: \`${triple}\``,
     '- Intended platforms: darwin-arm64, darwin-x64, linux-arm64, linux-x64, win32-x64',

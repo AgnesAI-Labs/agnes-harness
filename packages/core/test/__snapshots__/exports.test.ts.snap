@@ -192,6 +192,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "toProviderRequest",
   "toolFilterRejection",
   "toolFilterRule",
+  "toolPolicyBindingProblem",
   "trackExternalChild",
   "turnsForNodes",
   "unbindChildFactory",

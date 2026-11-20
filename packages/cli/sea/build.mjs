@@ -18,13 +18,17 @@ import postject from 'postject'
 import { checkGlibc } from '../../../tools/native/check-glibc.mjs'
 import { presentationEntries, verifyPresentation } from '../../../tools/presentation-build.mjs'
 import { bundledManifests } from '../tools/bundled-manifests.mjs'
+import { PUBLIC_PACKAGE_VERSION } from '../tools/release-version.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const out = join(root, 'dist', 'sea')
 const target = `${process.platform}-${process.arch}`
 const executable = join(out, `agnes-${target}${process.platform === 'win32' ? '.exe' : ''}`)
 const harness = join(out, `sea-loader-smoke-${target}${process.platform === 'win32' ? '.exe' : ''}`)
-const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
+const declaredVersion = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
+const version =
+  process.env.AGNES_SEA_VERSION?.trim() ||
+  (declaredVersion === '0.0.0' ? PUBLIC_PACKAGE_VERSION : declaredVersion)
 const seaNode = process.env.AGNES_SEA_NODE || process.execPath
 const workspace = join(root, '..')
 const seaRuntime = JSON.parse(
@@ -104,6 +108,7 @@ async function buildSea(name, entry, destination) {
     plugins: [bundleJitiTransform],
     define: {
       AGNES_VERSION: JSON.stringify(String(version)),
+      AGNES_DISTRIBUTION: JSON.stringify('sea'),
       AGNES_BUNDLED_RIPGREP_PATH: JSON.stringify(
         `./ripgrep/${process.platform === 'win32' ? 'rg.exe' : 'rg'}`,
       ),
@@ -167,16 +172,25 @@ async function buildSea(name, entry, destination) {
 
 // Shared mode launches separate daemon/worker processes. Package the same built entries and a
 // verified Node runtime; the SEA CLI must never execute itself as if it were a Node interpreter.
+const local = join(out, 'local')
 execFileSync(
   process.platform === 'win32' ? seaNode : process.execPath,
-  ['--import', 'tsx', join(root, 'tools', 'build-local.ts')],
+  [
+    '--import',
+    'tsx',
+    join(root, 'tools', 'build-local.ts'),
+    '--output-dir',
+    local,
+    '--version',
+    String(version),
+  ],
   {
     cwd: root,
+    env: { ...process.env, AGNES_BUILD_DISTRIBUTION: 'sea' },
     stdio: 'inherit',
     windowsHide: true,
   },
 )
-const local = join(root, 'dist', 'local')
 for (const name of [
   'daemon.mjs',
   'daemon-main.mjs',
@@ -203,6 +217,7 @@ for (const name of readdirSync(join(local, 'node_modules')).filter(
   (name) => name !== '@agnes' && name !== 'esbuild' && name !== '@esbuild',
 ))
   cpSync(join(local, 'node_modules', name), join(out, 'node_modules', name), { recursive: true })
+rmSync(local, { recursive: true })
 const runtime = join(out, 'runtime')
 mkdirSync(runtime, { recursive: true })
 const runtimeNode = join(runtime, process.platform === 'win32' ? 'node.exe' : 'node')

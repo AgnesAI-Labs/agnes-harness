@@ -8,7 +8,7 @@ import {
   type VoicePort,
 } from '@agnes/web-client'
 import { createRegionRenderer } from '@agnes/web-ui'
-import type { TranscriptHandle } from '@agnes/web-units/shell'
+import type { TranscriptHandle, TranscriptRefinementActions } from '@agnes/web-units/shell'
 import { flushSync } from 'react-dom'
 import type { ClaimResolver } from '../client-modules/boot.js'
 import { TimelineNodeHost } from '../timeline-node-host.js'
@@ -18,22 +18,12 @@ export interface TranscriptRegionMount extends EmptyStateRegionMount, Transcript
 export function mountTranscriptRegion(
   registry: SlotRegistry,
   container: HTMLElement,
-  options: {
+  options: TranscriptRefinementActions & {
     markdownRenderer?: 'legacy' | 'xmarkdown'
     claim?: ClaimResolver
     newContentButton?: HTMLButtonElement
     onFork?: (turn: import('@agnes/protocol').UITurn) => Promise<void>
     turnErrorActions?: import('@agnes/web-ui/conversation').TurnErrorActions
-    onWithdrawRefinement?: (
-      sessionId: string,
-      appliedSeq: number,
-    ) => Promise<import('@agnes/web-ui/conversation').RefinementWithdrawOutcome>
-    onSaveRefinementEntry?: (
-      sessionId: string,
-      kind: 'memory' | 'prompt' | 'skill',
-      id: string,
-      target?: 'user',
-    ) => Promise<import('@agnes/web-ui/conversation').RefinementSaveOutcome>
     session?: SessionService
     locale?: LocaleService
     resources?: ClientResourceService

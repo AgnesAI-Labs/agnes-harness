@@ -1,4 +1,51 @@
 @layer app {
+  .composer-slash {
+    position: relative;
+  }
+  .slash-popup {
+    position: absolute;
+    inset-inline: 0;
+    bottom: var(--s8);
+    z-index: var(--agh-z-dropdown);
+    display: grid;
+    gap: var(--s4);
+    padding: var(--s4);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-md);
+    background: var(--agnes-bg-popover);
+    box-shadow: var(--shadow-elevation-soft);
+  }
+  .slash-popup .slash-option {
+    display: flex;
+    justify-content: flex-start;
+    align-items: baseline;
+    gap: var(--s12);
+    height: auto;
+    min-width: 0;
+    padding: var(--s8) var(--s12);
+    border-color: transparent;
+    background: transparent;
+    color: var(--agnes-text-primary);
+    text-align: start;
+    white-space: normal;
+  }
+  .slash-option > span {
+    flex: 0 0 4.5rem;
+    font: var(--font-weight-semibold) var(--font-size-sm) / 1.5 var(--font-mono);
+  }
+  .slash-option > small {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+  }
+  .slash-popup .slash-option:hover,
+  .slash-popup .slash-option[aria-selected="true"] {
+    background: var(--agnes-brand-emphasis-soft);
+    color: var(--agnes-text-emphasis);
+  }
+  .slash-popup .slash-option[aria-selected="true"] {
+    border-color: var(--agnes-brand-focus-ring);
+  }
+
   /* 空态判据取 `#empty-state` 的 hidden，与 app 的 shouldShowEmptyState 同一个信号。
    （`#transcript:empty` 永远不成立：React 树恒定渲染一个 `#transcript-content` 子节点。）
    输入框的高度由 Sender 按行数自适应，这里不再给空态单独定最小高度。 */

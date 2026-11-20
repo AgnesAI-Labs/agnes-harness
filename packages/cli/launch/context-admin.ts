@@ -24,13 +24,22 @@ export function contextAdmin(
   feedback?: (
     input: AppServerParams<'_agnes/v1/admin.feedback'>,
   ) => Promise<AppServerResult<'_agnes/v1/admin.feedback'>>,
+  telemetry?: (
+    input: AppServerParams<'_agnes/v1/admin.telemetry'>,
+  ) => Promise<AppServerResult<'_agnes/v1/admin.telemetry'>>,
 ) {
+  const routes = {
+    '/api/context': ['_agnes/v1/admin.context', invoke],
+    '/api/memory': ['_agnes/v1/admin.memory', memory],
+    '/api/observability': ['_agnes/v1/admin.observability', observability],
+    '/api/feedback': ['_agnes/v1/admin.feedback', feedback],
+    '/api/telemetry': ['_agnes/v1/admin.telemetry', telemetry],
+  } as const
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     const url = new URL(request.url ?? '/', origin)
-    const isFeedback = url.pathname === '/api/feedback' && feedback !== undefined
-    const isMemory = url.pathname === '/api/memory' && memory !== undefined
-    const isObservability = url.pathname === '/api/observability' && observability !== undefined
-    if (url.pathname !== '/api/context' && !isMemory && !isObservability && !isFeedback) return false
+    if (!Object.hasOwn(routes, url.pathname)) return false
+    const [method, handler] = routes[url.pathname as keyof typeof routes]
+    if (!handler) return false
     const reply = (status: number, data: unknown) => {
       response.writeHead(status, {
         'Content-Type': 'application/json',
@@ -57,30 +66,15 @@ export function contextAdmin(
       for await (const chunk of request) {
         const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
         size += bytes.length
-        if (size > (isMemory ? 8 * 1024 * 1024 : 65536)) throw new Error('request')
+        if (size > (method === '_agnes/v1/admin.memory' ? 8 * 1024 * 1024 : 65536)) throw new Error('request')
         chunks.push(bytes)
       }
       const input: unknown = JSON.parse(
         new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)),
       )
-      const method = isFeedback
-        ? '_agnes/v1/admin.feedback'
-        : isObservability
-          ? '_agnes/v1/admin.observability'
-          : isMemory
-            ? '_agnes/v1/admin.memory'
-            : '_agnes/v1/admin.context'
       if (!validateMethod(method, 'params', input).ok) throw new Error('request')
-      reply(
-        200,
-        isFeedback
-          ? await feedback!(input as AppServerParams<'_agnes/v1/admin.feedback'>)
-          : isObservability
-            ? await observability!(input as AppServerParams<'_agnes/v1/admin.observability'>)
-            : isMemory
-              ? await memory!(input as AppServerParams<'_agnes/v1/admin.memory'>)
-              : await invoke(input as AppServerParams<'_agnes/v1/admin.context'>),
-      )
+      // Each method and its handler are paired above and the matching schema has validated the input.
+      reply(200, await handler(input as never))
     } catch (error) {
       if (error instanceof DaemonUnavailableError) {
         reply(503, daemonUnavailableBody())

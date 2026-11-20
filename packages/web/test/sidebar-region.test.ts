@@ -761,7 +761,7 @@ describe('rendered sidebar region', () => {
       ...[...BUILTIN_HOME_ENTRIES].reverse().map((id, index) =>
         homeEntries.register({
           id,
-          order: 30 - index * 10,
+          order: (BUILTIN_HOME_ENTRIES.length - index) * 10,
           placement: 'primary',
           icon: 'plug',
           titleKey: `home.entry.${id}`,
@@ -771,7 +771,7 @@ describe('rendered sidebar region', () => {
       ),
       homeEntries.register({
         id: 'primary.board',
-        order: 40,
+        order: 60,
         placement: 'primary',
         icon: 'puzzle',
         titleKey: 'Primary board',
@@ -803,6 +803,7 @@ describe('rendered sidebar region', () => {
         'home-entry-agents',
         'home-entry-automation',
         'home-entry-mhs',
+        'home-entry-rsi',
         'home-entry-primary.board',
         'home-entry-example.board',
       ])
@@ -816,6 +817,10 @@ describe('rendered sidebar region', () => {
       ).toContain('2')
       // The entries sit between the new-session action and the workspace list.
       const entries = sidebar?.querySelector('[data-testid="home-entries"]')
+      const rsi = sidebar?.querySelector('[data-testid="home-entry-rsi"]')
+      const search = getByRole(sidebar as HTMLElement, 'button', { name: 'Search sessions' })
+      expect(rsi?.textContent).toBe('RSI')
+      expect((rsi?.compareDocumentPosition(search) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
       expect(
         (sidebar?.querySelector('#new')?.compareDocumentPosition(entries as Node) ?? 0) &
           Node.DOCUMENT_POSITION_FOLLOWING,

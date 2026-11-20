@@ -15,7 +15,6 @@ import {
 } from '@agnes/core-ledger/reduce/state'
 import { isWorkflowRunId } from '@agnes/extension-api'
 import { estimateTokens } from '../execution/model-tokens.js'
-import { resolveModel } from '../execution/turn/inference.js'
 import { sessionIdentity } from '../loop/scope.js'
 import { MAINTENANCE_RESULT, type MaintenanceResult, maintenanceEffectId } from '../maintenance/execute.js'
 import { maintenanceInFlight } from '../maintenance/in-flight.js'
@@ -65,7 +64,7 @@ export type RefinementRunDeps = {
   planner: RefinementPlanner
   /** The refinement switch and its revision as they are now. */
   settings: () => { enabled: boolean; revision: string }
-  /** The planner model; absent means the session's current primary model, frozen for the run. */
+  /** The explicit planner model, frozen for the run. */
   target?: { route: string; model: string }
   /** A manual run the user agreed to pay an unknown price for. */
   allowUnpriced?: boolean
@@ -306,7 +305,11 @@ export async function planRefinementRun(
 
     const attempt = (run.attempt ?? 0) + 1
     const byId = new Map(snapshot.items.map((item) => [item.id, item]))
-    const target = deps.target ?? resolveModel(s, 'primary')
+    const target = deps.target
+    const current = deps.settings()
+    if (!current.enabled || current.revision !== settings.revision)
+      return await move(s, runId, 'cancelled', { reason: 'settings-changed' }, queued)
+    if (!target) return await move(s, runId, 'rejected', { reason: 'unavailable' }, queued)
     const planning = await move(
       s,
       runId,

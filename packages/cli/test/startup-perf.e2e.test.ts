@@ -42,6 +42,7 @@ it.skipIf(!entry)(
             LANG: 'en_US.UTF-8',
             HOME: home,
             USERPROFILE: home,
+            AGH_TELEMETRY_DISABLED: '1',
             AGH_HOME: home,
             AGNES_PROFILE: 'local-dev',
             AGNES_WEB_ORIGIN: origin,

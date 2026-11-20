@@ -1821,30 +1821,28 @@ it('discovers image input and keeps explicit choices through retesting, reopenin
   expect((await reopened.get()).revision).toBe(before)
 })
 
-it('inherits image input only from the catalog at the matching official endpoint and protocol', async () => {
+it('inherits image input from the matching official catalogue, else from the catalogues that know the id', async () => {
   const entry = getApiKeyProvider('moonshotai-cn')!
   const model = (await entry.createAdapter()).models(entry.route).find((m) => m.id === 'kimi-k3')!
   const service = createConfigurationService({
     home: await home(),
     profile: 'local-dev',
-    request: async () => Response.json({ data: [{ id: model.id }] }),
+    request: async () => Response.json({ data: [{ id: model.id }, { id: 'no-catalogue-knows-this' }] }),
   })
   const found = await service.test({ providerId: 'openai-compatible', baseUrl: entry.baseUrl })
   expect(found.models[0]?.input).toEqual(['text', 'image'])
-  const unrelated = await service.test({
+  // A gateway whose list names models but not their inputs (llm.sg) takes what the catalogues know.
+  const gateway = await service.test({
     providerId: 'openai-compatible',
     baseUrl: 'https://gateway.invalid/v1',
   })
-  expect(unrelated.models[0]).not.toHaveProperty('input')
-  const other = getApiKeyProvider('openai')!
-  const otherModel = (await other.createAdapter()).models(other.route).find((m) => m.input.includes('image'))!
-  const wrongProtocol = createConfigurationService({
-    home: await home(),
-    profile: 'local-dev',
-    request: async () => Response.json({ data: [{ id: otherModel.id }] }),
-  })
-  const refused = await wrongProtocol.test({ providerId: 'openai-compatible', baseUrl: other.baseUrl })
-  expect(refused.models[0]).not.toHaveProperty('input')
+  expect(gateway.models[0]?.input).toEqual(['text', 'image'])
+  // Its capacity comes from the same catalogue entry rather than the 128K default.
+  expect(gateway.models[0]).toMatchObject({ contextWindow: model.contextWindow, maxTokens: model.maxTokens })
+  expect(model.contextWindow).not.toBe(128_000)
+  // An id no catalogue knows keeps the text fallback and the default capacity.
+  expect(gateway.models[1]).not.toHaveProperty('input')
+  expect(gateway.models[1]).toMatchObject({ contextWindow: 128_000, maxTokens: 8_192 })
 })
 
 it('projects installed input types and permits only named per-model input overrides', async () => {

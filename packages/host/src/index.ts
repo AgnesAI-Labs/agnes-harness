@@ -99,6 +99,7 @@ export {
   inDataDir,
   legacySessionsDbPath,
   ownStateRoots,
+  privateStateRoots,
 } from '@agnes/host-common/paths'
 export * from '@agnes/host-common/presets/index'
 export { canonicalJson, sha256hex } from '@agnes/host-common/profile/canonical'

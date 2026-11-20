@@ -43,6 +43,7 @@ import { storageReads } from './session-reads.js'
 import { prepareDaemonSocketPaths } from './socket-paths.js'
 import { watchWindowsStopRequest } from './stop-request.js'
 import { adaptHostTables } from './storage-adapters.js'
+import { openProductionTelemetry } from './telemetry/production.js'
 
 export type { StartSupervisorOptions } from './assembly-options.js'
 export { supervisorHostFacade } from './host-facade.js'
@@ -218,6 +219,9 @@ export async function startProductionSupervisor(
       ...(o.clock ? { clock: o.clock } : {}),
     })
     lifetime.own({ dispose: () => storage.close() })
+    const reads = storageReads(o, storage)
+    const telemetry = o.telemetry ?? (await openProductionTelemetry(o, home, reads.sessionFactRead, storage))
+    lifetime.own({ dispose: telemetry.dispose })
     const supervisor = await (deps.start ?? startSupervisor)(
       {
         ...o,
@@ -227,7 +231,8 @@ export async function startProductionSupervisor(
           storage.tables('@agnes/daemon/artifact-read-authority'),
         ).table('artifact_read_authority'),
         reclaim: storage.crashReclaim,
-        ...storageReads(o, storage),
+        ...reads,
+        telemetry,
       },
       { home, lock, storageLocked: true },
     )

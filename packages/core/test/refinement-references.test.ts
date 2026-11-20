@@ -125,9 +125,10 @@ async function open(o: { plans?: string[]; references?: false } = {}) {
   }
   const sw = { enabled: true, mode: 'auto' as const, revision: 'r1' }
   const refinement: RefinementDeps = {
+    provider: () => p.provider,
     settings: () => ({ ...sw }),
     planner: () => planner,
-    target,
+    target: () => target,
     ...(o.references === false ? {} : { references }),
   }
   const p = provider(o.plans ?? [])

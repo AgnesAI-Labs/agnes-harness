@@ -178,6 +178,7 @@ async function scenario(options: { simultaneous: boolean }): Promise<void> {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: home,
+    AGH_TELEMETRY_DISABLED: '1',
     AGH_HOME: home,
     AGNES_PROFILE: 'local-dev',
     AGNES_WEB_ORIGIN: origin,

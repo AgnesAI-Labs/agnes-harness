@@ -1,10 +1,17 @@
 /** @vitest-environment happy-dom */
-import { DEFAULT_VOICE_SETTINGS, type VoiceSettings, type VoiceSettingsSnapshot } from '@agnes/protocol'
+import {
+  type ConfigAccount,
+  type ConfigSnapshot,
+  DEFAULT_VOICE_SETTINGS,
+  type VoiceSettings,
+  type VoiceSettingsSnapshot,
+} from '@agnes/protocol'
 import { settingsSections, type VoiceSettingsApi } from '@agnes/web-client'
 import { createDocumentLocaleSource, UiLocaleProvider } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
+import type { SideModelsClient } from '../src/settings/side-models.js'
 import { registerVoiceSettingsSection, VoiceSettingsPanel } from '../src/settings/voice.js'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -16,6 +23,7 @@ afterEach(async () => {
   document.body.replaceChildren()
   document.documentElement.lang = 'en'
   vi.useRealTimers()
+  vi.unstubAllGlobals()
 })
 
 const D: VoiceSettings = structuredClone(DEFAULT_VOICE_SETTINGS)
@@ -31,7 +39,6 @@ type FakeApi = VoiceSettingsApi & {
   read: ReturnType<typeof vi.fn<VoiceSettingsApi['read']>>
   save: ReturnType<typeof vi.fn<VoiceSettingsApi['save']>>
   accounts: ReturnType<typeof vi.fn<VoiceSettingsApi['accounts']>>
-  openSideModels: ReturnType<typeof vi.fn<VoiceSettingsApi['openSideModels']>>
 }
 function fakeApi(stored: VoiceSettings = D): FakeApi {
   const revisions = [REV1, REV2]
@@ -44,11 +51,10 @@ function fakeApi(stored: VoiceSettings = D): FakeApi {
       return { revision, settings: structuredClone(settings) }
     }),
     accounts: vi.fn(async () => ACCOUNTS),
-    openSideModels: vi.fn(),
   }
 }
 
-async function mount(api: VoiceSettingsApi) {
+async function mount(api: VoiceSettingsApi, models?: SideModelsClient) {
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
@@ -58,7 +64,11 @@ async function mount(api: VoiceSettingsApi) {
   disposers.push(locale.dispose)
   await act(async () =>
     root.render(
-      createElement(UiLocaleProvider, { source: locale.source }, createElement(VoiceSettingsPanel, { api })),
+      createElement(
+        UiLocaleProvider,
+        { source: locale.source },
+        createElement(VoiceSettingsPanel, { api, ...(models ? { models } : {}) }),
+      ),
     ),
   )
   await act(async () => {})
@@ -200,14 +210,87 @@ it('accepts only a language code the daemon accepts, or an empty one', async () 
   expect(api.save.mock.calls.at(-1)?.[0].input.language).toBe('')
 })
 
-it('shows the privacy note and opens the side-model block', async () => {
-  const api = fakeApi()
-  const host = await mount(api)
+const voiceAccount: ConfigAccount = {
+  accountId: 'siliconflow',
+  label: '硅基流动',
+  providerId: 'openai-audio',
+  route: 'account-siliconflow',
+  baseUrl: 'https://api.siliconflow.cn/v1',
+  model: 'FunAudioLLM/SenseVoiceSmall',
+  models: [
+    {
+      id: 'FunAudioLLM/SenseVoiceSmall',
+      name: 'FunAudioLLM/SenseVoiceSmall',
+      contextWindow: 65536,
+      maxTokens: 4096,
+      audioRole: 'transcribe',
+    },
+  ],
+  enabled: true,
+  credentialConfigured: true,
+  authType: 'api-key',
+}
+const decisionAccount: ConfigAccount = {
+  ...voiceAccount,
+  accountId: 'jev',
+  label: 'Jev',
+  providerId: 'typesafe-systemone',
+  route: 'account-jev',
+  baseUrl: 'https://openrouter.ai/api/v1',
+  model: 'typesafe/jev',
+  models: [{ id: 'typesafe/jev', name: 'Jev', contextWindow: 65536, maxTokens: 32768 }],
+}
+function models() {
+  let revision = 1
+  const snapshot = (): ConfigSnapshot => ({
+    profile: 'local-dev',
+    revision,
+    configured: true,
+    provider: null,
+    accounts: [voiceAccount, decisionAccount],
+    defaultAccountId: null,
+    effect: 'new-sessions',
+  })
+  return {
+    get: vi.fn(async () => snapshot()),
+    save: vi.fn(async () => {
+      revision++
+      return snapshot()
+    }),
+    test: vi.fn(async () => ({ models: [], verified: true })),
+    account: vi.fn(async () => snapshot()),
+  }
+}
+
+it('shows the privacy note and no link away to another page', async () => {
+  const host = await mount(fakeApi())
   expect(query(host, 'voice-privacy')?.textContent).toBe(
     'Recordings and reply text are sent to the chosen provider',
   )
-  await act(async () => query(host, 'voice-configure')?.click())
-  expect(api.openSideModels).toHaveBeenCalledTimes(1)
+  expect(query(host, 'voice-configure')).toBeNull()
+})
+
+it('lists and edits the voice models on this page, then lists the accounts to choose from again', async () => {
+  // The editor reads the credential store; keep it off the network.
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => Response.json({ error: 'offline' }, { status: 503 })),
+  )
+  const api = fakeApi()
+  const client = models()
+  const host = await mount(api, client)
+  await act(async () => {})
+  expect(query(host, 'voice-models-title')?.textContent).toBe('Voice models')
+  // Voice models only: the decision models stay on the model page.
+  expect(query(host, 'side-model-siliconflow')).not.toBeNull()
+  expect(query(host, 'side-model-jev')).toBeNull()
+  expect(api.accounts).toHaveBeenCalledTimes(1)
+  await act(async () => query(host, 'side-model-edit-siliconflow')?.click())
+  expect(query(host, 'side-editor')).not.toBeNull()
+  await act(async () => query(host, 'side-save')?.click())
+  await act(async () => {})
+  expect(client.save).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'openai-audio' }))
+  expect(api.accounts).toHaveBeenCalledTimes(2)
 })
 
 it('shows the section in Chinese', async () => {
@@ -215,7 +298,7 @@ it('shows the section in Chinese', async () => {
   const host = await mount(fakeApi())
   expect(query(host, 'voice-privacy')?.textContent).toBe('录音和回复文字会发给所选服务商')
   expect(options(host, 'voice-account')[0]).toEqual(['', '自动（唯一的语音账户）'])
-  expect(query(host, 'voice-configure')?.textContent).toBe('去配置')
+  expect(host.textContent).toContain('用哪个语音模型；在上方「语音模型」里添加。')
 })
 
 it('reloads after a revision conflict and says so', async () => {

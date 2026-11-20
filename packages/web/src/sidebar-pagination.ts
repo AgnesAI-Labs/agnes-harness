@@ -6,6 +6,8 @@ const PAGE_ROWS = 5
 
 const pagesOf = (rows: number): number => Math.max(1, Math.ceil(rows / PAGE_ROWS))
 
+type Row = PageSessionMeta['items'][number]
+
 type Group = SidebarGroupState & {
   generation: number
   firstNext?: string | undefined
@@ -69,8 +71,14 @@ export function createSidebarPagination(
   })
   const rows = () => groups.flatMap((group) => group.items)
   const failCode = (value: unknown): string | undefined => (value as { data?: { code?: string } })?.data?.code
-  /** Reads one page. The guards in `load` decide when a caller may ask for it. */
-  const readPage = (group: Group, append: boolean): Promise<void> => {
+  /**
+   * Reads one page. The guards in `load` decide when a caller may ask for it.
+   *
+   * A `sink` stages the rows instead of writing them to `group.items`: a refresh that rereads a
+   * multi-page group keeps the opened rows on screen and commits the whole staged list at once, so
+   * the intermediate one-page list never renders (and never collapses the group).
+   */
+  const readPage = (group: Group, append: boolean, sink?: Row[]): Promise<void> => {
     if (group.pending) return group.pending
     if (!group.opened || !group.ready || (append && (!group.next || group.stale))) return Promise.resolve()
     const generation = ++group.generation,
@@ -96,7 +104,10 @@ export function createSidebarPagination(
           group.stale = true
           return
         }
-        const old = new Map(group.items.map((row) => [row.sessionId, row]))
+        // Identity of unchanged rows is matched against the list this page extends: the staged rows
+        // when the caller is rebuilding the group off-screen, the visible rows otherwise.
+        const source = sink && append ? sink : group.items
+        const old = new Map(source.map((row) => [row.sessionId, row]))
         const incoming = page.items.map((row) => {
           const previous = old.get(row.sessionId)
           return previous && JSON.stringify(previous) === JSON.stringify(row) ? previous : row
@@ -105,7 +116,10 @@ export function createSidebarPagination(
           group.stale = true
           return
         }
-        group.items = append ? [...group.items, ...incoming] : incoming
+        if (sink) {
+          if (!append) sink.length = 0
+          sink.push(...incoming)
+        } else group.items = append ? [...group.items, ...incoming] : incoming
         group.total = page.total
         group.revision = page.revision
         group.pageRevision = page.revision
@@ -114,7 +128,7 @@ export function createSidebarPagination(
         group.stale = false
         if (!append) group.firstNext = page.next
         // A full group has nothing left to restore; an appended page moves the target along.
-        if (append || page.next === undefined) group.openPages = pagesOf(group.items.length)
+        if (append || page.next === undefined) group.openPages = pagesOf((sink ?? group.items).length)
       } catch (failure) {
         if (!current()) return
         group.retryAppend = append
@@ -138,19 +152,15 @@ export function createSidebarPagination(
     return readPage(group, append)
   }
   /** Loads the pages an automatic reread folded away back, until `pages` pages are showing again. */
-  const restorePages = async (group: Group, pages: number): Promise<void> => {
+  const restorePages = async (group: Group, pages: number, sink?: Row[]): Promise<void> => {
+    // A staged restore measures the rows collected so far; the visible list keeps its open pages.
+    const shown = () => sink ?? group.items
     // `readPage` answers without a request while its own guards hold (an unready summary, a page
     // already in flight), so stop as soon as a read adds no row: a guarded no-op must not spin here.
-    while (
-      group.opened &&
-      group.next &&
-      !group.stale &&
-      !group.error &&
-      pagesOf(group.items.length) < pages
-    ) {
-      const before = group.items.length
-      await readPage(group, true)
-      if (group.items.length === before) return
+    while (group.opened && group.next && !group.stale && !group.error && pagesOf(shown().length) < pages) {
+      const before = shown().length
+      await readPage(group, true, sink)
+      if (shown().length === before) return
     }
   }
   const invalidate = (group: Group) => {
@@ -233,8 +243,21 @@ export function createSidebarPagination(
           }
         }
         changed()
-        await Promise.all([...new Set(reload)].map((group) => load(group)))
-        await Promise.all(reread.map(({ group, pages }) => restorePages(group, pages)))
+        // A reread group stages its whole multi-page list off-screen and commits once; every other
+        // group reads its first page straight into the visible list.
+        const rereading = new Set(reread.map(({ group }) => group))
+        await Promise.all([
+          ...[...new Set(reload)].filter((group) => !rereading.has(group)).map((group) => load(group)),
+          ...reread.map(async ({ group, pages }) => {
+            const staged: Row[] = []
+            await readPage(group, false, staged)
+            if (!group.error && !group.stale) await restorePages(group, pages, staged)
+            // A failed or stale staged read keeps the rows already on screen; the next refresh retries.
+            if (group.error || group.stale) return
+            group.items = staged
+            changed()
+          }),
+        ])
       } catch (failure) {
         if (connection === epoch) error = errorText(failure)
       } finally {

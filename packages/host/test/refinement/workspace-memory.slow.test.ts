@@ -22,6 +22,7 @@ import {
   startWireCapture,
   type WireReply,
 } from '../../testkit/index.js'
+import { reviewCredential, reviewModel, routeReviewToLoopback } from './service-key.js'
 
 const baseDir = fileURLToPath(new URL('../../../base/', import.meta.url))
 const PROFILE = 'local-dev'
@@ -65,16 +66,22 @@ async function setUp(enabled: boolean) {
   dirs.push(root)
   const dataDir = join(root, 'data')
   const workspace = join(root, 'ws')
-  mkdirSync(dataDir)
+  createPrivateDirectorySync(dataDir)
   mkdirSync(workspace)
-  const settings = new RefinementSettingsStore(dataDir, PROFILE)
-  settings.save({ enabled, mode: 'auto' }, settings.read().revision)
+  const settings = new RefinementSettingsStore(dataDir, PROFILE, dataDir)
+  settings.save(
+    { credentialRef: await reviewCredential(dataDir, dataDir), model: reviewModel, enabled, mode: 'auto' },
+    settings.read().revision,
+  )
   const { host } = await createTestHost({
     dataDir,
     workspaceRoot: workspace,
     packageDirs: { '@agnes/base': baseDir },
     packages: { '@agnes/base': { plugins } },
     disableSessionTitle: true,
+    profileInputs: {
+      user: { name: PROFILE, adapters: { secrets: { kind: 'file', path: join(dataDir, 'secrets') } } },
+    },
   })
   return { host, dataDir, workspace }
 }
@@ -127,6 +134,7 @@ describe('workspace memory in the assembled host', () => {
 
       const session = await host.createSession({ cwd: workspace })
       try {
+        expect(session.d.refinement?.settings().enabled).toBe(true)
         const deadline = Date.now() + 10_000
         const state = () => registry.read().paragraphs.find((entry) => entry.id === 'rc000000001')?.state
         while (state() === 'active' && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
@@ -317,8 +325,16 @@ async function e2e(
   } finally {
     closeSync(credential)
   }
-  const settings = new RefinementSettingsStore(dataDir, E2E_PROFILE)
-  settings.save({ enabled: true, mode: 'auto' }, settings.read().revision)
+  const settings = new RefinementSettingsStore(dataDir, E2E_PROFILE, dataDir)
+  settings.save(
+    {
+      credentialRef: await reviewCredential(dataDir, dataDir),
+      model: reviewModel,
+      enabled: true,
+      mode: 'auto',
+    },
+    settings.read().revision,
+  )
   const queue: WireReply[] = []
   script = (replies) => {
     queue.splice(0, queue.length, ...replies)
@@ -330,6 +346,7 @@ async function e2e(
       return (planner[reviews++ % planner.length] as (b: unknown) => WireReply)(body)
     return queue.shift() ?? { text: 'Done.' }
   })
+  const redirected = routeReviewToLoopback(capture.baseUrl('openai-completions'))
   vi.stubEnv('AGH_HOME', dataDir)
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(T0)
@@ -379,6 +396,7 @@ async function e2e(
   } finally {
     vi.useRealTimers()
     vi.unstubAllEnvs()
+    redirected.mockRestore()
     await capture.close()
   }
 }

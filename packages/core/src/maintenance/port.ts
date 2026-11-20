@@ -1,4 +1,5 @@
 import { MAINTENANCE_LANE } from '@agnes/core-ledger/reduce/state'
+import type { Provider } from '@agnes/protocol'
 import { isChildSession } from '../step/child-session.js'
 import type { SessionImpl } from '../step/session.js'
 import { MAINTENANCE_BUDGET_TOKENS, maintenanceBudgetAvailable } from './budget.js'
@@ -44,7 +45,11 @@ export function maintenanceUnavailable(s: SessionImpl): 'child-session' | 'unava
   return undefined
 }
 
-export function createMaintenancePort(s: SessionImpl, opts: { budgetTokens?: number } = {}): MaintenancePort {
+export function createMaintenancePort(
+  s: SessionImpl,
+  opts: { budgetTokens?: number; provider?: () => Provider | undefined } = {},
+): MaintenancePort {
+  const provider = opts.provider ?? (() => s.d.provider)
   const budgetTokens = opts.budgetTokens ?? MAINTENANCE_BUDGET_TOKENS
   const unavailable = (req: MaintenanceRequest): MaintenanceReason | undefined => {
     const why = maintenanceUnavailable(s)
@@ -52,6 +57,6 @@ export function createMaintenancePort(s: SessionImpl, opts: { budgetTokens?: num
   }
   return Object.freeze({
     invoke: (req: MaintenanceRequest, signal: AbortSignal) =>
-      invokeMaintenance(s, req, signal, budgetTokens, () => unavailable(req)),
+      invokeMaintenance(s, req, signal, budgetTokens, () => unavailable(req), provider),
   })
 }

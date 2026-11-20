@@ -225,10 +225,20 @@ function replySse(api: WireApi, body: Record<string, unknown>, reply: WireReply)
  */
 export async function startWireCapture(
   script: (body: unknown, api: WireApi) => WireReply | Promise<WireReply>,
+  openAiModels?: (authorization: string | undefined) => { status: number; body: unknown },
 ) {
   const requests: CapturedRequest[] = []
   const server: Server = createServer(async (request, response) => {
-    const api = request.url?.split('/')[1] as WireApi
+    if (openAiModels && request.method === 'GET' && request.url === '/v1/models') {
+      const reply = openAiModels(request.headers.authorization)
+      response.writeHead(reply.status, { 'content-type': 'application/json' })
+      response.end(JSON.stringify(reply.body))
+      return
+    }
+    const api =
+      openAiModels && request.url === '/v1/chat/completions'
+        ? 'openai-completions'
+        : (request.url?.split('/')[1] as WireApi)
     if (!apis.includes(api)) {
       response.writeHead(404)
       response.end()
@@ -248,7 +258,8 @@ export async function startWireCapture(
   if (!address || typeof address === 'string') throw new Error('missing loopback address')
   return {
     requests,
-    baseUrl: (api: WireApi) => `http://127.0.0.1:${address.port}/${api}`,
+    baseUrl: (api: WireApi) =>
+      `http://127.0.0.1:${address.port}/${openAiModels && api === 'openai-completions' ? 'v1' : api}`,
     close: () =>
       new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
   }

@@ -55,6 +55,7 @@ it('agh queue from another process runs after the current turn ends', async () =
     TEMP: root,
     TMP: root,
     HOME: root,
+    AGH_TELEMETRY_DISABLED: '1',
     AGH_HOME: home,
     AGNES_PROFILE: 'local-dev',
     TMPDIR: tmpdir(),

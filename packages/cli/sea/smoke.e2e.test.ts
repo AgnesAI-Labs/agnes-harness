@@ -17,10 +17,12 @@ import { initializeHome } from '@agnes/host'
 import { createPackageManager, emptyLock, packageDir, parseSource, writeLock } from '@agnes/package-manager'
 import { NODE_MEMORY_FLAGS } from '@agnes/system-node/node-flags'
 import { describe, expect, it } from 'vitest'
+import { PUBLIC_PACKAGE_VERSION } from '../tools/release-version.mjs'
 import { windowsChildren, windowsIdentities } from './windows-processes.js'
 
 const bin = process.env.AGNES_SEA_BIN
 const harness = process.env.AGNES_SEA_LOADER_HARNESS
+const version = process.env.AGNES_SEA_VERSION?.trim() || PUBLIC_PACKAGE_VERSION
 
 describe.skipIf(!bin || !harness)('SEA smoke', () => {
   it('starts the CLI with the Node memory flags from the SEA configuration', () => {
@@ -31,6 +33,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       windowsHide: true,
     })
     expect(run.status, run.stderr).toBe(0)
+    expect(run.stdout).toContain(`agh ${version} `)
     const reported = run.stderr.split(/\r?\n/).find((line) => line.startsWith('exec-argv '))
     expect(reported, run.stderr).toBeDefined()
     expect(JSON.parse((reported as string).slice('exec-argv '.length))).toEqual(NODE_MEMORY_FLAGS)
@@ -49,7 +52,14 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       [fileURLToPath(new URL('./fixtures/openai-server.mjs', import.meta.url))],
       { stdio: ['ignore', 'pipe', 'inherit'] },
     )
-    const env = { ...process.env, AGH_HOME: home, HOME: home, NODE_PATH: '', NODE_OPTIONS: '' }
+    const env = {
+      ...process.env,
+      AGH_HOME: home,
+      AGH_TELEMETRY_DISABLED: '1',
+      HOME: home,
+      NODE_PATH: '',
+      NODE_OPTIONS: '',
+    }
     try {
       // Run outside the checkout so native dependency lookup cannot fall back to its node_modules.
       cpSync(dirname(resolve(bin as string)), distributionRoot, { recursive: true, dereference: true })
@@ -141,7 +151,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       })
       // The loader harness imports directly; Host keeps the external package disabled without a runtime pin.
       const packageDirectory = packageDir(layout.ledger, 'local-dev', row.id)
-      expect(execFileSync(binary, ['--version'], { encoding: 'utf8' })).toMatch(/^agh 0\.0\.0 node 24\./)
+      expect(execFileSync(binary, ['--version'], { encoding: 'utf8' })).toContain(`agh ${version} node 24.`)
       expect(execFileSync(binary, ['--help'], { encoding: 'utf8' })).toContain('agh [prompt]')
       const forwardedHelp = spawnSync(binary, ['daemon', 'start', '--help'], {
         encoding: 'utf8',
@@ -272,7 +282,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
         cwd: workspace,
       })
       expect(output).toBe('SEA extension test/hello loaded: pong\n')
-      const cache = join(home, 'cache', 'jiti', '0.0.0')
+      const cache = join(home, 'cache', 'jiti', version)
       expect(existsSync(cache)).toBe(true)
       expect(readdirSync(cache).length).toBeGreaterThan(0)
       const tampered = join(packageDirectory, 'tampered.ts')

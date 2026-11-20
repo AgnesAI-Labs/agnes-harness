@@ -59,11 +59,15 @@ export function TurnErrorRow({ turn, t, actions }: TurnErrorRowProps) {
       clear()
     }
   }
-  const factLine = facts.requestId
+  const statusLine = facts.requestId
     ? t('turn.error.meta', { status: facts.status ?? '', requestId: facts.requestId })
     : facts.status
       ? t('turn.error.metaStatus', { status: facts.status })
       : ''
+  // The gateway's own account message, kept by the adapter for a quota refusal, leads the facts.
+  const factLine = [facts.note ? t('turn.error.providerNote', { note: facts.note }) : '', statusLine]
+    .filter(Boolean)
+    .join(' · ')
   const copyLines = detail
     ? [
         `${t('turn.error.detail.code')}: ${detail.code ?? ''}`,

@@ -14,8 +14,12 @@ import type { RowOrigin } from '@agnes/plugin-runtime/host'
 import { afterEach, expect, it } from 'vitest'
 import * as authority from '../src/assemble/host-grants.js'
 
+const manifestVersion = (directory: string): string =>
+  (JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')) as { version: string }).version
+
 const ref = 'file:./bundled-plugins/jev-loop'
-const release = bundledPluginSource(ref)!
+const release = bundledPluginSource(ref)
+if (!release) throw new Error(`Missing bundled plugin ${ref}`)
 const directory = join(release.root, release.path)
 const digest = hashDirectory(directory)
 const rowId = 'ext:agnes.jev/loop'
@@ -30,7 +34,7 @@ const origin: RowOrigin = {
 }
 const pkg: ResolvedPackage = {
   id: origin.packageId,
-  version: '0.1.2',
+  version: manifestVersion(directory),
   source: ref,
   integrity: digest,
   trust: 'trusted',
@@ -173,13 +177,12 @@ it('revalidates refreshed wrappers without dropping the same verified identity',
 
 it('admits the real optional judgment release only with its matching source digest and row', () => {
   const released = bundledPluginSource('file:./bundled-plugins/judgment')
-  expect(released).toBeDefined()
-  const directory = join(released!.root, released!.path)
+  if (!released) throw new Error('Missing bundled judgment plugin')
+  const directory = join(released.root, released.path)
   const digest = hashDirectory(directory)
   const pkg = {
     id: '@agnes/judgment',
-    version: (JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')) as { version: string })
-      .version,
+    version: manifestVersion(directory),
     source: 'file:./bundled-plugins/judgment',
     integrity: digest,
     trust: 'trusted' as const,
@@ -227,8 +230,11 @@ it('does not replace an established identity when both current package and snaps
   let current = structuredClone(source)
   const grant = authority.pinOptionalBundledRowGrants([currentPackage], () => current, declarations)
   expect(grant(origin)).toEqual({ sideCall: true, hookTimeoutMs: 15000 })
-  currentPackage.version = '0.1.3'
-  current = { ...current, snapshot: { ...current.snapshot, version: '0.1.3', snapshotId: 'new-snapshot' } }
+  currentPackage.version = '9.9.9'
+  current = {
+    ...current,
+    snapshot: { ...current.snapshot, version: currentPackage.version, snapshotId: 'new-snapshot' },
+  }
   expect(grant({ ...origin, snapshotId: 'new-snapshot' })).toEqual({})
 })
 it('binds only after full proof and rechecks a refreshed directory and row', () => {

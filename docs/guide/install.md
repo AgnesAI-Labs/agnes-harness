@@ -20,7 +20,7 @@ Source builds remain the way to install from this repository. A release-candidat
 | --- | --- |
 | Public package | `@agnes/harness` |
 | Command | `agh` |
-| Version scheme | `0.1.0-alpha.N` (this candidate is `0.1.0-alpha.0`) |
+| Version scheme | Semantic Versioning (current candidate is `0.1.0`) |
 | Node.js | `>=24.10` |
 | Platforms | macOS arm64 and x64, Linux arm64 and x64, Windows x64 |
 

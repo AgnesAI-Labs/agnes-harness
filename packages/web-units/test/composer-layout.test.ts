@@ -89,6 +89,83 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+it('completes only the available slash commands and leaves a second Enter to submit', async () => {
+  const view: ComposerView = { ...idle, input: { ...idle.input, commands: ['plan', 'goal', 'refine'] } }
+  const { host, handle, prompt, props } = mount(
+    { references: createComposerReferences(async () => ({ items: [], truncated: false })) },
+    view,
+  )
+  const options = () => [...host.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+  const labels = () => options().map((option) => option.querySelector('span')?.textContent)
+  const selected = () => host.querySelector('[role="option"][aria-selected="true"]')
+  prompt.focus()
+  await act(async () => type(prompt, '/'))
+  expect(labels()).toEqual(['/plan', '/goal', '/refine'])
+  expect(prompt.getAttribute('aria-expanded')).toBe('true')
+  expect(prompt.getAttribute('aria-controls')).toBe(options()[0]?.closest('[role="listbox"]')?.id)
+  expect(prompt.getAttribute('aria-activedescendant')).toBe(options()[0]?.id)
+  await act(async () => key(prompt, { key: 'ArrowUp' }))
+  expect(selected()?.textContent).toContain('/refine')
+  await act(async () => key(prompt, { key: 'ArrowDown' }))
+  await act(async () => key(prompt, { key: 'ArrowDown' }))
+  expect(selected()?.textContent).toContain('/goal')
+  await act(async () => key(prompt, { key: 'Tab' }))
+  expect(handle.getDraft()).toBe('/goal ')
+  expect(document.activeElement).toBe(prompt)
+  expect(prompt.hasAttribute('aria-activedescendant')).toBe(false)
+
+  await act(async () => type(prompt, '/ref'))
+  expect(labels()).toEqual(['/refine'])
+  await act(async () => key(prompt, { key: 'Enter', ctrlKey: true }))
+  expect(handle.getDraft()).toBe('/refine ')
+  expect(props.onSubmit).not.toHaveBeenCalled()
+  await act(async () => key(prompt, { key: 'Enter' }))
+  expect(props.onSubmit).toHaveBeenCalledTimes(1)
+
+  await act(async () => type(prompt, '/plan'))
+  await act(async () => options()[0]?.click())
+  expect(handle.getDraft()).toBe('/plan ')
+  expect(prompt.selectionStart).toBe('/plan '.length)
+  await act(async () => type(prompt, '/'))
+  await act(async () => key(prompt, { key: 'Escape' }))
+  expect(options()).toHaveLength(0)
+  expect(handle.getDraft()).toBe('/')
+
+  await act(async () => handle.render({ ...view, input: { ...view.input, commands: ['plan'] } }))
+  await act(async () => type(prompt, '/'))
+  expect(labels()).toEqual(['/plan'])
+  await act(async () => handle.render({ ...view, readOnly: true }))
+  expect(options()).toHaveLength(0)
+})
+
+it('opens the slash menu only for a complete command word containing the caret', async () => {
+  const { host, prompt } = mount({}, { ...idle, input: { ...idle.input, commands: ['plan'] } })
+  const popup = () => host.querySelector('.slash-popup')
+  prompt.focus()
+  const absoluteHome = ['', 'Users', 'a'].join('/')
+  for (const value of [absoluteHome, '/plan/a', '/plan\n', '/plan task', ' /plan', '/compact']) {
+    await act(async () => type(prompt, value))
+    expect(popup(), value).toBeNull()
+  }
+  await act(async () => type(prompt, '/pl'))
+  expect(popup()).not.toBeNull()
+  await act(async () => {
+    prompt.setSelectionRange(0, 0)
+    prompt.click()
+  })
+  expect(popup()).toBeNull()
+  await act(async () => {
+    prompt.setSelectionRange(1, 2)
+    prompt.click()
+  })
+  expect(popup()).toBeNull()
+  await act(async () => {
+    prompt.setSelectionRange(2, 2)
+    prompt.click()
+  })
+  expect(popup()).not.toBeNull()
+})
+
 it.each([false, true])(
   'keeps message controls and context use in the card (native sizing %s)',
   (nativeSizing) => {
@@ -165,14 +242,15 @@ it('reports each typed change once and adopts scripted writes to the textarea', 
   expect(props.onDraftChange).toHaveBeenCalledTimes(1)
 
   // Text expanders and automation assign the value and fire an input event themselves.
-  prompt.value = '脚本写入'
-  prompt.dispatchEvent(new Event('input', { bubbles: true }))
+  await act(async () => {
+    prompt.value = '脚本写入'
+    prompt.dispatchEvent(new Event('input', { bubbles: true }))
+  })
   expect(props.onDraftChange).toHaveBeenLastCalledWith('脚本写入')
   expect(props.onDraftChange).toHaveBeenCalledTimes(2)
   expect(handle.getDraft()).toBe('脚本写入')
 
   // Without an event the host still reads what is on screen, and clearing really clears it.
-  await new Promise((resolve) => setTimeout(resolve, 0))
   prompt.value = '没有事件'
   expect(handle.getDraft()).toBe('没有事件')
   handle.setDraft('脚本写入')

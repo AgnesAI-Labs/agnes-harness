@@ -6,6 +6,7 @@
 //
 // Only `prepareHome` and `prepareMemory` are unit-tested; the rest boots a real host and is
 // exercised by a real run.
+import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -15,7 +16,9 @@ import {
   type AghSession,
   type LaunchInput,
   type LedgerRow,
+  REVIEW_KEY_ENV,
   type ReviewAnswer,
+  requireReviewService,
   TERMINAL_REVIEW_STATES,
 } from './run-agh.js'
 import { loadSkillSaveModules, refreshAfterSave, skillSaveTransport } from './skill-save.js'
@@ -24,43 +27,55 @@ const PACKAGES = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..',
 const CLI = join(PACKAGES, 'cli')
 const POLL_MS = 250
 
-type SettingsSnapshot = { settings: { enabled: boolean; mode: string }; revision: string }
-type SettingsStore = {
-  read(): SettingsSnapshot
-  save(settings: { enabled: boolean; mode: 'manual' | 'auto' }, expectedRevision: string): unknown
-}
 /** The parts of `@agnes/host` this file uses. */
-export type HostModule = {
-  initializeHomeLocked(home: string, profile: string): Promise<unknown>
-  dataDir(home: string): string
-  cacheDir(home: string): string
-  RefinementSettingsStore: new (dataDir: string, profile: string) => SettingsStore
-  /** The manual review request behind `session.refine`; the embedded host does not serve that RPC. */
-  requestRefinement(session: never, focus?: string, saveTo?: 'workspace' | 'user'): Promise<{ runId: string }>
-}
+export type HostModule = Pick<
+  typeof import('@agnes/host'),
+  | 'initializeHomeLocked'
+  | 'dataDir'
+  | 'cacheDir'
+  | 'createCredentialStore'
+  | 'RefinementSettingsStore'
+  | 'requestRefinement'
+>
 
 /**
  * Makes the run's home: a fresh AGH home, the profile file with the one route, and the refinement
- * switch saved the way the settings panel saves it (nothing at all for an "off" run). Returns the
- * data dir the host will use. Refuses a home that already exists, so no run reuses another's data.
+ * settings saved through the real stores for an "on" run. The caller releases the private review
+ * credential after the run. Refuses a home that already exists, so no run reuses another's data.
  */
 export async function prepareHome(
-  input: Pick<LaunchInput, 'home' | 'profile' | 'profileDocument' | 'refinement'>,
+  input: Pick<LaunchInput, 'home' | 'profile' | 'profileDocument' | 'refinement' | 'env'>,
   host: HostModule,
-): Promise<string> {
+): Promise<{ data: string; close(): Promise<void> }> {
   if (existsSync(input.home)) throw new Error(`the run home ${input.home} already exists`)
+  const refinement = input.refinement && { ...input.refinement, ...requireReviewService(input.env) }
   await host.initializeHomeLocked(input.home, input.profile)
   const profileDir = join(input.home, 'profiles', input.profile)
   mkdirSync(profileDir, { recursive: true, mode: 0o700 })
   // JSON is valid YAML 1.2, so the profile file needs no YAML writer.
   writeFileSync(join(profileDir, 'profile.yaml'), `${JSON.stringify(input.profileDocument, null, 2)}\n`)
   const data = host.dataDir(input.home)
-  const store = new host.RefinementSettingsStore(data, input.profile)
-  if (input.refinement) store.save(input.refinement, store.read().revision)
-  const now = store.read().settings
-  if (now.enabled !== (input.refinement !== undefined))
-    throw new Error(`the refinement switch in ${data} reads ${now.enabled ? 'on' : 'off'}`)
-  return data
+  const store = new host.RefinementSettingsStore(data, input.profile, input.home)
+  if (!refinement) {
+    if (store.read().settings.enabled) throw new Error(`the refinement switch in ${data} reads on`)
+    return { data, close: async () => {} }
+  }
+  const { key, ...settings } = refinement
+  const credentials = host.createCredentialStore({ root: input.home })
+  const credentialRef = `secret://generic/${randomUUID()}`
+  await credentials.putGeneric(credentialRef, key, {
+    label: 'RSI evaluation review service',
+    createdAt: new Date().toISOString(),
+  })
+  const close = () => credentials.remove(credentialRef)
+  try {
+    store.save({ ...settings, credentialRef }, store.read().revision)
+    if (!store.read().settings.enabled) throw new Error(`the refinement switch in ${data} reads off`)
+    return { data, close }
+  } catch (error) {
+    await close()
+    throw error
+  }
 }
 
 type Client = {
@@ -75,10 +90,7 @@ type SdkSession = {
   prompt(text: string, options: { signal: AbortSignal; unattended: boolean }): Promise<{ reason: string }>
   detach(): Promise<unknown>
 }
-type OwnedSession = {
-  close(): Promise<void>
-  state: { refinementRuns: ReadonlyMap<string, { state: string }> }
-}
+type OwnedSession = Parameters<HostModule['requestRefinement']>[0]
 type Booted = {
   client: Client
   /** The local form's rescan of the skill folders before the next skill read of any session. */
@@ -211,8 +223,27 @@ export function readLedger(dataDir: string, sessionKey: string): LedgerRow[] {
 }
 
 export async function launchHost(input: LaunchInput): Promise<AghHost> {
-  const host = (await import('@agnes/host')) as unknown as HostModule
-  const data = await prepareHome(input, host)
+  const host = await import('@agnes/host')
+  const home = await prepareHome(input, host)
+  try {
+    const opened = await bootRun(input, host, home.data)
+    return {
+      ...opened,
+      close: async () => {
+        try {
+          await opened.close()
+        } finally {
+          await home.close()
+        }
+      },
+    }
+  } catch (error) {
+    await home.close()
+    throw error
+  }
+}
+
+async function bootRun(input: LaunchInput, host: HostModule, data: string): Promise<AghHost> {
   await prepareMemory(input, await loadMemoryModule())
   const { bootLocal } = (await import(pathToFileURL(join(CLI, 'src', 'boot', 'local.ts')).href)) as {
     bootLocal(args: unknown, deps: object): Promise<Booted>
@@ -248,10 +279,11 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
   }
   let booted: Booted
   try {
+    const { [REVIEW_KEY_ENV]: _reviewKey, ...env } = input.env
     booted = await bootLocal(
       parseArgs(['--profile', input.profile, '--cwd', input.workspace, '--standalone']),
       {
-        env: input.env,
+        env,
         home: input.home,
         cwd: input.workspace,
         agnesVersion,
@@ -292,24 +324,19 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
     return {
       key: sessionKey,
       prompt: async (text, signal) => (await session.prompt(text, { signal, unattended: true })).reason,
-      // A read of the session's experience entries: no model call. It is refused exactly when a review
-      // would be (refinement off, or not wired into this host), so it shows a dead refinement.
+      // A valid read of the session's experience entries checks the refinement switch without a model call.
       liveness: async () => {
         const owned = embedded.kernel.get(session.id)
         if (!owned) return { refused: 'unavailable' }
-        const { refinementFacade } = (await import('@agnes/core')) as unknown as {
-          refinementFacade(s: never): { inspect(request: { op: 'list' }): Promise<object> }
-        }
-        const out = await refinementFacade(owned as never).inspect({ op: 'list' })
-        return 'refused' in out ? { refused: String(out.refused) } : { live: true as const }
+        const { refinementFacade } = await import('@agnes/core')
+        const out = await refinementFacade(owned).inspect({ op: 'list', kind: 'memory' })
+        return 'refused' in out ? { refused: out.refused } : { live: true as const }
       },
       review: async (saveTo): Promise<ReviewAnswer> => {
         try {
           const owned = embedded.kernel.get(session.id)
           if (!owned) return { refused: 'unavailable' }
-          return await (saveTo
-            ? host.requestRefinement(owned as never, undefined, saveTo)
-            : host.requestRefinement(owned as never))
+          return await host.requestRefinement(owned, undefined, saveTo)
         } catch (error) {
           const reason = refusal(error)
           if (reason === undefined) throw error

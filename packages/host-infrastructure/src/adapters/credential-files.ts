@@ -1,5 +1,15 @@
 import { randomUUID } from 'node:crypto'
-import { closeSync, constants, fstatSync, fsyncSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  fsyncSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { chmod, lstat, mkdir, open, rename, unlink } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileSecretsDir } from '@agnes/host-common/paths'
@@ -346,6 +356,30 @@ async function checkedFileStat(
     return stat
   }
   throw storeError(ref, 'changed')
+}
+
+/** Same private-file checks as the async store, for synchronous session admission and dispatch. */
+export function readApiKeyFileSync(
+  root: string,
+  ref: string,
+  enforcement: CredentialFileEnforcement,
+): string {
+  requireEnforcement(ref, enforcement)
+  const path = resolveCredentialFile(root, ref, 'api-key')
+  for (const dir of [resolve(root), dirname(dirname(path)), dirname(path)])
+    validateDirectory(lstatSync(dir), ref, enforcement, dir)
+  const before = lstatSync(path)
+  validateFile(before, ref, enforcement, path)
+  if (enforcement.mechanism === 'windows-acl') return windowsReadPrivateTextSync(path, MAX_CREDENTIAL_BYTES)
+  const fd = openSync(path, constants.O_RDONLY | NOFOLLOW | constants.O_NONBLOCK)
+  try {
+    const after = fstatSync(fd)
+    validateFile(after, ref, enforcement, path)
+    if (before.dev !== after.dev || before.ino !== after.ino) throw storeError(ref, 'changed')
+    return readFileSync(fd, 'utf8')
+  } finally {
+    closeSync(fd)
+  }
 }
 
 export async function readCredentialFile(options: {

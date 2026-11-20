@@ -21,10 +21,11 @@ import {
   endpointOk,
   failureCode,
   isSideProvider,
+  KIND_PROVIDERS,
   MODEL_ID,
   presetsFor,
   readModels,
-  SIDE_PROVIDERS,
+  type SideModelKind,
   type SideModelsClient,
   type SideModelsCredentials,
   type SideProviderId,
@@ -38,6 +39,8 @@ import { SIDE_MODELS_NAMESPACE, sideModelsCatalog } from './side-models-locale.j
 export type { SideModelsClient, SideModelsCredentials } from './side-models/model.js'
 
 type PanelProps = {
+  /** Decision models on the model page (the default), voice models on the voice page. */
+  kind?: SideModelKind
   client: SideModelsClient
   configuration: ConfigSnapshot | undefined
   canSave: boolean
@@ -70,6 +73,7 @@ const closePage = (page: HTMLElement | undefined) =>
  * leaving that page by Back or the browser drops the draft. Without that pane it opens below the list.
  */
 function SideModels({
+  kind = 'decision',
   client,
   configuration,
   canSave,
@@ -84,7 +88,10 @@ function SideModels({
     const epoch = editorEpoch.current
     return () => request.isCurrent() && epoch === editorEpoch.current
   }
-  const accounts = (configuration?.accounts ?? []).filter((row) => isSideProvider(row.providerId))
+  const providers = KIND_PROVIDERS[kind]
+  const accounts = (configuration?.accounts ?? []).filter(
+    (row) => isSideProvider(row.providerId) && providers.includes(row.providerId),
+  )
   const [draft, setDraft] = useState<EditorDraft>()
   /** The settings page the editor is on, and whether it was opened onto one. */
   const [page, setPage] = useState<HTMLElement>()
@@ -155,7 +162,7 @@ function SideModels({
     baseUrl: preset.baseUrl,
     models: preset.models(),
   })
-  const addDraft = (provider: SideProviderId = SIDE_PROVIDERS[0]): EditorDraft => {
+  const addDraft = (provider: SideProviderId = providers[0] as SideProviderId): EditorDraft => {
     const preset = presetsFor(provider)[0] as AdapterPreset
     return {
       accountId: '',
@@ -172,8 +179,10 @@ function SideModels({
     resetMessages()
     setRemoving(undefined)
     setDraft(next)
+    // Only the model page lends its pages; the voice page opens the editor below its list.
     const id = next.isNew ? SIDE_MODEL_PAGE_IDS.add : SIDE_MODEL_PAGE_IDS.edit
-    const row = document.querySelector<HTMLButtonElement>(`[data-settings-drill="${id}"]`)
+    const row =
+      kind === 'decision' ? document.querySelector<HTMLButtonElement>(`[data-settings-drill="${id}"]`) : null
     setPaged(!!row)
     if (row && row.getAttribute('aria-expanded') !== 'true') row.click()
   }
@@ -210,9 +219,10 @@ function SideModels({
     }
   }
   useEffect(() => {
+    if (kind !== 'decision') return
     setSettingsSideModelPage({ attach: (node, mode) => attach.current(node, mode) })
     return () => setSettingsSideModelPage(undefined)
-  }, [])
+  }, [kind])
 
   const patch = (next: Partial<EditorDraft>) => {
     resetMessages()
@@ -437,6 +447,7 @@ function SideModels({
   const editor = draft && (
     <SideModelEditor
       draft={draft}
+      providers={providers}
       route={saved?.route ?? `account-${accountIdFor(draft.label, takenIds, draft.fallbackId)}`}
       canSave={canSave}
       busy={busy}
@@ -461,6 +472,7 @@ function SideModels({
   return (
     <>
       <SideModelList
+        kind={kind}
         accounts={accounts}
         canSave={canSave}
         busy={busy}

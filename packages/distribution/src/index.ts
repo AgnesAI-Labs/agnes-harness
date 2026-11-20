@@ -216,3 +216,5 @@ export async function builtinModelSelectionData(profile: ModelProfile): Promise<
   const routes = [...declared, ...configs.flatMap((c) => c.routes)]
   return { adapters, routes, models: routes.flatMap((r) => r.models ?? []) }
 }
+
+export { createRefinementProvider, fetchRefinementModels, REFINEMENT_SERVICE } from './refinement-model.js'

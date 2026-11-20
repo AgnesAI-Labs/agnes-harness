@@ -129,6 +129,34 @@ async function setup(
 const settle = async () => {
   await new Promise((resolve) => setTimeout(resolve, 10))
 }
+
+it('keeps voice and judgment accounts out of the chat account list and editor', async () => {
+  const voice = {
+    ...account('voice'),
+    label: 'StepFun voice',
+    providerId: 'openai-audio',
+    model: 'stepaudio-3-asr-max',
+    models: [{ id: 'stepaudio-3-asr-max', name: 'StepAudio', audioRole: 'transcribe' as const }],
+  }
+  const judgment = { ...account('sys1'), providerId: 'agnes-sys1' }
+  const h = await setup([account('work'), voice, judgment])
+  const chatButtons = () => [...h.doc.querySelectorAll('#config-accounts .config-account-select')]
+  await vi.waitFor(() => expect(chatButtons().map((row) => row.textContent?.trim())).toEqual(['work']))
+  await h.controller.openAccount(voice.route)
+  expect(h.doc.querySelector('[data-testid="account-page-edit"]')).toBeNull()
+  await h.controller.openAccount('account-work')
+  await vi.waitFor(() => expect(h.input('config-account-name').value).toBe('work'))
+  expect(h.input('config-base-url').value).toBe('https://work.example/v1')
+  h.controller.close()
+})
+
+it('shows the chat account welcome when only a voice account is saved', async () => {
+  const h = await setup([{ ...account('voice'), providerId: 'openai-audio' }])
+  expect(h.doc.getElementById('config-accounts')?.getAttribute('data-state')).toBe('empty')
+  await vi.waitFor(() => expect(h.doc.querySelector('.config-accounts-welcome')).not.toBeNull())
+  h.controller.close()
+})
+
 it.each(['resolve', 'reject'] as const)(
   'ignores a test that %ss after the account draft is discarded',
   async (outcome) => {
@@ -200,6 +228,63 @@ it('offers Agnes AI International as the Agnes provider at the international add
   expect(h.input('config-base-url').value).toBe('https://apihub.agnes-ai.com/v1')
   expect(h.input('config-account-name').value).toBe(zhT('accounts.agnesInternational'))
   expect(h.doc.getElementById('config-provider-host')?.textContent).toBe('apihub.agnes-ai.com/v1')
+  h.controller.close()
+})
+
+it('offers llm.sg after the Agnes gateways and links each gateway to the page that issues its keys', async () => {
+  const agnes = {
+    id: 'agnes-ai',
+    label: 'Agnes AI',
+    api: 'openai-completions',
+    baseUrl: 'https://api.agnes-ai.cn/v1',
+  }
+  const compatible = {
+    id: 'openai-compatible',
+    label: 'OpenAI-compatible endpoint',
+    api: 'openai-completions',
+    baseUrl: 'https://endpoint.invalid/v1',
+  }
+  const h = await setup(undefined, [agnes, OPENAI, compatible])
+  const consoleLink = () => h.doc.getElementById('config-key-console') as unknown as HTMLAnchorElement
+  const helpToggle = () => h.doc.getElementById('config-key-help-toggle') as unknown as HTMLButtonElement
+  const choose = (provider: string, baseUrl?: string) => {
+    h.input('config-provider').value = provider
+    h.input('config-provider').dispatchEvent(
+      new (window as Window).Event('change', { bubbles: true }) as unknown as Event,
+    )
+    if (baseUrl === undefined) return
+    h.input('config-base-url').value = baseUrl
+    h.input('config-base-url').dispatchEvent(
+      new (window as Window).Event('input', { bubbles: true }) as unknown as Event,
+    )
+  }
+  await h.click('#config-add-account')
+  const tiles = [
+    ...h.doc.querySelectorAll('.account-provider-groups > .account-provider-choices > button'),
+  ].map((tile) => (tile as unknown as HTMLElement).dataset.provider)
+  expect(tiles.slice(0, 3)).toEqual(['agnes-ai', 'agnes-ai:international', 'preset:llm-sg'])
+
+  // llm.sg is an OpenAI-compatible gateway: the preset fills its address and name.
+  await h.click('[data-provider="preset:llm-sg"]')
+  expect(h.input('config-provider').value).toBe('openai-compatible')
+  expect(h.input('config-base-url').value).toBe('https://api.llm.sg/v1')
+  expect(h.input('config-account-name').value).toBe('llm.sg')
+  expect(consoleLink().hidden).toBe(false)
+  expect(consoleLink().getAttribute('href')).toBe('https://www.llm.sg/')
+  expect(consoleLink().getAttribute('target')).toBe('_blank')
+  expect(consoleLink().getAttribute('rel')).toBe('noopener noreferrer')
+  expect(helpToggle().hidden).toBe(true)
+
+  // Agnes AI links to its China console by default and to the international one at that address.
+  choose('agnes-ai')
+  expect(consoleLink().getAttribute('href')).toBe('https://api.agnes-ai.cn/')
+  choose('agnes-ai', 'https://apihub.agnes-ai.com/v1')
+  expect(consoleLink().getAttribute('href')).toBe('https://apihub.agnes-ai.com/')
+
+  // Any other provider keeps the general help in place of a link.
+  choose('openai')
+  expect(consoleLink().hidden).toBe(true)
+  expect(helpToggle().hidden).toBe(false)
   h.controller.close()
 })
 
@@ -487,7 +572,8 @@ it('connects a relay through the OpenAI-compatible form: listed or typed models,
     baseUrl: 'https://api.siliconflow.cn/v1',
   })
   expect(h.doc.getElementById('config-error')?.textContent).toBe('')
-  // The first listed model joins the draft and becomes the default, so saving needs no second pick.
+  // Every listed model joins a new draft, so each can be picked in a conversation; the first is
+  // the default, so saving needs no second pick.
   const listed = (id: string) => ({ id, name: id, contextWindow: 32768, maxTokens: 8192 })
   h.config.test.mockResolvedValue({ models: [listed('Qwen/Qwen3-32B'), listed('other')], verified: true })
   fetchModels()
@@ -495,11 +581,19 @@ it('connects a relay through the OpenAI-compatible form: listed or typed models,
   expect(panel?.textContent).not.toContain(zhT('accounts.compatible.error.http404'))
   await vi.waitFor(() => expect(h.input('config-model').value).toBe('Qwen/Qwen3-32B'))
   expect(h.input('config-save').disabled).toBe(false)
-  // Dropping the only chosen model locks the group again and names the missing choice.
-  const chip = [...(panel?.querySelectorAll<HTMLButtonElement>('button[aria-pressed]') ?? [])].find(
-    (button) => button.textContent === 'Qwen/Qwen3-32B',
-  )
-  chip?.click()
+  const chips = () => [...(panel?.querySelectorAll<HTMLButtonElement>('button[aria-pressed]') ?? [])]
+  const chip = (id: string) => chips().find((button) => button.textContent === id)
+  const selectAll = () =>
+    [...(panel?.querySelectorAll('button') ?? [])].find(
+      (button) => button.textContent === zhT('accounts.compatible.selectAll'),
+    )
+  expect(chips().map((button) => button.getAttribute('aria-pressed'))).toEqual(['true', 'true'])
+  // "Select all" is offered only while something listed is left out.
+  expect(selectAll()).toBeUndefined()
+  // Dropping every chosen model locks the group again and names the missing choice.
+  chip('Qwen/Qwen3-32B')?.click()
+  await vi.waitFor(() => expect(h.input('config-model').value).toBe('other'))
+  chip('other')?.click()
   await vi.waitFor(() => expect(h.input('config-model').value).toBe(''))
   expect(h.doc.getElementById('config-model-lock')?.hasAttribute('hidden')).toBe(false)
   expect(h.doc.getElementById('config-model-lock-text')?.textContent).toBe(zhT('accounts.modelLockedChoose'))
@@ -510,8 +604,11 @@ it('connects a relay through the OpenAI-compatible form: listed or typed models,
     zhT('accounts.saveNeedsModel'),
   )
   expect(h.doc.getElementById('config-model')?.textContent).toContain(zhT('settings.model.chooseAbove'))
-  chip?.click()
+  // "Select all" brings every listed model back in one click.
+  ;(selectAll() as HTMLButtonElement | undefined)?.click()
   await vi.waitFor(() => expect(h.input('config-model').value).toBe('Qwen/Qwen3-32B'))
+  expect(chips().map((button) => button.getAttribute('aria-pressed'))).toEqual(['true', 'true'])
+  expect(selectAll()).toBeUndefined()
   expect(h.doc.getElementById('config-model-lock')?.hasAttribute('hidden')).toBe(true)
   expect(h.input('config-save').hasAttribute('data-disabled-reason')).toBe(false)
   await h.click('#config-save')
@@ -522,7 +619,7 @@ it('connects a relay through the OpenAI-compatible form: listed or typed models,
     baseUrl: 'https://api.siliconflow.cn/v1',
     label: zhT('accounts.preset.siliconflow'),
     model: 'Qwen/Qwen3-32B',
-    models: [listed('Qwen/Qwen3-32B')],
+    models: [listed('Qwen/Qwen3-32B'), listed('other')],
   })
   expect(saved[0]).not.toHaveProperty('apiKey')
   // Choosing it from the provider list (as the first-run guide does) asks for the address in place.

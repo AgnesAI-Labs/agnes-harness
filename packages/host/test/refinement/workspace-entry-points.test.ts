@@ -219,9 +219,10 @@ async function setup(o: {
     },
   }
   const refinement: RefinementDeps = {
+    provider: () => provider,
     settings: () => ({ ...switchState }),
     planner: () => planner,
-    target: { route: 'rsi', model: 'planner' },
+    target: () => ({ route: 'rsi', model: 'planner' }),
     workspace: saves,
     workspaceRefs,
     ...(o.goal ? { taskScope: () => ({ id: 'goal-1', revision: 1, phase: 'active' as const }) } : {}),

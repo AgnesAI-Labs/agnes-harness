@@ -17,7 +17,7 @@ it.skipIf(!entry || !sourceHome)(
     const root = await mkdtemp(join(tmpdir(), 'agnes-real-'))
     const home = join(root, 'home')
     const cwd = join(root, 'workspace')
-    const env = { ...process.env, AGH_HOME: home, AGNES_PROFILE: profile }
+    const env = { ...process.env, AGH_HOME: home, AGNES_PROFILE: profile, AGH_TELEMETRY_DISABLED: '1' }
     const command = (args: string[]) =>
       new Promise<string>((done, reject) => {
         const child = execFile(

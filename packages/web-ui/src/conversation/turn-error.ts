@@ -105,18 +105,32 @@ export function turnErrorView(turn: UITurn): TurnErrorView {
 export interface TurnErrorFacts {
   status?: string
   requestId?: string
+  note?: string
 }
 
 /**
- * The two facts the adapter keeps when it redacts a provider error: a numeric HTTP status and a
- * request id. Nothing else in the message is safe or useful to put on the row.
+ * The facts the adapter keeps when it redacts a provider error: a numeric HTTP status, a request id
+ * and, for an account out of quota only, the gateway's own short account message (`note="…"`, already
+ * screened by the adapter). Nothing else in the message is safe or useful to put on the row.
  */
 export function turnErrorMessageFacts(message: string | undefined): TurnErrorFacts {
   if (!message) return {}
   const status = /(?:^|\s)status=([1-5]\d{2})(?=\s|$)/.exec(message)?.[1]
   const requestId = /(?:^|\s)requestId=(\S+)/.exec(message)?.[1]
+  const note = quotedNote(/(?:^|\s)note=("(?:[^"\\]|\\.)*")/.exec(message)?.[1])
   return {
     ...(status ? { status } : {}),
     ...(requestId ? { requestId } : {}),
+    ...(note ? { note } : {}),
+  }
+}
+
+function quotedNote(quoted: string | undefined): string | undefined {
+  if (!quoted) return undefined
+  try {
+    const value: unknown = JSON.parse(quoted)
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined
+  } catch {
+    return undefined
   }
 }

@@ -1,4 +1,16 @@
 import type { UINode, UITurn } from '@agnes/protocol'
+import type { RefinementSaveOutcome, RefinementWithdrawOutcome } from '@agnes/web-ui/conversation'
+
+/** Actions on a refinement record go back to the session that produced it. */
+export interface TranscriptRefinementActions {
+  onWithdrawRefinement?(sessionId: string, appliedSeq: number): Promise<RefinementWithdrawOutcome>
+  onSaveRefinementEntry?(
+    sessionId: string,
+    kind: 'memory' | 'prompt' | 'skill',
+    id: string,
+    target?: 'user',
+  ): Promise<RefinementSaveOutcome>
+}
 
 /** Whether older records exist before the loaded window, and how to load a page of them. */
 export type TranscriptMeta = {

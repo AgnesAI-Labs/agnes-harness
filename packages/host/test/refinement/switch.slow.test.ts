@@ -7,6 +7,7 @@ import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-s
 import { afterAll, describe, expect, it } from 'vitest'
 import type { Host } from '../../src/runtime/lifecycle/host.js'
 import { createTestHost } from '../../testkit/index.js'
+import { reviewCredential, reviewModel } from './service-key.js'
 
 const baseDir = fileURLToPath(new URL('../../../base/', import.meta.url))
 const REFINEMENT_TOOLS = ['harness_inspect', 'harness_propose', 'harness_refine']
@@ -51,9 +52,12 @@ const LEGACY_PRESET = {
   },
 } as const
 
-function enable(dataDir: string): void {
+async function enable(dataDir: string): Promise<void> {
   const store = new RefinementSettingsStore(dataDir, PROFILE)
-  store.save({ enabled: true, mode: 'auto' }, store.read().revision)
+  store.save(
+    { credentialRef: await reviewCredential(dataDir), model: reviewModel, enabled: true, mode: 'auto' },
+    store.read().revision,
+  )
 }
 
 async function refinementTools(dataDir: string) {
@@ -98,7 +102,7 @@ describe('the refinement switch at host assembly', () => {
 
   it('only the settings file turns the tools on, harness_refine always loaded and the others deferred', async () => {
     const dataDir = scratch()
-    enable(dataDir)
+    await enable(dataDir)
     const { offered: tools } = await refinementTools(dataDir)
     expect(tools).toEqual(REFINEMENT_TOOLS.map((name) => ({ name, deferred: name !== 'harness_refine' })))
   })
@@ -106,7 +110,10 @@ describe('the refinement switch at host assembly', () => {
   it('a settings file for another profile does not turn the tools on', async () => {
     const dataDir = scratch()
     const other = new RefinementSettingsStore(dataDir, 'another-profile')
-    other.save({ enabled: true, mode: 'auto' }, other.read().revision)
+    other.save(
+      { credentialRef: await reviewCredential(dataDir), model: reviewModel, enabled: true, mode: 'auto' },
+      other.read().revision,
+    )
     expect((await refinementTools(dataDir)).offered).toEqual([])
   })
 })
@@ -117,14 +124,17 @@ describe('what Core reads of the switch in a running host', () => {
     const session = await host.createSession({ cwd: dataDir, key: 'switch-live' })
     return { host, session }
   }
-  const save = (dataDir: string, enabled: boolean) => {
+  const save = async (dataDir: string, enabled: boolean) => {
     const store = new RefinementSettingsStore(dataDir, PROFILE)
-    store.save({ enabled, mode: 'auto' }, store.read().revision)
+    store.save(
+      { credentialRef: await reviewCredential(dataDir), model: reviewModel, enabled, mode: 'auto' },
+      store.read().revision,
+    )
   }
 
   it('on at assembly: Core has the planner and sees a switch-off at once, the tools stay', async () => {
     const dataDir = scratch()
-    enable(dataDir)
+    await enable(dataDir)
     const { host, session } = await opened(dataDir)
     try {
       expect(session.d.refinementEnabled?.()).toBe(true)
@@ -132,7 +142,7 @@ describe('what Core reads of the switch in a running host', () => {
       // The refine plugin handed its planner over when its tools were registered.
       expect(session.d.refinement?.planner()).toMatchObject({ buildPrompt: expect.any(Function) })
       expect(session.d.refinementTriggers?.accepts?.(session.key)).toBe(true)
-      save(dataDir, false)
+      await save(dataDir, false)
       expect(session.d.refinementEnabled?.()).toBe(false)
       expect(session.d.refinementTriggers?.accepts?.(session.key)).toBe(false)
       // The session's tool list does not change: the tools answer that refinement is off.
@@ -146,7 +156,7 @@ describe('what Core reads of the switch in a running host', () => {
     const dataDir = scratch()
     const { host, session: before } = await opened(dataDir)
     try {
-      save(dataDir, true)
+      await save(dataDir, true)
       // The session that was already open runs as before: off, without the tools.
       expect(before.d.refinementEnabled?.()).toBe(false)
       expect(before.d.refinement?.settings().enabled).toBe(false)
@@ -162,7 +172,7 @@ describe('what Core reads of the switch in a running host', () => {
       expect(offered(after).map((tool) => tool.name)).toEqual(REFINEMENT_TOOLS)
       expect(capabilityTools(host, after.key)).toEqual(REFINEMENT_TOOLS.map((id) => ({ id, enabled: true })))
       // Off reaches every session at once; the newer one keeps its tool list, which now answers off.
-      save(dataDir, false)
+      await save(dataDir, false)
       expect(after.d.refinementEnabled?.()).toBe(false)
       expect(after.d.refinement?.settings().enabled).toBe(false)
       expect(offered(after)).toHaveLength(REFINEMENT_TOOLS.length)

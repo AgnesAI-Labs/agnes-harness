@@ -102,6 +102,7 @@ export type StartSupervisorOptions = {
   /** Read-only Host mutation readiness; omission is the production fail-closed default. */
   lockedPackageMutations?: LockedPackageMutationStatusSource
   observability?: import('@agnes/observability').ObservabilityProvider
+  telemetry?: import('./telemetry/service.js').Telemetry
   audit?: (rec: unknown) => void
   /** Test/composition injection; production creates one global supervisor gate. */
   activationBarrier?: ExtensionActivationBarrier

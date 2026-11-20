@@ -20,6 +20,11 @@ import { AGNES_BASE_PLUGIN_METADATA } from './base-plugin-metadata.js'
 
 declare const AGNES_BASE_EXTENSION_MANIFESTS: NonNullable<PackageModule['embeddedExtensions']> | undefined
 declare const AGNES_CODE_EXTENSION_MANIFESTS: NonNullable<PackageModule['embeddedExtensions']> | undefined
+declare const AGNES_VERSION: string | undefined
+
+// Lock defaults use 0.0.0 to match the daemon. The Host uses it to preserve saved generation digests.
+// The jiti compile cache is scoped to the release version.
+const agnesVersion = typeof AGNES_VERSION === 'string' ? AGNES_VERSION : '0.0.0'
 
 /**
  * SEA workers cannot read workspace package.json files at runtime. Keep the normalized form of
@@ -269,7 +274,7 @@ export function packagedPackages(profile: ResolvedProfile, home: string, entryFi
   const hostRoot = dirname(entryFile)
   const lock = readLock(profileDir, { profile: profile.name, agnesVersion: '0.0.0' })
   verifyLockIntegrity(lock, { dataDir: profile.dataDir, profile: profile.name })
-  const jiti = createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion: '0.0.0' })
+  const jiti = createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion })
   const external = createJitiPackageLoader(jiti)
   const builtin = async (id: string): Promise<Record<string, unknown>> => {
     if (id === '@agnes/ai') return import('@agnes/ai')

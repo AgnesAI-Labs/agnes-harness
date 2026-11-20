@@ -14,6 +14,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
+import { bindComposerListbox } from './composer/listbox-aria.js'
 import type { Translate } from './locales/index.js'
 
 export interface ComposerReferences {
@@ -382,15 +383,6 @@ export function ReferencePicker({
       epoch++
       adapter.cancelSearch()
       if (timer) clearTimeout(timer)
-      for (const attr of [
-        'role',
-        'aria-autocomplete',
-        'aria-haspopup',
-        'aria-expanded',
-        'aria-controls',
-        'aria-activedescendant',
-      ])
-        input.removeAttribute(attr)
       input.removeEventListener('input', query)
       input.removeEventListener('click', query)
       input.removeEventListener('keydown', keydown, true)
@@ -401,22 +393,11 @@ export function ReferencePicker({
 
   useLayoutEffect(() => {
     const input = textarea.current
-    if (!input || !adapter) return
-    if (opened && !disabled) {
-      input.setAttribute('role', 'combobox')
-      input.setAttribute('aria-autocomplete', 'list')
-      input.setAttribute('aria-haspopup', 'listbox')
-      input.setAttribute('aria-expanded', 'true')
-    } else {
-      for (const attr of ['role', 'aria-autocomplete', 'aria-haspopup', 'aria-expanded'])
-        input.removeAttribute(attr)
-    }
-    if (opened && !disabled) input.setAttribute('aria-controls', listId)
-    else input.removeAttribute('aria-controls')
-    if (opened && !disabled && (visibleItems[active] || choosingSource)) {
-      input.setAttribute('aria-activedescendant', `${listId}-${active}`)
-      document.getElementById(`${listId}-${active}`)?.scrollIntoView?.({ block: 'nearest' })
-    } else input.removeAttribute('aria-activedescendant')
+    if (!input || !adapter || !opened || disabled) return
+    const optionId = visibleItems[active] || choosingSource ? `${listId}-${active}` : undefined
+    const clear = bindComposerListbox(input, listId, optionId)
+    if (optionId) document.getElementById(optionId)?.scrollIntoView?.({ block: 'nearest' })
+    return clear
   }, [adapter, textarea, opened, disabled, active, visibleItems, choosingSource, listId])
   if (!adapter) return null
   return (

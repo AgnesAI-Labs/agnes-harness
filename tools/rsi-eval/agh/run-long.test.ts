@@ -273,12 +273,15 @@ describe('long tasks and the frozen arm in the runner', () => {
       expect(outcome.onProtocol).toBe('triggers')
     })
 
-    it('stops an on run with triggers only when refinement is not live', async () => {
-      await expect(
-        run(staged(), 'on', { liveness: { refused: 'refinement-off' } }, { onProtocol: 'triggers' }),
-      ).rejects.toThrow(/not active in the run host \(refinement-off\)/)
-      expect(calls.some((c) => c.op === 'prompt')).toBe(false)
-    })
+    it.each(['refinement-off', 'invalid'])(
+      'stops an on run with triggers only when the liveness read returns %s',
+      async (refused) => {
+        await expect(
+          run(staged(), 'on', { liveness: { refused } }, { onProtocol: 'triggers' }),
+        ).rejects.toThrow(`not active in the run host (${refused})`)
+        expect(calls.some((c) => c.op === 'prompt')).toBe(false)
+      },
+    )
 
     it('keeps the default: a manual review after every prompt, no liveness read', async () => {
       const outcome = await run(staged(), 'on')

@@ -25,10 +25,12 @@ const ASCII_NUMBER = /^[0-9]+$/
 
 const FILLER = new Set(
   (
-    'hi hii hiii hiya hey heya hello helo hullo yo ya sup wassup whatsup howdy greetings hola ciao aloha gm gn ' +
-    'good morning afternoon evening night day thanks thank thx ty tysm cheers please pls plz ok okay okey k kk ' +
-    'yep yes yeah yup nope no nah sure cool nice great awesome perfect lol lmao haha hehe test tests testing ' +
-    'ping pong there you u hmm hmmm um uh so well anyway'
+    'hi hello hey hiya howdy hola yo sup there again greetings morning afternoon evening day bye ' +
+    'goodbye cya later cheers night gn thanks thank thx ty tysm thankyou you u so much very please ' +
+    'pls plz appreciated welcome yw np sorry ok okay k kk then cool nice great good fine alright sure ' +
+    'gotcha got it understood noted roger perfect awesome sounds yes yeah yep yup ya yea no nope nah ' +
+    'lol haha hehe lmao wow whoa oh ooh omg yay um uh hmm er erm ah well anyway test testing ping ' +
+    'pong asdf'
   ).split(' '),
 )
 

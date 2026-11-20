@@ -110,6 +110,17 @@ describe('redacted message facts', () => {
     expect(turnErrorMessageFacts('status=?')).toEqual({})
   })
 
+  it("reads the gateway's quota note the adapter kept", () => {
+    expect(turnErrorMessageFacts('status=403 note="用户额度不足，剩余额度: ＄0.000000"')).toEqual({
+      status: '403',
+      note: '用户额度不足，剩余额度: ＄0.000000',
+    })
+    expect(turnErrorMessageFacts('status=429 note="say \\"hi\\" later"').note).toBe('say "hi" later')
+    // A note that is not a complete quoted string is not a fact.
+    expect(turnErrorMessageFacts('status=403 note="unterminated').note).toBeUndefined()
+    expect(turnErrorMessageFacts('status=403 note=""').note).toBeUndefined()
+  })
+
   it('does not invent facts from free text', () => {
     expect(turnErrorMessageFacts('the provider said no')).toEqual({})
     expect(turnErrorMessageFacts('status=5000')).toEqual({})
