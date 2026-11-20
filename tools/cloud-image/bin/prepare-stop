@@ -1,0 +1,2 @@
+#!/bin/sh
+exec timeout --signal=TERM --kill-after=1s 30s node /opt/agh/sync/cli.mjs stop

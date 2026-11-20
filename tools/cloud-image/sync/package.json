@@ -1,0 +1,13 @@
+{
+  "name": "@agnes/cloud-image-sync",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1150.0"
+  }
+}

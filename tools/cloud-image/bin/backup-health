@@ -1,0 +1,2 @@
+#!/bin/sh
+exec node /opt/agh/sync/cli.mjs health

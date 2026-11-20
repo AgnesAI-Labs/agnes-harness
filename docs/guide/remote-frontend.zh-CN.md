@@ -11,6 +11,8 @@ A、B 使用同一套完整标准 Harness。A 托管自己的页面，普通连�
 
 ## LLMSG 沙箱入口
 
+镜像侧持续备份、STS 续期、CFS 文件保存和停机恢复的参数及职责见[云端沙箱持久化对接文档](../../tools/cloud-image/README.zh-CN.md)。前端沿用现有连接入口，无需直接调用备份控制脚本或接收 COS 凭证。
+
 用户先在 LLMSG 开通沙箱，再在 A 选择保存 AGH Key 的本地凭证，点击“保存并连接”。连接设置只展示凭证与连接状态，不展示沙箱地址或手动地址入口；地址由既有接口按 Key 自动获取。此连接只查询已开通的实例，不自动开机、续期或计费。旧的显式 `?remote=` 链接与内部地址校验继续兼容。
 
 A 的 daemon 使用所选 `agh_sk_` Key 请求 `POST /llmsg/api/agh/connection`，携带 `Authorization: Bearer <Key>` 和 `{}`。LLMSG 按 Key 返回当前绑定的 HTTPS `8443-<实例>.<地域>.tencentags.com` 来源及业务 Token；旧调用传入 `sandbox_url` 时仍要求地址完全一致。需要部署支持空请求体的 LLMSG 版本。原始 Key 和平台 Token 不保存在浏览器中。

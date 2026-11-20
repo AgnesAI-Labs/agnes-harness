@@ -1,0 +1,5 @@
+sync/node_modules
+**/._*
+**/.DS_Store
+test
+.git

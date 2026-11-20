@@ -210,11 +210,14 @@ describe('Host workspace policy compiler', () => {
   })
 
   it('binds permission presets to write roots and distinct readiness identities', async () => {
-    const protectedPaths = privateStateRoots({
-      home: '/installation',
-      dataDir: '/data',
-      workspace: '/work',
-    }).map((path) => path.replaceAll('\\', '/'))
+    const protectedPaths = privateStateRoots(
+      {
+        home: '/installation',
+        dataDir: '/data',
+        workspace: '/work',
+      },
+      { AGH_ASSETS_DIR: '/private-assets', AGH_SYNC_DIR: '/private-sync' },
+    ).map((path) => path.replaceAll('\\', '/'))
     const readOnly = await compile(
       '/work',
       {
@@ -245,6 +248,8 @@ describe('Host workspace policy compiler', () => {
         '/installation/secrets',
         '/installation/profiles',
         '/installation/cloud-key',
+        '/private-assets',
+        '/private-sync',
         '/data/daemon',
       ])
         expect(plan.backendOptions.denyPaths).toContain(path)

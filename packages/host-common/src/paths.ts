@@ -124,18 +124,25 @@ export function privateStateFiles(paths: { home: string }): string[] {
   return [join(paths.home, 'cloud-key')]
 }
 
-export function privateStateRoots(paths: {
-  home: string
-  dataDir: string
-  workspace?: string
-  profileDir?: string
-  secretsDir?: string
-}): string[] {
+export function privateStateRoots(
+  paths: {
+    home: string
+    dataDir: string
+    workspace?: string
+    profileDir?: string
+    secretsDir?: string
+  },
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string[] {
   const workspace = paths.workspace
   return [
     ...new Set([
       ...['secrets', 'auth', 'profiles', 'daemon', 'memory'].map((leaf) => join(paths.home, leaf)),
       ...privateStateFiles(paths),
+      // The cloud image keeps backups and STS outside the Harness home.
+      ...[env.AGH_ASSETS_DIR, env.AGH_SYNC_DIR].filter(
+        (path): path is string => typeof path === 'string' && isAbsolute(path),
+      ),
       join(paths.dataDir, 'secrets'),
       join(paths.dataDir, 'daemon'),
       ...(workspace ? WORKSPACE_SECRET_DIRS.map((leaf) => join(workspace, leaf)) : []),
