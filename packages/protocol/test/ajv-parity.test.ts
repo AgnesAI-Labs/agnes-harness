@@ -5089,13 +5089,20 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'one page row of session.list; lastSeq/generation boundaries and the five required fields',
   },
   SessionListParams: {
-    valid: { q: { cwd: '/work', prefix: 'x', text: 'hello' }, cursor: 'c1', limit: 20 },
+    valid: {
+      q: { cwd: '/work', prefix: 'x', text: 'hello' },
+      cursor: 'c1',
+      limit: 20,
+      includePromptTitles: true,
+    },
     invalid: [
       { limit: 0 }, // boundary: one below minimum:1
       { limit: 501 }, // boundary: one above maximum:500
       { cursor: rep(513) }, // boundary: maxLength:512
       { sidebar: { groupId: 'unassigned' }, q: {} },
       { sidebar: { groupId: 'unassigned' }, limit: 6 },
+      { includePromptTitles: 'true' },
+      { sidebar: { groupId: 'unassigned' }, includePromptTitles: true },
     ],
     note: 'every field is optional; the three boundaries are limit range and cursor length',
   },

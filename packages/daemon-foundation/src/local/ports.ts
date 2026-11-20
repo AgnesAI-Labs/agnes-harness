@@ -105,11 +105,14 @@ export type SessionMetaRow = {
   cwd?: string
 }
 export interface SessionLister {
+  readonly supportsPromptTitles?: boolean
   list(q: {
     q?: string
     cwd?: string
     cursor?: string
     limit?: number
+    /** Display-only labels are explicitly requested; ordinary lists retain durable-title semantics. */
+    includePromptTitles?: boolean
     /** Server-derived active owner scope. Implementations filter this before pagination. */
     sessionIds?: readonly string[]
   }): Promise<{

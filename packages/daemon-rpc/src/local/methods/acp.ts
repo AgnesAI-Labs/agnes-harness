@@ -51,6 +51,7 @@ import { registerSessionIntegrity } from './session-integrity.js'
 import { throwWorkspaceRpcError } from './workspaces.js'
 
 export type LocalContext = {
+  sessionPromptTitles?: boolean
   profileFeatures?: readonly string[]
   host: Host
   registry: Registry<SessionEntry>
@@ -601,6 +602,7 @@ export function registerAcp(
             turnMaxSteps: true,
             turnTimeLimit: true,
             sessionOpen: true,
+            ...(cx.sessionPromptTitles ? { sessionPromptTitles: true } : {}),
             ...(cx.workspaces.admitsExtraRoots ? { forkAdditionalDirectories: true } : {}),
           },
         },

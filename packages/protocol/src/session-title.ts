@@ -2,6 +2,8 @@ import { type Static, Type } from '@sinclair/typebox'
 import type { EventEnvelope } from '../gen/ts/session-v1.js'
 import { validateAgainst } from './validate.js'
 
+export { type ApplicationWorkRequest, applicationWorkText } from './application-work.js'
+
 export const SESSION_TITLE_EVENT = 'x/host/session-title'
 
 const identity = {

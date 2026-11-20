@@ -1,4 +1,5 @@
-import type { Client } from '@agnes/sdk/browser'
+import { JSONRPC_ERRORS, META_KEY } from '@agnes/protocol'
+import { type Client, JsonRpcError } from '@agnes/sdk/browser'
 import { homeNavigation } from '@agnes/web-client'
 import { broadcast, onBroadcast, onHistoryNavigation } from '../app/global-events.js'
 import { requestNewSession } from '../application.js'
@@ -35,6 +36,7 @@ export function installBackendFrameBridge(
   let ready = false
   let reading = false
   let count = 100
+  let promptTitlesDowngraded = false
   let queued: { command: BackendCommand; commandId: string } | undefined
   const completed = new Set<string>()
   let last: BackendSnapshot = { ready: false, connected: false, rows: [], activity: [], more: false }
@@ -49,12 +51,38 @@ export function installBackendFrameBridge(
     reading = true
     try {
       const rows: BackendSnapshot['rows'] = []
+      const info = await client.initialize()
+      if (disposed) return
+      const meta = info.capabilities._meta as Record<string, { sessionPromptTitles?: boolean }> | undefined
+      let includePromptTitles =
+        Boolean(context.remote) && !promptTitlesDowngraded && meta?.[META_KEY]?.sessionPromptTitles === true
       let cursor: string | undefined
       do {
-        const page = await client.session.list({
+        const params = {
           limit: Math.min(500, count - rows.length),
           ...(cursor ? { cursor } : {}),
-        })
+        }
+        const page = await client.session
+          .list({
+            ...params,
+            ...(includePromptTitles ? { includePromptTitles: true } : {}),
+          })
+          .catch((error: unknown) => {
+            if (
+              disposed ||
+              !includePromptTitles ||
+              !(error instanceof JsonRpcError) ||
+              error.code !== JSONRPC_ERRORS.INVALID_PARAMS ||
+              error.data.code !== 'UNKNOWN_KEY' ||
+              error.data.key !== 'includePromptTitles' ||
+              error.data.path !== '/includePromptTitles'
+            )
+              throw error
+            // Read-only compatibility retry; remember the downgrade for subsequent refreshes.
+            promptTitlesDowngraded = true
+            includePromptTitles = false
+            return client.session.list(params)
+          })
         rows.push(
           ...page.items
             .filter((row) => !row.archived)

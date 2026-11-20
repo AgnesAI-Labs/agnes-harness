@@ -1,7 +1,10 @@
 import { realpathSync } from 'node:fs'
 import type { JobsPort, SessionLister, SessionMetaRow } from '@agnes/daemon-foundation/local/ports'
 import { MemoryTickets } from '@agnes/daemon-foundation/storage/lister'
+import { MemorySessionPrincipalOwnership } from '@agnes/daemon-foundation/storage/session-ownership'
+import { withSessionPromptTitles } from '@agnes/daemon-foundation/storage/sidebar-sessions'
 import { sessionKey as canonicalSessionKey } from '@agnes/host'
+import type { EventEnvelope } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { openTestHost } from './host.js'
 
@@ -24,6 +27,70 @@ const meta = (sessionId: string): SessionMetaRow => ({
 })
 
 describe('authenticated session ownership RPC guard', () => {
+  it.each([true, false])(
+    'advertises available prompt labels and preserves ordinary title reads (supported=%s)',
+    async (supported) => {
+      const h = await openTestHost()
+      const ownership = new MemorySessionPrincipalOwnership()
+      ownership.bindNew('title-session', 'owner')
+      ownership.activateNew('title-session', 'owner')
+      let savedTitle: string | undefined
+      const scan = vi.fn(
+        async (): Promise<EventEnvelope[]> => [
+          {
+            v: 1,
+            type: 'user/message',
+            seq: 1,
+            id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+            actor: { id: 'owner', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+            origin: 'principal',
+            trust: 'untrusted',
+            lane: 'main',
+            ts: '2026-11-20T00:00:00Z',
+            data: { content: [{ type: 'text', text: '首条问题' }] },
+          },
+        ],
+      )
+      const lister = withSessionPromptTitles(
+        {
+          async list() {
+            return { items: [{ ...meta('title-session'), ...(savedTitle ? { title: savedTitle } : {}) }] }
+          },
+        },
+        supported ? scan : undefined,
+      )
+      const endpoint = h.endpoint({
+        lister,
+        sessionOwnership: ownership,
+        identity: { principalId: 'owner', authKind: 'local', credentialKind: 'local' },
+      })
+      try {
+        const initialized = (await endpoint.handle(initialize)) as {
+          result: { agentCapabilities: { _meta: { 'ai.agnes.harness': { sessionPromptTitles?: boolean } } } }
+        }
+        expect(initialized.result.agentCapabilities._meta['ai.agnes.harness'].sessionPromptTitles).toBe(
+          supported ? true : undefined,
+        )
+        const read = (params: unknown) =>
+          endpoint.handle({ jsonrpc: '2.0', id: 2, method: '_agnes/v1/session.list', params }) as Promise<{
+            result: { items: SessionMetaRow[] }
+          }>
+        for (const params of [{}, { includePromptTitles: false }])
+          expect((await read(params)).result.items[0]?.title).toBeUndefined()
+        expect(scan).not.toHaveBeenCalled()
+        expect((await read({ includePromptTitles: true })).result.items[0]?.title).toBe(
+          supported ? '首条问题' : undefined,
+        )
+        expect((await read({})).result.items[0]?.title).toBeUndefined()
+        savedTitle = '迟到的模型标题'
+        expect((await read({})).result.items[0]?.title).toBe('迟到的模型标题')
+      } finally {
+        lister.close()
+        await endpoint.close()
+        await h.close()
+      }
+    },
+  )
   it('binds sidebar queries to the authenticated principal and never enumerates legacy owner IDs', async () => {
     const h = await openTestHost()
     const groups = vi.fn(async () => ({ items: [], ready: true }))

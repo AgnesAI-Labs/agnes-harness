@@ -419,6 +419,7 @@ export function createLocalEndpoint(
   const cx = {
     host,
     registry,
+    sessionPromptTitles: opts.lister?.supportsPromptTitles === true,
     profileFeatures: [
       ...(host.profileServices ? ['services.profile.v1', 'store.owned.v1'] : []),
       ...(opts.packageAdmin?.service.features ?? []),

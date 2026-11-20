@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 
-import type { Client } from '@agnes/sdk/browser'
+import { META_KEY, rpcError } from '@agnes/protocol'
+import { type Client, JsonRpcError } from '@agnes/sdk/browser'
 import { homeNavigation } from '@agnes/web-client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { installBackendFrameBridge } from '../src/backends/frame-bridge.js'
@@ -8,8 +9,122 @@ import * as frameContext from '../src/backends/frame-context.js'
 import { bindHomeRouting } from '../src/pages/host.js'
 
 afterEach(() => {
+  vi.useRealTimers()
   homeNavigation.close()
   history.replaceState(null, '', '/')
+})
+
+it.each(['supported', 'old', 'mismatch', 'local'] as const)(
+  'negotiates display labels and caches an exact old-parameter downgrade (%s)',
+  async (mode) => {
+    vi.useFakeTimers()
+    const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue({
+      parentOrigin: location.origin,
+      ...(mode === 'local' ? {} : { remote: 'http://cloud.test:8443' }),
+    })
+    const publish = vi.spyOn(window.parent, 'postMessage')
+    const list = vi.fn(async (params: { includePromptTitles?: boolean }) => {
+      if (mode === 'mismatch' && params.includePromptTitles)
+        throw new JsonRpcError(
+          rpcError('INVALID_PARAMS', {
+            code: 'UNKNOWN_KEY',
+            key: 'includePromptTitles',
+            path: '/includePromptTitles',
+          }),
+        )
+      return { items: [] }
+    })
+    const client = {
+      initialize: async () => ({
+        capabilities: { _meta: { [META_KEY]: { sessionPromptTitles: mode !== 'old' } } },
+      }),
+      on: () => () => {},
+      session: { list, activity: async () => ({ items: [] }) },
+    } as unknown as Client
+    const stop = installBackendFrameBridge(client)
+    try {
+      window.dispatchEvent(new CustomEvent('agnes:backend-frame-ready'))
+      await vi.waitFor(() =>
+        expect(
+          publish.mock.calls.some(([message]) => message.kind === 'state' && message.snapshot.connected),
+        ).toBe(true),
+      )
+      expect(list.mock.calls.map(([params]) => params.includePromptTitles)).toEqual(
+        mode === 'mismatch' ? [true, undefined] : [mode === 'supported' ? true : undefined],
+      )
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(list.mock.calls.at(-1)?.[0].includePromptTitles).toBe(mode === 'supported' ? true : undefined)
+      expect(list).toHaveBeenCalledTimes(mode === 'mismatch' ? 3 : 2)
+    } finally {
+      stop()
+      publish.mockRestore()
+      frame.mockRestore()
+    }
+  },
+)
+
+it.each([
+  rpcError('CAPABILITY_DENIED'),
+  rpcError('INVALID_PARAMS', { code: 'UNKNOWN_KEY', key: 'limit', path: '/limit' }),
+  rpcError('INVALID_PARAMS', { code: 'TYPE', key: 'includePromptTitles', path: '/includePromptTitles' }),
+])('does not downgrade unrelated display-list errors ($data.code)', async (failure) => {
+  const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue({
+    parentOrigin: location.origin,
+    remote: 'http://cloud.test:8443',
+  })
+  const publish = vi.spyOn(window.parent, 'postMessage')
+  const list = vi.fn(async () => {
+    throw new JsonRpcError(failure)
+  })
+  const client = {
+    initialize: async () => ({ capabilities: { _meta: { [META_KEY]: { sessionPromptTitles: true } } } }),
+    on: () => () => {},
+    session: { list, activity: async () => ({ items: [] }) },
+  } as unknown as Client
+  const stop = installBackendFrameBridge(client)
+  try {
+    window.dispatchEvent(new CustomEvent('agnes:backend-frame-ready'))
+    await vi.waitFor(() =>
+      expect(publish.mock.calls.some(([message]) => message.kind === 'state' && message.snapshot.error)).toBe(
+        true,
+      ),
+    )
+    expect(list).toHaveBeenCalledTimes(1)
+  } finally {
+    stop()
+    publish.mockRestore()
+    frame.mockRestore()
+  }
+})
+
+it('does not start a display-list read when disposed during capability negotiation', async () => {
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const initialize = vi.fn(async () => {
+    await gate
+    return { capabilities: {} }
+  })
+  const list = vi.fn(async () => ({ items: [] }))
+  const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue({ parentOrigin: location.origin })
+  const stop = installBackendFrameBridge({
+    initialize,
+    on: () => () => {},
+    session: { list },
+  } as unknown as Client)
+  try {
+    window.dispatchEvent(new CustomEvent('agnes:backend-frame-ready'))
+    expect(initialize).toHaveBeenCalledTimes(1)
+    stop()
+    release()
+    await initialize.mock.results[0]?.value
+    expect(list).not.toHaveBeenCalled()
+  } finally {
+    stop()
+    release()
+    frame.mockRestore()
+  }
 })
 
 it.each([undefined, 'http://cloud.test:8443'])(
@@ -21,6 +136,7 @@ it.each([undefined, 'http://cloud.test:8443'])(
     const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue({ parentOrigin: location.origin })
     const stopRouting = bindHomeRouting()
     const client = {
+      initialize: async () => ({ capabilities: {} }),
       on: () => () => {},
       session: { list: async () => ({ items: [] }), activity: async () => ({ items: [] }) },
     } as unknown as Client

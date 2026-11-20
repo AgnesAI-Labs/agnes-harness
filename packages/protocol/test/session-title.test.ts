@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
 import {
+  applicationWorkText,
   type EventEnvelope,
   META_KEY,
   readSessionTitle,
@@ -7,6 +8,26 @@ import {
   validateEvent,
   validateMethod,
 } from '../src/index.js'
+
+it('separates bounded application work context while retaining ordinary JSON prompts', () => {
+  const request = {
+    applicationId: 'acme',
+    packageId: 'acme/kit',
+    actionId: 'review',
+    object: { type: 'ncr', id: 'NCR-018' },
+  }
+  const suffix = JSON.stringify(request)
+  expect(applicationWorkText(`调查当前对象\n\n${suffix}`)).toEqual({ text: '调查当前对象', request })
+  expect(applicationWorkText(suffix)).toEqual({ text: '', request })
+  for (const text of [
+    '{"hello":"world"}',
+    JSON.stringify({ ...request, extra: true }),
+    JSON.stringify({ ...request, object: { ...request.object, extra: true } }),
+    `问题\n\n{${' '.repeat(8192)}${suffix.slice(1)}`,
+    '问题\n\n{invalid',
+  ])
+    expect(applicationWorkText(text)).toEqual({ text })
+})
 
 const event: EventEnvelope = {
   v: 1,

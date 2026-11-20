@@ -6530,6 +6530,10 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "includePromptTitles": {
+          "type": "boolean",
+          "description": "Opt in to bounded display-only first-prompt titles when no saved title exists. Defaults to false. Requires initialize capability ai.agnes.harness.sessionPromptTitles."
+        },
         "q": {
           "type": "object",
           "additionalProperties": false,
