@@ -80,3 +80,6 @@ packages/package-manager/bundled-plugins/superagent/prompts/
 packages/package-manager/bundled-plugins/superagent/skills/
 packages/package-manager/bundled-plugins/superagent/locale/
 packages/package-manager/bundled-plugins/superagent/*.tmp/
+
+# Cloud image tooling is maintained in the private CNB cloud plugin repository.
+/tools/cloud-image/
