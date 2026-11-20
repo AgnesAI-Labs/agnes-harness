@@ -265,13 +265,13 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
     const entry = page.items.find((item) => item.id === PACKAGE)
     expect(entry, JSON.stringify(page.items.map((item) => item.id))).toMatchObject({
       id: PACKAGE,
-      version: '0.1.3',
+      version: '0.1.4',
       source: { type: 'file', ref: 'file:./bundled-plugins/jev-loop' },
       sourceId: 'builtin-plugins',
       // Optional: the UI offers uninstall for it, unlike the default-enabled helpers.
       presentation: { origin: 'official', optional: true },
       provides: ['loop'],
-      metadata: { locales: { 'zh-CN': { displayName: expect.any(String) } } },
+      metadata: { displayName: 'jev', locales: { 'zh-CN': { displayName: 'jev' } } },
     })
     expect(await loops('pre-install')).not.toContain('agnes.jev@0.1.0')
 
