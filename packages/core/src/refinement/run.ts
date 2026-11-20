@@ -66,7 +66,7 @@ export type RefinementRunDeps = {
   settings: () => { enabled: boolean; revision: string }
   /** The explicit planner model, frozen for the run. */
   target?: { route: string; model: string }
-  /** A manual run the user agreed to pay an unknown price for. */
+  /** A run the user agreed to pay an unknown price for: their own request, or a usage-billed service. */
   allowUnpriced?: boolean
 }
 

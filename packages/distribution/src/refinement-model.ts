@@ -13,13 +13,20 @@ export const isAllowedRefinementBaseUrl = (
   endpoints: readonly string[] = REFINEMENT_ENDPOINTS,
 ): boolean => endpoints.includes(baseUrl)
 
-/** Deployment-owned review service. This route belongs only to the private maintenance provider. */
+/**
+ * Deployment-owned review service. This route belongs only to the private maintenance provider.
+ *
+ * The service bills the person's own key by usage, at a price this deployment does not know. The route
+ * claims no rate (a rate that is not a number is no price), so the ledger records a review's tokens
+ * without credits, and a manual review asks the person to accept the unknown price. Automatic and
+ * model reviews were accepted when the person turned the service on (the host's `usageBilled` target).
+ */
 export const REFINEMENT_SERVICE = Object.freeze({
   route: 'task-experience',
   api: 'openai-completions',
   contextWindow: 65_536,
   maxTokens: 4_096,
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  cost: { input: Number.NaN, output: Number.NaN, cacheRead: Number.NaN, cacheWrite: Number.NaN },
 })
 
 export function createRefinementProvider(

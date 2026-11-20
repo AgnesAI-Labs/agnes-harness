@@ -72,8 +72,10 @@ it('opens RSI from the sidebar and applies settings and workspace skill actions 
         throw new Error(`Unexpected page call: ${method}`)
     }
   })
+  const replacement = { ...credential, id: 'secret://generic/00000000-0000-4000-8000-000000000001' }
+  const created = [credential, replacement]
   const fetch = vi.fn(async (url: string, _init: RequestInit) =>
-    Response.json(url === '/admin/api/credentials/create' ? credential : {}),
+    Response.json(url === '/admin/api/credentials/create' ? created.shift() : {}),
   )
   vi.stubGlobal('fetch', fetch)
   const unregister = registerBuiltinHomeEntries()
@@ -133,6 +135,20 @@ it('opens RSI from the sidebar and applies settings and workspace skill actions 
     enabled.click()
     await vi.waitFor(() => expect(enabled.getAttribute('aria-checked')).toBe('false'))
     expect(saved.at(-1)?.settings).toMatchObject({ enabled: false, mode: 'auto' })
+    // Replacing the key binds the new one, then asks the credential store to delete the old one; the
+    // request is not forced, so a key something else uses is kept.
+    getByRole(page, 'button', { name: 'Replace key' }).click()
+    fireEvent.input(await vi.waitFor(() => getByLabelText(page, 'Service key')), {
+      target: { value: 'synthetic-rsi-replacement' },
+    })
+    getByRole(page, 'button', { name: 'Save key' }).click()
+    await vi.waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        '/admin/api/credentials/delete',
+        expect.objectContaining({ method: 'POST', body: JSON.stringify({ id: credential.id }) }),
+      ),
+    )
+    expect(saved.at(-1)?.settings).toMatchObject({ credentialRef: replacement.id, enabled: false })
 
     const skills = getByTestId(page, 'refinement-saved-skills')
     await vi.waitFor(() => expect(getByText(skills, skill.name)).toBeTruthy())

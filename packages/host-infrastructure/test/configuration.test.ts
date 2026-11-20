@@ -1845,6 +1845,25 @@ it('inherits image input from the matching official catalogue, else from the cat
   expect(gateway.models[1]).toMatchObject({ contextWindow: 128_000, maxTokens: 8_192 })
 })
 
+it('leaves a saved account on an arbitrary gateway as it was saved, and infers only while listing', async () => {
+  const service = createConfigurationService({
+    home: await home(),
+    profile: 'local-dev',
+    request: async () => Response.json({ data: [{ id: 'kimi-k3' }] }),
+  })
+  const gateway = { providerId: 'openai-compatible', baseUrl: 'https://gateway.invalid/v1' }
+  // An account saved before inputs were inferred by id declares none for its model.
+  await service.save({
+    ...gateway,
+    model: 'kimi-k3',
+    models: [{ id: 'kimi-k3', name: 'kimi-k3', contextWindow: 128_000, maxTokens: 8_192 }],
+  } as never)
+  expect((await service.get()).accounts?.[0]?.models[0]).not.toHaveProperty('input')
+  expect((await service.profileInput()).provider?.routes?.[0]?.models?.[0]?.input).toEqual(['text'])
+  // Fetching the list again offers what the catalogues know, for the person to save.
+  expect((await service.test(gateway)).models[0]?.input).toEqual(['text', 'image'])
+})
+
 it('projects installed input types and permits only named per-model input overrides', async () => {
   const entry = getApiKeyProvider('openai')!
   const record = (await entry.createAdapter()).models(entry.route).find((m) => m.input.includes('image'))!

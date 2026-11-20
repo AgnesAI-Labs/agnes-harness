@@ -12,8 +12,9 @@ export function RsiPage({ context }: { context: UiExtensionContext }) {
     () => ({
       read: () => data.call('_agnes/v1/refinement.get', {}),
       models: () => data.call('_agnes/v1/refinement.models', {}),
-      // Credential writes go through the Web admin endpoint.
+      // Credential writes go through the Web admin endpoint, which refuses to delete a key in use.
       createKey: async (label, value) => (await new CredentialsApi().create(label, value)).id,
+      deleteKey: (id) => new CredentialsApi().delete({ id }),
       save: (settings, expectedRevision) =>
         data.call('_agnes/v1/refinement.save', { settings, expectedRevision }),
       savedSkills: {

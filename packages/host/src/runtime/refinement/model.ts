@@ -7,18 +7,21 @@ export function refinementModel(store: RefinementSettingsStore, clock: () => num
   return {
     target() {
       const { settings } = store.current()
-      return settings.enabled ? { route: REFINEMENT_SERVICE.route, model: settings.model } : undefined
+      // The service bills the person's own key by usage; turning it on agreed to that unknown price.
+      return settings.enabled
+        ? { route: REFINEMENT_SERVICE.route, model: settings.model, usageBilled: true as const }
+        : undefined
     },
     provider(): Provider | undefined {
       const { settings, revision, modelOption } = store.current()
       if (!settings.enabled) return undefined
       if (cached?.revision === revision) return cached.provider
-      // Re-read at dispatch, including for a provider acquired before rotation or deletion.
+      // Resolved again at dispatch, including for a provider acquired before rotation or deletion: one
+      // resolution gives both the settings and the key, so a request reads the key file at most once.
       const key = () => {
-        const now = store.current()
-        const value =
-          now.settings.enabled && now.revision === revision && store.serviceKey(settings.credentialRef)
-        if (!value) throw new Error('Task experience service key unavailable')
+        const { snapshot: now, key: value } = store.currentWithKey()
+        if (!value || !now.settings.enabled || now.revision !== revision)
+          throw new Error('Task experience service key unavailable')
         return value
       }
       const provider = createRefinementProvider(clock, key, settings.baseUrl, {

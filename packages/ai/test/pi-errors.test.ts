@@ -78,6 +78,35 @@ describe('classifyPiError', () => {
     })
   })
 
+  it('keeps a throttle worded as quota retryable, and waits as long as it asks', () => {
+    // Gemini and Vertex answer a per-minute limit with quota words; seconds later it succeeds.
+    const gemini = classifyPiError(
+      msg(
+        '429 You exceeded your current quota, please check your plan and billing details. Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 10. Please retry in 41.53s.',
+      ),
+      undefined,
+      429,
+    )
+    expect(gemini).toMatchObject({ code: 'RATE_LIMIT', retryable: true, retryAfterMs: 41530 })
+    expect(gemini.message).not.toContain('note=')
+    // DashScope's throttle names an allocated quota.
+    expect(
+      classifyPiError(msg('429 Allocated quota exceeded, please increase your quota limit.')),
+    ).toMatchObject({
+      code: 'RATE_LIMIT',
+      retryable: true,
+    })
+    expect(classifyPiError(msg('429 Requests rate limit exceeded, quota per minute reached')).code).toBe(
+      'RATE_LIMIT',
+    )
+    // An account that has run out stays out until someone tops it up.
+    expect(
+      classifyPiError(msg('429 You exceeded your current quota, please check your plan and billing details.'))
+        .code,
+    ).toBe('QUOTA')
+    expect(classifyPiError(msg('403 用户额度不足，剩余额度: ＄0.000000')).code).toBe('QUOTA')
+  })
+
   it('keeps a quota note only when it is short and carries nothing shaped like a credential', () => {
     expect(quotaNote('402 insufficient_user_quota')).toBe('insufficient_user_quota')
     expect(quotaNote('403 insufficient quota for sk-live1234567890')).toBeUndefined()

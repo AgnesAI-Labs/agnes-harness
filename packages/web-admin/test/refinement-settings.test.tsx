@@ -134,6 +134,14 @@ it('the settings panel saves with revision and shows the permission text', async
     'Applies to sessions opened after you turn it on; sessions already open are not affected. Turning it off applies to all sessions at once. To keep lessons for later sessions, also turn workspace memory on (Settings → General → Personalization → Memory: "Ask me first" or "Automatic"); while it is off, lessons last only for the session they were learned in.',
   )
   expect(help?.getAttribute('tabindex')).toBe('0')
+  // How the reviews are paid for, beside the switch that agrees to it.
+  const billing = field(host, 'refinement-billing')
+  expect(billing.closest('.agnes-settings-item')).toBe(
+    field(host, 'refinement-enabled').closest('.agnes-settings-item'),
+  )
+  expect(billing.textContent).toBe(
+    'Reviews use your llm.sg key and are billed by usage. AGH does not know the price; the token budget limits how much each session uses.',
+  )
   expect(field(host, 'refinement-approvals').textContent).toMatch(/^More command approvals: .*more commands/)
 
   await toggle(host, 'refinement-enabled')
@@ -181,10 +189,16 @@ it.each([true, false])('switches service addresses with the saved key (keeps mod
   expect(modelSelect.disabled).toBe(true)
 
   await act(async () => release())
-  expect(modelSelect.value).toBe(selected)
+  // The saved model stays saved, offered or not: only the person's own choice replaces it.
+  expect(modelSelect.value).toBe(model)
+  expect(api.save).toHaveBeenCalledTimes(1)
+  if (!keep) {
+    expect(host.textContent).toContain(`The saved model ${model} is not in the service's current list.`)
+    expect(enable.disabled).toBe(true)
+    await choose(host, 'refinement-model', selected)
+    expect(api.save).toHaveBeenLastCalledWith({ ...paused, model: selected }, REV1)
+  }
   expect(enable.disabled).toBe(false)
-  if (keep) expect(api.save).toHaveBeenCalledTimes(1)
-  else expect(api.save).toHaveBeenLastCalledWith({ ...paused, model: selected }, REV1)
   await toggle(host, 'refinement-enabled')
   expect(api.save).toHaveBeenLastCalledWith({ ...paused, enabled: true, model: selected }, keep ? REV1 : REV2)
 })
@@ -205,11 +219,13 @@ it('shows the sole service address before a key is saved', async () => {
   expect(api.models).not.toHaveBeenCalled()
 })
 
-it('requires a saved service key, recovers a missing key and can rotate it without showing its value', async () => {
+it('requires a saved service key, recovers a missing key and rotates it without showing its value, deleting the key it replaced', async () => {
   for (const missing of [false, true]) {
     const api = fakeApi(
       missing ? { ...OFF, credentialRef, model, enabled: true } : DEFAULT_REFINEMENT_SETTINGS,
     )
+    const deleteKey = vi.fn(async (_ref: string) => {})
+    api.deleteKey = deleteKey
     const host = await mount(api)
     if (missing) {
       expect((field(host, 'refinement-enabled') as HTMLButtonElement).disabled).toBe(false)
@@ -252,22 +268,68 @@ it('requires a saved service key, recovers a missing key and can rotate it witho
           ?.click(),
       )
       expect(create).toHaveBeenCalledWith('Task experience service key', 'fixture-key')
-      expect(api.save).toHaveBeenCalledWith(
-        { enabled: false, mode: 'manual', credentialRef: ref, ...(index || missing ? { model } : {}) },
-        index === 0 ? REV0 : missing ? REV1 : REV2,
-      )
+      // Only the key is bound; a model is saved when the person picks one or turns learning on.
+      expect(api.save).toHaveBeenCalledTimes(index + 1)
       expect(api.save).toHaveBeenLastCalledWith(
-        { enabled: false, mode: 'manual', credentialRef: ref, model },
-        index ? (missing ? REV1 : REV2) : missing ? REV0 : REV1,
+        { enabled: false, mode: 'manual', credentialRef: ref, ...(missing ? { model } : {}) },
+        index ? REV1 : REV0,
       )
+      // The key it replaced is deleted once the settings point to the new one.
+      const replaced = index ? 'secret://generic/first-review' : missing ? credentialRef : undefined
+      if (replaced) {
+        expect(deleteKey).toHaveBeenLastCalledWith(replaced)
+        expect(deleteKey.mock.invocationCallOrder.at(-1)).toBeGreaterThan(
+          api.save.mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY,
+        )
+      } else expect(deleteKey).not.toHaveBeenCalled()
       expect((field(host, 'refinement-model') as HTMLSelectElement).value).toBe(model)
       expect(toggle.disabled).toBe(false)
       expect(host.querySelector('input[type=password]')).toBeNull()
     }
+    // Turning learning on saves the model the form proposed.
+    await act(async () => toggle.click())
+    expect(api.save).toHaveBeenLastCalledWith(
+      { enabled: true, mode: 'manual', credentialRef: replace, model },
+      REV2,
+    )
   }
 })
 
-it('handles rejected keys, retries model discovery and persists the default and an explicit selection', async () => {
+it('keeps the replaced key until the new one is bound, and never deletes a key it could not replace', async () => {
+  const api = fakeApi()
+  const deleteKey = vi.fn(async (_ref: string) => {
+    throw new Error('referenced')
+  })
+  api.deleteKey = deleteKey
+  api.createKey = vi.fn(async () => 'secret://generic/new-review')
+  api.save.mockRejectedValueOnce(new Error('down'))
+  const host = await mount(api)
+  const click = (name: string) =>
+    act(async () =>
+      Array.from(host.querySelectorAll('button'))
+        .find((b) => b.textContent === name)
+        ?.click(),
+    )
+  await click('Replace key')
+  const input = host.querySelector<HTMLInputElement>('input[type=password]')
+  if (!input) throw new Error('Missing service-key input')
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'fixture-key')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await click('Save key')
+  expect(api.save).toHaveBeenCalledTimes(1)
+  expect(deleteKey).not.toHaveBeenCalled()
+  // The retried save binds the new key; only then is the old one offered for deletion. The daemon
+  // refuses a key something else still uses, and that refusal is not the binding's failure.
+  await toggle(host, 'settings-save-retry')
+  expect(api.save).toHaveBeenLastCalledWith({ ...OFF, credentialRef: 'secret://generic/new-review' }, REV0)
+  expect(deleteKey).toHaveBeenCalledExactlyOnceWith(credentialRef)
+  await act(async () => {})
+  expect(query(host, 'settings-save-failed')).toBeNull()
+})
+
+it('handles rejected keys, retries model discovery and saves only an explicit selection', async () => {
   const api = fakeApi({ ...OFF, model: 'retired-review' })
   api.models
     .mockRejectedValueOnce(
@@ -295,16 +357,39 @@ it('handles rejected keys, retries model discovery and persists the default and 
   expect(host.textContent).toContain('The service returned no chat models.')
   expect(enabled.disabled).toBe(true)
   await retry()
-  expect(modelSelect.value).toBe(model)
-  expect(modelSelect.selectedOptions[0]?.textContent).toContain('Company Review A')
-  expect(api.save).toHaveBeenLastCalledWith(OFF, REV0)
-  expect(enabled.disabled).toBe(false)
+  expect(modelSelect.value).toBe('retired-review')
+  expect(api.save).not.toHaveBeenCalled()
+  expect(enabled.disabled).toBe(true)
   await choose(host, 'refinement-model', another)
-  expect(api.save).toHaveBeenLastCalledWith({ ...OFF, model: another }, REV1)
+  expect(api.save).toHaveBeenLastCalledWith({ ...OFF, model: another }, REV0)
   expect(modelSelect.value).toBe(another)
+  expect(modelSelect.selectedOptions[0]?.textContent).toContain('Company Review B')
+  expect(enabled.disabled).toBe(false)
   await toggle(host, 'refinement-enabled')
-  expect(api.save).toHaveBeenLastCalledWith({ ...OFF, model: another, enabled: true }, REV2)
+  expect(api.save).toHaveBeenLastCalledWith({ ...OFF, model: another, enabled: true }, REV1)
 })
+
+it.each([false, true])(
+  'never switches a saved model the service no longer offers, and saves nothing (learning on: %s)',
+  async (enabled) => {
+    const stored = { ...OFF, model: 'retired-review', enabled }
+    const api = fakeApi(stored)
+    const host = await mount(api)
+    await macrotask()
+    const modelSelect = field(host, 'refinement-model') as HTMLSelectElement
+    expect(modelSelect.value).toBe('retired-review')
+    expect(modelSelect.selectedOptions[0]?.textContent).toBe('retired-review (not offered now)')
+    expect(host.textContent).toContain(
+      "The saved model retired-review is not in the service's current list. It stays as saved; choose another model to change it.",
+    )
+    expect(field(host, 'refinement-enabled').getAttribute('aria-checked')).toBe(String(enabled))
+    expect(api.save).not.toHaveBeenCalled()
+    document.documentElement.lang = 'zh-CN'
+    await act(async () => {})
+    expect(modelSelect.selectedOptions[0]?.textContent).toBe('retired-review（目前未提供）')
+    expect(host.textContent).toContain('已保存的模型 retired-review 不在该服务当前的列表中。')
+  },
+)
 
 it('a revision conflict keeps its banner and reports no success, once the real queue has run', async () => {
   const published = feedbackSpy()
@@ -404,6 +489,9 @@ it('shows the section in Chinese', async () => {
     '打开后，之后新开的会话生效；已经打开的会话不受影响。关闭立即对所有会话生效。要把经验留给之后的会话，还需打开工作区记忆（设置 → 通用 → 个性化 → 记忆：「先问我」或「自动」）；记忆为「关闭」时，经验只在学到它的会话里有效。',
   )
   expect(text).not.toContain('重启')
+  expect(field(host, 'refinement-billing').textContent).toBe(
+    '复盘使用你的 llm.sg 密钥，按实际用量计费。AGH 不知道价格；每个会话的用量受 token 预算限制。',
+  )
   expect(field(host, 'refinement-approvals').textContent).toContain('可能出现更多命令审批：')
   expect(field(host, 'refinement-permissions').textContent).not.toContain('后续版本')
   expect(field(host, 'refinement-allows-install').textContent).toContain('纯指令')

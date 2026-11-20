@@ -390,11 +390,14 @@ describe('the refinement loop in an assembled host', () => {
             revision,
             fallback,
           )
-          const review = await requestRefinement(session)
+          // The service bills the person's key at a price nobody here knows: their own review waits for
+          // them to accept it, every time.
+          await expect(requestRefinement(session)).rejects.toMatchObject({ data: { reason: 'unpriced' } })
+          const review = await requestRefinement(session, undefined, undefined, true)
           let queued: Awaited<ReturnType<typeof requestRefinement>>
           try {
             await until('the first review reaches the gateway', () => planner().length === 1)
-            queued = await requestRefinement(session)
+            queued = await requestRefinement(session, undefined, undefined, true)
             expect(session.state.refinementRuns.get(queued.runId)?.state).toBe('queued')
             // The test key is already in the local store when the owner changes addresses.
             await createCredentialStore({ root: dataDir }).putGeneric(credentialRef, alternateKey, {
@@ -432,7 +435,7 @@ describe('the refinement loop in an assembled host', () => {
             reason: 'settings-changed',
           })
           await turn(session, 'Check the release checklist.')
-          const next = await requestRefinement(session)
+          const next = await requestRefinement(session, undefined, undefined, true)
           await until(
             'the second review ends',
             () => session.state.refinementRuns.get(next.runId)?.state === 'no-op',
@@ -524,6 +527,12 @@ describe('the refinement loop in an assembled host', () => {
             'no-op',
           ])
           expect(planner()).toHaveLength(1)
+          // The person's key is billed by usage at a price nobody here knows: the review's cost row
+          // records its tokens, and neither a made-up zero nor NaN credits.
+          const costs = (await scan(session, 'cost/ledger')).filter((row) => row.lane === 'refinement')
+          expect(costs).toHaveLength(1)
+          expect(costs[0]?.data).not.toHaveProperty('credits')
+          expect(costs[0]?.data).toMatchObject({ purpose: 'side-call', creditSource: 'estimated' })
           expect(await scan(session, ['harness/refine', 'harness/entry'])).toEqual([])
           expect(entries(session)).toEqual([])
           await turn(session, 'Anything else?')
@@ -576,7 +585,12 @@ describe('the refinement loop in an assembled host', () => {
           async (t) => {
             session = t.session
             await turn(t.session, 'Read notes.txt and tell me what it says.')
-            const { runId } = await requestRefinement(t.session, 'where the notes file lives')
+            const { runId } = await requestRefinement(
+              t.session,
+              'where the notes file lives',
+              undefined,
+              true,
+            )
             await until('the planning call is sent', () => plannerWaiting)
             expect(t.session.state.refinementRuns.get(runId)?.state).toBe('planning')
             // Not blocked: this turn runs to its end while the planning call was unanswered at its start.

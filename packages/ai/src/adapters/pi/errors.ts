@@ -5,6 +5,13 @@ export type Classified = { code: AiErrorCode; message: string; retryable: boolea
 
 const QUOTA_TEXT =
   /insufficient[_ ](?:user[_ ])?(?:credit|quota|balance)|quota[_ ]exceeded|exceeded your current quota|额度不足|余额不足/i
+/**
+ * Quota words that describe a throttle: a per-minute limit (Gemini, Vertex: "Quota exceeded for
+ * metric … Please retry in 41s"), an allocated rate (DashScope: "Allocated quota exceeded") or a
+ * rate limit. Both lookaheads must hold, anywhere in the text.
+ */
+const THROTTLED_QUOTA =
+  /^(?=[\s\S]*(?:quota|额度))(?=[\s\S]*(?:retry (?:in|after)|retry-after|per[ _-]?minute|throttl|allocated quota|rate[ _-]?limit))/i
 
 /**
  * Failure text to a code and a verdict on asking again, in order. The order is the meaning: an
@@ -16,7 +23,9 @@ const TABLE: Array<[RegExp, AiErrorCode, boolean]> = [
   // An account out of quota is read from its words before its status: gateways answer it with 403
   // (llm.sg: "用户额度不足") or 429 (OpenAI: "You exceeded your current quota"), and calling it a
   // rejected key or a busy server sends the reader to the wrong fix or retries a request that
-  // cannot succeed until someone tops the account up.
+  // cannot succeed until someone tops the account up. A throttle worded as quota is not that: it
+  // clears in seconds, so it stays a retryable rate limit and is read first.
+  [THROTTLED_QUOTA, 'RATE_LIMIT', true],
   [QUOTA_TEXT, 'QUOTA', false],
   // `no api key` is the wire library refusing to send an unauthenticated request at all, which is a
   // route that was never going to work rather than a moment when the far end was busy. It used to
@@ -70,10 +79,10 @@ export function classifyPiError(msg: AssistantMessage, contextWindow?: number, s
   return { code: 'TRANSPORT', message: redact(text), retryable: false }
 }
 
-/** What the far end asked us to wait, when it said; a second otherwise. */
+/** What the far end asked us to wait ("retry-after: 7", "retry in 41.5s"), when it said; a second otherwise. */
 function retryAfterMs(text: string): number {
-  const m = /retry[- ]after:?\s*(\d+)/i.exec(text)
-  return m ? Number(m[1]) * 1000 : 1000
+  const m = /retry(?:[- ]after:?| in)\s*(\d+(?:\.\d+)?)/i.exec(text)
+  return m ? Math.ceil(Number(m[1]) * 1000) : 1000
 }
 
 /**

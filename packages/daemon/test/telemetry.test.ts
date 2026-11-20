@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -59,6 +59,7 @@ type Trace = {
   events: { seq: number; type: string; data: unknown }[]
 }
 type Capture = {
+  at: number
   body: unknown
   decodedBytes: number
   wireBytes: number
@@ -90,6 +91,7 @@ async function receiver() {
     const schema = req.headers['x-agh-schema-version']
     const idempotency = req.headers['x-idempotency-key']
     received[path].push({
+      at: Date.now(),
       body,
       decodedBytes: decoded.byteLength,
       wireBytes: raw.byteLength,
@@ -149,7 +151,11 @@ const accounts = [
   },
 ] as const satisfies readonly ConfigAccount[]
 
-async function fixture(env: NodeJS.ProcessEnv = { VITEST: 'true' }, allowInTest = true) {
+async function fixture(
+  env: NodeJS.ProcessEnv = { VITEST: 'true' },
+  allowInTest = true,
+  configuredAccounts: readonly ConfigAccount[] = accounts,
+) {
   const home = await homeDir()
   const sessionCwd = await mkdtemp(join(tmpdir(), 'agh-telemetry-workspace-'))
   cleanups.push(() => rm(sessionCwd, { recursive: true, force: true }))
@@ -188,13 +194,14 @@ async function fixture(env: NodeJS.ProcessEnv = { VITEST: 'true' }, allowInTest 
       AGH_TELEMETRY_ENDPOINT: server.endpoint,
       AGH_TELEMETRY_FLUSH_MS: '60000',
       AGH_TELEMETRY_TRACE_DEBOUNCE_MS: '5',
+      AGH_TELEMETRY_RETRY_MS: '20',
       ...env,
     },
     scan,
     table,
     configuration: {
       get: async () => ({
-        accounts: [...accounts],
+        accounts: [...configuredAccounts],
         provider: null,
         profile: 'test',
         configured: true,
@@ -205,9 +212,9 @@ async function fixture(env: NodeJS.ProcessEnv = { VITEST: 'true' }, allowInTest 
     credentials: () => [CREDENTIAL],
     paths: () => ({ privatePaths: ['/private/var/synthetic-agh-state'], workspacePaths: [] }),
   }
-  const telemetry = await openTelemetry(options)
+  let telemetry = await openTelemetry(options)
   cleanups.push(() => telemetry.dispose())
-  function row(type: string, data: EventEnvelope['data'] = {}, key = KEY) {
+  function append(type: string, data: EventEnvelope['data'], key: string, at: number, lane = 'main') {
     let rows = ledger.get(key)
     if (!rows) {
       rows = []
@@ -218,25 +225,66 @@ async function fixture(env: NodeJS.ProcessEnv = { VITEST: 'true' }, allowInTest 
       type,
       seq,
       data,
-      ts: new Date(clock()).toISOString(),
+      ts: new Date(at).toISOString(),
       id: String(seq).padStart(26, '0'),
       origin: 'system',
       trust: 'trusted',
       actor,
-      lane: 'main',
+      lane,
     } as EventEnvelope
     rows.push(entry)
-    telemetry.observe(key, entry, () => ({ cwd: sessionCwd }))
-    return seq
+    return entry
   }
-  return { home, sessionCwd, server, table, telemetry, options, row, scan }
+  function row(type: string, data: EventEnvelope['data'] = {}, key = KEY, lane = 'main') {
+    const entry = append(type, data, key, clock(), lane)
+    telemetry.observe(key, entry, () => ({ cwd: sessionCwd }))
+    return entry.seq
+  }
+  /** A row committed an hour ago that no running uploader observed. */
+  function history(type: string, data: EventEnvelope['data'] = {}, key = KEY) {
+    return append(type, data, key, clock() - 3_600_000).seq
+  }
+  /** A row a daemon committed while it was not observing for upload, such as one with telemetry off by env. */
+  function unobserved(type: string, data: EventEnvelope['data'] = {}, key = KEY) {
+    return append(type, data, key, clock()).seq
+  }
+  /** Close this daemon's telemetry and open the same home again, as a daemon restart does. */
+  async function restart(env: NodeJS.ProcessEnv = {}) {
+    await telemetry.dispose()
+    telemetry = await openTelemetry({ ...options, env: { ...options.env, ...env } })
+    cleanups.push(() => telemetry.dispose())
+    return telemetry
+  }
+  return {
+    home,
+    sessionCwd,
+    server,
+    table,
+    get telemetry() {
+      return telemetry
+    },
+    options,
+    row,
+    history,
+    unobserved,
+    restart,
+    scan,
+  }
 }
 
-const acked = (table: TableHandle) =>
+const acked = (table: TableHandle, key = KEY) =>
   table.get<{ last_acked_seq: number }>(
     'SELECT last_acked_seq FROM trace_upload_watermarks WHERE session_key = ?',
-    [KEY],
+    [key],
   )?.last_acked_seq
+const seqs = (trace: Trace) => trace.events.map((event) => event.seq)
+
+/** Letters and spaces drawn at random: no secret shape, and close to incompressible for gzip. */
+function randomWords(bytes: number): string {
+  return Buffer.from(
+    randomBytes(bytes).map((byte, index) => (index % 8 === 7 ? 32 : 97 + (byte % 26))),
+  ).toString('latin1')
+}
 
 it('uploads complete gzip ranges, scrubs the trace copy, and hot-disables trace scanning independently of activity', async () => {
   const { home, sessionCwd, server, table, telemetry, options, row, scan } = await fixture()
@@ -416,6 +464,105 @@ it('uploads complete gzip ranges, scrubs the trace copy, and hot-disables trace 
     expect((await stat(join(home, 'telemetry.json'))).mode & 0o777).toBe(0o600)
 })
 
+const relayAccountId = 'fixture-relay-id'
+const relayLabel = 'fixture-relay-label'
+const relayRoute = `account-${relayAccountId}`
+const apiUrl = 'https://api.llm.sg/v1'
+const vendorModel = 'anthropic/claude-sonnet-4-6'
+const minimaxModel = 'minimax/minimax-m2.5'
+
+it.each([
+  [apiUrl, relayRoute, undefined, vendorModel, 'llm-sg', vendorModel, 'api_key'],
+  [apiUrl, `${relayRoute}-a1b2c3`, 'api-key', minimaxModel, 'llm-sg', minimaxModel, 'api_key'],
+  ['https://llm.sg/v1', relayRoute, 'api-key', 'openai/gpt-5.4', 'llm-sg', 'openai/gpt-5.4', 'api_key'],
+  ['https://API.LLM.SG/v1', relayRoute, 'oauth', vendorModel, 'llm-sg', vendorModel, 'oauth'],
+  ['https://notllm.sg/v1', relayRoute, 'api-key', vendorModel, 'openai-compatible', 'custom', 'api_key'],
+  [
+    'http://private-second.invalid',
+    relayRoute,
+    'api-key',
+    minimaxModel,
+    'openai-compatible',
+    'custom',
+    'api_key',
+  ],
+  ['invalid-url', relayRoute, 'api-key', vendorModel, 'openai-compatible', 'custom', 'api_key'],
+  [apiUrl, relayRoute, 'api-key', 'sk-fixture-123456789abcdef', 'llm-sg', 'custom', 'api_key'],
+  [apiUrl, relayRoute, 'api-key', relayLabel, 'llm-sg', 'custom', 'api_key'],
+  [apiUrl, relayRoute, 'api-key', relayAccountId, 'llm-sg', 'custom', 'api_key'],
+  [apiUrl, relayRoute, 'api-key', 'C:/fixture/model', 'llm-sg', 'custom', 'api_key'],
+] as const)(
+  'reports relay %s via %s (%s) with model %s as %s/%s (%s)',
+  async (baseUrl, route, authType, model, provider_id, model_id, auth_type) => {
+    const account = {
+      accountId: relayAccountId,
+      label: relayLabel,
+      route: relayRoute,
+      providerId: 'openai-compatible',
+      ...(authType ? { authType } : {}),
+      baseUrl,
+      model,
+      models: [],
+      enabled: true,
+      credentialConfigured: true,
+    } satisfies ConfigAccount
+    const { home, server, table, telemetry, row } = await fixture(undefined, undefined, [account])
+    telemetry.sessionCreated(KEY, 'web')
+    row('session/start', { key: KEY })
+    row('turn/start', { trigger: 'prompt' })
+    const request = row('request/sent', { baseUrl, model: { route, id: model } })
+    const cost = row('cost/ledger', { route, model, purpose: 'inference', tokens: { input: 1 } })
+    const end = row('turn/end', { reason: 'completed' })
+    await vi.waitFor(() => expect(acked(table())).toBe(end))
+    await telemetry.dispose()
+
+    const install = (await readFile(join(home, 'telemetry-id'), 'utf8')).trim()
+    const safeRoute = `account-${createHash('sha256').update(`${install}:${route}`).digest('hex').slice(0, 8)}`
+    const trace = traceAt(server.traces, 0)
+    const provider = { provider_id, auth_type }
+    expect(trace.route_providers).toEqual({ [safeRoute]: provider })
+    expect(trace.events.find((event) => event.seq === request)?.data).toMatchObject({
+      baseUrl: '<redacted>',
+      model: { route: safeRoute, id: model_id },
+    })
+    expect(trace.events.find((event) => event.seq === cost)?.data).toMatchObject({
+      route: safeRoute,
+      model: model_id,
+    })
+    expect(server.reports[0]?.body).toMatchObject({
+      models: [{ ...provider, model_id, turns: 1, input_tokens: 1 }],
+    })
+  },
+)
+
+it('attributes dedicated task experience costs to llm.sg without an account or request receipt', async () => {
+  const { server, table, telemetry, row } = await fixture()
+  const route = 'task-experience'
+  row('session/start', { key: KEY })
+  row('turn/start', { trigger: 'prompt' })
+  row(
+    'cost/ledger',
+    { route, model: minimaxModel, purpose: 'side-call', tokens: { input: 12, output: 3 } },
+    KEY,
+    'refinement',
+  )
+  const end = row('turn/end', { reason: 'completed' })
+  await vi.waitFor(() => expect(acked(table())).toBe(end))
+  await telemetry.dispose()
+
+  const trace = traceAt(server.traces, 0)
+  const provider = { provider_id: 'llm-sg', auth_type: 'api_key' }
+  expect(trace.route_providers).toEqual({ [route]: provider })
+  expect(trace.events.find((event) => event.type === 'cost/ledger')?.data).toMatchObject({
+    route,
+    model: minimaxModel,
+    purpose: 'side-call',
+  })
+  expect(server.reports[0]?.body).toMatchObject({
+    models: [{ ...provider, model_id: minimaxModel, turns: 1, input_tokens: 12, output_tokens: 3 }],
+  })
+})
+
 it('splits an oversized backlog at complete turn boundaries and acknowledges each batch', async () => {
   const { server, row, table, telemetry } = await fixture()
   await telemetry.admin({ settings: { analyticsEnabled: false } })
@@ -443,23 +590,228 @@ it('splits an oversized backlog at complete turn boundaries and acknowledges eac
   expect(from).toBe(head + 1)
 })
 
-it('requires an affirmative ACK and retries the complete range on a later boundary', async () => {
+it('requires an affirmative ACK and retries the complete range, extended by a later boundary', async () => {
   const { server, row, table } = await fixture()
   server.acknowledge(false)
   row('session/start', { key: KEY, preset: 'base' })
   row('turn/start', { turn: 1, trigger: 'prompt' })
   const end = row('turn/end', { reason: 'completed' })
-  await vi.waitFor(() => expect(server.traces).toHaveLength(1))
+  await vi.waitFor(() => expect(server.traces.length).toBeGreaterThanOrEqual(2))
+  expect(acked(table())).toBeUndefined()
+  const feedback = row('x/feedback/item', { target: { turn: 1 }, rating: 'up' })
+  server.acknowledge(true)
+  await vi.waitFor(() => expect(acked(table())).toBe(feedback))
+  const ranges = server.traces.map((capture) => (capture.body as Trace).watermark)
+  expect(ranges.at(-1)).toEqual({ from_seq: 1, to_seq: feedback, session_head_seq: feedback })
+  for (const range of ranges) {
+    expect(range.from_seq).toBe(1)
+    expect([end, feedback]).toContain(range.to_seq)
+  }
+})
+
+it('never uploads rows committed while Session Log upload was not enabled for this home', async () => {
+  const { server, row, history, restart, table, telemetry } = await fixture()
+  await telemetry.admin({ settings: { analyticsEnabled: false } })
+  // This session already had history when the daemon that uploads Session Logs first started.
+  history('session/start', { key: KEY, preset: 'base' })
+  history('turn/start', { turn: 1, trigger: 'prompt' })
+  history('user/message', { content: [{ type: 'text', text: 'written before the upgrade' }] })
+  history('turn/end', { reason: 'completed' })
+  const resumed = row('turn/start', { turn: 2, trigger: 'prompt' })
+  row('user/message', { content: [{ type: 'text', text: 'first turn after the upgrade' }] })
+  const first = row('turn/end', { reason: 'completed' })
+  await vi.waitFor(() => expect(acked(table())).toBe(first))
+  expect(seqs(traceAt(server.traces, 0))).toEqual([resumed, resumed + 1, first])
+
+  await telemetry.admin({ settings: { traceUploadEnabled: false } })
+  row('turn/start', { turn: 3, trigger: 'prompt' })
+  row('user/message', { content: [{ type: 'text', text: 'written while upload was off' }] })
+  row('turn/end', { reason: 'completed' })
+  await delay(5)
+  await telemetry.admin({ settings: { traceUploadEnabled: true } })
+  const back = row('turn/start', { turn: 4, trigger: 'prompt' })
+  row('user/message', { content: [{ type: 'text', text: 'written after upload was on again' }] })
+  const second = row('turn/end', { reason: 'completed' })
+  await vi.waitFor(() => expect(acked(table())).toBe(second))
+  expect(seqs(traceAt(server.traces, 1))).toEqual([back, back + 1, second])
+
+  // A daemon run with telemetry disabled by environment observes nothing; its rows stay local.
+  await restart({ AGH_TELEMETRY_DISABLED: '1' })
+  row('turn/start', { turn: 5, trigger: 'prompt' })
+  row('user/message', { content: [{ type: 'text', text: 'written while disabled by env' }] })
+  row('turn/end', { reason: 'completed' })
+  await delay(5)
+  const reopened = await restart({ AGH_TELEMETRY_DISABLED: undefined })
+  await reopened.admin({ settings: { analyticsEnabled: false } })
+  const later = row('turn/start', { turn: 6, trigger: 'prompt' })
+  const third = row('turn/end', { reason: 'completed' })
+  await vi.waitFor(() => expect(acked(table())).toBe(third))
+  expect(seqs(traceAt(server.traces, 2))).toEqual([later, third])
+
+  // A session created after enablement uploads from its first row.
+  const fresh = `${KEY}-fresh`
+  row('session/start', { key: fresh, preset: 'base' }, fresh)
+  row('turn/start', { turn: 1, trigger: 'prompt' }, fresh)
+  const freshEnd = row('turn/end', { reason: 'completed' }, fresh)
+  await vi.waitFor(() => expect(acked(table(), fresh)).toBe(freshEnd))
+  expect(seqs(traceAt(server.traces, 3))).toEqual([1, 2, 3])
+  expect(server.traces).toHaveLength(4)
+  const uploaded = JSON.stringify(server.traces.map((capture) => capture.body))
+  for (const text of [
+    'written before the upgrade',
+    'written while upload was off',
+    'written while disabled by env',
+  ])
+    expect(uploaded).not.toContain(text)
+})
+
+it.each([
+  ['the raw batch limit', () => Array.from({ length: 40 }, () => 'oversized fixture chunk '.repeat(10_000))],
+  ['the compressed batch limit', () => Array.from({ length: 31 }, () => randomWords(240_000))],
+])(
+  'uploads a single turn over %s in reduced form and keeps the session moving',
+  async (_limit, parts) => {
+    const { server, row, table, telemetry } = await fixture()
+    await telemetry.admin({ settings: { analyticsEnabled: false } })
+    row('session/start', { key: KEY, preset: 'base' })
+    row('turn/start', { turn: 1, trigger: 'prompt' })
+    for (const text of parts()) row('assistant/message', { content: [{ type: 'text', text }] })
+    const big = row('turn/end', { reason: 'completed' })
+    await vi.waitFor(() => expect(acked(table())).toBe(big), { timeout: 10_000 })
+    const reduced = traceAt(server.traces, 0)
+    expect(reduced.watermark).toMatchObject({ from_seq: 1, to_seq: big })
+    expect(reduced.events.at(-1)).toMatchObject({ seq: big, type: 'turn/end' })
+    expect(JSON.stringify(reduced.events)).toMatch(/\[omitted-oversized bytes=\d+\]/)
+    expect(server.traces[0]?.decodedBytes).toBeLessThanOrEqual(8 * 1024 * 1024)
+    expect(server.traces[0]?.wireBytes).toBeLessThanOrEqual(4 * 1024 * 1024)
+
+    const next = row('turn/start', { turn: 2, trigger: 'prompt' })
+    row('user/message', { content: [{ type: 'text', text: 'a small turn after the oversized one' }] })
+    const end = row('turn/end', { reason: 'completed' })
+    await vi.waitFor(() => expect(acked(table())).toBe(end))
+    expect(server.traces).toHaveLength(2)
+    const after = traceAt(server.traces, 1)
+    expect(after.watermark).toMatchObject({ from_seq: big + 1, to_seq: end })
+    expect(seqs(after)).toEqual([next, next + 1, end])
+    expect(JSON.stringify(after)).toContain('a small turn after the oversized one')
+  },
+  30_000,
+)
+
+it('replaces a turn that stays over the limit even in reduced form with an omitted-for-size record', async () => {
+  const { server, row, table, telemetry } = await fixture()
+  await telemetry.admin({ settings: { analyticsEnabled: false } })
+  row('session/start', { key: KEY, preset: 'base' })
+  row('turn/start', { turn: 1, trigger: 'prompt' })
+  // Each body stays under the reduced form's per-event marker size, so only the count overflows.
+  const text = 'fixture text '.repeat(1150)
+  for (let part = 0; part < 600; part++) row('tool/result', { content: [{ type: 'text', text }] })
+  const big = row('turn/end', { reason: 'completed' })
+  await vi.waitFor(() => expect(acked(table())).toBe(big), { timeout: 10_000 })
+  const omitted = traceAt(server.traces, 0)
+  expect(omitted.watermark).toMatchObject({ from_seq: 1, to_seq: big })
+  expect(omitted.events).toEqual([
+    expect.objectContaining({
+      seq: big,
+      type: 'x/telemetry/omitted',
+      data: { reason: 'size', from_seq: 1, to_seq: big, events: big, bytes: expect.any(Number) },
+    }),
+  ])
+  expect(omitted.events[0]?.data).toMatchObject({
+    bytes: expect.toSatisfy((bytes: number) => bytes > 8 * 1024 * 1024),
+  })
+  row('turn/start', { turn: 2, trigger: 'prompt' })
+  const end = row('turn/end', { reason: 'completed' })
+  await vi.waitFor(() => expect(acked(table())).toBe(end))
+  expect(traceAt(server.traces, 1).watermark).toMatchObject({ from_seq: big + 1, to_seq: end })
+}, 30_000)
+
+it('retries a failed upload with growing delays until it is acknowledged, then stays quiet', async () => {
+  const { server, row, table, telemetry } = await fixture()
+  await telemetry.admin({ settings: { analyticsEnabled: false } })
+  server.acknowledge(false)
+  row('session/start', { key: KEY, preset: 'base' })
+  row('turn/start', { turn: 1, trigger: 'prompt' })
+  const end = row('turn/end', { reason: 'completed' })
+  await vi.waitFor(() => expect(server.traces.length).toBeGreaterThanOrEqual(3))
   expect(acked(table())).toBeUndefined()
   server.acknowledge(true)
-  const feedback = row('x/feedback/item', { target: { turn: 1 }, rating: 'up' })
-  await vi.waitFor(() => expect(acked(table())).toBe(feedback))
-  expect(traceAt(server.traces, 0).watermark.to_seq).toBe(end)
-  expect(traceAt(server.traces, 1).watermark).toEqual({
-    from_seq: 1,
-    to_seq: feedback,
-    session_head_seq: feedback,
+  await vi.waitFor(() => expect(acked(table())).toBe(end))
+  const attempts = server.traces.map((capture) => capture.at)
+  attempts.slice(1).forEach((at, index) => {
+    expect(at - (attempts[index] as number)).toBeGreaterThanOrEqual(20 * 2 ** index - 2)
   })
+  for (const capture of server.traces)
+    expect((capture.body as Trace).watermark).toMatchObject({ from_seq: 1, to_seq: end })
+  const settled = server.traces.length
+  await delay(150)
+  expect(server.traces).toHaveLength(settled)
+})
+
+it('stops retrying an upload that keeps failing after a bounded number of attempts', async () => {
+  const { server, row, telemetry } = await fixture({ AGH_TELEMETRY_RETRY_MS: '1' })
+  await telemetry.admin({ settings: { analyticsEnabled: false } })
+  server.acknowledge(false)
+  row('session/start', { key: KEY, preset: 'base' })
+  row('turn/start', { turn: 1, trigger: 'prompt' })
+  row('turn/end', { reason: 'completed' })
+  await vi.waitFor(() => expect(server.traces).toHaveLength(8))
+  await delay(300)
+  expect(server.traces).toHaveLength(8)
+})
+
+it('cancels pending retries, including across a restart, when Session Log upload is switched off', async () => {
+  const { server, row, telemetry, restart } = await fixture()
+  await telemetry.admin({ settings: { analyticsEnabled: false } })
+  server.acknowledge(false)
+  row('session/start', { key: KEY, preset: 'base' })
+  row('turn/start', { turn: 1, trigger: 'prompt' })
+  row('turn/end', { reason: 'completed' })
+  await vi.waitFor(() => expect(server.traces.length).toBeGreaterThanOrEqual(2))
+  await telemetry.admin({ settings: { traceUploadEnabled: false } })
+  const attempts = server.traces.length
+  await delay(200)
+  expect(server.traces).toHaveLength(attempts)
+  await telemetry.admin({ settings: { traceUploadEnabled: true } })
+  server.acknowledge(true)
+  await restart()
+  await delay(200)
+  expect(server.traces).toHaveLength(attempts)
+})
+
+it('re-queues unacknowledged sessions after a daemon restart, a bounded number per start', async () => {
+  const { server, row, table, telemetry, restart, sessionCwd } = await fixture({
+    AGH_TELEMETRY_RETRY_MS: '60000',
+  })
+  await telemetry.admin({ settings: { analyticsEnabled: false } })
+  server.acknowledge(false)
+  const keys = Array.from({ length: 17 }, (_, index) => `${KEY}-${index}`)
+  for (const key of keys) {
+    telemetry.sessionCreated(key, 'web')
+    row('session/start', { key, preset: 'base' }, key)
+    row('turn/start', { turn: 1, trigger: 'prompt' }, key)
+    row('user/message', { content: [{ type: 'text', text: `${sessionCwd}/notes.txt` }] }, key)
+    row('turn/end', { reason: 'completed' }, key)
+  }
+  await vi.waitFor(() => expect(server.traces).toHaveLength(keys.length))
+  expect(keys.filter((key) => acked(table(), key) !== undefined)).toEqual([])
+  server.acknowledge(true)
+  await restart()
+  await vi.waitFor(() => expect(keys.filter((key) => acked(table(), key) === 4)).toHaveLength(16))
+  await delay(100)
+  expect(keys.filter((key) => acked(table(), key) === 4)).toHaveLength(16)
+  await restart()
+  await vi.waitFor(() => expect(keys.filter((key) => acked(table(), key) === 4)).toHaveLength(17))
+  const recovered = server.traces
+    .slice(keys.length)
+    .map((capture) => capture.body as Trace & { surface: string })
+  expect(recovered).toHaveLength(keys.length)
+  for (const trace of recovered) {
+    expect(trace.watermark).toMatchObject({ from_seq: 1, to_seq: 4 })
+    expect(trace.surface).toBe('web')
+    expect(JSON.stringify(trace)).toContain('<workspace>/notes.txt')
+    expect(JSON.stringify(trace)).not.toContain(sessionCwd)
+  }
 })
 
 it('configures the production collector when no endpoint is supplied', () => {

@@ -277,7 +277,7 @@ export async function* runInference(
         // Do not let an invalid runtime billing object survive through the spread below. Adapter
         // implementations are TypeScript-typed, but a remote decoder can still hand one an invalid
         // value; only the closed shape above is allowed onto the public stream.
-        const { billing: _untrustedBilling, response, ...usage } = ev
+        const { billing: _untrustedBilling, response, credits: _stated, ...usage } = ev
         // Credits the adapter did not state come from the gateway's own dollars when it billed the
         // request (a subscription has no per-request price to derive them from), and from the
         // catalogue otherwise. The source follows the figure: it says `gateway` only when a gateway
@@ -286,11 +286,14 @@ export async function* runInference(
           ev.credits === undefined && safeBilling?.source === 'gateway' && !safeBilling.subscription
             ? Math.max(0, Math.round((safeBilling.usdMicros / 1e6) * deps.creditsPerUsd * 1e6) / 1e6)
             : undefined
+        const credits =
+          ev.credits ?? gatewayCredits ?? estimateCredits(resolved.model, ev.tokens, deps.creditsPerUsd)
         yield {
           ...usage,
           ...checkedResponse(response),
-          credits:
-            ev.credits ?? gatewayCredits ?? estimateCredits(resolved.model, ev.tokens, deps.creditsPerUsd),
+          // A model with no known price has no estimate: its usage names no credits rather than NaN,
+          // which no ledger row could record.
+          ...(Number.isFinite(credits) ? { credits } : {}),
           creditSource:
             ev.credits !== undefined
               ? ev.creditSource
