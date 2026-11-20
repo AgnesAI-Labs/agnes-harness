@@ -7,7 +7,10 @@ export function refinementModel(store: RefinementSettingsStore, clock: () => num
   return {
     target() {
       const { settings } = store.current()
-      return settings.enabled ? { route: REFINEMENT_SERVICE.route, model: settings.model } : undefined
+      // The service bills the person's own key by usage; turning it on agreed to that unknown price.
+      return settings.enabled
+        ? { route: REFINEMENT_SERVICE.route, model: settings.model, usageBilled: true as const }
+        : undefined
     },
     provider(): Provider | undefined {
       const { settings, revision, modelOption } = store.current()

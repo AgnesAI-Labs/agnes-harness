@@ -418,6 +418,9 @@ function RefinementFields(props: {
               if (!enabled || canEnable) change({ enabled })
             }}
           />
+          <p className="agnes-settings-note" data-testid="refinement-billing">
+            {t('refinement.billing')}
+          </p>
         </SettingsItem>
         <SettingsItem label={t('refinement.mode')} description={t('refinement.mode.hint')}>
           <SettingsSelect

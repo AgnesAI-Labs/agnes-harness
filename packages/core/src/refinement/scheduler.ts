@@ -27,6 +27,9 @@ import { type RefinementWorkspaceRefs, renewConfirmed, renewsWorkspace } from '.
 /** The refinement switch as Core reads it: on or off, how automatic triggers are treated, and its revision. */
 export type RefinementSettingsView = { enabled: boolean; mode: 'manual' | 'auto'; revision: string }
 
+/** A planner model on a route of the refinement provider; see `RefinementDeps.target`. */
+export type RefinementTarget = { route: string; model: string; usageBilled?: true }
+
 /**
  * What the host gives Core to run refinement for a session. Both reads happen often (before a plan,
  * before an apply) and must be cheap; a read that throws counts as off.
@@ -37,7 +40,12 @@ export type RefinementDeps = {
   planner(): RefinementPlanner | undefined
   /** Private planner catalogue and transport. Without a target and transport no review can run. */
   provider?: () => Provider | undefined
-  target?: () => { route: string; model: string } | undefined
+  /**
+   * The planner model reviews use. `usageBilled`: a service that bills the person's own key by usage,
+   * which they agreed to by turning it on; automatic and model reviews may then run on its unknown
+   * price, held to the token budget alone. The user's own request still asks for an unknown price.
+   */
+  target?: () => RefinementTarget | undefined
   /**
    * The session's current task, read through the task-scope reader the goal plugin provides; null
    * when it has no goal, undefined (or a throw) when it cannot be read now. Absent means no task
@@ -214,8 +222,11 @@ async function start(s: SessionImpl, run: RefinementRunRecord): Promise<boolean>
       return { enabled: view !== undefined, revision: view?.revision ?? '' }
     },
     ...(target ? { target } : {}),
-    // Only the user's own request carries the agreement to an unknown price, recorded when it was queued.
-    ...(run.trigger.kind === 'manual' && run.trigger.allowUnpriced === true ? { allowUnpriced: true } : {}),
+    // The user's own request carries its agreement to an unknown price, recorded when it was queued; the
+    // other reviews of a usage-billed service were agreed to when the person turned the service on.
+    ...((automatic ? target?.usageBilled === true : run.trigger.allowUnpriced === true)
+      ? { allowUnpriced: true }
+      : {}),
   }
   const done = await planRefinementRun(s, run.runId, runDeps, new AbortController().signal)
   if (done?.state === 'proposed') await tryApply(s, done.runId)

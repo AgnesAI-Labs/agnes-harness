@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { Kernel, RefinementPlanner } from '@agnes/core'
 import { ProjectionRegistry, refinementFacade } from '@agnes/core'
 import { actor, fakeProvider, openSession, sent, textTurn, usage } from '@agnes/core/testkit'
+import { REFINEMENT_SERVICE } from '@agnes/distribution'
 import { createCredentialStore } from '@agnes/host-infrastructure/adapters/credential-store'
 import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import type { ModelRecord, Provider } from '@agnes/protocol'
@@ -107,6 +108,23 @@ describe('the host side of refinement', () => {
     review.reads = 0
     expect(key()).toBe('rotated-review-key')
     expect(review.reads).toBe(1)
+  })
+
+  it('the review service bills the person by usage: its route claims no price, and its target says they agreed', async () => {
+    const dataDir = scratch()
+    await save(dataDir, { enabled: true, mode: 'auto' })
+    const bridge = createRefinementHost(dataDir, PROFILE)
+    expect(bridge.kernelOptions.refinement.target?.()).toEqual({
+      route: REFINEMENT_SERVICE.route,
+      model: reviewModel,
+      usageBilled: true,
+    })
+    const [record, ...others] = bridge.kernelOptions.refinement.provider?.()?.models() ?? []
+    expect(others).toEqual([])
+    expect(record).toMatchObject({ route: REFINEMENT_SERVICE.route, id: reviewModel })
+    expect([record?.cost.input, record?.cost.output].some((rate) => Number.isFinite(rate))).toBe(false)
+    await save(dataDir, { enabled: false, mode: 'auto' })
+    expect(bridge.kernelOptions.refinement.target?.()).toBeUndefined()
   })
 
   it('the plugin connects with its planner; its calls reach the session the tool ran in', async () => {

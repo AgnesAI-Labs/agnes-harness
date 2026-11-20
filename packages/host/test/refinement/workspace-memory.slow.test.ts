@@ -265,7 +265,8 @@ async function turn(session: Session, prompt: string): Promise<void> {
 }
 /** The user asks for a review; it is planned in the background and applied once the session is idle. */
 async function refine(session: Session): Promise<void> {
-  const { runId } = await requestRefinement(session as never)
+  // The person accepts the review service's unknown price, as /refine asks them to.
+  const { runId } = await requestRefinement(session as never, undefined, undefined, true)
   await until('the review is applied', () => {
     const run = session.state.refinementRuns.get(runId)
     if (run?.state === 'no-op' || run?.state === 'rejected')

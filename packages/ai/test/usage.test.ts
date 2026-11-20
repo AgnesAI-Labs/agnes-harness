@@ -133,6 +133,22 @@ describe('the provider completes the usage event', () => {
     expect(warns.join(' ')).toContain('denominated in USD')
   })
 
+  it('a model with no known price reports usage without credits, never NaN', async () => {
+    const unknown = { input: Number.NaN, output: Number.NaN, cacheRead: Number.NaN, cacheWrite: Number.NaN }
+    const events = await run({
+      models: priced(unknown),
+      pricing: { creditsPerUsd: 100 },
+      script: () => [
+        { type: 'usage', tokens: tokens(500_000, 500_000), creditSource: 'estimated' },
+        { type: 'done', reason: 'stop' },
+      ],
+    })
+    const usage = usageOf(events)
+    expect(usage).not.toHaveProperty('credits')
+    expect(usage).not.toHaveProperty('billing')
+    expect(usage).toMatchObject({ tokens: tokens(500_000, 500_000), creditSource: 'estimated' })
+  })
+
   it('says nothing when a price table was configured', async () => {
     const warns: string[] = []
     await run({

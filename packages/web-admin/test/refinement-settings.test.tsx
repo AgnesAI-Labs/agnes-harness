@@ -134,6 +134,14 @@ it('the settings panel saves with revision and shows the permission text', async
     'Applies to sessions opened after you turn it on; sessions already open are not affected. Turning it off applies to all sessions at once. To keep lessons for later sessions, also turn workspace memory on (Settings → General → Personalization → Memory: "Ask me first" or "Automatic"); while it is off, lessons last only for the session they were learned in.',
   )
   expect(help?.getAttribute('tabindex')).toBe('0')
+  // How the reviews are paid for, beside the switch that agrees to it.
+  const billing = field(host, 'refinement-billing')
+  expect(billing.closest('.agnes-settings-item')).toBe(
+    field(host, 'refinement-enabled').closest('.agnes-settings-item'),
+  )
+  expect(billing.textContent).toBe(
+    'Reviews use your llm.sg key and are billed by usage. AGH does not know the price; the token budget limits how much each session uses.',
+  )
   expect(field(host, 'refinement-approvals').textContent).toMatch(/^More command approvals: .*more commands/)
 
   await toggle(host, 'refinement-enabled')
@@ -481,6 +489,9 @@ it('shows the section in Chinese', async () => {
     '打开后，之后新开的会话生效；已经打开的会话不受影响。关闭立即对所有会话生效。要把经验留给之后的会话，还需打开工作区记忆（设置 → 通用 → 个性化 → 记忆：「先问我」或「自动」）；记忆为「关闭」时，经验只在学到它的会话里有效。',
   )
   expect(text).not.toContain('重启')
+  expect(field(host, 'refinement-billing').textContent).toBe(
+    '复盘使用你的 llm.sg 密钥，按实际用量计费。AGH 不知道价格；每个会话的用量受 token 预算限制。',
+  )
   expect(field(host, 'refinement-approvals').textContent).toContain('可能出现更多命令审批：')
   expect(field(host, 'refinement-permissions').textContent).not.toContain('后续版本')
   expect(field(host, 'refinement-allows-install').textContent).toContain('纯指令')

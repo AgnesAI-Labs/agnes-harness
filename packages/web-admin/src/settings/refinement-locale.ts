@@ -34,6 +34,8 @@ export const refinementSettingsCatalog: LocaleCatalog = {
       'Off by default. When on, you or the model can request a background review and keep useful lessons for later turns. When off, reviews and the experience tools are unavailable.',
     'refinement.enabled.info':
       'Applies to sessions opened after you turn it on; sessions already open are not affected. Turning it off applies to all sessions at once. To keep lessons for later sessions, also turn workspace memory on (Settings → General → Personalization → Memory: "Ask me first" or "Automatic"); while it is off, lessons last only for the session they were learned in.',
+    'refinement.billing':
+      'Reviews use your llm.sg key and are billed by usage. AGH does not know the price; the token budget limits how much each session uses.',
     'refinement.mode': 'How reviews start',
     'refinement.mode.hint':
       'On demand: use /refine, or let the model request a review for this session. With automatic triggers: the system also considers reviews after a successful summary compaction or repeated tool failures, subject to budget, cooldown and frequency limits. The model needs automatic triggers enabled to save lessons beyond this session; memory settings still apply.',
@@ -100,6 +102,8 @@ export const refinementSettingsCatalog: LocaleCatalog = {
       '默认关闭。开启后，你或模型可以发起后台复盘，把有用的经验留给之后的轮次；关闭后不再复盘，也不提供经验工具。',
     'refinement.enabled.info':
       '打开后，之后新开的会话生效；已经打开的会话不受影响。关闭立即对所有会话生效。要把经验留给之后的会话，还需打开工作区记忆（设置 → 通用 → 个性化 → 记忆：「先问我」或「自动」）；记忆为「关闭」时，经验只在学到它的会话里有效。',
+    'refinement.billing':
+      '复盘使用你的 llm.sg 密钥，按实际用量计费。AGH 不知道价格；每个会话的用量受 token 预算限制。',
     'refinement.mode': '复盘如何开始',
     'refinement.mode.hint':
       '按需：你用 /refine，或由模型主动发起当前会话的复盘。开启自动触发后：系统还会在摘要压缩成功、同类工具错误重复出现时尝试复盘，受预算、冷却时间和次数限制。模型主动把经验保存到工作区或用户记忆，需要开启自动触发；记忆设置仍然有效。',
