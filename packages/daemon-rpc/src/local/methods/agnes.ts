@@ -39,6 +39,7 @@ import {
   type ParticipantParams,
   publicRejectionRpc,
   rpcError,
+  type SessionListParams,
   type SessionProjectUIHistoryParams,
   type SessionProjectUIOpeningParams,
   type SessionProjectUIParams,
@@ -1168,13 +1169,8 @@ export function registerAgnes(
     return cx.sidebarSessions.groups(c.conn.principalId)
   })
   ep.register('_agnes/v1/session.list', async (params, c) => {
-    const p = params as {
-      q?: { cwd?: string; prefix?: string; text?: string }
-      sidebar?: { groupId: string }
-      cursor?: string
-      limit?: number
-    }
-    if (p.sidebar) {
+    const p = params as SessionListParams
+    if ('sidebar' in p) {
       if (!cx.sidebarSessions) throw rpcError('SEMANTIC_REJECTED', { code: 'SESSION_SIDEBAR_UNAVAILABLE' })
       return cx.sidebarSessions.list(c.conn.principalId, {
         groupId: p.sidebar.groupId,
@@ -1203,6 +1199,7 @@ export function registerAgnes(
       })
     }
     const r = await cx.lister.list({
+      ...(p.includePromptTitles !== undefined ? { includePromptTitles: p.includePromptTitles } : {}),
       ...(q !== undefined ? { q } : {}),
       ...(cwd !== undefined ? { cwd } : {}),
       ...(p.cursor !== undefined ? { cursor: p.cursor } : {}),

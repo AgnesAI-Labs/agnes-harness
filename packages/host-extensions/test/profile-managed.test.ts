@@ -3,6 +3,7 @@ import type { BoundWakes, ProfileManagedDefinition } from '@agnes/extension-api'
 import type { ProcessIdentity } from '@agnes/host-infrastructure/adapters/process-identity'
 import type { JsonValue, ManagedServiceDescriptor } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
+import { SupersededProfileResourceError } from '../src/profile/activation.js'
 import { ProfileManagedResources } from '../src/profile/managed.js'
 import { ownedStore } from '../src/profile/owned-store.js'
 
@@ -36,11 +37,11 @@ it('runs only the published resource, drains replacements, and refuses revival a
       throw new Error('unbound-target')
     },
   }
-  let current = true
+  let current: string | undefined = 'one'
   const one = new ProfileManagedResources(
       'synthetic-singleton',
       () => wakes,
-      () => current,
+      (_owner, _integrity, revision) => revision === current,
     ),
     two = new ProfileManagedResources('synthetic-singleton', () => wakes)
   const descriptor: ManagedServiceDescriptor = {
@@ -127,17 +128,18 @@ it('runs only the published resource, drains replacements, and refuses revival a
     sibling.release()
     await one.publish()
     expect((await first.get()).port).toBe(originalPort)
-    current = false
+    current = undefined
     await one.publish()
     expect(one.statuses('@example/server')).toEqual([])
-    await expect(first.get()).rejects.toThrow()
-    current = true
+    await expect(first.get()).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+    current = 'one'
     const publishing = one.publish()
     // Replace while the preceding publication is still installing its starting resource slot.
     await Promise.resolve()
     await two.publish()
     await publishing
-    await expect(first.get()).rejects.toThrow()
+    current = 'two'
+    await expect(first.get()).rejects.toBeInstanceOf(SupersededProfileResourceError)
     expect((await staged.get()).port).toBeGreaterThan(0)
     expect(peak).toBe(1)
     unknown = true

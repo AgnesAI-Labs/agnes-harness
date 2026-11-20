@@ -6,6 +6,8 @@
   "description": "Web UI component layer: the only package allowed to import antd/@ant-design (spec 2026-09-24-web-ui-component-system-design)",
   "exports": {
     ".": "./src/index.ts",
+    "./html-preview-resources": "./src/conversation/html-preview-resources.ts",
+    "./pdf-preview-document": "./src/conversation/pdf-preview-document.ts",
     "./conversation": "./src/conversation-vendor.ts",
     "./x": "./src/x-vendor.ts",
     "./layers.css": "./src/layers.css",
@@ -33,6 +35,7 @@
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
     "esbuild": "0.28.2",
+    "pdfjs-dist": "6.5.438",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },

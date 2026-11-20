@@ -17,5 +17,6 @@ export const HOOK_TABLE = Object.freeze({
   subagent_start: Object.freeze({"mode":"emit","category":"observe","failPolicy":"open","timeoutMs":200,"replayOnResume":false}),
   subagent_end: Object.freeze({"mode":"emit","category":"observe","failPolicy":"open","timeoutMs":200,"replayOnResume":false}),
   format_deviation: Object.freeze({"mode":"parallel","category":"observe","failPolicy":"open","timeoutMs":500,"replayOnResume":false}),
+  turn_end: Object.freeze({"mode":"parallel","category":"observe","failPolicy":"open","timeoutMs":1000,"replayOnResume":false}),
   shutdown: Object.freeze({"mode":"parallel","category":"observe","failPolicy":"open","timeoutMs":1000,"replayOnResume":false}),
 } as const satisfies Record<HookEvent, HookSpec>)

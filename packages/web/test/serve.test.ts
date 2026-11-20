@@ -202,7 +202,10 @@ it('issues a fresh CSP style nonce for each served HTML document', async () => {
   })
   try {
     const nonceMarker = '<meta name="agnes-csp-nonce" content="__AGNES_CSP_NONCE__">'
-    await writeFile(join(root, 'index.html'), `${nonceMarker}<meta data-ws="__AGNES_WS_URL__">`)
+    await writeFile(
+      join(root, 'index.html'),
+      `${nonceMarker}<meta id="agnes-config" data-ws="__AGNES_WS_URL__">`,
+    )
     await writeFile(join(root, 'admin.html'), nonceMarker)
     await writeFile(join(root, 'resources.html'), nonceMarker)
 
@@ -230,7 +233,11 @@ it('issues a fresh CSP style nonce for each served HTML document', async () => {
       const cdn = ['https://cos-agent-default.agnes-ai.cn', 'https://cos-agent-default.agnes-ai.com']
       if (new URL(document.url).pathname === '/') {
         expect(directives['img-src']).toEqual(["'self'", 'blob:', ...cdn])
-        expect(directives['frame-src']).toEqual(["'self'", 'blob:'])
+        const cloudOrigin = /data-cloud-origin="([^"]+)"/u.exec(body)?.[1]
+        if (!cloudOrigin) throw Error('missing isolated static origin')
+        expect(new URL(cloudOrigin).hostname).toBe('127.0.0.1')
+        expect(cloudOrigin).not.toBe(server.url)
+        expect(directives['frame-src']).toEqual(["'self'", 'blob:', cloudOrigin])
         expect(directives['media-src']).toEqual(["'self'", 'blob:', ...cdn])
       } else {
         expect(directives['img-src']).toBeUndefined()

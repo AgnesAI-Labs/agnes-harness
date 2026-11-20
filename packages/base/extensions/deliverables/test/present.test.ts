@@ -11,7 +11,7 @@ import deliverables from '../src/index.js'
 
 describe('deliverable surface', () => {
   it.each(
-    ['html', 'md', 'tgz'].flatMap((format) =>
+    ['html', 'md', 'tgz', 'svg'].flatMap((format) =>
       ['available', 'disabled', 'rejected', 'unavailable'].map((ui) => ({ format, ui })),
     ),
   )(
@@ -76,7 +76,14 @@ describe('deliverable surface', () => {
           deliverables: [
             {
               name: `Cities.${format}`,
-              ref: { mime: { html: 'text/html', md: 'text/markdown', tgz: 'application/gzip' }[format] },
+              ref: {
+                mime: {
+                  html: 'text/html',
+                  md: 'text/markdown',
+                  tgz: 'application/gzip',
+                  svg: 'image/svg+xml',
+                }[format],
+              },
             },
           ],
           laneId: 'main',
@@ -93,7 +100,12 @@ describe('deliverable surface', () => {
                   name: `Cities.${format}`,
                   description: 'City comparison',
                   artifact: {
-                    mime: { html: 'text/html', md: 'text/markdown', tgz: 'application/gzip' }[format],
+                    mime: {
+                      html: 'text/html',
+                      md: 'text/markdown',
+                      tgz: 'application/gzip',
+                      svg: 'image/svg+xml',
+                    }[format],
                     size: new TextEncoder().encode('<h1>城市</h1>').byteLength,
                   },
                 },

@@ -1534,7 +1534,7 @@ describe('without announce', () => {
     // Ledger includes request composition and the atomic turn wait summary.
     // Keep full byte equivalence across all omitted forms and input-ordered results.
     expect(sha256Hex(canonicalJson(omitted as never))).toBe(
-      '416868be3b0f1bedc305e5644eff3a999f97a82d968d95541489c84138cbbca9',
+      '2da85d24f6c1f98b727573515504a65dfaff6100a84f5633639b221055328c85',
     )
     expect(await ledger(undefined)).toEqual(omitted)
     expect(await ledger({})).toEqual(omitted)

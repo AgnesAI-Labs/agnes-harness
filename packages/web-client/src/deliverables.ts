@@ -13,7 +13,7 @@ export type DeliverableRecord = Readonly<{
   id: string
   sessionId: string
   laneId: string
-  source: { owner: string; toolUseId?: string; callSeq?: number; surfaceId?: string }
+  source: { owner: string; toolUseId?: string; callSeq?: number; resultSeq?: number; surfaceId?: string }
   turnId?: string
   seq: number
   inline: boolean
@@ -99,6 +99,7 @@ type PresentResult = {
 /** One durable present call with a result, in the order the projection lists tool calls. */
 type PresentSource = Readonly<{
   callSeq: number
+  resultSeq: number
   toolUseId: string
   turnId?: string
   read: () => Promise<PresentResult>
@@ -336,7 +337,7 @@ async function readDeliverables(
       presents.set(key, present)
       return present
     }
-    return [{ callSeq: node.seq, toolUseId: node.toolUseId, ...(turnId ? { turnId } : {}), read }]
+    return [{ callSeq: node.seq, resultSeq, toolUseId: node.toolUseId, ...(turnId ? { turnId } : {}), read }]
   })
   return assemble(session, sources, () => timeline.turns)
 }
@@ -363,6 +364,7 @@ async function readQueried(session: Session): Promise<DeliverableRecord[]> {
     )
     sources.push({
       callSeq: item.callSeq,
+      resultSeq: item.resultSeq,
       toolUseId: item.toolUseId,
       ...(item.turnId === undefined ? {} : { turnId: item.turnId }),
       read: async () => present,
@@ -441,6 +443,7 @@ async function assemble(
           owner: owner ?? match?.source.owner ?? 'present',
           toolUseId: source.toolUseId,
           callSeq: source.callSeq,
+          resultSeq: source.resultSeq,
         },
         ...(turnId ? { turnId } : {}),
         seq: source.callSeq,

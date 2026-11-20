@@ -9,7 +9,7 @@ import { mergeWindowsEnvironment, startWindowsJobProcess } from '@agnes/system-n
 import { type WindowsLaunch, windowsLaunch } from '../windows-acl/launch.js'
 import type { WindowsAclLaunchPermit } from '../windows-acl/leases.js'
 import { commandOutputDecoder } from './command-output.js'
-import type { PowerShellDescriptor } from './powershell.js'
+import { type PowerShellDescriptor, powerShellStartError } from './powershell.js'
 import { powerShellEncoding } from './powershell-command.js'
 import { preparePowerShellFile } from './powershell-file.js'
 
@@ -83,7 +83,7 @@ async function openStarted(
     } catch (cleanup) {
       throw new AggregateError([cause, cleanup], 'Windows process startup and cleanup failed')
     }
-    throw cause
+    throw powerShellStartError(cause, options.powerShell, argv, launch !== undefined)
   }
   launch?.started(child.completion)
   const listeners = new Set<(chunk: ProcessOutput) => void>()

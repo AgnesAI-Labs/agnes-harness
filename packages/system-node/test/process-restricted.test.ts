@@ -68,6 +68,7 @@ vi.mock('node:module', async (importOriginal) => {
 })
 
 class Broker extends EventEmitter {
+  connected = true
   readonly pid = 4242
   readonly stdin = new PassThrough()
   readonly stdout = new PassThrough()
@@ -85,6 +86,10 @@ class Broker extends EventEmitter {
     this.sent.push(message)
     setImmediate(() => {
       done?.(null)
+      if (message.type === 'abort') {
+        this.kill()
+        return
+      }
       this.reply(message, this)
     })
     return true
@@ -128,9 +133,11 @@ const restricted =
     }
   }
 const direct: Reply = (message, broker) => {
-  if (message.type !== 'run') return
-  broker.answer({ type: 'started', pid: 98 })
-  setTimeout(() => broker.answer({ type: 'exit', code: 7, signal: null }), 5)
+  if (message.type === 'run') broker.answer({ type: 'created', pid: 98, start: '555' })
+  if (message.type === 'resume') {
+    broker.answer({ type: 'started', pid: 98 })
+    setTimeout(() => broker.answer({ type: 'exit', code: 7, signal: null }), 5)
+  }
 }
 
 const original = Object.getOwnPropertyDescriptor(process, 'platform')
@@ -396,7 +403,7 @@ describe('Windows confined launch', () => {
         confinement: spawn.sealWindowsConfinement(writable),
       }),
     ).rejects.toMatchObject({ code: expected })
-    expect(gate.sent.map((message) => message.type)).toEqual(['run-restricted'])
+    expect(gate.sent.map((message) => message.type)).toEqual(['run-restricted', 'abort'])
     expect(current.terminate).toHaveBeenCalled()
     expect(gate.killed).toBe(true)
     expect(current.close).toHaveBeenCalled()
@@ -417,7 +424,7 @@ describe('Windows confined launch', () => {
         confinement: spawn.sealWindowsConfinement(readOnly),
       }),
     ).rejects.toMatchObject({ code: 'EPROTO' })
-    expect(gate.sent.map((message) => message.type)).toEqual(['run-restricted'])
+    expect(gate.sent.map((message) => message.type)).toEqual(['run-restricted', 'abort'])
     expect(current.contains).not.toHaveBeenCalled()
   })
 
@@ -446,7 +453,7 @@ describe('Windows confined launch', () => {
         confinement: spawn.sealWindowsConfinement(writable),
       }),
     ).rejects.toMatchObject({ code: 'EACCES' })
-    expect(gate.sent.map((message) => message.type)).toEqual(['run-restricted'])
+    expect(gate.sent.map((message) => message.type)).toEqual(['run-restricted', 'abort'])
     expect(fake.spawns).toBe(1)
   })
 
@@ -465,7 +472,7 @@ describe('Windows confined launch', () => {
         confinement: spawn.sealWindowsConfinement(readOnly),
       }),
     ).rejects.toBeInstanceOf(Error)
-    expect(gate.sent.map((message) => message.type)).toEqual(['run-restricted'])
+    expect(gate.sent.map((message) => message.type)).toEqual(['run-restricted', 'abort'])
     expect(current.terminate).toHaveBeenCalled()
   })
 
@@ -484,15 +491,22 @@ describe('Windows confined launch', () => {
     expect(fake.spawns).toBe(0)
   })
 
-  it('leaves an unconfined launch on the direct broker protocol', async () => {
+  it('checks the Job before resuming an unconfined launch too', async () => {
     const spawn = await load('win32')
     const gate = broker(direct)
     const child = await spawn.startWindowsJobProcess([tool, 'a b'], options())
     expect(child.pid).toBe(98)
     expect(gate.sent).toEqual([
-      { type: 'run', argv: [tool, 'a b'], cwd: options().cwd, env: options().env, windowsBatch: 'script' },
+      {
+        type: 'run',
+        application: tool,
+        commandLine: `"${tool}" "a b"`,
+        cwd: options().cwd,
+        environment: expect.any(String),
+      },
+      { type: 'resume' },
     ])
     expect(await child.completion).toEqual({ code: 7, signal: null, cancelled: false, stoppedProcesses: 1 })
-    expect(current.contains).not.toHaveBeenCalled()
+    expect(current.contains).toHaveBeenCalledWith(98, '555')
   })
 })

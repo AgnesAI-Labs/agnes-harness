@@ -122,7 +122,15 @@ describe('durable artifact read authority index', () => {
     }
   })
 
-  it('reopens a fresh store through the production package-table adapter without PRAGMA', async () => {
+  it.each([
+    [],
+    ['CREATE TABLE _litestream_seq (id INTEGER PRIMARY KEY, seq INTEGER)'],
+    ['CREATE TABLE _litestream_lock (id INTEGER)'],
+    [
+      'CREATE TABLE _litestream_seq (id INTEGER PRIMARY KEY, seq INTEGER)',
+      'CREATE TABLE _litestream_lock (id INTEGER)',
+    ],
+  ])('reopens a fresh store through the production adapter with replication metadata %j', async (...ddl) => {
     const directory = await mkdtemp(join(tmpdir(), 'agnes-artifact-authority-host-'))
     const open = () =>
       createSqliteStorage({
@@ -135,8 +143,10 @@ describe('durable artifact read authority index', () => {
       const fresh = storage
         .tables('@agnes/daemon/artifact-read-authority-test')
         .table('artifact_read_authority')
+      for (const statement of ddl) fresh.exec(statement)
       const initial = new PersistentArtifactReadAuthorityIndex(adaptHostTable(fresh))
       expect(initial.append(writer('append'), expected)).toEqual({ ok: true, code: 'appended' })
+      expect(initial.resolve('session-a', 'lane-a', first.sha256)).toEqual(expected)
       await storage.close()
 
       storage = open()
@@ -408,6 +418,27 @@ describe('durable artifact read authority index', () => {
   })
 
   it('rejects trigger-based write mutation and incompatible schema versions', () => {
+    for (const ddl of [
+      'CREATE TABLE _litestream_seq (id INTEGER PRIMARY KEY, seq TEXT)',
+      'CREATE TABLE _litestream_lock (id INTEGER, owner TEXT)',
+      'CREATE TABLE _litestream_unrecognized (id INTEGER)',
+      'CREATE VIEW _litestream_seq AS SELECT 1 AS id, 1 AS seq',
+      `CREATE TRIGGER _litestream_lock AFTER INSERT ON artifact_read_authority_v1
+       BEGIN UPDATE artifact_read_authority_v1 SET owner_id = 'attacker'; END`,
+    ]) {
+      const raw = sqliteTables().table('artifact-read-authority')
+      const index = new PersistentArtifactReadAuthorityIndex(raw)
+      expect(index.append(writer('append'), binding())).toMatchObject({ ok: true })
+      raw.exec(ddl)
+      expect(index.append(writer('append'), binding(second))).toMatchObject({
+        ok: false,
+        code: 'storage_unavailable',
+      })
+      expect(() => new PersistentArtifactReadAuthorityIndex(raw)).toThrow(
+        'artifact read authority index unavailable',
+      )
+      expect(raw.get('SELECT owner_id FROM artifact_read_authority_v1')).toEqual({ owner_id: 'owner-a' })
+    }
     const triggerTables = sqliteTables()
     const triggerTable = triggerTables.table('artifact-read-authority')
     new PersistentArtifactReadAuthorityIndex(triggerTable)

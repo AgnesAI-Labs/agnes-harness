@@ -56,6 +56,7 @@ function browserControlPlaneMethod(method: string): boolean {
   return (
     method.startsWith('_agnes/v1/packages.') ||
     method.startsWith('_agnes/v1/admin.credentials.') ||
+    method === '_agnes/v1/admin.cloud.authorize' ||
     method.startsWith('_agnes/v1/sessionSelection.') ||
     method.startsWith('_agnes/v1/autoReview.') ||
     method.startsWith('_agnes/v1/config.modelSlots.') ||

@@ -180,7 +180,12 @@ describe('run-prime', () => {
     mkdirSync(join(dir, 'fixture-b'))
     writeFileSync(join(dir, 'fixture-b', 'README.md'), 'second project')
     const t = crossWorkspace([['a'], ['b']])
-    at(at(t.sessions, 1).prompts).checks = [{ command: 'cat README.md', contains: 'second project' }]
+    at(at(t.sessions, 1).prompts).checks = [
+      {
+        command: `node -e "process.stdout.write(require('node:fs').readFileSync('README.md','utf8'))"`,
+        contains: 'second project',
+      },
+    ]
     const outcome = await runOne(t, 'on', 1, cfg, out, { fixtureDir: fx, dockerCommand: docker })
     const runDir = join(out, 't1.on.r1')
     const runs = invocations().filter((args) => args.includes('prime-agent'))

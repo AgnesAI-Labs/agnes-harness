@@ -10,6 +10,7 @@
   "@agnes/web-slots": [],
   "@agnes/web-ui": ["@agnes/protocol", "@agnes/protocol-validation"],
   "@agnes/web-client": [
+    "@agnes/web-ui",
     "@agnes/web-units",
     "@agnes/cordis",
     "@agnes/web-slots",

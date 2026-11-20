@@ -99,3 +99,19 @@ export function credentialWriteFailure(
   return undefined
 }
 export const CREDENTIALS_CHANGED = 'agnes:credentials-changed'
+
+/** Browser connection references are display-only; backend configuration/deletion checks stay owned by A. */
+let cloudCredentialRef: string | undefined
+const connectionListeners = new Set<() => void>()
+export const cloudCredentialUsage = {
+  read: () => cloudCredentialRef,
+  subscribe(listener: () => void) {
+    connectionListeners.add(listener)
+    return () => connectionListeners.delete(listener)
+  },
+  set(reference: string | undefined) {
+    if (reference === cloudCredentialRef) return
+    cloudCredentialRef = reference
+    for (const listener of connectionListeners) listener()
+  },
+}

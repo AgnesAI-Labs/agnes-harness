@@ -69,6 +69,10 @@
   },
   {
     "path": "packages/web/src/app.ts",
+    "includes": ["from '@agnes/sdk/browser'", "createBackendConnection(shellConfig.wsUrl)"]
+  },
+  {
+    "path": "packages/web/src/app/backend-connection.ts",
     "includes": ["from '@agnes/sdk/browser'", "transport: { kind: 'ws'", "auth: { kind: 'local' }"]
   },
   {

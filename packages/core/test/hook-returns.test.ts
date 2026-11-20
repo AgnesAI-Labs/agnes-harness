@@ -47,6 +47,7 @@ const valid: { [E in HookEvent]: HookReturnMap[E] } = {
   subagent_start: undefined,
   subagent_end: undefined,
   format_deviation: undefined,
+  turn_end: undefined,
   shutdown: undefined,
 }
 

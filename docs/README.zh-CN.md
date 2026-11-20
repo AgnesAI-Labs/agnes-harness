@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+云端连接、地址自动发现与计费旁路配套说明见[云端对接文档](guide/remote-frontend.zh-CN.md)。
+
 从旧版 `main` 升级请先看[旧版升级指南](guide/upgrade-from-previous.zh-CN.md)：备份、清理旧环境，再重新配置。
 
 **AGH 把业务能力交付为可安装的插件、可启动的智能体和可采纳的应用。**

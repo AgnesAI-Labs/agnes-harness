@@ -1,3 +1,4 @@
+import { backendResourceUrl } from '../../remote-frontend.js'
 import type { PreparedClientStyles, ReadyClientModule } from './contracts.js'
 
 export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -22,7 +23,8 @@ export async function prepareDocumentStyles(
 ): Promise<PreparedClientStyles> {
   if (target.styleUrls.length === 0) return { activate() {}, dispose() {} }
   const nonce = document.querySelector<HTMLMetaElement>('meta[name="agnes-csp-nonce"]')?.content
-  const links = target.styleUrls.map((href) => {
+  const links = target.styleUrls.map((value) => {
+    const href = backendResourceUrl(value)
     const link = document.createElement(nonce ? 'style' : 'link')
     if (nonce) {
       // Use the page's existing style authorization for the import wrapper. Only the actual

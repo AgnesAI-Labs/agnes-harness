@@ -11,6 +11,7 @@ import {
   unmountRegion,
 } from '@agnes/web-ui'
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from 'react'
+import { SESSION_SEARCH_EVENT } from './regions/session-tools.js'
 
 export type SessionSearchHit = {
   sessionId: string
@@ -504,7 +505,8 @@ export function mountSessionSearch(options: {
     )
       return
     event.preventDefault()
-    open()
+    // The native chord keeps dialog admission and toggle semantics; a backend owner may route its open request.
+    if (document.dispatchEvent(new CustomEvent(SESSION_SEARCH_EVENT, { cancelable: true }))) open()
   }
   document.addEventListener('keydown', onKeydown)
   render()

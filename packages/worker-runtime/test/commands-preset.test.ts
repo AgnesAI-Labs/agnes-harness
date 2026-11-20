@@ -398,3 +398,35 @@ it('leaves the models of a payload-only adapter out of the session catalog', asy
   currentBundles = {}
   expect(await handleServiceCommand(host, frame, new Map())).toMatchObject({ bundles: [] })
 })
+
+it('refreshes runtime model contributions before validating a newly selected model, and refuses unknown models', async () => {
+  let models: Array<{ route: string; id: string }> = []
+  const session = { key: 'cloud', setModel: vi.fn(async () => 23) } as unknown as HostSession
+  const profile = { hash: 'unchanged' }
+  const host = {
+    profile,
+    provider: { models: () => models },
+    applyModelProfile: async (next: unknown) => {
+      expect(next).toBe(profile)
+      models = [{ route: 'cloud-primary', id: 'cloud-a' }]
+    },
+    validateModelSwitch: (selection: { route: string; model: string }) => {
+      if (!models.some((model) => model.route === selection.route && model.id === selection.model))
+        throw Error('model-unserved')
+    },
+  } as unknown as Host
+  const run = (model: string) =>
+    handleCommand(
+      session,
+      {
+        kind: 'command',
+        requestId: 'cloud-model',
+        method: 'setModel',
+        params: { sel: { slot: 'primary', route: 'cloud-primary', model } },
+      } as never,
+      { host, aborts: new Map() },
+    )
+  await expect(run('cloud-a')).resolves.toEqual({ effectiveFromSeq: 23 })
+  await expect(run('unknown')).rejects.toThrow('model-unserved')
+  expect(session.setModel).toHaveBeenCalledOnce()
+})

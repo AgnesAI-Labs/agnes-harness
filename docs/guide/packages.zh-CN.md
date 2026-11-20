@@ -34,6 +34,8 @@ agh plugins add ./hello-tool.tgz
 
 `pack` 校验静态清单，打包后端和声明的前端入口，保留第三方法律注释及许可证/NOTICE，输出 `package/` 格式 tarball。`agnes.hostProvidedExternals` 声明的 Host SDK 由 AGH 提供，不重复打入包；旧包保留 Agnes SDK 外部导入。只复制 npm 会发布的文件（`package.json` 的 `files`、`.npmignore`，缺省回退 `.gitignore`），因此运行时需要的文件（含声明的客户端描述符、入口与资源）都要列入其中；所选文件含 `.env*`、`*.pem`、`*.key`、`id_rsa*`、`id_ed25519*` 时打包会被拒绝。朋友无需作者的 `node_modules`、源码目录或能力哈希。支持静态 JavaScript/TypeScript 导入；原生插件与读取未声明动态文件的依赖需要作者准备可分发产物。打包不执行插件代码、测试或安装脚本；输出文件不能已存在或位于来源目录内。
 
+打包会排除 macOS 的 `._*`、`.DS_Store`、`__MACOSX` 元数据，并禁止生成 AppleDouble 文件，避免额外顶层条目导致 Linux 安装失败。
+
 ## 能力声明
 
 在每个插件的 `agnes.plugins[].capabilities` 中声明请求范围。已安装包、本地插件、代理生成的插件和随包发布的官方插件使用同一种形状：

@@ -36,6 +36,8 @@ agh plugins add ./hello-tool.tgz
 
 `pack` validates the static manifest, bundles the backend entry and declared frontend entries, preserves third-party legal comments and license/notice files, then emits a `package/` tarball. Host SDK imports declared in `agnes.hostProvidedExternals` stay external and are supplied by AGH; older packages retain their Agnes SDK external imports. Only the files npm would publish are copied (`package.json` `files`, `.npmignore`, or `.gitignore` as fallback), so list every runtime file there, including declared client descriptors, entries and assets; `pack` refuses to continue if the selection contains `.env*`, `*.pem`, `*.key`, `id_rsa*` or `id_ed25519*`. The friend does not need the author's `node_modules`, source checkout or capability hash. Static JavaScript/TypeScript imports are supported; native addons and dependencies that load undeclared dynamic files need an author-provided distributable. Packing runs no plugin code, tests or install scripts and refuses an existing output file or output inside the source folder.
 
+Packing excludes macOS `._*`, `.DS_Store` and `__MACOSX` metadata and disables AppleDouble generation, so archives can be installed on Linux without extra top-level entries.
+
 ## Capabilities
 
 Declare requested access in each plugin's `agnes.plugins[].capabilities`. One shape serves installed packages, local plugins, plugins scaffolded by the agent and the bundled official plugins:

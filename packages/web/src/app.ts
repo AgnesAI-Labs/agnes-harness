@@ -13,6 +13,7 @@ import {
 } from '@agnes/web-ui'
 import { settingsRoute, sortSessionsByRecency, untitledSessionLabel } from '@agnes/web-units/shell'
 import { createAppearanceController } from './app/appearance-controller.js'
+import { createBackendConnection } from './app/backend-connection.js'
 import { type ApplySessionControls, createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
 import { bindConnectionEvents } from './app/connection-events.js'
@@ -35,8 +36,11 @@ import { SubmissionOwner } from './app/submission-owner.js'
 import { bindTerminalNavigation } from './app/terminal-navigation.js'
 import { createTurnController } from './app/turn-controller.js'
 import { openApplicationHome, projectApplication, requestNewSession } from './application.js'
+import { installCloudConnectionSettings } from './backends/cloud-connection-settings.js'
+import { backendFrameStartup, installBackendFrameBridge } from './backends/frame-bridge.js'
 import { readyRosterModules } from './client-modules/reconcile/roster.js'
 import { ComposerDrafts, switchComposerDraft } from './composer-drafts.js'
+import { frontendBackendIdentity } from './remote-frontend.js'
 import '@agnes/web-admin/settings/registry'
 import type {
   ConfigSnapshot,
@@ -47,16 +51,8 @@ import type {
   UITurn,
   WorkspaceEntry,
 } from '@agnes/protocol'
-import {
-  createClient,
-  JsonRpcError,
-  localStorageJournal,
-  type PermissionOutcome,
-  type PermissionRequest,
-  type Session,
-} from '@agnes/sdk/browser'
+import type { PermissionOutcome, PermissionRequest, Session } from '@agnes/sdk/browser'
 import { type PermissionMode, permissionLabel, yoloEnabled } from '@agnes/web-admin/permission-picker'
-import { createSettingsController } from '@agnes/web-admin/settings'
 import { loadAuxiliaryModelDefaults, loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
 import { settingsCatalog } from '@agnes/web-admin/settings/locales'
 import { mountStatusCheck } from '@agnes/web-admin/settings/status-check'
@@ -77,10 +73,12 @@ import { attachmentErrorMessage } from '@agnes/web-units/shell'
 import { createWorkspaceController } from './app/workspace-controller.js'
 import { appNotice, setConnectionNotice, setReconnectNotice } from './app-notices.js'
 import { mountAppShell } from './app-shell.js'
+import { createLocalManagementSettings as createSettingsController } from './backends/local-management.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
 import { bindJobsClient } from './client-modules/jobs.js'
 import type { RosterSource } from './client-modules/reconcile.js'
+import { clientSessionServices } from './client-modules/session-services.js'
 import { readWebComposerMemory, rememberWebComposer, selectionFromMemory } from './composer-memory.js'
 import { composerReferences, composerSkills } from './composer-references.js'
 import { createDiagnosticsDialog } from './diagnostics-dialog.js'
@@ -91,13 +89,14 @@ import {
   loopIdentity,
   type NewSessionCatalog,
 } from './loop-picker.js'
+import { contributedModelCatalog } from './model-picker/catalog-source.js'
 import { namedModels } from './model-picker/state.js'
 import type { ModelPickerOption } from './model-picker.js'
 import { businessAgentSuggestions } from './pages/business-agents.js'
 import { callChannel } from './pages/channel-api.js'
 import { registerBuiltinHomeEntries } from './pages/entries.js'
 import { activeHomeEntry, bindHomeRouting, mountHomePages, watchActiveHomeEntry } from './pages/host.js'
-import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
+import { createReconnectController, type ReconnectPhase } from './reconnect.js'
 import { coalesceBurst, createRefreshCoordinator } from './refresh-coordinator.js'
 import { SESSION_SEARCH_EVENT } from './regions/session-tools.js'
 import { sessionViewCommands } from './regions/session-views.js'
@@ -210,7 +209,7 @@ export interface AppSessionContext {
   runtimeCatalog: typeof runtimeCatalog
   runtimeModels: typeof runtimeModels
   draftSessionRequest: typeof draftSessionRequest
-  selectedModelAvailable: typeof selectedModelAvailable
+  selectedModelAvailable: () => boolean
   selectedWorkspace: typeof selectedWorkspace
   sessionControls: typeof sessionControls
   sessionPending: typeof sessionPending
@@ -536,9 +535,7 @@ const appSessionContext: AppSessionContext = {
   get draftSessionRequest() {
     return draftSessionRequest
   },
-  get selectedModelAvailable() {
-    return selectedModelAvailable
-  },
+  selectedModelAvailable: () => modelCatalogSource.available(runtimeModels, knownSessionModel),
   get selectedWorkspace() {
     return selectedWorkspace
   },
@@ -676,21 +673,23 @@ const readOnlyController = createReadOnlyController(appSessionContext, {
   beginNewDraft: () => beginExplicitNewDraft(),
 })
 
-const composerDrafts = new ComposerDrafts(sessionStorage, location.origin)
+const composerDrafts = new ComposerDrafts(sessionStorage, frontendBackendIdentity())
 // Keep image submissions below the daemon's WebSocket frame cap, including their JSON-RPC envelope.
 const savedComposerDraft = { text: composerDrafts.read(), references: composerDrafts.readReferences() }
 const notice = appNotice
 const conversation = hosts.conversation
 const goalHost = hosts.goal
-const wsUrl = shellConfig.wsUrl
-const client = createClient({
-  sessionRestoreHistory: 'none',
-  transport: { kind: 'ws', url: wsUrl ?? '', protocols: ['agnes-v1'] },
-  auth: { kind: 'local' },
-  journal: localStorageJournal(sessionStorage, `agnes-web-commands:${wsUrl ?? location.origin}`),
-})
-// Before any plugin code can reach the client: owner-only methods go out only through ownerCall.
+const { client, wsUrl, probe: backendProbe } = createBackendConnection(shellConfig.wsUrl)
+onPageHide(
+  installBackendFrameBridge(
+    client,
+    (id) => sessionLabels.get(id),
+    (action, id, title, trigger) => void sessionActions.act(action, id, title, trigger),
+  ),
+)
+// Before plugins load, retain develop's owner-only method reservation.
 const ownerCall = reserveOwnerOnly(client)
+
 onPageHide(
   bindJobsClient({
     client,
@@ -704,7 +703,7 @@ let intentionalClose = false
 // Recovery state lives beside the notice, not in it: later errors rewrite the notice, and the
 // retry control must survive them.
 const reconnect = createReconnectController({
-  probe: bootstrapProbe((input, init) => fetch(input, init), wsUrl ?? ''),
+  probe: backendProbe,
   reload: () => location.reload(),
   onPhase: renderReconnect,
 })
@@ -789,53 +788,7 @@ const clientModules = await startClientModules({
     if (!response.ok) throw new Error(t('app.plugin.serviceUnavailable'))
     return response.json()
   },
-  clientServiceCaller: async (module, sessionId, service, input) => {
-    const response = await fetch('/api/client-modules/service', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({ rowId: module.rowId ?? module.packageId, sessionId, service, input }),
-    })
-    if (!response.ok) throw new Error(t('app.plugin.serviceUnavailable'))
-    const body: unknown = await response.json().catch(() => undefined)
-    if (!body || typeof body !== 'object' || !('output' in body))
-      throw new Error(t('app.plugin.serviceInvalid'))
-    return (body as { output: unknown }).output
-  },
-  clientEffectCaller: async (module, sessionId, service, commandId, input) => {
-    const response = await fetch('/api/client-modules/effect', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        rowId: module.rowId ?? module.packageId,
-        sessionId,
-        service,
-        commandId,
-        input,
-      }),
-    })
-    const body: unknown = await response.json().catch(() => undefined)
-    if (!response.ok) {
-      const failure = (body as { error?: { code?: unknown; data?: { code?: unknown } } } | null)?.error
-      if (typeof failure?.code === 'number' && typeof failure.data?.code === 'string')
-        throw new JsonRpcError({
-          code: failure.code,
-          message: t('app.plugin.effectUnavailable'),
-          data: { code: failure.data.code },
-        })
-      throw new Error(t('app.plugin.effectUnavailable'))
-    }
-    if (!body || typeof body !== 'object' || !('output' in body))
-      throw new Error(t('app.plugin.effectInvalid'))
-    return (body as { output: unknown }).output
-  },
+  ...clientSessionServices((key) => t(key)),
   authorizeCommand: ({ owner, command }) =>
     window.confirm(
       t('app.plugin.authorize', {
@@ -923,6 +876,7 @@ const clientModules = await startClientModules({
     onDraftChange: handleComposerDraftChange,
     onError: showError,
     onModelSelect: selectModel,
+    onModelCatalogChange: (models) => modelCatalogSource.set(models),
     onAuxiliaryRead: readAuxiliaryModels,
     onAuxiliarySelect: selectAuxiliaryModel,
     onModelSettingsChange: selectModelSettings,
@@ -1016,6 +970,7 @@ const statusCheck = mountStatusCheck({
 })
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')
+onPageHide(installCloudConnectionSettings(clientModules.locale))
 const openSettingsSection = (section: string) => {
   settingsRegion.open('model')
   run(async () => {
@@ -1124,6 +1079,7 @@ let sessionPending = new URLSearchParams(location.search).get('new') === '1'
 let stopAfterSeq = 0
 let approvalBusy = false
 let runtimeModels: ModelPickerOption[] = []
+const modelCatalogSource = contributedModelCatalog(() => void refreshModels().catch(showError))
 let configuredAccounts: ConfigSnapshot['accounts'] = []
 let accountProvider: { route?: string; id?: string; model?: string } | null = null
 let knownSessionModel: KnownSessionModel | undefined
@@ -1376,6 +1332,7 @@ const stopSettingsRouting = onHistoryNavigation(restoreSettingsLocation)
 clientModules.locale.subscribe(() => settings.refreshLocale())
 const firstRun = createFirstRunController({
   host: hosts.firstRun,
+  modelCatalog: modelCatalogSource,
   banner: hosts.doctorNotice,
   client,
   storage: safeThemeStorage(),
@@ -1871,18 +1828,16 @@ function selectComposerDraft(id?: string, options: { preserve?: boolean; carry?:
 }
 let modelReadGeneration = 0
 let modelAppliedGeneration = 0
-function selectedModelAvailable(): boolean {
-  const selected = knownSessionModel
-  return (
-    !selected || runtimeModels.some((model) => model.route === selected.route && model.id === selected.id)
-  )
-}
 async function refreshModels(catalogReady?: Promise<void>): Promise<ModelPickerOption[]> {
   const generation = ++modelReadGeneration
   const apis = await client.apis()
   // Start the model read immediately; defaults and labels must settle before selection is applied.
   await catalogReady
-  const models = namedModels(apis.profile.models ?? [], configuredAccounts ?? [])
+  const models = modelCatalogSource.visible(
+    namedModels(apis.profile.models ?? [], configuredAccounts ?? []),
+    knownSessionModel,
+    !!sessionBinding.session,
+  )
   if (generation > modelAppliedGeneration) {
     modelAppliedGeneration = generation
     runtimeModels = models
@@ -2334,7 +2289,7 @@ onPageHide(() => {
   void (previous.stop?.() ?? Promise.resolve()).finally(() => client.close())
 })
 
-run(async () => {
+const startup = backendFrameStartup(async () => {
   const startupSelection = sessionBinding.capture()
   setConnection('connecting')
   if (!wsUrl) throw new Error(t('app.ws.unavailable'))
@@ -2535,3 +2490,4 @@ run(async () => {
     settingsRegion.route(target)
   }
 })
+run(startup)

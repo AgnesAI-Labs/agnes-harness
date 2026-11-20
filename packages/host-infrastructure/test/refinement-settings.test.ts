@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -7,6 +7,7 @@ import {
   REFINEMENT_ENDPOINTS,
 } from '@agnes/distribution/refinement-model'
 import { DEFAULT_REFINEMENT_SETTINGS } from '@agnes/protocol'
+import { createPrivateFileSync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveCredentialFile } from '../src/adapters/credential-files.js'
 import { createCredentialStore } from '../src/adapters/credential-store.js'
@@ -282,7 +283,12 @@ describe('RefinementSettingsStore', () => {
     rmSync(keyFile)
     expect(store.read()).toMatchObject({ credentialMissing: true })
     // A missing key is looked for again on every read, so a key back in place is seen at once.
-    writeFileSync(keyFile, key, { mode: 0o600 })
+    const restored = createPrivateFileSync(keyFile)
+    try {
+      writeFileSync(restored, key)
+    } finally {
+      closeSync(restored)
+    }
     expect(store.current()).not.toHaveProperty('credentialMissing')
   })
 

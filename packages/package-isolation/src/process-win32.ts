@@ -9,6 +9,7 @@ export async function runWindowsIsolatedCommand(
 ): Promise<{ stdout: string }> {
   const controller = new AbortController()
   let failure: Error | undefined
+  let started = false
   const chunks: Buffer[] = []
   const stop = (message: string) => {
     failure ??= new Error(message)
@@ -28,6 +29,7 @@ export async function runWindowsIsolatedCommand(
       windowsBatch: options.windowsBatch ?? 'script',
       signal: controller.signal,
     })
+    started = true
     let bytes = 0
     child.stdout.on('data', (chunk: Buffer) => {
       bytes += chunk.length
@@ -42,12 +44,17 @@ export async function runWindowsIsolatedCommand(
     if (result.code !== 0) throw new Error(`command exited with status ${result.code ?? 'signal'}`)
     return { stdout: Buffer.concat(chunks).toString('utf8') }
   } catch (cause) {
+    // Startup cancellation owns preflight failures; a started child's cleanup failure stays visible.
     if (
       failure &&
-      cause instanceof Error &&
-      (cause.name === 'AbortError' || ('code' in cause && cause.code === 'ABORT_ERR'))
-    )
+      !(cause instanceof Error && 'code' in cause && cause.code === 'E_JOB_CLEANUP_TIMEOUT') &&
+      (!started ||
+        (cause instanceof Error &&
+          (cause.name === 'AbortError' || ('code' in cause && cause.code === 'ABORT_ERR'))))
+    ) {
+      if (cause !== failure) failure.cause = cause
       throw withCommandOutput(failure, chunks)
+    }
     throw cause instanceof Error ? withCommandOutput(cause, chunks) : cause
   } finally {
     clearTimeout(timeout)

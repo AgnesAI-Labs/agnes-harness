@@ -68,6 +68,7 @@ import {
   toolDecisionSource,
 } from './tool-decision.js'
 import { discloseTool } from './tool-disclosure.js'
+import { toolResultRecords } from './tool-result-records.js'
 import {
   notStartedResults,
   reconciledMessage,
@@ -260,13 +261,14 @@ async function settleSyntheticDispatch(
   const notes = await callFailureNotes(s, call.name, effect.effectId, o, input.code)
   await s.transition(
     [
-      s.ev(
-        'tool/result',
+      ...toolResultRecords(
+        s,
         {
           toolUseId: call.toolUseId,
           content: toLedgerContent(result.content),
           isError: true,
           code: input.code,
+          dispatchPhase: phase,
           ...(input.structured ? { structured: input.structured } : {}),
           ...(input.code === 'CANCELLED'
             ? { partial: input.partial ?? false, cancelledBy: input.cancelledBy ?? s.d.actor }
@@ -1518,8 +1520,8 @@ export async function approveAndExecute(
           }),
         ]
       : [
-          s.ev(
-            'tool/result',
+          ...toolResultRecords(
+            s,
             {
               toolUseId: call.toolUseId,
               content: toLedgerContent(
@@ -1548,6 +1550,7 @@ export async function approveAndExecute(
                   : {}
               })(),
               ...(recordedResult.structured !== undefined ? { structured: recordedResult.structured } : {}),
+              dispatchPhase: settledDispatchPhase,
               isError: cancelled || recordedResult.isError === true,
               ...(cancelled
                 ? { code: 'CANCELLED', partial: true, cancelledBy: stopRequestedBy(s) ?? s.d.actor }
@@ -1574,7 +1577,7 @@ export async function approveAndExecute(
               ]
             : []),
         ]
-    resultRows.push(...(await executedNotes(s, call.name, o, deferred ? undefined : resultRows[0])))
+    resultRows.push(...(await executedNotes(s, call.name, o, resultRows)))
     const verifierSignal = s.ev('verifier/signal', {
       scope: 'tool',
       tier: s.preset.verifier.defaultTier,

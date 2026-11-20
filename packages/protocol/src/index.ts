@@ -2,7 +2,7 @@ export type { ApplicationWorkbenchText } from '../gen/ts/extension-manifest.js'
 export type { DecisionPresentation, InputDeliverer, ToolPresentation } from '../gen/ts/session-v1.js'
 // jcs is the shared strict RFC 8785 serializer for SDK/daemon signature bytes; it does not replace core request hashing.
 export { type ValidatedRequestMedia, validateRequestMedia } from './request-media.js'
-export { readSessionTitle, SESSION_TITLE_EVENT, SessionTitleRecord } from './session-title.js'
+export * from './session-title.js'
 export {
   isSkillBundleIgnored,
   isSkillBundleMarker,
@@ -786,6 +786,7 @@ export {
   validateReferenceSelections,
 } from './references.js'
 export * from './refinement.js'
+export * from './remote-frontend.js'
 export * from './resource-control.js'
 export * from './runtime-admin.js'
 export * from './runtime-target-artifact.js'

@@ -4,11 +4,14 @@ import { act, type ComponentType, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { apply } from '../../package-manager/bundled-plugins/browser/src/browser.js'
+import { browserAddress } from '../../package-manager/bundled-plugins/browser/src/browser-address.js'
+
+const screenInteract = vi.hoisted(() => vi.fn())
 
 vi.mock('@agnes/web-ui', async () => {
   const { createElement } = await import('react')
-  const button = ({ children, label, onClick, disabled }: any) =>
-    createElement('button', { onClick, disabled, 'aria-label': label }, children ?? label)
+  const button = ({ children, label, onClick, disabled, htmlType }: any) =>
+    createElement('button', { onClick, disabled, type: htmlType, 'aria-label': label }, children ?? label)
   return {
     Button: button,
     IconButton: button,
@@ -46,15 +49,36 @@ vi.mock('@agnes/web-ui', async () => {
   }
 })
 vi.mock('../../package-manager/bundled-plugins/browser/src/browser-screen.js', async () => {
-  const { createElement, forwardRef } = await import('react')
+  const { createElement, forwardRef, useImperativeHandle } = await import('react')
   return {
-    BrowserScreen: forwardRef((props: { fixedSize?: boolean; actualSize?: boolean }, _ref) =>
-      createElement('div', {
+    BrowserScreen: forwardRef((props: { fixedSize?: boolean; actualSize?: boolean }, ref) => {
+      useImperativeHandle(ref, () => ({ interact: screenInteract }))
+      return createElement('div', {
         'data-viewport': props.fixedSize ? 'fixed' : 'adaptive',
         'data-scale': props.actualSize ? 'actual' : 'fit',
-      }),
-    ),
+      })
+    }),
   }
+})
+
+it.each([
+  [' www.baidu.com ', 'https://www.baidu.com/'],
+  ['baidu.com/a?q=1#part', 'https://baidu.com/a?q=1#part'],
+  ['localhost:5173', 'http://localhost:5173/'],
+  ['127.0.0.1:5173', 'http://127.0.0.1:5173/'],
+  ['[::1]:5173', 'http://[::1]:5173/'],
+  ['http://example.com', 'http://example.com/'],
+  ['index.html', 'index.html'],
+  ['docs.v1/index.html', 'docs.v1/index.html'],
+  ['./example.com', './example.com'],
+  ['C:\\workspace\\index.html', 'C:\\workspace\\index.html'],
+  ['file:///workspace/index.html', 'file:///workspace/index.html'],
+  ['https://', undefined],
+  ['www..example.com', undefined],
+  ['https://account:token@example.com/', undefined],
+  ['javascript:alert(1)', undefined],
+])('converts address-bar input %s to %s', (input, output) => {
+  expect(browserAddress(input)).toBe(output)
 })
 
 it('automatically displays agent pages without a load button or an input connection for empty history', async () => {
@@ -122,6 +146,16 @@ it('automatically displays agent pages without a load button or an input connect
   })
   const publish = async (pages: unknown[]) =>
     act(async () => callbacks.get('browser.pages')?.({ enabled: true, state: 'ready', pages }))
+  const submitAddress = async (value: string) => {
+    const input = container.querySelector('input')
+    if (!input?.form) throw new Error('missing address bar')
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setValue?.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => input.form?.dispatchEvent(new Event('submit', { bubbles: true })))
+  }
   try {
     await act(async () => root.render(createElement(Panel)))
     await publish([])
@@ -134,12 +168,42 @@ it('automatically displays agent pages without a load button or an input connect
     expect(query).not.toHaveBeenCalled()
     call.mockRejectedValueOnce(new Error('Session pages unavailable'))
     await act(async () => callbacks.get('browser.pages')?.({ enabled: true, state: 'ready', changed: true }))
-    expect(container.querySelector('[role="status"]')?.textContent).toBe('browser.pagesUnavailable')
+    expect(container.querySelector('[role="status"]')).toBeNull()
     expect(container.querySelector('[role="alert"]')).toBeNull()
     expect(container.textContent).not.toContain('browser.empty')
     expect(effect).not.toHaveBeenCalled()
-    await publish([])
+    await act(async () => vi.advanceTimersByTimeAsync(3000))
     expect(container.querySelector('[role="status"]')).toBeNull()
+    expect(container.textContent).toContain('browser.empty')
+    await submitAddress('https://')
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('browser.invalidUrl')
+    expect(effect).not.toHaveBeenCalled()
+    expect(container.textContent).not.toContain('browser.checkAction')
+    await submitAddress('www.baidu.com')
+    expect(effect).toHaveBeenCalledWith('browser.open', { url: 'https://www.baidu.com/' }, expect.anything())
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    effect.mockResolvedValueOnce({ status: 'refused', code: 'FILE_DENIED' } as never)
+    await submitAddress('index.html')
+    expect(effect).toHaveBeenCalledWith('browser.open', { url: 'index.html' }, expect.anything())
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('browser.fileDenied')
+    expect(container.textContent).not.toContain('browser.checkAction')
+    effect.mockRejectedValueOnce(new Error('response lost'))
+    await submitAddress('example.com')
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('browser.actionStatusUnavailable')
+    const afterLoss = effect.mock.calls.length
+    await act(async () => vi.advanceTimersByTimeAsync(3000))
+    expect(effect).toHaveBeenCalledTimes(afterLoss)
+    expect(container.textContent).not.toContain('browser.checkAction')
+    call.mockRejectedValueOnce(
+      Object.assign(new Error('Superseded'), { kind: 'json-rpc', data: { code: 'GENERATION_STALE' } }),
+    )
+    await act(async () => callbacks.get('browser.pages')?.({ enabled: true, state: 'ready', changed: true }))
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('browser.sessionIncompatible')
+    expect(container.querySelector<HTMLButtonElement>('button[type=submit]')?.disabled).toBe(true)
+    const afterRefusal = call.mock.calls.length
+    await act(async () => vi.advanceTimersByTimeAsync(30_000))
+    expect(call).toHaveBeenCalledTimes(afterRefusal)
+    effect.mockClear()
     call.mockClear()
     stream.open.mockClear()
     await act(async () => {
@@ -160,6 +224,8 @@ it('automatically displays agent pages without a load button or an input connect
     await vi.waitFor(() => expect(callbacks.has('browser.pages')).toBe(true))
     await publish([page('user', 1), page('model', 2)])
     expect(effect).toHaveBeenCalledWith('browser.connect', {}, expect.anything())
+    await submitAddress('example.com/path')
+    expect(screenInteract).toHaveBeenCalledWith({ type: 'navigate', url: 'https://example.com/path' })
     expect(container.querySelector('[data-viewport="adaptive"][data-scale="fit"]')).not.toBeNull()
     await act(async () => container.querySelector<HTMLButtonElement>('[data-option="viewport"]')!.click())
     expect(container.querySelector('[data-viewport="fixed"]')).not.toBeNull()

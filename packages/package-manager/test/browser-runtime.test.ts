@@ -6,6 +6,9 @@ import { expect, it, vi } from 'vitest'
 const { BrowserRuntime } = await import(
   new URL('../bundled-plugins/browser/src/runtime.mjs', import.meta.url).href
 )
+const { browserHostKey } = await import(
+  new URL('../bundled-plugins/browser/src/launcher.mjs', import.meta.url).href
+)
 const { browserUrl, browserInstructions, failure } = await import(
   new URL('../bundled-plugins/browser/src/policy.mjs', import.meta.url).href
 )
@@ -663,6 +666,14 @@ it.each(['page', 'capture'] as const)(
   },
 )
 
+it.each(['x64', 'arm64'])('rejects macOS 12 before selecting the %s browser payload', (cpu) => {
+  expect(() => browserHostKey('darwin', cpu, '21.6.0')).toThrow(
+    expect.objectContaining({ code: 'UNSUPPORTED_MACOS' }),
+  )
+  expect(browserHostKey('darwin', cpu, '22.0.0')).toBe('darwin-' + cpu)
+  expect(browserHostKey('win32', 'x64', '10.0.26100')).toBe('win32-x64')
+})
+
 it('returns known open refusals as terminal results while preserving uncertain or operating-system failures', async () => {
   const { runtime, session } = fixture()
   const handlers = new Map<string, (input: unknown, context: unknown) => Promise<unknown>>()
@@ -680,6 +691,10 @@ it('returns known open refusals as terminal results while preserving uncertain o
   runtime.protectedOrigins.add('http://localhost:4180')
   const open = handlers.get('browser.open')!
   const context = { session, signal: new AbortController().signal }
+  await expect(runtime.act(session, { action: 'open' })).rejects.toMatchObject({ code: 'INVALID_URL' })
+  await expect(runtime.act(session, { action: 'open', path: 'https://example.com/' })).rejects.toMatchObject({
+    code: 'FILE_DENIED',
+  })
   await expect(open({ url: 'http://localhost:4180/' }, context)).resolves.toEqual({
     status: 'refused',
     code: 'PROTECTED_TARGET',
@@ -696,9 +711,26 @@ it('returns known open refusals as terminal results while preserving uncertain o
       },
     ),
   ).resolves.toEqual({ status: 'refused', code: 'PAGE_UNAVAILABLE' })
+  vi.spyOn(runtime, 'launch').mockRejectedValueOnce(
+    new Error(
+      'browserType.launch: Target page, context or browser has been closed\nBrowser logs: <launching> /private/chrome',
+    ),
+  )
+  await expect(open({ url: 'http://localhost:5173/' }, context)).resolves.toEqual({
+    status: 'refused',
+    code: 'LAUNCH_FAILED',
+  })
+  expect(runtime.status()).toMatchObject({
+    state: 'failed',
+    errorCode: 'LAUNCH_FAILED',
+    error: expect.stringContaining('Turn it off and back on in Plugins'),
+  })
+  expect(runtime.status().error).not.toMatch(/browserType\.launch|Browser logs|\/private\/chrome/)
+  expect(runtime.list(session)).toEqual([])
   await expect(open({ url: 'http://localhost:5173/' }, context)).resolves.toMatchObject({
     pageId: expect.any(String),
   })
+  expect(runtime.status()).toMatchObject({ state: 'ready', errorCode: null, error: null })
   for (const error of [
     failure('UNCERTAIN', 'Inspect before retrying'),
     Object.assign(new Error('Pipe closed'), { code: 'EPIPE' }),

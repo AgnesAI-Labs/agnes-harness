@@ -10,6 +10,8 @@ The reader follows session readiness epochs. A history preview can mount the rol
 
 Every delivered version is a content snapshot. Editing the workspace file does not change it. Open and download always use `ClientResourceService` with the recorded lane and full artifact identity. Refusal and reclaimed/missing content remain failures. A reference is never authorization.
 
+Version 0.1.6 adds SVG image previews, including legacy octet-stream records named `.svg`. HTML dependencies use the original paths and artifact references from the exact durable `present` call/result; only registered snapshots in the HTML directory are embedded, within the combined 1 MiB limit. Image objects become inert images. Missing dependencies show a localized error. This requires the matching host resource loader; an older installed cloud UI plugin must be updated separately from rebuilding the local frontend.
+
 Intelligent UI is an optional peer of the backend tool. If rendering is disabled or fails, `present` still records the snapshots and succeeds; this plugin displays the durable plain file list. Existing Intelligent UI file-list records remain readable after switching providers.
 
 The conversation tail follows its parent outlet with `slots.inject()`. It may be absent during startup or conversation replacement; the data store, card renderers and workbench panel remain available. Disposing the role also removes the injection, so later outlet declarations cannot revive its old owner.

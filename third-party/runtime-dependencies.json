@@ -15,6 +15,7 @@
         "packages/package-manager",
         "packages/sdk",
         "packages/web",
+        "packages/web-server",
         "packages/web-ui"
       ]
     },

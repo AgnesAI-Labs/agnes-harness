@@ -6,6 +6,7 @@ import {
   type RuntimeErrorStage,
   RuntimeStatusStore,
 } from '@agnes/web-foundation/client-modules/runtime-status'
+import { backendResourceUrl } from '../remote-frontend.js'
 import { rowKey } from './reconcile/catalog.js'
 import type {
   ClientModuleLifecycleStep,
@@ -56,7 +57,7 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
     ((url: string) => {
       // A repeated session binding may use the same reviewed code. Explicit hot reload and
       // same-URL revisions advance the query token; normal rebinding reuses the ESM namespace.
-      return import(/* @vite-ignore */ importUrls.resolve(url))
+      return import(/* @vite-ignore */ backendResourceUrl(importUrls.resolve(url)))
     })
   const prepareStyles = options.prepareStyles ?? prepareDocumentStyles
   const moduleCache = options.moduleCache ?? { delete: () => undefined }

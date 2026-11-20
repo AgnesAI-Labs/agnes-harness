@@ -46,15 +46,20 @@ describe('web_fetch tool', () => {
     )
     expect(() => renderHtml('<div/>'.repeat(600), 'https://example.com')).toThrow('WEB_CONVERSION_FAILED')
   })
-  it('returns 404 as an explicitly labeled response', async () => {
-    const ctx = fakeToolContext()
-    ctx.net.fetchPublic = vi.fn(async () => ({ ...result('missing', 'text'), statusCode: 404 }))
-    const output = await webFetchTool.execute({ url: 'https://example.com' }, ctx)
-    expect(JSON.stringify(output.content)).toContain('non-success response')
-    expect(output.details).toMatchObject({ statusCode: 404, truncated: false })
-    expect(output.isError).toBeUndefined()
-    expect(output.structured).toBeUndefined()
-  })
+  it.each([200, 204, 206, 302, 403, 404, 429, 500, 503])(
+    'preserves HTTP %s response text and marks non-success as a tool error',
+    async (statusCode) => {
+      const ctx = fakeToolContext()
+      ctx.net.fetchPublic = vi.fn(async () => ({ ...result('response body', 'text'), statusCode }))
+      const output = await webFetchTool.execute({ url: 'https://example.com' }, ctx)
+      const failed = statusCode < 200 || statusCode >= 300
+      expect(JSON.stringify(output.content)).toContain('response body')
+      expect(JSON.stringify(output.content).includes('non-success response')).toBe(failed)
+      expect(output.details).toMatchObject({ statusCode, truncated: false })
+      expect(output.isError).toBe(failed ? true : undefined)
+      expect(output.structured).toBeUndefined()
+    },
+  )
   it.each([false, true])('bounds source and model output even if artifacts fail: %s', async (fail) => {
     // The page is sized against an 8 KiB limit, so the case asks for it rather than the default.
     const ctx = fakeToolContext({ outputMaxBytes: 8192, ...(fail ? { artifactsFail: 'offline' } : {}) })

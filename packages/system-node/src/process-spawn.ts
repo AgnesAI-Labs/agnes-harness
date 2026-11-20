@@ -12,6 +12,7 @@ import {
   type RestrictedLaunch,
   restrictedLaunch,
   type WindowsConfinement,
+  windowsJobLaunch,
 } from './process-restricted.js'
 
 export { sealWindowsConfinement, type WindowsConfinement } from './process-restricted.js'
@@ -113,6 +114,7 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
     ),
   )
   let restricted: RestrictedLaunch | undefined
+  let ordinary: ReturnType<typeof windowsJobLaunch> | undefined
   try {
     if (confinement)
       restricted = restrictedLaunch(
@@ -123,14 +125,22 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
         confinement,
         bootstrapEnv,
       )
+    else
+      ordinary = windowsJobLaunch(
+        argv,
+        options.cwd,
+        options.env,
+        options.windowsBatch ?? 'script',
+        bootstrapEnv,
+      )
   } catch (cause) {
     return Promise.reject(cause)
   }
   return new Promise((resolve, reject) => {
     const job = createWindowsProcessJob()
-    if (restricted && typeof job.contains !== 'function') {
+    if (typeof job.contains !== 'function') {
       job.close()
-      reject(error('E_SYSTEM_NATIVE_UNAVAILABLE', 'Rebuild native artifact for restricted Windows launches'))
+      reject(error('E_SYSTEM_NATIVE_UNAVAILABLE', 'Rebuild native artifact for Windows launches'))
       return
     }
     let brokerPath: string
@@ -157,20 +167,19 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
     }
     let started = false
     let released = false
-    // A restricted target stays suspended until the Host has proven it is inside this Job.
+    // Every target stays suspended until the Host has proven it is inside this Job.
     let created: number | undefined
     let stopped = false
     let cancelled = false
     let failure: Error | undefined
     let targetExit: ExitStatus | undefined
     let stoppedProcesses: number | undefined
+    let stopTimer: ReturnType<typeof setTimeout> | undefined
     let complete: (status: Awaited<WindowsJobProcess['completion']>) => void = () => {}
     const completion: WindowsJobProcess['completion'] = new Promise((done) => {
       complete = done
     })
-    const stop = () => {
-      if (stopped) return
-      stopped = true
+    const terminate = () => {
       try {
         job.terminate()
       } catch (cause) {
@@ -178,6 +187,22 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
       }
       // Also covers cancellation before the trusted broker was assigned to the Job.
       broker.kill('SIGKILL')
+    }
+    const stop = () => {
+      if (stopped) return
+      stopped = true
+      if (released && !started && broker.connected) {
+        // The suspended target may not have inherited this Job. Let its owning broker discard it
+        // before terminating the broker; killing only the Job can otherwise leave its pipes open.
+        stopTimer = setTimeout(terminate, 1000)
+        try {
+          broker.send({ type: 'abort' }, (cause) => {
+            if (cause) terminate()
+          })
+        } catch {
+          terminate()
+        }
+      } else terminate()
     }
     const abort = () => {
       cancelled = true
@@ -228,10 +253,8 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
               ? { type: 'run-restricted', cwd: options.cwd, ...restricted }
               : {
                   type: 'run',
-                  argv,
                   cwd: options.cwd,
-                  env: options.env,
-                  windowsBatch: options.windowsBatch ?? 'script',
+                  ...ordinary,
                 },
             (cause) => {
               if (cause) fail(cause)
@@ -242,7 +265,6 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
         }
       } else if (
         message.type === 'created' &&
-        restricted &&
         released &&
         created === undefined &&
         validPid(message.pid) &&
@@ -250,8 +272,11 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
       ) {
         created = Number(message.pid)
         try {
+          // Do not rely on implicit Job inheritance in a managed/nested Host. The target is still
+          // suspended, and assign verifies the same creation identity before changing membership.
+          if (!job.contains?.(created, message.start)) job.assign(created, message.start)
           if (!job.contains?.(created, message.start))
-            throw error('E_JOB_MEMBERSHIP', 'Restricted Windows process is outside its Job')
+            throw error('E_JOB_MEMBERSHIP', 'Windows process is outside its Job')
           broker.send({ type: 'resume' }, (cause) => {
             if (cause) fail(cause)
           })
@@ -263,7 +288,8 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
         released &&
         !started &&
         validPid(message.pid) &&
-        (!restricted || (created !== undefined && Number(message.pid) === created))
+        created !== undefined &&
+        Number(message.pid) === created
       ) {
         started = true
         clearTimeout(timer)
@@ -298,9 +324,13 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
         fail(error(message.code, 'Windows target process could not start'))
       } else fail(error('EPROTO', 'Unexpected process gate reply'))
     })
-    broker.once('exit', stop)
+    broker.once('exit', () => {
+      stop()
+      terminate()
+    })
     broker.once('close', (code, signal) => {
       clearTimeout(timer)
+      clearTimeout(stopTimer)
       clearInterval(observation)
       options.signal?.removeEventListener('abort', abort)
       void (async () => {

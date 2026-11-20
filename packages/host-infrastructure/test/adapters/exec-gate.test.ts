@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { testFsPolicy } from '@agnes/core/testkit'
+import { describe, expect, it, vi } from 'vitest'
 import { createPolicyExec } from '../../src/adapters/exec.js'
 
 const okInner = {
@@ -7,6 +8,39 @@ const okInner = {
 }
 
 describe('exec gate: remote posture', () => {
+  it.each([
+    [[], { mode: 'deny', hosts: [] }],
+    [['*'], { mode: 'allow', hosts: [] }],
+    [['example.com'], { mode: 'hosts', hosts: ['example.com'] }],
+  ])(
+    'carries the authorized network scope %j without broadening file writes',
+    async (networkAllow, network) => {
+      const policy = { ...testFsPolicy('/work'), networkAllow: networkAllow as string[] }
+      const inner = vi.fn(okInner.run)
+      const run = createPolicyExec(
+        { ...okInner, run: inner },
+        {
+          policy: () => policy,
+          boundDigest: () => policy.digest,
+          state: () => ({ backend: 'l1', onUnavailable: 'deny', access: 'workspace-write' }),
+          authorizeCwd: async (cwd) => cwd,
+        },
+      )
+      await run(['echo', 'hi'], { cwd: '/work', sandbox: { policyDigest: policy.digest, backend: 'l1' } })
+      expect(inner).toHaveBeenCalledWith(
+        ['echo', 'hi'],
+        expect.objectContaining({
+          sandbox: expect.objectContaining({
+            policy: expect.objectContaining({
+              network,
+              fsWrite: expect.objectContaining({ allow: ['/work'] }),
+            }),
+          }),
+        }),
+      )
+    },
+  )
+
   it('lets a remote-posture request through even though onUnavailable is deny', async () => {
     const run = createPolicyExec(okInner, {
       boundDigest: () => 'd1',

@@ -1,6 +1,7 @@
 {
   "name": "@agnes/extension-api",
-  "version": "5.22.0",
+  "version": "5.23.0",
+
   "private": true,
   "type": "module",
   "exports": {

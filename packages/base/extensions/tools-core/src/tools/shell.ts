@@ -5,11 +5,13 @@ import { runShellJob } from '../../../jobs/src/shell.js'
 import { failureCode, toolFailure } from '../guards/feedback.js'
 import { guardedCommandResult } from '../guards/output.js'
 import {
+  commandNetworkNote,
   DEADLINE_ADVICE,
   deadlineStop,
   deadlineWait,
   packageListsNote,
   shellGuidance,
+  shellSetupAdvice,
   timeoutGuidance,
 } from '../shell-guidance.js'
 import { ShellParams } from './schemas.js'
@@ -94,7 +96,8 @@ export function createShellTool(jobs?: ShellJobs, observationMs?: number) {
         return toolFailure(
           ctx,
           failureCode(e, 'SHELL_START_FAILED'),
-          `command could not be started (${failureCode(e, 'SHELL_START_FAILED')}); check the selected interpreter and cwd with available file tools; choose an allowed command or ask the user to adjust access.`,
+          shellSetupAdvice(e) ??
+            `command could not be started (${failureCode(e, 'SHELL_START_FAILED')}); check the selected interpreter and cwd with available file tools; choose an allowed command or ask the user to adjust access.`,
         )
       }
       const parts: string[] = shellGuidance(ctx, args.command, r.stoppedProcesses)
@@ -102,6 +105,8 @@ export function createShellTool(jobs?: ShellJobs, observationMs?: number) {
       if (r.stderr) parts.push(`[stderr]\n${r.stderr.replace(/\n$/, '')}`)
       const packageLists = packageListsNote(r.stdout, r.stderr)
       if (packageLists) parts.push(packageLists)
+      const networkNote = commandNetworkNote(ctx, r.stdout, r.stderr)
+      if (networkNote) parts.push(networkNote)
       // An executor that reports nothing (a third-party seam) still has the kernel's cut-off behind it,
       // so only then is a killed-looking result that took the whole limit read as the timeout it was.
       const timedOut = r.timedOut ?? (r.code < 0 && Date.now() - startedAt >= timeoutMs)

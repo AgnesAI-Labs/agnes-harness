@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs'
+import { readdirSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { nativeRealpathSync } from '@agnes/system-node/realpath'
 
@@ -48,4 +48,24 @@ export function sandboxReadPaths(denyPaths: readonly string[], root = '/'): stri
   }
   walk(root)
   return paths
+}
+
+/** File masks require an existing mountpoint. Missing private files conservatively mask their
+ * parent for this command, without creating a file or directory in the installation home.
+ */
+export function sandboxFileMasks(denyPaths: readonly string[], privateFiles: readonly string[]) {
+  const files = new Set(privateFiles.map(canonicalDeny))
+  const fileDenyPaths: string[] = []
+  const paths = denyPaths.map((path) => {
+    if (!files.has(canonicalDeny(path))) return path
+    try {
+      if (!statSync(path).isFile()) throw new Error('private file is not a regular file')
+      fileDenyPaths.push(path)
+      return path
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      return dirname(path)
+    }
+  })
+  return { denyPaths: [...new Set(paths)], fileDenyPaths }
 }

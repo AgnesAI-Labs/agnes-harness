@@ -1,5 +1,7 @@
 # Agnes Harness
 
+云端连接与联调请参阅[云端对接文档](docs/guide/remote-frontend.zh-CN.md)。
+
 English | [简体中文](README.zh-CN.md)
 
 <p align="center">

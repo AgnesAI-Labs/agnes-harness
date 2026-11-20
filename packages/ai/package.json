@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./model-adapter": "./src/model-adapter.ts",
     "./testkit": "./testkit/index.ts"
   },
   "scripts": {

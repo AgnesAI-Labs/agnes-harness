@@ -79,9 +79,11 @@ export function supervisorHostFacade(
         })
       return { view: name, doc: {} as PresetDoc, chain: [], hash: '' } as unknown as ResolvedPreset
     },
-    /** The supervisor checks the sealed declaration before forwarding. The worker repeats the full
-     * assembled-provider check (including the published catalogue), so this is not the final gate. */
-    validateModelSwitch(sel: { route: string; model: string }): void {
+    /** Session-owned adapters can contribute runtime routes absent from the profile. The worker
+     * performs the authoritative assembled-route/model check before writing the session switch;
+     * display catalog publication is never used to authorize it. Without a session, check the profile. */
+    validateModelSwitch(sel: { route: string; model: string }, sessionKey?: string): void {
+      if (sessionKey) return
       const route = profile.provider.routes?.find((candidate) => candidate.route === sel.route)
       const modelDeclared =
         route?.models === undefined || route.models.some((model) => model.id === sel.model)

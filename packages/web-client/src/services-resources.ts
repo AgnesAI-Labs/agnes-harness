@@ -1,6 +1,7 @@
 import { type Context, Service } from '@agnes/cordis'
 import type { ArtifactReadResult } from '@agnes/protocol'
 import { downloadArtifact } from './artifact-download.js'
+import { prepareHtmlPreview } from './html-preview-resources.js'
 import type {
   ClientDocumentArtifact,
   ClientDocumentKind,
@@ -47,8 +48,13 @@ function isArtifact(value: unknown): value is ClientImageArtifact {
   )
 }
 
-function acceptsDocumentMime(kind: ClientDocumentKind, mime: string): boolean {
-  if (kind === 'image') return IMAGE_MIMES.has(mime)
+function acceptsDocumentMime(kind: ClientDocumentKind, mime: string, name?: string): boolean {
+  if (kind === 'image')
+    return (
+      IMAGE_MIMES.has(mime) ||
+      mime === 'image/svg+xml' ||
+      (mime === 'application/octet-stream' && typeof name === 'string' && /\.svg$/i.test(name))
+    )
   if (kind === 'pdf') return mime === 'application/pdf'
   if (kind === 'html') return mime === 'text/html'
   if (kind === 'markdown') return mime === 'text/markdown' || mime === 'text/plain'
@@ -151,40 +157,83 @@ export class ClientResourceService extends Service {
   }
 
   private async loadDocument(
-    input: Readonly<{ laneId: string; kind: ClientDocumentKind; artifact: ClientImageArtifact }>,
+    input: Parameters<ClientDocumentLoader['load']>[0],
   ): Promise<ClientDocumentResource> {
     const sessionId = this.session.sessionId
     if (!sessionId) throw new Error('document resource requires an active session')
     if (
       !isBoundedText(input.laneId) ||
       !isArtifact(input.artifact) ||
-      !acceptsDocumentMime(input.kind, input.artifact.mime)
+      !acceptsDocumentMime(input.kind, input.artifact.mime, input.name)
     )
       throw new TypeError('document resource reference is invalid')
 
-    const result = await this.client.call<ArtifactReadResult>('_agnes/v1/artifact.read', {
-      sessionId,
-      laneId: input.laneId,
-      artifact: input.artifact,
-    })
-    if (this.session.sessionId !== sessionId) throw new Error('document resource session changed')
-    if (!result.ok && result.status === 410 && result.code === 'artifact_reclaimed')
-      throw new ClientResourceReclaimedError()
-    if (!result.ok)
-      throw Object.assign(new Error(`document resource is unavailable: ${result.code}`), {
-        code: result.code,
-      })
-    if (!sameImageArtifact(result.artifact, input.artifact) || result.contentLength !== input.artifact.size)
-      throw new Error('document resource identity mismatch')
-
-    const bytes = decodeBase64(result.base64)
-    if (bytes.byteLength !== result.contentLength) throw new Error('document resource length mismatch')
+    const { bytes, base64 } = await this.readArtifact(sessionId, input.laneId, input.artifact)
+    const svg = input.kind === 'image' && !IMAGE_MIMES.has(input.artifact.mime)
+    if (svg) {
+      const parsed = new DOMParser().parseFromString(new TextDecoder().decode(bytes), 'image/svg+xml')
+      if (parsed.documentElement.localName !== 'svg' || parsed.querySelector('parsererror'))
+        throw new Error('SVG preview is invalid')
+    }
     const needsUrl = input.kind === 'image' || input.kind === 'pdf'
-    const url = needsUrl ? this.createObjectUrl(bytes, result.artifact.mime) : undefined
-    const content = needsUrl ? undefined : new TextDecoder().decode(bytes)
+    let content = input.kind === 'pdf' ? base64 : needsUrl ? undefined : new TextDecoder().decode(bytes)
+    if (input.kind === 'html') {
+      content = await prepareHtmlPreview(
+        content ?? '',
+        input.artifact,
+        async () => {
+          const handle = this.client.sessions.get(sessionId)
+          if (!handle) throw new Error('HTML preview session is unavailable')
+          let { callSeq, resultSeq } = input.source ?? {}
+          // Older surface/inline cards carry no tool coordinates. Resolve only one exact durable match.
+          if (callSeq === undefined || resultSeq === undefined) {
+            const matches = []
+            for (let afterSeq: number | undefined = 0; afterSeq !== undefined; ) {
+              if (!this.active || this.session.sessionId !== sessionId)
+                throw new Error('document resource session changed')
+              const page = await handle.deliverables({ afterSeq })
+              for (const item of page.items) {
+                const data = item.structured as
+                  | { surfaceId?: string; deliverables?: Array<{ ref?: ClientImageArtifact }> }
+                  | undefined
+                if (
+                  (callSeq === undefined || item.callSeq === callSeq) &&
+                  (input.source?.surfaceId === undefined || data?.surfaceId === input.source.surfaceId) &&
+                  Array.isArray(data?.deliverables) &&
+                  data.deliverables.some((row) => row?.ref && sameImageArtifact(row.ref, input.artifact))
+                )
+                  matches.push(item)
+              }
+              if (matches.length > 1) throw new Error('HTML preview source is ambiguous')
+              afterSeq = page.nextAfterSeq
+            }
+            if (matches.length !== 1 || !matches[0])
+              throw new Error('HTML preview source is ambiguous or unavailable')
+            callSeq = matches[0].callSeq
+            resultSeq = matches[0].resultSeq
+          }
+          if (
+            typeof callSeq !== 'number' ||
+            typeof resultSeq !== 'number' ||
+            !Number.isSafeInteger(callSeq) ||
+            !Number.isSafeInteger(resultSeq) ||
+            callSeq < 1 ||
+            callSeq >= resultSeq
+          )
+            throw new Error('HTML preview source is unavailable')
+          return handle.readToolDetail(callSeq, resultSeq)
+        },
+        (ref) => this.readArtifact(sessionId, input.laneId, ref),
+      )
+    }
+    if (!this.active || this.session.sessionId !== sessionId)
+      throw new Error('document resource session changed')
+    const url = needsUrl
+      ? this.createObjectUrl(bytes, svg ? 'image/svg+xml' : input.artifact.mime)
+      : undefined
     let released = false
     return Object.freeze({
-      artifact: result.artifact,
+      artifact: input.artifact,
       kind: input.kind,
       ...(content === undefined ? {} : { content }),
       ...(url === undefined ? {} : { url }),
@@ -197,6 +246,30 @@ export class ClientResourceService extends Service {
         }
       },
     })
+  }
+
+  private async readArtifact(sessionId: string, laneId: string, artifact: ClientImageArtifact) {
+    if (!this.active || this.session.sessionId !== sessionId)
+      throw new Error('document resource session changed')
+    if (!isArtifact(artifact)) throw new TypeError('document resource reference is invalid')
+    const result = await this.client.call<ArtifactReadResult>('_agnes/v1/artifact.read', {
+      sessionId,
+      laneId,
+      artifact,
+    })
+    if (this.session.sessionId !== sessionId) throw new Error('document resource session changed')
+    if (!result.ok && result.status === 410 && result.code === 'artifact_reclaimed')
+      throw new ClientResourceReclaimedError()
+    if (!result.ok)
+      throw Object.assign(new Error(`document resource is unavailable: ${result.code}`), {
+        code: result.code,
+      })
+    if (!sameImageArtifact(result.artifact, artifact) || result.contentLength !== artifact.size)
+      throw new Error('document resource identity mismatch')
+
+    const bytes = decodeBase64(result.base64)
+    if (bytes.byteLength !== result.contentLength) throw new Error('document resource length mismatch')
+    return { bytes, base64: result.base64 }
   }
 
   private createObjectUrl(bytes: ArrayBuffer, mime: string): string {

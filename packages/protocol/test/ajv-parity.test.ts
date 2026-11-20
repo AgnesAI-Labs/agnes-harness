@@ -844,6 +844,8 @@ const TOOLDEF_DEFS: Record<string, TSchema> = {
 // hooks.json, the fifth self-owned document. Seven of its $defs are cross-file aliases (six of
 // session-v1's and tooldef's ToolMeta), registered here for the two-way coverage guard like the rest.
 const HOOKS_DEFS: Record<string, TSchema> = {
+  TurnEndPayload: HooksGen.TurnEndPayload,
+  TurnEndReturn: HooksGen.TurnEndReturn,
   JsonValue: HooksGen.JsonValue,
   Actor: HooksGen.Actor,
   ContentBlock: HooksGen.ContentBlock,
@@ -5165,13 +5167,20 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'one page row of session.list; lastSeq/generation boundaries and the five required fields',
   },
   SessionListParams: {
-    valid: { q: { cwd: '/work', prefix: 'x', text: 'hello' }, cursor: 'c1', limit: 20 },
+    valid: {
+      q: { cwd: '/work', prefix: 'x', text: 'hello' },
+      cursor: 'c1',
+      limit: 20,
+      includePromptTitles: true,
+    },
     invalid: [
       { limit: 0 }, // boundary: one below minimum:1
       { limit: 501 }, // boundary: one above maximum:500
       { cursor: rep(513) }, // boundary: maxLength:512
       { sidebar: { groupId: 'unassigned' }, q: {} },
       { sidebar: { groupId: 'unassigned' }, limit: 6 },
+      { includePromptTitles: 'true' },
+      { sidebar: { groupId: 'unassigned' }, includePromptTitles: true },
     ],
     note: 'every field is optional; the three boundaries are limit range and cursor length',
   },
@@ -5951,6 +5960,17 @@ const nullReturn: Sample = {
 }
 
 const HOOKS_SAMPLES: Record<string, Sample> = {
+  TurnEndPayload: {
+    note: 'committed turn outcome with nonnegative turn and positive ledger sequence',
+    valid: { turn: 0, reason: 'completed', endSeq: 1 },
+    invalid: [
+      { turn: -1, reason: 'completed', endSeq: 1 },
+      { turn: 0, reason: 'unknown', endSeq: 1 },
+      { turn: 0, reason: 'error', endSeq: 0 },
+      { turn: 0, reason: 'completed', endSeq: 1, extra: true },
+    ],
+  },
+  TurnEndReturn: { note: 'the observational hook returns only null', valid: null, invalid: [{}, true, 0] },
   JsonValue: SESSION_SAMPLES.JsonValue as Sample,
   Actor: SESSION_SAMPLES.Actor as Sample,
   ContentBlock: SESSION_SAMPLES.ContentBlock as Sample,
@@ -8200,6 +8220,26 @@ const AppSamples: Record<string, Sample> = {
     ],
     note: 'Closed write-only credential contract',
   },
+  AdminCloudAuthorize: {
+    valid: {
+      origin: 'http://cloud.fixture:8443',
+      credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111',
+    },
+    invalid: [
+      {},
+      { origin: 'http://cloud.fixture:8443', key: 'raw-value' },
+      { origin: 'http://cloud.fixture', credentialRef: 'env:CLOUD_KEY' },
+    ],
+    note: 'Resolve only managed credential references',
+  },
+  AdminCloudAuthorization: {
+    valid: { token: `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`, expiresAt: 1000 },
+    invalid: [
+      { token: 'invalid', expiresAt: 1000 },
+      { token: `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`, expiresAt: 1000, key: 'must-not-return' },
+    ],
+    note: 'Return a temporary capability, never the original credential',
+  },
   AdminCredentialCreate: {
     valid: { label: 'Work key', value: 'canary' },
     invalid: [{ label: 'Work key' }, { label: 'Work key', value: 'x\ncanary' }],
@@ -9284,6 +9324,11 @@ describe('McpServerDescriptor: authorizationStatus field', () => {
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/admin.cloud.authorize': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminCloudAuthorize',
+    result: 'AdminCloudAuthorization',
+  },
   '_agnes/v1/channels.catalog': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
     params: 'AdminEmpty',
@@ -10381,6 +10426,18 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/admin.cloud.authorize': {
+    valid: {
+      origin: 'http://cloud.fixture:8443',
+      credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111',
+    },
+    invalid: [
+      {},
+      { origin: 'http://cloud.fixture:8443', key: 'raw-value' },
+      { origin: 'http://cloud.fixture', credentialRef: 'env:CLOUD_KEY' },
+    ],
+    note: 'The daemon exchanges an A-owned credential reference; no raw Key crosses this interface',
+  },
   '_agnes/v1/channels.catalog': {
     valid: {},
     invalid: [{ unexpected: true }],
@@ -11439,6 +11496,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/admin.cloud.authorize': AppSamples.AdminCloudAuthorization!,
   '_agnes/v1/channels.catalog': {
     valid: { providers: [] },
     invalid: [{}, { providers: 'invalid' }],
