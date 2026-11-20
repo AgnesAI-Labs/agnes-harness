@@ -544,7 +544,7 @@ it('retains pi image input limits in the public model catalogue', () => {
 it('registers the domestic default URL and credential namespace for Agnes Sys1', () => {
   expect(getApiKeyProvider('agnes-sys1')).toMatchObject({
     api: 'agnes-sys1',
-    baseUrl: 'https://litellm-sa.agnes-ai.cn/sys1/v1',
+    baseUrl: 'https://api.agnes-ai.cn/v1',
     credentialRef: 'secret://agnes-sys1/default',
   })
 })

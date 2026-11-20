@@ -265,8 +265,8 @@ const sys1Preset = (id: 'sys1-cn' | 'sys1-intl', baseUrl: string): AdapterPreset
 })
 
 export const ADAPTER_PRESETS: readonly AdapterPreset[] = [
-  sys1Preset('sys1-cn', 'https://litellm-sa.agnes-ai.cn/sys1/v1'),
-  sys1Preset('sys1-intl', 'https://agrouter-sg.agnes-ai.com/sa/sys1/v1'),
+  sys1Preset('sys1-cn', 'https://api.agnes-ai.cn/v1'),
+  sys1Preset('sys1-intl', 'https://apihub.agnes-ai.com/v1'),
   {
     id: 'jev',
     provider: 'typesafe-systemone',

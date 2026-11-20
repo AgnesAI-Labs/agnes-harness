@@ -185,18 +185,24 @@ it('lists only payload-only accounts as account-style cards with a counted headi
   expect(adapter?.textContent).not.toContain('Voice')
 })
 
-it('opens the domestic Sys1 preset and allows choosing the international gateway', async () => {
+it('opens the Agnes AI Sys1 preset and allows choosing Agnes AI International', async () => {
+  document.documentElement.lang = 'zh-CN'
   const { host } = await mount(client())
   await click(host, 'side-model-add')
   expect(host.textContent).not.toContain('Defaults come from Jev 1.13')
   expect(input(host, 'side-adapter')?.value).toBe('agnes-sys1')
-  expect(input(host, 'side-preset')?.value).toBe('sys1-cn')
-  expect(input(host, 'side-base-url')?.value).toBe('https://litellm-sa.agnes-ai.cn/sys1/v1')
+  const preset = host.querySelector<HTMLSelectElement>('[data-testid="side-preset"]')
+  expect(preset?.value).toBe('sys1-cn')
+  expect(Array.from(preset?.options ?? []).map((option) => option.textContent)).toEqual([
+    'Agnes AI',
+    'Agnes AI 国际版',
+  ])
+  expect(input(host, 'side-base-url')?.value).toBe('https://api.agnes-ai.cn/v1')
   expect(input(host, 'side-model-id-0')?.value).toBe('agnes-sys1-1.0')
   await choose(host, 'side-credential', 'secret://generic/11111111-1111-4111-8111-111111111111')
   await choose(host, 'side-preset', 'sys1-intl')
   expect(input(host, 'side-credential')?.value).toBe('')
-  expect(input(host, 'side-base-url')?.value).toBe('https://agrouter-sg.agnes-ai.com/sa/sys1/v1')
+  expect(input(host, 'side-base-url')?.value).toBe('https://apihub.agnes-ai.com/v1')
   expect(input(host, 'side-model-id-0')?.value).toBe('agnes-sys1-1.0')
 })
 
