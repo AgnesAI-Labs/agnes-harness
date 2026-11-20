@@ -46,19 +46,29 @@ if [ -L "$AGH_HOME" ]; then
 fi
 chmod 0700 -- "$AGH_HOME"
 
-# 只在文件缺失时初始化；重启保留已轮换的新 Key，不用旧环境变量修复异常文件。
+# 已有 Key 在服务启动前校验；缺失时保留空 home 供 Core 正常初始化。
 key_file="$AGH_HOME/cloud-key"
-if [ ! -e "$key_file" ] && [ ! -L "$key_file" ]; then
-  if ! (set -o noclobber; printf '%s\n' "$AGH_CLOUD_KEY" > "$key_file"); then
-    printf 'Cannot initialize private cloud Key file\n' >&2
+validate_cloud_key() {
+  if [ -L "$key_file" ] || [ ! -f "$key_file" ] || [ ! -s "$key_file" ]; then
+    printf 'cloud-key must be a nonempty regular file, not a symbolic link\n' >&2
     exit 78
   fi
+  chmod 0600 -- "$key_file"
+}
+if [ -e "$key_file" ] || [ -L "$key_file" ]; then
+  validate_cloud_key
 fi
-if [ -L "$key_file" ] || [ ! -f "$key_file" ] || [ ! -s "$key_file" ]; then
-  printf 'cloud-key must be a nonempty regular file, not a symbolic link\n' >&2
-  exit 78
-fi
-chmod 0600 -- "$key_file"
+initialize_cloud_key() {
+  # Core 初始化前由插件的现有环境变量回退提供 Key；不伪造布局标记。
+  # 重启保留已轮换的新 Key，不用旧环境变量修复异常文件。
+  if [ ! -e "$key_file" ] && [ ! -L "$key_file" ]; then
+    if ! (set -o noclobber; printf '%s\n' "$AGH_CLOUD_KEY" > "$key_file"); then
+      printf 'Cannot initialize private cloud Key file\n' >&2
+      exit 78
+    fi
+  fi
+  validate_cloud_key
+}
 cd -- "$WORKSPACE_DIR"
 
 # 保留集成镜像的有界清理，避免子进程忽略 TERM 后一直等待。
@@ -97,6 +107,8 @@ envd_pid=$!
 
 node /opt/agh/runtime/agnes.mjs plugins add \
   /opt/agh/plugins/cloud.tgz --yes
+
+initialize_cloud_key
 
 node /opt/agh/runtime/agnes.mjs serve &
 harness_pid=$!
