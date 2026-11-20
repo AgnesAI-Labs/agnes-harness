@@ -1,7 +1,7 @@
 {
   "name": "@agnes/jev-loop",
-  "version": "0.1.3",
-  "description": "Agent loop in which TypeSafe Jev chooses each step",
+  "version": "0.1.4",
+  "description": "Agent loop driven by a configured decision model",
   "type": "module",
   "license": "Apache-2.0",
   "exports": "./index.mjs",
@@ -134,28 +134,28 @@
           }
         },
         "metadata": {
-          "displayName": "Jev Agent Loop",
-          "summary": "Lets TypeSafe Jev choose each step and asks the conversation model only to write, bind or review.",
-          "description": "Lets TypeSafe Jev choose each step and asks the conversation model only to write, bind or review. Needs a Jev side-call route.",
+          "displayName": "jev",
+          "summary": "Uses a decision model such as Agnes Sys1 to choose each step. The conversation model writes, fills in arguments or reviews.",
+          "description": "Uses a configured decision model to choose each step. Select an Agnes Sys1 or Jev route. The conversation model writes, fills in arguments or reviews.",
           "locales": {
             "zh-CN": {
-              "displayName": "Jev 运行方式",
-              "summary": "由 TypeSafe Jev 选择每一步，只在撰写、补参数或复核时调用对话模型。",
-              "description": "由 TypeSafe Jev 选择每一步，只在撰写、补参数或复核时调用对话模型。需要配置 Jev 决策模型路由。"
+              "displayName": "jev",
+              "summary": "由决策模型选择每一步，可配置 Agnes Sys1。对话模型负责撰写、补参数和复核。",
+              "description": "由已配置的决策模型选择每一步，可选 Agnes Sys1 或 Jev。只在撰写、补参数或复核时调用对话模型。"
             }
           }
         }
       }
     ],
     "metadata": {
-      "displayName": "Jev Agent Loop",
-      "summary": "Lets TypeSafe Jev choose each step and asks the conversation model only to write, bind or review.",
-      "description": "Lets TypeSafe Jev choose each step and asks the conversation model only to write, bind or review. Needs a Jev side-call route.",
+      "displayName": "jev",
+      "summary": "Uses a decision model such as Agnes Sys1 to choose each step. The conversation model writes, fills in arguments or reviews.",
+      "description": "Uses a configured decision model to choose each step. Select an Agnes Sys1 or Jev route. The conversation model writes, fills in arguments or reviews.",
       "locales": {
         "zh-CN": {
-          "displayName": "Jev 运行方式",
-          "summary": "由 TypeSafe Jev 选择每一步，只在撰写、补参数或复核时调用对话模型。",
-          "description": "由 TypeSafe Jev 选择每一步，只在撰写、补参数或复核时调用对话模型。需要配置 Jev 决策模型路由。"
+          "displayName": "jev",
+          "summary": "由决策模型选择每一步，可配置 Agnes Sys1。对话模型负责撰写、补参数和复核。",
+          "description": "由已配置的决策模型选择每一步，可选 Agnes Sys1 或 Jev。只在撰写、补参数或复核时调用对话模型。"
         }
       }
     },

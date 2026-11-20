@@ -85,7 +85,7 @@ it('renders loading, bounded instance statistics and native-only availability wi
     await host.render()
     expect(getByRole(host.container, 'status').textContent).toContain('正在读取')
     await host.act(async () => finish(status))
-    expect(getByRole(host.container, 'heading', { name: 'jev判断' })).toBeDefined()
+    expect(getByRole(host.container, 'heading', { name: 'sys1' })).toBeDefined()
     expect(host.container.textContent).toContain('命中: 7')
     expect(host.container.textContent).toContain('未命中: 9')
     expect(host.container.textContent).toContain('条目: 2')
