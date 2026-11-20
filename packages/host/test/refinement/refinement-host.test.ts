@@ -4,11 +4,35 @@ import { join } from 'node:path'
 import type { Kernel, RefinementPlanner } from '@agnes/core'
 import { ProjectionRegistry, refinementFacade } from '@agnes/core'
 import { actor, fakeProvider, openSession, sent, textTurn, usage } from '@agnes/core/testkit'
+import { createCredentialStore } from '@agnes/host-infrastructure/adapters/credential-store'
 import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import type { ModelRecord, Provider } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRefinementHost } from '../../src/runtime/assemble/refinement.js'
-import { reviewCredential, reviewModel } from './service-key.js'
+import { reviewCredential, reviewModel, syntheticKey } from './service-key.js'
+
+// The key each review provider is built to resolve at dispatch, and how often the key file is read.
+const review = vi.hoisted(() => ({ keys: [] as Array<() => string>, reads: 0 }))
+vi.mock('@agnes/distribution', async (original) => {
+  const actual = await original<typeof import('@agnes/distribution')>()
+  return {
+    ...actual,
+    createRefinementProvider: (...args: Parameters<typeof actual.createRefinementProvider>) => {
+      review.keys.push(args[1])
+      return actual.createRefinementProvider(...args)
+    },
+  }
+})
+vi.mock('@agnes/host-infrastructure/adapters/credential-files', async (original) => {
+  const actual = await original<typeof import('@agnes/host-infrastructure/adapters/credential-files')>()
+  return {
+    ...actual,
+    readApiKeyFileSync: (...args: Parameters<typeof actual.readApiKeyFileSync>) => {
+      review.reads++
+      return actual.readApiKeyFileSync(...args)
+    },
+  }
+})
 
 const PROFILE = 'p'
 const dirs: string[] = []
@@ -63,6 +87,26 @@ describe('the host side of refinement', () => {
     expect(bridge.kernelOptions.refinementEnabled()).toBe(false)
     expect(bridge.kernelOptions.refinement.settings().enabled).toBe(false)
     expect(bridge.kernelOptions.refinementTriggers.accepts?.('k')).toBe(false)
+  })
+
+  it('a dispatch resolves the service key once, and reads no file while nothing changed', async () => {
+    const dataDir = scratch()
+    await save(dataDir, { enabled: true, mode: 'auto' })
+    const bridge = createRefinementHost(dataDir, PROFILE)
+    expect(bridge.kernelOptions.refinement.provider?.()).toBeDefined()
+    const key = review.keys.at(-1) as () => string
+    review.reads = 0
+    expect(key()).toBe(syntheticKey)
+    expect(review.reads).toBe(0)
+    // A rotated key is read once, by the dispatch that needs it.
+    const ref = await reviewCredential(dataDir)
+    await createCredentialStore({ root: dataDir }).putGeneric(ref, 'rotated-review-key', {
+      label: 'Rotated',
+      createdAt: new Date(0).toISOString(),
+    })
+    review.reads = 0
+    expect(key()).toBe('rotated-review-key')
+    expect(review.reads).toBe(1)
   })
 
   it('the plugin connects with its planner; its calls reach the session the tool ran in', async () => {

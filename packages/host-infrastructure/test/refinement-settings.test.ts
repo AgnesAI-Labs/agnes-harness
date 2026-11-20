@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,13 +7,27 @@ import {
   REFINEMENT_ENDPOINTS,
 } from '@agnes/distribution/refinement-model'
 import { DEFAULT_REFINEMENT_SETTINGS } from '@agnes/protocol'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { resolveCredentialFile } from '../src/adapters/credential-files.js'
 import { createCredentialStore } from '../src/adapters/credential-store.js'
 import {
   type RefinementSettingsPort,
   RefinementSettingsStore,
   refinementSettingsRevision,
 } from '../src/refinement-settings.js'
+
+// Every file read in this process, the settings file and the service key alike.
+const io = vi.hoisted(() => ({ reads: 0 }))
+vi.mock('node:fs', async (original) => {
+  const fs = await original<typeof import('node:fs')>()
+  return {
+    ...fs,
+    readFileSync: ((...args: Parameters<typeof fs.readFileSync>) => {
+      io.reads++
+      return fs.readFileSync(...args)
+    }) as typeof fs.readFileSync,
+  }
+})
 
 const dirs: string[] = []
 const model = 'company/review'
@@ -234,6 +248,42 @@ describe('RefinementSettingsStore', () => {
       settings: { ...next, baseUrl },
       endpoints: [baseUrl, retiredUrl],
     })
+  })
+
+  it('hot reads come from memory; saves and credential writes here are seen at once, other changes within the recheck', async () => {
+    const dir = await dataDir()
+    let now = 0
+    const store = new RefinementSettingsStore(dir, 'p', dir, REFINEMENT_ENDPOINTS, () => now)
+    const credentials = createCredentialStore({ root: dir })
+    const keyFile = resolveCredentialFile(dir, credentialRef, 'api-key')
+    const metadata = { label: 'Fixture', createdAt: new Date(0).toISOString() }
+    const on = { credentialRef, model, enabled: true, mode: 'auto' } as const
+    store.save(on, store.read().revision)
+    expect(store.current().settings).toEqual({ ...on, baseUrl })
+    io.reads = 0
+    for (let call = 0; call < 20; call++) expect(store.current().settings.enabled).toBe(true)
+    expect(io.reads).toBe(0)
+
+    // Any store of this process saving, and the credential store writing, take effect at once.
+    const other = new RefinementSettingsStore(dir, 'p', dir)
+    other.save({ ...on, mode: 'manual' }, other.read().revision)
+    expect(store.current().settings).toEqual({ ...on, mode: 'manual', baseUrl })
+    await credentials.remove(credentialRef)
+    expect(store.current()).toMatchObject({ settings: { enabled: false }, credentialMissing: true })
+    await credentials.putGeneric(credentialRef, 'fixture-review-key', metadata)
+    expect(store.current()).not.toHaveProperty('credentialMissing')
+
+    // Another process writing the file is seen once the recheck interval has passed.
+    plant(dir, 'p', JSON.stringify({ settings: { ...on, enabled: false }, nonce: randomUUID() }))
+    now += 1_000
+    expect(store.current().settings).toEqual({ ...on, enabled: false, baseUrl })
+    // The settings page reads the files as they are now, without waiting for the recheck.
+    const key = readFileSync(keyFile)
+    rmSync(keyFile)
+    expect(store.read()).toMatchObject({ credentialMissing: true })
+    // A missing key is looked for again on every read, so a key back in place is seen at once.
+    writeFileSync(keyFile, key, { mode: 0o600 })
+    expect(store.current()).not.toHaveProperty('credentialMissing')
   })
 
   it('serves the port: current() is the store snapshot', async () => {

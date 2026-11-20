@@ -336,6 +336,9 @@ export async function prepareCredentialWrite(
   await ensureCredentialDirectories(root, provider, kind, ref, enforcement)
 }
 
+/** How many times a name caught mid-rename (an unlinked old inode, nlink=0) is looked up again. */
+const RENAME_RETRIES = 64
+
 async function checkedFileStat(
   path: string,
   ref: string,
@@ -344,7 +347,7 @@ async function checkedFileStat(
   // A concurrent atomic rename can leave an already-resolved old inode at nlink=0 for the instant
   // lstat returns. That is neither a hard link nor a safe snapshot; retry the name and validate the
   // inode currently installed there. A real hard link has nlink>1 and is still refused immediately.
-  for (let attempt = 0; attempt < 64; attempt++) {
+  for (let attempt = 0; attempt < RENAME_RETRIES; attempt++) {
     const stat = await safeLstat(path, ref)
     if (stat === null) return null
     if (Number(stat.nlink) === 0) {
@@ -358,6 +361,54 @@ async function checkedFileStat(
   throw storeError(ref, 'changed')
 }
 
+/**
+ * `checkedFileStat` for a synchronous caller: the same retry of a name caught mid-rename, without
+ * yielding between attempts. The rename runs in another process or on the thread pool, not on this
+ * thread, so it completes meanwhile and the next lookup finds the inode it installed.
+ */
+function checkedFileStatSync(
+  path: string,
+  ref: string,
+  enforcement: Extract<CredentialFileEnforcement, { level: 'full' }>,
+): FileStat {
+  for (let attempt = 0; attempt < RENAME_RETRIES; attempt++) {
+    const stat = lstatSync(path)
+    if (Number(stat.nlink) === 0) continue
+    validateFile(stat, ref, enforcement, path)
+    return stat
+  }
+  throw storeError(ref, 'changed')
+}
+
+let writes = 0
+
+/**
+ * How many times this process has written or removed a credential file. A caller that keeps a key it
+ * read compares this to see a change made here at once, without waiting to look at the file again.
+ */
+export const credentialFileWrites = (): number => writes
+
+function lstampSync(path: string): string {
+  try {
+    const stat = lstatSync(path, { bigint: true, throwIfNoEntry: false })
+    if (!stat) return '-'
+    const { dev, ino, mode, uid, nlink, size, mtimeNs, ctimeNs } = stat
+    return [dev, ino, mode, uid, nlink, size, mtimeNs, ctimeNs].join(':')
+  } catch (error) {
+    return `!${errorCode(error) ?? 'io'}`
+  }
+}
+
+/**
+ * What `readApiKeyFileSync` reads, as metadata only: the key file and the directories it checks. A
+ * rewrite (the rename installs a new inode), a removal, or a mode, owner or link change shows here, so
+ * a caller may keep a key it read until this changes instead of reading the file on every call.
+ */
+export function apiKeyFileStampSync(root: string, ref: string): string {
+  const path = resolveCredentialFile(root, ref, 'api-key')
+  return [resolve(root), dirname(dirname(path)), dirname(path), path].map(lstampSync).join('|')
+}
+
 /** Same private-file checks as the async store, for synchronous session admission and dispatch. */
 export function readApiKeyFileSync(
   root: string,
@@ -368,12 +419,12 @@ export function readApiKeyFileSync(
   const path = resolveCredentialFile(root, ref, 'api-key')
   for (const dir of [resolve(root), dirname(dirname(path)), dirname(path)])
     validateDirectory(lstatSync(dir), ref, enforcement, dir)
-  const before = lstatSync(path)
-  validateFile(before, ref, enforcement, path)
+  const before = checkedFileStatSync(path, ref, enforcement)
   if (enforcement.mechanism === 'windows-acl') return windowsReadPrivateTextSync(path, MAX_CREDENTIAL_BYTES)
   const fd = openSync(path, constants.O_RDONLY | NOFOLLOW | constants.O_NONBLOCK)
   try {
     const after = fstatSync(fd)
+    if (Number(after.nlink) === 0) throw storeError(ref, 'changed')
     validateFile(after, ref, enforcement, path)
     if (before.dev !== after.dev || before.ino !== after.ino) throw storeError(ref, 'changed')
     return readFileSync(fd, 'utf8')
@@ -485,6 +536,7 @@ export async function atomicWriteCredentialFile(options: {
       await options.admission?.verify()
       options.admission?.assertActive()
       renameWriteThroughSync(temp, path)
+      writes++
       return
     } catch (error) {
       if (fd !== undefined) {
@@ -520,6 +572,7 @@ export async function atomicWriteCredentialFile(options: {
         options.admission.assertActive()
         renameWriteThroughSync(temp, path)
       } else await rename(temp, path)
+      writes++
     } catch (error) {
       throw storeError(options.ref, 'io', path, error)
     }
@@ -552,6 +605,7 @@ export async function removeCredentialFile(options: {
       options.admission.assertActive()
       unlinkSync(path)
     } else await unlink(path)
+    writes++
   } catch (error) {
     throw storeError(options.ref, 'io', path, error)
   }
