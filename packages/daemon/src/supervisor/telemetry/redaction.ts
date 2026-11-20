@@ -56,6 +56,82 @@ function binarySummary(data: string | Uint8Array, mime: unknown) {
   }
 }
 
+// Credentials that carry no vendor shape are recognised by what names them. A name qualifies when
+// one of its segments (split on separators and camelCase) is a credential word, when two adjacent
+// segments spell a credential pair, or when an unsegmented name ends in a long credential word.
+// Segments rather than substrings keep `author`, `passport`, `bypass`, `max_tokens` and `tokenizer`.
+const CREDENTIAL_SEGMENT = new Set([
+  'pass',
+  'passwd',
+  'password',
+  'pwd',
+  'secret',
+  'token',
+  'credential',
+  'credentials',
+  'auth',
+  'authorization',
+  'apikey',
+  'accesskey',
+  'privatekey',
+])
+const CREDENTIAL_PAIR = new Set(['api key', 'access key', 'private key'])
+const CREDENTIAL_SUFFIX = /(?:password|passwd|secret|token|credentials?|apikey|accesskey|privatekey)$/
+const CREDENTIAL_HINT = /pass|pwd|secret|token|key|credential|auth/i
+// `NAME=value`, `NAME: value`, `NAME := value` and the quoted JSON or YAML spelling. Horizontal
+// whitespace only, so a YAML key that opens a block never borrows the next line as its value; a
+// bounded quoted value keeps an unclosed quote from rescanning the rest of a long line.
+const ASSIGNMENT =
+  /(?<![\w.-])(\\?["']?)([A-Za-z_][\w.-]{0,63})\1([ \t]*:?=(?![=>])[ \t]*|[ \t]*:(?![:/])[ \t]*)(?:(\\?["'])([^\r\n]{0,4096}?)\4|([^\s"',;\\]+))/g
+// A header value is every scheme and parameter after the colon, `Token abc` and `Digest a="b"`
+// alike: to the quote that opened a quoted header (`curl -H "..."`), otherwise to the end of line.
+// A quoted JSON name is left to ASSIGNMENT, which knows where its quoted value ends.
+const QUOTED_AUTHORIZATION = /(["'])((?:proxy-)?authorization[ \t]*:[ \t]*)[^\r\n]*?(?=\1)/gi
+const AUTHORIZATION = /(?<![\w"'-])((?:proxy-)?authorization[ \t]*:[ \t]*)[^\r\n]+/gi
+const URL_USERINFO = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@'"<>]+@/gi
+const PRIVATE_KEY =
+  /(?:-----BEGIN [^\r\n-]*PRIVATE KEY-----)[\s\S]*?(?:-----END [^\r\n-]*PRIVATE KEY-----|$)/g
+// AWS secret access keys are exactly forty base64 characters and often contain `/` or `+`, which
+// split them below the generic opaque-run threshold. A path segment never starts the match because
+// the run may not follow `/`, and requiring digits and both cases leaves words and hex alone.
+const AWS_SECRET = /(^|[^A-Za-z0-9/+=])([A-Za-z0-9+][A-Za-z0-9/+]{38}[A-Za-z0-9+])(?![A-Za-z0-9/+=])/g
+
+function credentialName(name: string): boolean {
+  const segments = name
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .split(/[_.-]+/)
+    .filter(Boolean)
+  return (
+    segments.some(
+      (segment, index) =>
+        CREDENTIAL_SEGMENT.has(segment) || CREDENTIAL_PAIR.has(`${segment} ${segments[index + 1]}`),
+    ) ||
+    (segments.length === 1 && CREDENTIAL_SUFFIX.test(segments[0] ?? ''))
+  )
+}
+
+/** Remove credential values that have no vendor prefix, keeping the text around them readable. */
+function scrubCredentials(text: string): string {
+  let clean = text
+    .replace(PRIVATE_KEY, '<redacted>')
+    .replace(QUOTED_AUTHORIZATION, '$1$2<redacted>')
+    .replace(AUTHORIZATION, '$1<redacted>')
+    .replace(/\b(?:bearer|basic)\s+[^\s"',;<>]+/gi, '<redacted>')
+  if (clean.includes('://')) clean = clean.replace(URL_USERINFO, '$1<redacted>@')
+  if (CREDENTIAL_HINT.test(clean))
+    clean = clean.replace(
+      ASSIGNMENT,
+      (match, open: string, name: string, separator: string, quote?: string, quoted?: string) => {
+        if (!credentialName(name) || quoted === '' || match.endsWith('<redacted>')) return match
+        return `${open}${name}${open}${separator}${quote ? `${quote}<redacted>${quote}` : '<redacted>'}`
+      },
+    )
+  return clean.replace(AWS_SECRET, (match, lead: string, run: string) =>
+    /[0-9]/.test(run) && /[A-Z]/.test(run) && /[a-z]/.test(run) ? `${lead}<redacted>` : match,
+  )
+}
+
 function pathSpellings(path: string): string[] {
   const spellings = [path, path.replaceAll('\\', '/'), path.replaceAll('\\', '\\\\')]
   // Darwin realpath exposes the /private targets of these system symlinks. Prompts and tool
@@ -133,18 +209,13 @@ export function traceRedaction(options: {
   }
 
   function scrub(text: string) {
-    const clean = text
-      .replace(replacements, (match) =>
+    const clean = scrubCredentials(
+      text.replace(replacements, (match) =>
         match.toLowerCase().startsWith('account-')
           ? route(match.toLowerCase())
           : (normalized.get(match.toLowerCase()) ?? '<redacted>'),
-      )
-      .replace(/\b(?:bearer|basic)\s+[^\s"',;<>]+/gi, '<redacted>')
-      .replace(
-        /(?:-----BEGIN [^\r\n-]*PRIVATE KEY-----)[\s\S]*?(?:-----END [^\r\n-]*PRIVATE KEY-----|$)/g,
-        '<redacted>',
-      )
-      .replace(/(?:\/Users\/|\/home\/|[a-z]:[\\/]Users[\\/])[^\\/\s"'<>]+/gi, '<agh_home>')
+      ),
+    ).replace(/(?:\/Users\/|\/home\/|[a-z]:[\\/]Users[\\/])[^\\/\s"'<>]+/gi, '<agh_home>')
     const result = redactText(clean, { ...DEFAULT_RULES, paths: false }).text.replace(
       /\[REDACTED:[^\]]+\]/g,
       '<redacted>',
