@@ -24,9 +24,9 @@ async function returnStagedKey(config, staged) {
     await copyFile(staged, join(config.home, 'cloud-key'), constants.COPYFILE_EXCL)
   } catch (error) {
     if (error.code !== 'EEXIST') throw error
-  } finally {
-    await rm(staged, { force: true })
   }
+  // Retain the only staged copy if publishing the private credential itself fails.
+  await rm(staged, { force: true })
 }
 export function harnessRuntime(config) {
   let running,

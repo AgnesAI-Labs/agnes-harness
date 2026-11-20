@@ -75,7 +75,10 @@ test('mirrors only ordinary approved files into CFS, verifies restore and refuse
   await writeFile(join(cfg.home, 'data', 'artifacts', 'sha256', 'image'), 'image-bytes')
   await writeFile(join(cfg.home, 'cloud-key'), 'never-back-up-key', { mode: 0o600 })
   await writeFile(join(cfg.home, 'profiles', 'local-dev', 'configuration-lock.sqlite'), 'lock')
+  for (const suffix of ['', '-wal', '-shm', '-journal'])
+    await writeFile(join(cfg.home, 'data', 'artifacts', `index.db.orphan.tmp${suffix}`), 'orphan')
   const files = await snapshotAssets(cfg)
+  assert.ok(files.every((f) => !f.path.includes('index.db.orphan.tmp')))
   assert.ok(files.some((f) => f.path.endsWith('/image')))
   assert.ok(
     files.every(

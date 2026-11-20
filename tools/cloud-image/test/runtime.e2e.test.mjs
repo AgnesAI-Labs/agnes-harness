@@ -122,6 +122,24 @@ test('runtime initializes a file-Key-only home, preserves a concurrent rotation 
   process.kill(pid, 0)
   await runtime.stop(AbortSignal.timeout(3000))
   assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' })
+
+  // An I/O failure publishing the only current Key must not discard its private staged copy.
+  const failed = await fixture(t)
+  const failedRuntimeDir = join(failed.root, 'runtime')
+  await privateDirectory(failedRuntimeDir)
+  await writeFile(join(failed.cfg.home, 'cloud-key'), 'fixture-retained-key', { mode: 0o600 })
+  await writeFile(
+    join(failedRuntimeDir, 'agnes.mjs'),
+    `import { rename } from 'node:fs/promises';
+     if (process.argv[2] === 'plugins')
+       await rename(process.env.AGH_HOME, process.env.AGH_HOME + '.retained');`,
+  )
+  const failedRuntime = harnessRuntime({ ...failed.cfg, runtime: failedRuntimeDir })
+  t.after(() => failedRuntime.cleanup())
+  await assert.rejects(failedRuntime.boot(), { code: 'ENOENT' })
+  const staged = join(failed.cfg.run, 'cloud-key.initializing')
+  assert.equal(await readFile(staged, 'utf8'), 'fixture-retained-key')
+  assert.equal((await stat(staged)).mode & 0o777, 0o600)
 })
 
 test('startup refuses an invalid initial STS before booting Harness and publishes only a sanitized failure', async (t) => {

@@ -18,7 +18,7 @@ AGNES_NATIVE_BUILDER=glibc228 node tools/toolchain/run.mjs --filter @agnes/cli b
 node /ABS/CONTEXT/runtime/agnes.mjs plugins pack /ABS/cloud-plugin /ABS/CONTEXT/cloud.tgz
 ```
 
-将本目录的 `Dockerfile`、`.dockerignore`、`start.sh`、`install-litestream.sh`、`healthcheck.mjs`、`verify-plugin.mjs`、`THIRD_PARTY.md`、`sync/` 和 `bin/` 复制到构建上下文。默认插件版本为 `0.9.2-successful-tools.20261119.1`、要求 Extension API `^5.23.0`；构建参数必须与实际插件归档一致。镜像构建拒绝含 AppleDouble、Finder 元数据或异常根目录的插件归档。包校验、信任和启用仍由标准插件安装器负责。
+将本目录的 `Dockerfile`、`.dockerignore`、`start.sh`、`install-litestream.sh`、`healthcheck.mjs`、`verify-plugin.mjs`、`THIRD_PARTY.md`、`sync/` 和 `bin/` 复制到构建上下文。构建时必须显式传入真实源码版本及插件归档版本，不使用默认插件版本。已核对的插件为 `0.9.2-successful-tools.20261119.1`，源码提交 `3d70a1bd3a15c4fd8dd179961be7d8ab63effd2d`，要求 Extension API `^5.23.0`；构建参数必须与实际插件归档一致。镜像构建拒绝含 AppleDouble、Finder 元数据或异常根目录的插件归档。包校验、信任和启用仍由标准插件安装器负责。
 
 ```sh
 docker build --platform linux/amd64 \
@@ -86,6 +86,10 @@ LLMSG 的 CFS 目录初始化实例沿用专用 `WORKSPACE_DIR=/workspace/llmsg-
 实现采用**本地普通文件工作副本**：将快照保存至私有 CFS `<assets>/objects/<hash前缀>/<SHA256>`，恢复时按清单回填 Harness 原有路径。这样不依赖容器内 bind mount 权限，也不引入私有路径校验会拒绝的符号链接。它不是 profiles/artifacts 的零拷贝挂载：冷启动耗时和本地空间随文件量增加；普通文件不会另传 COS。CFS 根目录 `state.json` 绑定 tenant/user/state。暂不自动清理对象，平台清理历史代次时需同步制定保留策略，不能删除仍被清单引用的文件。
 
 单份清单上限为 16 MiB，数据库最多 10,000 个、普通文件最多 100,000 个；超限拒绝发布成功清单。每个代次的清单包括 `version`、`identity`、`epoch`、`complete`、`stopped`、`created_at`、数据库路径/Litestream TXID/schema user_version、普通文件路径/hash/大小/执行位，以及清单正文 SHA-256。恢复时验证清单、逐库恢复到指定 TXID、执行 SQLite `quick_check`、验证文件 hash，完成后才启动 Harness。有历史却找不到有效备份时直接失败，不静默建空库。同代次本地恢复按绑定标记复用；已停写的实例保持关闭，等待重试最终备份。
+
+冷恢复中断时，私有 `.cloud-restore.json` 绑定当前身份、写入代次、恢复来源及清单校验和，只有同一事务可在非空 home 继续。已恢复普通文件须与清单 hash 和大小一致；数据库重新恢复到指定 TXID 后逐字节核对，不能只比较 schema 版本。不匹配返回 `SYNC_RESTORE_TARGET_MISMATCH`，事务绑定变化返回 `SYNC_RESTORE_IDENTITY_MISMATCH`，均保留原文件。数据库使用唯一 `.tmp` 文件，校验结束会清理本次临时库及其 WAL/SHM/journal；强杀遗留的这些临时文件均排除在普通文件备份之外，也不阻止重试。没有该标记的旧半恢复目录仍拒绝接管，需由平台按数据保留流程重新创建空的本地目录；镜像不自动删除或覆盖旧数据。
+
+仅有文件 Key 的首次初始化会将其暂存到私有控制目录；如安装后写回 Key 发生 I/O 错误，保留暂存副本并阻止业务启动，不丢弃唯一凭证。正常轮换的有效当前文件仍优先于启动环境变量。
 
 ## 就绪与停机
 

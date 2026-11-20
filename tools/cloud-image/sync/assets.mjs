@@ -7,7 +7,7 @@ import { atomicJson, fault, noLinks, privateDirectory, privateJson, safeRelative
 // Explicit ordinary-file scope. Credentials supplied by the provider are never copied.
 export const assetRoots = ['home-layout.json', 'profiles', 'data/profiles', 'data/artifacts', 'memory']
 const transient = (name) =>
-  /(?:\.(?:db|sqlite)(?:-(?:wal|shm|journal))?|\.lock|\.tmp)$/u.test(name) ||
+  /(?:\.(?:db|sqlite)(?:-(?:wal|shm|journal))?|\.lock|\.tmp(?:-(?:wal|shm|journal))?)$/u.test(name) ||
   ['owner.json', '.owner.json'].includes(name) ||
   name.startsWith('.home-layout-') ||
   name.endsWith('-litestream')
@@ -112,7 +112,7 @@ export async function snapshotAssets(config, signal) {
   fingerprintCaches.set(config, cache)
   return files.sort((a, b) => a.path.localeCompare(b.path))
 }
-export async function restoreAssets(config, files, signal) {
+export async function restoreAssets(config, files, signal, { resume = false } = {}) {
   if (!Array.isArray(files) || files.length > 100000) throw fault('SYNC_MANIFEST_INVALID')
   const seen = new Set()
   for (const entry of files) {
@@ -133,6 +133,18 @@ export async function restoreAssets(config, files, signal) {
     const stat = await lstat(source)
     if (!stat.isFile() || stat.size !== entry.size || (await digest(source)) !== entry.sha256)
       throw fault('SYNC_ASSET_CORRUPT')
+    if (resume) {
+      const target = join(config.home, path)
+      const restored = await lstat(target).catch((error) => {
+        if (error.code !== 'ENOENT') throw error
+        return null
+      })
+      if (restored) {
+        if (!restored.isFile() || restored.size !== entry.size || (await digest(target)) !== entry.sha256)
+          throw fault('SYNC_RESTORE_TARGET_MISMATCH')
+        continue
+      }
+    }
     await copyAtomic(source, join(config.home, path), entry.executable ? 0o700 : 0o600, entry.sha256)
   }
   if (!seen.has('home-layout.json')) throw fault('SYNC_HOME_MARKER_MISSING')

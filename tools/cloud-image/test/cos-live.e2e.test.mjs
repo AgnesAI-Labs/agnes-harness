@@ -30,7 +30,7 @@ test('real COS accepts scoped STS, Litestream dynamic databases and cold restore
   assert.equal(bundle.second.prefix, first.prefix)
   const { cfg, root, env } = await fixture(t, {
     AGH_TENANT_ID: 'llmsg',
-    AGH_USER_ID: '6',
+    AGH_USER_ID: 'fixture',
     AGH_STATE_ID: bundle.state,
     AGH_STATE_EPOCH: '1',
     AGH_STATE_PREFIX: first.prefix,
@@ -81,7 +81,25 @@ test('real COS accepts scoped STS, Litestream dynamic databases and cold restore
   current = bundle.second
   const restoreReplicator = createLitestream(target)
   t.after(() => restoreReplicator.close())
+  await writeFile(join(target.home, 'cloud-key'), 'fixture-current-key', { mode: 0o600 })
+  let restoredCount = 0
+  await assert.rejects(
+    restoreState(
+      target,
+      store,
+      {
+        restore: async (...args) => {
+          if (++restoredCount === 2) throw new Error('fixture interrupted COS restore')
+          return restoreReplicator.restore(...args)
+        },
+      },
+      current,
+    ),
+    /fixture interrupted COS restore/,
+  )
   await restoreState(target, store, restoreReplicator, current)
+  assert.equal(await readFile(join(target.home, 'cloud-key'), 'utf8'), 'fixture-current-key')
+  await assert.rejects(readFile(join(target.home, '.cloud-restore.json')), { code: 'ENOENT' })
   const restored = new DatabaseSync(join(target.home, 'data', 'tables', 'live-test.db'), { readOnly: true })
   assert.equal(
     restored.prepare('SELECT request_id FROM pending_reports').get().request_id,

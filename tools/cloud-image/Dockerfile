@@ -17,7 +17,7 @@ RUN cd /opt/agh/sync && npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 COPY sync/ /opt/agh/sync/
 COPY --chmod=755 bin/ /opt/agh/bin/
 ARG SOURCE_REVISION
-ARG CLOUD_PLUGIN_VERSION=0.9.2-successful-tools.20261119.1
+ARG CLOUD_PLUGIN_VERSION
 LABEL org.opencontainers.image.title="AGH cloud runtime" \
       org.opencontainers.image.revision="${SOURCE_REVISION}" \
       org.opencontainers.image.version="${CLOUD_PLUGIN_VERSION}"
@@ -28,7 +28,7 @@ COPY --chmod=755 start.sh /opt/agh/start-llmsg.sh
 COPY healthcheck.mjs verify-plugin.mjs THIRD_PARTY.md /opt/agh/
 ENV WORKSPACE_DIR=/workspace/data AGH_HOME=/data/agh AGH_ASSETS_DIR=/data/agh-assets AGH_SYNC_DIR=/run/agh-sync
 RUN mkdir -p /workspace/data /data/agh /run/agh-sync \
-    && test -n "${SOURCE_REVISION}" \
+    && test -n "${SOURCE_REVISION}" && test -n "${CLOUD_PLUGIN_VERSION}" \
     && chmod 700 /data/agh /run/agh-sync \
     && bash -n /opt/agh/start.sh \
     && node /opt/agh/verify-plugin.mjs /opt/agh/plugins/cloud.tgz "${CLOUD_PLUGIN_VERSION}" \

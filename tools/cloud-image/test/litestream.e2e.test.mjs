@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
@@ -80,7 +81,48 @@ test('real Litestream backs up dynamic databases, rotates credentials and restor
   const restoreReplicator = createLitestream(target, { replicaOverride })
   t.after(() => restoreReplicator.close())
   const next = { ...rotated, epoch: 3, restore_from_epoch: 2 }
+  await writeFile(join(target.home, 'cloud-key'), 'fixture-current-provider-key', { mode: 0o600 })
+  let restored = 0
+  await assert.rejects(
+    restoreState(
+      target,
+      store,
+      {
+        restore: async (...args) => {
+          if (++restored === 2) throw new Error('fixture interrupted restore')
+          return restoreReplicator.restore(...args)
+        },
+      },
+      next,
+    ),
+    /fixture interrupted restore/,
+  )
+  // The same transaction may resume, but cannot take over different local bytes or an epoch.
+  const layoutPath = join(target.home, 'home-layout.json')
+  const layout = await readFile(layoutPath)
+  await writeFile(layoutPath, Buffer.concat([layout, Buffer.from('\n')]))
+  await assert.rejects(restoreState(target, store, restoreReplicator, next), {
+    code: 'SYNC_RESTORE_TARGET_MISMATCH',
+  })
+  assert.deepEqual(await readFile(layoutPath), Buffer.concat([layout, Buffer.from('\n')]))
+  await writeFile(layoutPath, layout)
+  await assert.rejects(restoreState({ ...target, epoch: 4 }, store, restoreReplicator, next), {
+    code: 'SYNC_RESTORE_IDENTITY_MISMATCH',
+  })
+  const partialPath = join(target.home, manifest.databases[0].path)
+  const partial = await readFile(partialPath)
+  await writeFile(partialPath, Buffer.concat([partial, Buffer.from('changed')]))
+  await assert.rejects(restoreState(target, store, restoreReplicator, next), {
+    code: 'SYNC_RESTORE_TARGET_MISMATCH',
+  })
+  assert.deepEqual(await readFile(partialPath), Buffer.concat([partial, Buffer.from('changed')]))
+  await writeFile(partialPath, partial)
   await restoreState(target, store, restoreReplicator, next)
+  assert.equal(await readFile(join(target.home, 'cloud-key'), 'utf8'), 'fixture-current-provider-key')
+  assert.deepEqual(
+    (await readdir(join(target.home, 'data', 'artifacts'))).filter((name) => name.includes('.tmp')),
+    [],
+  )
   const recovered = new DatabaseSync(join(target.home, 'data', 'tables', 'new-plugin.db'), { readOnly: true })
   assert.deepEqual(
     recovered
