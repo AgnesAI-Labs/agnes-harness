@@ -620,6 +620,36 @@ it('pauses, resumes and runs a task now through the daemon', async () => {
   )
 })
 
+it('greys out only the task being switched, never the header action', async () => {
+  let release!: () => void
+  const switched = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const daemon = api([standup, report, { ...standup, id: 'sched_1111111111111111' }], {
+    control: vi.fn(async () => {
+      await switched
+      return standup
+    }),
+  })
+  const host = await mount(createElement(SchedulesPage, { api: daemon, t }))
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid="schedules-enabled"]')).toHaveLength(3))
+  await act(async () => host.querySelectorAll<HTMLElement>('[data-testid="schedules-enabled"]')[0]?.click())
+  // Only the row whose write is in flight shows it; the header's new-task action stays usable.
+  expect(host.querySelectorAll<HTMLButtonElement>('[data-testid="schedules-enabled"]')[0]?.disabled).toBe(
+    true,
+  )
+  expect(host.querySelectorAll<HTMLButtonElement>('[data-testid="schedules-enabled"]')[1]?.disabled).toBe(
+    false,
+  )
+  expect(host.querySelector<HTMLButtonElement>('[data-testid="schedules-new"]')?.disabled).toBe(false)
+  await act(async () => release())
+  await vi.waitFor(() =>
+    expect(host.querySelectorAll<HTMLButtonElement>('[data-testid="schedules-enabled"]')[0]?.disabled).toBe(
+      false,
+    ),
+  )
+})
+
 it('opens a saved task with its values and archives it after confirmation', async () => {
   let rows: unknown[] = [standup]
   const daemon = api([], {

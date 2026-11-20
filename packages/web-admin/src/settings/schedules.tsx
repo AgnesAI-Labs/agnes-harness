@@ -233,7 +233,10 @@ export function SchedulesPage({
   }
   const [runRequested, setRunRequested] = useState(false)
   const [pending, setPending] = useState<string>()
-  const [busy, setBusy] = useState(false)
+  // Two busy states: the form/dialog write, and the row whose control request is running. A row
+  // action must not grey out unrelated buttons (the header's new-task button in particular).
+  const [saving, setSaving] = useState(false)
+  const [pendingRow, setPendingRow] = useState<string>()
   // New and edit open as pages inside Automation: the open page is the address (`view=schedule-…`).
   const nav = usePushStack()
   const top = nav.stack.at(-1)
@@ -250,7 +253,8 @@ export function SchedulesPage({
   useSettingsOverlay(formOpen || !!pending)
   // biome-ignore lint/correctness/useExhaustiveDependencies: each page or connection starts a fresh operation scope.
   useEffect(() => {
-    setBusy(false)
+    setSaving(false)
+    setPendingRow(undefined)
     setError(undefined)
     setFormError(undefined)
   }, [api, top])
@@ -319,10 +323,10 @@ export function SchedulesPage({
   // the button that creates one, and the missed-run note stays with a list that has rows.
   const filtered = search !== '' || status !== 'all' || workspaceFilter !== ''
   const save = async () => {
-    if (!api || busy) return
+    if (!api || saving || pendingRow) return
     const request = captureRequest(lifetime)
     setFormError(undefined)
-    setBusy(true)
+    setSaving(true)
     try {
       const result = (await api.upsert({
         ...(editing ? { id: editing } : {}),
@@ -346,16 +350,16 @@ export function SchedulesPage({
       if (request.isCurrent()) setFormError(failureText(reason, ux, t))
       return
     } finally {
-      if (request.isCurrent()) setBusy(false)
+      if (request.isCurrent()) setSaving(false)
     }
     // The list reloads on its own; the page stays usable meanwhile.
     void refresh()
   }
   const control = async (row: ScheduleRow, action: 'run' | 'pause' | 'resume') => {
-    if (!api?.control || busy) return
+    if (!api?.control || saving || pendingRow) return
     const request = captureRequest(lifetime)
     setError(undefined)
-    setBusy(true)
+    setPendingRow(row.id)
     try {
       const result = (await api.control({ id: row.id, action })) as { updated?: boolean; code?: string }
       if (!request.isCurrent()) return
@@ -372,9 +376,9 @@ export function SchedulesPage({
       if (request.isCurrent()) setError(reason)
       return
     } finally {
-      if (request.isCurrent()) setBusy(false)
+      if (request.isCurrent()) setPendingRow(undefined)
     }
-    void refresh()
+    void refresh(true)
   }
   const prepareNew = () => {
     prepared.current = schedulePageId(undefined)
@@ -419,7 +423,7 @@ export function SchedulesPage({
       appearance="primary"
       icon={<Icon name="plus" size={16} />}
       data-testid="schedules-new"
-      disabled={!api || busy}
+      disabled={!api}
       onClick={openNew}
     >
       {ux('newSchedule')}
@@ -514,7 +518,7 @@ export function SchedulesPage({
         choices={choices}
         workspaces={workspaces}
         sessions={sessions}
-        busy={busy}
+        busy={saving}
         error={formError}
         t={t}
         ux={ux}
@@ -560,7 +564,7 @@ export function SchedulesPage({
                     appearance="primary"
                     icon={<Icon name="plus" size={16} />}
                     data-testid="schedules-empty-create"
-                    disabled={!api || busy}
+                    disabled={!api}
                     onClick={openNew}
                   >
                     {ux('newSchedule')}
@@ -637,7 +641,7 @@ export function SchedulesPage({
                           <StateSwitch
                             testId="schedules-enabled"
                             label={ux('enabledLabel', { title: row.title })}
-                            disabled={busy || !api?.control}
+                            disabled={pendingRow === row.id || !api?.control}
                             checked={row.status === 'active'}
                             onToggle={(checked) => void control(row, checked ? 'resume' : 'pause')}
                           />
@@ -659,7 +663,7 @@ export function SchedulesPage({
                                       id: 'run',
                                       label: ux('runNow'),
                                       testId: 'schedules-run-now',
-                                      disabled: busy || last?.outcome === 'running',
+                                      disabled: pendingRow === row.id || last?.outcome === 'running',
                                       onSelect: () => void control(row, 'run'),
                                     },
                                   ]
@@ -701,15 +705,15 @@ export function SchedulesPage({
         confirmLabel={t('schedulesConfirm')}
         cancelLabel={t('schedulesCancel')}
         destructive
-        busy={busy}
+        busy={saving}
         testIds={{ confirm: 'schedules-archive-confirm', cancel: 'schedules-archive-cancel' }}
         onCancel={() => setPending(undefined)}
         onConfirm={() => {
           const id = pending
-          if (!api || !id || busy) return
+          if (!api || !id || saving) return
           const request = captureRequest(lifetime)
           setError(undefined)
-          setBusy(true)
+          setSaving(true)
           void api
             .archive({ id })
             .then((result) => {
@@ -723,7 +727,7 @@ export function SchedulesPage({
               if (request.isCurrent()) setError(reason)
             })
             .finally(() => {
-              if (request.isCurrent()) setBusy(false)
+              if (request.isCurrent()) setSaving(false)
             })
         }}
       >

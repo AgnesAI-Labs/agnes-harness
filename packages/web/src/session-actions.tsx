@@ -270,7 +270,7 @@ export function createSessionActions(options: {
           reportSuccess('session-archive', t('session.archivedNotice'))
           await options.changed()
           options.archived?.(id)
-          document.querySelector<HTMLElement>('#sessions button')?.focus()
+          document.querySelector<HTMLElement>('#sessions button')?.focus({ preventScroll: true })
         }
       } catch (failure) {
         options.error(

@@ -54,7 +54,7 @@ export function PluginConfigTab({
                 key: 'config',
                 label: <span data-testid="plugin-config-tab">{t('config')}</span>,
                 children: (
-                  <>
+                  <div className="plugin-detail-stack">
                     {settingsSummary}
                     {configOpened && (
                       <PluginConfigPanel
@@ -63,7 +63,7 @@ export function PluginConfigTab({
                         canSave={!context.readOnly && context.permissions.includes('packages.activate')}
                       />
                     )}
-                  </>
+                  </div>
                 ),
               },
             ]
