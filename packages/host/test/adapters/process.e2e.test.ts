@@ -1,13 +1,14 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { stripVTControlCharacters } from 'node:util'
 import { createExec, createPolicyOpenProcess } from '@agnes/host-infrastructure/adapters/exec'
 import { openLocalProcess } from '@agnes/host-infrastructure/adapters/process'
 import { describe, expect, it } from 'vitest'
 
 describe.skipIf(process.platform === 'win32')('Host interactive processes', () => {
   it.each(existsSync('/bin/zsh') ? ['bash', 'zsh'] : ['bash'])(
-    'provides %s a controlling PTY, input, resize, interruption and joined cleanup with bounded launch and joined cleanup',
+    'provides %s a controlling PTY, input, resize, interruption and joined cleanup',
     async (shell) => {
       const handle = await openLocalProcess({
         argv: shell === 'zsh' ? ['/bin/zsh', '-f', '-i'] : ['bash', '--noprofile', '--norc', '-i'],
@@ -18,25 +19,23 @@ describe.skipIf(process.platform === 'win32')('Host interactive processes', () =
       handle.onOutput((chunk) => {
         output += chunk.text
       })
+      const pollOutput = () => expect.poll(() => stripVTControlCharacters(output), { timeout: 5_000 })
       try {
         await handle.write('test -t 0 && printf "real-%s\\n" tty; stty size\r')
-        await expect.poll(() => output).toContain('real-tty')
-        await expect.poll(() => output).toContain('24 80')
-        await handle.write('tty; ps -o tpgid= -p $$; printf "tty-%s\\n" checked\r')
-        await expect.poll(() => output).toContain('tty-checked')
-        expect(output).toMatch(/\/dev\/[^\s]+/)
+        await pollOutput().toContain('real-tty')
+        await pollOutput().toContain('24 80')
+        // Some tty implementations omit the newline. Frame both values and wait for the whole line.
+        await handle.write('printf "tty:%s tpgid:%s\\n" "$(tty)" "$(ps -o tpgid= -p "$$")"\r')
+        await pollOutput().toMatch(/(?:^|[\r\n])tty:\/dev\/\S+ tpgid:[ \t]*[1-9]\d*\r?\n/)
         expect(output).not.toMatch(/can't set tty pgrp|no job control|not a tty/i)
-        const groups = output.match(/\r?\n\s*(\d+)\s*\r?\n/)
-        expect(Number(groups?.[1])).toBeGreaterThan(0)
         await handle.resize(91, 31)
         await handle.write('stty size\r')
-        await expect.poll(() => output).toContain('31 91')
-        await handle.write('sleep 30\r')
-        // Wait for input echo before signalling the foreground process.
-        await expect.poll(() => output).toContain('sleep 30')
+        await pollOutput().toContain('31 91')
+        await handle.write('sh -c \'printf "sleep-%s\\n" started; exec sleep 30\'\r')
+        await pollOutput().toContain('sleep-started')
         await handle.signal('SIGINT')
-        await handle.write('printf "after-%s\\n" interrupt\r')
-        await expect.poll(() => output).toContain('after-interrupt')
+        await handle.write('printf "sleep-exit:%s\\n" "$?"\r')
+        await pollOutput().toMatch(/(?:^|[\r\n])sleep-exit:130\r?\n/)
         await handle.close()
         expect((await handle.exited).code).not.toBeNull()
         await handle.close()
@@ -44,6 +43,7 @@ describe.skipIf(process.platform === 'win32')('Host interactive processes', () =
         await handle.close()
       }
     },
+    30_000,
   )
   it.runIf(existsSync('/usr/bin/sandbox-exec')).each([false, true])(
     'retains read-only confinement through the %s PTY mode and its descendants',

@@ -5,8 +5,11 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, it, vi } from 'vitest'
-import { createChannelClient } from '../../packages/channels/src/runner/client.js'
-import { readDaemonDiscovery, resolveDaemonScope } from '../../packages/daemon/src/index.js'
+import {
+  createChannelClient,
+  readDaemonDiscovery,
+  resolveDaemonScope,
+} from '../../packages/daemon/src/index.js'
 import { startProviderFixture } from './provider-fixture.js'
 
 const entry = process.env.AGNES_LOCAL_CLI
@@ -53,16 +56,16 @@ it.skipIf(!windows || !entry)(
         diagnostic = (diagnostic + bytes.toString()).slice(-4096)
       })
       child.stdout?.resume()
-      let descriptor: Awaited<ReturnType<typeof readDaemonDiscovery>> = null
-      await vi.waitFor(
+      const descriptor = await vi.waitFor(
         async () => {
           if (child.exitCode !== null) throw new Error(`daemon exited ${child.exitCode}: ${diagnostic}`)
-          descriptor = await readDaemonDiscovery(scope)
-          expect(descriptor?.owner.pid).toBe(child.pid)
+          const discovered = await readDaemonDiscovery(scope)
+          if (!discovered) throw new Error('missing daemon discovery')
+          expect(discovered.owner.pid).toBe(child.pid)
+          return discovered
         },
         { timeout: 15000, interval: 100 },
       )
-      if (!descriptor) throw new Error('missing daemon discovery')
       return { child, descriptor, diagnostic: () => diagnostic }
     }
     try {
