@@ -181,13 +181,16 @@ export type CatalogueFacts = Readonly<{
  * Any other endpoint, such as a gateway like llm.sg whose model list names models but not what they
  * accept or hold, takes for each id what the built-in catalogues that know it agree on: only the input
  * types every one allows, and the smallest context window and output allowance. An id no catalogue
- * knows has no facts and keeps the text fallback and default capacity.
+ * knows has no facts and keeps the text fallback and default capacity. That inference by id is for
+ * listing a gateway's models, where the person sees it before saving; with `byId` false (saved
+ * accounts, routes) only the exact endpoint lends its catalogue, so a saved account stays as saved.
  */
 export async function catalogueFacts<T extends { api: string; baseUrl: string; capabilities?: unknown }>(
   providers: readonly T[],
   read: (provider: T) => Promise<{ records: ModelRecord[] }>,
   api: string,
   address: string,
+  byId = true,
 ): Promise<ReadonlyMap<string, CatalogueFacts>> {
   const catalogued = providers.filter((candidate) => !candidate.capabilities)
   const records = (provider: T) =>
@@ -205,6 +208,7 @@ export async function catalogueFacts<T extends { api: string; baseUrl: string; c
       candidate.api === api && candidate.baseUrl.replace(/\/$/, '') === address.replace(/\/$/, ''),
   )
   if (exact) return new Map((await records(exact)).map((record) => [record.id, facts(record)]))
+  if (!byId) return new Map()
   const agreed = new Map<string, CatalogueFacts>()
   for (const catalogue of await Promise.all(catalogued.map(records)))
     for (const record of catalogue) {

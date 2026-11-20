@@ -729,9 +729,9 @@ export function createConfigurationService(
     return next
   }
 
-  const catalogFacts = (api: string, address: string) =>
-    catalogueFacts(API_KEY_PROVIDER_REGISTRY, staticCatalogue, api, address)
-  const catalogInputs = (api: string, address: string) => catalogFacts(api, address).then(factsInputs)
+  const catalogFacts = (api: string, address: string, byId = true) =>
+    catalogueFacts(API_KEY_PROVIDER_REGISTRY, staticCatalogue, api, address, byId)
+  const catalogInputs = (api: string, address: string) => catalogFacts(api, address, false).then(factsInputs)
 
   const readCredential = configurationCredentialReader(home, credentialStore)
 
