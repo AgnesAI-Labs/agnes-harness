@@ -236,7 +236,6 @@ The TUI shows the same lines as text but has no withdraw action. A client can ca
 - The review service has a configured price, so manual and automatic reviews can start without a price confirmation.
 - In the TUI, the footer, `/status` and the `/usage` figures leave review spend out, and `/usage` lists it on its own **RSI cost** line (a free model shows a zero cost, a model with no known price shows "price unknown").
 - The Web counts review spend in the session's usage totals.
-- Product telemetry attributes review costs on the built-in `task-experience` route to `llm-sg`.
 - The guidance and entry notes add tokens to every request of a session where task experience is on.
 
 ## Turn it off
