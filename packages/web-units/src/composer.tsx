@@ -32,6 +32,7 @@ import { useComposerHint } from './composer/hint.js'
 import type { ComposerAttachment } from './composer/image-files.js'
 import { renderComposerQueue } from './composer/queue.js'
 import { SkillMentionLayer, skillMentionTokens } from './composer/skill-mentions.js'
+import { SlashPicker } from './composer/slash-picker.js'
 import { ReferencePicker } from './reference-picker.js'
 import { type ComposerSkill, SkillPicker } from './skill-picker.js'
 
@@ -131,6 +132,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   } = useComposerAttachments({ view, dependencies, prepareUploadSession, onAttachmentsChange, onError })
 
   const hasAttachments = attachments.length + pendingCount + uploads.chips.length > 0
+  const slashCommands = !view.readOnly && !view.input.disabled && !view.loading && view.input.commands
   const example = useComposerHint(
     examplePrompts,
     view.input.exampleHint === true,
@@ -497,6 +499,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           t={t}
           disabled={imageDisabled}
         />
+        {slashCommands && slashCommands.length > 0 && (
+          <SlashPicker textarea={prompt} edit={editDraft} commands={slashCommands} t={t} />
+        )}
         {slots?.overlay}
         <label className="visually-hidden" htmlFor="prompt">
           {t('composer.input.label')}
@@ -525,7 +530,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             inputAttributes={INPUT_ATTRIBUTES}
             value={draft}
             disabled={view.input.disabled || (!!view.readOnly && !view.loading)}
-            placeholder={view.readOnly ? t('composer.hint.readOnly') : view.input.placeholder}
+            placeholder={view.input.placeholder}
             autoSize={nativeSizing ? false : AUTO_SIZE}
             {...(nativeSizing ? { styles: NATIVE_INPUT_STYLES } : {})}
             onChange={changeDraft}

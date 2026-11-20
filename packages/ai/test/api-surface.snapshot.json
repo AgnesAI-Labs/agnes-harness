@@ -1,6 +1,8 @@
 [
+  "AGNES_SYS1_WIRE_API",
   "API_KEY_CREDENTIAL_REFS",
   "API_KEY_PROVIDER_REGISTRY",
+  "AgnesSys1Adapter",
   "AiSetupError",
   "ApiKeyProviderError",
   "CODEX_API",

@@ -12,7 +12,8 @@ import { IconButton } from './ui/icon-button.js'
 
 /**
  * The key field. Its label row offers where to get a key, opened in place above the field, and the
- * key can be shown while it is typed; the controller owns its value, state and placeholder.
+ * key can be shown while it is typed; the controller owns its value, state and placeholder. For a
+ * gateway with a key console of its own, the controller swaps the help for a link to that page.
  */
 function AccountKeyField({ t }: { t: Translate }) {
   const [help, setHelp] = useState(false)
@@ -22,12 +23,24 @@ function AccountKeyField({ t }: { t: Translate }) {
       <div className="account-field-head">
         <Field className="form-field" label={t('accounts.apiKeyLabel')} htmlFor="config-api-key" />
         <Button
+          id="config-key-help-toggle"
           appearance="link"
           size="small"
           htmlType="button"
           aria-expanded={help}
           aria-controls="config-key-help"
           onClick={() => setHelp(!help)}
+        >
+          {t('accounts.keyHelp')}
+        </Button>
+        <Button
+          id="config-key-console"
+          appearance="link"
+          size="small"
+          href="https://api.agnes-ai.cn/"
+          target="_blank"
+          rel="noopener noreferrer"
+          hidden
         >
           {t('accounts.keyHelp')}
         </Button>

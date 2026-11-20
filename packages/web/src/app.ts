@@ -56,7 +56,13 @@ import { type PermissionMode, permissionLabel, yoloEnabled } from '@agnes/web-ad
 import { loadAuxiliaryModelDefaults, loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
 import { settingsCatalog } from '@agnes/web-admin/settings/locales'
 import { mountStatusCheck } from '@agnes/web-admin/settings/status-check'
-import { effectiveApplication, homeEntries, homeNavigation, settingsSections } from '@agnes/web-client'
+import {
+  composerCommands,
+  effectiveApplication,
+  homeEntries,
+  homeNavigation,
+  settingsSections,
+} from '@agnes/web-client'
 import type { LiveProjection } from '@agnes/web-conversation/live-projection'
 import { errorNotice, type KnownSessionModel, type Translate } from '@agnes/web-conversation/presentation'
 import { workbenchLocaleCatalog } from '@agnes/web-conversation/workbench'
@@ -2085,6 +2091,7 @@ clientModules.locale.subscribe(() => {
   appearance.sync()
   skinGroup.sync()
 })
+onPageHide(composerCommands.subscribe(() => queueMicrotask(renderControls)))
 
 /**
  * The workspace the admin panes are scoped to: the workbench's current one, else the one the

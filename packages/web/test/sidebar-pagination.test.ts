@@ -483,3 +483,69 @@ it('never expands the chats group by default, only the first workspace', async (
     ['a', true],
   ])
 })
+
+it('rereads an expanded group off-screen and commits the pages in one render', async () => {
+  const lengths: number[] = []
+  let observe = () => {}
+  const s = setup(() => observe())
+  observe = () => lengths.push(s.ui.snapshot().groups[0]?.items.length ?? 0)
+  await s.ui.refresh()
+  await s.ui.action('a', 'more')
+  await s.ui.action('a', 'more')
+  expect(s.ui.rows()).toHaveLength(15)
+  // A new session lands in the group: the summary revision changes and every row moves down one.
+  s.revision('v2')
+  s.list.mockImplementation(
+    async (input: { sidebar: { groupId: string }; cursor?: string }): Promise<PageSessionMeta> => {
+      const start = Number(input.cursor ?? 0)
+      return {
+        items: Array.from({ length: Math.min(5, 17 - start) }, (_, i) =>
+          row(100 + start + i, input.sidebar.groupId),
+        ),
+        total: 17,
+        revision: 'v2',
+        ...(start + 5 < 17 ? { next: String(start + 5) } : {}),
+      }
+    },
+  )
+  lengths.length = 0
+  await s.ui.refresh()
+  // The one-page intermediate state never renders: no render shows fewer rows than before.
+  expect(lengths.filter((length) => length < 15)).toEqual([])
+  expect(s.ui.rows()).toHaveLength(15)
+  expect(s.ui.rows()[0]?.sessionId).toBe('a100')
+  expect(s.ui.snapshot().groups[0]).toMatchObject({ total: 17, next: '15', opened: true })
+})
+
+it('still removes an archived row from a reread group', async () => {
+  const lengths: number[] = []
+  let observe = () => {}
+  const s = setup(() => observe())
+  observe = () => lengths.push(s.ui.snapshot().groups[0]?.items.length ?? 0)
+  let total = 15
+  s.list.mockImplementation(
+    async (input: { sidebar: { groupId: string }; cursor?: string }): Promise<PageSessionMeta> => {
+      const start = Number(input.cursor ?? 0)
+      return {
+        items: Array.from({ length: Math.max(0, Math.min(5, total - start)) }, (_, i) =>
+          row(start + i, input.sidebar.groupId),
+        ),
+        total,
+        revision: 'v1',
+        ...(start + 5 < total ? { next: String(start + 5) } : {}),
+      }
+    },
+  )
+  await s.ui.refresh()
+  await s.ui.action('a', 'more')
+  await s.ui.action('a', 'more')
+  expect(s.ui.rows()).toHaveLength(15)
+  // One row is archived elsewhere: the reread ends one row shorter, without a one-page fold first.
+  total = 14
+  s.revision('v2')
+  lengths.length = 0
+  await s.ui.refresh()
+  expect(lengths.filter((length) => length === 5)).toEqual([])
+  expect(s.ui.rows()).toHaveLength(14)
+  expect(lengths.at(-1)).toBe(14)
+})

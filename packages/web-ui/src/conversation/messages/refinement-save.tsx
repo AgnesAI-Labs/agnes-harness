@@ -1,7 +1,10 @@
 import type { UINode } from '@agnes/protocol'
+import { createContext } from 'react'
 import type { Translate } from '../../locales/index.js'
 
-type RefinementSave = Extract<UINode, { kind: 'refinement-save' }>
+export type RefinementSave = Extract<UINode, { kind: 'refinement-save' }>
+
+export const RefinementSavesByRun = createContext<ReadonlyMap<string, readonly RefinementSave[]>>(new Map())
 
 /** Refusal reasons this client can say in words; a later one is shown as the host named it. */
 const REASONS = new Set([

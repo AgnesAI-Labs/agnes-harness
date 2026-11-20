@@ -84,3 +84,17 @@ it('leaves session reads such as deliverables to the browser client', async () =
     call.mockRestore()
   }
 })
+
+it('lets the Web settings read the review catalogue through its local RPC', async () => {
+  const result = {
+    models: [{ id: 'company/review', name: 'Review', contextWindow: 65536, maxTokens: 4096 }],
+  }
+  const call = vi.spyOn(BaseClient.prototype, 'call').mockResolvedValue(result)
+  try {
+    const client = createClient({ transport: { kind: 'ws', url: 'ws://127.0.0.1/unused' } })
+    await expect(client.refinement.models()).resolves.toEqual(result)
+    expect(call).toHaveBeenCalledWith('_agnes/v1/refinement.models', {}, undefined)
+  } finally {
+    call.mockRestore()
+  }
+})

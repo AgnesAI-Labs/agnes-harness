@@ -7,6 +7,8 @@ import {
   saveEntryToWorkspace,
 } from '@agnes/host'
 import {
+  type RefinementModelOption,
+  type RefinementModelsResult,
   type RefinementSettingsSaveParams,
   type RefinementSettingsSaveResult,
   type RefinementSettingsSnapshot,
@@ -27,7 +29,8 @@ const errorCode = (error: unknown): string | undefined => (error as { code?: str
 export function registerRefinement(
   ep: LocalEndpoint,
   deps: {
-    settings: Pick<RefinementSettingsStore, 'read' | 'save'>
+    settings: Pick<RefinementSettingsStore, 'read' | 'save' | 'serviceKey' | 'resolveBaseUrl'>
+    fetchModels: (baseUrl: string, key: string, signal: AbortSignal) => Promise<RefinementModelOption[]>
     /** Told, after the save, when a save turned refinement on; it cannot fail the save. */
     switchedOn?: () => void
     /** The skills refinement saved in a workspace, for the owner; absent where none are saved. */
@@ -56,6 +59,33 @@ export function registerRefinement(
     local(c)
     return stored(() => deps.settings.read())
   })
+  const loadModels = async (baseUrl: string, ref: string | undefined, signal: AbortSignal) => {
+    const key = ref && deps.settings.serviceKey(ref)
+    if (!ref || !key) throw rpcError('SEMANTIC_REJECTED', { reason: 'REFINEMENT_KEY_MISSING' })
+    let models: RefinementModelOption[]
+    try {
+      models = await deps.fetchModels(baseUrl, key, signal)
+    } catch (error) {
+      throw rpcError('SEMANTIC_REJECTED', {
+        reason:
+          error instanceof Error && error.message === 'REFINEMENT_KEY_INVALID'
+            ? 'REFINEMENT_KEY_INVALID'
+            : 'REFINEMENT_MODELS_UNAVAILABLE',
+      })
+    }
+    if (deps.settings.serviceKey(ref) !== key)
+      throw rpcError('SEMANTIC_REJECTED', { reason: 'REFINEMENT_KEY_MISSING' })
+    return models
+  }
+  ep.register('_agnes/v1/refinement.models', async (_params, c): Promise<RefinementModelsResult> => {
+    local(c)
+    const snapshot = stored(() => deps.settings.read())
+    const { baseUrl, credentialRef } = snapshot.settings
+    const models = await loadModels(baseUrl, credentialRef, c.signal)
+    if (stored(() => deps.settings.read()).revision !== snapshot.revision)
+      throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_REVISION_CONFLICT' })
+    return { models }
+  })
   // The owner's saved skills: listed, uninstalled or rolled back, on this machine only.
   ep.register('_agnes/v1/refinement.skills', async (params, c): Promise<RefinementSkillsResult> => {
     local(c)
@@ -65,14 +95,24 @@ export function registerRefinement(
   ep.register('_agnes/v1/refinement.save', async (params, c): Promise<RefinementSettingsSaveResult> => {
     local(c)
     const p = params as RefinementSettingsSaveParams
-    let wasOn = false
-    try {
-      wasOn = deps.settings.read().settings.enabled === true
-    } catch {
-      // unreadable counts as off
+    const { revision, settings: previous } = stored(() => deps.settings.read())
+    if (revision !== p.expectedRevision)
+      throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_REVISION_CONFLICT' })
+    const baseUrl = stored(() => deps.settings.resolveBaseUrl(p.settings.baseUrl))
+    const { enabled, model, credentialRef } = p.settings
+    const requiresCatalogue =
+      model &&
+      credentialRef &&
+      (model !== previous.model ||
+        (enabled &&
+          (!previous.enabled || credentialRef !== previous.credentialRef || baseUrl !== previous.baseUrl)))
+    let option: RefinementModelOption | undefined
+    if (requiresCatalogue) {
+      option = (await loadModels(baseUrl, credentialRef, c.signal)).find(({ id }) => id === model)
+      if (!option) throw rpcError('SEMANTIC_REJECTED', { reason: 'REFINEMENT_MODEL_UNAVAILABLE' })
     }
-    const saved = stored(() => deps.settings.save(p.settings, p.expectedRevision))
-    if (p.settings.enabled === true && !wasOn)
+    const saved = stored(() => deps.settings.save(p.settings, p.expectedRevision, option))
+    if (enabled && !previous.enabled)
       try {
         deps.switchedOn?.()
       } catch {

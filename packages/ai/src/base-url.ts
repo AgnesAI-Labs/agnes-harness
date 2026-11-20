@@ -1,4 +1,5 @@
 import type { RouteDecl } from '@agnes/protocol'
+import { AGNES_SYS1_WIRE_API } from './adapters/agnes-sys1/index.js'
 import { JEV_WIRE_API } from './adapters/jev/wire.js'
 import { OPENAI_AUDIO_WIRE_API } from './adapters/openai-audio/wire.js'
 import { checkedPayloadBase } from './adapters/payload-wire.js'
@@ -7,7 +8,7 @@ import { AiSetupError } from './errors.js'
 
 /** Validate with the serving adapter's policy, without opening a transport or echoing input. */
 export function validateModelBaseUrl(decl: Pick<RouteDecl, 'api' | 'route' | 'baseUrl'>): void {
-  if (decl.api !== JEV_WIRE_API && decl.api !== OPENAI_AUDIO_WIRE_API) {
+  if (![JEV_WIRE_API, AGNES_SYS1_WIRE_API, OPENAI_AUDIO_WIRE_API].includes(decl.api)) {
     requireAbsoluteHttpUrl(decl)
     return
   }

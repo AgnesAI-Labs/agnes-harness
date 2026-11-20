@@ -204,6 +204,23 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 1.75rem;
   }
+  .refinement-settings {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s24);
+  }
+  .refinement-settings .agnes-settings-note {
+    margin-block: 0;
+    padding: var(--s8) var(--s16);
+  }
+  .refinement-note-lead {
+    color: var(--agnes-text-secondary);
+    font-weight: var(--font-weight-medium);
+  }
+  .refinement-settings pre.agnes-settings-note {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
   .home-page-section {
     min-width: 0;
     display: grid;

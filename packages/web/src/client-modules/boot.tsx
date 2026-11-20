@@ -56,6 +56,7 @@ import { diagnosticsCatalog } from '@agnes/web-units/diagnostics-locale'
 import {
   BuiltinWebUnitRegistry,
   type SessionListMark,
+  type TranscriptRefinementActions,
   WEB_UNITS_LOCALE_NAMESPACE,
   webUnitsLocaleCatalog,
 } from '@agnes/web-units/shell'
@@ -337,6 +338,11 @@ export async function startClientModules(options: {
   }
   let conversationView: ConversationRegionMount | undefined
   let emptyVisible = true
+  const refinementActions: TranscriptRefinementActions = {
+    onWithdrawRefinement: (sessionId, appliedSeq) => withdrawRefinement(options.agnes, sessionId, appliedSeq),
+    onSaveRefinementEntry: (sessionId, kind, id, target) =>
+      saveRefinementEntry(options.agnes, sessionId, kind, id, target),
+  }
   if (options.conversationContainer)
     presentation.conversation = {
       container: options.conversationContainer,
@@ -352,6 +358,7 @@ export async function startClientModules(options: {
       },
       transcript: {
         ...options.transcript,
+        ...refinementActions,
         ...(options.claim ? { claim: options.claim } : {}),
         ...(voice ? { voice } : {}),
         attach(handle) {
@@ -545,10 +552,7 @@ export async function startClientModules(options: {
       ? mountTranscriptRegion(registry, options.transcriptContainer, {
           ...options.transcript,
           ...(options.claim ? { claim: options.claim } : {}),
-          onWithdrawRefinement: (sessionId, appliedSeq) =>
-            withdrawRefinement(options.agnes, sessionId, appliedSeq),
-          onSaveRefinementEntry: (sessionId, kind, id, target) =>
-            saveRefinementEntry(options.agnes, sessionId, kind, id, target),
+          ...refinementActions,
           session,
           locale,
           resources,

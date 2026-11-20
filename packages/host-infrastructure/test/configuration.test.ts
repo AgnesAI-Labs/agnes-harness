@@ -1821,30 +1821,47 @@ it('discovers image input and keeps explicit choices through retesting, reopenin
   expect((await reopened.get()).revision).toBe(before)
 })
 
-it('inherits image input only from the catalog at the matching official endpoint and protocol', async () => {
+it('inherits image input from the matching official catalogue, else from the catalogues that know the id', async () => {
   const entry = getApiKeyProvider('moonshotai-cn')!
   const model = (await entry.createAdapter()).models(entry.route).find((m) => m.id === 'kimi-k3')!
   const service = createConfigurationService({
     home: await home(),
     profile: 'local-dev',
-    request: async () => Response.json({ data: [{ id: model.id }] }),
+    request: async () => Response.json({ data: [{ id: model.id }, { id: 'no-catalogue-knows-this' }] }),
   })
   const found = await service.test({ providerId: 'openai-compatible', baseUrl: entry.baseUrl })
   expect(found.models[0]?.input).toEqual(['text', 'image'])
-  const unrelated = await service.test({
+  // A gateway whose list names models but not their inputs (llm.sg) takes what the catalogues know.
+  const gateway = await service.test({
     providerId: 'openai-compatible',
     baseUrl: 'https://gateway.invalid/v1',
   })
-  expect(unrelated.models[0]).not.toHaveProperty('input')
-  const other = getApiKeyProvider('openai')!
-  const otherModel = (await other.createAdapter()).models(other.route).find((m) => m.input.includes('image'))!
-  const wrongProtocol = createConfigurationService({
+  expect(gateway.models[0]?.input).toEqual(['text', 'image'])
+  // Its capacity comes from the same catalogue entry rather than the 128K default.
+  expect(gateway.models[0]).toMatchObject({ contextWindow: model.contextWindow, maxTokens: model.maxTokens })
+  expect(model.contextWindow).not.toBe(128_000)
+  // An id no catalogue knows keeps the text fallback and the default capacity.
+  expect(gateway.models[1]).not.toHaveProperty('input')
+  expect(gateway.models[1]).toMatchObject({ contextWindow: 128_000, maxTokens: 8_192 })
+})
+
+it('leaves a saved account on an arbitrary gateway as it was saved, and infers only while listing', async () => {
+  const service = createConfigurationService({
     home: await home(),
     profile: 'local-dev',
-    request: async () => Response.json({ data: [{ id: otherModel.id }] }),
+    request: async () => Response.json({ data: [{ id: 'kimi-k3' }] }),
   })
-  const refused = await wrongProtocol.test({ providerId: 'openai-compatible', baseUrl: other.baseUrl })
-  expect(refused.models[0]).not.toHaveProperty('input')
+  const gateway = { providerId: 'openai-compatible', baseUrl: 'https://gateway.invalid/v1' }
+  // An account saved before inputs were inferred by id declares none for its model.
+  await service.save({
+    ...gateway,
+    model: 'kimi-k3',
+    models: [{ id: 'kimi-k3', name: 'kimi-k3', contextWindow: 128_000, maxTokens: 8_192 }],
+  } as never)
+  expect((await service.get()).accounts?.[0]?.models[0]).not.toHaveProperty('input')
+  expect((await service.profileInput()).provider?.routes?.[0]?.models?.[0]?.input).toEqual(['text'])
+  // Fetching the list again offers what the catalogues know, for the person to save.
+  expect((await service.test(gateway)).models[0]?.input).toEqual(['text', 'image'])
 })
 
 it('projects installed input types and permits only named per-model input overrides', async () => {
@@ -1925,3 +1942,39 @@ it('inherits official image defaults for an existing account without rewriting o
   expect((await reopened.profileInput()).provider?.routes?.[0]?.models?.[0]?.input).toEqual(['text', 'image'])
   expect(await readFile(file, 'utf8')).toBe(before)
 })
+
+it.each(['https://litellm-sa.agnes-ai.cn/sys1/v1', 'https://agrouter-sg.agnes-ai.com/sa/sys1/v1'])(
+  'probes Agnes Sys1 at %s with a typed synthetic question',
+  async (baseUrl) => {
+    const model = 'agnes-sys1-1.0'
+    const requests: Request[] = []
+    const request: typeof fetch = async (input, init) => {
+      requests.push(new Request(input, init))
+      return Response.json({
+        model,
+        answers: { ping: { type: 'noul', noul: 0.99 } },
+        usage: { input_tokens: 10, output_tokens: 0 },
+      })
+    }
+    await expect(
+      probePayloadRoute('agnes-sys1', {
+        baseUrl,
+        model,
+        request,
+        credential: 'sys1-test-key',
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toBe('ok')
+    expect(requests).toHaveLength(1)
+    const [sent] = requests
+    if (sent === undefined) throw new Error('probe sent no request')
+    expect(sent.method).toBe('POST')
+    expect(sent.url).toBe(`${baseUrl}/systemone`)
+    expect(sent.headers.get('authorization')).toBe('Bearer sys1-test-key')
+    expect(await sent.json()).toEqual({
+      model,
+      state: 'The system is ready.',
+      questions: { ping: { type: 'noul', instructions: 'Is it ready?' } },
+    })
+  },
+)

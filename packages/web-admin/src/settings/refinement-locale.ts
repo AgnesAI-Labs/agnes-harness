@@ -4,17 +4,44 @@ export const REFINEMENT_SETTINGS_NAMESPACE = '@agnes/web-admin/refinement'
 
 export const refinementSettingsCatalog: LocaleCatalog = {
   en: {
+    'refinement.endpoint': 'Service address',
+    'refinement.endpoint.hint': 'Switching pauses learning and reloads its models.',
+    'refinement.endpoint.singleHint': 'Dedicated company review gateway.',
+    'refinement.key': 'Service key',
+    'refinement.key.label': 'Task experience service key',
+    'refinement.key.hint': 'Save your company service key to load the review models.',
+    'refinement.key.ready': 'Service key configured.',
+    'refinement.key.missing': 'Service key missing. Enter and save a new key.',
+    'refinement.key.save': 'Save key',
+    'refinement.key.replace': 'Replace key',
+    'refinement.key.error': 'Could not save the service key. Try again.',
+    'refinement.model': 'Review model',
+    'refinement.model.needsKey': 'Save a service key to load the available models.',
+    'refinement.model.loading': 'Loading available models…',
+    'refinement.model.hint': 'Used for background reviews. Changes apply to subsequent reviews.',
+    'refinement.model.placeholder': 'Select a review model',
+    'refinement.model.invalidKey': 'The service key is invalid or lacks access. Check it and save it again.',
+    'refinement.model.error': 'Could not load the available models. Try again.',
+    'refinement.model.empty': 'The service returned no chat models.',
+    'refinement.model.unavailable': 'That model is no longer available. Reload the model list.',
+    'refinement.model.notOffered':
+      "The saved model {model} is not in the service's current list. It stays as saved; choose another model to change it.",
+    'refinement.model.notOfferedOption': '{model} (not offered now)',
+    'refinement.model.retry': 'Reload models',
     'refinement.group.main': 'Task experience (RSI)',
     'refinement.enabled': 'Learn from finished work',
     'refinement.enabled.hint':
       'Off by default. When on, you or the model can request a background review and keep useful lessons for later turns. When off, reviews and the experience tools are unavailable.',
     'refinement.enabled.info':
       'Applies to sessions opened after you turn it on; sessions already open are not affected. Turning it off applies to all sessions at once. To keep lessons for later sessions, also turn workspace memory on (Settings → General → Personalization → Memory: "Ask me first" or "Automatic"); while it is off, lessons last only for the session they were learned in.',
+    'refinement.billing':
+      'Reviews use your llm.sg key and are billed by usage. AGH does not know the price; the token budget limits how much each session uses.',
     'refinement.mode': 'How reviews start',
     'refinement.mode.hint':
       'On demand: use /refine, or let the model request a review for this session. With automatic triggers: the system also considers reviews after a successful summary compaction or repeated tool failures, subject to budget, cooldown and frequency limits. The model needs automatic triggers enabled to save lessons beyond this session; memory settings still apply.',
     'refinement.mode.manual': 'On demand',
     'refinement.mode.auto': 'On demand + automatic triggers',
+    'refinement.note.separator': ': ',
     'refinement.group.allows': 'What turning it on allows',
     'refinement.allows.install': 'Install proven skills in the workspace',
     'refinement.allows.install.hint':
@@ -37,7 +64,7 @@ export const refinementSettingsCatalog: LocaleCatalog = {
       'A learned note reaches the model as untrusted text, so a turn that carries one may ask you to approve more commands.',
     'refinement.cost': 'Cost',
     'refinement.cost.hint':
-      'A review is a background model call on your account. The terminal lists its cost on its own “RSI cost” line in the usage details; the web counts it in the session’s usage totals.',
+      'Each review uses the company review service. The terminal lists its cost on its own “RSI cost” line in the usage details; the web counts it in the session’s usage totals.',
     'refinement.conflict':
       'The experience settings were changed somewhere else. They are shown again as they are now; make your change again.',
     'refinement.notice':
@@ -45,17 +72,44 @@ export const refinementSettingsCatalog: LocaleCatalog = {
     'refinement.notice.dismiss': 'Dismiss this notice',
   },
   'zh-CN': {
+    'refinement.endpoint': '服务地址',
+    'refinement.endpoint.hint': '切换后会暂停学习并重新读取该节点的模型。',
+    'refinement.endpoint.singleHint': '公司的专用复盘服务节点。',
+    'refinement.key': '服务密钥',
+    'refinement.key.label': '任务经验服务密钥',
+    'refinement.key.hint': '保存公司服务密钥后即可读取复盘模型。',
+    'refinement.key.ready': '已配置服务密钥。',
+    'refinement.key.missing': '服务密钥缺失，请重新填写并保存。',
+    'refinement.key.save': '保存密钥',
+    'refinement.key.replace': '更换密钥',
+    'refinement.key.error': '服务密钥保存失败，请重试。',
+    'refinement.model': '复盘模型',
+    'refinement.model.needsKey': '保存服务密钥后即可读取可选模型。',
+    'refinement.model.loading': '正在读取可选模型…',
+    'refinement.model.hint': '用于后台复盘，切换后对后续复盘生效。',
+    'refinement.model.placeholder': '选择复盘模型',
+    'refinement.model.invalidKey': '服务密钥无效或没有访问权限，请核对后重新保存。',
+    'refinement.model.error': '暂时无法读取可选模型，请重试。',
+    'refinement.model.empty': '服务未返回可用于对话的模型。',
+    'refinement.model.unavailable': '该模型已不可用，请重新读取模型列表。',
+    'refinement.model.notOffered':
+      '已保存的模型 {model} 不在该服务当前的列表中。它会按原样保留；如需更换，请选择其他模型。',
+    'refinement.model.notOfferedOption': '{model}（目前未提供）',
+    'refinement.model.retry': '重新读取模型',
     'refinement.group.main': '任务经验（RSI）',
-    'refinement.enabled': '从完成的工作中学习',
+    'refinement.enabled': '从已完成的工作中学习',
     'refinement.enabled.hint':
       '默认关闭。开启后，你或模型可以发起后台复盘，把有用的经验留给之后的轮次；关闭后不再复盘，也不提供经验工具。',
     'refinement.enabled.info':
       '打开后，之后新开的会话生效；已经打开的会话不受影响。关闭立即对所有会话生效。要把经验留给之后的会话，还需打开工作区记忆（设置 → 通用 → 个性化 → 记忆：「先问我」或「自动」）；记忆为「关闭」时，经验只在学到它的会话里有效。',
+    'refinement.billing':
+      '复盘使用你的 llm.sg 密钥，按实际用量计费。AGH 不知道价格；每个会话的用量受 token 预算限制。',
     'refinement.mode': '复盘如何开始',
     'refinement.mode.hint':
       '按需：你用 /refine，或由模型主动发起当前会话的复盘。开启自动触发后：系统还会在摘要压缩成功、同类工具错误重复出现时尝试复盘，受预算、冷却时间和次数限制。模型主动把经验保存到工作区或用户记忆，需要开启自动触发；记忆设置仍然有效。',
     'refinement.mode.manual': '按需复盘',
     'refinement.mode.auto': '按需＋自动触发',
+    'refinement.note.separator': '：',
     'refinement.group.allows': '开启即表示允许',
     'refinement.allows.install': '把已证实的技能安装到工作区',
     'refinement.allows.install.hint':
@@ -77,10 +131,10 @@ export const refinementSettingsCatalog: LocaleCatalog = {
       '学到的经验会作为不受信任的文字交给模型，所以带着经验的那一轮可能会要求你批准更多命令。',
     'refinement.cost': '费用',
     'refinement.cost.hint':
-      '复盘是记在你账户上的一次后台模型调用。终端会在用量详情里单列“RSI 费用”一行；网页里它计入会话的用量合计。',
+      '每次复盘都会调用公司的复盘服务。终端会在用量详情里单列“RSI 费用”一行；网页里它计入会话的用量合计。',
     'refinement.conflict': '经验设置在别处被修改了。现在显示的是最新状态，请重新做一次你的修改。',
     'refinement.notice':
-      '本版本新增：开启任务经验后，经验现在也会保存到工作区记忆和工作区技能，这里不会再次询问。工作区记忆设置仍然有效，询问模式下每次保存仍会等你确认。适用于所有工作区的经验会自动写入用户记忆。要停止，请关闭上面的“从完成的工作中学习”。',
+      '本版本新增：开启任务经验后，经验现在也会保存到工作区记忆和工作区技能，这里不会再次询问。工作区记忆设置仍然有效，询问模式下每次保存仍会等你确认。适用于所有工作区的经验会自动写入用户记忆。要停止，请关闭上面的“从已完成的工作中学习”。',
     'refinement.notice.dismiss': '关闭此说明',
   },
 }

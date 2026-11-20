@@ -18,9 +18,9 @@ If the package is not installed, it performs no checks. If it is installed but d
 
 ## Configure a judgment model, then enable detection
 
-For Jev, open **Settings → Models & accounts → Advanced: side models and task models → Side models**. Add a Jev entry and save its key through the credential controls. Follow the [Jev setup guide](typesafe-jev.md) for route and model configuration.
+Open **Settings → Models & accounts → Advanced: decision models and task models → Decision models**. A new entry starts with **Agnes Sys1**, using the domestic test gateway preset. You can switch to the international gateway before selecting the matching credential. You can also choose Jev and follow the [Jev setup guide](typesafe-jev.md).
 
-The plugin automatically selects the sole native Jev route only when one model entry remains. If that route has multiple models, select a model explicitly. With multiple routes, select the intended route and model in the plugin settings; the plugin never chooses by catalogue order. A native judgment model may have one explicitly configured native fallback. It never switches automatically to a chat model after failure.
+Automatic selection uses a uniquely configured Sys1 model first. If no Sys1 model is configured, it selects a unique Jev candidate. An explicit judgment route or model takes precedence. If several candidates remain at the applicable priority, choose the route and model in plugin settings. A native model may have one explicitly configured native fallback.
 
 You can instead explicitly select a chat model as the primary judgment model. The plugin sends that model a text question and converts its answer to yes or no. These answers represent a binary decision, not a calibrated probability. To keep this judgment request on your machine, choose a model served entirely locally.
 

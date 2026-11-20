@@ -155,7 +155,18 @@ const VOICE_SETTINGS = {
   conversation: { pauseSeconds: 1.2 },
 }
 /** Valid refinement settings: on, automatic (not the default, so a default change cannot hide a regression). */
-const REFINEMENT_SETTINGS = { enabled: true, mode: 'auto' }
+const REFINEMENT_SETTINGS = {
+  enabled: true,
+  mode: 'auto',
+  credentialRef: 'secret://generic/review',
+  model: 'company/review-v2',
+}
+const REFINEMENT_MODEL = {
+  id: REFINEMENT_SETTINGS.model,
+  name: 'Review',
+  contextWindow: 65536,
+  maxTokens: 4096,
+}
 /** Deep copy for fixture baselines whose nested fields need changing — fixture objects are shared
  * across several negative cases and must not be mutated in place. */
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T
@@ -717,6 +728,11 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionRefineSaveParams: AgnesGen.SessionRefineSaveParams,
   SessionRefineSaveResult: AgnesGen.SessionRefineSaveResult,
   RefinementSaveReceipt: AgnesGen.RefinementSaveReceipt,
+  RefinementCredentialRef: AgnesGen.RefinementCredentialRef,
+  RefinementModelId: AgnesGen.RefinementModelId,
+  RefinementModelOption: AgnesGen.RefinementModelOption,
+  RefinementModelsResult: AgnesGen.RefinementModelsResult,
+  RefinementBaseUrl: AgnesGen.RefinementBaseUrl,
   RefinementSettings: AgnesGen.RefinementSettings,
   RefinementSettingsSnapshot: AgnesGen.RefinementSettingsSnapshot,
   RefinementSettingsSaveParams: AgnesGen.RefinementSettingsSaveParams,
@@ -4553,9 +4569,60 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     ],
     note: 'withdrawal result: the row that records it',
   },
+  RefinementCredentialRef: {
+    valid: 'secret://generic/review-service',
+    invalid: [
+      'secret://generic/',
+      'secret://generic/.review',
+      'secret://chat/review',
+      'secret://generic/a/b',
+      `secret://generic/${'a'.repeat(129)}`,
+    ],
+    note: 'refinement service keys must refer to a generic credential by name',
+  },
+  RefinementModelId: {
+    valid: 'company/review-v2',
+    invalid: ['', 'two models', 'with\nnewline', 'bad\u0085id', 'bad\u2000id', rep(257), '🙂'.repeat(257)],
+    note: 'review model IDs disallow whitespace, control characters and IDs over 256 characters',
+  },
+  RefinementModelOption: {
+    valid: REFINEMENT_MODEL,
+    invalid: [
+      { ...REFINEMENT_MODEL, contextWindow: 0 },
+      { ...REFINEMENT_MODEL, maxTokens: 1.5 },
+      { ...REFINEMENT_MODEL, name: '' },
+      { ...REFINEMENT_MODEL, apiKey: 'fixture' },
+    ],
+    note: 'review model options carry only an ID, display name and token limits',
+  },
+  RefinementModelsResult: {
+    valid: { models: [REFINEMENT_MODEL] },
+    invalid: [{}, { models: [{ id: 'review' }] }, { models: [], credentials: [] }],
+    note: 'the private model catalogue can be empty',
+  },
+  RefinementBaseUrl: {
+    valid: 'https://review.example/v1',
+    invalid: [
+      'https://',
+      'ftp://review.example/v1',
+      'https://review.example/v1?query',
+      'https://review.example/v1#fragment',
+      'https://review.example/contains space',
+      'https://review.example/contains\u0085control',
+      'https://review.example/contains\u2003separator',
+      `https://${rep(251)}`,
+    ],
+    note: 'the gateway address has a bounded URL shape while the allowlist is runtime-owned',
+  },
   RefinementSettings: {
     valid: REFINEMENT_SETTINGS,
     invalid: [
+      { enabled: true, mode: 'auto' }, // enabled without either binding
+      { enabled: true, mode: 'auto', credentialRef: REFINEMENT_SETTINGS.credentialRef },
+      { enabled: true, mode: 'auto', model: REFINEMENT_SETTINGS.model },
+      { ...REFINEMENT_SETTINGS, model: '' },
+      { ...REFINEMENT_SETTINGS, credentialRef: 'secret://chat/model' },
+      { ...REFINEMENT_SETTINGS, baseUrl: 'review.example' },
       { enabled: true }, // missing required mode
       { mode: 'auto' }, // missing required enabled
       { ...REFINEMENT_SETTINGS, enabled: 'yes' }, // wrong type
@@ -4565,9 +4632,20 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'refinement settings: the on/off switch and whether planning is manual or automatic',
   },
   RefinementSettingsSnapshot: {
-    valid: { revision: rep64, settings: REFINEMENT_SETTINGS },
+    valid: {
+      revision: rep64,
+      settings: { ...REFINEMENT_SETTINGS, baseUrl: 'https://review.example/v1' },
+      endpoints: ['https://review.example/v1'],
+    },
     invalid: [
       { settings: REFINEMENT_SETTINGS }, // missing required revision
+      { revision: rep64, settings: REFINEMENT_SETTINGS, credentialMissing: false },
+      { revision: rep64, settings: REFINEMENT_SETTINGS, endpoints: [] },
+      {
+        revision: rep64,
+        settings: REFINEMENT_SETTINGS,
+        endpoints: ['https://api.example', 'https://api.example'],
+      },
       { revision: 'A'.repeat(64), settings: REFINEMENT_SETTINGS }, // pattern: lowercase hex only
       { revision: 'a'.repeat(63), settings: REFINEMENT_SETTINGS }, // pattern: one short of 64
     ],
@@ -8650,6 +8728,34 @@ const AppSamples: Record<string, Sample> = {
     invalid: [null, { status: 'ok', queued: -1, dropped: 0, failures: 0 }],
     note: 'Bounded exporter health',
   },
+  TelemetrySettings: {
+    valid: { analyticsEnabled: true, traceUploadEnabled: false },
+    invalid: [
+      { traceUploadEnabled: false },
+      { analyticsEnabled: true },
+      { analyticsEnabled: true, traceUploadEnabled: true, other: true },
+    ],
+    note: 'Both settings are required in a snapshot',
+  },
+  AdminTelemetryParams: {
+    valid: { settings: { traceUploadEnabled: false } },
+    invalid: [{ settings: { traceUploadEnabled: 0 } }, { settings: { other: false } }, { other: false }],
+    note: 'Read or write a strict partial settings object',
+  },
+  AdminTelemetryResult: {
+    valid: {
+      settings: { analyticsEnabled: true, traceUploadEnabled: false },
+      status: { disabledByEnv: false, endpointConfigured: true },
+    },
+    invalid: [
+      { settings: { analyticsEnabled: true, traceUploadEnabled: false }, status: { disabledByEnv: false } },
+      {
+        settings: { analyticsEnabled: true, traceUploadEnabled: false },
+        status: { disabledByEnv: false, endpointConfigured: true, endpoint: 'https://collector.invalid' },
+      },
+    ],
+    note: 'Settings and reporting gates without exposing the destination',
+  },
   AdminObservabilityParams: {
     valid: {},
     invalid: [null, { settings: { enabled: true, redaction: 'raw' } }],
@@ -9533,6 +9639,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'AdminSearchTest',
     result: 'AdminSearchResult',
   },
+  '_agnes/v1/admin.telemetry': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminTelemetryParams',
+    result: 'AdminTelemetryResult',
+  },
   '_agnes/v1/admin.observability': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
     params: 'AdminObservabilityParams',
@@ -10121,6 +10232,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     fileId: AGNES_ID,
     params: 'ConfigEmptyParams',
     result: 'RefinementSettingsSnapshot',
+  },
+  '_agnes/v1/refinement.models': {
+    fileId: AGNES_ID,
+    params: 'ConfigEmptyParams',
+    result: 'RefinementModelsResult',
   },
   '_agnes/v1/refinement.save': {
     fileId: AGNES_ID,
@@ -10959,6 +11075,11 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [null],
     note: 'App Server boundary shape',
   },
+  '_agnes/v1/admin.telemetry': {
+    valid: { settings: { analyticsEnabled: false } },
+    invalid: [{ settings: null }, { settings: { analyticsEnabled: 'false' } }],
+    note: 'Telemetry administrative patch',
+  },
   '_agnes/v1/admin.observability': {
     valid: {},
     invalid: [null, { settings: { enabled: false, headers: { authorization: 'plaintext' } } }],
@@ -11247,6 +11368,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/session.voice.speak': AGNES_SAMPLES.SessionVoiceSpeakParams as Sample,
   '_agnes/v1/voice.status': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/refinement.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
+  '_agnes/v1/refinement.models': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/refinement.save': AGNES_SAMPLES.RefinementSettingsSaveParams as Sample,
   '_agnes/v1/refinement.skills': AGNES_SAMPLES.RefinementSkillsParams as Sample,
   '_agnes/v1/voice.settings.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
@@ -11691,6 +11813,14 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/admin.search.get': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
   '_agnes/v1/admin.search.save': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
   '_agnes/v1/admin.search.test': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
+  '_agnes/v1/admin.telemetry': {
+    valid: {
+      settings: { analyticsEnabled: false, traceUploadEnabled: true },
+      status: { disabledByEnv: true, endpointConfigured: false },
+    },
+    invalid: [{ settings: { analyticsEnabled: false, traceUploadEnabled: true } }, null],
+    note: 'Telemetry administrative snapshot',
+  },
   '_agnes/v1/admin.observability': {
     valid: {
       settings: { enabled: false },
@@ -12016,6 +12146,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.voice.speak': AGNES_SAMPLES.SessionVoiceSpeakResult as Sample,
   '_agnes/v1/voice.status': AGNES_SAMPLES.VoiceStatusResult as Sample,
   '_agnes/v1/refinement.get': AGNES_SAMPLES.RefinementSettingsSnapshot as Sample,
+  '_agnes/v1/refinement.models': AGNES_SAMPLES.RefinementModelsResult as Sample,
   '_agnes/v1/refinement.save': AGNES_SAMPLES.RefinementSettingsSaveResult as Sample,
   '_agnes/v1/refinement.skills': AGNES_SAMPLES.RefinementSkillsResult as Sample,
   '_agnes/v1/voice.settings.get': AGNES_SAMPLES.VoiceSettingsSnapshot as Sample,

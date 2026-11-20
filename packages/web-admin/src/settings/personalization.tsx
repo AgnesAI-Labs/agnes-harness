@@ -33,6 +33,7 @@ import {
 } from './prompt-config.js'
 import { PromptConflictNotice } from './prompt-conflict.js'
 import { promptCatalog } from './system-prompt-locale.js'
+import { TelemetrySettingsPanel } from './telemetry.js'
 
 type Instruction = 'personaPrefix' | 'personaSuffix' | 'replyStyle'
 type Style = 'default' | 'concise' | 'detailed' | 'custom'
@@ -247,6 +248,7 @@ export function SettingsGeneralExtras() {
   documentLocale ??= createDocumentLocaleSource({}).source
   return (
     <UiLocaleProvider source={documentLocale}>
+      <TelemetrySettingsPanel />
       <Personalization
         onRunConfiguration={() =>
           document

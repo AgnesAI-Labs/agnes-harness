@@ -3,7 +3,7 @@
  *
  * The workspace package stays `@agnes/cli` (private, 0.0.0) so repository builds and
  * filters keep working. `npm pack` emits `@agnes/harness` with no install-time dependencies.
- * The version scheme is `0.1.0-alpha.N`. This candidate is `0.1.0-alpha.0` and is not published.
+ * The current release candidate is `0.1.0`. Publication to the npm registry is pending.
  */
 export const PUBLIC_PACKAGE_NAME = '@agnes/harness'
 export const PUBLIC_BIN = 'agh'

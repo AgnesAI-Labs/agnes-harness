@@ -1143,6 +1143,9 @@ importers:
       '@agnes/core-ledger':
         specifier: workspace:*
         version: link:../core-ledger
+      '@agnes/distribution':
+        specifier: workspace:*
+        version: link:../distribution
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api

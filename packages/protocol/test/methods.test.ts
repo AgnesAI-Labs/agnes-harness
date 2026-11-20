@@ -198,6 +198,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/admin.context',
         '_agnes/v1/admin.memory',
         '_agnes/v1/admin.observability',
+        '_agnes/v1/admin.telemetry',
         '_agnes/v1/admin.history.search',
         '_agnes/v1/admin.plan',
         '_agnes/v1/admin.mcp.oauth.get',
@@ -388,6 +389,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/voice.settings.get',
         '_agnes/v1/voice.settings.save',
         '_agnes/v1/refinement.get',
+        '_agnes/v1/refinement.models',
         '_agnes/v1/refinement.save',
         '_agnes/v1/refinement.skills',
         '_agnes/v1/workspace.add',
@@ -405,7 +407,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(251)
+    expect(Object.keys(METHODS)).toHaveLength(253)
     expect(METHODS['_agnes/v1/session.integrity']).toMatchObject({ kind: 'request', direction: 'c2s' })
     expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
     expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({

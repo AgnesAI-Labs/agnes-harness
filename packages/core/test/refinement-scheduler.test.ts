@@ -94,9 +94,10 @@ const planner: RefinementPlanner = {
 }
 
 type Plan = { text: string; gate?: Promise<void> }
+type Usage = Extract<InferenceEvent, { type: 'usage' }>
 
 /** The conversation answers from scripts (a turn may be held); the `rsi` route plans, one answer per call. */
-function provider(o: { plans?: Plan[]; holds?: Map<number, Promise<void>> } = {}) {
+function provider(o: { plans?: Plan[]; holds?: Map<number, Promise<void>>; usage?: Usage } = {}) {
   const base = fakeProvider([textTurn('answer')])
   const planned: RequestBody[] = []
   const plans = [...(o.plans ?? [])]
@@ -115,12 +116,12 @@ function provider(o: { plans?: Plan[]; holds?: Map<number, Promise<void>> } = {}
       yield sentFor(request)
       await plan.gate
       yield { type: 'text_delta', delta: plan.text }
-      yield {
+      yield (o.usage ?? {
         type: 'usage',
         tokens: { input: 100, output: 10, cacheRead: 0, cacheWrite: 0 },
         credits: 0.001,
         creditSource: 'gateway',
-      } as InferenceEvent
+      }) as InferenceEvent
       yield { type: 'done', reason: 'stop' }
     },
   }
@@ -130,7 +131,7 @@ function provider(o: { plans?: Plan[]; holds?: Map<number, Promise<void>> } = {}
 type Switch = RefinementSettingsView
 
 function deps(sw: Switch, over: Partial<RefinementDeps> = {}): RefinementDeps {
-  return { settings: () => ({ ...sw }), planner: () => planner, target, ...over }
+  return { settings: () => ({ ...sw }), planner: () => planner, target: () => target, ...over }
 }
 
 async function open(
@@ -138,6 +139,7 @@ async function open(
     sw?: Switch
     plans?: Plan[]
     holds?: Map<number, Promise<void>>
+    usage?: Usage
     storage?: MemoryStorage
     writerRunId?: string
     clock?: () => number
@@ -152,7 +154,7 @@ async function open(
     ...(o.storage ? { storage: o.storage, key: 'k' } : {}),
     ...(o.writerRunId ? { writerRunId: o.writerRunId } : {}),
     ...(o.clock ? { clock: o.clock } : {}),
-    refinement: deps(sw, o.refinement),
+    refinement: deps(sw, { provider: () => p.provider, ...o.refinement }),
     refinementEnabled: () => sw.enabled,
     logger: { debug() {}, info() {}, warn: (message: string) => warnings.push(message), error() {} },
   })
@@ -601,10 +603,17 @@ describe('scheduling plans', () => {
       refused: 'manual-mode',
     })
     t.sw.mode = 'auto'
-    // No planner target given: the session's primary model has no price, so nothing bounds the spend.
+    // Only an explicitly configured review route may be used, even with price consent.
     const { target: _target, ...untargeted } = deps(t.sw)
     t.session.d.refinement = untargeted
-    expect(await t.facade.request({ kind: 'compaction', seq })).toEqual({ refused: 'unpriced' })
+    expect(await t.facade.request({ kind: 'compaction', seq })).toEqual({ refused: 'unavailable' })
+    expect(await t.facade.request({ kind: 'manual', seq, allowUnpriced: true })).toEqual({
+      refused: 'unavailable',
+    })
+    t.session.d.refinement = deps(t.sw, { provider: () => ({ ...t.session.d.provider, models: () => [] }) })
+    // Nothing automatic runs on an unknown price, neither the machine's triggers nor the model's request.
+    for (const kind of ['compaction', 'repeated-failure', 'model'] as const)
+      expect(await t.facade.request({ kind, seq })).toEqual({ refused: 'unpriced' })
     // The user's own request runs on an unknown price only once the user agreed to it.
     expect(await t.facade.request({ kind: 'manual', seq })).toEqual({ refused: 'unpriced' })
     const agreed = await t.facade.request({ kind: 'manual', seq, allowUnpriced: true })
@@ -613,6 +622,49 @@ describe('scheduling plans', () => {
       kind: 'manual',
       allowUnpriced: true,
     })
+    await t.session.close()
+  })
+
+  it('a usage-billed service plans automatic and model reviews on its unknown price, bounded by the token budget', async () => {
+    // The person's own key, billed by usage at a price nobody here knows; turning the service on agreed to it.
+    const unknown = { ...plannerModel, cost: { input: NaN, output: NaN, cacheRead: NaN, cacheWrite: NaN } }
+    const t = await open({
+      plans: [{ text: NOOP }, { text: NOOP }, { text: NOOP }],
+      // A gateway that bills by usage reports tokens, and the price no one knows is no credits at all.
+      usage: {
+        type: 'usage',
+        tokens: { input: 300_000, output: 10, cacheRead: 0, cacheWrite: 0 },
+        creditSource: 'estimated',
+      },
+      refinement: { target: () => ({ ...target, usageBilled: true }) },
+    })
+    vi.spyOn(t.session.d.provider, 'models').mockReturnValue([unknown])
+    expect(await t.say('first task')).toMatchObject({ reason: 'completed' })
+    const seq = await t.lastUserSeq()
+    // The user's own request still asks for the unknown price each time.
+    expect(await t.facade.request({ kind: 'manual', seq })).toEqual({ refused: 'unpriced' })
+    const automatic = runId(await t.facade.request({ kind: 'compaction', seq }))
+    await vi.waitFor(() => expect(t.state(automatic)).toBe('no-op'))
+    const model = runId(await t.facade.request({ kind: 'model', seq }))
+    await vi.waitFor(() => expect(t.state(model)).toBe('no-op'))
+    // The token budget still bounds them: past it, a review is refused before anything is sent.
+    const over = runId(await t.facade.request({ kind: 'model', seq }))
+    await vi.waitFor(() => expect(t.state(over)).toBe('rejected'))
+    expect(t.session.state.refinementRuns.get(over)).toMatchObject({ reason: 'budget' })
+    const agreed = runId(await t.facade.request({ kind: 'manual', seq, allowUnpriced: true }))
+    await vi.waitFor(() => expect(t.state(agreed)).toBe('rejected'))
+    expect(t.session.state.refinementRuns.get(agreed)).toMatchObject({ reason: 'budget' })
+    expect(t.planned).toHaveLength(2)
+    // The spend is recorded as tokens with no price: neither a made-up zero nor NaN.
+    const costs = ofType(
+      (await t.rows()).filter((row) => row.lane === MAINTENANCE_LANE),
+      'cost/ledger',
+    )
+    expect(costs).toHaveLength(2)
+    for (const cost of costs) {
+      expect(data(cost)).not.toHaveProperty('credits')
+      expect(data(cost)).toMatchObject({ creditSource: 'estimated', tokens: { input: 300_000, output: 10 } })
+    }
     await t.session.close()
   })
 
@@ -740,7 +792,7 @@ describe('child sessions', () => {
       netFetch: async () => new Response(''),
       timers: noTimers,
       logger: { debug() {}, info() {}, warn() {}, error() {} },
-      refinement: deps(sw),
+      refinement: deps(sw, { provider: () => provider().provider }),
       refinementEnabled: () => sw.enabled,
       childRoles: {
         list: async () => [role],

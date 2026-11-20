@@ -500,3 +500,50 @@ describe('diagnostics.events', () => {
     ).toHaveProperty('error.data.code', 'SESSION_NOT_FOUND')
   })
 })
+
+it('requires the local admin grant and a writable configuration for telemetry patches', async () => {
+  const ep = new LocalEndpoint({ clock: Date.now, principalId: 'synthetic-owner' })
+  cleanups.push(() => ep.close())
+  ep.conn.initialized = true
+  ep.conn.authKind = 'local'
+  ep.conn.credentialKind = 'local'
+  let authority = localPackageAdminAuthority(['packages.read'])
+  let readOnly = false
+  let settings = { analyticsEnabled: true, traceUploadEnabled: true }
+  registerDiagnostics(ep, {
+    authority: (context) => authority(context),
+    readOnly: async () => readOnly,
+    administerTelemetry: async (input) => {
+      settings = { ...settings, ...input.settings }
+      return { settings, status: { disabledByEnv: false, endpointConfigured: true } }
+    },
+    registry: {
+      get: () => undefined,
+      require: () => {
+        throw new Error('must not open a session')
+      },
+    },
+    requireSessionOwner: () => {
+      throw new Error('must not inspect a session')
+    },
+  })
+  const read = () => call(ep, '_agnes/v1/admin.telemetry', {})
+  const write = (traceUploadEnabled: boolean) =>
+    call(ep, '_agnes/v1/admin.telemetry', { settings: { traceUploadEnabled } })
+  expect((await read()).result).toHaveProperty('settings.traceUploadEnabled', true)
+  expect(await write(false)).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
+  expect(await call(ep, '_agnes/v1/admin.telemetry', { settings: {} })).toHaveProperty(
+    'error.data.code',
+    'CAPABILITY_DENIED',
+  )
+  authority = localPackageAdminAuthority()
+  expect((await write(false)).result).toHaveProperty('settings', {
+    analyticsEnabled: true,
+    traceUploadEnabled: false,
+  })
+  readOnly = true
+  expect(await write(true)).toHaveProperty('error.data.reason', 'E_ADMIN_READ_ONLY')
+  expect((await read()).result).toHaveProperty('settings.traceUploadEnabled', false)
+  ep.conn.authKind = 'jwt'
+  expect(await read()).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
+})

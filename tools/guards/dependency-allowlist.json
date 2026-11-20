@@ -228,6 +228,7 @@
     "@agnes/ai",
     "@agnes/cordis",
     "@agnes/core",
+    "@agnes/distribution",
     "@agnes/extension-api",
     "@agnes/git-worktree-contract",
     "@agnes/host-common",

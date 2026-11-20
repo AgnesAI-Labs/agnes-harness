@@ -1,7 +1,7 @@
-import { defaultLoop, userImagePolicy, type WorkspaceEntry } from '@agnes/protocol'
+import { defaultLoop, type SessionMeta, userImagePolicy, type WorkspaceEntry } from '@agnes/protocol'
 import { sessionLoopSelection } from '@agnes/web-admin/admin/plugins/session-loop'
 import { choiceName } from '@agnes/web-admin/settings/choices'
-import { effectiveApplication } from '@agnes/web-client'
+import { composerCommands, effectiveApplication } from '@agnes/web-client'
 import type { ComposerView } from '@agnes/web-conversation/composer'
 import {
   composerActionPresentation,
@@ -23,6 +23,23 @@ import { isolationNoteKey } from './isolation-note.js'
 
 /** Ends the progress of the session being opened, while one is. */
 let endSessionRead: (() => void) | undefined
+
+/** The picker mirrors the commands the open composer can offer. Submission still owns routing. */
+export function composerSlashCommands({
+  plan,
+  sessionId,
+  sessions,
+}: {
+  plan: boolean
+  sessionId: string | undefined
+  sessions: readonly Pick<SessionMeta, 'sessionId' | 'parent'>[]
+}): NonNullable<ComposerView['input']['commands']> {
+  const commands: NonNullable<ComposerView['input']['commands']>[number][] = []
+  if (plan) commands.push('plan')
+  if (sessionId && composerCommands.get('goal')) commands.push('goal')
+  if (sessions.some((row) => row.sessionId === sessionId && row.parent === undefined)) commands.push('refine')
+  return commands
+}
 
 /** The draft's workspace chip. The managed chats workspace reads as no choice: 「Choose workspace」. */
 export function composerWorkspaceView(input: {
@@ -103,6 +120,7 @@ export function createComposerController(
     | 'sessionControls'
     | 'sessionIsolation'
     | 'sessionPending'
+    | 'sessionRows'
     | 'sessionBinding'
     | 'sessionYoloEnabled'
     | 'settingsText'
@@ -214,6 +232,23 @@ export function createComposerController(
       context.draftingNew &&
       context.selectedWorkspace?.available === true &&
       context.selectedWorkspace.managedRole !== 'legacy'
+    const inputDisabled =
+      !available ||
+      (!context.current &&
+        !context.draftingNew &&
+        !(context.sessionPending && context.sessionBinding.targetId)) ||
+      context.stopping ||
+      (!!context.readOnly && !context.sessionPending) ||
+      initialSubmissionPending
+    const sessionId = !context.draftingNew ? context.current?.id : undefined
+    const commands =
+      inputDisabled || context.readOnly || context.sessionPending
+        ? []
+        : composerSlashCommands({
+            plan: sessionId ? !!context.selectedWorkspace?.path : canStartDraft,
+            sessionId,
+            sessions: context.sessionRows,
+          })
     const permissionUnknown =
       context.current !== undefined &&
       (context.permissionRefreshPending || context.sessionYoloEnabled === undefined)
@@ -337,26 +372,16 @@ export function createComposerController(
             }
           : {}),
         exampleHint: context.draftingNew && !context.readOnly,
-        disabled:
-          !available ||
-          (!context.current &&
-            !context.draftingNew &&
-            !(context.sessionPending && context.sessionBinding.targetId)) ||
-          context.stopping ||
-          (!!context.readOnly && !context.sessionPending) ||
-          initialSubmissionPending,
-        // The slash hint is a promise that typing "/" offers something: only with a command registered.
-        placeholder: context.readOnly
-          ? context.t('composer.hint.readOnly')
-          : busy
+        disabled: inputDisabled,
+        commands,
+        placeholder:
+          busy && !context.readOnly
             ? context.sessionControls?.sessionId === context.current?.id &&
               context.sessionControls?.value.paused === true
               ? context.t('composer.placeholder.paused')
               : context.t('composer.placeholder.busy', { shortcut: shortcutLabel(['mod', 'enter']) })
             : context.t(
-                !context.draftingNew && context.clientModules.commands.list().length
-                  ? 'composer.placeholder.idle'
-                  : 'composer.placeholder.idleNoCommands',
+                commands.length ? 'composer.placeholder.idle' : 'composer.placeholder.idleNoCommands',
               ),
       },
       loading: context.sessionPending,

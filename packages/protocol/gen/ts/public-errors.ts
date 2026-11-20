@@ -160,6 +160,16 @@ const PUBLIC_ERROR_COPY = {
       "action": "请检查剩余预算和上限后再重试。"
     }
   },
+  "providerQuota": {
+    "en": {
+      "reason": "The model provider account has run out of quota.",
+      "action": "Top up the account with the provider, or switch to another model account."
+    },
+    "zh-CN": {
+      "reason": "模型服务商账户额度不足。",
+      "action": "请到服务商充值，或换用其他模型账户。"
+    }
+  },
   "publication": {
     "en": {
       "reason": "Plugin publication was refused by trust or capability policy.",
@@ -709,7 +719,7 @@ export const PUBLIC_ERROR_CONTRACT = {
   "PLUGIN_PUBLICATION_UNANSWERED": { rpc: "APPROVAL_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["pluginReview"], reasons: {  } },
   "PLUGIN_REQUEST_LIMIT": { rpc: "OVERLOADED", messageKey: "appServer.errors.busy", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["busy"], reasons: {  } },
   "HELPER_MANAGEMENT_FAILED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },
-  "QUOTA": { rpc: "INTERNAL_ERROR", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["budget"], reasons: {  } },
+  "QUOTA": { rpc: "INTERNAL_ERROR", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["providerQuota"], reasons: {  } },
   "OVERFLOW": { rpc: "INTERNAL_ERROR", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["budget"], reasons: {  } },
   "TIMEOUT": { rpc: "INTERNAL_ERROR", messageKey: "appServer.errors.timeout", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["timeout"], reasons: {  } },
   "NO_MODEL": { rpc: "INTERNAL_ERROR", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },

@@ -132,12 +132,18 @@ describe('rendered composer region', () => {
     expect(usage?.nextElementSibling?.classList.contains('model-field')).toBe(true)
     expect(usage?.querySelector('.usage-ring')).toBeTruthy()
     expect(document.querySelector('.usage-percent')?.textContent).toBe('2%')
-    handle?.render({ ...readyView, readOnly: true, workspace: { ...readyView.workspace, visible: false } })
+    const readOnlyPlaceholder = 'Describe what you want to do, @ to reference files'
+    handle?.render({
+      ...readyView,
+      readOnly: true,
+      input: { ...readyView.input, placeholder: readOnlyPlaceholder },
+      workspace: { ...readyView.workspace, visible: false },
+    })
     expect(document.querySelector('.model-field')).toBeNull()
     expect(document.querySelector('#composer-permission')).toBeNull()
     expect(document.querySelector('#composer-workspace')?.hasAttribute('hidden')).toBe(true)
     expect(prompt?.disabled).toBe(true)
-    expect(prompt?.placeholder).toContain('read-only')
+    expect(prompt?.placeholder).toBe(readOnlyPlaceholder)
     expect(document.querySelector('#send')?.hasAttribute('hidden')).toBe(true)
     composer?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     expect(submitted).toEqual([])

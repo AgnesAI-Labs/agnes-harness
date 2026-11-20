@@ -5,7 +5,7 @@
 English | [简体中文](README.zh-CN.md)
 
 <p align="center">
-  <img src="docs/assets/readme/banner.png" alt="Agnes Harness, a pluggable agent harness for Forward Deployed Engineering. LLM is the brain, Jev is the cerebellum, Harness is the memory, MHS is the body." width="100%" />
+  <img src="docs/assets/readme/banner.png" alt="Agnes Harness, a pluggable agent harness for Forward Deployed Engineering. The four roles are LLM as the brain, Agnes Sys1 as the cerebellum, Harness as the memory, and MHS as the body." width="100%" />
 </p>
 
 <div align="center">
@@ -28,11 +28,11 @@ Developer preview (pre-alpha) · [Source build](#run-from-source) · [Apache-2.0
 > **Upgrading from the previous version?** This is a new release with no data migration. Read the [upgrade guide](docs/guide/upgrade-from-previous.md) first: back up and clean up the old environment, then start fresh.
 
 <p align="center">
-  <img src="docs/assets/readme/trailer.webp" alt="Animated introduction: the brain (LLM), the cerebellum (Jev), the memory (Harness) and the body (MHS, connecting devices through AgnesHub) come together as Agnes Harness, one execution foundation for enterprise FDE delivery and physical-world MHS integration" width="100%" />
+  <img src="docs/assets/readme/trailer.webp" alt="Animated introduction to Agnes Harness, with LLM reasoning, Agnes Sys1 judgment, Harness memory, and MHS device integration through AgnesHub." width="100%" />
 </p>
 
 <p align="center">
-  <b>LLM is the brain. Jev is the cerebellum. Harness is the memory. MHS is the body.</b><br />
+  <b>LLM is the brain. Agnes Sys1 is the cerebellum. Harness is the memory. MHS is the body.</b><br />
   <sub>One open-source foundation for business agents, enterprise delivery and the physical world. <a href="#architecture">See the architecture</a></sub>
 </p>
 
@@ -76,14 +76,14 @@ What it is not, so you can choose the right trial:
 
 <h2 id="architecture">Architecture: brain, cerebellum, memory and body</h2>
 
-The brain, cerebellum, memory and body describe AGH's vision: combine reasoning, structured decisions, persistent task context and physical capabilities. Harness is the runtime; Jev and MHS join it as official plugins.
+AGH brings together model reasoning, structured judgments, persistent task context and physical capabilities. **Agnes Sys1** is Agnes's own judgment model and the default choice when adding a decision model in AGH. Configure it and enable the judgment features you want, such as checking whether a session title still fits or whether a reply ended before carrying out a promised step. [Set up Agnes Sys1](docs/guide/judgment.md#configure-a-judgment-model-then-enable-detection).
 
-![AGH architecture: LLM as brain, Jev as cerebellum, Harness as memory, and MHS as body, in one runtime that serves enterprise FDE delivery and MHS device integration](docs/assets/architecture.svg)
+![AGH architecture with LLM as the brain, Agnes Sys1 as the cerebellum, Harness as the memory, and MHS as the body. One runtime supports enterprise FDE delivery and MHS device integration.](docs/assets/architecture.svg)
 
 | Role | What it means in AGH | Current scope |
 | --- | --- | --- |
 | **LLM / brain** | Understand requests, reason about the task and propose actions | Model accounts and model-adapter plugins |
-| **Jev / cerebellum** | TypeSafe Jev chooses each step; the conversation model only writes, fills parameters or reviews | Official optional loop plugin `@agnes/jev-loop`, installed from the Marketplace ([guide](docs/guide/jev-loop.md)) |
+| **Agnes Sys1 / cerebellum** | Answers structured questions from task context to support judgment features | Default side-model adapter with domestic test and international gateway presets ([setup](docs/guide/judgment.md#configure-a-judgment-model-then-enable-detection)) |
 | **Harness / memory** | Session history, task state, execution records and reusable methods in Skills | The runtime itself: it runs, records, recovers and governs execution |
 | **MHS / body** | Connect device capabilities so tasks can read physical state and request actions | Official plugin; integration in progress |
 
@@ -248,7 +248,7 @@ AGH is a developer preview.
 | Plugin upgrades that keep running sessions on their pinned code | Available |
 | Agent-drafted Skills and plugins with human review | Available |
 | Webhook triggers, voice in the dialog | Available, opt-in |
-| Jev loop | Official optional plugin |
+| Agnes Sys1 judgment | Available with the optional [Judgment plugin](docs/guide/judgment.md) |
 | MHS device integration | Official plugin, integration in progress |
 | Command sandbox and execution constraints | Platform-dependent |
 | Platforms | macOS and Linux have maintained checks; Windows is not yet tested end to end |

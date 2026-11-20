@@ -136,7 +136,7 @@ export {
   type TraceRow,
   traceRowBuilder,
 } from './trace.js'
-export type { TranscriptHandle, TranscriptMeta } from './transcript.js'
+export type { TranscriptHandle, TranscriptMeta, TranscriptRefinementActions } from './transcript.js'
 
 /** The contribution half of one built-in `web:` row. */
 export interface WebUnitContribution {

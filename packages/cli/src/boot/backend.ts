@@ -344,6 +344,7 @@ function launchChild(
     ...(options.env ?? {}),
     AGH_HOME: scope.home,
     AGNES_PROFILE: scope.profile,
+    ...(resources.mode === 'sea' ? { AGH_TELEMETRY_DISTRIBUTION: 'sea' } : {}),
     [STARTUP_DIAGNOSTIC_ENV]: diagnosticPath,
   }
   const runtimeOverride = options.env?.AGNES_NODE_EXEC_PATH ?? process.env.AGNES_NODE_EXEC_PATH

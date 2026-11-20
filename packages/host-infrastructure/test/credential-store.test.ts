@@ -13,10 +13,11 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createPrivateDirectorySync } from '@agnes/system-node'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type CredentialFileEnforcement,
   credentialFileEnforcement,
+  readApiKeyFileSync,
   readCredentialFile,
   resolveCredentialFile,
 } from '../src/adapters/credential-files.js'
@@ -53,6 +54,21 @@ function refusal(promise: Promise<unknown>): Promise<CredentialStoreError> {
     },
   )
 }
+
+// A name caught mid-rename: lstat resolved the old inode just as the rename unlinked it.
+const renaming = vi.hoisted(() => ({ path: '', times: 0 }))
+vi.mock('node:fs', async (original) => {
+  const fs = await original<typeof import('node:fs')>()
+  return {
+    ...fs,
+    lstatSync: ((...args: Parameters<typeof fs.lstatSync>) => {
+      const stat = fs.lstatSync(...args)
+      if (!stat || args[0] !== renaming.path || renaming.times <= 0) return stat
+      renaming.times--
+      return Object.assign(Object.create(Object.getPrototypeOf(stat)), stat, { nlink: 0 })
+    }) as typeof fs.lstatSync,
+  }
+})
 
 describe.runIf(process.getuid !== undefined)('credential store', () => {
   let parent: string
@@ -239,6 +255,27 @@ describe.runIf(process.getuid !== undefined)('credential store', () => {
     const file = resolveCredentialFile(root, 'secret://deepseek/default', 'api-key')
     linkSync(file, join(parent, 'second-link'))
     expect(await refusal(store.read('secret://deepseek/default'))).toMatchObject({ reason: 'link-count' })
+    expect(() => readApiKeyFileSync(root, 'secret://deepseek/default', posix)).toThrowError(
+      expect.objectContaining({ reason: 'link-count' }),
+    )
+  })
+
+  it('the synchronous reader retries a key caught mid-rename as the async one does, within the same bound', async () => {
+    const ref = 'secret://deepseek/default'
+    await createCredentialStore({ root }).putApiKey(ref, 'api-key-marker')
+    renaming.path = resolveCredentialFile(root, ref, 'api-key')
+    try {
+      renaming.times = 63
+      expect(JSON.parse(readApiKeyFileSync(root, ref, posix))).toMatchObject({ value: 'api-key-marker' })
+      expect(renaming.times).toBe(0)
+      // A name that never settles is refused, not waited on forever.
+      renaming.times = 64
+      expect(() => readApiKeyFileSync(root, ref, posix)).toThrowError(
+        expect.objectContaining({ reason: 'changed' }),
+      )
+    } finally {
+      renaming.times = 0
+    }
   })
 
   it.each([

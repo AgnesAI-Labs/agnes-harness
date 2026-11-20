@@ -76,7 +76,7 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly BundledPackage[] = Object.freez
   {
     name: 'jev-loop',
     id: '@agnes/jev-loop',
-    version: '0.1.2',
+    version: '0.1.3',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/jev-loop',
     // index.mjs is generated from packages/loop-jev and is not committed.
@@ -86,7 +86,7 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly BundledPackage[] = Object.freez
   {
     name: 'judgment',
     id: '@agnes/judgment',
-    version: '0.1.3',
+    version: '0.1.5',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/judgment',
     sourcePath: 'package-manager/bundled-plugins/judgment',
@@ -110,7 +110,7 @@ export const DEFAULT_ENABLED_BUNDLED_PACKAGES: readonly (BundledPackage & {
   {
     name: 'superagent',
     id: '@agnes/superagent',
-    version: '0.2.4',
+    version: '0.2.5',
     // The payload is Apache-2.0; its NOTICE carries the MIT license of the ported code and of zod.
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/superagent',

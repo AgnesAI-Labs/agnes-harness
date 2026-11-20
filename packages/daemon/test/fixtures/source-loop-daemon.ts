@@ -6,6 +6,8 @@ const home = process.argv[2]
 const workspace = process.argv[3]
 if (!home || !workspace) throw new Error('source daemon fixture requires home and workspace')
 
+process.env.AGH_TELEMETRY_DISABLED ??= '1'
+
 await runAgnesd(
   { home, workspace, profile: 'local-dev' },
   {

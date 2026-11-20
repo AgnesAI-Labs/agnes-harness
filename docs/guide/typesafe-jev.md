@@ -1,4 +1,4 @@
-# Use TypeSafe Jev for side model calls
+# Use TypeSafe Jev for decision model calls
 
 English | [简体中文](typesafe-jev.zh-CN.md)
 
@@ -6,18 +6,18 @@ English | [简体中文](typesafe-jev.zh-CN.md)
 
 `@agnes/ai` includes a model adapter for TypeSafe Jev, registered as `typesafe-systemone`. It answers one structured request at a time: a JSON `state` and a set of `questions`, to which the vendor returns an answer for each question. A loop plugin uses it for quick decisions that should not go through the conversation model.
 
-Jev is **not a chat model**. The adapter takes a payload and nothing else: no messages, no system prompt, no tools and no streaming. It declares the capabilities `payload: true` and `payloadOnly: true`, so a model served by it never appears in a model picker, cannot be chosen as a session, default, fast, verifier or child-agent model, and is refused if a client asks for it by name. A loop plugin reaches it through a side model call.
+Jev is **not a chat model**. The adapter takes a payload and nothing else: no messages, no system prompt, no tools and no streaming. It declares the capabilities `payload: true` and `payloadOnly: true`, so a model served by it never appears in a model picker, cannot be chosen as a session, default, fast, verifier or child-agent model, and is refused if a client asks for it by name. A loop plugin reaches it through a decision model call.
 
 ## Settings page
 
-In Settings → Models & accounts, expand **Advanced: side models and task models**, then add an entry under **Side models**. The same page also offers a **Voice** adapter for dictation and read-aloud in the conversation; it is covered in [Talk to the agent](voice.md). For a Jev entry:
+In Settings → Models & accounts, expand **Advanced: decision models and task models**, then add an entry under **Decision models**. Voice models for dictation and read-aloud are set up on the voice settings page instead; see [Talk to the agent](voice.md). For a Jev entry:
 
 1. The adapter is fixed to `typesafe-systemone`.
 2. The endpoint defaults to `https://openrouter.ai/api/v1` and can point at `https://api.typesafe.ai/v1` directly. The rules are the adapter's: no templates, no inline credentials, no query or fragment, and plain `http` only on loopback addresses.
 3. Pick a [generic credential](credentials.md), or create one in place; the entry stores its `secret://generic/<UUID>` reference, never the key.
 4. Each model needs only `id`, `name`, `contextWindow`, `maxTokens` and an optional `cost`; the remaining fields are fixed by the adapter's template (`reasoning: false`, `input: [text]`, `toolCallFormats: []`, `thinkingReplay: drop`, `contract_id: null`).
 5. The test button sends one fixed minimal payload `{state: {}, questions: {ping: 'ping'}}`: a success or a rate limit both count as reachable, and a rejected credential is called out. What the probe sends is provisional, and you can skip the test and save.
-6. Saving takes effect for new sessions; an entry can be enabled, disabled or removed. A side model can never become the default account, and it never appears in the fast or verifier slots.
+6. Saving takes effect for new sessions; an entry can be enabled, disabled or removed. A decision model can never become the default account, and it never appears in the fast or verifier slots.
 
 The page names the route it creates `account-<id>`, and the entry's summary line shows that name; a loop plugin targets it by that name. A route declared in the user profile (the next section) is used only while Settings manages no account: once a page entry or any other account is saved, the settings service supplies the whole `provider` block and the profile's routes are no longer used. When moving from a profile route to the page, save the page entry, point the loop at its route name, then remove the profile route. The workspace file `.agh/profile.local.yaml` cannot declare a route: in this version it accepts only `extensionIsolation`, and any other key stops the runtime from starting with `E_DEP_MISSING`.
 

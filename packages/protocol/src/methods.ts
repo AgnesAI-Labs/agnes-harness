@@ -177,6 +177,7 @@ export type MethodName =
   | '_agnes/v1/voice.settings.get'
   | '_agnes/v1/voice.settings.save'
   | '_agnes/v1/refinement.get'
+  | '_agnes/v1/refinement.models'
   | '_agnes/v1/refinement.save'
   | '_agnes/v1/refinement.skills'
   | '_agnes/v1/session.rename'
@@ -464,6 +465,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/voice.settings.get': clientRequest(A.ConfigEmptyParams, A.VoiceSettingsSnapshot),
   '_agnes/v1/voice.settings.save': clientRequest(A.VoiceSettingsSaveParams, A.VoiceSettingsSnapshot),
   '_agnes/v1/refinement.get': clientRequest(A.ConfigEmptyParams, A.RefinementSettingsSnapshot),
+  '_agnes/v1/refinement.models': clientRequest(A.ConfigEmptyParams, A.RefinementModelsResult),
   '_agnes/v1/refinement.save': clientRequest(A.RefinementSettingsSaveParams, A.RefinementSettingsSaveResult),
   '_agnes/v1/refinement.skills': clientRequest(A.RefinementSkillsParams, A.RefinementSkillsResult),
   '_agnes/v1/session.rename': clientRequest(A.SessionRenameParams, A.SessionPreferences),

@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -36,6 +36,7 @@ const temporary: string[] = []
 
 afterEach(async () => {
   createHost.mockClear()
+  vi.unstubAllGlobals()
   await Promise.all(temporary.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
 })
 
@@ -167,6 +168,22 @@ describe('packaged host wiring', () => {
       enabled: true,
       config: { command: process.execPath, args: ['fake-codex.mjs'], allow: [process.execPath] },
     })
+  })
+
+  it('keeps Host compatibility stable across releases and uses a versioned extension cache', async () => {
+    vi.stubGlobal('AGNES_VERSION', '0.1.0')
+    vi.resetModules()
+    const { createPackagedHost } = await import('./packaged-host.js')
+    const { home, profile, entryFile } = await packagedHome()
+    const extension = join(home, 'extension.ts')
+    await writeFile(extension, 'export const answer: number = 42\n')
+
+    await createPackagedHost(profile, prompter, { home, cwd: home, entryFile })
+
+    const options = createHost.mock.calls[0]?.[1]
+    expect(options?.agnesVersion).toBe('0.0.0')
+    expect(await options?.extensionLoader?.import(extension)).toMatchObject({ answer: 42 })
+    expect(await readdir(join(profile.cacheDir, 'jiti', '0.1.0'))).not.toHaveLength(0)
   })
 
   it('forwards the verified ordinary-plugin snapshot selection without rebuilding it', async () => {

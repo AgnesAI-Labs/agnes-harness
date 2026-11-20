@@ -566,6 +566,14 @@
   .plugin-detail-stack > .plugin-facts {
     margin-block: 0;
   }
+  /* The config panel's parts — notice, toolbar, row picker, notes, form, technical fold — are
+     separate blocks in plain flow; the stack keeps them from touching. */
+  .plugin-config-panel {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s12);
+  }
   .plugin-blockers,
   .plugin-operations {
     margin-top: var(--s16);

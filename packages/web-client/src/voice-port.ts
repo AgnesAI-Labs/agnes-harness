@@ -61,7 +61,7 @@ export interface VoicePort {
   toggleReading(nodeId: string, text: string): void
   /** Continues playback the browser blocked; call it from the click. */
   resumePlayback(): void
-  /** Opens the side-model settings, where voice accounts are configured. */
+  /** Opens the voice settings, where voice models are configured. */
   openSettings(): void
 }
 /** The voice settings section's view of the settings and the accounts it can choose from. */
@@ -70,5 +70,4 @@ export type VoiceSettingsApi = {
   /** Saves, then refreshes the button state here and in the other tabs. */
   save(settings: VoiceSettings, expectedRevision: string): Promise<VoiceSettingsSnapshot>
   accounts(): Promise<readonly { route: string; label: string }[]>
-  openSideModels(): void
 }

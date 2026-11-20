@@ -78,7 +78,7 @@ async function fixture(
   const signals: AbortSignal[] = []
   let asked = false
   let ownedSession: HostSession | undefined
-  const { host } = await createTestHost({
+  const { host, audit } = await createTestHost({
     dataDir: root,
     ...(options.park
       ? {
@@ -167,7 +167,7 @@ async function fixture(
   hosts.push(host)
   const session = await host.createSession({ cwd: root, key: 'title-test' })
   ownedSession = session
-  return { host, root, session, calls, signals, callOptions }
+  return { host, audit, root, session, calls, signals, callOptions }
 }
 async function run(session: HostSession, text = '请修复登录问题', titleLocale?: 'en' | 'zh-CN') {
   await session.enqueue('next-turn', {
@@ -764,15 +764,14 @@ it.each(['next-input', 'host-close'] as const)(
   'keeps fresh background work separate from foreground lifecycle: %s',
   async (mode) => {
     let release!: () => void
-    let entered!: () => void
-    const reached = new Promise<void>((resolve) => {
-      entered = resolve
-    })
+    let entered = false
     const f = await fixture({
       waitSide: new Promise<void>((resolve) => {
         release = resolve
       }),
-      sideEntered: entered,
+      sideEntered: () => {
+        entered = true
+      },
     })
     await run(f.session)
     await vi.waitFor(async () => expect(await titleRecord(f.session)).toMatchObject({ status: 'generated' }))
@@ -806,7 +805,7 @@ it.each(['next-input', 'host-close'] as const)(
     )
     try {
       expect((await run(f.session, 'Second task')).reason).toBe('completed')
-      await reached
+      await expect.poll(() => entered, { timeout: 5_000 }).toBe(true)
       expect(completed).toBe(false)
       expect(context!.boundary.turn).toBe(2)
       if (mode === 'next-input') {
@@ -814,11 +813,18 @@ it.each(['next-input', 'host-close'] as const)(
         expect(context!.signal.aborted).toBe(false)
       } else {
         await observer.close()
-        await f.host.close()
         expect(context!.signal.aborted).toBe(true)
       }
       expect(completed).toBe(false)
+      // The adapter retains its provider lease until it returns, even after the call is cancelled.
       release()
+      if (mode === 'host-close') {
+        await f.host.close()
+        expect(f.audit.events.at(-1)).toMatchObject({
+          kind: 'host.closed',
+          detail: { forced: false, failed: [] },
+        })
+      }
       await vi.waitFor(() => expect(completed).toBe(true))
       await expect(
         context!.sideCall.prepare({ label: 'late', target: { route: 'gw', model: 'm1' } }),
@@ -832,6 +838,7 @@ it.each(['next-input', 'host-close'] as const)(
       await observer.close()
     }
   },
+  30_000,
 )
 
 it.each(['before', 'during', 'failure', 'hard-budget', 'authority-unavailable', 'source-revoked'] as const)(

@@ -4,10 +4,36 @@ import { join } from 'node:path'
 import type { Kernel, RefinementPlanner } from '@agnes/core'
 import { ProjectionRegistry, refinementFacade } from '@agnes/core'
 import { actor, fakeProvider, openSession, sent, textTurn, usage } from '@agnes/core/testkit'
+import { REFINEMENT_SERVICE } from '@agnes/distribution'
+import { createCredentialStore } from '@agnes/host-infrastructure/adapters/credential-store'
 import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import type { ModelRecord, Provider } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRefinementHost } from '../../src/runtime/assemble/refinement.js'
+import { reviewCredential, reviewModel, syntheticKey } from './service-key.js'
+
+// The key each review provider is built to resolve at dispatch, and how often the key file is read.
+const review = vi.hoisted(() => ({ keys: [] as Array<() => string>, reads: 0 }))
+vi.mock('@agnes/distribution', async (original) => {
+  const actual = await original<typeof import('@agnes/distribution')>()
+  return {
+    ...actual,
+    createRefinementProvider: (...args: Parameters<typeof actual.createRefinementProvider>) => {
+      review.keys.push(args[1])
+      return actual.createRefinementProvider(...args)
+    },
+  }
+})
+vi.mock('@agnes/host-infrastructure/adapters/credential-files', async (original) => {
+  const actual = await original<typeof import('@agnes/host-infrastructure/adapters/credential-files')>()
+  return {
+    ...actual,
+    readApiKeyFileSync: (...args: Parameters<typeof actual.readApiKeyFileSync>) => {
+      review.reads++
+      return actual.readApiKeyFileSync(...args)
+    },
+  }
+})
 
 const PROFILE = 'p'
 const dirs: string[] = []
@@ -20,38 +46,41 @@ const scratch = () => {
   dirs.push(dir)
   return dir
 }
-const save = (dataDir: string, settings: { enabled: boolean; mode: 'manual' | 'auto' }) => {
+const save = async (dataDir: string, settings: { enabled: boolean; mode: 'manual' | 'auto' }) => {
   const store = new RefinementSettingsStore(dataDir, PROFILE)
-  store.save(settings, store.read().revision)
+  store.save(
+    { ...settings, credentialRef: await reviewCredential(dataDir), model: reviewModel },
+    store.read().revision,
+  )
 }
 const planner = { buildPrompt: () => ({}) as never, parseOutput: () => ({ error: 'unused' }) }
 
 describe('the host side of refinement', () => {
-  it('Core reads the switch as it is now, whatever it was at assembly', () => {
+  it('Core reads the switch as it is now, whatever it was at assembly', async () => {
     const dataDir = scratch()
-    save(dataDir, { enabled: true, mode: 'auto' })
+    await save(dataDir, { enabled: true, mode: 'auto' })
     const on = createRefinementHost(dataDir, PROFILE)
     expect(on.kernelOptions.refinementEnabled()).toBe(true)
-    save(dataDir, { enabled: true, mode: 'manual' })
+    await save(dataDir, { enabled: true, mode: 'manual' })
     // Mode changes are live; automatic candidates are wanted only in auto mode.
     expect(on.kernelOptions.refinement.settings()).toMatchObject({ enabled: true, mode: 'manual' })
     expect(on.kernelOptions.refinementTriggers.accepts?.('k')).toBe(false)
-    save(dataDir, { enabled: false, mode: 'manual' })
+    await save(dataDir, { enabled: false, mode: 'manual' })
     expect(on.kernelOptions.refinementEnabled()).toBe(false)
 
     // Off at assembly: turning it on is seen at once (Core applies it to the sessions opened afterwards).
     const offDir = scratch()
     const off = createRefinementHost(offDir, PROFILE)
     expect(off.kernelOptions.refinementEnabled()).toBe(false)
-    save(offDir, { enabled: true, mode: 'auto' })
+    await save(offDir, { enabled: true, mode: 'auto' })
     expect(off.kernelOptions.refinementEnabled()).toBe(true)
     expect(off.kernelOptions.refinement.settings()).toMatchObject({ enabled: true, mode: 'auto' })
     expect(off.kernelOptions.refinementTriggers.accepts?.('k')).toBe(true)
   })
 
-  it('a read that throws is off, never an error', () => {
+  it('a read that throws is off, never an error', async () => {
     const dataDir = scratch()
-    save(dataDir, { enabled: true, mode: 'auto' })
+    await save(dataDir, { enabled: true, mode: 'auto' })
     const bridge = createRefinementHost(dataDir, PROFILE)
     vi.spyOn(RefinementSettingsStore.prototype, 'current').mockImplementation(() => {
       throw new Error('disk gone')
@@ -61,9 +90,46 @@ describe('the host side of refinement', () => {
     expect(bridge.kernelOptions.refinementTriggers.accepts?.('k')).toBe(false)
   })
 
+  it('a dispatch resolves the service key once, and reads no file while nothing changed', async () => {
+    const dataDir = scratch()
+    await save(dataDir, { enabled: true, mode: 'auto' })
+    const bridge = createRefinementHost(dataDir, PROFILE)
+    expect(bridge.kernelOptions.refinement.provider?.()).toBeDefined()
+    const key = review.keys.at(-1) as () => string
+    review.reads = 0
+    expect(key()).toBe(syntheticKey)
+    expect(review.reads).toBe(0)
+    // A rotated key is read once, by the dispatch that needs it.
+    const ref = await reviewCredential(dataDir)
+    await createCredentialStore({ root: dataDir }).putGeneric(ref, 'rotated-review-key', {
+      label: 'Rotated',
+      createdAt: new Date(0).toISOString(),
+    })
+    review.reads = 0
+    expect(key()).toBe('rotated-review-key')
+    expect(review.reads).toBe(1)
+  })
+
+  it('the review service bills the person by usage: its route claims no price, and its target says they agreed', async () => {
+    const dataDir = scratch()
+    await save(dataDir, { enabled: true, mode: 'auto' })
+    const bridge = createRefinementHost(dataDir, PROFILE)
+    expect(bridge.kernelOptions.refinement.target?.()).toEqual({
+      route: REFINEMENT_SERVICE.route,
+      model: reviewModel,
+      usageBilled: true,
+    })
+    const [record, ...others] = bridge.kernelOptions.refinement.provider?.()?.models() ?? []
+    expect(others).toEqual([])
+    expect(record).toMatchObject({ route: REFINEMENT_SERVICE.route, id: reviewModel })
+    expect([record?.cost.input, record?.cost.output].some((rate) => Number.isFinite(rate))).toBe(false)
+    await save(dataDir, { enabled: false, mode: 'auto' })
+    expect(bridge.kernelOptions.refinement.target?.()).toBeUndefined()
+  })
+
   it('the plugin connects with its planner; its calls reach the session the tool ran in', async () => {
     const dataDir = scratch()
-    save(dataDir, { enabled: true, mode: 'auto' })
+    await save(dataDir, { enabled: true, mode: 'auto' })
     const bridge = createRefinementHost(dataDir, PROFILE)
     expect(bridge.kernelOptions.refinement.planner()).toBeUndefined()
     const runs = bridge.connect(planner)
@@ -101,7 +167,7 @@ describe('the host side of refinement', () => {
 
   it("Core reads the session's task through the projection the task plugin offers", async () => {
     const dataDir = scratch()
-    save(dataDir, { enabled: true, mode: 'auto' })
+    await save(dataDir, { enabled: true, mode: 'auto' })
     const bridge = createRefinementHost(dataDir, PROFILE)
     const projections = new ProjectionRegistry()
     // A stand-in task projection: the last request names the goal, `fail` breaks the fold.
@@ -161,7 +227,7 @@ describe('the host side of refinement', () => {
 describe('inspect through the host', () => {
   it('inspect never returns another session’s entries', async () => {
     const dataDir = scratch()
-    save(dataDir, { enabled: true, mode: 'manual' })
+    await save(dataDir, { enabled: true, mode: 'manual' })
     const bridge = createRefinementHost(dataDir, PROFILE)
     const runs = bridge.connect(planner)
     const opened = async (key: string) =>
@@ -289,7 +355,11 @@ describe('switching refinement off and on again with the real settings store', (
     const p = provider(o)
     const { session } = await openSession({
       provider: p.provider,
-      refinement: bridge.kernelOptions.refinement,
+      refinement: {
+        ...bridge.kernelOptions.refinement,
+        provider: () => p.provider,
+        target: () => ({ route: primary.route, model: primary.id }),
+      },
       refinementEnabled: bridge.kernelOptions.refinementEnabled,
     })
     const say = async (text: string) => {
@@ -302,7 +372,7 @@ describe('switching refinement off and on again with the real settings store', (
 
   it('a proposal pending when the switch went off is never applied after it is back on', async () => {
     const dataDir = scratch()
-    save(dataDir, { enabled: true, mode: 'auto' })
+    await save(dataDir, { enabled: true, mode: 'auto' })
     const held = gate()
     const t = await opened(dataDir, { holds: new Map([[1, held.wait]]) })
     expect(await t.say('first task')).toMatchObject({ reason: 'completed' })
@@ -316,13 +386,13 @@ describe('switching refinement off and on again with the real settings store', (
     })
     const id = (outcome as { runId: string }).runId
     expect(t.session.state.refinementRuns.get(id)?.state).toBe('proposed')
-    save(dataDir, { enabled: false, mode: 'auto' })
+    await save(dataDir, { enabled: false, mode: 'auto' })
     const before = (await t.rows()).length
     held.open()
     expect(await second).toMatchObject({ reason: 'completed' })
     // Off: the turn ended and nothing at all was written for refinement.
     expect((await t.rows()).slice(before).filter((row) => row.lane === 'refinement')).toEqual([])
-    save(dataDir, { enabled: true, mode: 'auto' })
+    await save(dataDir, { enabled: true, mode: 'auto' })
     expect(await t.say('third task')).toMatchObject({ reason: 'completed' })
     expect(t.session.state.refinementRuns.get(id)).toMatchObject({
       state: 'cancelled',
@@ -335,7 +405,7 @@ describe('switching refinement off and on again with the real settings store', (
 
   it('a queued request is not planned after the switch went off and on again', async () => {
     const dataDir = scratch()
-    save(dataDir, { enabled: true, mode: 'auto' })
+    await save(dataDir, { enabled: true, mode: 'auto' })
     const plan = gate()
     const t = await opened(dataDir, { plan: plan.wait })
     expect(await t.say('first task')).toMatchObject({ reason: 'completed' })
@@ -344,8 +414,8 @@ describe('switching refinement off and on again with the real settings store', (
     await vi.waitFor(() => expect(t.seen.plans).toBe(1))
     const b = (await facade.request({ kind: 'manual', seq: t.session.lastSeq })) as { runId: string }
     expect(t.session.state.refinementRuns.get(b.runId)?.state).toBe('queued')
-    save(dataDir, { enabled: false, mode: 'auto' })
-    save(dataDir, { enabled: true, mode: 'auto' })
+    await save(dataDir, { enabled: false, mode: 'auto' })
+    await save(dataDir, { enabled: true, mode: 'auto' })
     plan.open()
     await vi.waitFor(() => expect(t.session.state.refinementRuns.get(b.runId)?.state).toBe('cancelled'))
     // The plan in flight settles under the new revision and is not proposed either.

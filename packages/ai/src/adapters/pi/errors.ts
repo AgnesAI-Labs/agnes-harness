@@ -3,6 +3,16 @@ import { type AssistantMessage, isContextOverflow } from '@earendil-works/pi-ai'
 
 export type Classified = { code: AiErrorCode; message: string; retryable: boolean; retryAfterMs?: number }
 
+const QUOTA_TEXT =
+  /insufficient[_ ](?:user[_ ])?(?:credit|quota|balance)|quota[_ ]exceeded|exceeded your current quota|额度不足|余额不足/i
+/**
+ * Quota words that describe a throttle: a per-minute limit (Gemini, Vertex: "Quota exceeded for
+ * metric … Please retry in 41s"), an allocated rate (DashScope: "Allocated quota exceeded") or a
+ * rate limit. Both lookaheads must hold, anywhere in the text.
+ */
+const THROTTLED_QUOTA =
+  /^(?=[\s\S]*(?:quota|额度))(?=[\s\S]*(?:retry (?:in|after)|retry-after|per[ _-]?minute|throttl|allocated quota|rate[ _-]?limit))/i
+
 /**
  * Failure text to a code and a verdict on asking again, in order. The order is the meaning: an
  * authentication failure whose text also mentions a 500 is an authentication failure, and reading it
@@ -10,12 +20,19 @@ export type Classified = { code: AiErrorCode; message: string; retryable: boolea
  * text; a 5xx response status is read before this table (see `classifyPiError`).
  */
 const TABLE: Array<[RegExp, AiErrorCode, boolean]> = [
+  // An account out of quota is read from its words before its status: gateways answer it with 403
+  // (llm.sg: "用户额度不足") or 429 (OpenAI: "You exceeded your current quota"), and calling it a
+  // rejected key or a busy server sends the reader to the wrong fix or retries a request that
+  // cannot succeed until someone tops the account up. A throttle worded as quota is not that: it
+  // clears in seconds, so it stays a retryable rate limit and is read first.
+  [THROTTLED_QUOTA, 'RATE_LIMIT', true],
+  [QUOTA_TEXT, 'QUOTA', false],
   // `no api key` is the wire library refusing to send an unauthenticated request at all, which is a
   // route that was never going to work rather than a moment when the far end was busy. It used to
   // land in the unclassified bucket and be retried under backoff.
   [/\b(401|403)\b|invalid api key|no api key|missing api key|unauthorized|forbidden/i, 'AUTH', false],
   [/\b429\b|rate limit/i, 'RATE_LIMIT', true],
-  [/\b402\b|insufficient (credit|quota|balance)|quota exceeded/i, 'QUOTA', false],
+  [/\b402\b/, 'QUOTA', false],
   [/timed? ?out|ETIMEDOUT|deadline/i, 'TIMEOUT', true],
   [/overloaded|at capacity/i, 'TRANSPORT', true],
   [/\b404\b.*model|model .*not (found|exist)|unknown model/i, 'NO_MODEL', false],
@@ -52,7 +69,9 @@ export function classifyPiError(msg: AssistantMessage, contextWindow?: number, s
     return { code: 'TRANSPORT', message: redact(text), retryable: true }
   for (const [re, code, retryable] of TABLE) {
     if (re.test(text)) {
-      const c: Classified = { code, message: redact(text), retryable }
+      const note = code === 'QUOTA' ? quotaNote(text) : undefined
+      const message = note ? `${redact(text)} note=${JSON.stringify(note)}` : redact(text)
+      const c: Classified = { code, message, retryable }
       if (code === 'RATE_LIMIT') c.retryAfterMs = retryAfterMs(text)
       return c
     }
@@ -60,10 +79,10 @@ export function classifyPiError(msg: AssistantMessage, contextWindow?: number, s
   return { code: 'TRANSPORT', message: redact(text), retryable: false }
 }
 
-/** What the far end asked us to wait, when it said; a second otherwise. */
+/** What the far end asked us to wait ("retry-after: 7", "retry in 41.5s"), when it said; a second otherwise. */
 function retryAfterMs(text: string): number {
-  const m = /retry[- ]after:?\s*(\d+)/i.exec(text)
-  return m ? Number(m[1]) * 1000 : 1000
+  const m = /retry(?:[- ]after:?| in)\s*(\d+(?:\.\d+)?)/i.exec(text)
+  return m ? Math.ceil(Number(m[1]) * 1000) : 1000
 }
 
 /**
@@ -75,10 +94,49 @@ function retryAfterMs(text: string): number {
  */
 export function redact(text: string): string {
   const status = /\b([1-5]\d{2})\b/.exec(text)?.[1]
-  const reqId = /req[_-]?[A-Za-z0-9]{6,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/.exec(
-    text,
-  )?.[0]
+  const reqId =
+    /req[_-]?[A-Za-z0-9]{6,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/.exec(text)?.[0] ??
+    REQUEST_ID_LABEL.exec(text)?.[1]
   return [status ? `status=${status}` : 'status=?', reqId ? `requestId=${reqId}` : '']
     .filter(Boolean)
     .join(' ')
+}
+
+/** New API style gateways (Agnes, llm.sg) append "(request id: 2026…)" to their messages. */
+const REQUEST_ID_LABEL = /request id:\s*([A-Za-z0-9-]{6,64})/i
+const STATUS_PREFIX = /^\s*(?:error:?\s*)?[1-5]\d{2}\b[\s:]*/i
+const REQUEST_ID_NOTE = /\s*[(（]\s*request id:[^)）]*[)）]/gi
+/** Anything that could be key material, a bearer value or a URL carrying parameters. */
+const SECRETISH =
+  /\b(?:sk|pk|rk)-[A-Za-z0-9]{6,}|bearer\s+\S+|api[_ -]?key\s*[:=]|[A-Za-z0-9_-]{24,}|https?:\/\/\S*[?=&]/i
+const NOTE_MAX = 160
+
+/**
+ * A quota refusal is the far end's own account message, such as "用户额度不足，剩余额度: ＄0", and
+ * the reader needs those words to know what to fix. It is written by the gateway about the account
+ * rather than echoed from the request, so it is kept once it is short and carries nothing shaped like
+ * a credential; otherwise it is dropped. Every other failure stays reduced to its status and id.
+ */
+export function quotaNote(text: string): string | undefined {
+  const body = text.replace(STATUS_PREFIX, '')
+  const note = (bodyMessage(body) ?? body).replace(REQUEST_ID_NOTE, '').replace(/\s+/g, ' ').trim()
+  if (!note || note.length > NOTE_MAX || SECRETISH.test(note)) return undefined
+  return note
+}
+
+/** A gateway whose body is passed through raw keeps its readable words in `message`. */
+function bodyMessage(body: string): string | undefined {
+  const start = body.indexOf('{')
+  const end = body.lastIndexOf('}')
+  if (start < 0 || end <= start) return undefined
+  try {
+    const parsed = JSON.parse(body.slice(start, end + 1)) as {
+      message?: unknown
+      error?: { message?: unknown }
+    }
+    const message = parsed.error?.message ?? parsed.message
+    return typeof message === 'string' ? message : undefined
+  } catch {
+    return undefined
+  }
 }

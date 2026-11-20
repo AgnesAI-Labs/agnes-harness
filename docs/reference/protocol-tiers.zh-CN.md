@@ -142,6 +142,7 @@
 - `_agnes/v1/admin.feedback`
 - `_agnes/v1/doctor.run`
 - `_agnes/v1/admin.observability`
+- `_agnes/v1/admin.telemetry`
 - `_agnes/v1/trace.clear`
 - `_agnes/v1/session.factChain`
 - `_agnes/v1/trace.request`
@@ -300,6 +301,7 @@
 - `_agnes/v1/voice.settings.get`
 - `_agnes/v1/voice.settings.save`
 - `_agnes/v1/refinement.get`
+- `_agnes/v1/refinement.models`
 - `_agnes/v1/refinement.save`
 - `_agnes/v1/refinement.skills`
 

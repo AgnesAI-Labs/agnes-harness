@@ -44,6 +44,7 @@ test('permissions never flash a fallback selection when returning from applicati
       await section(page, 'security')
       await requested
       const cards = page.getByTestId('security-default-permissions')
+      await expect(cards.locator('p.agnes-settings-note')).toHaveCSS('margin-block-end', '12px')
       await expect(cards.locator('input[type="radio"]')).toHaveCount(3)
       await expect(cards.locator('input[type="radio"]:checked')).toHaveCount(0)
       await expect(cards.locator('input[type="radio"]:enabled')).toHaveCount(0)
@@ -82,6 +83,20 @@ test('v3 home entries, deep links and browser back/forward retain the selected p
   await page.reload()
   await expect(page.getByRole('tab', { name: 'Triggers', exact: true })).toHaveCount(0)
   await expect(page.getByTestId('schedules-new')).toBeVisible()
+
+  await homePage(page, 'rsi')
+  await expect(page.getByRole('heading', { name: 'RSI', exact: true })).toBeVisible()
+  for (const note of ['allows-install', 'allows-undo', 'approvals', 'cost']) {
+    await expect(page.getByTestId(`refinement-${note}`)).toHaveCSS('margin-block-end', '0px')
+  }
+  await expect(page.getByTestId('refinement-saved-skills')).toBeVisible()
+  await page.goto(`${runtime.url}/?settings=refinement`)
+  await expect(page).toHaveURL(/\?page=rsi$/)
+  await expect(page.getByTestId('refinement-saved-skills')).toBeVisible()
+
+  await section(page, 'general')
+  await expect(page.locator('#settings-section-tabs').getByRole('tab')).toHaveText(['General', 'Voice'])
+  await expect(page.getByTestId('settings-nav-refinement-tab')).toHaveCount(0)
 })
 
 test('v3 command-K searches durable session text and opens the matching session', async ({

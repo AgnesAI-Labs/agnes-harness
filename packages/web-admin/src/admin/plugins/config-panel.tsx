@@ -147,7 +147,7 @@ export function PluginConfigPanel({
     }
   }
   return (
-    <section data-testid="plugin-config-panel" aria-label={t('config')}>
+    <section data-testid="plugin-config-panel" className="plugin-config-panel" aria-label={t('config')}>
       {notice && (
         <StatusMessage
           kind={notice === 'pending' ? 'pending' : 'error'}

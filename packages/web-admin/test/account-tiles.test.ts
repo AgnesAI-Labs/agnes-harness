@@ -1,7 +1,12 @@
 /** @vitest-environment happy-dom */
 import { mountRegion } from '@agnes/web-ui'
 import { afterEach, expect, it, vi } from 'vitest'
-import { defaultAccountLabel, groupProviders, providerTiles } from '../src/settings/account-tiles.js'
+import {
+  defaultAccountLabel,
+  groupProviders,
+  keyConsoleUrl,
+  providerTiles,
+} from '../src/settings/account-tiles.js'
 
 const provider = (id: string, oauth = false) => ({
   id,
@@ -51,6 +56,7 @@ it('offers Agnes AI first, then the popular providers, the relays, and folds a l
   expect(tiles('.account-provider-groups > .account-provider-choices')).toEqual([
     'agnes-ai',
     'agnes-ai:international',
+    'preset:llm-sg',
     'deepseek',
     'openai',
     'zai',
@@ -74,12 +80,42 @@ it('offers Agnes AI first, then the popular providers, the relays, and folds a l
   top?.querySelector<HTMLButtonElement>('[data-provider="openai-compatible"]')?.click()
   host.querySelector<HTMLButtonElement>('[data-provider="preset:siliconflow"]')?.click()
   top?.querySelector<HTMLButtonElement>('[data-provider="agnes-ai:international"]')?.click()
+  top?.querySelector<HTMLButtonElement>('[data-provider="preset:llm-sg"]')?.click()
+  expect(top?.querySelector('[data-provider="preset:llm-sg"] small')?.textContent).toBe('accounts.llmSgHint')
   expect(select.mock.calls).toEqual([
     ['xai'],
     ['openai-compatible'],
     ['openai-compatible', { label: 'accounts.preset.siliconflow', baseUrl: 'https://api.siliconflow.cn/v1' }],
     ['agnes-ai', { label: 'accounts.agnesInternational', baseUrl: 'https://apihub.agnes-ai.com/v1' }],
+    ['openai-compatible', { label: 'accounts.llmSg', baseUrl: 'https://api.llm.sg/v1' }],
   ])
+})
+
+it('offers llm.sg only where the OpenAI-compatible form is offered', () => {
+  const host = document.createElement('div')
+  document.body.append(host)
+  dispose.push(
+    mountRegion(
+      host,
+      providerTiles([provider('agnes-ai')], (key) => key, vi.fn()),
+    ),
+  )
+  expect(host.querySelector('[data-provider="preset:llm-sg"]')).toBeNull()
+  expect(host.querySelector('[data-provider="agnes-ai:international"]')).not.toBeNull()
+})
+
+it('finds the key console of each gateway from its address', () => {
+  expect(keyConsoleUrl('openai-compatible', 'https://api.llm.sg/v1')).toBe('https://www.llm.sg/')
+  expect(keyConsoleUrl('openai-compatible', 'https://llm.sg/v1')).toBe('https://www.llm.sg/')
+  expect(keyConsoleUrl('agnes-ai', 'https://api.agnes-ai.cn/v1')).toBe('https://api.agnes-ai.cn/')
+  expect(keyConsoleUrl('agnes-ai', 'https://apihub.agnes-ai.com/v1')).toBe('https://apihub.agnes-ai.com/')
+  // An Agnes account whose address is still being typed uses the provider's default gateway.
+  expect(keyConsoleUrl('agnes-ai', 'https://')).toBe('https://api.agnes-ai.cn/')
+  expect(keyConsoleUrl('agnes-ai', '')).toBe('https://api.agnes-ai.cn/')
+  // A look-alike host is not the gateway.
+  expect(keyConsoleUrl('openai-compatible', 'https://notllm.sg/v1')).toBeUndefined()
+  expect(keyConsoleUrl('openai-compatible', 'https://api.siliconflow.cn/v1')).toBeUndefined()
+  expect(keyConsoleUrl('openai', 'https://api.openai.com/v1')).toBeUndefined()
 })
 
 it('names a new account after its provider and numbers a second one', () => {

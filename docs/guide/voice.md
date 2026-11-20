@@ -2,7 +2,7 @@
 
 English | [简体中文](voice.zh-CN.md)
 
-[Documentation](../README.md) · [Generic credentials](credentials.md) · [Use TypeSafe Jev for side model calls](typesafe-jev.md) · [Network deployment](deployment.md) · [API and schemas](../reference/api.md)
+[Documentation](../README.md) · [Generic credentials](credentials.md) · [Use TypeSafe Jev for decision model calls](typesafe-jev.md) · [Network deployment](deployment.md) · [API and schemas](../reference/api.md)
 
 The Web conversation can take what you say and read what the agent answers. It has three functions, all built in and used through one **voice account**:
 
@@ -10,11 +10,11 @@ The Web conversation can take what you say and read what the agent answers. It h
 - **Voice conversation.** The wave button runs a hands-free loop: you speak, the message is sent, the reply is read to you, and it listens again.
 - **Read aloud.** A button under each final reply reads it, and an optional setting reads every reply by itself.
 
-A voice account is an entry under Side models that uses the **Voice** adapter. It sends recordings to a speech-to-text model and reply text to a text-to-speech model at the provider you choose. Nothing is installed, and the conversation model is never involved.
+A voice account is an entry under **Voice models**, on the voice settings page. It sends recordings to a speech-to-text model and reply text to a text-to-speech model at the provider you choose. Nothing is installed, and the conversation model is never involved.
 
 ## Add a voice account
 
-In Settings → Models & accounts, expand **Advanced: side models and task models**, choose **Add side model**, and set the adapter to **Voice**. Pick a service; it fills in the endpoint and both models, so the form asks only for a credential:
+Open Settings → General → Voice and choose **Add voice model** under **Voice models**. Pick a service; it fills in the endpoint and both models, so the form asks only for a credential:
 
 | Service | Endpoint | Transcription model | Speech model | Default voice |
 | --- | --- | --- | --- | --- |
@@ -22,7 +22,7 @@ In Settings → Models & accounts, expand **Advanced: side models and task model
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini-transcribe` | `gpt-4o-mini-tts` | `alloy` |
 | StepFun | `https://api.stepfun.com/v1` | `stepaudio-3-asr-max` | `stepaudio-3-tts` | `cixingnansheng` |
 
-- The endpoint is editable, and so are both model IDs. Any endpoint that speaks the OpenAI audio API works. The endpoint rules are those of the other side models: an absolute HTTPS URL, with plain `http` only on loopback addresses, and no credentials, templates, query or fragment.
+- The endpoint is editable, and so are both model IDs. Any endpoint that speaks the OpenAI audio API works. The endpoint rules are those of the decision models: an absolute HTTPS URL, with plain `http` only on loopback addresses, and no credentials, templates, query or fragment.
 - To use the StepFun international site, change the endpoint to `https://api.stepfun.ai/v1`. StepFun transcribes through its own request format rather than the OpenAI one; the adapter switches by model name, so there is nothing to configure.
 - Leave one model field empty to turn that function off. The account needs at least one, and the two must differ.
 - Pick a [generic credential](credentials.md), or create one in place. The entry stores a reference to it. The key stays in the credential store, is used only by the local backend, and is never sent to the browser.
@@ -33,7 +33,7 @@ An account added while a conversation is open is picked up by that conversation;
 
 ### Several voice accounts
 
-With exactly one enabled voice account, it is used automatically. With more than one, open Settings → General → Voice and choose one under **Voice account**. The list shows the names of the voice accounts in the side models page. Until you choose, the buttons stay greyed out with the reason "There are several voice accounts; choose one in settings". A disabled account does not count.
+With exactly one enabled voice account, it is used automatically. With more than one, open Settings → General → Voice and choose one under **Voice account**. The list shows the names of the voice models above it. Until you choose, the buttons stay greyed out with the reason "There are several voice accounts; choose one in settings". A disabled account does not count.
 
 ## Settings
 
@@ -52,7 +52,7 @@ Settings → General → Voice holds these settings. A change saves itself and t
 | | Read replies aloud automatically | Off | Replies are often long, so reading every one is noisy and costs money |
 | Voice conversation | Pause that counts as finished (seconds) | 1.2 | From 0.5 to 5 |
 
-The section also repeats the privacy note and has a **Go to setup** button that opens the side models page. If both voice input and read aloud are off, the conversation shows no voice buttons at all.
+The section also repeats the privacy note. If both voice input and read aloud are off, the conversation shows no voice buttons at all.
 
 On SiliconFlow, a voice is named `<speech model>:<name>`; typing only the name, such as `anna`, is enough. StepFun accepts speeds from 0.5 to 2, and a value outside that range is sent as the nearest limit. A speed of exactly 1 is not sent at all, so the plain request works with every provider.
 
@@ -106,7 +106,7 @@ Recordings and reply text are sent to the provider of the account you chose, thr
 
 ## Troubleshooting
 
-A greyed-out button explains itself: hover it or click it for the reason. For the first four reasons the popover also has a **Configure** link to the side models page.
+A greyed-out button explains itself: hover it or click it for the reason. For the first four reasons the popover also has a **Configure** link to the voice settings page.
 
 | Reason shown | What it means and what to do |
 | --- | --- |

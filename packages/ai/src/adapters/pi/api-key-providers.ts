@@ -7,6 +7,7 @@ import {
 } from '@earendil-works/pi-ai'
 import { isUsableCredential } from '../../credentials.js'
 import { nativeToolCallFormats } from '../../decode/prose-calls.js'
+import { AGNES_SYS1_BASE_URL, AGNES_SYS1_WIRE_API } from '../agnes-sys1/index.js'
 import { JEV_WIRE_API } from '../jev/index.js'
 import { OPENAI_AUDIO_WIRE_API } from '../openai-audio/wire.js'
 import type { ManualRoute } from './index.js'
@@ -34,6 +35,7 @@ export type ApiKeyProviderId =
   | 'moonshotai-cn'
   | 'zai-coding-cn'
   | 'typesafe-systemone'
+  | 'agnes-sys1'
   | 'openai-audio'
   | 'openai-compatible'
 
@@ -427,6 +429,17 @@ const JEV_PROVIDER: ApiKeyProviderRegistryEntry = Object.freeze({
   createAdapter: () => Promise.reject(new ApiKeyProviderError('PROVIDER_CONTRACT')),
 })
 
+const AGNES_SYS1_PROVIDER: ApiKeyProviderRegistryEntry = Object.freeze({
+  ...JEV_PROVIDER,
+  id: AGNES_SYS1_WIRE_API,
+  displayName: 'Agnes Sys1',
+  route: AGNES_SYS1_WIRE_API,
+  api: AGNES_SYS1_WIRE_API,
+  baseUrl: AGNES_SYS1_BASE_URL,
+  credentialRef: 'secret://agnes-sys1/default',
+  sourceProviderId: AGNES_SYS1_WIRE_API,
+})
+
 /**
  * Speech to text and text to speech answer a payload, so this entry has no pi catalogue either. The
  * default address is SiliconFlow's; an account may point it at any OpenAI-style audio API.
@@ -484,6 +497,7 @@ export const API_KEY_PROVIDER_REGISTRY: readonly ApiKeyProviderRegistryEntry[] =
     }),
   ),
   JEV_PROVIDER,
+  AGNES_SYS1_PROVIDER,
   OPENAI_AUDIO_PROVIDER,
   OPENAI_COMPATIBLE_PROVIDER,
 ])

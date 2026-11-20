@@ -25,6 +25,7 @@ export interface AppServerMethods {
   "_agnes/v1/admin.mcp.oauth.logout": { params: Static<typeof import("./app-server.js").AdminMcpOAuthGet>; result: Static<typeof import("./app-server.js").AdminMcpOAuthLogoutResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/doctor.run": { params: Static<typeof import("./app-server.js").DoctorParams>; result: Static<typeof import("./app-server.js").DoctorResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.memory": { params: Static<typeof import("./app-server.js").AdminMemoryParams>; result: Static<typeof import("./app-server.js").AdminMemoryResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/admin.telemetry": { params: Static<typeof import("./app-server.js").AdminTelemetryParams>; result: Static<typeof import("./app-server.js").AdminTelemetryResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.observability": { params: Static<typeof import("./app-server.js").AdminObservabilityParams>; result: Static<typeof import("./app-server.js").AdminObservabilityResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.triggers": { params: Static<typeof import("./app-server.js").WebhookRequest>; result: Static<typeof import("./app-server.js").WebhookResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.managedWorkspaces.list": { params: Static<typeof import("./app-server.js").ManagedWorkspaceGrantsListParams>; result: Static<typeof import("./app-server.js").ManagedWorkspaceGrantsList>; direction: "c2s"; kind: "request" }
@@ -194,6 +195,7 @@ export interface AppServerMethods {
   "_agnes/v1/voice.settings.get": { params: Static<typeof import("./agnes-v1.js").ConfigEmptyParams>; result: Static<typeof import("./agnes-v1.js").VoiceSettingsSnapshot>; direction: "c2s"; kind: "request" }
   "_agnes/v1/voice.settings.save": { params: Static<typeof import("./agnes-v1.js").VoiceSettingsSaveParams>; result: Static<typeof import("./agnes-v1.js").VoiceSettingsSnapshot>; direction: "c2s"; kind: "request" }
   "_agnes/v1/refinement.get": { params: Static<typeof import("./agnes-v1.js").ConfigEmptyParams>; result: Static<typeof import("./agnes-v1.js").RefinementSettingsSnapshot>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/refinement.models": { params: Static<typeof import("./agnes-v1.js").ConfigEmptyParams>; result: Static<typeof import("./agnes-v1.js").RefinementModelsResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/refinement.save": { params: Static<typeof import("./agnes-v1.js").RefinementSettingsSaveParams>; result: Static<typeof import("./agnes-v1.js").RefinementSettingsSaveResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/refinement.skills": { params: Static<typeof import("./agnes-v1.js").RefinementSkillsParams>; result: Static<typeof import("./agnes-v1.js").RefinementSkillsResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.rename": { params: Static<typeof import("./agnes-v1.js").SessionRenameParams>; result: Static<typeof import("./agnes-v1.js").SessionPreferences>; direction: "c2s"; kind: "request" }

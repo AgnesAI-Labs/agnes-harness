@@ -3,14 +3,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
-  type HostModule,
   loadMemoryModule,
   prepareHome,
   prepareMemory,
   seedUserMemory,
   seedWorkspaceMemory,
 } from './launch.js'
-import { aghProfile, EVAL_MEMORY, PROFILE } from './run-agh.js'
+import { aghProfile, EVAL_MEMORY, PROFILE, REVIEW_KEY_ENV, REVIEW_MODEL_ENV } from './run-agh.js'
 
 const cfg = {
   provider: 'eval',
@@ -24,7 +23,9 @@ const cfg = {
 }
 
 // The real host pieces: the home layout, its data dir and the store the settings panel saves through.
-const host = async () => (await import('@agnes/host')) as unknown as HostModule
+const host = () => import('@agnes/host')
+const reviewKey = 'synthetic-eval-review-key'
+const reviewModel = 'company/review-model'
 
 describe('prepareHome', () => {
   let dir: string
@@ -47,27 +48,56 @@ describe('prepareHome', () => {
     profile: PROFILE,
     profileDocument: aghProfile(cfg, `${name}.r1`),
     refinement: on ? ({ enabled: true, mode: 'auto' } as const) : undefined,
+    env: on ? { [REVIEW_KEY_ENV]: reviewKey, [REVIEW_MODEL_ENV]: reviewModel } : {},
   })
 
   it('saves the switch in the run home for an on run only, and writes the route to the profile file', async () => {
     const h = await host()
-    const onData = await prepareHome(input('on', true), h)
-    const offData = await prepareHome(input('off', false), h)
-    expect(onData).toBe(h.dataDir(join(dir, 'on', 'home')))
-    expect(new h.RefinementSettingsStore(onData, PROFILE).read().settings).toEqual({
+    const on = input('on', true)
+    const off = input('off', false)
+    const preparedOn = await prepareHome(on, h)
+    const preparedOff = await prepareHome(off, h)
+    expect(preparedOn.data).toBe(h.dataDir(on.home))
+    const store = new h.RefinementSettingsStore(preparedOn.data, PROFILE, on.home)
+    const { settings } = store.read()
+    if (!settings.enabled) throw new Error('Expected the run to enable refinement')
+    expect(settings).toEqual({
       enabled: true,
       mode: 'auto',
+      model: reviewModel,
+      baseUrl: 'https://api.llm.sg/v1',
+      credentialRef: expect.stringMatching(/^secret:\/\/generic\//),
     })
-    expect(new h.RefinementSettingsStore(offData, PROFILE).read().settings.enabled).toBe(false)
+    expect(store.serviceKey(settings.credentialRef)).toBe(reviewKey)
+    expect(new h.RefinementSettingsStore(preparedOff.data, PROFILE).read().settings.enabled).toBe(false)
+    expect(await h.createCredentialStore({ root: off.home }).listGeneric()).toEqual([])
     // Nothing reached the user's home.
     expect(
       new h.RefinementSettingsStore(h.dataDir(process.env.AGH_HOME as string), PROFILE).read().settings
         .enabled,
     ).toBe(false)
-    const profile = JSON.parse(
-      readFileSync(join(dir, 'on', 'home', 'profiles', PROFILE, 'profile.yaml'), 'utf8'),
-    )
-    expect(profile).toEqual(aghProfile(cfg, 'on.r1'))
+    const profile = readFileSync(join(on.home, 'profiles', PROFILE, 'profile.yaml'), 'utf8')
+    expect(JSON.parse(profile)).toEqual(aghProfile(cfg, 'on.r1'))
+    expect(profile).not.toContain(reviewKey)
+    await preparedOn.close()
+    expect(store.serviceKey(settings.credentialRef)).toBeUndefined()
+    expect(store.read().settings.enabled).toBe(false)
+  })
+
+  it.each([REVIEW_KEY_ENV, REVIEW_MODEL_ENV])('requires %s for the on arm', async (name) => {
+    const run = input('missing', true)
+    await expect(
+      prepareHome({ ...run, env: { ...run.env, [name]: undefined } }, await host()),
+    ).rejects.toThrow(name)
+  })
+
+  it('removes the staged key when the review settings are invalid', async () => {
+    const h = await host()
+    const run = input('invalid-review', true)
+    await expect(
+      prepareHome({ ...run, env: { ...run.env, [REVIEW_MODEL_ENV]: 'two model ids' } }, h),
+    ).rejects.toThrow('CONFIG_INVALID_INPUT')
+    expect(await h.createCredentialStore({ root: run.home }).listGeneric()).toEqual([])
   })
 
   it('saves the same memory settings for every workspace, where the memory provider reads them', async () => {
@@ -83,7 +113,7 @@ describe('prepareHome', () => {
       )
     for (const name of ['on', 'off']) {
       const run = input(name, name === 'on')
-      await prepareHome(run, await host())
+      const prepared = await prepareHome(run, await host())
       // Before: the defaults, memory off and no user memory.
       expect((await settingsOf(run.home)).map((s) => [s.mode, s.userEnabled])).toEqual([
         ['off', false],
@@ -91,6 +121,7 @@ describe('prepareHome', () => {
       ])
       await prepareMemory({ home: run.home, workspaces, memory: EVAL_MEMORY }, memory)
       for (const settings of await settingsOf(run.home)) expect(settings).toMatchObject(EVAL_MEMORY)
+      await prepared.close()
     }
     // Nothing reached the user's home.
     const elsewhere = memory.openMemory({

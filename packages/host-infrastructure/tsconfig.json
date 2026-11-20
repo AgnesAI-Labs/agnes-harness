@@ -19,6 +19,9 @@
       "path": "../core"
     },
     {
+      "path": "../distribution"
+    },
+    {
       "path": "../extension-api"
     },
     {

@@ -42,7 +42,7 @@ Find commands by session execution, administration, or extensions. For an end-to
 | `agh triggers add --file RULE.json\|-` / `edit RULE --file RULE.json\|-` / `configure --file CONFIG.json\|-` | Save a rule or the configuration from JSON (`-` reads stdin); the JSON is checked against the protocol schema before anything is sent |
 | `agh triggers test RULE [--payload FILE\|-]` | Run a synthetic delivery through a rule; a delivery that is not accepted prints its status and exits 1. `deliver` is webhook-only and not offered |
 | `agh settings [--json]` | List the settings sections with a one-line description |
-| `agh settings SECTION [get] [--json]` | Print one section (`model-slots`, `child-engines`, `auto-review`, `system-prompt`, `memory`, `observability`, `search`, `session-defaults`) as one line per value, or the daemon result with `--json`; `memory` uses `--cwd` |
+| `agh settings SECTION [get] [--json]` | Print one section (`model-slots`, `child-engines`, `auto-review`, `system-prompt`, `memory`, `observability`, `telemetry`, `search`, `session-defaults`) as one line per value, or the daemon result with `--json`; `memory` uses `--cwd` |
 | `agh settings SECTION set --file FILE\|-` | Save a section from JSON (`-` reads stdin); checked against the protocol schema before anything is sent. `system-prompt` also takes `--text TEXT` (replaces the whole prompt and needs `--yes`; empty removes it) |
 | `agh settings search test --text QUERY [PROVIDER]` | Run one search on a provider (default: the default provider); a failed test prints the reason and exits 1 |
 | `agh credentials [list] [--json]` / `agh credentials rename ID NAME...` | List generic credentials (id, name, kind, creation time, references; never a secret) / rename one |

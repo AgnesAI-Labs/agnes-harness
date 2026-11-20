@@ -8,6 +8,7 @@ import type {
   SidebarHandle,
   SidebarState,
   TranscriptHandle,
+  TranscriptRefinementActions,
 } from '@agnes/web-units/shell'
 import type { ComponentType, ReactNode } from 'react'
 import type { VoicePort } from './voice-port.js'
@@ -24,7 +25,7 @@ export interface ConversationPresentationPort {
   onMount(children: ConversationChildContainers): void
   onUnmount(): void
   attach(handle: ConversationHandle): () => void
-  transcript: {
+  transcript: TranscriptRefinementActions & {
     onFork?: (turn: UITurn) => Promise<void>
     claim?: (entry: import('@agnes/web-client').SlotEntry, extId: string) => boolean
     /** Present when the host offers voice: the final reply shows a read-aloud button. */

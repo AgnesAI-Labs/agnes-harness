@@ -5,7 +5,7 @@
 [English](README.md) | 简体中文
 
 <p align="center">
-  <img src="docs/assets/readme/banner.zh-CN.png" alt="Agnes Harness：面向前线交付工程（FDE）的插件化智能体框架。LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。" width="100%" />
+  <img src="docs/assets/readme/banner.zh-CN.png" alt="面向前线交付工程（FDE）的插件化智能体框架 Agnes Harness。LLM 是大脑，Agnes Sys1 是小脑，Harness 是记忆，MHS 是身体。" width="100%" />
 </p>
 
 <div align="center">
@@ -28,11 +28,11 @@
 > **从旧版升级？** 本次按新产品发布，不迁移旧数据。请先阅读[旧版升级指南](docs/guide/upgrade-from-previous.zh-CN.md)，备份并清理旧环境后再全新开始。
 
 <p align="center">
-  <img src="docs/assets/readme/trailer.zh-CN.webp" alt="动画介绍：大脑（LLM）、小脑（Jev）、记忆（Harness）与身体（MHS，经 AgnesHub 连接设备）合为 Agnes Harness，一套执行底座支撑企业 FDE 交付与物理世界的 MHS 接入" width="100%" />
+  <img src="docs/assets/readme/trailer.zh-CN.webp" alt="Agnes Harness 架构动画，展示 LLM 推理、Agnes Sys1 判断、Harness 记忆，以及 MHS 通过 AgnesHub 接入设备。" width="100%" />
 </p>
 
 <p align="center">
-  <b>LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。</b><br />
+  <b>LLM 是大脑，Agnes Sys1 是小脑，Harness 是记忆，MHS 是身体。</b><br />
   <sub>同一套开源底座，支撑业务智能体、企业交付与物理世界。<a href="#architecture">查看架构</a></sub>
 </p>
 
@@ -76,14 +76,14 @@ AGH 是面向 Forward Deployed Engineering（FDE）的开源智能体框架：�
 
 <h2 id="architecture">架构：大脑、小脑、记忆与身体</h2>
 
-大脑、小脑、记忆与身体这组比喻表达 AGH 的产品愿景：把推理、结构化决策、持久任务上下文和物理能力组织到一起。Harness 是运行时本身，Jev 与 MHS 以官方插件的形式接入。
+AGH 把模型推理、结构化判断、持久任务上下文和物理能力接到同一套运行时。**Agnes Sys1** 是 Agnes 自研的判断模型，也是 AGH 新增决策模型时的默认选择。配置后可按需开启判断功能，例如检查标题是否仍贴合当前任务，以及检测回复是否在执行承诺的操作前就结束了。[配置 Agnes Sys1](docs/guide/judgment.zh-CN.md#配置判断模型再打开检测)。
 
-![AGH 架构：LLM 是大脑、Jev 是小脑、Harness 是记忆、MHS 是身体，同一套运行时支撑企业 FDE 交付与 MHS 设备接入](docs/assets/architecture.zh-CN.svg)
+![AGH 架构中，LLM 是大脑、Agnes Sys1 是小脑、Harness 是记忆、MHS 是身体。同一套运行时支撑企业 FDE 交付与 MHS 设备接入。](docs/assets/architecture.zh-CN.svg)
 
 | 角色 | 在 AGH 中意味着什么 | 当前范围 |
 | --- | --- | --- |
 | **LLM / 大脑** | 理解请求、推理任务、提出行动建议 | 模型账户与模型适配器插件 |
-| **Jev / 小脑** | 由 TypeSafe Jev 选择每一步，对话模型只负责撰写、补参数和复核 | 官方可选的运行方式插件 `@agnes/jev-loop`，从插件市场安装（[指南](docs/guide/jev-loop.zh-CN.md)） |
+| **Agnes Sys1 / 小脑** | 根据任务上下文回答结构化问题，供各项判断功能使用 | 默认旁路适配器，提供国内测试与国际网关预设（[配置指南](docs/guide/judgment.zh-CN.md#配置判断模型再打开检测)） |
 | **Harness / 记忆** | 会话历史、任务状态、执行记录，以及沉淀在 Skills 中的可复用方法 | 运行时本身：负责执行、记录、恢复与治理 |
 | **MHS / 身体** | 连接设备能力，让任务读取物理状态、请求设备动作 | 官方插件，接入中 |
 
@@ -248,7 +248,7 @@ AGH 当前为开发者预览。
 | 插件升级时，进行中的会话保留原版本代码 | 可用 |
 | Agent 起草 Skill 与插件，人工审阅后发布 | 可用 |
 | Webhook 触发、对话框语音 | 可用，需显式开启 |
-| Jev 运行方式 | 官方可选插件 |
+| Agnes Sys1 判断 | 通过可选的[判断插件](docs/guide/judgment.zh-CN.md)使用 |
 | MHS 设备接入 | 官方插件，接入中 |
 | 命令沙箱与执行约束 | 取决于平台 |
 | 平台 | macOS 与 Linux 有持续维护的检查；Windows 尚未完成端到端验证 |

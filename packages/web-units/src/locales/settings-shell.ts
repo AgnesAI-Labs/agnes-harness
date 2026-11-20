@@ -3,7 +3,7 @@ import type { LocaleCatalog } from './index.js'
 /** Settings shell template: host applyLocaleText fills the first frame; boot refills the whole document on locale changes. */
 export const settingsShellLocaleCatalog: LocaleCatalog = {
   en: {
-    'settings-shell.advancedModels': 'Advanced: side models and task models',
+    'settings-shell.advancedModels': 'Advanced: decision models and task models',
     'settings-shell.group.application': 'Application',
     'settings-shell.page.application': 'Application',
     'settings-shell.keywords.application': 'application product brand navigation identity',
@@ -33,7 +33,6 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'settings-shell.advanced': 'Advanced',
     'settings-shell.jobs': 'Jobs',
     'settings-shell.voice': 'Voice',
-    'settings-shell.refinement': 'Task experience',
     'settings-shell.showAdvanced': 'Show advanced settings',
     'settings-shell.showAdvancedHelp':
       'Run configuration, diagnostics and the advanced options on each page.',
@@ -98,8 +97,8 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'settings-shell.accountsAria': 'Saved model accounts',
     'settings-shell.accountsTitle': 'Accounts',
     'settings-shell.addAccount': 'Add account',
-    'settings-shell.addSideModel': 'Add side model',
-    'settings-shell.editSideModel': 'Edit side model',
+    'settings-shell.addSideModel': 'Add decision model',
+    'settings-shell.editSideModel': 'Edit decision model',
     'settings-shell.accountsNote': 'A session can switch between the models of enabled accounts at any time.',
     'settings-shell.appearanceTitle': 'General',
     'settings-shell.appearanceIntro': 'Appearance and language. Saved on this computer only.',
@@ -137,7 +136,7 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'settings-shell.saveAccount': 'Save account',
   },
   'zh-CN': {
-    'settings-shell.advancedModels': '高级：旁路模型与任务模型',
+    'settings-shell.advancedModels': '高级：决策模型与任务模型',
     'settings-shell.group.application': '应用',
     'settings-shell.page.application': '应用',
     'settings-shell.keywords.application': '应用 产品 品牌 导航 身份',
@@ -166,7 +165,6 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'settings-shell.advanced': '高级',
     'settings-shell.jobs': '作业',
     'settings-shell.voice': '语音',
-    'settings-shell.refinement': '任务经验',
     'settings-shell.showAdvanced': '显示高级设置',
     'settings-shell.showAdvancedHelp': '运行配置、诊断和各页里的高级选项。',
     'settings-shell.extensions': '扩展',
@@ -229,8 +227,8 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'settings-shell.accountsAria': '已保存的模型账户',
     'settings-shell.accountsTitle': '账户',
     'settings-shell.addAccount': '添加账户',
-    'settings-shell.addSideModel': '添加旁路模型',
-    'settings-shell.editSideModel': '编辑旁路模型',
+    'settings-shell.addSideModel': '添加决策模型',
+    'settings-shell.editSideModel': '编辑决策模型',
     'settings-shell.accountsNote': '会话里可以随时在已启用账户的模型之间切换。',
     'settings-shell.appearanceTitle': '通用',
     'settings-shell.appearanceIntro': '界面外观和语言；只保存在这台电脑上。',

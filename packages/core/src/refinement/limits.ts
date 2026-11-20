@@ -5,7 +5,6 @@ import {
   type RefinementRunState,
   TERMINAL_RUN_STATES,
 } from '@agnes/core-ledger/reduce/state'
-import { resolveModel } from '../execution/turn/inference.js'
 import { knownPrice } from '../maintenance/budget.js'
 import type { SessionImpl } from '../step/session.js'
 
@@ -81,7 +80,8 @@ async function plannedRuns(s: SessionImpl, except?: string): Promise<Planned[]> 
  * Whether an automatic plan may start now, and if only time stands in the way, when it may. The model's
  * own request (`kind: 'model'`) is held to the price and to `MODEL_LIMITS` only. The
  * planner model must have a known price; zero is one (a free or local model, bounded by the token
- * budget alone). A model with no known price only runs for the user's own request, once they agree.
+ * budget alone). A model with no known price only runs for the user's own request, once they agree,
+ * or on a usage-billed target, which the person agreed to by turning it on (bounded by the token budget).
  *
  * `run` is the run about to start: its own earlier attempts (a plan a restart or a close cut short)
  * do not count against it, so it continues rather than being refused by itself. `cooldown: false`
@@ -90,10 +90,10 @@ async function plannedRuns(s: SessionImpl, except?: string): Promise<Planned[]> 
  */
 export async function automaticRefusal(
   s: SessionImpl,
-  target: { route: string; model: string } | undefined,
+  target: { route: string; model: string; usageBilled?: true } | undefined,
   o: { run?: string; cooldown?: false; kind?: 'model' } = {},
 ): Promise<{ refused: LimitRefusal; retryAt?: number } | undefined> {
-  if (!priced(s, target ?? resolveModel(s, 'primary'))) return { refused: 'unpriced' }
+  if (!plannerPriced(s, target) && target?.usageBilled !== true) return { refused: 'unpriced' }
   const now = s.d.clock()
   const planned = await plannedRuns(s, o.run)
   if (o.kind === 'model')
@@ -115,14 +115,16 @@ export async function automaticRefusal(
   return undefined
 }
 
-/** Whether the planner model, the target or else the session's primary, has a known price. */
+/** Whether the dedicated catalogue has a known price for the planner model. */
 export function plannerPriced(s: SessionImpl, target: { route: string; model: string } | undefined): boolean {
-  return priced(s, target ?? resolveModel(s, 'primary'))
-}
-
-function priced(s: SessionImpl, target: { route: string; model: string }): boolean {
+  if (!target) return false
   try {
-    return knownPrice(s.d.provider.models().find((m) => m.route === target.route && m.id === target.model))
+    return knownPrice(
+      s.d.refinement
+        ?.provider?.()
+        ?.models()
+        .find((m) => m.route === target.route && m.id === target.model),
+    )
   } catch {
     return false
   }

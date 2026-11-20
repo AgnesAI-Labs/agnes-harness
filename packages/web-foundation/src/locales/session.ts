@@ -108,7 +108,7 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'headsUp.label': 'Heads-up',
     'headsUp.title': 'Side-review heads-up',
     'headsUp.help':
-      'Off by default. A side model reviews the Agent’s work and hands it one advisory note before its next step. It never blocks a tool, changes a permission or approves anything. The setting belongs to the running session and resets when it is reopened.',
+      'Off by default. An auxiliary model (the verifier model, or the fast model without one) reviews the Agent’s work and hands it one advisory note before its next step. It never blocks a tool, changes a permission or approves anything. The setting belongs to the running session and resets when it is reopened.',
     'headsUp.sends':
       'When on, after side-effecting tool calls and at the end of each turn, the conversation so far plus a truncated tool summary is sent to the verifier model, or the fast model when no verifier is set. Each review is billed as a side call.',
     'headsUp.unavailable': 'Heads-up is not available in this session.',
@@ -285,7 +285,7 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'headsUp.label': '旁路提醒',
     'headsUp.title': '旁路提醒',
     'headsUp.help':
-      '默认关闭。旁路模型会审查智能体的工作，并在它下一步之前递上一条仅供参考的提醒。它不会拦截工具、不会改变权限，也不会替你审批。该设置属于正在运行的会话，会话重新打开后恢复为关闭。',
+      '默认关闭。辅助模型（验证模型，没有时用快速模型）会审查智能体的工作，并在它下一步之前递上一条仅供参考的提醒。它不会拦截工具、不会改变权限，也不会替你审批。该设置属于正在运行的会话，会话重新打开后恢复为关闭。',
     'headsUp.sends':
       '开启后，在有副作用的工具调用之后和每轮结束时，会把到目前为止的对话和截断后的工具摘要发给验证模型，没有验证模型时发给快速模型。每次审查按旁路调用计费。',
     'headsUp.unavailable': '本会话不支持旁路提醒。',

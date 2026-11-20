@@ -1,5 +1,6 @@
 import { Button, Icon } from '@agnes/web-ui'
 import { type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { bindComposerListbox } from './composer/listbox-aria.js'
 import type { Translate } from './locales/index.js'
 
 export type ComposerSkill = Readonly<{
@@ -163,15 +164,6 @@ export function SkillPicker({
     return () => {
       disposed = true
       request?.abort()
-      for (const attr of [
-        'role',
-        'aria-autocomplete',
-        'aria-haspopup',
-        'aria-expanded',
-        'aria-controls',
-        'aria-activedescendant',
-      ])
-        input.removeAttribute(attr)
       input.removeEventListener('input', open)
       input.removeEventListener('click', open)
       input.removeEventListener('keydown', keydown, true)
@@ -181,28 +173,11 @@ export function SkillPicker({
 
   useLayoutEffect(() => {
     const input = textarea.current
-    if (!input || !skills || !opened || disabled) {
-      for (const attr of [
-        'role',
-        'aria-autocomplete',
-        'aria-haspopup',
-        'aria-expanded',
-        'aria-controls',
-        'aria-activedescendant',
-      ])
-        input?.removeAttribute(attr)
-      return
-    }
-    input.setAttribute('role', 'combobox')
-    input.setAttribute('aria-autocomplete', 'list')
-    input.setAttribute('aria-haspopup', 'listbox')
-    input.setAttribute('aria-expanded', 'true')
-    input.setAttribute('aria-controls', listId)
-    const skill = items[active]
-    if (skill) {
-      input.setAttribute('aria-activedescendant', `${listId}-${active}`)
-      document.getElementById(`${listId}-${active}`)?.scrollIntoView?.({ block: 'nearest' })
-    }
+    if (!input || !skills || !opened || disabled) return
+    const optionId = items[active] ? `${listId}-${active}` : undefined
+    const clear = bindComposerListbox(input, listId, optionId)
+    if (optionId) document.getElementById(optionId)?.scrollIntoView?.({ block: 'nearest' })
+    return clear
   }, [skills, textarea, opened, disabled, listId, items, active])
 
   if (!skills) return null

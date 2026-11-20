@@ -112,6 +112,17 @@ const CASES = [
     line: 'settings.enabled: false\n',
   },
   {
+    section: 'telemetry',
+    read: '_agnes/v1/admin.telemetry',
+    write: '_agnes/v1/admin.telemetry',
+    result: {
+      settings: { analyticsEnabled: true, traceUploadEnabled: true },
+      status: { disabledByEnv: false, endpointConfigured: true },
+    },
+    doc: { settings: { traceUploadEnabled: false } },
+    line: 'settings.traceUploadEnabled: true\n',
+  },
+  {
     section: 'search',
     read: '_agnes/v1/admin.search.get',
     write: '_agnes/v1/admin.search.save',

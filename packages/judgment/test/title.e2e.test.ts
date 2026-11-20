@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 import type { Socket } from 'node:net'
 import { expect, it, vi } from 'vitest'
-import { CALLER, judgmentDaemon, MODEL, PACKAGE, PROFILE } from './helpers/daemon.js'
+import { CALLER, judgmentDaemon, MODEL, PACKAGE, PROFILE, SYS1_MODEL } from './helpers/daemon.js'
 
 async function titleModel() {
   const sockets = new Set<Socket>()
@@ -150,6 +150,40 @@ it('refreshes an installed automatic title in the background and preserves an ex
     expect(model.titles).toHaveLength(beforeRevocation + 1)
   } finally {
     model.release()
+    try {
+      await fixture.close()
+    } finally {
+      await model.close()
+    }
+  }
+}, 240_000)
+
+it('selects Sys1 for automatic title judgment while Jev is configured', async () => {
+  const model = await titleModel()
+  const fixture = await judgmentDaemon({ modelServerUrl: model.url, sys1: true }).catch(async (error) => {
+    await model.close()
+    throw error
+  })
+  try {
+    await fixture.configure({ uses: { title: { enabled: true, refreshAfterPrompts: 1 } } })
+    const session = await fixture.session('sys1-title')
+    const title = async () =>
+      (await fixture.sdk.session.list()).items.find((row) => row.sessionId === session.id)?.title
+    await fixture.turn(session, 'Plan a synthetic garden layout.')
+    await vi.waitFor(async () => expect(await title()).toBe('Synthetic garden planning'), { timeout: 10_000 })
+    model.setTitle('Synthetic lunar navigation')
+    const second = await fixture.turn(session, 'Switch tasks to synthetic lunar navigation.')
+    expect(second.result.reason).toBe('completed')
+    await vi.waitFor(async () => expect(await title()).toBe('Synthetic lunar navigation'), {
+      timeout: 10_000,
+    })
+    expect(fixture.fake.seen).toHaveLength(1)
+    expect(fixture.fake.seen[0]?.body).toMatchObject({ model: SYS1_MODEL })
+    const usage = await session.projectUI()
+    expect(usage.nodes).toContainEqual(
+      expect.objectContaining({ kind: 'cost', caller: CALLER, label: 'judgment.title', model: SYS1_MODEL }),
+    )
+  } finally {
     try {
       await fixture.close()
     } finally {
