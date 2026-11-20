@@ -129,6 +129,34 @@ async function setup(
 const settle = async () => {
   await new Promise((resolve) => setTimeout(resolve, 10))
 }
+
+it('keeps voice and judgment accounts out of the chat account list and editor', async () => {
+  const voice = {
+    ...account('voice'),
+    label: 'StepFun voice',
+    providerId: 'openai-audio',
+    model: 'stepaudio-3-asr-max',
+    models: [{ id: 'stepaudio-3-asr-max', name: 'StepAudio', audioRole: 'transcribe' as const }],
+  }
+  const judgment = { ...account('sys1'), providerId: 'agnes-sys1' }
+  const h = await setup([account('work'), voice, judgment])
+  const chatButtons = () => [...h.doc.querySelectorAll('#config-accounts .config-account-select')]
+  await vi.waitFor(() => expect(chatButtons().map((row) => row.textContent?.trim())).toEqual(['work']))
+  await h.controller.openAccount(voice.route)
+  expect(h.doc.querySelector('[data-testid="account-page-edit"]')).toBeNull()
+  await h.controller.openAccount('account-work')
+  await vi.waitFor(() => expect(h.input('config-account-name').value).toBe('work'))
+  expect(h.input('config-base-url').value).toBe('https://work.example/v1')
+  h.controller.close()
+})
+
+it('shows the chat account welcome when only a voice account is saved', async () => {
+  const h = await setup([{ ...account('voice'), providerId: 'openai-audio' }])
+  expect(h.doc.getElementById('config-accounts')?.getAttribute('data-state')).toBe('empty')
+  await vi.waitFor(() => expect(h.doc.querySelector('.config-accounts-welcome')).not.toBeNull())
+  h.controller.close()
+})
+
 it.each(['resolve', 'reject'] as const)(
   'ignores a test that %ss after the account draft is discarded',
   async (outcome) => {

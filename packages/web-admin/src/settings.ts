@@ -48,6 +48,7 @@ import {
 } from './settings/dialog.js'
 import { reportAccountSaved } from './settings/feedback.js'
 import { modelSlotsPanel } from './settings/model-slots.js'
+import { isSideProvider } from './settings/side-models/model.js'
 import { sideModelsPanel } from './settings/side-models.js'
 
 export type SettingsControllerOptions = {
@@ -103,12 +104,12 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const accountDialogContext = optionalElement('config-account-context', 'p')
   const accountName = optionalElement('config-account-name', 'input')
   const accountBody = accountDialog?.querySelector<HTMLElement>('.account-dialog-body')
-  const accounts = () => configuration?.accounts
+  const chatAccounts = () => configuration?.accounts?.filter((row) => !isSideProvider(row.providerId))
   // Leaving the page by Back or the browser drops the draft, as closing the dialog did.
   const accountRestore = linkedAccountRestorer(
     ui.dialog,
     () => open(),
-    accounts,
+    chatAccounts,
     (id) => editAccount(id),
   )
   const accountPage = bindAccountPage(
@@ -144,7 +145,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   let editingId: string | undefined
   let removingId: string | undefined
   const selectedAccount = (): ConfigAccount | undefined =>
-    configuration?.accounts?.find((row) => row.accountId === editingId)
+    chatAccounts()?.find((row) => row.accountId === editingId)
   const defaultLabel = (base: string): string =>
     defaultAccountLabel(base, configuration?.accounts?.map((row) => row.label) ?? [])
   const savedProvider = () => {
@@ -494,7 +495,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       ])
       if (!current(token)) return
       configuration = snapshot
-      editingId = snapshot.defaultAccountId ?? snapshot.accounts?.[0]?.accountId
+      editingId = snapshot.defaultAccountId ?? chatAccounts()?.[0]?.accountId
       if (snapshot.accounts && !editingId) editingId = `acct-${crypto.randomUUID()}`
       if (accountName) accountName.value = selectedAccount()?.label ?? ''
       removingId = undefined
@@ -509,7 +510,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       say('')
       renderProviders()
       renderModels()
-      setLoadPhase(snapshot.accounts?.length ? 'ready' : 'empty')
+      setLoadPhase(chatAccounts()?.length ? 'ready' : 'empty')
     } catch (error) {
       if (current(token)) {
         setError(error)
@@ -768,11 +769,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
 
   /** Open an account page when settings provides one; otherwise use its dialog, falling back to open when showModal is unavailable. */
   const openAccountDialog = (): void => {
-    if (
-      !accountDialog ||
-      accountPage.open(!configuration?.accounts?.some((a) => a.accountId === editingId), editingId)
-    )
-      return
+    if (!accountDialog || accountPage.open(!selectedAccount(), editingId)) return
     setDialogOpen(accountDialog, true)
     accountFocusReturn = focusable(document.activeElement) ? document.activeElement : null
     ui.provider.focus()
@@ -816,7 +813,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       if (!current(token)) return
       configuration = saved
       removingId = undefined
-      if (!selectedAccount()) editingId = saved.defaultAccountId ?? saved.accounts?.[0]?.accountId
+      if (!selectedAccount()) editingId = saved.defaultAccountId ?? chatAccounts()?.[0]?.accountId
       if (!editingId) editingId = `acct-${crypto.randomUUID()}`
       if (accountName) accountName.value = selectedAccount()?.label ?? ''
       renderProviders()
@@ -863,13 +860,13 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     }
     if (!currentAccountList) return
     renderedAccountList = currentAccountList
-    if (loadPhase === 'ready' || loadPhase === 'empty')
-      loadPhase = configuration?.accounts?.length ? 'ready' : 'empty'
+    const accounts = chatAccounts() ?? []
+    if (loadPhase === 'ready' || loadPhase === 'empty') loadPhase = accounts.length ? 'ready' : 'empty'
     currentAccountList.dataset.state = loadPhase
     renderRegion(
       currentAccountList,
       createElement(SettingsAccounts, {
-        accounts: configuration?.accounts ?? [],
+        accounts,
         phase: loadPhase,
         ...accountWelcome(providers, tr, () => editAccount(), selectProvider, close),
         onRetry: () => ui.retry?.click(),
