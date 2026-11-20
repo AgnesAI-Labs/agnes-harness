@@ -4,6 +4,7 @@ import type { UiExtensionContext } from '@agnes/web-client'
 
 /** Built-in panel data supplied by the session shell; registrations confer no backend authority. */
 export type WorkbenchContext = {
+  terminalBackend?: { platform: string | undefined; remoteOrigin: string | undefined } | undefined
   session?: Session | undefined
   timeline?: UITimeline | undefined
   workspace?: { name: string; path: string }

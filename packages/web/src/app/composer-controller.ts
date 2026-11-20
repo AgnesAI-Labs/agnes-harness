@@ -15,6 +15,7 @@ import type { WorkbenchContext } from '@agnes/web-conversation/workbench'
 import { shortcutLabel, shortenHome, trackPageRequest } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
 import { loopIdentity, updateLoopPicker } from '../loop-picker.js'
+import { selectedRemoteOrigin } from '../remote-frontend.js'
 import { defaultPermissionLevel, defaultRecipe, permissionModeOf } from '../session-permission.js'
 import { webView } from '../view.js'
 import { renderWorkbench, unmountWorkbenchSoon } from '../workbench/dock.js'
@@ -133,9 +134,12 @@ export function createComposerController(
     | 'updateSidebar'
     | 'workspaceRows'
   >,
+  runtimePlatform?: () => string | undefined,
 ) {
   function renderControls(): void {
+    const remoteOrigin = selectedRemoteOrigin()
     const workbench: WorkbenchContext = {
+      terminalBackend: remoteOrigin ? { platform: runtimePlatform?.(), remoteOrigin } : undefined,
       session: context.draftingNew || context.sessionPending ? undefined : context.current,
       timeline: context.draftingNew || context.sessionPending ? undefined : context.projection,
       disabled:

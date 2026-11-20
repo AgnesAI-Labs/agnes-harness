@@ -7,6 +7,7 @@ import { fireEvent, within } from '@testing-library/dom'
 import { act } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, expect, it, vi } from 'vitest'
+import type { WorkbenchContext } from '../src/workbench/context.js'
 import { workbenchLocaleCatalog } from '../src/workbench/locales.js'
 import { sessionCount } from '../src/workbench/tab-counts.js'
 import { TerminalPanel } from '../src/workbench/terminal-panel.js'
@@ -27,7 +28,7 @@ const job = (patch: Partial<SessionJob> = {}): SessionJob => ({
   ...patch,
 })
 const hosts: HTMLElement[] = []
-function mount(jobs = [job()], selection?: unknown) {
+function mount(jobs = [job()], selection?: unknown, terminalBackend?: WorkbenchContext['terminalBackend']) {
   const jobsControl = vi.fn(
     async (input: { operation: string; shell?: 'zsh' | 'bash' | 'pwsh'; jobId?: string }) => {
       if (input.operation === 'open') {
@@ -67,7 +68,7 @@ function mount(jobs = [job()], selection?: unknown) {
       <TerminalPanel
         context={{
           t: createCatalogTranslator(workbenchLocaleCatalog, 'zh-CN'),
-          data: { session, disabled: false },
+          data: { session, disabled: false, terminalBackend },
           selection: next,
         }}
       />,
@@ -86,6 +87,31 @@ const click = (node: Element | null) => {
   if (!node) throw new Error('Missing control')
   flushSync(() => fireEvent.click(node))
 }
+
+it.each([
+  ['linux', 'bash'],
+  ['win32', 'pwsh'],
+  ['darwin', 'zsh'],
+] as const)(
+  'uses the %s cloud terminal default without inheriting the local shell',
+  async (platform, shell) => {
+    localStorage.setItem('agnes.workbench.terminal.shell', shell === 'pwsh' ? 'bash' : 'pwsh')
+    const { host, jobsControl } = mount([], undefined, {
+      platform,
+      remoteOrigin: 'https://cloud.example.com',
+    })
+    await vi.waitFor(() =>
+      expect(host.querySelector('[data-testid=terminal-new]')?.getAttribute('aria-label')).toContain(
+        `(${shell})`,
+      ),
+    )
+    click(host.querySelector('[data-testid=terminal-new]'))
+    await vi.waitFor(() =>
+      expect(jobsControl).toHaveBeenCalledWith({ operation: 'open', shell, columns: 100, rows: 30 }),
+    )
+    expect(localStorage.getItem('agnes.workbench.terminal.shell')).toBe(shell === 'pwsh' ? 'bash' : 'pwsh')
+  },
+)
 async function menu(tab: Element, keyboard = false) {
   flushSync(() =>
     keyboard ? fireEvent.keyDown(tab, { key: 'F10', shiftKey: true }) : fireEvent.contextMenu(tab),

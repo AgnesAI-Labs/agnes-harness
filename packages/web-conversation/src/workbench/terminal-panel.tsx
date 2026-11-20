@@ -13,6 +13,7 @@ import {
   terminalStorageKey as storageKey,
   type TerminalShell,
   terminalNames,
+  terminalShellScope,
   terminalShells,
 } from './terminal-preferences.js'
 import { TerminalTabs } from './terminal-tabs.js'
@@ -59,7 +60,7 @@ function attachments(id: string): string[] | undefined {
 }
 /** A panel owns only subscriptions and attached tabs. The session owns every process. */
 export function TerminalPanel({ context }: { context: UiExtensionContext }) {
-  const { session } = panelContext(context),
+  const { session, terminalBackend } = panelContext(context),
     { t } = context
   const sessionId = session?.id
   const [snapshot, setSnapshot] = useState<SessionJobsReadResult>({ jobs: [], completions: [] })
@@ -86,7 +87,12 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
     }
   }, [sessionId, active])
   const [refresh, setRefresh] = useState(0)
-  const [shell, setShell] = useState(readTerminalShell)
+  const shellScope = terminalShellScope(terminalBackend?.remoteOrigin, terminalBackend?.platform)
+  const [shellSelection, setShellSelection] = useState<{ scope: string; shell: TerminalShell }>()
+  const shell =
+    shellSelection?.scope === shellScope
+      ? shellSelection.shell
+      : readTerminalShell(shellScope, terminalBackend?.platform)
   const [names, setNames] = useState<Record<string, string>>({})
   const [terminate, setTerminate] = useState<{ job: SessionJob; detach: boolean }>()
   const removed = useRef(new Set<string>())
@@ -328,8 +334,8 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
         ? `${t('workbench.terminal.childAgent')} · ${row.id.slice(-6)}`
         : row.command)
   const create = (choice: TerminalShell) => {
-    setShell(choice)
-    rememberTerminalShell(choice)
+    setShellSelection({ scope: shellScope, shell: choice })
+    rememberTerminalShell(choice, shellScope)
     void control({ operation: 'open', shell: choice, columns: 100, rows: 30 })
   }
   const menuItems = [

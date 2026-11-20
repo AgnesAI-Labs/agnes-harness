@@ -243,6 +243,7 @@ export interface AppSessionContext {
 const sessionBinding = new SessionBindingOwner()
 const submissions = new SubmissionOwner(sessionBinding)
 const sessionActivity = new SessionActivityView()
+let runtimePlatform: string | undefined
 const appSessionContext: AppSessionContext = {
   sessionActivity,
   invalidateSessionRuntime: (id) => sessionActions.invalidateRuntime(id),
@@ -665,7 +666,7 @@ const appSessionContext: AppSessionContext = {
   },
 }
 const commandController = createCommandController(appSessionContext)
-const composerController = createComposerController(appSessionContext)
+const composerController = createComposerController(appSessionContext, () => runtimePlatform)
 const submissionController = createSubmissionController(appSessionContext)
 const sessionController = createSessionController(appSessionContext, sessionBinding)
 const turnController = createTurnController(appSessionContext)
@@ -1214,7 +1215,6 @@ function updateTitle(id: string, title: string): void {
   if (sessionBinding.session?.id === id) topbarRuntime.setTaskTitle(title)
   updateSidebar()
 }
-let runtimePlatform: string | undefined
 let sessionRows: PageSessionMeta['items'] = []
 let workspaceRows: WorkspaceEntry[] = []
 // The search panel's footer total follows the sidebar snapshot; the panel itself never reads pages.
