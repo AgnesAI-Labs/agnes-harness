@@ -46,7 +46,7 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-it('creates, rotates and renames write-only values; reviews changing references and confirms forced deletion', async () => {
+it('creates and renames write-only values without an inline replacement; reviews references and confirms forced deletion', async () => {
   let items: AdminCredentialMetadata[] = []
   let referenced = false
   const writes: Array<{ path: string; force?: boolean; confirm?: boolean }> = []
@@ -134,13 +134,8 @@ it('creates, rotates and renames write-only values; reviews changing references 
       })
     }
     await menu()
-    await click('credential-replace')
-    await fill('credential-value', canary)
-    const replacement = node<HTMLInputElement>('credential-value')
-    await click('credential-save')
-    expect(replacement.value === '').toBe(true)
-    expect(cleanDom()).toBe(true)
-    await menu()
+    expect(document.querySelector('[data-testid="credential-replace"]')).toBeNull()
+    expect(node('credential-delete')).not.toBeNull()
     await click('credential-rename')
     await fill('credential-label', 'Renamed key')
     await click('credential-save')

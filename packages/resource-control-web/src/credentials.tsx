@@ -233,7 +233,7 @@ export function CredentialsPage({
                 <Menu
                   label={t('menu', { name: item.label })}
                   trigger={<IconButton name="ellipsis" label={t('menu', { name: item.label })} />}
-                  items={(['rename', 'replace', 'delete'] as const).map((mode) => ({
+                  items={(['rename', 'delete'] as const).map((mode) => ({
                     id: mode,
                     label: t(mode),
                     testId: `credential-${mode}`,
