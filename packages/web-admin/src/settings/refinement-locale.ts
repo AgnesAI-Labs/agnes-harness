@@ -24,6 +24,9 @@ export const refinementSettingsCatalog: LocaleCatalog = {
     'refinement.model.error': 'Could not load the available models. Try again.',
     'refinement.model.empty': 'The service returned no chat models.',
     'refinement.model.unavailable': 'That model is no longer available. Reload the model list.',
+    'refinement.model.notOffered':
+      "The saved model {model} is not in the service's current list. It stays as saved; choose another model to change it.",
+    'refinement.model.notOfferedOption': '{model} (not offered now)',
     'refinement.model.retry': 'Reload models',
     'refinement.group.main': 'Task experience (RSI)',
     'refinement.enabled': 'Learn from finished work',
@@ -87,6 +90,9 @@ export const refinementSettingsCatalog: LocaleCatalog = {
     'refinement.model.error': '暂时无法读取可选模型，请重试。',
     'refinement.model.empty': '服务未返回可用于对话的模型。',
     'refinement.model.unavailable': '该模型已不可用，请重新读取模型列表。',
+    'refinement.model.notOffered':
+      '已保存的模型 {model} 不在该服务当前的列表中。它会按原样保留；如需更换，请选择其他模型。',
+    'refinement.model.notOfferedOption': '{model}（目前未提供）',
     'refinement.model.retry': '重新读取模型',
     'refinement.group.main': '任务经验（RSI）',
     'refinement.enabled': '从已完成的工作中学习',

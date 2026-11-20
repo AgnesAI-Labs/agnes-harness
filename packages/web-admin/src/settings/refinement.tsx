@@ -27,6 +27,11 @@ import { failureCode } from './side-models/model.js'
 /** The daemon's refinement switch: read it with its revision, save it against that revision. */
 export type RefinementSettingsApi = {
   createKey(label: string, value: string): Promise<string>
+  /**
+   * Deletes a service key the settings no longer point to. The credential store refuses a key that
+   * something else still uses; absent where this connection cannot delete credentials.
+   */
+  deleteKey?(ref: string): Promise<void>
   read(): Promise<RefinementSettingsSnapshot>
   models(): Promise<RefinementModelsResult>
   save(settings: RefinementSettings, expectedRevision: string): Promise<RefinementSettingsSaveResult>
@@ -206,6 +211,8 @@ function RefinementFields(props: {
   }, [api, credentialRef, baseUrl, modelReads, snapshot])
   // Read when a save is sent, so a save queued behind another one uses the revision the first returned.
   const revision = useRef(snapshot.revision)
+  // A replaced key, deleted once a save binds the key that replaced it: never while it is still bound.
+  const replaced = useRef<{ from: string; to: string } | undefined>(undefined)
   const autosave = useAutosave<RefinementSettings>({
     stored,
     equal: sameSettings,
@@ -219,6 +226,12 @@ function RefinementFields(props: {
         revision.current = saved.revision
         setStored(next)
         if (next.credentialRef !== stored.credentialRef) setMissing(false)
+        const retired = replaced.current
+        if (retired && next.credentialRef === retired.to) {
+          replaced.current = undefined
+          // A leaked key must not stay on disk or selectable. Its deletion is not this save's outcome.
+          void api.deleteKey?.(retired.from).catch(() => undefined)
+        }
       } catch (error) {
         // The conflict error names no current state: read it again and show it. The edit that lost is
         // dropped, and the save ends as a failure, not a success: a success would clear the banner
@@ -242,24 +255,27 @@ function RefinementFields(props: {
   const result = catalogue?.ref === credentialRef && catalogue?.baseUrl === baseUrl ? catalogue : undefined
   const models = result && 'models' in result ? result.models : undefined
   const modelError = result && 'error' in result ? result.error : undefined
-  const canEnable = models?.some(({ id }) => id === stored.model) === true
   const firstModel = models?.[0]?.id
-  const { set: saveSettings, busy, failed } = autosave
-  useEffect(() => {
-    if (firstModel && !canEnable && !locked && !busy && !failed)
-      saveSettings({ ...stored, model: firstModel }, 'now')
-  }, [firstModel, canEnable, locked, busy, failed, stored, saveSettings])
+  // The saved model is never changed for the person, even when the service stops offering it: reviews
+  // are billed to their key. Only with no model saved yet does the form propose the first one, and the
+  // proposal is saved only with their own choice or their switching learning on.
+  const notOffered = models !== undefined && !!stored.model && !models.some(({ id }) => id === stored.model)
+  const proposed = stored.model ? undefined : firstModel
+  const canEnable = models !== undefined && !notOffered && (stored.model ?? proposed) !== undefined
+  const { set: saveSettings, busy } = autosave
   const modelStatus = !credentialRef
     ? 'refinement.model.needsKey'
     : (modelError ??
       (models
-        ? firstModel
-          ? 'refinement.model.hint'
-          : 'refinement.model.empty'
+        ? !firstModel
+          ? 'refinement.model.empty'
+          : notOffered
+            ? 'refinement.model.notOffered'
+            : 'refinement.model.hint'
         : 'refinement.model.loading'))
   const change = (patch: Partial<Pick<RefinementSettings, 'enabled' | 'mode' | 'model'>>) => {
     if (!credentialRef || locked || busy) return
-    const { enabled = stored.enabled, mode = stored.mode, model = stored.model } = patch
+    const { enabled = stored.enabled, mode = stored.mode, model = stored.model ?? proposed } = patch
     if (enabled) {
       if (model) saveSettings({ ...stored, enabled, mode, credentialRef, model }, 'now')
     } else {
@@ -274,6 +290,8 @@ function RefinementFields(props: {
       const credentialRef = await api.createKey(t('refinement.key.label'), keyInput.trim())
       setKeyInput('')
       setEditingKey(false)
+      if (stored.credentialRef && stored.credentialRef !== credentialRef)
+        replaced.current = { from: stored.credentialRef, to: credentialRef }
       // Verify the new binding before learning can be turned back on.
       saveSettings({ ...stored, enabled: false, credentialRef }, 'now')
     } catch {
@@ -353,18 +371,26 @@ function RefinementFields(props: {
           )}
         </SettingsItem>
         {keyError && <Banner tone="error">{t('refinement.key.error')}</Banner>}
-        <SettingsItem label={t('refinement.model')} description={t(modelStatus)}>
+        <SettingsItem
+          label={t('refinement.model')}
+          description={t(modelStatus, { model: stored.model ?? '' })}
+        >
           <SettingsSelect
             id="refinement-model"
             data-testid="refinement-model"
             aria-label={t('refinement.model')}
-            value={models?.some(({ id }) => id === settings.model) ? settings.model : ''}
+            value={(models && (settings.model ?? proposed)) || ''}
             disabled={!firstModel || locked || busy}
             onChange={(event) => change({ model: event.target.value })}
           >
             <option value="" disabled>
               {t('refinement.model.placeholder')}
             </option>
+            {notOffered && stored.model && (
+              <option value={stored.model} disabled>
+                {t('refinement.model.notOfferedOption', { model: stored.model })}
+              </option>
+            )}
             {models?.map(({ id, name }) => (
               <option key={id} value={id}>
                 {name === id ? id : `${name} (${id})`}
