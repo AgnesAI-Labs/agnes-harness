@@ -155,7 +155,7 @@ describe('a skill hidden from the model, through the real host bridge', () => {
     dirs.push(dataDir)
     const store = new RefinementSettingsStore(dataDir, 'p')
     store.save(
-      { credentialRef: reviewCredential(dataDir), model: reviewModel, enabled: true, mode: 'auto' },
+      { credentialRef: await reviewCredential(dataDir), model: reviewModel, enabled: true, mode: 'auto' },
       store.read().revision,
     )
     let flags: Flags = USER_ONLY

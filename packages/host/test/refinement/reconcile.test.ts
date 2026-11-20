@@ -250,10 +250,10 @@ describe('reconciling saved paragraphs with the memory file', () => {
 })
 
 describe('reconciling when a session opens', () => {
-  const enable = (dataDir: string, enabled: boolean) => {
+  const enable = async (dataDir: string, enabled: boolean) => {
     const store = new RefinementSettingsStore(dataDir, 'p')
     store.save(
-      { credentialRef: reviewCredential(dataDir), model: reviewModel, enabled, mode: 'auto' },
+      { credentialRef: await reviewCredential(dataDir), model: reviewModel, enabled, mode: 'auto' },
       store.read().revision,
     )
   }
@@ -281,7 +281,7 @@ describe('reconciling when a session opens', () => {
 
   it('a workspace that never saved anything has no registry file after a session opens', async () => {
     const dataDir = scratch()
-    enable(dataDir, true)
+    await enable(dataDir, true)
     const host = createRefinementHost(dataDir, 'p', clock)
     const opener = vi.fn(() => undefined)
     host.workspace.bindMemory(opener)
@@ -294,7 +294,7 @@ describe('reconciling when a session opens', () => {
 
   it('with refinement on, opening a session reconciles its workspace once at a time', async () => {
     const ws = workspace()
-    enable(ws.dataDir, true)
+    await enable(ws.dataDir, true)
     ws.seed(paragraph(A, LESSON))
     await ws.write('Human line.\n')
     const host = createRefinementHost(ws.dataDir, 'p', clock)
@@ -309,7 +309,7 @@ describe('reconciling when a session opens', () => {
     // The workspace memory the Host opens for background work is the same provider, keyed for the workspace.
     expect(host.workspace.openWorkspaceMemory(ws.root)).toBeDefined()
     // Switching refinement off stops it.
-    enable(ws.dataDir, false)
+    await enable(ws.dataDir, false)
     ws.seed(paragraph(B, 'Keep answers short.'))
     expect(await host.workspace.reconcile(ws.root)).toEqual([])
     expect(ws.stateOf(B)).toBe('active')

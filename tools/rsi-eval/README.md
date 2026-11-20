@@ -95,6 +95,11 @@ request's catalogue.
 `agh/run-agh.ts --arms off,on,oracle` adds a third arm to the runs. The default is still `on,off`, and
 `--settings` (on and off only) is the same option under its older name.
 
+The `on` arm also requires `RSI_EVAL_REVIEW_API_KEY` and `RSI_EVAL_REVIEW_MODEL` for the dedicated
+task-experience gateway, `https://api.llm.sg/v1`. The runner stores the review key in the run home's
+private credential store while the host is open and removes it on close. The other arms use only the
+conversation credentials from `keyEnv`.
+
 - `oracle` is `off` (refinement off) plus one paragraph, the task's own `trap.note`, written to the
   second session's workspace memory after the first session ends and before the second one opens. It goes
   through the memory provider's own edit of `MEMORY.md`, the one the memory page makes, so the agent
@@ -139,6 +144,7 @@ a preflight call. It then prints the checklist of
 
 ```
 export <the variable your run config names as "keyEnv">=...
+export RSI_EVAL_REVIEW_API_KEY=... RSI_EVAL_REVIEW_MODEL=...
 RSI_EVAL_CONFIG=<run-config.json> RSI_EVAL_OUT=<a folder that does not exist yet> tools/rsi-eval/scripts/smoke-v2.sh
 ```
 
@@ -230,8 +236,9 @@ every task.
   in every resample.
 - **Review calls.** The `on` arm reviews after every prompt, as the Prime runs do. Rows marked "all lanes"
   include those calls; rows marked "session work only" leave them out (the refinement lane of the ledger),
-  and the report prints the review calls' own mean per run. The effect of the saved lesson alone is in the
-  second kind of row.
+  and the report prints the review calls' own mean per run. For AGH, review request and token counts come
+  from the ledger. The dedicated gateway's billed charges are absent from the dollar totals. The effect
+  of the saved lesson alone is in the second kind of row.
 
 ## Long tasks, milestones and the request cap
 
@@ -258,8 +265,9 @@ prompt. No category has a floor of tasks.
   that many requests of a run and answers the rest with HTTP 400 and a body that says so (not sent, not
   usage, and not a status the infrastructure check takes for an upstream failure); the runner then aborts the
   turn and records `capped` with the session and prompt. Capped runs are listed apart in the report and left
-  out of every mean; they appear in the milestone curves, which stop at the cap. The cap counts every request
-  of the run, the review calls included. The session timeout still applies; size it to the cap.
+  out of every mean; they appear in the milestone curves, which stop at the cap. The cap covers requests
+  through the proxy. AGH's dedicated review calls go directly to the task-experience gateway. The session
+  timeout still applies; size it to the cap.
 
 ### The long tasks
 

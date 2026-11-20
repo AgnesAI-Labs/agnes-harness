@@ -966,7 +966,7 @@ describe('the assembled host', () => {
     const { RefinementSettingsStore } = await import('@agnes/host-infrastructure/refinement-settings')
     const store = new RefinementSettingsStore(ws.dataDir, 'p')
     store.save(
-      { credentialRef: reviewCredential(ws.dataDir), model: reviewModel, enabled: true, mode: 'auto' },
+      { credentialRef: await reviewCredential(ws.dataDir), model: reviewModel, enabled: true, mode: 'auto' },
       store.read().revision,
     )
     const host = createRefinementHost(ws.dataDir, 'p', ws.clock)

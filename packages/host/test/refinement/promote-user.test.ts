@@ -500,6 +500,7 @@ describe('the user memory registry', () => {
     const h = await home()
     // Each profile with a data directory of its own (one in the standard place, one elsewhere).
     const elsewhere = join(h.dir, 'custom-data')
+    const credentialRef = await reviewCredential(h.dataDir, h.dir)
     const hosts = [
       [h.dataDir, PROFILE_A],
       [elsewhere, PROFILE_B],
@@ -507,7 +508,7 @@ describe('the user memory registry', () => {
       const store = new RefinementSettingsStore(dataDir as string, profile as string, h.dir)
       store.save(
         {
-          credentialRef: reviewCredential(dataDir as string, h.dir),
+          credentialRef,
           model: reviewModel,
           enabled: true,
           mode: 'auto',

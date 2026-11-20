@@ -1,38 +1,20 @@
-import { closeSync, existsSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname } from 'node:path'
 import { DEFAULT_REFINEMENT_BASE_URL } from '@agnes/distribution/refinement-model'
-import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
+import { createCredentialStore } from '@agnes/host-infrastructure/adapters/credential-store'
 import { expect, vi } from 'vitest'
 
 export const syntheticKey = 'synthetic-review-service-key'
 export const reviewModel = 'company/review-a'
-export function reviewCredential(
+export async function reviewCredential(
   dataDir: string,
   home = basename(dataDir) === 'data' ? dirname(dataDir) : dataDir,
-) {
-  const name = '00000000-0000-4000-8000-000000000001'
-  const root = join(home, 'secrets')
-  for (const dir of [home, root, join(root, 'generic')]) if (!existsSync(dir)) createPrivateDirectorySync(dir)
-  const file = join(root, 'generic', name)
-  if (!existsSync(file)) {
-    const fd = createPrivateFileSync(file)
-    try {
-      writeFileSync(
-        fd,
-        JSON.stringify({
-          version: 1,
-          kind: 'api-key',
-          provider: 'generic',
-          label: 'Review fixture',
-          createdAt: new Date(0).toISOString(),
-          value: syntheticKey,
-        }),
-      )
-    } finally {
-      closeSync(fd)
-    }
-  }
-  return `secret://generic/${name}`
+): Promise<string> {
+  const ref = 'secret://generic/00000000-0000-4000-8000-000000000001'
+  await createCredentialStore({ root: home }).putGeneric(ref, syntheticKey, {
+    label: 'Review fixture',
+    createdAt: new Date(0).toISOString(),
+  })
+  return ref
 }
 
 type ReviewGateway = { baseUrl: string; loopback: string; key: string }

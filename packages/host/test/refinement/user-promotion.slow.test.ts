@@ -184,7 +184,7 @@ async function twoWorkspaces(
   }
   const settings = new RefinementSettingsStore(dataDir, PROFILE, dataDir)
   settings.save(
-    { credentialRef: reviewCredential(dataDir, dataDir), model: reviewModel, enabled, mode: 'auto' },
+    { credentialRef: await reviewCredential(dataDir, dataDir), model: reviewModel, enabled, mode: 'auto' },
     settings.read().revision,
   )
   const planner = [lesson, confirm(AGAIN), confirm(ONCE_MORE)]

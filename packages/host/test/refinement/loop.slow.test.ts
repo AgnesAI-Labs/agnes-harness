@@ -154,10 +154,10 @@ type Fixture = {
   dataDir: string
 }
 
-const saveSwitch = (dataDir: string, enabled: boolean) => {
+const saveSwitch = async (dataDir: string, enabled: boolean) => {
   const store = new RefinementSettingsStore(dataDir, PROFILE, dataDir)
   store.save(
-    { credentialRef: reviewCredential(dataDir, dataDir), model: reviewModel, enabled, mode: 'auto' },
+    { credentialRef: await reviewCredential(dataDir, dataDir), model: reviewModel, enabled, mode: 'auto' },
     store.read().revision,
   )
 }
@@ -195,7 +195,7 @@ async function withHost(
   } finally {
     closeSync(credential)
   }
-  if (o.switchOn) saveSwitch(o.dataDir, true)
+  if (o.switchOn) await saveSwitch(o.dataDir, true)
   let next = 0
   const capture = await startWireCapture(async (body) => {
     if (JSON.stringify(body).includes(PLANNER_MARK)) throw new Error('Review reached the chat provider')
@@ -362,7 +362,7 @@ describe('the refinement loop in an assembled host', () => {
         async ({ session, planner, main, alternatePlanner }) => {
           await turn(session, 'Check the release notes.')
           const store = new RefinementSettingsStore(dataDir, PROFILE, dataDir)
-          const credentialRef = reviewCredential(dataDir, dataDir)
+          const credentialRef = await reviewCredential(dataDir, dataDir)
           const { revision } = store.save(
             { enabled: false, mode: 'manual', credentialRef },
             store.read().revision,
@@ -604,8 +604,8 @@ describe('the refinement loop in an assembled host', () => {
     '%s: with refinement switched off the same script writes and sends nothing of it',
     async (api) => {
       await withDataDir(async (dataDir) => {
-        saveSwitch(dataDir, true)
-        saveSwitch(dataDir, false)
+        await saveSwitch(dataDir, true)
+        await saveSwitch(dataDir, false)
         await withHost(
           { api, dataDir, switchOn: false, steps: loopSteps(), plan: () => NOTHING_TO_KEEP },
           async ({ session, main, planner }) => {
@@ -639,7 +639,7 @@ describe('the refinement loop in an assembled host', () => {
     async (api) => {
       await withDataDir(async (dataDir) => {
         await loop(api, dataDir)
-        saveSwitch(dataDir, false)
+        await saveSwitch(dataDir, false)
         // The baseline session reads this very switch: saved, now off, and not the never-saved default.
         const saved = new RefinementSettingsStore(dataDir, BASELINE_PROFILE).read()
         const neverSaved = new RefinementSettingsStore(join(dataDir, 'never-saved'), BASELINE_PROFILE).read()

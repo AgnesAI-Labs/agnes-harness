@@ -212,10 +212,10 @@ describe('refinement experience on the provider wire', () => {
     '%s turning it on reaches the sessions opened after it; one already open keeps its bytes, also reopened',
     async (api) => {
       let dataDir = ''
-      const switchTo = (enabled: boolean) => {
+      const switchTo = async (enabled: boolean) => {
         const settings = new RefinementSettingsStore(dataDir, 'wire-refinement')
         settings.save(
-          { credentialRef: reviewCredential(dataDir), model: reviewModel, enabled, mode: 'manual' },
+          { credentialRef: await reviewCredential(dataDir), model: reviewModel, enabled, mode: 'manual' },
           settings.read().revision,
         )
       }
@@ -223,13 +223,13 @@ describe('refinement experience on the provider wire', () => {
         api,
         async (open, requests, restart, host) => {
           await turn(open, 'First question')
-          switchTo(true)
+          await switchTo(true)
           await turn(open, 'Second question')
           const fresh = await host.createSession({ cwd: open.d.cwd, key: 'wire-refinement-after' })
           await turn(fresh, 'First question')
-          switchTo(false)
+          await switchTo(false)
           await turn(fresh, 'Second question')
-          switchTo(true)
+          await switchTo(true)
           const reopened = await restart()
           await turn(reopened, 'Third question')
           expect(requests).toHaveLength(5)
@@ -339,7 +339,7 @@ describe('refinement experience on the provider wire', () => {
       const DAY = 86_400_000
       const LESSON = 'Saved lesson: run pnpm build before the tests.'
       const ID = 'ra000000001'
-      let switchTo: (enabled: boolean) => void = () => undefined
+      let switchTo: (enabled: boolean) => Promise<void> = async () => undefined
       vi.useFakeTimers({ toFake: ['Date'] })
       vi.setSystemTime(T0)
       try {
@@ -348,9 +348,9 @@ describe('refinement experience on the provider wire', () => {
           async (session, requests, _restart, host) => {
             // A session opened while the switch was off runs without task experience: the saved paragraph
             // is in neither its memory note nor any note of its own, and nothing is recorded for it.
-            switchTo(false)
+            await switchTo(false)
             const older = await host.createSession({ cwd: session.d.cwd, key: 'wire-refinement-older' })
-            switchTo(true)
+            await switchTo(true)
             const root = session.workspaceRoot
             const admin = host.memory(root, 'admin')
             if (!admin) throw new Error('no memory provider assembled')
@@ -394,15 +394,20 @@ describe('refinement experience on the provider wire', () => {
             expect(changes.map((data) => data.reason)).toEqual(['experience-snapshot', 'workspace-memory'])
             expect(changes[1]).toEqual({ reason: 'workspace-memory', inForce: 0, expired: 1 })
           },
-          (dataDir) => {
-            switchTo = (enabled) => {
+          async (dataDir) => {
+            switchTo = async (enabled) => {
               const settings = new RefinementSettingsStore(dataDir, 'wire-refinement')
               settings.save(
-                { credentialRef: reviewCredential(dataDir), model: reviewModel, enabled, mode: 'manual' },
+                {
+                  credentialRef: await reviewCredential(dataDir),
+                  model: reviewModel,
+                  enabled,
+                  mode: 'manual',
+                },
                 settings.read().revision,
               )
             }
-            switchTo(true)
+            await switchTo(true)
             seed = (root) => {
               const registry = new RefinementRegistry(dataDir, root, Date.now)
               registry.update((draft) => {

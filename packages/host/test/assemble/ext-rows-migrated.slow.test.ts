@@ -27,17 +27,17 @@ const packageDirs = {
 const NOT_MIGRATED: string[] = []
 
 /** Saves the default profile's refinement switch through the same store the settings RPC uses. */
-const setRefinement = (dataDir: string, enabled: boolean): void => {
+const setRefinement = async (dataDir: string, enabled: boolean): Promise<void> => {
   const store = new RefinementSettingsStore(dataDir, 'local-dev')
   store.save(
-    { credentialRef: reviewCredential(dataDir), model: reviewModel, enabled, mode: 'manual' },
+    { credentialRef: await reviewCredential(dataDir), model: reviewModel, enabled, mode: 'manual' },
     store.read().revision,
   )
 }
 /** A data directory whose default profile has refinement switched on. */
-const refinementOn = (): string => {
+const refinementOn = async (): Promise<string> => {
   const dataDir = scratch()
-  setRefinement(dataDir, true)
+  await setRefinement(dataDir, true)
   return dataDir
 }
 const REFINE_ON = ['tool:harness_propose', 'tool:harness_refine', 'tool:harness_inspect']
@@ -277,7 +277,7 @@ describe('a third party replaces a migrated builtin and gives way', () => {
       const body = tools.map((n) => `ctx.tools.register(tool('${n}'))`).join('\n')
       const h = await pluginHost(
         pluginSource(body, 'plugin', row),
-        id === 'agnes/refine' ? { dataDir: refinementOn() } : {},
+        id === 'agnes/refine' ? { dataDir: await refinementOn() } : {},
       )
       const before = h.host.kernel.tools.resolve(tools[0] as string)?.source.source
       expect(before).toBe(id)
@@ -422,13 +422,13 @@ describe('a third party replaces a migrated builtin and gives way', () => {
   ] as const)
     it(`keeps the refine tool set fixed when the switch goes ${from ? 'on' : 'off'} -> ${to ? 'on' : 'off'} and the row remounts`, async () => {
       const dataDir = scratch()
-      if (from) setRefinement(dataDir, true)
+      if (from) await setRefinement(dataDir, true)
       const row = 'ext:agnes/refine'
       const h = await pluginHost(pluginSource(`ctx.tools.register(tool('harness_propose'))`, 'plugin', row), {
         dataDir,
       })
       expect(h.host.kernel.registrations('agnes/refine')).toEqual(REFINE_ON)
-      setRefinement(dataDir, to)
+      await setRefinement(dataDir, to)
       for (const disabled of [false, true]) {
         const report = await h.host.applyRuntimeTarget(targetOf([pluginRow(row, 'plugin', disabled)]))
         await settle()
@@ -442,7 +442,7 @@ describe('a third party replaces a migrated builtin and gives way', () => {
   it('keeps refine single-instance when unrelated rows come and go around it', async () => {
     const h = await pluginHost(
       pluginSource(`ctx.tools.register(tool('unrelated_tool'))`, 'plugin', 'ext:acme/x'),
-      { dataDir: refinementOn() },
+      { dataDir: await refinementOn() },
     )
     expect(h.host.kernel.registrations('agnes/refine')).toEqual(REFINE_ON)
     for (const disabled of [false, true, false]) {

@@ -9,6 +9,7 @@
 //   pnpm --filter @agnes/host build:native
 //   pnpm --filter @agnes/system-node build:native
 //   export RSI_EVAL_API_KEY=...            # the variable named by keyEnv in the run config
+//   export RSI_EVAL_REVIEW_API_KEY=... RSI_EVAL_REVIEW_MODEL=...  # for the `on` arm
 //   pnpm exec tsx tools/rsi-eval/agh/run-agh.ts --config <run-config.json> --out <dir> \
 //     [--tasks a,b] [--reps 3] [--arms off,on,oracle] [--tasks-dir <dir>]
 //   pnpm exec tsx tools/rsi-eval/report.ts --run-dir <dir> --config <run-config.json>
@@ -27,8 +28,8 @@
 // sessions use, copied to <out>/<runId>/work (and work-b for fixture-b) at the end. Sessions that use
 // the same fixture share its workspace, so the second session of a cross-session task is in the same
 // project; the second session of a cross-workspace task is in another one, under the same home. The
-// host is embedded in this process. Model traffic goes through the usage proxy at /run/<runId>/ like
-// the Prime runs, so report.ts prices both the same way.
+// host is embedded in this process. Conversation traffic goes through the usage proxy at /run/<runId>/
+// like the Prime runs. Review traffic goes directly to the deployment's task-experience gateway.
 //
 // Memory, in both settings alike: every workspace's memory is on in automatic mode and reads the
 // user memory (EVAL_MEMORY), so on and off differ only in refinement.
@@ -71,9 +72,8 @@
 // without a goal expires. So the tasks put a plain user correction in the second prompt of the
 // first session; a lesson can quote it, which a session-level lesson needs.
 //
-// The key: read only from the environment variable named by keyEnv, never written to a file or
-// printed. It is handed to the host in this process's environment as the secret the route refers
-// to; commands the agent runs get a fixed small environment without it.
+// Keys come from the environment. The conversation route uses an environment secret. The review
+// key is staged in the run home's private credential store for the lifetime of the embedded host.
 //
 // Cost: every prompt is a full agent turn on the main model; with refinement on, each prompt adds
 // one review (input up to about 24,000 tokens, output up to 4,096, at most 524,288 tokens per
@@ -126,6 +126,8 @@ export const PROFILE = 'local-dev'
 export const SECRET_REF = 'secret://rsi-eval/key'
 /** How the host's environment secrets read `SECRET_REF`: AGNES_SECRET_<NS>_<NAME>, upper case. */
 export const SECRET_ENV = 'AGNES_SECRET_RSI_EVAL_KEY'
+export const REVIEW_KEY_ENV = 'RSI_EVAL_REVIEW_API_KEY'
+export const REVIEW_MODEL_ENV = 'RSI_EVAL_REVIEW_MODEL'
 /** Longest wait for one manual review to finish: the manual planner deadline (90 s) and some room. */
 export const REFINE_WAIT_MS = 180_000
 const CHECK_TIMEOUT_MS = 120_000
@@ -183,7 +185,7 @@ export interface AghSession {
   settled(runId: string, ms: number): Promise<string | undefined>
   /**
    * Whether refinement is live in this session, without a model call (a read of its experience entries):
-   * refused, with the reason, exactly when a review would be. For `on` runs that send no manual reviews.
+   * refused with the reason if the read cannot run. For `on` runs that send no manual reviews.
    */
   liveness?(): Promise<{ live: true } | { refused: string }>
   close(): Promise<void>
@@ -393,6 +395,15 @@ export function requireKey(cfg: RunConfig, env: Record<string, string | undefine
       `environment variable ${cfg.keyEnv} (run-config keyEnv) is not set in this shell; it must hold the model key`,
     )
   return key
+}
+
+/** The dedicated review binding for an enabled run. */
+export function requireReviewService(env: LaunchInput['env']): { key: string; model: string } {
+  const key = env[REVIEW_KEY_ENV]?.trim()
+  if (!key) throw new Error(`set ${REVIEW_KEY_ENV} to the task-experience service key for the on arm`)
+  const model = env[REVIEW_MODEL_ENV]?.trim()
+  if (!model) throw new Error(`set ${REVIEW_MODEL_ENV} to a task-experience model for the on arm`)
+  return { key, model }
 }
 
 /** The run config's route name must be a valid AGH route name. */
@@ -810,7 +821,7 @@ async function runSession(host: AghHost, plan: SessionPlan): Promise<SessionEnd>
     if (setting === 'on' && plan.protocol === 'triggers') {
       if (!session.liveness) throw new Error('this host cannot check that refinement is live')
       const live = await session.liveness()
-      if ('refused' in live && NOT_ACTIVE.has(live.refused))
+      if ('refused' in live)
         throw new Error(
           `refinement is not active in the run host (${live.refused}); the "on" run would measure nothing`,
         )
@@ -903,6 +914,7 @@ async function main(argv: string[]): Promise<void> {
   const cfg = readConfig(args.config)
   checkRoute(cfg)
   const key = requireKey(cfg, process.env)
+  const review = args.settings.includes('on') ? requireReviewService(process.env) : undefined
 
   const [{ loadSuite }, { startUsageProxy }, { launchHost }] = await Promise.all([
     import('../suite.js'),
@@ -942,7 +954,7 @@ async function main(argv: string[]): Promise<void> {
     upstream: cfg.upstream,
     port: cfg.proxyPort,
     logFile: join(out, 'usage.jsonl'),
-    redact: [key],
+    redact: review ? [key, review.key] : [key],
   })
   // The host resolves the route's secret from this process's environment; it is never written down.
   process.env[SECRET_ENV] = key

@@ -70,7 +70,7 @@ async function setUp(enabled: boolean) {
   mkdirSync(workspace)
   const settings = new RefinementSettingsStore(dataDir, PROFILE, dataDir)
   settings.save(
-    { credentialRef: reviewCredential(dataDir, dataDir), model: reviewModel, enabled, mode: 'auto' },
+    { credentialRef: await reviewCredential(dataDir, dataDir), model: reviewModel, enabled, mode: 'auto' },
     settings.read().revision,
   )
   const { host } = await createTestHost({
@@ -327,7 +327,12 @@ async function e2e(
   }
   const settings = new RefinementSettingsStore(dataDir, E2E_PROFILE, dataDir)
   settings.save(
-    { credentialRef: reviewCredential(dataDir, dataDir), model: reviewModel, enabled: true, mode: 'auto' },
+    {
+      credentialRef: await reviewCredential(dataDir, dataDir),
+      model: reviewModel,
+      enabled: true,
+      mode: 'auto',
+    },
     settings.read().revision,
   )
   const queue: WireReply[] = []
