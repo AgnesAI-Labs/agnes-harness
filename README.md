@@ -17,7 +17,7 @@ English | [简体中文](README.zh-CN.md)
 <img src="https://img.shields.io/badge/node-%E2%89%A5%2024.10-339933" alt="Node.js 24.10 or later" />
 <img src="https://img.shields.io/badge/checks-macOS%20%C2%B7%20Linux-3b8fff" alt="Maintained checks: macOS and Linux" />
 
-[Quickstart](docs/guide/quickstart.md) · [Architecture](#architecture) · [Write a plugin](#write-a-plugin) · [Try the examples](docs/guide/demo.md) · [Documentation](docs/README.md)
+[Quickstart](docs/guide/quickstart.md) · [Architecture](#architecture) · [Write a plugin](#write-a-plugin) · [Try the examples](docs/guide/demo.md) · [Hackathon projects](docs/community/hackathons/README.md) · [Documentation](docs/README.md)
 
 Developer preview (pre-alpha) · [Source build](#run-from-source) · [Apache-2.0](LICENSE)
 
@@ -50,6 +50,7 @@ Taking AI into a real deployment is rarely about the model alone. It is about th
 - [What AGH does for a deployment team](#what-agh-does-for-a-deployment-team)
 - [Write a plugin](#write-a-plugin)
 - [Demo videos and reproduction](#demo-videos-and-reproduction)
+- [Community hackathons](#community-hackathons)
 - [Public benchmark](#public-benchmark)
 - [Run from source](#run-from-source)
 - [New product and old environments](#new-product-and-old-environments)
@@ -197,6 +198,10 @@ The same template also starts a tool with a panel, an agent loop, a model adapte
 Have the agent send the hopper to find an astronaut, then coordinate the robot and airlock to bring them back. AGH runs the task, AgnesHub calls devices through MHS, and MOS returns camera images, poses and other observations. The video was recorded on the previous release; reproduction steps return with the MHS plugin.
 
 The [demo guide](docs/guide/demos.md) lists the runnable product demos and developer scripts. They use fresh isolated homes and a deterministic local model by default, and send no external business messages.
+
+## Community hackathons
+
+Explore the [hackathon project archive](docs/community/hackathons/README.md). Each edition links to its projects' own GitHub repositories.
 
 ## Public benchmark
 
