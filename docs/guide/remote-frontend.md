@@ -66,7 +66,7 @@ To use a deployment-specific discovery broker, set `AGH_LLMSG_API_BASE_URL` in *
 
 A's daemon sends `POST /llmsg/api/agh/connection` with body `{}` and the managed LLMSG Key as a bearer credential. The broker discovers an existing sandbox and returns its bound HTTPS origin and a platform traffic token. A keeps this token in its daemon and launcher and uses it to relay authorized sandbox traffic. A rejected Key needs credential correction. HTTP 409 means the sandbox is unavailable. For HTTP 429, wait for the rate limit to clear before reconnecting.
 
-The workbench address retains the local page or settings section and the workspace selected for a local draft or named by a Skills link. Reload restores that destination. Browser Back and Forward revisit the local destination or cloud conversation in the address. Reloading a new cloud conversation returns to its draft view. Returning to Local restores the page you left, and reconnecting to the same cloud deployment restores its selected conversation.
+The workbench address retains the local page or settings section and the workspace selected for a local draft or named by a Skills link. Reload restores that destination. Browser Back and Forward revisit the local destination or cloud conversation in the address. Reloading a new cloud conversation returns to its draft view. Returning to Local restores the page you left, including after reloading while Cloud is selected. Reconnecting to the same cloud deployment restores its selected conversation.
 
 Disconnecting clears the active connection while preserving the stored credential. Local sessions remain available during cloud interruption. Browser private-network, mixed-content and certificate rules apply. Use a compatible secure endpoint for HTTPS pages.
 

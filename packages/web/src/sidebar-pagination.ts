@@ -416,9 +416,16 @@ export function createSidebarPagination(
             await restorePages(group, pages)
         }
       } else {
+        if (group.items.length > PAGE_ROWS || group.stale) {
+          // A failed staged refresh retained the old rows and cursor together. Rebuild the opened
+          // pages through the same staging path instead of appending to that older snapshot.
+          group.stale = true
+          await refresh()
+          return
+        }
         await load(group, !group.stale && group.retryAppend === true)
         // 追加页遇到过期游标时同样自动重读首页，不把「请重新加载」抛给用户。
-        if (group.stale && group.opened) await load(group)
+        if (group.stale && group.opened) await refresh()
       }
     },
     /** A locally persisted message must fence a page already in flight before the summary arrives. */

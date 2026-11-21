@@ -357,6 +357,12 @@ it('v3 home entries preserve local routes across cloud and session switches', as
   holdCloudStartup = false
   await cloud.getByRole('button', { name: 'Complete cloud startup' }).click()
   await expect(cloud.locator('output')).toHaveText('cloud-b')
+  // Reloading Cloud must also retain the local destination, without relying on its history URL.
+  await localTab.click()
+  await expect(local.getByTestId('home-page-rsi')).toBeVisible()
+  await expect.poll(() => query('page')).toBe('rsi')
+  await page.goBack()
+  await expect(cloud.locator('output')).toHaveText('cloud-b')
   await page.goBack()
   await expect(cloud.locator('output')).toHaveText('cloud-a')
   expect(query('session')).toBe('cloud-a')

@@ -485,6 +485,32 @@ it('opens the created session group without rereading a freshly loaded first pag
   expect(s.ui.snapshot().groups[1]).toMatchObject({ opened: true, loaded: true, loading: false })
 })
 
+it.each(['first page', 'continuation'] as const)(
+  'keeps expanded rows and retries every page after a failed refresh %s',
+  async (failedPage) => {
+    const s = setup()
+    await s.ui.refresh()
+    await s.ui.action('a', 'more')
+    const before = s.ui.rows()
+    s.revision('v2')
+    if (failedPage === 'continuation') s.list.mockImplementationOnce(s.list.getMockImplementation()!)
+    s.list.mockRejectedValueOnce(new Error('offline'))
+    await s.ui.refresh()
+    expect(s.ui.rows()).toEqual(before)
+    expect(s.ui.snapshot().groups[0]?.error).toBe('Failed')
+    const pending = deferred<PageSessionMeta>()
+    s.list.mockImplementationOnce(() => pending.promise)
+    const retry = s.ui.action('a', 'retry')
+    await vi.waitFor(() => expect(s.ui.snapshot().groups[0]?.loading).toBe(true))
+    expect(s.ui.rows()).toEqual(before)
+    pending.resolve({ items: before.slice(0, 5), total: 17, revision: 'v2', next: '5' })
+    await retry
+    expect(s.ui.rows()).toEqual(before)
+    expect(s.ui.snapshot().groups[0]).toMatchObject({ next: '10', revision: 'v2', stale: false })
+    expect(s.ui.snapshot().groups[0]?.error).toBeUndefined()
+  },
+)
+
 it('keeps the pages a user had open when a created session rereads the first page', async () => {
   const s = setup()
   await s.ui.refresh()

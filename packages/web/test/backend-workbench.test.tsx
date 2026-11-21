@@ -714,6 +714,7 @@ async function diagnosticWorkbench(active: 'local' | 'cloud') {
     async close() {
       await act(async () => unmountApplication(document))
       delete document.body.dataset.aghBackendWorkbench
+      host.remove()
       meta.remove()
       settings.disableIframePageLoading = previousLoading
       localStorage.clear()
@@ -721,6 +722,39 @@ async function diagnosticWorkbench(active: 'local' | 'cloud') {
     },
   }
 }
+
+it.each([
+  '/?settings=model/account&account=saved#settings-subsection-auxiliary-models',
+  '/?page=plugins&tab=plugins.search&view=%40scope%2Fpkg/review',
+])('restores the local subpage after reloading the cloud workbench: %s', async (route) => {
+  let saved: unknown = { unrelated: 'retained' }
+  const state = vi.spyOn(history, 'state', 'get').mockImplementation(() => saved)
+  const replace = vi.spyOn(history, 'replaceState').mockImplementation((value) => {
+    saved = value
+  })
+  const push = vi.spyOn(history, 'pushState').mockImplementation((value) => {
+    saved = value
+  })
+  let fixture: Awaited<ReturnType<typeof diagnosticWorkbench>> | undefined
+  try {
+    fixture = await diagnosticWorkbench('local')
+    await fixture.message('local', { kind: 'local-route', route, operation: 'push' })
+    await fixture.message('local', { kind: 'sidebar-select', backend: 'cloud' })
+    await fixture.close()
+    fixture = undefined
+    fixture = await diagnosticWorkbench('cloud')
+    const local = new URL(fixture.frame('local').src, location.origin)
+    expect(`${local.pathname}${local.search}${local.hash}`).toBe(route)
+    await fixture.message('local', { kind: 'sidebar-select', backend: 'local' })
+    expect(push.mock.calls.at(-1)?.[2]).toBe(route)
+    expect(saved).toMatchObject({ unrelated: 'retained' })
+  } finally {
+    await fixture?.close()
+    state.mockRestore()
+    replace.mockRestore()
+    push.mockRestore()
+  }
+})
 
 it.each(['managed', 'direct', 'local-selected'] as const)(
   'renews the same-ref cloud frame after %s credential replacement without replaying business requests',

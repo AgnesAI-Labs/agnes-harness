@@ -121,18 +121,33 @@ function BackendWorkbench() {
   )
   const initialSearch = useRef(location.search)
   const initialHash = useRef(location.hash)
-  const localRoute = useRef(
-    (initial.active === 'local' && localWorkbenchRoute(`/${initialSearch.current}${initialHash.current}`)) ||
-      '/',
+  const [localAddress] = useState(
+    () =>
+      new URL(
+        localWorkbenchRoute(
+          initial.active === 'local'
+            ? `/${initialSearch.current}${initialHash.current}`
+            : history.state?.aghLocalRoute,
+        ) || '/',
+        location.origin,
+      ),
   )
+  const localRoute = useRef(`${localAddress.pathname}${localAddress.search}${localAddress.hash}`)
   const setAddress = useCallback((backend: BackendId, sessionId?: string, push = false) => {
     const href =
       backend === 'local' || !latest.current.cloud
         ? localRoute.current
         : workbenchAddress(backend, latest.current.cloud, sessionId)
-    if (`${location.pathname}${location.search}${location.hash}` === href) return
-    if (push) history.pushState({}, '', href)
-    else history.replaceState({}, '', href)
+    const state = {
+      ...(history.state && typeof history.state === 'object' ? history.state : {}),
+      aghLocalRoute: localRoute.current,
+    }
+    if (`${location.pathname}${location.search}${location.hash}` === href) {
+      history.replaceState(state, '')
+      return
+    }
+    if (push) history.pushState(state, '', href)
+    else history.replaceState(state, '', href)
   }, [])
   const send = useCallback(
     (backend: BackendId, command: BackendCommand, restoring = false) => {
@@ -581,10 +596,11 @@ function BackendWorkbench() {
             hidden={backend === 'cloud' && (active !== 'cloud' || sidebarOpen)}
             src={initialFrameSource(
               backend === 'cloud' ? cloud : undefined,
-              (backend === 'cloud' && cloudFrame.search !== undefined) ||
-                (initial.active === backend && (backend === 'local' || cloud === initial.remote)),
-              (backend === 'cloud' ? cloudFrame.search : undefined) ?? initialSearch.current,
-              initialHash.current,
+              backend === 'local' ||
+                cloudFrame.search !== undefined ||
+                (initial.active === 'cloud' && cloud === initial.remote),
+              backend === 'local' ? localAddress.search : (cloudFrame.search ?? initialSearch.current),
+              backend === 'local' ? localAddress.hash : initialHash.current,
             )}
           />
         ),
