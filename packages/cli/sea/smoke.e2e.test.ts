@@ -306,7 +306,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
               ],
               {
                 encoding: 'utf8',
-                env: { ...env, NODE_PATH: '', NODE_OPTIONS: '' },
+                env: { ...env, NODE_PATH: '', NODE_OPTIONS: '', AGH_TIMING: '1' },
                 timeout: 30_000,
               },
             ),

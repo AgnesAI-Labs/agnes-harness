@@ -40,6 +40,14 @@ export type MainIO = {
   signals?: NodeJS.EventEmitter
 }
 
+function exitTimingMark(phase: string, io: Pick<MainIO, 'env' | 'stderr'> = process): void {
+  try {
+    timingMark(phase, io.env, (line) => io.stderr.write(line))
+  } catch {
+    // Optional exit diagnostics must never bypass owned cleanup or change the command result.
+  }
+}
+
 /** How long shutdown gets after a first signal before the process leaves anyway. */
 const GRACE_MS = 5_000
 /** And how long, after that, anything still queued on a pipe gets to reach it. */
@@ -643,7 +651,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       }
     } finally {
       opening?.abandon()
+      exitTimingMark('boot-close-enter', io)
       await Promise.race([booted.close().catch(() => undefined), exited])
+      exitTimingMark('boot-close-leave', io)
       // The TUI reports its own worktrees on the way out; the one-shot form does it here, on stderr.
       if (worktree && mode === 'print')
         io.stderr.write((await worktreeFlag?.printWorktreeEnd(worktree, resolveLocale(io.env))) ?? '')
@@ -712,9 +722,11 @@ export async function runExecutable(): Promise<void> {
     cwd: process.cwd(),
     agnesVersion: agnesVersion(),
   })
+  exitTimingMark('main-returned')
   process.exitCode = code
   // main has completed all owned cleanup. Flush redirected output before ending the executable;
   // unrelated library timers must not keep a successful one-shot command alive.
+  exitTimingMark('stdio-flush-enter')
   await Promise.all(
     [process.stdout, process.stderr].map(
       (stream) => new Promise<void>((resolve) => stream.write('', () => resolve())),

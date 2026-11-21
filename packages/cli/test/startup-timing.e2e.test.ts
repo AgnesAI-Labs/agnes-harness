@@ -27,7 +27,13 @@ it.skipIf(!built)(
     expect(plain.stderr).toBe('')
     expect(timed.stdout).toBe(plain.stdout)
     const marks = [...timed.stderr.matchAll(/^agh-timing (\S+) (\d+\.\d)$/gm)]
-    expect(marks.map((m) => m[1])).toEqual(['launcher', 'bootstrap', 'main-loaded'])
+    expect(marks.map((m) => m[1])).toEqual([
+      'launcher',
+      'bootstrap',
+      'main-loaded',
+      'main-returned',
+      'stdio-flush-enter',
+    ])
     const times = marks.map((m) => Number(m[2]))
     expect([...times].sort((a, b) => a - b)).toEqual(times)
   },
