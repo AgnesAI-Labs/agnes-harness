@@ -7,6 +7,7 @@
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { UITimeline } from '@agnes/protocol'
 import { afterAll, expect, it } from 'vitest'
 import { openStore } from '../../src/app/store.js'
 import { KV } from '../../src/kv.js'
@@ -414,7 +415,7 @@ it('restart while busy: a comment waiting for a busy worker is taken once, withi
     const timeline: string[] = []
     /** When Superagent's service answered again: the daemon publishes the plugin's service some seconds after it listens. */
     let back: number | undefined
-    /** When the daemon let the owner load the worker's session again, after restoring its sessions. */
+    /** When the daemon let the owner project the worker's session again, after restoring its sessions. */
     let sessionsBack: number | undefined
     let watching = true
     const watch = (async () => {
@@ -426,8 +427,10 @@ it('restart while busy: a comment waiting for a busy worker is taken once, withi
         const stored = ticketOf(database, ticket.id) as
           | { assignments: { state: string; startedAt?: string }[] }
           | undefined
-        const pending = await worker()
-          .then(async (session) => (await session.projectUI()).pendingInputs?.length ?? 0)
+        // Observe the worker without opening it ahead of Superagent's own recovery.
+        const pending = await daemon.client
+          .call<UITimeline>('_agnes/v1/session.projectUI', { sessionId: workerId })
+          .then((ui) => ui.pendingInputs?.length ?? 0)
           .catch(() => -1)
         if (pending >= 0 && sessionsBack === undefined) sessionsBack = Date.now()
         const line = JSON.stringify({
@@ -455,7 +458,7 @@ it('restart while busy: a comment waiting for a busy worker is taken once, withi
     console.info(
       [
         `restart while busy: Superagent's service answered ${(back ?? Number.NaN) - restarted} ms after the restart, ` +
-          `the worker's session loaded again ${(sessionsBack ?? Number.NaN) - restarted} ms after it; ` +
+          `the worker's session could be projected again ${(sessionsBack ?? Number.NaN) - restarted} ms after it; ` +
           `the comment reached the worker's model ${taken.at - restarted} ms after the restart`,
         ...timeline,
       ].join('\n'),
@@ -463,7 +466,7 @@ it('restart while busy: a comment waiting for a busy worker is taken once, withi
     // Ten seconds from the moment the daemon serves Superagent and its sessions again: the time the daemon takes to start
     // the plugin and restore the sessions is the platform's, and is logged above.
     expect(back, "Superagent's service answered again").toBeDefined()
-    expect(sessionsBack, "the worker's session loaded again").toBeDefined()
+    expect(sessionsBack, "the worker's session could be projected again").toBeDefined()
     expect(taken.at - Math.max(back!, sessionsBack!)).toBeLessThanOrEqual(10_000)
     await until(
       'the worker idle after the restart',
