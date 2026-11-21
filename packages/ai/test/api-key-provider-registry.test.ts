@@ -415,21 +415,52 @@ describe('API-key provider registry', () => {
   })
 
   it('preserves verified Agnes modalities and sends each model output allowance on the wire', async () => {
-    const adapter = await getApiKeyProvider('agnes-ai')?.createAdapter()
+    const entry = getApiKeyProvider('agnes-ai')
+    const adapter = await entry?.createAdapter()
     const inputs = Object.fromEntries(
       (adapter?.models('agnes-ai') ?? []).map((model) => [model.id, model.input]),
     )
     expect(inputs).toEqual({
       'agnes-3.0-flash': ['text', 'image'],
+      'agnes-3.0-pro': ['text', 'image'],
       'agnes-2.5-pro': ['text'],
       'agnes-2.5-pro-alpha': ['text'],
       'agnes-2.5-pro-beta': ['text'],
+      'agnes-2.5-pro-theta': ['text', 'image'],
       'agnes-2.5-flash': ['text', 'image'],
       'agnes-2.0-flash': ['text', 'image'],
     })
     if (!adapter) throw new Error('missing Agnes adapter')
-    for (const record of adapter.models('agnes-ai'))
+    for (const record of adapter.models('agnes-ai')) {
       expect(record.inputLimits?.images?.maxPerRequest).toBe(record.input.includes('image') ? 4 : undefined)
+      expect(record.contextWindow).toBe(record.id === 'agnes-3.0-pro' ? 1_000_000 : 200_000)
+    }
+    const narrowed = await entry?.createAdapter({
+      modelIds: [
+        'agnes-2.5-pro-alpha',
+        'agnes-2.5-pro-theta',
+        'agnes-video-2.5-flash',
+        'agnes-3.0-flash',
+        'agnes-image-2.1-flash',
+        'agnes-video-2.5',
+        'agnes-image-2.0-flash',
+        'agnes-2.5-flash',
+        'agnes-3.0-pro',
+        'agnes-2.5-pro',
+        'agnes-2.5-pro-beta',
+        'agnes-image-2.5-flash',
+        'agnes-sys1-1.0',
+      ],
+    })
+    expect(narrowed?.models('agnes-ai').map((model) => model.id)).toEqual([
+      'agnes-3.0-flash',
+      'agnes-3.0-pro',
+      'agnes-2.5-pro',
+      'agnes-2.5-pro-alpha',
+      'agnes-2.5-pro-beta',
+      'agnes-2.5-pro-theta',
+      'agnes-2.5-flash',
+    ])
     adapter.bindCredential('agnes-ai', 'fixture-output-limit-key')
     const bodies: Array<Record<string, unknown>> = []
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
