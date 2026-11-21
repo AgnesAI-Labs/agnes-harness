@@ -27,7 +27,7 @@ const roots: string[] = []
 // Includes candidate merge/remove edits and bounded shell waits with retained background children.
 // Tool schemas now carry standard #/$defs refs and no $id (8db85dc27).
 // Background job tools (job_kill, job_list, job_output) are loaded up front.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'ec46c5d4aacf0897d4f8d5009b1ea1fe9a3bc5b6df996ed6181a69f45389905d'
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'a79842cd044a5f7551759316094a444256c6502da50858880c2737ce6bd74cd8'
 const expectedToolNames = [
   'ask_user_question',
   'compact',

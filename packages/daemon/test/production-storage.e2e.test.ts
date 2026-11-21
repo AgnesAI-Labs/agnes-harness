@@ -510,9 +510,12 @@ describe('production supervisor storage', () => {
   }, 240_000)
 
   it('projects a killed stdio MCP generation without degrading an unrelated active server', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agnes-mcp-health-'))
-    const server = join(dir, 'mcp-health-server.mjs')
-    const runtimeObservation = join(dir, 'daemon', 'mcp-runtime-observer.jsonl')
+    const caseRoot = mkdtempSync(join(tmpdir(), 'agnes-mcp-health-'))
+    // Keep executable fixtures outside the private home masked by the workspace sandbox.
+    const dir = join(caseRoot, 'home')
+    const workspace = join(caseRoot, 'workspace')
+    const server = join(workspace, 'mcp-health-server.mjs')
+    const runtimeObservation = join(workspace, 'mcp-runtime-observer.jsonl')
     const previousAllowlist = process.env.AGNES_MCP_STDIO_ALLOWLIST
     const previousPath = process.env.PATH
     let supervisor: Awaited<ReturnType<typeof startProductionSupervisor>> | undefined
@@ -527,6 +530,8 @@ describe('production supervisor storage', () => {
       process.env.PATH = `${dirname(process.execPath)}:${previousPath ?? ''}`
     }
     try {
+      mkdirSync(dir)
+      mkdirSync(workspace)
       writeFileSync(
         server,
         [
@@ -608,12 +613,12 @@ describe('production supervisor storage', () => {
         _meta: { 'ai.agnes.harness': { clientId: 'mcp-health-test' } },
       })
       const activate = async (serverId: string): Promise<{ revision: string; pidFile: string }> => {
-        const pidFile = join(dir, `${serverId}.pid`)
+        const pidFile = join(workspace, `${serverId}.pid`)
         const definition = {
           serverId,
           displayName: serverId,
           sandboxProfile: windows ? 'off-with-warning' : 'workspace-write',
-          workspacePath: dir,
+          workspacePath: workspace,
           transport: { kind: 'stdio', executable, args: [server, pidFile] },
           secretBinding: { kind: 'none' },
           toolPolicy: { allow: ['status'] },
@@ -660,7 +665,7 @@ describe('production supervisor storage', () => {
                   defer: false,
                   cmd: [executable, server, pidFile],
                   sandboxProfile: windows ? 'off-with-warning' : 'workspace-write',
-                  workspacePath: dir,
+                  workspacePath: workspace,
                 },
                 {
                   home: dir,
@@ -728,17 +733,20 @@ describe('production supervisor storage', () => {
       else process.env.AGNES_MCP_STDIO_ALLOWLIST = previousAllowlist
       if (previousPath === undefined) delete process.env.PATH
       else process.env.PATH = previousPath
-      rmSync(dir, { recursive: true, force: true })
+      rmSync(caseRoot, { recursive: true, force: true })
     }
   }, 240_000)
 
   it(
     'resolves SecretRef only inside the resource worker and preserves the active MCP on a missing ref',
     async () => {
-      const dir = mkdtempSync(join(tmpdir(), 'agnes-resource-secret-'))
-      const server = join(dir, 'mcp-secret-server.mjs')
-      const runtimeObservation = join(dir, 'daemon', 'mcp-runtime-observer.jsonl')
-      const observation = join(dir, 'mcp-observation.json')
+      const caseRoot = mkdtempSync(join(tmpdir(), 'agnes-resource-secret-'))
+      // Keep executable fixtures outside the private home masked by the workspace sandbox.
+      const dir = join(caseRoot, 'home')
+      const workspace = join(caseRoot, 'workspace')
+      const server = join(workspace, 'mcp-secret-server.mjs')
+      const runtimeObservation = join(workspace, 'mcp-runtime-observer.jsonl')
+      const observation = join(workspace, 'mcp-observation.json')
       const sentinel = ['resource', 'credential', 'audit', 'marker'].join('-')
       const expectedHash = createHash('sha256').update(sentinel, 'utf8').digest('hex')
       const previousAllowlist = process.env.AGNES_MCP_STDIO_ALLOWLIST
@@ -748,6 +756,8 @@ describe('production supervisor storage', () => {
       process.env.AGNES_MCP_STDIO_ALLOWLIST = process.execPath
       process.env.AGNES_SECRET_AUDIT_TOKEN = sentinel
       try {
+        mkdirSync(dir)
+        mkdirSync(workspace)
         writeFileSync(
           server,
           [
@@ -819,7 +829,7 @@ describe('production supervisor storage', () => {
           serverId: 'secret-audit',
           displayName: 'Secret audit',
           sandboxProfile: process.platform === 'win32' ? 'off-with-warning' : 'workspace-write',
-          workspacePath: dir,
+          workspacePath: workspace,
           transport: {
             kind: 'stdio',
             executable: process.execPath,
@@ -870,7 +880,7 @@ describe('production supervisor storage', () => {
                   defer: false,
                   cmd: [process.execPath, server, expectedHash, observation],
                   sandboxProfile: process.platform === 'win32' ? 'off-with-warning' : 'workspace-write',
-                  workspacePath: dir,
+                  workspacePath: workspace,
                 },
                 {
                   home: dir,
@@ -1024,7 +1034,7 @@ describe('production supervisor storage', () => {
         else process.env.AGNES_MCP_STDIO_ALLOWLIST = previousAllowlist
         if (previousToken === undefined) delete process.env.AGNES_SECRET_AUDIT_TOKEN
         else process.env.AGNES_SECRET_AUDIT_TOKEN = previousToken
-        rmSync(dir, { recursive: true, force: true })
+        rmSync(caseRoot, { recursive: true, force: true })
       }
     },
     3 * SOURCE_WORKER_STARTUP_MS + 60_000,
