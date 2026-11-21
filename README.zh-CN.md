@@ -17,7 +17,7 @@
 <img src="https://img.shields.io/badge/node-%E2%89%A5%2024.10-339933" alt="Node.js 24.10 及以上" />
 <img src="https://img.shields.io/badge/checks-macOS%20%C2%B7%20Linux-3b8fff" alt="持续维护的检查：macOS 与 Linux" />
 
-[快速开始](docs/guide/quickstart.zh-CN.md) · [架构](#architecture) · [写一个插件](#写一个插件) · [体验示例](docs/guide/demo.zh-CN.md) · [完整文档](docs/README.zh-CN.md)
+[快速开始](docs/guide/quickstart.zh-CN.md) · [架构](#architecture) · [写一个插件](#写一个插件) · [体验示例](docs/guide/demo.zh-CN.md) · [黑客松项目](docs/community/hackathons/README.zh-CN.md) · [完整文档](docs/README.zh-CN.md)
 
 开发者预览（pre-alpha） · [源码构建](#从源码开始) · [Apache-2.0](LICENSE)
 
@@ -50,6 +50,7 @@
 - [在现场交付中，AGH 能帮上什么](#在现场交付中agh-能帮上什么)
 - [写一个插件](#写一个插件)
 - [案例演示与复现](#案例演示与复现)
+- [社区黑客松](#社区黑客松)
 - [公开评测](#公开评测)
 - [从源码开始](#从源码开始)
 - [新产品与旧环境](#新产品与旧环境)
@@ -197,6 +198,10 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 让 Agent 调度飞行器寻找宇航员，再协调机器人与气闸完成救援。AGH 组织任务，AgnesHub 经 MHS 调用设备，MOS 回传相机画面、位姿等观测数据。视频录制于上一版本；MHS 插件接入后补上复现步骤。
 
 [演示指南](docs/guide/demos.zh-CN.md)列出可运行的产品演示与开发者脚本。它们默认使用全新隔离 home 和确定性本地模型，不发送外部业务消息。
+
+## 社区黑客松
+
+浏览[黑客松项目档案](docs/community/hackathons/README.zh-CN.md)。每届比赛的页面均链接到项目各自的 GitHub 仓库。
 
 ## 公开评测
 
