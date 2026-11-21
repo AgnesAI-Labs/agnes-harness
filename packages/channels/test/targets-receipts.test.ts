@@ -14,8 +14,19 @@ import type { ChannelTargetsPort } from '../src/targets.js'
 import { createFakeClient, FAKE_MANIFEST, FakeChannel } from '../testkit/index.js'
 
 const cleanups: (() => Promise<unknown>)[] = []
-afterEach(async () => {
+async function cleanupFixtures(): Promise<void> {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+}
+afterEach(async () => {
+  if (!vi.isFakeTimers()) return cleanupFixtures()
+  try {
+    // A failed assertion can leave a reply waiting for its token. Finish the original stop budget
+    // under the same clock; the hook reports cleanup failures separately from the test body.
+    const results = await Promise.allSettled([cleanupFixtures(), vi.advanceTimersByTimeAsync(5_000)])
+    for (const result of results) if (result.status === 'rejected') throw result.reason
+  } finally {
+    vi.useRealTimers()
+  }
 })
 
 /** A memory stand-in for the Host receipt store behind the pairing port. */
@@ -256,8 +267,17 @@ it('service not running: the notice says it will be handed over, and the receipt
 })
 
 it('a click on a card whose buttons were never recorded tells the owner instead of dropping it silently', async () => {
+  vi.useFakeTimers()
   const { targets, adapter, claimed } = await paired()
+  // confirm() publishes the pairing before its reply has consumed the chat's first token.
+  await vi.waitFor(() => expect(adapter.sent).toHaveLength(1))
+  expect(texts(adapter)[0]).toContain('Desk')
   adapter.emit(click('old:1', 'stale'))
+  await vi.waitFor(() => expect(targets.received).toEqual(['stale']))
+  expect(claimed('stale')).toBe(true)
+  expect(texts(adapter).some((text) => text.includes('最新的卡片'))).toBe(false)
+  // The second reply must retain the production one-message-per-second chat limit.
+  await vi.advanceTimersByTimeAsync(1_000)
   await vi.waitFor(() =>
     expect(texts(adapter).some((text) => text.includes('最新的卡片') && text.includes('网页'))).toBe(true),
   )
