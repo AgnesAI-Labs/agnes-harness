@@ -431,6 +431,9 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
     devDependencies:
+      '@agnes/daemon-rpc':
+        specifier: workspace:*
+        version: link:../daemon-rpc
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api

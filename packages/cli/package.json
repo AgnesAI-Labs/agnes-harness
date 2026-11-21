@@ -68,6 +68,7 @@
     "@agnes/host-extensions": "workspace:*"
   },
   "devDependencies": {
+    "@agnes/daemon-rpc": "workspace:*",
     "@agnes/extension-api": "workspace:*",
     "@sinclair/typebox": "0.34.33",
     "@xterm/headless": "6.0.0",

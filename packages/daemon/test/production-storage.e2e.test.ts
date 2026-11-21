@@ -28,9 +28,12 @@ import { telemetrySnapshot } from '@agnes/observability'
 import { hasPrivateDaclSync } from '@agnes/system-node'
 import { describe, expect, it, vi } from 'vitest'
 import { pendingDecision } from '../../core-ledger/testkit/decision.js'
+import { PersistentArtifactReadAuthorityIndex } from '../src/local/artifact-read-authority.js'
 import { MemoryTickets } from '../src/storage/lister.js'
 import { buildConfig, type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import { encodeFrame, JsonlDecoder } from '../src/supervisor/framing.js'
+import { WorkerRegistry } from '../src/supervisor/registry.js'
+import { adaptHostTables } from '../src/supervisor/storage-adapters.js'
 import {
   deliverWorkerEvent,
   type StartSupervisorOptions,
@@ -1194,16 +1197,12 @@ describe('production supervisor storage', () => {
     }
   })
 
-  it('answers a recorded session view before any worker can start', async () => {
+  it('reads a recorded session view and artifacts across cold restarts without opening its execution worker', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agh-view-no-worker-'))
     const sessionId = 'agnes:local:default:daemon:dm:recorded'
-    const started = join(dir, 'worker-started')
-    // A worker entry that only leaves a mark: a view that needs a worker cannot be answered.
+    // The daemon's background @shared keeper may spawn, but no worker can answer these reads.
     const workerEntry = join(dir, 'worker.mjs')
-    writeFileSync(
-      workerEntry,
-      `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(started)}, 'started')\nprocess.exit(1)\n`,
-    )
+    writeFileSync(workerEntry, 'process.exit(1)\n')
     const o = { ...options(dir), workerEntry }
     writeFileSync(o.profileFile, JSON.stringify(o.profile))
     const seeded = createSqliteStorage({ file: join(dir, 'sessions.db'), tablesDir: join(dir, 'tables') })
@@ -1240,10 +1239,73 @@ describe('production supervisor storage', () => {
       ],
     })
     await seeded.release(sessionId, 'view-fixture')
+    const artifactIndex = new PersistentArtifactReadAuthorityIndex(
+      adaptHostTables(seeded.tables('@agnes/daemon/artifact-read-authority')).table(
+        'artifact_read_authority',
+      ),
+    )
+    const artifacts = ['image/png', 'application/pdf', 'text/html'].map((mime) => {
+      const bytes = Buffer.from(`recorded ${mime} bytes`)
+      const artifact = { sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length, mime }
+      const directory = join(dir, 'artifacts', 'sha256', artifact.sha256.slice(0, 2))
+      mkdirSync(directory, { recursive: true })
+      writeFileSync(join(directory, artifact.sha256), bytes)
+      expect(artifactIndex.resolve(sessionId, 'main', artifact.sha256, mime)).toBeUndefined()
+      return { artifact, bytes }
+    })
+    // A restored legacy present result has durable roots and CAS bytes but no projected grants.
+    await seeded.open(sessionId, { writerRunId: 'artifact-fixture', ttlMs: 10_000 })
+    const common: Pick<import('@agnes/protocol').EventEnvelope, 'ts' | 'v' | 'lane' | 'trust' | 'actor'> = {
+      ts: '2026-01-01T00:00:01Z',
+      v: 1,
+      lane: 'main',
+      trust: 'trusted',
+      actor: { id: 'local', org: '', role: '', deptPath: [], attrs: {} },
+    }
+    await seeded.commit(sessionId, {
+      expectedWriterRunId: 'artifact-fixture',
+      events: [
+        {
+          ...common,
+          id: '01ARZ3NDEKTSV4RRFFQ69G5FAW',
+          type: 'tool/call',
+          origin: 'model',
+          data: { toolUseId: 'present-recorded', name: 'present', args: {}, ordinal: 0 },
+        },
+        {
+          ...common,
+          id: '01ARZ3NDEKTSV4RRFFQ69G5FAX',
+          type: 'tool/result',
+          origin: 'tool:present',
+          data: {
+            toolUseId: 'present-recorded',
+            isError: false,
+            content: artifacts.map(({ artifact }) => ({
+              type: 'resource_link',
+              name: 'file',
+              uri: `artifact://${artifact.sha256}`,
+              mimeType: artifact.mime,
+            })),
+            artifactRefs: artifacts.map(({ artifact }) => artifact),
+            enforcement: { level: 'full', scope: [] },
+            authz: { decisionId: 'n/a' },
+          },
+        },
+      ],
+    })
+    await seeded.release(sessionId, 'artifact-fixture')
     await seeded.close()
-    const supervisor = await startProductionSupervisor(o)
-    const rpc = await client(supervisor.socketPath)
+    const opened = vi.spyOn(WorkerRegistry.prototype, 'open')
+    const required = vi.spyOn(WorkerRegistry.prototype, 'require')
+    const noExecution = () => {
+      expect(opened.mock.calls.filter(([input]) => input.key === sessionId)).toEqual([])
+      expect(required.mock.calls.filter(([key]) => key === sessionId)).toEqual([])
+    }
+    let supervisor: Awaited<ReturnType<typeof startProductionSupervisor>> | undefined
+    let rpc: Awaited<ReturnType<typeof client>> | undefined
     try {
+      supervisor = await startProductionSupervisor(o)
+      rpc = await client(supervisor.socketPath)
       await rpc.call(1, 'initialize', {
         protocolVersion: 1,
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
@@ -1251,16 +1313,55 @@ describe('production supervisor storage', () => {
       const view = (await rpc.call(2, '_agnes/v1/session.view', { sessionId, maxNodes: 20 })) as {
         timeline: { nodes: Array<{ kind: string }> }
       }
-      expect(view).toMatchObject({ sessionId, readOnly: true, lastSeq: 1 })
-      expect(view.timeline.nodes.map((node) => node.kind)).toEqual(['user'])
+      expect(view).toMatchObject({ sessionId, readOnly: true, lastSeq: 3 })
+      expect(view.timeline.nodes.map((node) => node.kind)).toEqual(['user', 'tool'])
       await expect(
         rpc.call(3, '_agnes/v1/session.view', { sessionId: 'unknown-session' }),
       ).rejects.toMatchObject({ data: { code: 'SESSION_NOT_FOUND' } })
-      expect(existsSync(started)).toBe(false)
+      noExecution()
+      for (let restart = 0; restart < 2; restart++) {
+        for (const { artifact, bytes } of artifacts) {
+          await expect(
+            rpc.call(10, '_agnes/v1/artifact.read', { sessionId, laneId: 'main', artifact }),
+          ).resolves.toMatchObject({
+            ok: true,
+            status: 200,
+            artifact,
+            base64: bytes.toString('base64'),
+          })
+          for (const target of [
+            { sessionId, laneId: 'other' },
+            { sessionId: 'unknown-session', laneId: 'main' },
+          ])
+            await expect(
+              rpc.call(11, '_agnes/v1/artifact.read', { ...target, artifact }),
+            ).resolves.toMatchObject({
+              ok: false,
+              status: 403,
+              code: 'artifact_forbidden',
+            })
+        }
+        noExecution()
+        if (restart === 0) {
+          rpc.close()
+          await supervisor.close()
+          supervisor = await startProductionSupervisor(o)
+          rpc = await client(supervisor.socketPath)
+          await rpc.call(1, 'initialize', {
+            protocolVersion: 1,
+            clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+          })
+        }
+      }
     } finally {
-      rpc.close()
-      await supervisor.close()
-      rmSync(dir, { recursive: true, force: true })
+      rpc?.close()
+      try {
+        await supervisor?.close()
+      } finally {
+        opened.mockRestore()
+        required.mockRestore()
+        rmSync(dir, { recursive: true, force: true })
+      }
     }
   }, 60_000)
 })

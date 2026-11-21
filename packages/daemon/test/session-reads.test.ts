@@ -1,7 +1,7 @@
 import type { CallContext, Handler, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { rpcError } from '@agnes/protocol'
+import { type EventEnvelope, rpcError } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import { registerWorkerSessionReads } from '../src/supervisor/session-reads.js'
+import { artifactHistoryReader, registerWorkerSessionReads } from '../src/supervisor/session-reads.js'
 
 const stored = { sessionId: 's-1', readOnly: true, lastSeq: 3, source: 'stored' }
 const hosted = { sessionId: 's-1', readOnly: true, lastSeq: 3, source: 'worker' }
@@ -74,4 +74,36 @@ describe('session.view', () => {
     await expect(view({ sessionId: 's-1', maxNodes: 5 })).resolves.toBe(hosted)
     expect(command).toHaveBeenCalledWith('session.view', { sessionId: 's-1', maxNodes: 5 })
   })
+})
+
+describe('recorded artifact history', () => {
+  const row = (seq: number, lane = 'main') => ({ seq, lane, type: 'tool/result' }) as EventEnvelope
+
+  it('keeps the initial ledger head and requested lane while paging recorded roots', async () => {
+    const events = Array.from({ length: 120 }, (_, i) => row(i + 1, i % 2 ? 'other' : 'main'))
+    const reader = artifactHistoryReader(() => async (query) => {
+      if (!query.type) return [row(120)]
+      return [...events, row(121)]
+        .filter((e) => e.seq >= (query.fromSeq ?? 1) && e.seq <= (query.toSeq ?? 0))
+        .slice(0, query.limit)
+    })
+    const history = await reader.read('recorded', 'main', new AbortController().signal)
+    expect(history).toEqual(events.filter((e) => e.lane === 'main'))
+  })
+
+  it.each(['row limit', 'byte limit', 'invalid order', 'scan failure', 'cancelled'] as const)(
+    'refuses a history read on %s',
+    async (mode) => {
+      const ac = new AbortController()
+      const reader = artifactHistoryReader(() => async (query) => {
+        if (!query.type) return [row(5000)]
+        if (mode === 'scan failure') throw new Error('private adapter detail')
+        if (mode === 'cancelled') ac.abort()
+        if (mode === 'byte limit') return [{ ...row(1), data: 'x'.repeat(4 * 1024 * 1024) }]
+        if (mode === 'invalid order') return [row(2), row(1)]
+        return Array.from({ length: 100 }, (_, i) => row((query.fromSeq ?? 1) + i))
+      })
+      await expect(reader.read('recorded', 'main', ac.signal)).rejects.toThrow()
+    },
+  )
 })

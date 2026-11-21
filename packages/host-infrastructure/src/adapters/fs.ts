@@ -160,6 +160,10 @@ export function createFs(
     if (readOnly && mode !== 'read') refuse(p, 'workspace is read-only')
     usable(p)
     const abs = isAbsolute(p) ? p : resolve(policy.workspaceRoot, p)
+    // A lexical hard deny can only close access. Do not require traversing its private parents
+    // merely to report the policy refusal; all possible allowances still require the live walk.
+    if (decideFsPath(policy, resolve(abs), { caseSensitive }).reason === 'hard-deny')
+      refuse(p, 'is denied by policy')
     const { real, named } = await canonicalNames(io, abs, p)
     resolved?.({ real, named })
     const decision = decideFsPath(policy, real, { caseSensitive })
@@ -212,6 +216,8 @@ export function createFs(
     } catch (err) {
       const { policy, caseSensitive } = binding()
       const abs = isAbsolute(p) ? p : resolve(policy.workspaceRoot, p)
+      if (decideFsPath(policy, resolve(abs), { caseSensitive }).reason === 'hard-deny')
+        refuse(p, 'is denied by policy')
       const { real, named } = resolved ?? (await canonicalNames(io, abs, p))
       if (decideFsPath(policy, real, { caseSensitive }).reason !== 'no-match') throw err
       const inside = (outer: string, inner: string): boolean =>
