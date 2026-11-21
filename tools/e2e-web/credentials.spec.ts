@@ -126,6 +126,7 @@ test('credentials create inline, replace in place, rename and protect referenced
     expect(before).toMatchObject({ id: ref, label: 'Integration key' })
     const writesBeforeReplacement = writes.length
     const actions = row.getByRole('button', { name: 'Actions for Integration key' })
+    await actions.scrollIntoViewIfNeeded()
     await actions.press('Enter')
     await workbench.getByTestId('credential-replace').click()
     await expect(workbench.getByTestId('credential-value')).toHaveValue('')

@@ -599,8 +599,16 @@ function BackendWorkbench() {
               backend === 'local' ||
                 cloudFrame.search !== undefined ||
                 (initial.active === 'cloud' && cloud === initial.remote),
-              backend === 'local' ? localAddress.search : (cloudFrame.search ?? initialSearch.current),
-              backend === 'local' ? localAddress.hash : initialHash.current,
+              backend === 'local'
+                ? initial.active === 'local'
+                  ? initialSearch.current
+                  : localAddress.search
+                : (cloudFrame.search ?? initialSearch.current),
+              backend === 'local'
+                ? initial.active === 'local'
+                  ? initialHash.current
+                  : localAddress.hash
+                : initialHash.current,
             )}
           />
         ),

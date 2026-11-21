@@ -109,23 +109,24 @@ test('v3 plugin tabs and built-in context save survive navigation and reload', a
     ).toHaveAttribute('aria-selected', 'true')
   }
   // The custom instructions are on the General page of settings.
+  const expectedInstruction = 'REG5 persisted opening instruction'
   await settings(page)
   await section(page, 'general')
-  await page.getByTestId('system-prompt-personaPrefix').fill('REG5 persisted opening instruction')
+  await page.getByTestId('system-prompt-personaPrefix').fill(expectedInstruction)
   await page.getByTestId('system-prompt-personaPrefix').press('Tab')
   const client = await runtime.connect()
   await expect
     .poll(async () => (await client.systemPrompt.get()).config.personaPrefix)
-    .toBe('REG5 persisted opening instruction')
+    .toBe(expectedInstruction)
   await expect(page.getByTestId('system-prompt-save')).toHaveCount(0)
   await expect(page.getByTestId('system-prompt-saved')).toHaveCount(0)
   await page.reload()
+  await expect(page.getByTestId('system-prompt-personaPrefix')).toHaveValue(expectedInstruction)
+  await closeSettings(page)
   await chooseWorkspace(page, runtime)
   await settings(page)
   await section(page, 'general')
-  await expect(page.getByTestId('system-prompt-personaPrefix')).toHaveValue(
-    'REG5 persisted opening instruction',
-  )
+  await expect(page.getByTestId('system-prompt-personaPrefix')).toHaveValue(expectedInstruction)
 })
 
 test('v3 local package install and enable requires consent and disable/uninstall persists', async ({
@@ -214,12 +215,11 @@ test('v3 MCP method cards choose their method from every part of the card', asyn
   }
   const agentHref = await dialog.locator('#mcp-method-agent').getAttribute('href')
   if (!agentHref) throw new Error('Agent method must remain a real link')
-  const agentUrl = new URL(agentHref, runtime.url).href
-  const agentPrompt = new URL(agentUrl).searchParams.get('prompt')
+  const agentPrompt = new URL(agentHref, runtime.url).searchParams.get('prompt')
   if (!agentPrompt) throw new Error('Agent method must include the connection prompt')
   for (const target of ['description', 'icon', 'space'] as const) {
     await clickMethod('agent', target)
-    await expect(page).toHaveURL(agentUrl)
+    await expect(page).toHaveURL(/\/\?new=1(?:&workspaceId=[0-9a-f]{64})?$/)
     await expect(page.getByRole('textbox', { name: 'Task content', exact: true })).toHaveValue(agentPrompt)
     await page.goBack()
     await homePage(page, 'plugins', 'mcp')
@@ -321,8 +321,7 @@ test('v3 deliberately installed teaching agent creates a reviewed Demo session',
   await expect(page.locator('#home-page')).toBeHidden({ timeout: 25_000 })
   await expect(page.locator('#prompt')).toHaveValue(/refund/)
   const requestedBundles = ['@agnes-fde/knowledge-qa#knowledge-qa']
-  const launchedId = new URL(page.url()).searchParams.get('session')
-  expect(launchedId).toBeTruthy()
+  await expect.poll(() => new URL(page.url()).searchParams.get('session')).toBeTruthy()
   await expect(page.getByRole('textbox', { name: 'Task content', exact: true })).toBeEnabled()
   await page
     .getByRole('textbox', { name: 'Task content', exact: true })

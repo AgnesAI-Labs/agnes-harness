@@ -435,6 +435,11 @@ it('v3 home entries preserve local routes across cloud and session switches', as
   await page.goForward()
   await expect(cloud.locator('output')).toHaveText('New conversation')
   expect(query('new')).toBe('1')
+
+  await localTab.click()
+  await expect(local.getByTestId('home-page-rsi')).toBeVisible()
+  await expect.poll(() => query('page')).toBe('rsi')
+  expect(query('workspaceId')).toBe(alternate.workspaceId)
 })
 
 it('v3 home entries restore the draft when Back interrupts a pending session load', async ({
@@ -714,7 +719,8 @@ test('browser locale initializes the shell and a saved choice wins after reload'
       expect(await page.evaluate(() => navigator.language)).toBe(locale)
       expect(await page.evaluate(() => localStorage.getItem('agnes-locale'))).toBeNull()
       if (locale === 'zh-CN') {
-        await expect(page.locator('#new')).toContainText('新对话')
+        const local = page.frameLocator('[data-testid="backend-frame-local"]')
+        await expect(local.locator('#new')).toContainText('新对话')
         await info.attach('browser-zh-CN.png', { body: await page.screenshot(), contentType: 'image/png' })
         await info.attach('browser-locale.json', {
           body: JSON.stringify(
@@ -729,6 +735,7 @@ test('browser locale initializes the shell and a saved choice wins after reload'
         await page.evaluate(() => localStorage.setItem('agnes-locale', 'en'))
         await page.reload()
         await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+        await expect(local.locator('html')).toHaveAttribute('lang', 'en')
       }
     } finally {
       await context.close()
