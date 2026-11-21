@@ -4,6 +4,8 @@ English | [简体中文](sessions.zh-CN.md)
 
 In Web, recorded content becomes readable before execution admission finishes. You can edit a local text draft while “Preparing session…” is shown; sending, file references, attachments and approval actions wait for admission. Drafts belong to the current profile and session. Switching sessions cancels the old opening wait, preserves its text draft and leaves running agents alone. A failed admission keeps the record readable and offers a new-session recovery path; preparation never sends your draft automatically.
 
+With the default SQLite storage, recorded images and files can also be read after a cold start using the current session owner, lane and trusted history, without opening the session for execution. File bytes or a reference supplied by a client alone do not grant read access; reads still check the original artifact's identity, access scope and size limits, and a read failure does not bypass session execution admission.
+
 <a id="会话与恢复让工作接续起来"></a>
 
 [Documentation](../README.md) · [Security boundaries](security.md)
