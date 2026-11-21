@@ -24,6 +24,38 @@ const bin = process.env.AGNES_SEA_BIN
 const harness = process.env.AGNES_SEA_LOADER_HARNESS
 const version = process.env.AGNES_SEA_VERSION?.trim() || PUBLIC_PACKAGE_VERSION
 
+function imageSmokeDiagnostic(run: () => string, tracePath: string): string {
+  try {
+    return run()
+  } catch (error) {
+    const failure = error as { code?: unknown; status?: unknown; signal?: unknown; stdout?: unknown }
+    let stages: unknown[] = []
+    try {
+      stages = existsSync(tracePath)
+        ? readFileSync(tracePath, 'utf8')
+            .trim()
+            .split('\n')
+            .filter(Boolean)
+            .slice(0, 64)
+            .map((line) => JSON.parse(line))
+        : []
+    } catch {
+      // Preserve the original command failure, including a partial diagnostic trace write.
+    }
+    console.error(
+      'SEA image smoke stages',
+      JSON.stringify({
+        code: failure.code === 'ETIMEDOUT' ? 'ETIMEDOUT' : 'other',
+        status: typeof failure.status === 'number' ? failure.status : null,
+        signal: failure.signal === 'SIGTERM' || failure.signal === 'SIGKILL' ? failure.signal : null,
+        expectedStdout: typeof failure.stdout === 'string' && failure.stdout === 'sea image smoke ok\n',
+        stages,
+      }),
+    )
+    throw error
+  }
+}
+
 describe.skipIf(!bin || !harness)('SEA smoke', () => {
   it('starts the CLI with the Node memory flags from the SEA configuration', () => {
     const probe = fileURLToPath(new URL('./fixtures/exec-argv.cjs', import.meta.url))
@@ -47,10 +79,11 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
     const loaderHarness = join(distributionRoot, basename(harness as string))
     // Session workspaces cannot contain the private .agh state under home.
     const workspace = join(temporary, 'workspace')
+    const tracePath = join(temporary, 'provider-stages.jsonl')
     const server = spawn(
       process.env.AGNES_SEA_NODE || process.execPath,
       [fileURLToPath(new URL('./fixtures/openai-server.mjs', import.meta.url))],
-      { stdio: ['ignore', 'pipe', 'inherit'] },
+      { stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, AGNES_SEA_SMOKE_TRACE: tracePath } },
     )
     const env = {
       ...process.env,
@@ -257,23 +290,27 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
         ),
       ).toBe('sea faux ok\n')
       expect(
-        execFileSync(
-          binary,
-          [
-            '-p',
-            'SEA_IMAGE_SMOKE',
-            '--profile',
-            'local-dev',
-            '--model',
-            'primary=faux/faux-1',
-            '--cwd',
-            workspace,
-          ],
-          {
-            encoding: 'utf8',
-            env: { ...env, NODE_PATH: '', NODE_OPTIONS: '' },
-            timeout: 30_000,
-          },
+        imageSmokeDiagnostic(
+          () =>
+            execFileSync(
+              binary,
+              [
+                '-p',
+                'SEA_IMAGE_SMOKE',
+                '--profile',
+                'local-dev',
+                '--model',
+                'primary=faux/faux-1',
+                '--cwd',
+                workspace,
+              ],
+              {
+                encoding: 'utf8',
+                env: { ...env, NODE_PATH: '', NODE_OPTIONS: '' },
+                timeout: 30_000,
+              },
+            ),
+          tracePath,
         ),
       ).toBe('sea image smoke ok\n')
       const output = execFileSync(loaderHarness, [join(packageDirectory, 'index.ts')], {

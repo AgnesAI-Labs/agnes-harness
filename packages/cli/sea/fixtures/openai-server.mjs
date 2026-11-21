@@ -1,4 +1,21 @@
+import { appendFileSync } from 'node:fs'
 import { createServer } from 'node:http'
+
+const tracePath = process.env.AGNES_SEA_SMOKE_TRACE
+const started = performance.now()
+let traceRows = 0
+let round = 0
+function trace(stage, detail = {}) {
+  if (!tracePath || traceRows++ >= 64) return
+  try {
+    appendFileSync(
+      tracePath,
+      `${JSON.stringify({ stage, elapsedMs: Math.round(performance.now() - started), ...detail })}\n`,
+    )
+  } catch {
+    // Test diagnostics must not change the provider response.
+  }
+}
 
 // Inspect provider pixels independently of sharp: package read must have decoded and resized them.
 function dimensions(url) {
@@ -24,6 +41,8 @@ const server = createServer(async (request, response) => {
     chunks.push(_chunk)
   }
   const body = JSON.parse(Buffer.concat(chunks).toString())
+  round += 1
+  trace('request', { round })
   if (
     request.method !== 'POST' ||
     request.url !== '/v1/chat/completions' ||
@@ -31,6 +50,7 @@ const server = createServer(async (request, response) => {
     body.model !== 'faux-1'
   ) {
     response.writeHead(400)
+    trace('request-rejected', { round, status: 400 })
     response.end('unexpected production provider request')
     return
   }
@@ -38,6 +58,7 @@ const server = createServer(async (request, response) => {
   let tool
   if (JSON.stringify(body.messages).includes('SEA_IMAGE_SMOKE')) {
     const results = body.messages.filter((message) => message.role === 'tool')
+    trace('image-request', { round, tools: results.length })
     if (results.length) {
       const images = body.messages.flatMap((message) =>
         Array.isArray(message.content) ? message.content.filter((block) => block.type === 'image_url') : [],
@@ -48,6 +69,7 @@ const server = createServer(async (request, response) => {
         images.some((image) => dimensions(image.image_url.url).join('x') !== '128x64')
       ) {
         response.writeHead(400)
+        trace('image-rejected', { round, status: 400 })
         response.end('packaged image read did not return resized 128x64 pixels')
         return
       }
@@ -61,6 +83,7 @@ const server = createServer(async (request, response) => {
         function: { name: 'read', arguments: JSON.stringify({ path: `sea-image.${format}`, max_edge: 128 }) },
       }
     else answer = 'sea image smoke ok'
+    trace('image-validated', { round, tools: results.length, final: !format })
   }
   const event = {
     id: 'sea-smoke',
@@ -81,6 +104,12 @@ const server = createServer(async (request, response) => {
     `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: {}, finish_reason: tool ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n`,
   )
   response.end('data: [DONE]\n\n')
+  trace('response-ended', {
+    round,
+    status: 200,
+    tool: Boolean(tool),
+    finalImage: answer === 'sea image smoke ok',
+  })
 })
 
 server.listen(0, '127.0.0.1', () => {
