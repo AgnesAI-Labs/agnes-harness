@@ -110,7 +110,7 @@ export function CredentialEditor({
         reconnect ? { kind: 'reconnect-required', message: t('reconnect') } : undefined,
       )
     }
-    window.dispatchEvent(new Event(CREDENTIALS_CHANGED))
+    window.dispatchEvent(new CustomEvent(CREDENTIALS_CHANGED, { detail: { mode, id: result.id } }))
     if (active.current) onSaved(result)
   }
   const footer = (

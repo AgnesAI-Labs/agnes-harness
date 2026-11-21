@@ -3,7 +3,7 @@ import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { installDeveloperExample } from './developer-example.js'
-import { expect, test } from './fixtures.js'
+import { expect, root as it, test } from './fixtures.js'
 import { describingFirst, prompt, toolResult } from './sdk.js'
 import {
   chooseWorkspace,
@@ -565,7 +565,7 @@ test('automation keeps a task under the same switch coordinates after toggling',
     expect(result.schedules.find((row) => row.id === task.id)?.status).toBe(i === 0 ? 'paused' : 'active')
 })
 
-test('v3 home entries keep the selected workspace in a default draft', async ({ page, runtime }) => {
+it('v3 home entries keep the selected workspace in a default draft', async ({ page, runtime }) => {
   test.setTimeout(180_000)
   await preferences(page)
   const client = await runtime.connect()
@@ -717,7 +717,7 @@ test('v3 home entries keep the selected workspace in a default draft', async ({ 
   expect(requestedWorkspaces.every((id) => id === other.workspaceId)).toBe(true)
 })
 
-test('v3 home entries resolve the Skills scope before the first startup read', async ({ page, runtime }) => {
+it('v3 home entries resolve the Skills scope before the first startup read', async ({ page, runtime }) => {
   test.setTimeout(240_000)
   await preferences(page)
   const client = await runtime.connect()

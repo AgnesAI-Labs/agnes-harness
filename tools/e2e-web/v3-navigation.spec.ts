@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, realpath } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { expect, test } from './fixtures.js'
+import { expect, root as it, test } from './fixtures.js'
 import { accessible, translated } from './quality.js'
 import {
   chooseView,
@@ -60,7 +60,7 @@ test('permissions never flash a fallback selection when returning from applicati
   }
 })
 
-test('v3 home entries, deep links and browser back/forward retain the selected page', async ({
+it('v3 home entries, deep links and browser back/forward retain the selected page', async ({
   page,
   runtime,
 }) => {
@@ -153,7 +153,7 @@ test('v3 home entries, deep links and browser back/forward retain the selected p
   await expect(local.getByTestId('settings-nav-refinement-tab')).toHaveCount(0)
 })
 
-test('v3 home entries preserve local routes across cloud and session switches', async ({ page, runtime }) => {
+it('v3 home entries preserve local routes across cloud and session switches', async ({ page, runtime }) => {
   test.setTimeout(180_000)
   await preferences(page)
   const client = await runtime.connect()
@@ -431,7 +431,7 @@ test('v3 home entries preserve local routes across cloud and session switches', 
   expect(query('new')).toBe('1')
 })
 
-test('v3 home entries restore the draft when Back interrupts a pending session load', async ({
+it('v3 home entries restore the draft when Back interrupts a pending session load', async ({
   page,
   runtime,
 }) => {
@@ -549,7 +549,7 @@ test('v3 archive filter restores the same session and its conversation', async (
   await expect(page.getByTestId('conversation-turn')).toContainText('REG5_ARCHIVE_CONTENT')
 })
 
-test('v3 settings exposes four everyday pages, persistent advanced settings and legacy plugin redirects', async ({
+it('v3 settings exposes four everyday pages, persistent advanced settings and legacy plugin redirects', async ({
   page,
   runtime,
 }) => {

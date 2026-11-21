@@ -87,7 +87,13 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
     }
   }, [sessionId, active])
   const [refresh, setRefresh] = useState(0)
-  const shellScope = terminalShellScope(terminalBackend?.remoteOrigin, terminalBackend?.platform)
+  const shellScope = terminalShellScope(
+    terminalBackend?.remoteOrigin,
+    terminalBackend?.platform,
+    terminalBackend?.backend,
+  )
+  const currentShellScope = useRef(shellScope)
+  currentShellScope.current = shellScope
   const [shellSelection, setShellSelection] = useState<{ scope: string; shell: TerminalShell }>()
   const shell =
     shellSelection?.scope === shellScope
@@ -333,10 +339,14 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
       : row.kind === 'child' && row.command === 'in-process'
         ? `${t('workbench.terminal.childAgent')} · ${row.id.slice(-6)}`
         : row.command)
-  const create = (choice: TerminalShell) => {
-    setShellSelection({ scope: shellScope, shell: choice })
-    rememberTerminalShell(choice, shellScope)
-    void control({ operation: 'open', shell: choice, columns: 100, rows: 30 })
+  const create = (choice: TerminalShell | undefined) => {
+    void control({ operation: 'open', ...(choice ? { shell: choice } : {}), columns: 100, rows: 30 }).then(
+      (accepted) => {
+        if (!accepted || !choice || currentShellScope.current !== shellScope) return
+        setShellSelection({ scope: shellScope, shell: choice })
+        rememberTerminalShell(choice, shellScope)
+      },
+    )
   }
   const menuItems = [
     ...terminalShells.map((choice) => ({
@@ -366,7 +376,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
                 <IconButton
                   name="plus"
                   data-testid="terminal-new"
-                  label={`${t('workbench.terminal.new')} (${shell})`}
+                  label={`${t('workbench.terminal.new')} (${shell ?? t('workbench.terminal.defaultShell')})`}
                   disabled={busy}
                   onClick={() => create(shell)}
                 />

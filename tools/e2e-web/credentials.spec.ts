@@ -1,5 +1,5 @@
 import type { ConsoleMessage, Request } from '@playwright/test'
-import { expect, test } from './fixtures.js'
+import { expect, root as test } from './fixtures.js'
 import { expand, preferences } from './ui.js'
 
 // Draft values must not enter Playwright's network trace or failure screenshots.

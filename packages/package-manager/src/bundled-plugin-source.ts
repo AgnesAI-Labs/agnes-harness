@@ -76,7 +76,7 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly BundledPackage[] = Object.freez
   {
     name: 'jev-loop',
     id: '@agnes/jev-loop',
-    version: '0.1.3',
+    version: '0.1.4',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/jev-loop',
     // index.mjs is generated from packages/loop-jev and is not committed.
@@ -86,7 +86,7 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly BundledPackage[] = Object.freez
   {
     name: 'judgment',
     id: '@agnes/judgment',
-    version: '0.1.5',
+    version: '0.1.6',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/judgment',
     sourcePath: 'package-manager/bundled-plugins/judgment',

@@ -13,6 +13,7 @@ type Group = SidebarGroupState & {
   firstNext?: string | undefined
   pageRevision?: string | undefined
   pending?: Promise<void> | undefined
+  appending?: boolean
   retryAppend?: boolean
   /**
    * How many pages the user keeps open with 「展开显示」. A list change makes the page cursors stale,
@@ -21,6 +22,9 @@ type Group = SidebarGroupState & {
    * arrives. Collapsing the group puts it back to one page.
    */
   openPages: number
+}
+type PageStage = Pick<Group, 'total' | 'revision' | 'next' | 'firstNext' | 'pageRevision'> & {
+  items: Row[]
 }
 type Port = {
   groups(): Promise<SessionGroupsResult>
@@ -56,6 +60,7 @@ export function createSidebarPagination(
         firstNext: _f,
         pageRevision: _r,
         pending: _p,
+        appending,
         retryAppend: _a,
         openPages: _o,
         ...view
@@ -63,6 +68,7 @@ export function createSidebarPagination(
         ...view,
         // Waiting for the summary is part of an open group's background refresh too.
         loading: view.loading || (loading && view.opened),
+        refreshing: loading && refreshingMetadata && view.loaded && !appending,
       }),
     ),
     ready,
@@ -78,13 +84,16 @@ export function createSidebarPagination(
    * multi-page group keeps the opened rows on screen and commits the whole staged list at once, so
    * the intermediate one-page list never renders (and never collapses the group).
    */
-  const readPage = (group: Group, append: boolean, sink?: Row[]): Promise<void> => {
+  const readPage = (group: Group, append: boolean, sink?: PageStage): Promise<void> => {
+    const pageState = sink ?? group
     if (group.pending) return group.pending
-    if (!group.opened || !group.ready || (append && (!group.next || group.stale))) return Promise.resolve()
+    if (!group.opened || !group.ready || (append && (!pageState.next || group.stale)))
+      return Promise.resolve()
     const generation = ++group.generation,
       connection = epoch,
-      cursor = append ? group.next : undefined
+      cursor = append ? pageState.next : undefined
     group.loading = true
+    group.appending = append && !sink
     delete group.error
     delete group.retryAppend
     changed()
@@ -100,13 +109,13 @@ export function createSidebarPagination(
         if (!current()) return
         if (page.total === undefined || page.revision === undefined || page.items.length > PAGE_ROWS)
           throw new Error('SESSION_SIDEBAR_UNAVAILABLE')
-        if (append && page.revision !== group.pageRevision) {
+        if (append && page.revision !== pageState.pageRevision) {
           group.stale = true
           return
         }
         // Identity of unchanged rows is matched against the list this page extends: the staged rows
         // when the caller is rebuilding the group off-screen, the visible rows otherwise.
-        const source = sink && append ? sink : group.items
+        const source = sink && append ? sink.items : group.items
         const old = new Map(source.map((row) => [row.sessionId, row]))
         const incoming = page.items.map((row) => {
           const previous = old.get(row.sessionId)
@@ -117,18 +126,18 @@ export function createSidebarPagination(
           return
         }
         if (sink) {
-          if (!append) sink.length = 0
-          sink.push(...incoming)
+          if (!append) sink.items.length = 0
+          sink.items.push(...incoming)
         } else group.items = append ? [...group.items, ...incoming] : incoming
-        group.total = page.total
-        group.revision = page.revision
-        group.pageRevision = page.revision
-        group.next = page.next
+        pageState.total = page.total
+        pageState.revision = page.revision
+        pageState.pageRevision = page.revision
+        pageState.next = page.next
         group.loaded = true
         group.stale = false
-        if (!append) group.firstNext = page.next
+        if (!append) pageState.firstNext = page.next
         // A full group has nothing left to restore; an appended page moves the target along.
-        if (append || page.next === undefined) group.openPages = pagesOf((sink ?? group.items).length)
+        if (!sink && (append || page.next === undefined)) group.openPages = pagesOf(group.items.length)
       } catch (failure) {
         if (!current()) return
         group.retryAppend = append
@@ -138,6 +147,7 @@ export function createSidebarPagination(
         if (current()) {
           group.loading = false
           group.pending = undefined
+          delete group.appending
           changed()
         }
       }
@@ -152,22 +162,32 @@ export function createSidebarPagination(
     return readPage(group, append)
   }
   /** Loads the pages an automatic reread folded away back, until `pages` pages are showing again. */
-  const restorePages = async (group: Group, pages: number, sink?: Row[]): Promise<void> => {
+  const restorePages = async (group: Group, pages: number, sink?: PageStage): Promise<boolean> => {
     // A staged restore measures the rows collected so far; the visible list keeps its open pages.
-    const shown = () => sink ?? group.items
+    const shown = () => sink?.items ?? group.items
     // `readPage` answers without a request while its own guards hold (an unready summary, a page
     // already in flight), so stop as soon as a read adds no row: a guarded no-op must not spin here.
-    while (group.opened && group.next && !group.stale && !group.error && pagesOf(shown().length) < pages) {
+    while (
+      group.opened &&
+      (sink ?? group).next &&
+      !group.stale &&
+      !group.error &&
+      pagesOf(shown().length) < pages
+    ) {
       const before = shown().length
+      const generation = group.generation
       await readPage(group, true, sink)
-      if (shown().length === before) return
+      if (sink && group.generation !== generation + 1) return false
+      if (shown().length === before) return false
     }
+    return true
   }
   const invalidate = (group: Group) => {
     delete group.retryAppend
     delete group.error
     group.generation++
     group.pending = undefined
+    delete group.appending
     group.loading = false
   }
   const refresh = (metadata = false): Promise<void> => {
@@ -215,8 +235,9 @@ export function createSidebarPagination(
           }
           // Counts alongside retained multi-page rows belong to that page's snapshot.
           const total = group.stale && group.items.length > PAGE_ROWS ? group.total : item.total
+          const revision = group.stale && group.items.length > PAGE_ROWS ? group.revision : item.revision
           delete group.initializationError
-          Object.assign(group, item, { total })
+          Object.assign(group, item, { total, revision })
           // Revisions cover paging, not every metadata edit; focus/reconnect explicitly reread rows.
           if (
             group.opened &&
@@ -249,12 +270,28 @@ export function createSidebarPagination(
         await Promise.all([
           ...[...new Set(reload)].filter((group) => !rereading.has(group)).map((group) => load(group)),
           ...reread.map(async ({ group, pages }) => {
-            const staged: Row[] = []
+            const staged: PageStage = {
+              items: [],
+              total: group.total,
+              revision: group.revision,
+              pageRevision: group.pageRevision,
+              next: group.next,
+              firstNext: group.firstNext,
+            }
+            const current = () =>
+              connection === epoch &&
+              mutation === mutations &&
+              groups.includes(group) &&
+              group.opened &&
+              group.openPages >= pages
+            const generation = group.generation
             await readPage(group, false, staged)
-            if (!group.error && !group.stale) await restorePages(group, pages, staged)
+            if (!current() || group.generation !== generation + 1) return
+            if (!group.error && !group.stale && !(await restorePages(group, pages, staged))) return
             // A failed or stale staged read keeps the rows already on screen; the next refresh retries.
-            if (group.error || group.stale) return
-            group.items = staged
+            if (!current() || group.error || group.stale) return
+            Object.assign(group, staged)
+            if (!group.next) group.openPages = pagesOf(staged.items.length)
             changed()
           }),
         ])
@@ -344,10 +381,42 @@ export function createSidebarPagination(
         // Reading the first page again is the fold the user asked for; nothing is left to restore.
         group.openPages = 1
         await load(group)
+      } else if (action === 'more') {
+        const connection = epoch,
+          mutation = mutations,
+          pages = pagesOf(group.items.length) + 1
+        group.openPages = pages
+        // Focusing the frame can start a metadata refresh between pointerdown and click.
+        // Keep the click's intent, then use the refreshed cursor rather than the old one.
+        while (refreshing) {
+          await refreshing
+          if (
+            connection !== epoch ||
+            mutation !== mutations ||
+            !groups.includes(group) ||
+            !group.opened ||
+            group.openPages < pages
+          )
+            return
+        }
+        if (!group.ready || error || group.error) return
+        if (group.stale) await load(group)
+        if (connection === epoch && groups.includes(group) && group.opened)
+          await restorePages(group, group.openPages)
+        if (mutation !== mutations) return
+        if (connection === epoch && groups.includes(group) && group.opened && group.stale) {
+          await load(group)
+          if (
+            connection === epoch &&
+            mutation === mutations &&
+            groups.includes(group) &&
+            group.opened &&
+            group.openPages >= pages
+          )
+            await restorePages(group, pages)
+        }
       } else {
-        // 用户点「展开显示」时先记住要展开到第几页；追加请求即使被列表刷新打断，展开意图也会保留。
-        if (action === 'more') group.openPages = pagesOf(group.items.length) + 1
-        await load(group, action === 'more' || (!group.stale && group.retryAppend === true))
+        await load(group, !group.stale && group.retryAppend === true)
         // 追加页遇到过期游标时同样自动重读首页，不把「请重新加载」抛给用户。
         if (group.stale && group.opened) await load(group)
       }

@@ -14,6 +14,7 @@ import {
   getSubscriptionProvider,
   isChatModelId,
   knownModel,
+  readModelCatalogueFacts,
   SUBSCRIPTION_PROVIDER_REGISTRY,
   type SubscriptionProviderEntry,
   subscriptionAuth,
@@ -88,7 +89,6 @@ import { ConfigurationError, type ConfigurationErrorCode } from './configuration
 import {
   applyInputOverrides,
   applyModelConfiguration,
-  catalogueFacts,
   configModel,
   configModels,
   factsInputs,
@@ -730,7 +730,7 @@ export function createConfigurationService(
   }
 
   const catalogFacts = (api: string, address: string, byId = true) =>
-    catalogueFacts(API_KEY_PROVIDER_REGISTRY, staticCatalogue, api, address, byId)
+    readModelCatalogueFacts(API_KEY_PROVIDER_REGISTRY, staticCatalogue, api, address, byId)
   const catalogInputs = (api: string, address: string) => catalogFacts(api, address, false).then(factsInputs)
 
   const readCredential = configurationCredentialReader(home, credentialStore)

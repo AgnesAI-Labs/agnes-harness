@@ -75,8 +75,13 @@ export const isAbsolute = (path) => path.startsWith('/')
 export const join = (...parts) => parts.join('/').replace(/\\/+/g, '/').split('/').reduce((out, part) => (part === '..' ? out.slice(0, -1) : part === '.' ? out : [...out, part]), []).join('/') || '/'
 export const dirname = (path) => path.replace(/\\/[^/]*$/, '') || '/'
 export const basename = (path) => path.replace(/^.*\\//, '')
+export const extname = (path) => {
+  const name = path.split('/').filter(Boolean).at(-1) ?? ''
+  const dot = name.lastIndexOf('.')
+  return dot <= 0 || name === '..' ? '' : name.slice(dot)
+}
 export const resolve = (...parts) => join(...parts)
-export const posix = { delimiter, isAbsolute, join, dirname, basename, resolve }
+export const posix = { delimiter, isAbsolute, join, dirname, basename, extname, resolve }
 export const win32 = { ...posix, delimiter: ';' }`,
   // Ids only need to be stable within the page, not cryptographic.
   'node:crypto': `export const randomUUID = () => crypto.randomUUID()

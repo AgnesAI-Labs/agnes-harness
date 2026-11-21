@@ -14,6 +14,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { discoverCloudOrigin } from '../remote-authorization.js'
 import { installCloudFrameAuthorization } from './cloud-frame-authorization.js'
 import { bindCloudCredential, readCloudCredentialRef } from './cloud-key.js'
+import { watchCloudOrigin } from './cloud-recovery.js'
 import { CLOUD_SETTINGS_SECTION, cloudConnectionAction } from './cloud-settings-bridge.js'
 import { cloudFrameOrigin } from './frame-context.js'
 import {
@@ -72,6 +73,8 @@ function BackendWorkbench() {
   const [credentialError, setCredentialError] = useState(false)
   const credentialRequest = useRef<AbortController | undefined>(undefined)
   const connectionRevision = useRef(0)
+  const [connectionEpoch, setConnectionEpoch] = useState(0)
+  const connectionIntent = useRef<string | undefined>(undefined)
   const connectionRequest = useRef<AbortController | undefined>(undefined)
   const [discovering, setDiscovering] = useState(false)
   const [states, setStates] = useState<Partial<Record<BackendId, BackendSnapshot>>>({})
@@ -108,6 +111,7 @@ function BackendWorkbench() {
     awaiting: initial.active === 'cloud' && initial.session !== undefined,
   })
   const localManagementActivation = useRef<string | undefined>(undefined)
+  const diagnosticsBackend = useRef<BackendId>(initial.active)
   const latest = useRef({ active, cloud, states, configure })
   latest.current = { active, cloud, states, configure }
   useEffect(
@@ -153,6 +157,11 @@ function BackendWorkbench() {
         if (window.matchMedia('(max-width: 900px)').matches)
           frames.current.local?.contentDocument?.getElementById('sidebar-close')?.click()
       }
+      if (
+        changesCloudSession ||
+        (backend === 'local' && (command.kind === 'session' || command.kind === 'new'))
+      )
+        diagnosticsBackend.current = backend
       if (changesCloudSession) {
         const sessionId = command.kind === 'session' ? command.sessionId : ''
         cloudSelection.current = { session: sessionId, awaiting: true }
@@ -176,9 +185,14 @@ function BackendWorkbench() {
   const select = useCallback(
     (
       backend: BackendId,
-      { keepSidebar = false, restoring = false }: { keepSidebar?: boolean; restoring?: boolean } = {},
+      {
+        keepSidebar = false,
+        restoring = false,
+        management = false,
+      }: { keepSidebar?: boolean; restoring?: boolean; management?: boolean } = {},
     ) => {
       localManagementActivation.current = undefined
+      if (!management) diagnosticsBackend.current = backend
       const switching = latest.current.active !== backend
       setActive(backend)
       latest.current.active = backend
@@ -212,12 +226,14 @@ function BackendWorkbench() {
     setCloudFrame(({ revision }) => ({ revision: revision + 1, search }))
   }, [clearCloudFrame])
   const connect = useCallback(
-    async (value: string | undefined, activate = true, credentialRef?: string) => {
+    async (value: string | undefined, activate = true, credentialRef?: string, recovering = false) => {
       const revision = ++connectionRevision.current
+      setConnectionEpoch(revision)
+      connectionIntent.current = credentialRef
       connectionRequest.current?.abort()
       const request = new AbortController()
       connectionRequest.current = request
-      setDiscovering(value === undefined)
+      setDiscovering(true)
       setConfigurationError('')
       let next: string
       try {
@@ -233,7 +249,8 @@ function BackendWorkbench() {
         if (revision !== connectionRevision.current || request.signal.aborted) return
         if (credentialRef !== undefined) {
           bindCloudCredential(next, credentialRef, items ?? [])
-          if (value === undefined) safeThemeStorage().setItem(CLOUD_DISCOVERY_KEY, credentialRef)
+          if (value === undefined || recovering)
+            safeThemeStorage().setItem(CLOUD_DISCOVERY_KEY, credentialRef)
           else safeThemeStorage().removeItem(CLOUD_DISCOVERY_KEY)
         }
       } catch (error) {
@@ -245,7 +262,10 @@ function BackendWorkbench() {
           )
         return
       } finally {
-        if (revision === connectionRevision.current) setDiscovering(false)
+        if (revision === connectionRevision.current) {
+          connectionIntent.current = undefined
+          setDiscovering(false)
+        }
       }
       if (revision !== connectionRevision.current || request.signal.aborted) return
       if (!readCloudCredentialRef(next)) {
@@ -255,9 +275,18 @@ function BackendWorkbench() {
       }
       safeThemeStorage().setItem(CLOUD_ORIGIN_KEY, next)
       if (next !== latest.current.cloud) {
+        const session = recovering ? cloudSelection.current.session : undefined
         clearCloudFrame()
-        cloudSelection.current = { session: undefined, awaiting: false }
-        setCloudFrame({ revision: 0, search: undefined })
+        cloudSelection.current = { session, awaiting: session !== undefined }
+        setCloudFrame({
+          revision: 0,
+          search:
+            session === undefined
+              ? undefined
+              : session
+                ? `?session=${encodeURIComponent(session)}`
+                : '?new=1',
+        })
         setCloud(next)
         latest.current.cloud = next
       } else if (credentialRef !== undefined || !latest.current.states.cloud?.connected) restartCloudFrame()
@@ -310,6 +339,15 @@ function BackendWorkbench() {
           const route = localWorkbenchRoute(event.data.route)
           const operation = event.data.operation
           if (!route || (operation !== 'push' && operation !== 'replace')) return
+          const section = new URL(route, location.origin).searchParams.get('settings')
+          if (
+            section?.split('/')[0] === 'diagnostics' &&
+            diagnosticsBackend.current === 'cloud' &&
+            latest.current.cloud
+          ) {
+            send('cloud', { kind: 'settings', section })
+            return
+          }
           localRoute.current = route
           if (
             latest.current.active === 'local' &&
@@ -322,13 +360,27 @@ function BackendWorkbench() {
       }
       const management = localManagementCommand(event.data)
       if (management) {
-        send('local', management)
+        send(
+          commandBackend(backend === 'local' ? diagnosticsBackend.current : backend, management),
+          management,
+        )
         return
       }
       const action = cloudConnectionAction(event.data)
       if (action && backend === 'local') {
         if (action.action === 'connect') connect(action.origin, false, action.credentialRef)
-        else if (action.action === 'disconnect') disconnect()
+        else if (action.action === 'credential-replaced') {
+          const remote = latest.current.cloud
+          const ref = action.credentialRef
+          if (
+            remote &&
+            readCloudCredentialRef(remote) === ref &&
+            (!connectionIntent.current || connectionIntent.current === ref)
+          ) {
+            const managed = safeThemeStorage().getItem(CLOUD_DISCOVERY_KEY) === ref
+            void connect(managed ? undefined : remote, false, ref, managed)
+          }
+        } else if (action.action === 'disconnect') disconnect()
         else if (action.action === 'refresh-credentials') loadCredentials()
         else if (action.action === 'manage-credentials')
           send('local', { kind: 'settings', section: 'credentials' })
@@ -366,7 +418,8 @@ function BackendWorkbench() {
       ) {
         const restoring = pending.current[backend]?.command.kind === 'restore-local-route'
         delete pending.current[backend]
-        if (backend === 'local' && localManagementActivation.current === event.data.commandId) select('local')
+        if (backend === 'local' && localManagementActivation.current === event.data.commandId)
+          select('local', { management: true })
         if (restoring && latest.current.active === 'local') setAddress('local')
       } else if (
         event.data?.type === BACKEND_FRAME_MESSAGE &&
@@ -453,6 +506,31 @@ function BackendWorkbench() {
   useEffect(() => {
     if (cloud) safeThemeStorage().setItem(CLOUD_ORIGIN_KEY, cloud)
   }, [cloud])
+  const cloudConnected = states.cloud?.connected
+  useEffect(() => {
+    if (!cloud || cloudConnected !== false || discovering || configurationError) return
+    const ref = safeThemeStorage().getItem(CLOUD_DISCOVERY_KEY)
+    if (!ref || readCloudCredentialRef(cloud) !== ref) return
+    if (connectionIntent.current && connectionIntent.current !== ref) return
+    const revision = connectionEpoch
+    return watchCloudOrigin(
+      cloud,
+      (signal) => discoverCloudOrigin(ref, signal),
+      (origin) => {
+        if (
+          connectionRevision.current === revision &&
+          latest.current.cloud === cloud &&
+          readCloudCredentialRef(cloud) === ref
+        )
+          void connect(origin, false, ref, true)
+      },
+      (reason) => {
+        if (connectionRevision.current === revision && latest.current.cloud === cloud)
+          setConfigurationError(reason)
+      },
+    )
+  }, [cloud, cloudConnected, connect, discovering, configurationError, connectionEpoch])
+
   useEffect(() => {
     frames.current.local?.contentWindow?.postMessage(
       {

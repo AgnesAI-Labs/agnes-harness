@@ -132,8 +132,9 @@ export function backendSnapshot(value: unknown): BackendSnapshot | undefined {
   return s as BackendSnapshot
 }
 
-/** Management pages always belong to the machine hosting the workbench. */
+/** Management stays local; diagnostics follow the selected execution backend. */
 export function commandBackend(backend: BackendId, command: BackendCommand): BackendId {
+  if (command.kind === 'settings' && command.section.split('/')[0] === 'diagnostics') return backend
   return command.kind === 'home' || command.kind === 'settings' ? 'local' : backend
 }
 

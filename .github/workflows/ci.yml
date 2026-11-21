@@ -144,6 +144,7 @@ jobs:
     uses: ./.github/workflows/e2e-web.yml
     with:
       suite: nightly
+      linux-runner: ubuntu-latest
       types: ${{ needs.static.outputs.types }}
       native-linux: ${{ needs.native-linux.outputs.artifact }}
       local-linux: ${{ needs.local-linux.outputs.artifact }}

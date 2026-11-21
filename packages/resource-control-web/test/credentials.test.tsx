@@ -134,6 +134,9 @@ it('creates, replaces and renames write-only credentials; reviews references and
     dispose = mountRegion(host, <CredentialsPage api={new CredentialsApi(fetcher)} />)
   })
   const restoreFeedback = installFeedbackSink({ publish: feedback, resolve: () => {} })
+  const changes: unknown[] = []
+  const changed = (event: Event) => changes.push((event as CustomEvent).detail)
+  window.addEventListener(CREDENTIALS_CHANGED, changed)
   try {
     node<HTMLButtonElement>('credential-create').focus()
     await click('credential-create')
@@ -151,6 +154,7 @@ it('creates, replaces and renames write-only credentials; reviews references and
     expect(cleanDom()).toBe(true)
     expect(responses.every((value) => !value.includes(canary))).toBe(true)
     expect(node('credential-row').textContent).toContain('API key')
+    expect(changes).toEqual([{ id: item.id, mode: 'create' }])
     const menu = async () => {
       await act(async () => {
         const trigger = node('credential-row').querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')!
@@ -171,6 +175,7 @@ it('creates, replaces and renames write-only credentials; reviews references and
     expect(node('credential-error').textContent).toContain('unavailable')
     expect(cleanDom()).toBe(true)
     expect(feedback).not.toHaveBeenCalled()
+    expect(changes).toHaveLength(1)
 
     replacementResponse = 'lost'
     await fill('credential-value', canary)
@@ -182,6 +187,7 @@ it('creates, replaces and renames write-only credentials; reviews references and
     expect(cleanDom()).toBe(true)
 
     replacementResponse = 'saved'
+    expect(changes).toHaveLength(1)
     await fill('credential-value', canary)
     await click('credential-save')
     expect(replacementRequests).toEqual([
@@ -195,11 +201,16 @@ it('creates, replaces and renames write-only credentials; reviews references and
     expect(node('credential-row').textContent).toContain(item.label)
     expect(feedback.mock.lastCall?.[0]).toMatchObject({ message: 'Credential value replaced.' })
     expect(feedback.mock.lastCall?.[0]).not.toHaveProperty('effect')
+    expect(changes).toEqual([
+      { id: item.id, mode: 'create' },
+      { id: item.id, mode: 'replace' },
+    ])
     await menu()
     await click('credential-rename')
     await fill('credential-label', 'Renamed key')
     await click('credential-save')
     expect(node('credential-row').textContent).toContain('Renamed key')
+    expect(changes.at(-1)).toEqual({ id: item.id, mode: 'rename' })
     referenced = true
     await menu()
     await click('credential-delete')
@@ -272,6 +283,7 @@ it('creates, replaces and renames write-only credentials; reviews references and
     expect(cleanDom()).toBe(true)
     expect(responses.every((value) => !value.includes(canary))).toBe(true)
   } finally {
+    window.removeEventListener(CREDENTIALS_CHANGED, changed)
     restoreFeedback()
     await act(async () => dispose())
     owner.remove()

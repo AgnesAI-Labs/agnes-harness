@@ -47,6 +47,8 @@ export type SettingsNavigationEntry = {
 export interface SettingsRegionOptions {
   sections?: { entries(): readonly SettingsNavigationEntry[]; subscribe(listener: () => void): () => void }
   onChange?: (change: SettingsPaneChange) => void
+  /** Return true when the host handles user navigation before local URL or page changes. */
+  beforeNavigate?: (section: string) => boolean
   onClose?: () => void
   /** A request named a page that moved out of settings; the host opens its new home. */
   onMoved?: (target: SettingsMoveTarget) => void
@@ -316,11 +318,17 @@ function SettingsBuiltinImpl(
         navigateRef.current = undefined
         pendingReveal.current?.()
       })
+      const interceptNavigation = (section: string, event: Event): boolean => {
+        if (!options.beforeNavigate?.(section)) return false
+        event.preventDefault()
+        return true
+      }
       const onClick = (event: Event) => {
         const target = (event.target as Element | null)?.closest<HTMLElement>(
           'button[data-settings-section], a[href]',
         )
         if (target?.dataset.settingsSection) {
+          if (interceptNavigation(target.dataset.settingsSection, event)) return
           navigate(target.dataset.settingsSection)
           return
         }
@@ -340,6 +348,7 @@ function SettingsBuiltinImpl(
         const id = url.searchParams.get('settings')
         if (!id) return
         event.preventDefault()
+        if (interceptNavigation(id, event)) return
         history.pushState(null, '', url)
         const page = searchParamRoute('settings').read()[0]
         if (page) navigate(page, true, true)
@@ -384,6 +393,7 @@ function SettingsBuiltinImpl(
         event.preventDefault()
         const id = choices[next]?.dataset.settingsSection
         if (id) {
+          if (interceptNavigation(id, event)) return
           navigate(id)
           tabs.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus()
         }

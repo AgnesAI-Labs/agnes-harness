@@ -8,6 +8,8 @@ This guide applies to deployments with a Harness build that supports **Settings 
 
 The local workbench (A) serves the browser UI and manages local credentials. The remote Harness (B) owns cloud sessions, workspaces, models, tools and approvals. Only B needs the cloud plugin. The workbench supports one cloud connection at a time.
 
+Settings diagnostics follow the selected local or cloud execution environment. An unreachable cloud reports failure instead of silently exporting local diagnostics; account management stays on A. For credential-discovered cloud connections, offline recovery makes at most eight discovery attempts with a 25-second request timeout and backoff capped at 30 seconds. Credential rejection (including HTTP 401) consumes this budget without granting access. Missing credentials, invalid authorization or exhaustion stop recovery; users can reconnect manually. A changed instance address is reauthorized and the selected session restored without replaying creation, sends or tools. After a confirmed replacement of the selected cloud credential value on A, the workbench reauthorizes and restores the cloud session selection. Credentials remain managed by A; editing another credential or only renaming one does not reconnect. An invalid replacement reports a connection failure and can be corrected before retrying.
+
 ## Configure the remote Harness
 
 For managed sandboxes, the deployment operator prepares B and provisions the instance before users connect. For a source deployment, follow the [installation guide](install.md) for platform prerequisites. From the root of a compatible source checkout, use the same build command on macOS, Linux and Windows PowerShell.

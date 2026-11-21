@@ -3,17 +3,29 @@ export const terminalShells: TerminalShell[] = ['zsh', 'bash', 'pwsh']
 export const terminalStorageKey = (id: string) => `agnes.workbench.terminals.${id}`
 const shellKey = 'agnes.workbench.terminal.shell'
 const namesKey = (id: string) => `agnes.workbench.terminal.names.${id}`
-export function terminalShellScope(remoteOrigin: string | undefined, platform: string | undefined): string {
-  return remoteOrigin ? JSON.stringify([remoteOrigin, platform ?? 'unknown']) : ''
+export function terminalShellScope(
+  remoteOrigin: string | undefined,
+  platform: string | undefined,
+  backend?: string,
+): string {
+  const identity = backend ?? remoteOrigin
+  return identity ? JSON.stringify([identity, platform ?? 'unknown']) : ''
 }
-export function readTerminalShell(scope = '', platform?: string): TerminalShell {
+export function readTerminalShell(scope = '', platform?: string): TerminalShell | undefined {
   try {
     const value = localStorage.getItem(scope ? `${shellKey}.${scope}` : shellKey)
     if (terminalShells.includes(value as TerminalShell)) return value as TerminalShell
   } catch {
     /* use the platform default */
   }
-  if (scope) return platform === 'win32' ? 'pwsh' : platform === 'darwin' ? 'zsh' : 'bash'
+  if (scope)
+    return platform === 'win32'
+      ? 'pwsh'
+      : platform === 'darwin'
+        ? 'zsh'
+        : platform === 'linux'
+          ? 'bash'
+          : undefined
   return /Win/i.test(navigator.platform) ? 'pwsh' : /Mac/i.test(navigator.platform) ? 'zsh' : 'bash'
 }
 export function rememberTerminalShell(shell: TerminalShell, scope = '') {

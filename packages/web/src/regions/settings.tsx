@@ -21,12 +21,14 @@ import {
   settingsPaneSlotHostId,
 } from '@agnes/web-units/shell'
 import { flushSync } from 'react-dom'
+import { requestDiagnosticBackend, requestLocalManagement } from '../backends/frame-context.js'
 import {
   type EmptyStateRegionMount,
   SETTINGS_DSH_GLOBAL_SLOT_NAMES,
   SETTINGS_UNIT_OWNER,
   settingsPaneSlot,
 } from './contracts.js'
+import { settingsRegionRoute } from './settings-route.js'
 
 export interface SettingsRegionOptions {
   sections?: import('@agnes/web-client').UiExtensionRegistry<import('@agnes/web-client').SettingsSection>
@@ -66,6 +68,8 @@ export function mountSettingsPaneRegion(
   const sectionPages = <SettingsPages {...(locale ? { hostText: (key, vars) => locale.t(key, vars) } : {})} />
   const shellOptions = {
     ...options,
+    beforeNavigate: (section: string) =>
+      requestDiagnosticBackend(section) || requestLocalManagement({ kind: 'settings', section }),
     sectionPages,
     ...(locale ? { translate: (key: string) => locale.t(key) } : {}),
   }
@@ -154,9 +158,7 @@ export function mountSettingsPaneRegion(
     },
     route(section: string) {
       // The settings shell listens for route requests on its own form.
-      handle.current
-        ?.form()
-        ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: section, bubbles: true }))
+      handle.current?.form()?.dispatchEvent(settingsRegionRoute(section))
     },
     pane(pane: SettingsPane) {
       return handle.current?.pane(pane) ?? null

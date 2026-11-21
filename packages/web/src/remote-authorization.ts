@@ -91,6 +91,7 @@ async function requestCloudAuthorization(
     proxied?: unknown
     origin?: unknown
   }
+  signal.throwIfAborted()
   if (
     typeof value.token !== 'string' ||
     typeof value.expiresAt !== 'number' ||

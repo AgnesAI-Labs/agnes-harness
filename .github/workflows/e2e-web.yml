@@ -11,6 +11,7 @@ on:
   workflow_call:
     inputs:
       suite: { type: string, default: nightly }
+      linux-runner: { type: string, default: ubuntu-24.04 }
       types: { type: string, default: '' }
       native-linux: { type: string, default: '' }
       local-linux: { type: string, default: '' }
@@ -26,7 +27,7 @@ jobs:
   web-native-linux:
     uses: ./.github/workflows/ci-native.yml
     with:
-      runner: ubuntu-24.04
+      runner: ${{ inputs.linux-runner || 'ubuntu-24.04' }}
       artifact: ${{ inputs.native-linux || '' }}
   web-native-macos:
     uses: ./.github/workflows/ci-native.yml
@@ -35,6 +36,7 @@ jobs:
     needs: web-native-linux
     uses: ./.github/workflows/ci-web-types.yml
     with:
+      runner: ${{ inputs.linux-runner || 'ubuntu-24.04' }}
       artifact: ${{ inputs.types || '' }}
       native: ${{ needs.web-native-linux.outputs.artifact }}
       nightly: ${{ inputs.suite == 'nightly' }}
@@ -43,7 +45,7 @@ jobs:
     needs: [web-types, web-native-linux]
     uses: ./.github/workflows/ci-local.yml
     with:
-      runner: ubuntu-24.04
+      runner: ${{ inputs.linux-runner || 'ubuntu-24.04' }}
       types: ${{ needs.web-types.outputs.artifact }}
       native: ${{ needs.web-native-linux.outputs.artifact }}
       artifact: ${{ inputs.local-linux || '' }}
@@ -60,7 +62,7 @@ jobs:
     needs: [web-types, web-native-linux]
     uses: ./.github/workflows/ci-web-quality.yml
     with:
-      runner: ubuntu-24.04
+      runner: ${{ inputs.linux-runner || 'ubuntu-24.04' }}
       types: ${{ needs.web-types.outputs.artifact }}
       native: ${{ needs.web-native-linux.outputs.artifact }}
   web-quality-macos:
@@ -76,7 +78,7 @@ jobs:
     needs: [web-types, web-native-linux]
     uses: ./.github/workflows/ci-local-benchmark.yml
     with:
-      runner: ubuntu-24.04
+      runner: ${{ inputs.linux-runner || 'ubuntu-24.04' }}
       types: ${{ needs.web-types.outputs.artifact }}
       native: ${{ needs.web-native-linux.outputs.artifact }}
   local-sharing-macos:
@@ -174,7 +176,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(inputs.linux-matrix || needs.web-types.outputs.linux-matrix) }}
     if: inputs.suite != 'narrow-nightly' && inputs.suite != 'benchmark'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.linux-runner || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps: &linux-web-steps
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -293,6 +295,6 @@ jobs:
           - {"id": "narrow-en-dark", "batches": [{"id": "narrow-en-dark", "args": ["narrow.spec.ts", "--grep", "en/dark$"], "widths": "", "timeoutMinutes": 20}]}
           - {"id": "narrow-zh-CN-light", "batches": [{"id": "narrow-zh-CN-light", "args": ["narrow.spec.ts", "--grep", "zh-CN/light$"], "widths": "", "timeoutMinutes": 20}]}
           - {"id": "narrow-zh-CN-dark", "batches": [{"id": "narrow-zh-CN-dark", "args": ["narrow.spec.ts", "--grep", "zh-CN/dark$"], "widths": "", "timeoutMinutes": 20}]}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.linux-runner || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps: *linux-web-steps

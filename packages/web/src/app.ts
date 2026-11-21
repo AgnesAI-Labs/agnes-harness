@@ -39,6 +39,7 @@ import { createTurnController } from './app/turn-controller.js'
 import { openApplicationHome, projectApplication, requestNewSession } from './application.js'
 import { installCloudConnectionSettings } from './backends/cloud-connection-settings.js'
 import { backendFrameStartup, installBackendFrameBridge } from './backends/frame-bridge.js'
+import { requestDiagnosticBackend } from './backends/frame-context.js'
 import { readyRosterModules } from './client-modules/reconcile/roster.js'
 import { ComposerDrafts, switchComposerDraft } from './composer-drafts.js'
 import { frontendBackendIdentity } from './remote-frontend.js'
@@ -687,7 +688,7 @@ onPageHide(
     client,
     (id) => sessionLabels.get(id),
     (action, id, title, trigger) => void sessionActions.act(action, id, title, trigger),
-    (section) => void openSettingsSection(section).catch(showError),
+    (section) => void openSettingsSection(section, true).catch(showError),
   ),
 )
 // Before plugins load, retain develop's owner-only method reservation.
@@ -964,19 +965,15 @@ if (!tracePanel) throw new Error('missing trace region')
 factChainLinks.register((target) => tracePanel.focusFact?.(target) ?? false)
 const stopTerminalNavigation = bindTerminalNavigation(() => settings.close())
 const statusCheck = mountStatusCheck({
-  details: () =>
-    run(async () => {
-      settingsRegion.open('model')
-      await settings.open()
-      settingsRegion.route('diagnostics')
-    }),
+  details: () => run(() => openSettingsSection('diagnostics')),
 })
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')
 onPageHide(installCloudConnectionSettings(clientModules.locale))
-const openSettingsSection = async (section: string) => {
+const openSettingsSection = async (section: string, fromWorkbench = false) => {
+  if (!fromWorkbench && requestDiagnosticBackend(section)) return
   settingsRegion.open('model')
-  const loading = settings.open()
+  const loading = settings.open(section)
   settingsRegion.route(section)
   await loading
 }

@@ -4,7 +4,8 @@ import { homeNavigation } from '@agnes/web-client'
 import { broadcast, onBroadcast, onHistoryNavigation } from '../app/global-events.js'
 import { requestNewSession } from '../application.js'
 import { SESSION_SEARCH_EVENT } from '../regions/session-tools.js'
-import { backendFrame, requestLocalManagement } from './frame-context.js'
+import { isSettingsRegionRoute } from '../regions/settings-route.js'
+import { backendFrame, requestDiagnosticBackend, requestLocalManagement } from './frame-context.js'
 import {
   BACKEND_FRAME_MESSAGE,
   type BackendCommand,
@@ -199,6 +200,13 @@ export function installBackendFrameBridge(
     )
       homeNavigation.close()
   })
+  const diagnosticRoute = (event: Event) => {
+    if (isSettingsRegionRoute(event)) return
+    if (!requestDiagnosticBackend((event as CustomEvent<unknown>).detail)) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  }
+  document.addEventListener('agnes:settings-route', diagnosticRoute, true)
   const localSettings = (event: Event) => {
     const section = (event as CustomEvent<{ section?: unknown }>).detail?.section
     if (
@@ -253,6 +261,7 @@ export function installBackendFrameBridge(
     window.removeEventListener('message', receive)
     homeOff()
     document.removeEventListener('agnes:open-settings', localSettings, true)
+    document.removeEventListener('agnes:settings-route', diagnosticRoute, true)
     readyOff()
     noticeOff()
     reconnectingOff()

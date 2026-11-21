@@ -76,6 +76,7 @@ export type RuntimeTargetHost = Readonly<{
     >[0],
   ): Promise<RuntimeConvergenceReport>
   applyRuntimeTarget(target: RuntimeTarget): Promise<RuntimeConvergenceReport>
+  setModelOwnerReconciler(reconcile: () => Promise<void>): void
   ordinaryReconciliation: OrdinaryReconciliationLifecycle
   pluginTree: HostPluginTreeBase
   bindRuntimeSession(sessionKey: string, preset: string): Promise<void>
@@ -101,6 +102,7 @@ type Shared = {
   views: SessionViews
   extensionServices: { current?: ExtensionServiceHost }
   intelligentUi: Late<ReturnType<typeof createIntelligentUiBridge>>
+  reconcileModelOwners?: () => Promise<void>
 }
 
 type SessionViews = Readonly<{
@@ -310,6 +312,7 @@ function createApplyQueue(ctx: AssemblyContext, hosts: RowHosts, shared: Shared)
     if (!live) return
     try {
       await publisher.apply(live, { rebuild: true })
+      await shared.reconcileModelOwners?.()
     } catch (error) {
       deps.log.error('could not restore the published runtime target after a rejected one', {
         message: error instanceof Error ? error.message : String(error),
@@ -372,6 +375,7 @@ function createApplyQueue(ctx: AssemblyContext, hosts: RowHosts, shared: Shared)
           detail: { reason: 'runtime-target-unpublished' },
         })
       }
+      await shared.reconcileModelOwners?.()
       return report
     })
     applyQueue = applied.catch(() => undefined)
@@ -504,6 +508,10 @@ export async function mountRuntimeTarget(
     intelligentUi,
     enqueueRuntimeTarget,
     applyRuntimeTarget,
+    setModelOwnerReconciler: (reconcile) => {
+      if (shared.reconcileModelOwners) throw new Error('Model owner reconciler is already bound')
+      shared.reconcileModelOwners = reconcile
+    },
     ordinaryReconciliation,
     pluginTree,
     bindRuntimeSession,

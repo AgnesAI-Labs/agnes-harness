@@ -253,12 +253,26 @@ describe('managed input ports on a real session', () => {
   it('withdraws a queued input, and a dedupe resubmission after a restart runs it exactly once', async () => {
     const h = await openTestHost({ script: [say('managed answer')] })
     const commandQueue = new CommandQueue()
+    let finishDelivery!: () => void
+    const delivered = new Promise<void>((resolve) => {
+      finishDelivery = resolve
+    })
+    const idle = createIdleSignal()
+    let stopIdle = () => {}
+    const waitForIdle = () =>
+      new Promise<void>((resolve) => {
+        stopIdle = idle.onIdle((id) => {
+          if (id !== 'managed-real') return
+          stopIdle()
+          resolve()
+        })
+      })
     try {
       const core = await h.host.createSession({ cwd: h.dataDir })
       const entry = { key: 'managed-real', ac: new AbortController(), inflight: null, session: core }
       const runner = createFollowUpRunner(
-        { commandQueue, activationBarrier: h.host.activationBarrier },
-        async () => undefined,
+        { commandQueue, activationBarrier: h.host.activationBarrier, onPromptEnd: (id) => idle.notify(id) },
+        async () => delivered,
       )
       let resume = false
       const ports = managedInputPorts<ManagedInputEntry>({
@@ -281,6 +295,7 @@ describe('managed input ports on a real session', () => {
       const first = await ports.submitInput('managed-real', { ...message, commandId: 'cmd-1', dedupe: false })
       if (first.state !== 'submitted') throw new Error('first submission was refused')
       resume = true
+      const firstIdle = waitForIdle()
       expect(
         await ports.submitInput('managed-real', { ...message, commandId: 'cmd-1', dedupe: true }),
       ).toEqual(first)
@@ -296,15 +311,25 @@ describe('managed input ports on a real session', () => {
           laterStart: false,
         }),
       )
+      // A durable turn/end precedes delivery and the follow-up runner clearing inflight.
+      expect(
+        await ports.submitInput('managed-real', { ...message, commandId: 'cmd-1', dedupe: true }),
+      ).toEqual({ state: 'busy' })
+      finishDelivery()
+      await firstIdle
+      const resubmissionIdle = waitForIdle()
       expect(
         await ports.submitInput('managed-real', { ...message, commandId: 'cmd-1', dedupe: true }),
       ).toEqual(first)
+      await resubmissionIdle
       const ran = (await core.scan({ type: 'user/message', limit: 50 })).filter(
         (row) => (row.data as { commandId?: string }).commandId === 'cmd-1',
       )
       expect(ran, 'the resubmitted input ran once').toHaveLength(1)
       expect(await ports.withdraw('managed-real', 'cmd-1')).toBe('taken')
     } finally {
+      finishDelivery()
+      stopIdle()
       await commandQueue.close()
       await h.close()
     }
