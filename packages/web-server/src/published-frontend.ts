@@ -75,7 +75,11 @@ export async function createPublishedFrontend(input: {
     for (const key of Object.keys(result)) {
       // This is the public stream admission marker, never a worker proof or caller identity.
       if (!upgrade && key === 'x-agnes-stream-open' && source[key] === '1') continue
-      if (/^(?:forwarded|x-forwarded-|x-agnes-|proxy-authorization|authorization|cookie|referer)/iu.test(key))
+      if (
+        /^(?:forwarded|x-forwarded-|x-agnes-|e2b-traffic-access-token$|proxy-authorization|authorization|cookie|referer)/iu.test(
+          key,
+        )
+      )
         delete result[key]
     }
     result.host = local.host
@@ -177,12 +181,21 @@ export async function createPublishedFrontend(input: {
           reply.pipe(res)
         },
       )
+      const stop = () => {
+        upstream.destroy()
+        res.destroy()
+      }
+      const expiry = authorized ? setTimeout(stop, Math.max(0, authorized.expiresAt - Date.now())) : undefined
+      expiry?.unref()
       upstream.on('error', () => {
         if (!res.headersSent) res.writeHead(502, cors)
         res.end()
       })
       req.once('aborted', () => upstream.destroy())
-      res.once('close', () => upstream.destroy())
+      res.once('close', () => {
+        if (expiry) clearTimeout(expiry)
+        upstream.destroy()
+      })
       req.pipe(upstream)
     } catch {
       req.resume()

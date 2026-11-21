@@ -1,9 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import {
   closeSync,
+  fchmodSync,
+  constants as fsConstants,
+  fstatSync,
   fsyncSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -166,6 +170,29 @@ export async function initializeLlmsgHomeLocked(
   }
 }
 
+function tightenAcceptedLlmsgHome(home: string): void {
+  if (!present(home)) {
+    directory(home)
+    return
+  }
+  const flags = fsConstants.O_RDONLY | (fsConstants.O_DIRECTORY ?? 0) | (fsConstants.O_NOFOLLOW ?? 0)
+  let fd: number
+  try {
+    fd = openSync(home, flags)
+  } catch {
+    throw homeFault('E_HOME_UNSAFE')
+  }
+  try {
+    const stat = fstatSync(fd)
+    if (!stat.isDirectory()) throw homeFault('E_HOME_UNSAFE')
+    if (typeof process.getuid === 'function' && stat.uid !== process.getuid())
+      throw homeFault('E_HOME_UNSAFE')
+    if ((stat.mode & 0o777) !== 0o700) fchmodSync(fd, 0o700)
+  } finally {
+    closeSync(fd)
+  }
+}
+
 function llmsgBootstrapContents(home: string): boolean {
   return readdirSync(home).every((name) => name === LLMSG_KEY_FILE || name === LLMSG_PENDING_MARKER)
 }
@@ -179,6 +206,8 @@ async function initializeWithLock(
   const initial = inspectHome(home, profile)
   const canonicalHome = resolve(home)
   const lock = join(dirname(canonicalHome), `.${basename(canonicalHome)}.initialize.sqlite`)
+  if (llmsg && llmsg.phase === 'persist-key' && initial.state !== 'current' && !present(lock))
+    throw homeVersionFault(home, 'unversioned')
   // An existing initializer may have created directories without publishing its marker yet.
   // Wait for that lock and inspect again; unknown homes without a lock remain untouched.
   if (initial.state === 'unsupported' && !present(lock) && !(llmsg && llmsgBootstrapContents(canonicalHome)))
@@ -194,8 +223,9 @@ async function initializeWithLock(
       throw homeVersionFault(canonicalHome, 'unversioned')
     if (info.state === 'unsupported' && !llmsgBootstrapContents(canonicalHome))
       throw homeVersionFault(canonicalHome, 'unversioned')
-    if (!hasPrivateDaclSync(canonicalHome)) throw homeFault('E_HOME_UNSAFE')
     if (llmsg.phase === 'layout' && !hasLlmsgKey(canonicalHome)) llmsgFallbackKey(llmsg.env)
+    tightenAcceptedLlmsgHome(canonicalHome)
+    if (!hasPrivateDaclSync(canonicalHome)) throw homeFault('E_HOME_UNSAFE')
     if (info.state !== 'current') {
       // Publish before creating Core directories: a killed initializer can retry either side of the rename.
       if (!llmsgBootstrapContents(canonicalHome)) throw homeVersionFault(canonicalHome, 'unversioned')

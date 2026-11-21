@@ -8,9 +8,10 @@ const equal = (a: Buffer, b: Buffer) => a.length === b.length && timingSafeEqual
 /** The plugin supplies a verifier, never its original third-party credential. */
 export function publicationAuthentication(digest: string) {
   if (!/^[a-f0-9]{64}$/u.test(digest)) throw new Error('invalid publication authentication')
-  const secret = Buffer.from(digest, 'hex')
+  const verifier = Buffer.from(digest, 'hex')
+  const signingKey = randomBytes(32)
   const sign = (value: string) =>
-    createHmac('sha256', secret).update(`agh-frontend-session/v1:${value}`).digest()
+    createHmac('sha256', signingKey).update(`agh-frontend-session/v1:${value}`).digest()
   return {
     async exchange(req: IncomingMessage): Promise<{ token: string; expiresAt: number } | undefined> {
       let bytes = 0
@@ -24,7 +25,7 @@ export function publicationAuthentication(digest: string) {
       try {
         const value = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { key?: unknown }
         if (typeof value.key !== 'string' || !value.key.trim() || value.key.length > 4096) return
-        if (!equal(createHash('sha256').update(value.key).digest(), secret)) return
+        if (!equal(createHash('sha256').update(value.key).digest(), verifier)) return
         const expiresAt = Date.now() + LIFETIME_MS
         const payload = `${expiresAt.toString(36)}.${randomBytes(16).toString('base64url')}`
         return { token: `${payload}.${sign(payload).toString('base64url')}`, expiresAt }

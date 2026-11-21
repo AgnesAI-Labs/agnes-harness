@@ -28,15 +28,17 @@ export function createCloudGateway() {
     reconnect: boolean
     retryAt: number
     sockets: Set<Duplex>
+    exchanges: Set<() => void>
     timer?: ReturnType<typeof setTimeout>
   }
   const grants = new Map<string, Grant>()
   const requests = new Set<ClientRequest>()
   let closed = false
-  const revoke = (prefix: string) => {
+  const revoke = (prefix: string, except?: () => void) => {
     const grant = grants.get(prefix)
     grants.delete(prefix)
     if (grant?.timer) clearTimeout(grant.timer)
+    for (const abort of [...(grant?.exchanges ?? [])]) if (abort !== except) abort()
     for (const socket of grant?.sockets ?? []) socket.destroy()
   }
   const register = (origin: string, result: AdminCloudAuthorization, refresh?: Grant['refresh']) => {
@@ -67,6 +69,7 @@ export function createCloudGateway() {
       reconnect: false,
       retryAt: 0,
       sockets: new Set(),
+      exchanges: new Set(),
     })
     const grant = grants.get(prefix)
     if (grant) {
@@ -95,10 +98,11 @@ export function createCloudGateway() {
       return null
     return { grant, prefix, url: new URL(`${url.pathname}${url.search}`, grant.origin) }
   }
-  const rejectGrant = (prefix: string, grant: Grant) => {
-    if (!grant.refresh) return revoke(prefix)
+  const rejectGrant = (prefix: string, grant: Grant, except?: () => void) => {
+    if (!grant.refresh) return revoke(prefix, except)
     grant.rejected = true
     grant.trafficToken = ''
+    for (const abort of [...grant.exchanges]) if (abort !== except) abort()
     for (const socket of grant.sockets) socket.destroy()
   }
   const renew = async (prefix: string, grant: Grant) => {
@@ -129,7 +133,7 @@ export function createCloudGateway() {
     request.once('close', () => requests.delete(request))
     return request
   }
-  const checkForbidden = (prefix: string, grant: Grant): Promise<void> => {
+  const checkForbidden = (prefix: string, grant: Grant, except?: () => void): Promise<void> => {
     if (grant.checking) return grant.checking
     const trafficToken = grant.trafficToken
     grant.checking = new Promise<number | undefined>((resolve) => {
@@ -158,7 +162,7 @@ export function createCloudGateway() {
           grant.trafficToken === trafficToken &&
           (status === 401 || status === 403)
         )
-          rejectGrant(prefix, grant)
+          rejectGrant(prefix, grant, except)
       })
       .finally(() => {
         delete grant.checking
@@ -209,7 +213,23 @@ export function createCloudGateway() {
         }
       }
       if (closed || request.aborted || response.destroyed) return true
-      const upstream = own(
+      if (grants.get(route.prefix) !== route.grant || route.grant.expiresAt <= Date.now()) {
+        revoke(route.prefix)
+        request.resume()
+        response.writeHead(401, { 'cache-control': 'no-store' }).end()
+        return true
+      }
+      let upstream: ClientRequest | undefined
+      const abort = () => {
+        clearTimeout(expiry)
+        route.grant.exchanges.delete(abort)
+        upstream?.destroy()
+        response.destroy()
+      }
+      const expiry = setTimeout(abort, Math.max(1, route.grant.expiresAt - Date.now()))
+      expiry.unref()
+      route.grant.exchanges.add(abort)
+      upstream = own(
         (route.url.protocol === 'https:' ? httpsRequest : httpRequest)(
           route.url,
           {
@@ -220,8 +240,8 @@ export function createCloudGateway() {
             incoming.on('error', () => response.destroy())
             incoming.once('aborted', () => response.destroy())
             const status = incoming.statusCode ?? 502
-            if (status === 401) rejectGrant(route.prefix, route.grant)
-            else if (status === 403) await checkForbidden(route.prefix, route.grant)
+            if (status === 401) rejectGrant(route.prefix, route.grant, abort)
+            else if (status === 403) await checkForbidden(route.prefix, route.grant, abort)
             if (response.destroyed) {
               incoming.resume()
               return
@@ -252,7 +272,11 @@ export function createCloudGateway() {
       })
       request.once('aborted', () => upstream.destroy())
       request.once('error', () => upstream.destroy())
-      response.once('close', () => upstream.destroy())
+      response.once('close', () => {
+        clearTimeout(expiry)
+        route.grant.exchanges.delete(abort)
+        upstream.destroy()
+      })
       request.pipe(upstream)
       return true
     },

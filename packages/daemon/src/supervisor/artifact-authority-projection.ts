@@ -24,7 +24,12 @@ type LaneState = {
   ownerId: string
   bindings: Map<string, ArtifactAuthorityBinding>
 }
-type EpochState = { session: number; lanes: Map<string, number> }
+type EpochState = {
+  session: number
+  lanes: Map<string, number>
+  revokedSession: boolean
+  revokedLanes: Set<string>
+}
 
 function unavailable(): Error {
   return new Error('artifact authority projection unavailable')
@@ -108,6 +113,12 @@ function artifact(value: unknown, sha256: string, mime: string): ArtifactRef | u
 }
 
 type ProjectionEpoch = Readonly<{ session: number; lane: number }>
+type SharedColdLoad = {
+  promise: Promise<void>
+  controller: AbortController
+  waiters: number
+  settled: boolean
+}
 
 function recordedArtifactScope(input: {
   ownership: TrustedArtifactOwnership
@@ -115,6 +126,7 @@ function recordedArtifactScope(input: {
   lanes: Map<string, Map<string, LaneState>>
   epoch(sessionId: string, laneId: string): ProjectionEpoch
   current(sessionId: string, laneId: string, observed: ProjectionEpoch): boolean
+  coldAllowed(sessionId: string, laneId: string): boolean
   projectRoots(
     sessionId: string,
     laneId: string,
@@ -122,10 +134,11 @@ function recordedArtifactScope(input: {
     signal: AbortSignal,
     observed: ProjectionEpoch,
     expectedOwner: string,
+    cold?: boolean,
   ): Promise<void>
 }): ArtifactReadScopeAuthority {
-  const { ownership, history, lanes, epoch, current, projectRoots } = input
-  const coldLoads = new Map<string, Promise<void>>()
+  const { ownership, history, lanes, epoch, current, coldAllowed, projectRoots } = input
+  const coldLoads = new Map<string, SharedColdLoad>()
   const scopeResolve: ArtifactReadScopeAuthority['resolve'] = async (target, signal) => {
     if (signal.aborted) return undefined
     let state = lanes.get(target.sessionId)?.get(target.laneId)
@@ -133,19 +146,29 @@ function recordedArtifactScope(input: {
     try {
       let currentOwner = owner(await ownership.resolve(target.sessionId, signal))
       if (
+        !currentOwner ||
         currentOwner !== target.principalId ||
         signal.aborted ||
         !current(target.sessionId, target.laneId, observedEpoch)
       )
         return undefined
-      if (!state && history && observedEpoch.session === 0 && observedEpoch.lane === 0) {
+      if (!state && history && coldAllowed(target.sessionId, target.laneId)) {
         const key = JSON.stringify([target.sessionId, target.laneId])
-        let loading = coldLoads.get(key)
-        if (!loading) {
+        let load = coldLoads.get(key)
+        if (!load) {
           if (coldLoads.size >= 4096) return undefined
           const source = history
-          loading = (async () => {
-            const events = await source.read(target.sessionId, target.laneId, signal)
+          const controller = new AbortController()
+          const loadEpoch = observedEpoch
+          const loadOwner = currentOwner
+          const entry: SharedColdLoad = {
+            promise: Promise.resolve(),
+            controller,
+            waiters: 0,
+            settled: false,
+          }
+          entry.promise = (async () => {
+            const events = await source.read(target.sessionId, target.laneId, controller.signal)
             if (!Array.isArray(events) || utilTypes.isProxy(events) || events.length > 4096)
               throw unavailable()
             const roots = new Map<string, Readonly<{ sha256: string; mime: string; size?: number }>>()
@@ -163,34 +186,69 @@ function recordedArtifactScope(input: {
                 if (roots.size > 4096) throw unavailable()
               }
             }
-            if (signal.aborted || !current(target.sessionId, target.laneId, observedEpoch))
+            if (
+              controller.signal.aborted ||
+              !coldAllowed(target.sessionId, target.laneId) ||
+              !current(target.sessionId, target.laneId, loadEpoch)
+            )
               throw unavailable()
             if (roots.size)
               await projectRoots(
                 target.sessionId,
                 target.laneId,
                 [...roots.values()],
-                signal,
-                observedEpoch,
-                target.principalId,
+                controller.signal,
+                loadEpoch,
+                loadOwner,
+                true,
               )
           })()
-          coldLoads.set(key, loading)
-          const pending = loading
-          const forget = () => {
-            if (coldLoads.get(key) === pending) coldLoads.delete(key)
+          coldLoads.set(key, entry)
+          const finish = () => {
+            entry.settled = true
+            if (coldLoads.get(key) === entry) coldLoads.delete(key)
           }
-          const settled = () => {
-            forget()
-            signal.removeEventListener('abort', forget)
-          }
-          signal.addEventListener('abort', forget, { once: true })
-          if (signal.aborted) forget()
-          void pending.then(settled, settled)
+          void entry.promise.then(finish, finish)
+          load = entry
         }
-        await loading
+        const activeLoad = load
+        activeLoad.waiters += 1
+        let left = false
+        const leave = () => {
+          if (left) return
+          left = true
+          activeLoad.waiters -= 1
+          if (activeLoad.waiters <= 0 && !activeLoad.settled) {
+            if (coldLoads.get(key) === activeLoad) coldLoads.delete(key)
+            activeLoad.controller.abort()
+          }
+        }
+        if (signal.aborted) {
+          leave()
+          return undefined
+        }
+        await new Promise<void>((resolve, reject) => {
+          const onAbort = () => {
+            leave()
+            reject(unavailable())
+          }
+          signal.addEventListener('abort', onAbort, { once: true })
+          activeLoad.promise.then(
+            () => {
+              signal.removeEventListener('abort', onAbort)
+              leave()
+              resolve()
+            },
+            (err) => {
+              signal.removeEventListener('abort', onAbort)
+              leave()
+              reject(err)
+            },
+          )
+        })
         state = lanes.get(target.sessionId)?.get(target.laneId)
         currentOwner = owner(await ownership.resolve(target.sessionId, signal))
+        if (!coldAllowed(target.sessionId, target.laneId)) return undefined
       }
       if (
         !state ||
@@ -249,62 +307,71 @@ function projectionConfiguration(input: unknown) {
   return Object.freeze({ writer, inspector, ownership, history })
 }
 
-/** Projects trusted storage registrations and legacy media roots into durable read authority. */
-export function createArtifactAuthorityProjection(
-  input: Readonly<{
-    writer: ArtifactAuthorityProjectionWriter
-    inspector: TrustedArtifactInspector
-    ownership: TrustedArtifactOwnership
-    history?: TrustedArtifactHistory
-  }>,
-): Readonly<{
-  observe(sessionId: string, event: unknown, signal: AbortSignal): Promise<void>
-  revokeLane(sessionId: string, laneId: string): void
-  resetSession(sessionId: string): void
-  scope: ArtifactReadScopeAuthority
-}> {
-  const { writer, inspector, ownership, history } = projectionConfiguration(input)
-  const lanes = new Map<string, Map<string, LaneState>>()
+function createEpochTracker() {
   const epochs = new Map<string, EpochState>()
-  const epoch = (sessionId: string, laneId: string) => {
-    const state = epochs.get(sessionId) ?? {
-      session: 0,
-      lanes: new Map<string, number>(),
+  const ensure = (sessionId: string): EpochState => {
+    let state = epochs.get(sessionId)
+    if (!state) {
+      state = {
+        session: 0,
+        lanes: new Map<string, number>(),
+        revokedSession: false,
+        revokedLanes: new Set<string>(),
+      }
+      epochs.set(sessionId, state)
     }
-    epochs.set(sessionId, state)
-    return Object.freeze({
-      session: state.session,
-      lane: state.lanes.get(laneId) ?? 0,
-    })
+    return state
   }
-  const current = (sessionId: string, laneId: string, observed: { session: number; lane: number }) => {
-    const state = epochs.get(sessionId)
-    return !!state && state.session === observed.session && (state.lanes.get(laneId) ?? 0) === observed.lane
+  return {
+    epoch(sessionId: string, laneId: string): ProjectionEpoch {
+      const state = epochs.get(sessionId)
+      return Object.freeze({
+        session: state?.session ?? 0,
+        lane: state?.lanes.get(laneId) ?? 0,
+      })
+    },
+    current(sessionId: string, laneId: string, observed: ProjectionEpoch): boolean {
+      const state = epochs.get(sessionId)
+      return (state?.session ?? 0) === observed.session && (state?.lanes.get(laneId) ?? 0) === observed.lane
+    },
+    coldAllowed(sessionId: string, laneId: string): boolean {
+      const state = epochs.get(sessionId)
+      return !state?.revokedSession && !state?.revokedLanes.has(laneId)
+    },
+    bumpLane(sessionId: string, laneId: string, revokeCold: boolean): void {
+      const state = ensure(sessionId)
+      state.lanes.set(laneId, (state.lanes.get(laneId) ?? 0) + 1)
+      if (revokeCold) state.revokedLanes.add(laneId)
+    },
+    bumpSession(sessionId: string, revokeCold: boolean): void {
+      const state = ensure(sessionId)
+      state.session += 1
+      state.lanes.clear()
+      if (revokeCold) {
+        state.revokedSession = true
+        state.revokedLanes.clear()
+      }
+    },
   }
-  const bumpLane = (sessionId: string, laneId: string) => {
-    const state = epochs.get(sessionId) ?? {
-      session: 0,
-      lanes: new Map<string, number>(),
-    }
-    state.lanes.set(laneId, (state.lanes.get(laneId) ?? 0) + 1)
-    epochs.set(sessionId, state)
-  }
-  const bumpSession = (sessionId: string) => {
-    const state = epochs.get(sessionId) ?? {
-      session: 0,
-      lanes: new Map<string, number>(),
-    }
-    state.session += 1
-    state.lanes.clear()
-    epochs.set(sessionId, state)
-  }
-  const projectRoots = async (
+}
+
+function createRootProjector(input: {
+  writer: ArtifactAuthorityProjectionWriter
+  inspector: TrustedArtifactInspector
+  ownership: TrustedArtifactOwnership
+  lanes: Map<string, Map<string, LaneState>>
+  epoch(sessionId: string, laneId: string): ProjectionEpoch
+  current(sessionId: string, laneId: string, observed: ProjectionEpoch): boolean
+}) {
+  const { writer, inspector, ownership, lanes, epoch, current } = input
+  return async (
     sessionId: string,
     laneId: string,
     roots: readonly Readonly<{ sha256: string; mime: string; size?: number }>[],
     signal: AbortSignal,
     observedEpoch = epoch(sessionId, laneId),
     expectedOwner?: string,
+    cold = false,
   ) => {
     const appended: ArtifactAuthorityBinding[] = []
     try {
@@ -323,16 +390,26 @@ export function createArtifactAuthorityProjection(
         // A Core registration attests storage, not this adapter's Web readability or byte limit.
         // Legacy roots have no size and still require the existing trusted inspector.
         const registered = existingState?.bindings.get(`${entry.sha256}:${entry.mime}`)?.artifact
-        const ref = artifact(
-          entry.size !== undefined
-            ? entry
-            : (registered ?? (await inspector.inspect({ sha256: entry.sha256, mime: entry.mime }, signal))),
-          entry.sha256,
-          entry.mime,
-        )
-        if (!ref || signal.aborted || !current(sessionId, laneId, observedEpoch)) throw unavailable()
+        let inspected: unknown
+        if (entry.size !== undefined) inspected = entry
+        else if (registered !== undefined) inspected = registered
+        else {
+          try {
+            inspected = await inspector.inspect({ sha256: entry.sha256, mime: entry.mime }, signal)
+          } catch {
+            if (!cold || signal.aborted || !current(sessionId, laneId, observedEpoch)) throw unavailable()
+            continue
+          }
+        }
+        const ref = artifact(inspected, entry.sha256, entry.mime)
+        if (signal.aborted || !current(sessionId, laneId, observedEpoch)) throw unavailable()
+        if (!ref) {
+          if (cold && entry.size === undefined) continue
+          throw unavailable()
+        }
         bindings.push(Object.freeze({ sessionId, laneId, ownerId, artifact: ref }))
       }
+      if (cold && bindings.length === 0) return
       const confirmedOwner = owner(await ownership.resolve(sessionId, signal))
       if (confirmedOwner !== ownerId || signal.aborted || !current(sessionId, laneId, observedEpoch))
         throw unavailable()
@@ -377,6 +454,27 @@ export function createArtifactAuthorityProjection(
       throw unavailable()
     }
   }
+}
+
+/** Projects trusted storage registrations and legacy media roots into durable read authority. */
+export function createArtifactAuthorityProjection(
+  input: Readonly<{
+    writer: ArtifactAuthorityProjectionWriter
+    inspector: TrustedArtifactInspector
+    ownership: TrustedArtifactOwnership
+    history?: TrustedArtifactHistory
+  }>,
+): Readonly<{
+  observe(sessionId: string, event: unknown, signal: AbortSignal): Promise<void>
+  revokeLane(sessionId: string, laneId: string): void
+  resetSession(sessionId: string): void
+  detachSession(sessionId: string): void
+  scope: ArtifactReadScopeAuthority
+}> {
+  const { writer, inspector, ownership, history } = projectionConfiguration(input)
+  const lanes = new Map<string, Map<string, LaneState>>()
+  const { epoch, current, coldAllowed, bumpLane, bumpSession } = createEpochTracker()
+  const projectRoots = createRootProjector({ writer, inspector, ownership, lanes, epoch, current })
   const observe = async (sessionId: string, raw: unknown, signal: AbortSignal) => {
     try {
       const checked = validateEvent(raw)
@@ -389,7 +487,7 @@ export function createArtifactAuthorityProjection(
     }
   }
   const revokeLane = (sessionId: string, laneId: string) => {
-    bumpLane(sessionId, laneId)
+    bumpLane(sessionId, laneId, true)
     const session = lanes.get(sessionId)
     const state = session?.get(laneId)
     session?.delete(laneId)
@@ -414,42 +512,49 @@ export function createArtifactAuthorityProjection(
     }
     if (failed) throw revocationUnavailable()
   }
+  const clearSession = (sessionId: string, revokeCold: boolean) => {
+    bumpSession(sessionId, revokeCold)
+    const session = lanes.get(sessionId)
+    lanes.delete(sessionId)
+    if (!session) return
+    let failed = false
+    for (const [laneId, state] of session) {
+      for (const binding of state.bindings.values()) {
+        try {
+          const result = writer.revoke(
+            {
+              permission: 'revoke',
+              sessionId,
+              laneId,
+              principalId: state.ownerId,
+            },
+            binding,
+          )
+          if (!result.ok) failed = true
+        } catch {
+          failed = true
+        }
+      }
+    }
+    if (failed) throw revocationUnavailable()
+  }
   const scope = recordedArtifactScope({
     ownership,
     history,
     lanes,
     epoch,
     current,
+    coldAllowed,
     projectRoots,
   })
   return Object.freeze({
     observe,
     revokeLane,
     resetSession(sessionId: string) {
-      bumpSession(sessionId)
-      const session = lanes.get(sessionId)
-      lanes.delete(sessionId)
-      if (!session) return
-      let failed = false
-      for (const [laneId, state] of session) {
-        for (const binding of state.bindings.values()) {
-          try {
-            const result = writer.revoke(
-              {
-                permission: 'revoke',
-                sessionId,
-                laneId,
-                principalId: state.ownerId,
-              },
-              binding,
-            )
-            if (!result.ok) failed = true
-          } catch {
-            failed = true
-          }
-        }
-      }
-      if (failed) throw revocationUnavailable()
+      clearSession(sessionId, true)
+    },
+    detachSession(sessionId: string) {
+      clearSession(sessionId, false)
     },
     scope,
   })

@@ -29,12 +29,20 @@ if [ "$(realpath -m -- "$AGH_HOME")" != "$AGH_HOME" ]; then
   printf 'AGH_HOME must not traverse a symbolic link\n' >&2
   exit 64
 fi
+if [ -L "$AGH_HOME" ]; then
+  printf 'AGH_HOME must not be a symbolic link\n' >&2
+  exit 64
+fi
 umask 077
-mkdir -p -- "$AGH_HOME" "$WORKSPACE_DIR"
 
 # 原运行时在 home 中存放 SQLite WAL、daemon 所有者记录和本机锁。
 # 本次 CFS 用于工作区普通文件，不能把网络挂载误当作受支持的数据库盘。
-runtime_fs="$(stat -f -c %T -- "$AGH_HOME")"
+# 在创建目录或收紧权限前，先在现有目录或最近已存在祖先目录上核对文件系统类型。
+fs_probe="$AGH_HOME"
+while [ ! -e "$fs_probe" ] && [ "$fs_probe" != "/" ]; do
+  fs_probe="$(dirname -- "$fs_probe")"
+done
+runtime_fs="$(stat -f -c %T -- "$fs_probe")"
 case "$runtime_fs" in
   nfs*|cifs|smb*|9p|virtiofs|fuse*)
     printf 'AGH_HOME requires SQLite-compatible local storage; network filesystem detected\n' >&2
@@ -42,17 +50,11 @@ case "$runtime_fs" in
     ;;
 esac
 
-# mkdir 的 umask 不会修正镜像或挂载中已经存在的目录；仅收紧运行数据根目录。
-# 工作区/CFS 权限由挂载配置管理，不递归修改，也不触碰已有文件内容。
-if [ -L "$AGH_HOME" ]; then
-  printf 'AGH_HOME must not be a symbolic link\n' >&2
-  exit 64
-fi
-chmod 0700 -- "$AGH_HOME"
-cd -- "$WORKSPACE_DIR"
-
-# Core 在安装插件前完成布局初始化。平台提供的 Key 始终留在原路径。
+# Core 在锁内先识别布局并安全收紧已确认可接受的运行目录；未知非空目录及旧布局保持原状拒绝。
 node /opt/agh/runtime/agnes.mjs home --llmsg-init
+
+mkdir -p -- "$WORKSPACE_DIR"
+cd -- "$WORKSPACE_DIR"
 
 # 保留集成镜像的有界清理，避免子进程忽略 TERM 后一直等待。
 envd_pid=""

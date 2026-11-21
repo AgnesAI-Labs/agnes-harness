@@ -77,31 +77,83 @@ describe('session.view', () => {
 })
 
 describe('recorded artifact history', () => {
-  const row = (seq: number, lane = 'main') => ({ seq, lane, type: 'tool/result' }) as EventEnvelope
+  const common = {
+    ts: '2026-01-01T00:00:00Z',
+    v: 1,
+    trust: 'trusted' as const,
+    actor: { id: 'local', org: '', role: '', deptPath: [], attrs: {} },
+  }
+  const artifactRow = (seq: number, lane = 'main', shaByte = seq) =>
+    ({
+      ...common,
+      seq,
+      lane,
+      id: `01ARZ3NDEKTSV4RRFFQ69G${String(seq).padStart(4, '0')}`,
+      type: 'x/core/artifact.registered',
+      origin: 'system',
+      ignorable: true,
+      data: {
+        artifact: {
+          sha256: shaByte.toString(16).padStart(64, '0'),
+          size: 16,
+          mime: 'image/png',
+        },
+      },
+    }) as unknown as EventEnvelope
+  const plainToolResult = (seq: number, lane = 'main', textBytes = 1024) =>
+    ({
+      ...common,
+      seq,
+      lane,
+      id: `01BRZ3NDEKTSV4RRFFQ69G${String(seq % 10000).padStart(4, '0')}`,
+      type: 'tool/result',
+      origin: 'tool:read',
+      data: {
+        toolUseId: `u-${seq}`,
+        isError: false,
+        content: [{ type: 'text', text: 'x'.repeat(textBytes) }],
+        enforcement: { level: 'full', scope: [] },
+        authz: { decisionId: 'n/a' },
+      },
+    }) as unknown as EventEnvelope
 
-  it('keeps the initial ledger head and requested lane while paging recorded roots', async () => {
-    const events = Array.from({ length: 120 }, (_, i) => row(i + 1, i % 2 ? 'other' : 'main'))
+  it('keeps the initial ledger head and requested lane while ignoring >4096 and >4MiB non-artifact or other-lane rows', async () => {
+    const first = artifactRow(1, 'main', 1)
+    const noisyMain = Array.from({ length: 4200 }, (_, i) => plainToolResult(i + 2, 'main', 1200))
+    const hugeOtherLane = plainToolResult(4202, 'other', 4 * 1024 * 1024 + 512)
+    const latest = artifactRow(4203, 'main', 2)
+    const postHead = artifactRow(4204, 'main', 3)
+    const all = [first, ...noisyMain, hugeOtherLane, latest, postHead]
+    const seenLanes: (string | undefined)[] = []
     const reader = artifactHistoryReader(() => async (query) => {
-      if (!query.type) return [row(120)]
-      return [...events, row(121)]
+      if (!query.type) return [latest]
+      seenLanes.push(query.lane)
+      return all
         .filter((e) => e.seq >= (query.fromSeq ?? 1) && e.seq <= (query.toSeq ?? 0))
         .slice(0, query.limit)
     })
     const history = await reader.read('recorded', 'main', new AbortController().signal)
-    expect(history).toEqual(events.filter((e) => e.lane === 'main'))
+    expect(seenLanes.every((lane) => lane === 'main')).toBe(true)
+    expect(history).toEqual([first, latest])
   })
 
-  it.each(['row limit', 'byte limit', 'invalid order', 'scan failure', 'cancelled'] as const)(
+  it.each(['root limit', 'byte limit', 'invalid order', 'scan failure', 'cancelled'] as const)(
     'refuses a history read on %s',
     async (mode) => {
       const ac = new AbortController()
       const reader = artifactHistoryReader(() => async (query) => {
-        if (!query.type) return [row(5000)]
+        if (!query.type) return [artifactRow(5000)]
         if (mode === 'scan failure') throw new Error('private adapter detail')
         if (mode === 'cancelled') ac.abort()
-        if (mode === 'byte limit') return [{ ...row(1), data: 'x'.repeat(4 * 1024 * 1024) }]
-        if (mode === 'invalid order') return [row(2), row(1)]
-        return Array.from({ length: 100 }, (_, i) => row((query.fromSeq ?? 1) + i))
+        if (mode === 'byte limit')
+          return [
+            {
+              ...artifactRow(1),
+              data: { artifact: 'x'.repeat(4 * 1024 * 1024) },
+            } as unknown as EventEnvelope,
+          ]
+        if (mode === 'invalid order') return [artifactRow(2), artifactRow(1)]
+        return Array.from({ length: 100 }, (_, i) => artifactRow((query.fromSeq ?? 1) + i))
       })
       await expect(reader.read('recorded', 'main', ac.signal)).rejects.toThrow()
     },

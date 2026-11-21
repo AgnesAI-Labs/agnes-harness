@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { once } from 'node:events'
 import { createServer, request as requestHttp } from 'node:http'
 import type { Duplex } from 'node:stream'
@@ -612,3 +612,94 @@ it.each([401, 403])(
     }
   },
 )
+
+it('terminates in-flight HTTP streams on grant replacement, eviction and expiry while preserving active grants', async () => {
+  const timers = new Set<ReturnType<typeof setInterval>>()
+  const upstream = createServer((req, res) => {
+    if (req.url?.endsWith('/stream')) {
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      res.write('data: start\n\n')
+      const timer = setInterval(() => {
+        if (!res.destroyed) res.write('data: keepalive\n\n')
+      }, 15)
+      timers.add(timer)
+      res.once('close', () => {
+        clearInterval(timer)
+        timers.delete(timer)
+      })
+      return
+    }
+    res.writeHead(200).end('ok')
+  })
+  upstream.listen(0, '127.0.0.1')
+  await once(upstream, 'listening')
+  fixture.origin = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`
+  const gateway = createCloudGateway()
+  const server = createServer(async (request, response) => {
+    if (!(await gateway.handleHttp(request, response))) response.writeHead(404).end()
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  const local = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+  const origin = 'https://8443-fixture.ap-shanghai.tencentags.com'
+  const makeToken = (id: number) =>
+    `${(Date.now() + 60_000 + id).toString(36)}.${randomBytes(16).toString('base64url')}.${randomBytes(32).toString('base64url')}`
+  const drainUntilClosed = async (reader: ReadableStreamDefaultReader<Uint8Array>) => {
+    try {
+      for (let i = 0; i < 40; i++) {
+        const next = await reader.read()
+        if (next.done) return true
+      }
+      return false
+    } catch {
+      return true
+    }
+  }
+  try {
+    const tokenEvicted = makeToken(1)
+    const tokenShort = makeToken(2)
+    const tokenSurvivor = makeToken(3)
+    gateway.register(origin, { token: tokenEvicted, expiresAt: Date.now() + 60_000, trafficToken: 't-1' })
+    gateway.register(origin, { token: tokenShort, expiresAt: Date.now() + 90, trafficToken: 't-2' })
+    gateway.register(origin, { token: tokenSurvivor, expiresAt: Date.now() + 60_000, trafficToken: 't-3' })
+
+    const evictedRes = await fetch(local + remoteFrontendSessionPath(tokenEvicted) + '/stream')
+    const shortRes = await fetch(local + remoteFrontendSessionPath(tokenShort) + '/stream')
+    const survivorRes = await fetch(local + remoteFrontendSessionPath(tokenSurvivor) + '/stream')
+    const evictedReader = evictedRes.body!.getReader()
+    const shortReader = shortRes.body!.getReader()
+    const survivorReader = survivorRes.body!.getReader()
+    expect((await evictedReader.read()).done).toBe(false)
+    expect((await shortReader.read()).done).toBe(false)
+    expect((await survivorReader.read()).done).toBe(false)
+
+    expect(await drainUntilClosed(shortReader)).toBe(true)
+    expect((await fetch(local + remoteFrontendSessionPath(tokenShort) + '/check')).status).toBe(401)
+    expect((await survivorReader.read()).done).toBe(false)
+
+    for (let id = 10; id < 41; id++)
+      gateway.register(origin, {
+        token: makeToken(id),
+        expiresAt: Date.now() + 60_000,
+        trafficToken: `t-${id}`,
+      })
+    expect(await drainUntilClosed(evictedReader)).toBe(true)
+    expect((await survivorReader.read()).done).toBe(false)
+
+    gateway.register(origin, {
+      token: tokenSurvivor,
+      expiresAt: Date.now() + 60_000,
+      trafficToken: 't-3-new',
+    })
+    expect(await drainUntilClosed(survivorReader)).toBe(true)
+  } finally {
+    for (const timer of timers) clearInterval(timer)
+    gateway.close()
+    server.closeAllConnections()
+    upstream.closeAllConnections()
+    await Promise.all([
+      new Promise<void>((resolve) => server.close(() => resolve())),
+      new Promise<void>((resolve) => upstream.close(() => resolve())),
+    ])
+  }
+})

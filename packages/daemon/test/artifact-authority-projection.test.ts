@@ -652,4 +652,106 @@ describe('cold recorded artifact authority', () => {
       await f.tables.close()
     }
   })
+
+  it('reconstructs cold read authority after normal worker detachment while fencing stale in-flight cold reads', async () => {
+    const f = await fixture()
+    try {
+      let releaseFirst!: () => void,
+        firstStarted!: () => void,
+        calls = 0
+      const firstGate = new Promise<void>((r) => {
+        releaseFirst = r
+      })
+      const started = new Promise<void>((r) => {
+        firstStarted = r
+      })
+      const projection = f.makeProjection({
+        history: {
+          read: async () => {
+            calls += 1
+            if (calls === 1) {
+              firstStarted()
+              await firstGate
+            }
+            return [f.event()]
+          },
+        },
+      })
+      const inflight = projection.scope.resolve(target, new AbortController().signal)
+      await started
+      // Worker lifecycle detachment fences the old epoch without permanently banning future cold reads.
+      projection.detachSession('session-a')
+      releaseFirst()
+      await expect(inflight).resolves.toBeUndefined()
+      expect(f.index.resolve('session-a', 'main', f.sha256)).toBeUndefined()
+
+      await expect(projection.scope.resolve(target, new AbortController().signal)).resolves.toEqual({
+        sessionId: 'session-a',
+        laneId: 'main',
+      })
+      expect(f.index.resolve('session-a', 'main', f.sha256)).toBeDefined()
+
+      projection.detachSession('session-a')
+      expect(f.index.resolve('session-a', 'main', f.sha256)).toBeUndefined()
+      await expect(projection.scope.resolve(target, new AbortController().signal)).resolves.toEqual({
+        sessionId: 'session-a',
+        laneId: 'main',
+      })
+      expect(f.index.resolve('session-a', 'main', f.sha256)).toBeDefined()
+
+      // Explicit revocation still permanently denies cold reads until a fresh live observe.
+      projection.resetSession('session-a')
+      await expect(projection.scope.resolve(target, new AbortController().signal)).resolves.toBeUndefined()
+    } finally {
+      await f.tables.close()
+    }
+  })
+
+  it.each(['first', 'second'] as const)(
+    'isolates concurrent cold-read callers when the %s caller cancels',
+    async (cancelledCaller) => {
+      const f = await fixture()
+      try {
+        let release!: () => void,
+          started!: () => void,
+          scans = 0
+        const gate = new Promise<void>((r) => {
+          release = r
+        })
+        const reading = new Promise<void>((r) => {
+          started = r
+        })
+        const projection = f.makeProjection({
+          history: {
+            read: async () => {
+              scans += 1
+              started()
+              await gate
+              return [f.event()]
+            },
+          },
+        })
+        const ac1 = new AbortController()
+        const ac2 = new AbortController()
+        const first = projection.scope.resolve(target, ac1.signal)
+        await reading
+        const second = projection.scope.resolve(target, ac2.signal)
+        await Promise.resolve()
+        if (cancelledCaller === 'first') {
+          ac1.abort()
+          await expect(first).resolves.toBeUndefined()
+          release()
+          await expect(second).resolves.toEqual({ sessionId: 'session-a', laneId: 'main' })
+        } else {
+          ac2.abort()
+          await expect(second).resolves.toBeUndefined()
+          release()
+          await expect(first).resolves.toEqual({ sessionId: 'session-a', laneId: 'main' })
+        }
+        expect(scans).toBe(1)
+      } finally {
+        await f.tables.close()
+      }
+    },
+  )
 })

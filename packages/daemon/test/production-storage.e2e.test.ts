@@ -1353,6 +1353,25 @@ describe('production supervisor storage', () => {
           })
         }
       }
+      // A failed execution open detaches worker lifecycle state in the same daemon without
+      // revoking read-only cold artifact recovery for the session owner.
+      await expect(
+        rpc.call(20, '_agnes/v1/session.open', {
+          sessionId,
+          cwd: dir,
+          binding: { workspacePath: dir, mode: 'read-only' },
+        }),
+      ).rejects.toThrow()
+      for (const { artifact, bytes } of artifacts) {
+        await expect(
+          rpc.call(21, '_agnes/v1/artifact.read', { sessionId, laneId: 'main', artifact }),
+        ).resolves.toMatchObject({
+          ok: true,
+          status: 200,
+          artifact,
+          base64: bytes.toString('base64'),
+        })
+      }
     } finally {
       rpc?.close()
       try {

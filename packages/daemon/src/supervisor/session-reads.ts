@@ -6,6 +6,8 @@ import {
   SESSION_ARTIFACT_ROOT_EVENT_TYPES,
   type SessionRuntimeParams,
   type SessionViewParams,
+  sessionArtifactRoots,
+  validateEvent,
 } from '@agnes/protocol'
 import type { TrustedArtifactHistory } from './artifact-authority-projection.js'
 import type { WorkerPool } from './worker-pool.js'
@@ -16,6 +18,10 @@ export type SessionViewRead = (
   options: { maxNodes?: number; signal?: AbortSignal },
 ) => Promise<unknown>
 
+const MAX_RETAINED_ARTIFACT_ROOTS = 4096
+const MAX_SINGLE_EVENT_BYTES = 4 * 1024 * 1024
+const MAX_SCANNED_CANDIDATE_ROWS = 250_000
+
 /** Bounded, read-only roots from the daemon-owned ledger; never opens a worker or writer lease. */
 export function artifactHistoryReader(
   read: (sessionId: string) => ScanRead<EventEnvelope>,
@@ -24,9 +30,10 @@ export function artifactHistoryReader(
     async read(sessionId, laneId, signal) {
       const scan = read(sessionId)
       const rows: EventEnvelope[] = []
+      const seenRoots = new Map<string, number | undefined>()
       let fromSeq = 1,
-        bytes = 0,
-        scanned = 0
+        scanned = 0,
+        pages = 0
       const check = () => {
         if (signal.aborted) throw new Error('artifact history unavailable')
       }
@@ -35,23 +42,49 @@ export function artifactHistoryReader(
       if (!Number.isSafeInteger(head) || head < 0) throw new Error('artifact history unavailable')
       while (fromSeq <= head) {
         check()
+        if (++pages % 20 === 0) await new Promise<void>((resolve) => setImmediate(resolve))
+        check()
         const page = await scan({
           fromSeq,
           toSeq: head,
+          lane: laneId,
           type: [...SESSION_ARTIFACT_ROOT_EVENT_TYPES],
           order: 'asc',
           limit: 100,
         })
         check()
-        bytes += Buffer.byteLength(JSON.stringify(page), 'utf8')
         scanned += page.length
-        if (page.length > 100 || scanned > 4096 || bytes > 4 * 1024 * 1024)
+        if (page.length > 100 || scanned > MAX_SCANNED_CANDIDATE_ROWS)
           throw new Error('artifact history unavailable')
         for (const row of page) {
           if (!Number.isSafeInteger(row.seq) || row.seq < fromSeq || row.seq > head)
             throw new Error('artifact history unavailable')
           fromSeq = row.seq + 1
-          if ((row.lane ?? 'main') === laneId) rows.push(row)
+          if ((row.lane ?? 'main') !== laneId) continue
+          if (Buffer.byteLength(JSON.stringify(row), 'utf8') > MAX_SINGLE_EVENT_BYTES)
+            throw new Error('artifact history unavailable')
+          const checked = validateEvent(row)
+          if (!checked.ok) throw new Error('artifact history unavailable')
+          const roots = sessionArtifactRoots(checked.value as EventEnvelope)
+          if (!roots?.length) continue
+          let keep = false
+          for (const ref of roots) {
+            const identity = `${ref.sha256}:${ref.mime}`
+            if (!seenRoots.has(identity)) {
+              seenRoots.set(identity, ref.size)
+              keep = true
+            } else {
+              const prev = seenRoots.get(identity)
+              if (prev === undefined && ref.size !== undefined) {
+                seenRoots.set(identity, ref.size)
+                keep = true
+              } else if (prev !== undefined && ref.size !== undefined && prev !== ref.size) {
+                keep = true
+              }
+            }
+            if (seenRoots.size > MAX_RETAINED_ARTIFACT_ROOTS) throw new Error('artifact history unavailable')
+          }
+          if (keep) rows.push(row)
         }
         if (page.length < 100) break
       }

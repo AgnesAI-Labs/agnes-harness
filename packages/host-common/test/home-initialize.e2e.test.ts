@@ -235,7 +235,22 @@ describe.runIf(process.platform === 'linux')('LLMSG home bootstrap', () => {
     expect(readFileSync(key, 'utf8')).toBe('fixture-rotated-key\n')
   })
 
-  it('refuses old layouts and preserves old data and the original Key', async () => {
+  it('refuses old layouts and preserves old data, original mode and the original Key', async () => {
+    const shared = join(parent, 'shared-legacy')
+    mkdirSync(shared, { mode: 0o755 })
+    writeFileSync(join(shared, 'foreign.txt'), 'keep')
+    await expect(initializeLlmsgHomeLocked(shared, 'local-dev', env)).rejects.toMatchObject({
+      code: 'E_HOME_VERSION',
+    })
+    expect(lstatSync(shared).mode & 0o777).toBe(0o755)
+    expect(readdirSync(shared)).toEqual(['foreign.txt'])
+    expect(readdirSync(parent)).not.toContain('.shared-legacy.initialize.sqlite')
+
+    const mounted = join(parent, 'mounted-home')
+    mkdirSync(mounted, { mode: 0o755 })
+    await initializeLlmsgHomeLocked(mounted, 'local-dev', env)
+    expect(lstatSync(mounted).mode & 0o777).toBe(0o700)
+
     const { home, key } = privateHome()
     writeFileSync(key, preseeded, { mode: 0o600 })
     const legacy = join(home, 'sessions.db')

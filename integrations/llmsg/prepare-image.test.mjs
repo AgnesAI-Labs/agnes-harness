@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -87,6 +89,58 @@ test('prepares committed matching sources and refuses dirty, mismatched or occup
     assert.equal(existsSync(mismatchOutput), false)
   } finally {
     assert.ok(relative(parent, temp).startsWith('agh-image-inputs-'))
+    rmSync(temp, { recursive: true, force: true })
+  }
+})
+
+test('start.sh refuses unrecognized AGH_HOME before mutating directory mode or creating WORKSPACE_DIR', () => {
+  const parent = resolve(tmpdir())
+  const temp = mkdtempSync(join(parent, 'agh-start-entry-'))
+  const source = dirname(fileURLToPath(import.meta.url))
+  try {
+    const bin = join(temp, 'bin')
+    mkdirSync(bin)
+    const writeTool = (name, script) => {
+      const target = join(bin, name)
+      writeFileSync(target, script)
+      chmodSync(target, 0o755)
+    }
+    writeTool(
+      'realpath',
+      `#!${process.execPath}\nconst p = process.argv.at(-1);\nprocess.stdout.write(p + '\\n');\n`,
+    )
+    writeTool('stat', '#!/bin/sh\nprintf "ext4\\n"\n')
+    writeTool(
+      'node',
+      `#!${process.execPath}\n` +
+        'const fs = require("node:fs"), path = require("node:path");\n' +
+        'const home = process.env.AGH_HOME;\n' +
+        'if (fs.existsSync(home) && fs.readdirSync(home).some((n) => n !== "cloud-key")) process.exit(1);\n' +
+        'fs.mkdirSync(home, { recursive: true, mode: 0o700 });\n' +
+        'fs.chmodSync(home, 0o700);\n',
+    )
+
+    const occupied = join(temp, 'occupied-home')
+    const workspace = join(temp, 'workspace-never-created')
+    mkdirSync(occupied)
+    chmodSync(occupied, 0o755)
+    writeFileSync(join(occupied, 'existing.txt'), 'preserve')
+
+    const failed = spawnSync('/bin/bash', [join(source, 'start.sh')], {
+      env: {
+        PATH: `${bin}:/usr/bin:/bin`,
+        AGH_CLOUD_API_BASE_URL: 'https://models.example.com/v1',
+        LLMSG_TRACK_URL: 'https://models.example.com/llmsg/api/track/tool_calls',
+        AGH_HOME: occupied,
+        WORKSPACE_DIR: workspace,
+      },
+      encoding: 'utf8',
+    })
+    assert.notEqual(failed.status, 0)
+    assert.equal(lstatSync(occupied).mode & 0o777, 0o755)
+    assert.equal(readFileSync(join(occupied, 'existing.txt'), 'utf8'), 'preserve')
+    assert.equal(existsSync(workspace), false)
+  } finally {
     rmSync(temp, { recursive: true, force: true })
   }
 })

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, createHmac, randomBytes } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import type { Duplex } from 'node:stream'
 import {
@@ -288,6 +288,115 @@ it('relays browser WebSockets to the fixed daemon and closes them on shutdown', 
     socket.close()
     await gateway.close()
     for (const peer of peers) peer.destroy()
+    await new Promise<void>((resolve) => upstream.close(() => resolve()))
+  }
+})
+
+it('isolates capability signing keys per publication and terminates ongoing HTTP streams at capability expiry', async () => {
+  const key = 'fixture-publication-signing-isolation-key'
+  const digest = createHash('sha256').update(key).digest('hex')
+  const timers = new Set<ReturnType<typeof setInterval>>()
+  const upstream = createServer((req, res) => {
+    if (req.url === '/api/stream') {
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' })
+      res.write('data: tick\n\n')
+      const timer = setInterval(() => {
+        if (!res.destroyed) res.write('data: tick\n\n')
+      }, 15)
+      timers.add(timer)
+      res.once('close', () => {
+        clearInterval(timer)
+        timers.delete(timer)
+      })
+      return
+    }
+    res.writeHead(200).end(req.headers['e2b-traffic-access-token'] ?? 'clean')
+  })
+  const origin = await listen(upstream)
+  const openPublication = (instanceId: string) =>
+    createPublishedFrontend({
+      publication: {
+        enabled: true,
+        access: 'key-owner',
+        auth: { keySha256: digest },
+        host: '127.0.0.1',
+        port: 0,
+      },
+      webOrigin: origin,
+      instanceId,
+      wsUrl: () => origin.replace('http:', 'ws:'),
+      current: async () => true,
+    })
+  let first = await openPublication('instance-1')
+  const second = await openPublication('instance-2')
+  try {
+    const forgedPayload = `${(Date.now() + 60_000).toString(36)}.${randomBytes(16).toString('base64url')}`
+    const forgedSig = createHmac('sha256', Buffer.from(digest, 'hex'))
+      .update(`agh-frontend-session/v1:${forgedPayload}`)
+      .digest('base64url')
+    const forgedPrefix = remoteFrontendSessionPath(`${forgedPayload}.${forgedSig}`)
+    expect((await fetch(`${first.url}${forgedPrefix}/api/check`)).status).toBe(401)
+
+    const auth1 = (await (
+      await fetch(`${first.url}${REMOTE_FRONTEND_AUTH}`, { method: 'POST', body: JSON.stringify({ key }) })
+    ).json()) as { token: string; expiresAt: number }
+    const prefix1 = remoteFrontendSessionPath(auth1.token)
+    expect(
+      await (
+        await fetch(`${first.url}${prefix1}/api/check`, {
+          headers: { 'e2b-traffic-access-token': 'platform-secret' },
+        })
+      ).text(),
+    ).toBe('clean')
+    expect((await fetch(`${second.url}${prefix1}/api/check`)).status).toBe(401)
+
+    await first.close()
+    first = await openPublication('instance-1-restarted')
+    expect((await fetch(`${first.url}${prefix1}/api/check`)).status).toBe(401)
+
+    const baseNow = Date.now()
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(baseNow - 8 * 60 * 60 * 1000 + 80)
+    let shortAuth: { token: string; expiresAt: number }
+    try {
+      shortAuth = (await (
+        await fetch(`${first.url}${REMOTE_FRONTEND_AUTH}`, { method: 'POST', body: JSON.stringify({ key }) })
+      ).json()) as { token: string; expiresAt: number }
+    } finally {
+      nowSpy.mockRestore()
+    }
+    const longAuth = (await (
+      await fetch(`${first.url}${REMOTE_FRONTEND_AUTH}`, { method: 'POST', body: JSON.stringify({ key }) })
+    ).json()) as { token: string; expiresAt: number }
+    const shortStream = await fetch(`${first.url}${remoteFrontendSessionPath(shortAuth.token)}/api/stream`)
+    const longStream = await fetch(`${first.url}${remoteFrontendSessionPath(longAuth.token)}/api/stream`)
+    expect(shortStream.status).toBe(200)
+    expect(longStream.status).toBe(200)
+    const shortReader = shortStream.body!.getReader()
+    const longReader = longStream.body!.getReader()
+    expect((await shortReader.read()).done).toBe(false)
+    expect((await longReader.read()).done).toBe(false)
+
+    const drained = await (async () => {
+      try {
+        for (let i = 0; i < 40; i++) {
+          const chunk = await shortReader.read()
+          if (chunk.done) return true
+        }
+        return false
+      } catch {
+        return true
+      }
+    })()
+    expect(drained).toBe(true)
+    expect((await fetch(`${first.url}${remoteFrontendSessionPath(shortAuth.token)}/api/check`)).status).toBe(
+      401,
+    )
+    expect((await longReader.read()).done).toBe(false)
+    await longReader.cancel()
+  } finally {
+    for (const timer of timers) clearInterval(timer)
+    await first.close()
+    await second.close()
     await new Promise<void>((resolve) => upstream.close(() => resolve()))
   }
 })
