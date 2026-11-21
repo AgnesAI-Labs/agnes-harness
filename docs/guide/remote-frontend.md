@@ -4,7 +4,7 @@ English | [简体中文](remote-frontend.zh-CN.md)
 
 [Documentation](../README.md) · [Installation](install.md) · [Plugins](packages.md) · [Credentials](credentials.md)
 
-This guide applies to deployments with a Harness build that supports **Settings → Advanced → Cloud connection**. The public `main` build at the time of writing does not include that feature. Obtain matching Harness builds for both ends and the compatible cloud plugin archive from your deployment operator. The integration described here uses Harness Extension API `5.23.0`.
+This guide applies to Harness deployments that provide **Settings → Advanced → Cloud connection**. Obtain matching Harness builds for both ends and the compatible cloud plugin archive from your deployment operator. The integration described here uses Harness Extension API `5.23.0`.
 
 The local workbench (A) serves the browser UI and manages local credentials. The remote Harness (B) owns cloud sessions, workspaces, models, tools and approvals. Only B needs the cloud plugin. The workbench supports one cloud connection at a time.
 

@@ -4,7 +4,7 @@
 
 [文档](../README.zh-CN.md) · [安装](install.zh-CN.md) · [插件](packages.zh-CN.md) · [凭据](credentials.zh-CN.md)
 
-本指南适用于提供**设置 → 高级 → 云端连接**的 Harness 部署。编写时的公开 `main` 构建尚未包含此功能。请向部署方获取两端配套的 Harness 构建和兼容的云端插件包。本文所述集成使用 Harness Extension API `5.23.0`。
+本指南适用于提供**设置 → 高级 → 云端连接**的 Harness 部署。请向部署方获取两端配套的 Harness 构建和兼容的云端插件包。本文所述集成使用 Harness Extension API `5.23.0`。
 
 本地工作台（A）提供浏览器界面并管理本地凭证。远程 Harness（B）管理云端会话、工作区、模型、工具和审批。仅 B 需要云端插件。工作台同时支持一个云端连接。
 
