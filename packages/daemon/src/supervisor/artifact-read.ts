@@ -15,6 +15,7 @@ import { createLocalArtifactReadStore } from '@agnes/host'
 import {
   type ArtifactAuthorityProjectionWriter,
   createArtifactAuthorityProjection,
+  type TrustedArtifactHistory,
   type TrustedArtifactOwnership,
 } from './artifact-authority-projection.js'
 
@@ -37,6 +38,7 @@ export type ProductionArtifactAuthorityProjection = Readonly<{
   operationTimeoutMs: number
   scopeTimeoutMs: number
   readTimeoutMs?: number
+  history?: TrustedArtifactHistory
 }>
 
 export type DefaultProductionArtifactAuthorityProjection = Readonly<{
@@ -48,6 +50,7 @@ export type DefaultProductionArtifactAuthorityProjection = Readonly<{
   operationTimeoutMs: number
   scopeTimeoutMs: number
   readTimeoutMs?: number
+  history?: TrustedArtifactHistory
 }>
 
 function exactConfiguration(
@@ -93,7 +96,7 @@ export function composeDefaultProductionProjectedArtifactRead(
     const descriptors = exactConfiguration(
       input,
       ['artifactAuthority', 'sessionOwnership', 'limits', 'operationTimeoutMs', 'scopeTimeoutMs'],
-      ['readTimeoutMs'],
+      ['readTimeoutMs', 'history'],
     )
     const artifactAuthority = descriptors.artifactAuthority?.value
     const sessionOwnership = descriptors.sessionOwnership?.value
@@ -142,6 +145,9 @@ export function composeDefaultProductionProjectedArtifactRead(
       limits: descriptors.limits?.value as ProductionArtifactAuthorityProjection['limits'],
       operationTimeoutMs: descriptors.operationTimeoutMs?.value as number,
       scopeTimeoutMs: descriptors.scopeTimeoutMs?.value as number,
+      ...(descriptors.history === undefined
+        ? {}
+        : { history: descriptors.history.value as TrustedArtifactHistory }),
       ...(descriptors.readTimeoutMs === undefined
         ? {}
         : { readTimeoutMs: descriptors.readTimeoutMs.value as number }),
@@ -171,7 +177,7 @@ export function composeProductionProjectedArtifactRead(
       throw new Error('invalid')
     const descriptors = Object.getOwnPropertyDescriptors(input)
     const required = ['authority', 'writer', 'ownership', 'limits', 'operationTimeoutMs', 'scopeTimeoutMs']
-    const allowed = new Set([...required, 'readTimeoutMs'])
+    const allowed = new Set([...required, 'readTimeoutMs', 'history'])
     if (
       required.some(
         (key) => descriptors[key]?.enumerable !== true || !Object.hasOwn(descriptors[key] ?? {}, 'value'),
@@ -212,6 +218,9 @@ export function composeProductionProjectedArtifactRead(
       writer: descriptors.writer?.value as ArtifactAuthorityProjectionWriter,
       ownership: descriptors.ownership?.value as TrustedArtifactOwnership,
       inspector: Object.freeze({ inspect: artifacts.inspect.bind(artifacts) }),
+      ...(descriptors.history === undefined
+        ? {}
+        : { history: descriptors.history.value as TrustedArtifactHistory }),
     })
     const legacy: ProductionArtifactReadAuthority = Object.freeze({
       authority: descriptors.authority?.value as ArtifactReadAuthorityPort,

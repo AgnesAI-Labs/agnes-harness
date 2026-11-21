@@ -41,6 +41,7 @@ import { ManagedSessionInputs } from './managed-session-inputs.js'
 import { ManagedSessionRecords } from './managed-session-records.js'
 import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { canonicalPath } from './scope.js'
+import { artifactHistoryReader } from './session-reads.js'
 import { persistResolvedProfile } from './storage-adapters.js'
 import {
   managedChatPrivateRoots,
@@ -233,6 +234,9 @@ export async function openStores(state: AssemblyBase, lifetime: AssemblyLifetime
             operationTimeoutMs: 10_000,
             scopeTimeoutMs: 5_000,
             readTimeoutMs: 15_000,
+            ...(o.profile.persistence === undefined && o.sessionFactRead
+              ? { history: artifactHistoryReader(o.sessionFactRead) }
+              : {}),
           })
         : undefined
   const artifactRead =
