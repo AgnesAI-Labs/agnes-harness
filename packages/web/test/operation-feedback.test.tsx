@@ -1,6 +1,12 @@
 /** @vitest-environment happy-dom */
 
-import { FeedbackHost, mountRegion, type OperationFeedback, useStoreSelector } from '@agnes/web-ui'
+import {
+  FeedbackHost,
+  installFeedbackSink,
+  mountRegion,
+  type OperationFeedback,
+  useStoreSelector,
+} from '@agnes/web-ui'
 import { createElement } from 'react'
 import { act } from 'react-dom/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -25,8 +31,7 @@ it('dedupes IDs, keeps the newest result per scope and retains one consequence u
   feedback.sink.publish(result('first', 'pending'))
   feedback.sink.publish(result('first'))
   feedback.sink.publish(result('first'))
-  for (const outcome of ['unknown', 'partial', 'error'] as const)
-    feedback.sink.publish(result(outcome, outcome))
+  feedback.sink.publish(result('partial', 'partial'))
   feedback.sink.publish({
     ...result('second'),
     effect: { kind: 'rescan-required', message: 'Rescan to load the folders.' },
@@ -45,6 +50,35 @@ it('dedupes IDs, keeps the newest result per scope and retains one consequence u
   expect(feedback.store.getSnapshot().notices).toHaveLength(1)
   feedback.sink.resolve('settings')
   expect(feedback.store.getSnapshot().notices).toEqual([])
+})
+
+it.each([
+  ['unknown', 'status', 'The replacement could not be confirmed.'],
+  ['error', 'alert', 'You do not have permission to manage credentials.'],
+] as const)('keeps a %s result visible as a dismissible notice', async (outcome, role, message) => {
+  const feedback = createOperationFeedback()
+  const restore = installFeedbackSink(feedback.sink)
+  const host = document.body.appendChild(document.createElement('div'))
+  function Harness() {
+    return createElement(FeedbackHost, {
+      snapshot: useStoreSelector(feedback.store, (value) => value),
+      onDismiss: feedback.dismiss,
+    })
+  }
+  try {
+    dispose = mountRegion(host, createElement(Harness))
+    await act(async () => {
+      feedback.sink.publish({ ...result(outcome, outcome), message })
+    })
+    const warning = host.querySelector('[data-testid="operation-notice"]')
+    expect(warning?.getAttribute('role')).toBe(role)
+    expect(warning?.textContent).toContain(message)
+    expect(feedback.store.getSnapshot().queue).toHaveLength(0)
+    await act(async () => warning?.querySelector('button')?.click())
+    expect(host.querySelector('[data-testid="operation-notice"]')).toBeNull()
+  } finally {
+    restore()
+  }
 })
 
 it('shows one polite toast for 3 seconds without moving focus, then advances to the next scope', async () => {

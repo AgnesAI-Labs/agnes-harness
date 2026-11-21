@@ -1,21 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import {
-  chmod,
-  mkdir,
-  mkdtemp,
-  open,
-  readFile,
-  realpath,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, open, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { arch, homedir, platform, release } from 'node:os' // guards-allow-platform: native browser payload selection
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { installed, linuxCacheDirectory } from './cache.mjs'
 import { failure, isBrowserRefusal } from './policy.mjs'
 
 const VERSION = '1.63.0'
@@ -52,29 +42,26 @@ async function artifact(cacheRoot) {
   const value = values[key]
   if (!value || !/^[a-f0-9]{64}$/.test(value.sha256))
     throw failure('UNSUPPORTED_PLATFORM', 'This platform has no reviewed browser runtime.')
-  const base =
+  const os = platform()
+  const xdgCache = process.env.XDG_CACHE_HOME
+  const location =
     cacheRoot ??
-    (platform() === 'win32'
+    (os === 'win32'
       ? join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'Agnes', 'browser')
-      : join(homedir(), 'Library', 'Caches', 'Agnes', 'browser'))
+      : os === 'linux'
+        ? join(xdgCache && isAbsolute(xdgCache) ? xdgCache : join(homedir(), '.cache'), 'Agnes', 'browser')
+        : join(homedir(), 'Library', 'Caches', 'Agnes', 'browser'))
+  const base = os === 'linux' ? resolve(location) : location
   const cache = owned(base, join(base, value.revision + '-' + key))
   return {
     ...value,
     relativeExecutable: value.executable,
+    os,
     base,
     cache,
     executable: owned(cache, join(cache, value.executable)),
   }
 }
-async function installed(info) {
-  try {
-    const marker = JSON.parse(await readFile(join(info.cache, 'agnes-install.json'), 'utf8'))
-    return marker.sha256 === info.sha256 && (await stat(info.executable)).isFile()
-  } catch {
-    return false
-  }
-}
-
 /** Fixed payloads are downloaded in process: no global Node or SEA-as-Node child is required. */
 export function createLauncher({ cacheRoot, fetchArchive = fetch } = {}) {
   let installing, controller, retryFor
@@ -118,7 +105,8 @@ export function createLauncher({ cacheRoot, fetchArchive = fetch } = {}) {
               ? packagedLock.href
               : pathToFileURL(require.resolve('@agnes/system-node/owner-lock')).href
           )
-          await mkdir(info.base, { recursive: true })
+          if (info.os === 'linux') await linuxCacheDirectory(info.base, true)
+          else await mkdir(info.base, { recursive: true })
           const lock = owned(info.base, info.cache + '.lock')
           const owner = { pid: process.pid, token: randomUUID() }
           while (!acquireOwnerFileLock(lock, owner)) {
@@ -163,7 +151,7 @@ export function createLauncher({ cacheRoot, fetchArchive = fetch } = {}) {
                 throw failure('INTEGRITY', 'Browser archive checksum did not match the reviewed manifest.')
               signal.throwIfAborted()
               const unpacked = owned(staging, join(staging, 'unpacked'))
-              await mkdir(unpacked)
+              await mkdir(unpacked, { mode: info.os === 'linux' ? 0o700 : 0o777 })
               await load().extractZip(zip, { dir: unpacked })
               signal.throwIfAborted()
               const executable = owned(unpacked, join(unpacked, info.relativeExecutable))
@@ -172,14 +160,14 @@ export function createLauncher({ cacheRoot, fetchArchive = fetch } = {}) {
               await writeFile(
                 join(unpacked, 'agnes-install.json'),
                 JSON.stringify({ sha256: info.sha256, revision: info.revision }),
+                { mode: info.os === 'linux' ? 0o600 : 0o666 },
               )
+              await installed({ ...info, base: staging, cache: unpacked, executable })
               // An existing cache is not overwritten or deleted underneath another profile.
-              if (existsSync(info.cache))
-                throw failure(
-                  'CACHE_INVALID',
-                  'The existing browser cache is incomplete; inspect it before repair.',
-                )
-              await rename(unpacked, info.cache)
+              if (!(await installed(info))) {
+                signal.throwIfAborted()
+                await rename(unpacked, info.cache)
+              }
             }
           } finally {
             try {

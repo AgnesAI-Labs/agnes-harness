@@ -1,8 +1,8 @@
 # Agnes Harness
 
-云端连接与联调请参阅[云端对接文档](docs/guide/remote-frontend.zh-CN.md)。
-
 [English](README.md) | 简体中文
+
+使用支持云端连接的部署时，请参阅[云端工作台对接预览](docs/guide/remote-frontend.zh-CN.md)。
 
 <p align="center">
   <img src="docs/assets/readme/banner.zh-CN.png" alt="面向前线交付工程（FDE）的插件化智能体框架 Agnes Harness。LLM 是大脑，Agnes Sys1 是小脑，Harness 是记忆，MHS 是身体。" width="100%" />

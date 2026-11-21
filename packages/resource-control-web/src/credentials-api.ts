@@ -10,13 +10,14 @@ export type CredentialFailure =
   | 'confirmation'
   | 'missing'
   | 'invalid'
+  | 'unconfirmed'
 export class CredentialError extends Error {
   constructor(readonly reason: CredentialFailure) {
     super(reason)
   }
 }
 /** Never render arbitrary response messages or retain error payloads at this write-only boundary. */
-function failure(body: unknown, status: number): CredentialFailure {
+function failure(body: unknown, status: number, replacement = false): CredentialFailure {
   const error = (
     body as { error?: { code?: unknown; data?: { code?: unknown; cause?: { code?: unknown } } } } | null
   )?.error
@@ -28,7 +29,10 @@ function failure(body: unknown, status: number): CredentialFailure {
   if (codes.includes('CONFIG_CREDENTIAL_CONFIRMATION_REQUIRED')) return 'confirmation'
   if (codes.includes('CONFIG_CREDENTIAL_NOT_FOUND')) return 'missing'
   if (status === 400 || codes.includes('INVALID_PARAMS')) return 'invalid'
-  return 'unavailable'
+  // These refusals happen before the bridge or daemon can write the new value.
+  if (codes.includes('E_ADMIN_CATALOG_UNAVAILABLE') || codes.includes('CONFIG_CREDENTIAL_UNAVAILABLE'))
+    return 'unavailable'
+  return replacement ? 'unconfirmed' : 'unavailable'
 }
 export const credentialFailure = (cause: unknown): CredentialFailure =>
   cause instanceof CredentialError ? cause.reason : 'unavailable'
@@ -54,7 +58,13 @@ export class CredentialsApi {
     return this.request('create', { label, value }) as Promise<AdminCredentialMetadata>
   }
   async set(id: string, value: string): Promise<AdminCredentialMetadata> {
-    return this.request('set', { id, value }) as Promise<AdminCredentialMetadata>
+    try {
+      return (await this.request('set', { id, value })) as AdminCredentialMetadata
+    } catch (cause) {
+      if (cause instanceof CredentialError) throw cause
+      // A lost or unreadable response can follow a completed write.
+      throw new CredentialError('unconfirmed')
+    }
   }
   async rename(id: string, label: string): Promise<AdminCredentialMetadata> {
     return this.request('rename', { id, label }) as Promise<AdminCredentialMetadata>
@@ -80,9 +90,10 @@ export class CredentialsApi {
         : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }),
     })
     const body: unknown = await response.json()
-    if (!response.ok) throw new CredentialError(failure(body, response.status))
+    if (!response.ok) throw new CredentialError(failure(body, response.status, action === 'set'))
     // Strict result schemas reject accidental value echoes, including unknown properties.
-    if (!validateMethod(method, 'result', body).ok) throw new CredentialError('unavailable')
+    if (!validateMethod(method, 'result', body).ok)
+      throw new CredentialError(action === 'set' ? 'unconfirmed' : 'unavailable')
     return body
   }
 }

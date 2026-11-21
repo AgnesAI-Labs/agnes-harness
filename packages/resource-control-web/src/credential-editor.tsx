@@ -4,11 +4,15 @@ import {
   Dialog,
   Field,
   getOverlayContainer,
+  publishFeedback,
+  reportSuccess,
+  resolveFeedback,
   SettingsInput,
   StatusMessage,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
+import { beginCredentialMutation, credentialReplacementScopes } from './credential-mutations.js'
 import {
   CREDENTIALS_CHANGED,
   type CredentialFailure,
@@ -52,34 +56,62 @@ export function CredentialEditor({
     }
   }, [])
   async function save() {
-    if (submitting.current) return
+    if (submitting.current || (mode !== 'create' && !item)) return
+    const replacing = mode === 'replace' ? item : undefined
+    const finish = replacing ? beginCredentialMutation(replacing.id) : undefined
+    if (replacing && !finish) return
     const input = value.current
+    const scopes = replacing ? credentialReplacementScopes(replacing.id) : undefined
     submitting.current = true
     setBusy(true)
     setError(undefined)
+    if (scopes) resolveFeedback(scopes.refusal)
+    let result: AdminCredentialMetadata
     try {
-      const result =
-        mode === 'create'
-          ? await api.create(label.trim(), input?.value ?? '')
-          : mode === 'replace'
-            ? await api.set(item!.id, input?.value ?? '')
-            : await api.rename(item!.id, label.trim())
-      // Clear synchronously before publishing metadata, even if the caller has unmounted.
-      if (input) input.value = ''
-      if (!active.current) return
-      setVisible(false)
-      window.dispatchEvent(new Event(CREDENTIALS_CHANGED))
-      onSaved(result)
+      if (replacing) result = await api.set(replacing.id, input?.value ?? '')
+      else if (mode === 'rename' && item) result = await api.rename(item.id, label.trim())
+      else result = await api.create(label.trim(), input?.value ?? '')
     } catch (cause) {
-      // A refused value is not kept for a retry: it is cleared at once and entered again.
-      if (input) input.value = ''
-      if (!active.current) return
-      setVisible(false)
-      setError(credentialFailure(cause))
+      const reason = credentialFailure(cause)
+      if (scopes && replacing && reason === 'unconfirmed') {
+        publishFeedback({
+          id: crypto.randomUUID(),
+          scope: scopes.unconfirmed,
+          outcome: 'unknown',
+          message: t('error.unconfirmed', { name: replacing.label }),
+        })
+      } else if (active.current) setError(reason)
+      else if (scopes)
+        publishFeedback({
+          id: crypto.randomUUID(),
+          scope: scopes.refusal,
+          outcome: 'error',
+          message: t(`error.${reason}`),
+        })
+      return
     } finally {
+      // Clear the draft before sharing metadata, even after the editor has unmounted.
+      if (input) input.value = ''
+      finish?.()
       submitting.current = false
-      if (active.current) setBusy(false)
+      if (active.current) {
+        setVisible(false)
+        setBusy(false)
+      }
     }
+    if (!active.current && !scopes) return
+    if (scopes) {
+      // A receipt only confirms this write. A previous request with a lost response could still arrive later.
+      const reconnect = result.references.some((reference) => reference.kind === 'mcp')
+      if (!reconnect) resolveFeedback(scopes.success)
+      reportSuccess(
+        scopes.success,
+        t('replaced'),
+        reconnect ? { kind: 'reconnect-required', message: t('reconnect') } : undefined,
+      )
+    }
+    window.dispatchEvent(new CustomEvent(CREDENTIALS_CHANGED, { detail: { mode, id: result.id } }))
+    if (active.current) onSaved(result)
   }
   const footer = (
     <>

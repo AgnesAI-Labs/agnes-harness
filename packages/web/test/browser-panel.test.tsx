@@ -103,8 +103,12 @@ it('shows one-click legacy lock guidance with the full path and copies it withou
 
 it.each([
   ['UNSUPPORTED_MACOS', '内置浏览器需要 macOS 13 Ventura 或更高版本。请升级 macOS 后再使用。'],
+  ['UNSUPPORTED_PLATFORM', '内置浏览器支持 Windows x64、macOS 13 及以上版本和 Linux x64。'],
   ['VERSION_MISMATCH', '已安装的浏览器组件版本不兼容。请更新 Agnes Harness 后再试。'],
   ['LAUNCH_FAILED', '内置浏览器启动失败。请在「插件」页关闭后重新启用内置浏览器，再试一次。'],
+  ['CACHE_INVALID', '退出共用缓存的 AGH 实例，移开该版本目录，再启用插件。'],
+  ['CACHE_UNSAFE', '请使用无符号链接的私有 Linux 缓存，再启用插件。'],
+  ['toString', '内置浏览器启动失败。请在「插件」页关闭后重新启用内置浏览器，再试一次。'],
   [undefined, '内置浏览器启动失败。请在「插件」页关闭后重新启用内置浏览器，再试一次。'],
 ])('renders safe startup guidance for %s even when an older backend sends raw logs', (code, message) => {
   const original = state.error

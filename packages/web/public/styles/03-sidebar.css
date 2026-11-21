@@ -613,8 +613,10 @@
       pointer-events: auto;
     }
   }
-  .session-menu-trigger {
-    width: 1rem;
+  .session-menu-trigger.agh-btn {
+    width: 1.5rem;
+    min-width: 1.5rem;
+    padding-inline: 0;
   }
   /* The compatibility landmark preserves the new-session selector and skin hook;
      the shared Dialog owns the modal surface and its focus/backdrop behavior. */

@@ -22,6 +22,7 @@ export const credentialsCatalog = {
     saved: 'Credential saved.',
     renamed: 'Credential renamed.',
     replaced: 'Credential value replaced.',
+    updatePending: 'A change to this credential is in progress.',
     reconnect: 'Reconnect the MCP services using this credential.',
     deleted: 'Credential deleted.',
     empty: 'No saved credentials',
@@ -30,6 +31,8 @@ export const credentialsCatalog = {
     retry: 'Refresh',
     deleteTitle: 'Delete {name}?',
     deleteHelp: 'This permanently removes the saved value. Review the configurations using it below.',
+    deleteRefreshFailed:
+      'Could not refresh the configurations using this credential. Refresh before confirming deletion anyway.',
     force: 'Delete anyway',
     forceConfirm: 'I understand these configurations will stop working until I assign another credential.',
     duplicate: '{name} · {id}',
@@ -44,6 +47,8 @@ export const credentialsCatalog = {
       'Settings are read-only while the service recovers. You can view credentials but cannot change them.',
     'error.denied': 'You do not have permission to manage credentials. Ask an administrator for access.',
     'error.unavailable': 'The credential store is unavailable. Try again when the service is ready.',
+    'error.unconfirmed':
+      'A replacement for {name} could not be confirmed. Its value may have been saved. Check the services using this credential.',
     'error.referenced':
       'This credential is in use, so it was not deleted. Remove its references first, or explicitly confirm deletion anyway.',
     'error.confirmation': 'Confirm the impact on the listed configurations before deleting this credential.',
@@ -72,6 +77,7 @@ export const credentialsCatalog = {
     saved: '凭据已保存。',
     renamed: '凭据已重命名。',
     replaced: '密钥值已替换。',
+    updatePending: '此凭据的更改正在处理。',
     reconnect: '重新连接使用此凭据的 MCP 服务。',
     deleted: '凭据已删除。',
     empty: '还没有保存的凭据',
@@ -80,6 +86,7 @@ export const credentialsCatalog = {
     retry: '刷新',
     deleteTitle: '删除「{name}」？',
     deleteHelp: '这会永久删除已保存的密钥值。请先检查下方使用它的配置。',
+    deleteRefreshFailed: '无法更新使用此凭据的配置列表。请刷新后再确认强制删除。',
     force: '仍然删除',
     forceConfirm: '我理解这些配置会停止工作，直到为它们指定其他凭据。',
     duplicate: '{name} · {id}',
@@ -93,6 +100,8 @@ export const credentialsCatalog = {
     'error.readOnly': '服务恢复期间设置为只读，可以查看凭据，暂时无法修改。',
     'error.denied': '你没有管理凭据的权限，请联系管理员开通。',
     'error.unavailable': '凭据存储暂不可用，请在服务恢复后重试。',
+    'error.unconfirmed':
+      '「{name}」有一次替换结果未确认，当时输入的密钥可能已经保存。请检查使用此凭据的服务。',
     'error.referenced': '这个凭据正在使用，未能删除。请先移除引用，或明确确认仍然删除。',
     'error.confirmation': '请先确认删除对所列配置的影响。',
     'error.missing': '这个凭据已不存在，请刷新列表。',

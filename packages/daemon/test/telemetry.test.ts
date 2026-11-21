@@ -79,6 +79,7 @@ async function receiver() {
     '/v1/traces/batches': [] as Capture[],
   }
   let ack = true
+  let paused: { at: number; wait: Promise<void>; closed: () => void } | undefined
   const server = createServer(async (req, res) => {
     const chunks: Uint8Array[] = []
     for await (const chunk of req) chunks.push(chunk)
@@ -101,7 +102,12 @@ async function receiver() {
       ...(typeof idempotency === 'string' ? { idempotency } : {}),
     })
     res.setHeader('Content-Type', 'application/json')
-    res.end(JSON.stringify({ ok: path === '/v1/telemetry/report' || ack }))
+    const response = JSON.stringify({ ok: path === '/v1/telemetry/report' || ack })
+    if (path === '/v1/traces/batches' && received[path].length === paused?.at) {
+      res.once('close', paused.closed)
+      await paused.wait
+    }
+    if (!res.destroyed) res.end(response)
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   cleanups.push(() => new Promise<void>((resolve) => server.close(() => resolve())))
@@ -112,6 +118,27 @@ async function receiver() {
     endpoint: `http://127.0.0.1:${address.port}`,
     acknowledge(next: boolean) {
       ack = next
+    },
+    pauseTraceAfter(at: number) {
+      let release: () => void = () => undefined
+      let closed = false
+      const wait = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      paused = {
+        at,
+        wait,
+        closed: () => {
+          closed = true
+        },
+      }
+      cleanups.push(release)
+      return {
+        release,
+        get closed() {
+          return closed
+        },
+      }
     },
   }
 }
@@ -593,19 +620,26 @@ it('splits an oversized backlog at complete turn boundaries and acknowledges eac
 it('requires an affirmative ACK and retries the complete range, extended by a later boundary', async () => {
   const { server, row, table } = await fixture()
   server.acknowledge(false)
-  row('session/start', { key: KEY, preset: 'base' })
-  row('turn/start', { turn: 1, trigger: 'prompt' })
-  const end = row('turn/end', { reason: 'completed' })
-  await vi.waitFor(() => expect(server.traces.length).toBeGreaterThanOrEqual(2))
-  expect(acked(table())).toBeUndefined()
-  const feedback = row('x/feedback/item', { target: { turn: 1 }, rating: 'up' })
-  server.acknowledge(true)
-  await vi.waitFor(() => expect(acked(table())).toBe(feedback))
-  const ranges = server.traces.map((capture) => (capture.body as Trace).watermark)
-  expect(ranges.at(-1)).toEqual({ from_seq: 1, to_seq: feedback, session_head_seq: feedback })
-  for (const range of ranges) {
-    expect(range.from_seq).toBe(1)
-    expect([end, feedback]).toContain(range.to_seq)
+  const paused = server.pauseTraceAfter(2)
+  try {
+    row('session/start', { key: KEY, preset: 'base' })
+    row('turn/start', { turn: 1, trigger: 'prompt' })
+    const end = row('turn/end', { reason: 'completed' })
+    await vi.waitFor(() => expect(server.traces.length).toBeGreaterThanOrEqual(2))
+    expect(server.traces).toHaveLength(2)
+    expect(acked(table())).toBeUndefined()
+    const feedback = row('x/feedback/item', { target: { turn: 1 }, rating: 'up' })
+    server.acknowledge(true)
+    paused.release()
+    await vi.waitFor(() => expect(acked(table())).toBe(feedback))
+    const ranges = server.traces.map((capture) => (capture.body as Trace).watermark)
+    expect(ranges.at(-1)).toEqual({ from_seq: 1, to_seq: feedback, session_head_seq: feedback })
+    for (const range of ranges) {
+      expect(range.from_seq).toBe(1)
+      expect([end, feedback]).toContain(range.to_seq)
+    }
+  } finally {
+    paused.release()
   }
 })
 
@@ -764,19 +798,27 @@ it('cancels pending retries, including across a restart, when Session Log upload
   const { server, row, telemetry, restart } = await fixture()
   await telemetry.admin({ settings: { analyticsEnabled: false } })
   server.acknowledge(false)
-  row('session/start', { key: KEY, preset: 'base' })
-  row('turn/start', { turn: 1, trigger: 'prompt' })
-  row('turn/end', { reason: 'completed' })
-  await vi.waitFor(() => expect(server.traces.length).toBeGreaterThanOrEqual(2))
-  await telemetry.admin({ settings: { traceUploadEnabled: false } })
-  const attempts = server.traces.length
-  await delay(200)
-  expect(server.traces).toHaveLength(attempts)
-  await telemetry.admin({ settings: { traceUploadEnabled: true } })
-  server.acknowledge(true)
-  await restart()
-  await delay(200)
-  expect(server.traces).toHaveLength(attempts)
+  const paused = server.pauseTraceAfter(2)
+  try {
+    row('session/start', { key: KEY, preset: 'base' })
+    row('turn/start', { turn: 1, trigger: 'prompt' })
+    row('turn/end', { reason: 'completed' })
+    await vi.waitFor(() => expect(server.traces.length).toBeGreaterThanOrEqual(2))
+    expect(server.traces).toHaveLength(2)
+    await telemetry.admin({ settings: { traceUploadEnabled: false } })
+    await vi.waitFor(() => expect(paused.closed).toBe(true))
+    paused.release()
+    const attempts = server.traces.length
+    await delay(200)
+    expect(server.traces).toHaveLength(attempts)
+    await telemetry.admin({ settings: { traceUploadEnabled: true } })
+    server.acknowledge(true)
+    await restart()
+    await delay(200)
+    expect(server.traces).toHaveLength(attempts)
+  } finally {
+    paused.release()
+  }
 })
 
 it('re-queues unacknowledged sessions after a daemon restart, a bounded number per start', async () => {

@@ -125,7 +125,7 @@ it('localizes shipped presentation plugin names and purposes for Chinese and Eng
   const { resolvePluginMetadata } = await import('@agnes/protocol')
   for (const [name, en, zh] of [
     ['goal-ui', 'Goals and progress', '目标与进度'],
-    ['jev-loop', 'Jev Agent Loop', 'Jev 运行方式'],
+    ['jev-loop', 'jev', 'jev'],
     ['interaction-ui', 'Questions and confirmations', '交互与确认'],
     ['deliverables-ui', 'Files and deliverables', '交付物展示'],
   ]) {

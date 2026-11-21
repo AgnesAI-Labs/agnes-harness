@@ -4,6 +4,7 @@ import { createLiveProjection } from '@agnes/web-conversation/live-projection'
 import type { KnownSessionModel } from '@agnes/web-conversation/presentation'
 import { preserveRouteParams, reportSuccess } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
+import { skillsWorkspaceId } from '../backends/local-route.js'
 import { forkTitle } from '../session-actions.js'
 import { bindWebSession, loadWebSession } from '../session-binding.js'
 import { sessionPermissionLevel } from '../session-permission.js'
@@ -227,6 +228,7 @@ export function createSessionController(
           context.workspaceRows.find((entry) => entry.path === workspacePath) ??
           (options.workspace?.path === workspacePath ? options.workspace : undefined)
       const url = new URL(location.href)
+      if (!skillsWorkspaceId(url.searchParams)) url.searchParams.delete('workspaceId')
       // Launch parameters describe a draft; replaying them would replace this session on refresh.
       for (const key of ['new', 'bundle', 'preset', 'loop', 'prompt']) url.searchParams.delete(key)
       url.searchParams.set('session', id)

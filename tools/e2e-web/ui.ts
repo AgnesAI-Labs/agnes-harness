@@ -322,8 +322,13 @@ async function dismissWorkbench(page: Page) {
 
 /** The session composer command opens the Goal popover. */
 export async function openGoal(page: Page) {
-  await page.getByRole('textbox', { name: /^(Task content|任务内容)$/ }).fill('/goal')
-  await page.getByRole('textbox', { name: /^(Task content|任务内容)$/ }).press('Enter')
+  // The first Enter completes the slash suggestion; the second submits that command.
+  const input = page.locator('#prompt')
+  await input.fill('/goal')
+  await expect(input).toHaveAttribute('role', 'combobox')
+  await input.press('Enter')
+  await expect(input).toHaveValue('/goal ')
+  await input.press('Enter')
   await expect(page.getByTestId('goal-objective')).toBeVisible()
 }
 

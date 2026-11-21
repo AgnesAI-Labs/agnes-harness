@@ -22,6 +22,8 @@ describe('ai public surface', () => {
   it('exports exactly the snapshot', async () => {
     const mod = await import('../src/index.js')
     expect(Object.keys(mod).sort()).toEqual([...snapshot].sort())
+    const adapter = await import('../src/model-adapter.js')
+    expect(Object.keys(adapter).sort()).toEqual(['PiAdapter', 'getModelCatalogueFacts', 'isChatModelId'])
   })
   // The wire library is an implementation detail of the adapters that speak its protocol. Anywhere
   // else it would leak a third-party type into shapes other packages consume. The dependency itself

@@ -795,11 +795,18 @@ it('manages write-only generic credentials with MCP references, restart persiste
       'error.data.cause.code',
       'CONFIG_CREDENTIAL_CONFIRMATION_REQUIRED',
     )
-    const updates = await Promise.all(
-      ['first-write', 'last-write'].map((value) => call('set', { id, value })),
+    unavailable = true
+    expect(await call('set', { id, value: `${canary}-refused` })).toHaveProperty(
+      'error.data.cause.code',
+      'CONFIG_CREDENTIAL_STORE',
     )
-    expect(updates.every((response) => !response.error)).toBe(true)
-    expect(resolver.resolve(id)).toBe('last-write')
+    expect(resolver.resolve(definition.secretBinding.credentialRef) === canary).toBe(true)
+    unavailable = false
+    const updates = await Promise.all(
+      [`${canary}-first`, `${canary}-last`].map((value) => call('set', { id, value })),
+    )
+    for (const update of updates) expect(update.result).toEqual({ ...metadata, references: allRefs })
+    expect(resolver.resolve(definition.secretBinding.credentialRef) === `${canary}-last`).toBe(true)
     expect(await call('rename', { id, label: 'Renamed' })).toHaveProperty('result.label', 'Renamed')
     await endpoint.close()
     endpoint = new LocalEndpoint({
@@ -818,7 +825,7 @@ it('manages write-only generic credentials with MCP references, restart persiste
       label: 'Renamed',
       createdAt: metadata.createdAt,
     })
-    expect(resolver.resolve(id)).toBe('last-write')
+    expect(resolver.resolve(id) === `${canary}-last`).toBe(true)
     unavailable = true
     expect(await call('delete', { id, force: true, confirm: true })).toHaveProperty(
       'error.data.cause.code',

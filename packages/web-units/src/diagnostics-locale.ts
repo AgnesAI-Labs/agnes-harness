@@ -5,6 +5,7 @@ const en = {
   'diagnostics.title.menu': 'Report a problem',
   'diagnostics.title.share': 'Choose what to include',
   'diagnostics.title.ready': 'Diagnostics package is ready',
+  'diagnostics.title.downloadRequested': 'Download requested',
   'diagnostics.title.saved': 'Diagnostics file saved',
   'diagnostics.intro':
     'Create a diagnostics ZIP you can share with support. It can include this session’s conversation and trace, logs, and system information.',
@@ -20,6 +21,8 @@ const en = {
   'diagnostics.warning':
     'Some diagnostics were unavailable or over the export limit. See diagnostic-export-warnings.json in the package.',
   'diagnostics.save': 'Save ZIP',
+  'diagnostics.downloadIntro': 'Check your browser’s downloads for the ZIP.',
+  'diagnostics.downloadAgain': 'Download again',
   'diagnostics.savedIntro': 'Share this ZIP with support or engineering. Unzip it and open index.html.',
   'diagnostics.close': 'Close',
   'diagnostics.error.generate': 'Could not generate the diagnostics package: {detail}',
@@ -70,6 +73,7 @@ const zh: Record<keyof typeof en, string> = {
   'diagnostics.title.menu': '报告问题',
   'diagnostics.title.share': '选择要包含的内容',
   'diagnostics.title.ready': '诊断包已生成',
+  'diagnostics.title.downloadRequested': '已请求下载',
   'diagnostics.title.saved': '诊断文件已保存',
   'diagnostics.intro':
     '创建一个可分享给支持人员的诊断 ZIP 包，可以包含当前会话的对话与轨迹、日志和系统信息。',
@@ -84,6 +88,8 @@ const zh: Record<keyof typeof en, string> = {
   'diagnostics.generating': '正在生成…',
   'diagnostics.warning': '部分诊断资料不可用或超出导出上限，详见包内 diagnostic-export-warnings.json。',
   'diagnostics.save': '保存 ZIP 包',
+  'diagnostics.downloadIntro': '请在浏览器的下载列表里查看 ZIP。',
+  'diagnostics.downloadAgain': '重新下载',
   'diagnostics.savedIntro': '把这个 ZIP 包分享给支持或研发人员。解压后打开 index.html 查看。',
   'diagnostics.close': '关闭',
   'diagnostics.error.generate': '生成诊断包失败：{detail}',

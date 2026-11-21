@@ -6,11 +6,13 @@ import {
 import { requestLocalManagement } from './frame-context.js'
 
 /** Dialog shortcuts and account-error links follow the same local destination as the sidebar. */
-export function routeLocalSettings(controller: SettingsController): SettingsController {
+export function routeLocalSettings(
+  controller: SettingsController,
+): SettingsController & { open(section?: string): Promise<void> } {
   return {
     ...controller,
-    open: () =>
-      requestLocalManagement({ kind: 'settings', section: 'model' }) ? Promise.resolve() : controller.open(),
+    open: (section: string = 'model') =>
+      requestLocalManagement({ kind: 'settings', section }) ? Promise.resolve() : controller.open(),
     openAccount: (route) =>
       requestLocalManagement({ kind: 'settings', section: 'model' })
         ? Promise.resolve()
@@ -18,6 +20,8 @@ export function routeLocalSettings(controller: SettingsController): SettingsCont
   }
 }
 
-export function createLocalManagementSettings(options: SettingsControllerOptions): SettingsController {
+export function createLocalManagementSettings(
+  options: SettingsControllerOptions,
+): ReturnType<typeof routeLocalSettings> {
   return routeLocalSettings(createSettingsController(options))
 }

@@ -58,10 +58,13 @@
     width: 100%;
     padding-inline-end: var(--s32);
   }
-  .backend-group-create {
+  .backend-session-group > .agh-tooltip-anchor:has(> .backend-group-create) {
     position: absolute;
     top: 0;
     right: 0;
+  }
+  .backend-group-create {
+    position: static;
   }
   .backend-session-count,
   .backend-group-hint {

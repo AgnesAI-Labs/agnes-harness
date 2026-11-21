@@ -45,6 +45,7 @@ export function requestLocalManagement(
 ): boolean {
   const context = backendFrame()
   if (!context?.remote) return false
+  if (command.kind === 'settings' && command.section.split('/')[0] === 'diagnostics') return false
   window.parent.postMessage(
     { type: 'agh.backend.frame/v1', kind: 'local-management', command },
     context.parentOrigin,
@@ -65,4 +66,22 @@ export function cloudFrameOrigin(): string {
   )
     throw Error('CLOUD_ORIGIN_DENIED')
   return url.origin
+}
+
+/** Ask the workbench to choose diagnostics before the local settings page starts reading A. */
+export function requestDiagnosticBackend(section: unknown): boolean {
+  const context = backendFrame()
+  if (
+    !context ||
+    context.remote ||
+    typeof section !== 'string' ||
+    section.length > 128 ||
+    section.split('/')[0] !== 'diagnostics'
+  )
+    return false
+  window.parent.postMessage(
+    { type: 'agh.backend.frame/v1', kind: 'local-management', command: { kind: 'settings', section } },
+    context.parentOrigin,
+  )
+  return true
 }

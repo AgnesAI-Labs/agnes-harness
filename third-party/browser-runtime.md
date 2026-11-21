@@ -30,6 +30,11 @@ Windows x64, macOS arm64 and macOS x64 archives were downloaded and hashed on
 2026-10-19. Their expected executable paths and macOS Mach-O CPU types were
 inspected. Archive inspection does not establish macOS runtime compatibility;
 the native smoke test must run on each admitted OS/architecture before release.
+The Linux amd64 archive was downloaded from the pinned CDN and hashed on
+2026-11-20. Its `chrome-linux64/chrome` executable is a 64-bit x86-64 ELF with
+mode `0755`, and the archive's helper executables also carry execute bits.
+The manifest records the uncompressed sizes of key Linux runtime files for
+checking staged installs and reused caches.
 
 This plugin is for trusted development/testing content. It uses an isolated
 browser profile and Chromium sandboxing, not an OS virtual machine or a universal

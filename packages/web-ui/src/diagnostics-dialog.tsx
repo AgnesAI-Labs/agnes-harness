@@ -2,7 +2,7 @@ import type { JSX } from 'react'
 import { SettingsCheckbox, SettingsState } from './settings-layout.js'
 import { Button } from './ui/button.js'
 
-export type DiagnosticsStep = 'menu' | 'share' | 'ready' | 'saved'
+export type DiagnosticsStep = 'menu' | 'share' | 'ready' | 'download-requested' | 'saved'
 export type DiagnosticsInclude = { conversation: boolean; logs: boolean; system: boolean }
 
 export type DiagnosticsDialogSnapshot = {
@@ -38,11 +38,14 @@ export function DiagnosticsDialogView({
   text?: (key: string) => string
 }): JSX.Element {
   const { step, include } = snapshot
+  const downloadRequested = step === 'download-requested'
   const label = (key: string, fallback: string) => text?.(key) ?? fallback
   return (
     <div className="diagnostics-body">
       <div className="dialog-heading">
-        <h2 id="diagnostics-heading">{snapshot.title}</h2>
+        <h2 id="diagnostics-heading" tabIndex={downloadRequested ? -1 : undefined}>
+          {snapshot.title}
+        </h2>
       </div>
       <section data-step="menu" hidden={step !== 'menu'}>
         <p className="dialog-intro">
@@ -108,7 +111,15 @@ export function DiagnosticsDialogView({
           </Button>
         </div>
       </section>
-      <section data-step="ready" hidden={step !== 'ready'}>
+      <section
+        data-step={downloadRequested ? 'download-requested' : 'ready'}
+        hidden={step !== 'ready' && !downloadRequested}
+      >
+        {downloadRequested && (
+          <p className="dialog-intro">
+            {label('diagnostics.downloadIntro', 'Check your browser’s downloads for the ZIP.')}
+          </p>
+        )}
         <p className="dialog-intro" data-ready-summary>
           {snapshot.summary}
         </p>
@@ -122,19 +133,24 @@ export function DiagnosticsDialogView({
           <Button
             appearance="secondary"
             htmlType="button"
-            data-back="share"
-            onClick={() => actions.back('share')}
+            data-back={downloadRequested ? undefined : 'share'}
+            onClick={downloadRequested ? actions.close : () => actions.back('share')}
           >
-            {label('diagnostics.back', 'Back')}
+            {downloadRequested ? label('diagnostics.close', 'Close') : label('diagnostics.back', 'Back')}
           </Button>
           <Button
             appearance="primary"
             htmlType="button"
             data-action="save"
             disabled={snapshot.saving}
-            onClick={actions.save}
+            onClick={(event) => {
+              // Keyboard clicks have detail 0. Ignore subsequent clicks in a pointer multi-click.
+              if (event.detail <= 1) actions.save()
+            }}
           >
-            {label('diagnostics.save', 'Save ZIP')}
+            {downloadRequested
+              ? label('diagnostics.downloadAgain', 'Download again')
+              : label('diagnostics.save', 'Save ZIP')}
           </Button>
         </div>
       </section>

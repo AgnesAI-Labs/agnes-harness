@@ -86,6 +86,36 @@ function platformHeavyOs(workflow: string, event: string): string[] {
 }
 
 describe('CI scope', () => {
+  it('keeps shared native and local Linux artifacts on the producer runner in every Web leg', () => {
+    const workflow = (name: string) =>
+      readFileSync(new URL(`../../.github/workflows/${name}`, import.meta.url), 'utf8')
+    const ci = workflow('ci.yml')
+    const producer = /^ {4}runs-on: (.+)$/m.exec(workflowJob(ci, 'static'))?.[1]
+    expect(producer).toBeTruthy()
+    for (const name of ['native-linux', 'local-linux'])
+      expect(workflowJob(ci, name)).toContain(`runner: ${producer}`)
+    expect(workflowJob(ci, 'web')).toContain(`linux-runner: ${producer}`)
+    const web = workflow('e2e-web.yml')
+    expect(web).toContain('linux-runner: { type: string, default: ubuntu-24.04 }')
+    for (const name of [
+      'web-native-linux',
+      'web-types',
+      'web-local-linux',
+      'web-quality-linux',
+      'local-sharing-linux',
+    ])
+      expect(workflowJob(web, name), name).toContain(
+        `runner: ${'$'}{{ inputs.linux-runner || 'ubuntu-24.04' }}`,
+      )
+    for (const name of ['e2e-web-linux', 'e2e-web-linux-narrow-nightly'])
+      expect(workflowJob(web, name), name).toContain(
+        `runs-on: ${'$'}{{ inputs.linux-runner || 'ubuntu-24.04' }}`,
+      )
+    const types = workflow('ci-web-types.yml')
+    expect(types).toContain('runner: { type: string, default: ubuntu-24.04 }')
+    expect(workflowJob(types, 'prepare')).toContain(`runs-on: ${'$'}{{ inputs.runner }}`)
+  })
+
   it('uses the repository Node pin in every setup-node step', () => {
     const workflows = fileURLToPath(new URL('../../.github/workflows/', import.meta.url))
     for (const name of readdirSync(workflows).filter((name) => /\.ya?ml$/.test(name))) {

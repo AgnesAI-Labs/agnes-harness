@@ -28,10 +28,12 @@ export function initialWorkbench(search: string, saved?: string | null) {
   try {
     if (requested || saved) remote = remoteFrontendOrigin(requested || saved || '')
   } catch {}
+  const active: BackendId = requested && remote ? 'cloud' : 'local'
+  const session = params.get('session') || undefined
   return {
     remote,
-    active: requested && remote ? ('cloud' as const) : ('local' as const),
-    session: params.get('session') ?? undefined,
+    active,
+    session: active === 'cloud' && params.get('new') === '1' ? '' : session,
     configure: params.has('connection'),
   }
 }
@@ -40,6 +42,7 @@ export function backendFrameSource(remote?: string, sessionId?: string): string 
   const params = new URLSearchParams()
   if (remote) params.set('remote', remoteFrontendOrigin(remote))
   if (sessionId) params.set('session', sessionId)
+  else if (remote && sessionId === '') params.set('new', '1')
   return `/${params.size ? `?${params}` : ''}`
 }
 

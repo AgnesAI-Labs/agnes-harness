@@ -7,8 +7,8 @@ const messages: Record<string, [string, string]> = {
     '内置浏览器需要 macOS 13 Ventura 或更高版本。请升级 macOS 后再使用。',
   ],
   unsupportedPlatform: [
-    'The built-in browser is unavailable on this system. Use Windows x64 or macOS 13 or later.',
-    '当前系统不受内置浏览器支持。请使用 Windows x64 或 macOS 13 及以上版本。',
+    'The built-in browser supports Windows x64, macOS 13 or later, and Linux x64.',
+    '内置浏览器支持 Windows x64、macOS 13 及以上版本和 Linux x64。',
   ],
   engineVersionMismatch: [
     'The installed browser engine is incompatible. Update Agnes Harness and try again.',
@@ -17,6 +17,14 @@ const messages: Record<string, [string, string]> = {
   startupFailed: [
     'The built-in browser could not start. Turn it off and back on in Plugins, then try again.',
     '内置浏览器启动失败。请在「插件」页关闭后重新启用内置浏览器，再试一次。',
+  ],
+  cacheInvalid: [
+    'Close AGH instances using this cache, move the revision folder aside, then re-enable the plugin.',
+    '退出共用缓存的 AGH 实例，移开该版本目录，再启用插件。',
+  ],
+  cacheUnsafe: [
+    'Use a private Linux cache without symlinks, then re-enable the plugin.',
+    '请使用无符号链接的私有 Linux 缓存，再启用插件。',
   ],
   cleanupUnconfirmed: [
     'Browser cleanup could not be confirmed. Check the cleanup steps in Plugins before reopening it.',
@@ -108,37 +116,26 @@ const catalog = (index: 0 | 1) =>
   Object.fromEntries(Object.entries(messages).map(([key, values]) => [`browser.${key}`, values[index]]))
 export const browserCatalog = { en: catalog(0), 'zh-CN': catalog(1) }
 
+const errorKeys: Record<string, string> = {
+  GENERATION_STALE: 'sessionIncompatible',
+  OUTCOME_UNKNOWN: 'actionStatusUnavailable',
+  CAPABILITY_DENIED: 'accessDenied',
+  UNSUPPORTED_MACOS: 'unsupportedMacOS',
+  UNSUPPORTED_PLATFORM: 'unsupportedPlatform',
+  VERSION_MISMATCH: 'engineVersionMismatch',
+  LAUNCH_FAILED: 'startupFailed',
+  CACHE_INVALID: 'cacheInvalid',
+  CACHE_UNSAFE: 'cacheUnsafe',
+  CLEANUP_UNCONFIRMED: 'cleanupUnconfirmed',
+  PREPARING: 'preparing',
+  CAPACITY: 'capacity',
+  PAGE_UNAVAILABLE: 'pageUnavailable',
+  PROTECTED_TARGET: 'protectedTarget',
+  INVALID_URL: 'invalidUrl',
+  FILE_DENIED: 'fileDenied',
+  UNSUPPORTED_FILE: 'unsupportedFile',
+}
+
 export function browserErrorKey(code?: string | null): string | undefined {
-  switch (code) {
-    case 'GENERATION_STALE':
-      return 'sessionIncompatible'
-    case 'OUTCOME_UNKNOWN':
-      return 'actionStatusUnavailable'
-    case 'CAPABILITY_DENIED':
-      return 'accessDenied'
-    case 'UNSUPPORTED_MACOS':
-      return 'unsupportedMacOS'
-    case 'UNSUPPORTED_PLATFORM':
-      return 'unsupportedPlatform'
-    case 'VERSION_MISMATCH':
-      return 'engineVersionMismatch'
-    case 'LAUNCH_FAILED':
-      return 'startupFailed'
-    case 'CLEANUP_UNCONFIRMED':
-      return 'cleanupUnconfirmed'
-    case 'PREPARING':
-      return 'preparing'
-    case 'CAPACITY':
-      return 'capacity'
-    case 'PAGE_UNAVAILABLE':
-      return 'pageUnavailable'
-    case 'PROTECTED_TARGET':
-      return 'protectedTarget'
-    case 'INVALID_URL':
-      return 'invalidUrl'
-    case 'FILE_DENIED':
-      return 'fileDenied'
-    case 'UNSUPPORTED_FILE':
-      return 'unsupportedFile'
-  }
+  return code && Object.hasOwn(errorKeys, code) ? errorKeys[code] : undefined
 }

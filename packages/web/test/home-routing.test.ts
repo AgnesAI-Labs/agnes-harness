@@ -127,6 +127,46 @@ it('does not start a display-list read when disposed during capability negotiati
   }
 })
 
+it('uses the existing cloud history entry for a workbench session command', () => {
+  const remote = 'http://cloud.test:8443'
+  history.replaceState(null, '', `/?remote=${encodeURIComponent(remote)}&session=first&page=rsi`)
+  const frame = vi
+    .spyOn(frameContext, 'backendFrame')
+    .mockReturnValue({ parentOrigin: location.origin, remote })
+  const stopRouting = bindHomeRouting()
+  const stopBridge = installBackendFrameBridge({
+    initialize: async () => ({ capabilities: {} }),
+    on: () => () => {},
+    session: { list: async () => ({ items: [] }), activity: async () => ({ items: [] }) },
+  } as unknown as Client)
+  try {
+    const before = history.length
+    window.dispatchEvent(new CustomEvent('agnes:backend-frame-ready'))
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: location.origin,
+        source: window.parent,
+        data: {
+          type: 'agh.backend.command/v1',
+          commandId: crypto.randomUUID(),
+          kind: 'session',
+          sessionId: 'second',
+        },
+      }),
+    )
+    expect(history.length).toBe(before)
+    expect(homeNavigation.getSnapshot()).toBeUndefined()
+    const params = new URLSearchParams(location.search)
+    expect(params.get('session')).toBe('second')
+    expect(params.get('remote')).toBe(remote)
+    expect(params.get('page')).toBeNull()
+  } finally {
+    stopBridge()
+    stopRouting()
+    frame.mockRestore()
+  }
+})
+
 it.each([undefined, 'http://cloud.test:8443'])(
   'returns from every sidebar page to a session through the backend bridge (remote=%s)',
   (remote) => {
@@ -175,26 +215,31 @@ it.each([undefined, 'http://cloud.test:8443'])(
   },
 )
 
-it('restores pages and tabs on history traversal without adding entries and preserves session scope', () => {
-  history.replaceState({ scope: 1 }, '', '/?page=plugins&tab=skills&session=s&workspaceId=w')
+it('restores page history and drops the Skills workspace when leaving its scope', () => {
+  const workspaceId = 'a'.repeat(64)
+  const skills = `/?page=plugins&tab=skills&session=s&workspaceId=${workspaceId}`
+  history.replaceState({ scope: 1 }, '', skills)
   const stop = bindHomeRouting()
   try {
     expect(homeNavigation.getSnapshot()).toEqual({ id: 'plugins', selection: { tab: 'skills' } })
     const count = history.length
     homeNavigation.open('plugins', { tab: 'mcp' })
     expect(history.length).toBe(count + 1)
-    expect(location.search).toBe('?page=plugins&tab=mcp&session=s&workspaceId=w')
+    expect(location.search).toBe('?page=plugins&tab=mcp&session=s')
     homeNavigation.open('plugins', { tab: 'mcp' })
     expect(history.length).toBe(count + 1)
     // Model the browser's URL change before it dispatches popstate.
-    history.replaceState(null, '', '/?page=plugins&tab=skills&session=s&workspaceId=w')
+    history.replaceState(null, '', skills)
     window.dispatchEvent(new PopStateEvent('popstate'))
     expect(homeNavigation.getSnapshot()).toEqual({ id: 'plugins', selection: { tab: 'skills' } })
     expect(history.length).toBe(count + 1)
-    history.replaceState(null, '', '/?session=s&workspaceId=w')
+    expect(new URLSearchParams(location.search).get('workspaceId')).toBe(workspaceId)
+    history.replaceState(null, '', `/?session=s&workspaceId=${workspaceId}`)
     window.dispatchEvent(new PopStateEvent('popstate'))
     expect(homeNavigation.getSnapshot()).toBeUndefined()
     expect(history.length).toBe(count + 1)
+    homeNavigation.open('plugins', { tab: 'skills' })
+    expect(location.search).toBe('?session=s&page=plugins&tab=skills')
     homeNavigation.openRef('a#overview', { tab: 'work' })
     expect(new URL(location.href).searchParams.get('pagePackage')).toBe('a')
     window.dispatchEvent(new PopStateEvent('popstate'))
@@ -214,6 +259,21 @@ it('restores pages and tabs on history traversal without adding entries and pres
   history.replaceState(null, '', '/?page=agents')
   window.dispatchEvent(new PopStateEvent('popstate'))
   expect(homeNavigation.getSnapshot()).toEqual({ id: 'third-party' })
+})
+
+it.each([
+  ['a draft', 'new=1', true],
+  ['a session starting a new draft', 'new=1&session=s', false],
+] as const)('leaves Skills from %s with the right workspace', (_entry, selection, keepsWorkspace) => {
+  const workspaceId = 'a'.repeat(64)
+  history.replaceState(null, '', `/?${selection}&workspaceId=${workspaceId}&page=plugins&tab=skills`)
+  const stop = bindHomeRouting()
+  try {
+    homeNavigation.open('rsi')
+    expect(new URLSearchParams(location.search).get('workspaceId')).toBe(keepsWorkspace ? workspaceId : null)
+  } finally {
+    stop()
+  }
 })
 
 it.each(['business-agents', 'business-agent', 'agent-fde', 'fde'])(

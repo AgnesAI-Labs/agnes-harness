@@ -415,21 +415,52 @@ describe('API-key provider registry', () => {
   })
 
   it('preserves verified Agnes modalities and sends each model output allowance on the wire', async () => {
-    const adapter = await getApiKeyProvider('agnes-ai')?.createAdapter()
+    const entry = getApiKeyProvider('agnes-ai')
+    const adapter = await entry?.createAdapter()
     const inputs = Object.fromEntries(
       (adapter?.models('agnes-ai') ?? []).map((model) => [model.id, model.input]),
     )
     expect(inputs).toEqual({
       'agnes-3.0-flash': ['text', 'image'],
+      'agnes-3.0-pro': ['text', 'image'],
       'agnes-2.5-pro': ['text'],
       'agnes-2.5-pro-alpha': ['text'],
       'agnes-2.5-pro-beta': ['text'],
+      'agnes-2.5-pro-theta': ['text', 'image'],
       'agnes-2.5-flash': ['text', 'image'],
       'agnes-2.0-flash': ['text', 'image'],
     })
     if (!adapter) throw new Error('missing Agnes adapter')
-    for (const record of adapter.models('agnes-ai'))
+    for (const record of adapter.models('agnes-ai')) {
       expect(record.inputLimits?.images?.maxPerRequest).toBe(record.input.includes('image') ? 4 : undefined)
+      expect(record.contextWindow).toBe(record.id === 'agnes-3.0-pro' ? 1_000_000 : 200_000)
+    }
+    const narrowed = await entry?.createAdapter({
+      modelIds: [
+        'agnes-2.5-pro-alpha',
+        'agnes-2.5-pro-theta',
+        'agnes-video-2.5-flash',
+        'agnes-3.0-flash',
+        'agnes-image-2.1-flash',
+        'agnes-video-2.5',
+        'agnes-image-2.0-flash',
+        'agnes-2.5-flash',
+        'agnes-3.0-pro',
+        'agnes-2.5-pro',
+        'agnes-2.5-pro-beta',
+        'agnes-image-2.5-flash',
+        'agnes-sys1-1.0',
+      ],
+    })
+    expect(narrowed?.models('agnes-ai').map((model) => model.id)).toEqual([
+      'agnes-3.0-flash',
+      'agnes-3.0-pro',
+      'agnes-2.5-pro',
+      'agnes-2.5-pro-alpha',
+      'agnes-2.5-pro-beta',
+      'agnes-2.5-pro-theta',
+      'agnes-2.5-flash',
+    ])
     adapter.bindCredential('agnes-ai', 'fixture-output-limit-key')
     const bodies: Array<Record<string, unknown>> = []
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -547,4 +578,39 @@ it('registers the domestic default URL and credential namespace for Agnes Sys1',
     baseUrl: 'https://api.agnes-ai.cn/v1',
     credentialRef: 'secret://agnes-sys1/default',
   })
+})
+
+it('reads independent capability facts from installed catalogues without credentials or network', async () => {
+  const { getModelCatalogueFacts } = await import('../src/model-adapter.js')
+  const network = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Unexpected network'))
+  try {
+    const facts = await getModelCatalogueFacts('openai-completions', 'https://gateway.example/v1')
+    const flash = facts.get('agnes-2.5-flash')
+    expect(flash).toEqual({ input: ['text', 'image'], contextWindow: 200000, maxTokens: 65536 })
+    // Names are exact: the gateway's dashed alias has not been declared by this catalogue.
+    expect(facts.has('agnes-2-5-flash')).toBe(false)
+    expect(facts.has('synthetic-unknown-model')).toBe(false)
+    expect(flash).not.toHaveProperty('reasoning')
+    expect(flash).not.toHaveProperty('thinkingLevelMap')
+    expect(flash).not.toHaveProperty('baseUrl')
+    expect(flash).not.toHaveProperty('cost')
+    expect(
+      await getModelCatalogueFacts('openai-completions', 'https://gateway.example/v1', { byId: false }),
+    ).toEqual(new Map())
+    const exact = await getModelCatalogueFacts('openai-completions', 'https://api.agnes-ai.cn/v1/', {
+      byId: false,
+    })
+    expect(exact.get('agnes-2.5-flash')).toEqual(flash)
+    if (!flash?.input) throw new Error('Expected model catalogue input facts')
+    Object.assign(flash, { contextWindow: 1 })
+    Object.defineProperty(flash.input, '0', { value: 'image' })
+    expect(
+      (await getModelCatalogueFacts('openai-completions', 'https://gateway.example/v1')).get(
+        'agnes-2.5-flash',
+      ),
+    ).toEqual({ input: ['text', 'image'], contextWindow: 200000, maxTokens: 65536 })
+    expect(network).not.toHaveBeenCalled()
+  } finally {
+    network.mockRestore()
+  }
 })

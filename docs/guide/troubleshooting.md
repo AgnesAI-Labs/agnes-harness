@@ -24,6 +24,8 @@ node agnes.mjs doctor provider --json
 
 When exporting a Web diagnostic ZIP with logs selected, `logs/daemon-runtime.jsonl` contains bounded runtime output from the live and previous rotated log, separately from request audit in `logs/daemon-request-audit.jsonl` and Host logs. Missing logs are reported explicitly. Older daemons are retried without the runtime option only when they reject its parameters.
 
+Web session diagnostic ZIPs redact cloud Keys and the ticket segment of cloud connection paths. The route and endpoint remain visible in the exported files and the offline viewer. Complete JSON records are decoded for redaction and written back as JSON with their original number literals.
+
 | Symptom | Check and next action |
 | --- | --- |
 | Old Node / SQLite module error | Confirm Node >=24.10; your default shell and build may use different Node installations |

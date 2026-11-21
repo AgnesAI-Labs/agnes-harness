@@ -13,10 +13,12 @@ import {
   createRegionRenderer,
   preserveRouteParams,
   RegionErrorBoundary,
+  type SnapshotSource,
   UiLocaleProvider,
   type UiLocaleSource,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useSyncExternalStore } from 'react'
+import { isDraftRoute, skillsWorkspaceId } from '../backends/local-route.js'
 import { ChannelDialogHost } from './channel-dialog.js'
 import { isBuiltinHomeEntry } from './entries.js'
 import { useWorkLaunchQuiet, workLaunch } from './work-launch.js'
@@ -40,8 +42,8 @@ export type HomePageData = Readonly<{
   startDraft(prompt?: string): void
   /** What this browser has loaded of each plugin, for the plugins page's run state. */
   plugins?: Pick<PluginAdminSources, 'actualSlots' | 'runtime'> & {
-    /** The workspace whose skills and MCP servers the page lists. */
-    workspaceId?(): string | undefined
+    /** Undefined selects profile skills, null waits for selection, and false marks an unresolved scope. */
+    skillsWorkspace?: SnapshotSource<string | undefined | null | false>
   }
 }>
 
@@ -212,6 +214,7 @@ export function bindHomeRouting(): () => void {
     if ((requested?.selection as { applicationDefault?: string } | undefined)?.applicationDefault) return
     const url = new URL(location.href)
     const before = url.href
+    const scopedSkills = skillsWorkspaceId(url.searchParams)
     const tab = (requested?.selection as { tab?: unknown } | undefined)?.tab
     // A page opened inside a page (`view=…`) belongs to that page and tab; another one starts at its top.
     if (
@@ -226,6 +229,9 @@ export function bindHomeRouting(): () => void {
     else url.searchParams.delete('pagePackage')
     if (requested && typeof tab === 'string') url.searchParams.set('tab', tab)
     else url.searchParams.delete('tab')
+    // A plain tab click neither creates a scoped link nor carries that scope to another page.
+    if (!isDraftRoute(url.searchParams) && scopedSkills !== skillsWorkspaceId(url.searchParams))
+      url.searchParams.delete('workspaceId')
     const address = preserveRouteParams(url)
     if (new URL(address, location.href).href !== before) history.pushState(null, '', address)
   })

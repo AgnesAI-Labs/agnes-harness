@@ -1,13 +1,24 @@
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { lstatSync, mkdtempSync, rmSync } from 'node:fs'
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createPrivateDirectorySync, hasPrivateDaclSync } from '@agnes/system-node'
-import { afterEach, beforeEach, expect, it } from 'vitest'
-import { initializeHomeLocked } from '../src/home-initialize.js'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { initializeHomeLocked, initializeLlmsgHomeLocked } from '../src/home-initialize.js'
 import { inspectHome } from '../src/home-layout.js'
 
 const initializer = new URL('../src/home-initialize.ts', import.meta.url).href
@@ -149,3 +160,185 @@ it('the real CLI initializes a fresh home before reporting daemon status', async
   expect(inspectHome(home).state).toBe('current')
   expect(lstatSync(join(parent, '.cli-home.initialize.sqlite')).isFile()).toBe(true)
 }, 60000)
+
+describe.runIf(process.platform === 'linux')('LLMSG home bootstrap', () => {
+  const fallback = 'fixture-environment-key'
+  const preseeded = 'fixture-preseeded-key\n'
+  const env = { AGH_CLOUD_KEY: fallback }
+  function privateHome() {
+    const home = join(parent, 'home')
+    mkdirSync(home, { mode: 0o700 })
+    return { home, key: join(home, 'cloud-key') }
+  }
+
+  it.each([false, true])(
+    'initializes an empty or Key-only home (Key exists: %s) and restarts',
+    async (preseed) => {
+      const { home, key } = privateHome()
+      if (preseed) {
+        writeFileSync(key, preseeded, { mode: 0o644 })
+        await expect(initializeHomeLocked(home)).rejects.toMatchObject({ code: 'E_HOME_VERSION' })
+      }
+      const originalInode = preseed ? lstatSync(key).ino : undefined
+      const initialEnv = preseed ? {} : env
+      const first = await initializeLlmsgHomeLocked(home, 'local-dev', initialEnv)
+      if (!preseed) expect(readdirSync(home)).not.toContain('cloud-key')
+      await initializeLlmsgHomeLocked(home, 'local-dev', initialEnv, 'persist-key')
+      expect(readFileSync(key, 'utf8')).toBe(preseed ? preseeded : `${fallback}\n`)
+      expect(lstatSync(key).mode & 0o777).toBe(0o600)
+      if (preseed) expect(lstatSync(key).ino).toBe(originalInode)
+      const replacement = join(home, 'rotation.tmp')
+      writeFileSync(replacement, 'fixture-rotated-key\n', { mode: 0o600 })
+      renameSync(replacement, key)
+      const rotatedInode = lstatSync(key).ino
+      await initializeLlmsgHomeLocked(home, 'local-dev', env)
+      const restart = await initializeLlmsgHomeLocked(home, 'local-dev', env, 'persist-key')
+      expect(restart.instanceId).toBe(first.instanceId)
+      expect(readFileSync(key, 'utf8')).toBe('fixture-rotated-key\n')
+      expect(lstatSync(key).ino).toBe(rotatedInode)
+    },
+  )
+
+  it('uses the corrected environment Key after a failed install and refuses conflicting aliases', async () => {
+    const { home, key } = privateHome()
+    const retry = { AGH_API_KEY: 'fixture-retried-key' }
+    await expect(initializeLlmsgHomeLocked(home, 'local-dev', env, 'persist-key')).rejects.toMatchObject({
+      code: 'E_HOME_VERSION',
+    })
+    await expect(initializeLlmsgHomeLocked(home, 'local-dev', { ...env, ...retry })).rejects.toThrow(
+      'Conflicting LLMSG cloud Key variables',
+    )
+    expect(readdirSync(home)).toEqual([])
+    const first = await initializeLlmsgHomeLocked(home, 'local-dev', env)
+    // The first plugin installation fails before the entrypoint can invoke the persistence step.
+    expect(readdirSync(home)).not.toContain('cloud-key')
+    const second = await initializeLlmsgHomeLocked(home, 'local-dev', retry)
+    expect(second.instanceId).toBe(first.instanceId)
+    await initializeLlmsgHomeLocked(home, 'local-dev', retry, 'persist-key')
+    expect(readFileSync(key, 'utf8')).toBe('fixture-retried-key\n')
+    await initializeLlmsgHomeLocked(home, 'local-dev', { ...env, ...retry }, 'persist-key')
+    expect(readFileSync(key, 'utf8')).toBe('fixture-retried-key\n')
+  })
+
+  it('rechecks the home after the provider completes an in-progress atomic rotation', async () => {
+    const { home, key } = privateHome()
+    const replacement = join(home, 'rotation.tmp')
+    writeFileSync(key, preseeded, { mode: 0o600 })
+    writeFileSync(replacement, 'fixture-rotated-key\n', { mode: 0o600 })
+    const bootstrap = initializeLlmsgHomeLocked(home, 'local-dev', {})
+    await delay(20)
+    expect(readFileSync(key, 'utf8')).toBe(preseeded)
+    expect(readdirSync(home).sort()).toEqual(['cloud-key', 'rotation.tmp'])
+    renameSync(replacement, key)
+    await expect(bootstrap).resolves.toMatchObject({ state: 'current' })
+    await initializeLlmsgHomeLocked(home, 'local-dev', env, 'persist-key')
+    expect(readFileSync(key, 'utf8')).toBe('fixture-rotated-key\n')
+  })
+
+  it('refuses old layouts and preserves old data and the original Key', async () => {
+    const { home, key } = privateHome()
+    writeFileSync(key, preseeded, { mode: 0o600 })
+    const legacy = join(home, 'sessions.db')
+    writeFileSync(legacy, 'fixture-old-data')
+    await expect(initializeLlmsgHomeLocked(home, 'local-dev', env)).rejects.toMatchObject({
+      code: 'E_HOME_VERSION',
+    })
+    expect(readdirSync(home).sort()).toEqual(['cloud-key', 'sessions.db'])
+    expect(readFileSync(legacy, 'utf8')).toBe('fixture-old-data')
+    expect(readFileSync(key, 'utf8')).toBe(preseeded)
+    const pending = join(home, '.llmsg-home-layout.pending')
+    renameSync(legacy, pending)
+    await expect(initializeLlmsgHomeLocked(home, 'local-dev', env)).rejects.toMatchObject({
+      code: 'E_HOME_UNSAFE',
+    })
+    expect(readFileSync(pending, 'utf8')).toBe('fixture-old-data')
+    expect(readFileSync(key, 'utf8')).toBe(preseeded)
+  })
+
+  it('refuses symbolic links, invalid existing Keys, and a missing fallback', async () => {
+    const { home, key } = privateHome()
+    const target = join(parent, 'private-target')
+    const alias = join(parent, 'alias')
+    writeFileSync(target, preseeded, { mode: 0o644 })
+    symlinkSync(home, alias)
+    await expect(initializeLlmsgHomeLocked(alias, 'local-dev', env)).rejects.toMatchObject({
+      code: 'E_HOME_UNSAFE',
+    })
+    symlinkSync(target, key)
+    await expect(initializeLlmsgHomeLocked(home, 'local-dev', env)).rejects.toMatchObject({
+      code: 'E_LLMSG_KEY',
+    })
+    expect(lstatSync(key).isSymbolicLink()).toBe(true)
+    expect(lstatSync(target).mode & 0o777).toBe(0o644)
+    rmSync(key)
+    for (const invalid of ['', ' \n']) {
+      writeFileSync(key, invalid, { mode: 0o600 })
+      await expect(initializeLlmsgHomeLocked(home, 'local-dev', env)).rejects.toMatchObject({
+        code: 'E_LLMSG_KEY',
+      })
+      expect(readFileSync(key, 'utf8')).toBe(invalid)
+    }
+    rmSync(key)
+    await expect(initializeLlmsgHomeLocked(home, 'local-dev', {})).rejects.toMatchObject({
+      code: 'E_LLMSG_KEY',
+    })
+    expect(readdirSync(home)).toEqual([])
+  })
+
+  it.each([
+    ['renameSync', false, true, 'fail'],
+    ['renameSync', false, true, 'kill'],
+    ['mkdirSync', false, true, 'kill'],
+    ['linkSync', false, false, 'kill'],
+    ['linkSync', true, false, 'kill'],
+    ['linkSync', false, false, 'rotate'],
+    ['openSync', true, true, 'rotate'],
+  ] as const)(
+    'recovers at %s (after: %s, preseed: %s, fault: %s)',
+    async (method, after, preseed, fault) => {
+      const { home, key } = privateHome()
+      if (preseed) writeFileSync(key, preseeded, { mode: 0o600 })
+      const child = childScript(
+        'import fs from "node:fs"; import { syncBuiltinESMExports } from "node:module"; ' +
+          'import { join } from "node:path"; import assert from "node:assert/strict"; ' +
+          'const [home, method, after, fault, fallback] = process.argv.slice(1); ' +
+          'const key = join(home, "cloud-key"), original = fs[method]; let injected = false; ' +
+          'fs[method] = (...args) => { ' +
+          '  if (injected || (method === "openSync" && args[0] !== key) || ' +
+          '      (method === "renameSync" && args[1] !== join(home, "home-layout.json")) || ' +
+          '      (method === "mkdirSync" && !String(args[0]).startsWith(home + "/")) || ' +
+          '      (method === "linkSync" && args[1] !== key)) return original(...args); ' +
+          '  injected = true; const result = after === "true" ? original(...args) : undefined; ' +
+          '  if (fault === "kill") { process.kill(process.pid, "SIGKILL"); return; } ' +
+          '  if (fault === "fail") throw Object.assign(new Error("fixture write failure"), { code: "EIO" }); ' +
+          '  fs.writeFileSync(key + ".rotation", "fixture-concurrent-key\\n", { mode: 0o600 }); ' +
+          '  fs.renameSync(key + ".rotation", key); return after === "true" ? result : original(...args); ' +
+          '}; syncBuiltinESMExports(); ' +
+          'const { initializeLlmsgHomeLocked } = await import(' +
+          JSON.stringify(initializer) +
+          '); ' +
+          'const env = { AGH_CLOUD_KEY: fallback || undefined }; ' +
+          'const init = async () => { await initializeLlmsgHomeLocked(home, "local-dev", env); ' +
+          'await initializeLlmsgHomeLocked(home, "local-dev", env, "persist-key"); }; ' +
+          'if (fault === "fail") await assert.rejects(init(), { code: "EIO" }); else await init(); ' +
+          'assert.ok(injected); process.disconnect();',
+        [home, method, String(after), fault, preseed ? '' : fallback],
+      )
+      expect(await once(child, 'exit')).toEqual(fault === 'kill' ? [null, 'SIGKILL'] : [0, null])
+      if (preseed && fault !== 'rotate') expect(readFileSync(key, 'utf8')).toBe(preseeded)
+      if (fault === 'rotate') expect(readFileSync(key, 'utf8')).toBe('fixture-concurrent-key\n')
+      const published = inspectHome(home).instanceId
+      const retryEnv = preseed ? {} : env
+      await initializeLlmsgHomeLocked(home, 'local-dev', retryEnv)
+      const retried = await initializeLlmsgHomeLocked(home, 'local-dev', retryEnv, 'persist-key')
+      expect(retried.state).toBe('current')
+      if (published) expect(retried.instanceId).toBe(published)
+      expect(readFileSync(key, 'utf8')).toBe(
+        fault === 'rotate' ? 'fixture-concurrent-key\n' : preseed ? preseeded : `${fallback}\n`,
+      )
+      expect(readdirSync(home)).not.toContain('.llmsg-home-layout.pending')
+      expect(readdirSync(retried.paths.credentials)).not.toContain('.llmsg-cloud-key.pending')
+    },
+    30000,
+  )
+})

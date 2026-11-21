@@ -48,7 +48,13 @@ Producing a file never opens a panel. Clicking a supported artifact of up to 1 M
 
 ## Compatibility and boundaries
 
-Reviewed browser payloads are provided for Windows x64, macOS Apple Silicon and macOS Intel. Both Mac architectures require macOS 13 Ventura or later and need native acceptance before a release is described as tested there. Windows ARM64 and Linux have no admitted payload in this plugin. Preparing the pinned Playwright and matching browser needs network access and enough disk space for the archive and extraction.
+Reviewed browser payloads are available for Windows x64, macOS Apple Silicon, macOS Intel and Linux x64 (amd64). Both Mac architectures require macOS 13 Ventura or later and need native acceptance before a release is described as tested there. Windows ARM64 and Linux ARM64 are unsupported. Preparing the pinned Playwright and matching browser needs network access and enough disk space for the archive and extraction.
+
+On Linux, install the pinned browser's system libraries and run AGH as a non-root user with permission to create user namespaces. Containers must permit the namespace operations required by the Chromium sandbox. The cache is `$XDG_CACHE_HOME/Agnes/browser` when `XDG_CACHE_HOME` is an absolute path and `~/.cache/Agnes/browser` otherwise. Use a cache path with real directories and files protected from writes by other accounts. If the browser cannot start, check the system libraries and container sandbox settings before retrying.
+
+When preinstalling a Linux browser cache in an image, use the final runtime account and its cache path. For a root-owned cache, give that account permission to traverse the directories, read the installation marker and browser files, and run the executables. Keep write access restricted to the owner.
+
+If the panel reports an incomplete or non-executable cache, stop the AGH instances sharing that cache, then move the affected browser revision directory aside before re-enabling the plugin. The default cache on Windows is `%LOCALAPPDATA%\Agnes\browser`. On macOS it is `~/Library/Caches/Agnes/browser`.
 
 The dedicated browser enables Chromium sandboxing, uses no personal browser profile and exposes no browser debugging endpoint to WebUI. Raw JavaScript evaluation, arbitrary executable selection, unrestricted filesystem access, automatic downloads and service workers are not exposed. The pinned Chromium PDF viewer and its internal static assets are admitted only for PDF documents. Known AGH management targets and cloud metadata endpoints are blocked. The plugin is trusted local development functionality; URL routing rules are not an operating-system network sandbox. See [runtime provenance](../../third-party/browser-runtime.md) for exact payloads and licenses.
 

@@ -121,7 +121,13 @@ export function SidebarDshFrame({
       }
       slots={{
         entries: (
-          <HomeEntriesNav t={dependencies.translate} onSelect={() => handle.current?.close()}>
+          <HomeEntriesNav
+            t={dependencies.translate}
+            onSelect={() => {
+              if (projection?.active === 'cloud') selectSidebarBackend('local')
+              handle.current?.close()
+            }}
+          >
             {profileApprovals}
           </HomeEntriesNav>
         ),

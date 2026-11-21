@@ -13,6 +13,7 @@ import {
 import { expect, it, vi } from 'vitest'
 import { bindCloudCredential, readCloudCredentialRef } from '../src/backends/cloud-key.js'
 import {
+  authorizeRemoteFrontend,
   discoverCloudOrigin,
   forgetRemoteAccess,
   remoteTransportOrigin,
@@ -292,4 +293,36 @@ it('preserves POST bodies, methods and cancellation and omits A cookies on a dir
   expect(calls[0]?.signal.aborted).toBe(true)
   await forwarded(new Request('http://127.0.0.1:4177/api/query', { method: 'POST', body: 'request body' }))
   expect(await calls[1]?.text()).toBe('request body')
+})
+
+it('keeps a late canceled cloud instance recovery ticket out of the authorization cache', async () => {
+  const remote = 'https://8443-rotation.ap-shanghai.tencentags.com'
+  const ref = 'secret://generic/11111111-1111-1111-1111-111111111111'
+  const oldToken = `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`
+  const newToken = `zzzzzzzz.${'C'.repeat(22)}.${'D'.repeat(43)}`
+  bindCloudCredential(remote, ref, [{ id: ref }])
+  const abort = new AbortController()
+  let complete: ((response: Response) => void) | undefined
+  const pending = authorizeRemoteFrontend(
+    remote,
+    abort.signal,
+    async () =>
+      new Promise<Response>((done) => {
+        complete = done
+      }),
+  )
+  const rejection = expect(pending).rejects.toThrow()
+  try {
+    abort.abort()
+    complete?.(Response.json({ token: oldToken, expiresAt: Date.now() + 60000 }))
+    await rejection
+    const fetcher = vi.fn(async () => Response.json({ token: newToken, expiresAt: Date.now() + 60000 }))
+    expect(await authorizeRemoteFrontend(remote, new AbortController().signal, fetcher)).toBe(
+      remoteFrontendSessionPath(newToken),
+    )
+    expect(fetcher).toHaveBeenCalledOnce()
+  } finally {
+    forgetRemoteAccess(remote)
+    localStorage.removeItem(`agnes.cloud.credential.v1:${remote}`)
+  }
 })

@@ -69,10 +69,21 @@ migration action or a new conversation. The plugin switch is the only enable/dis
 
 ## Runtime and security
 
-The supported payloads are Windows x64, macOS arm64 and macOS x64, with the system
-requirements of pinned Playwright 1.63.0 / Chromium revision 1243. Windows ARM64 and
-Linux are not admitted by this plugin. macOS must be verified on actual hardware
-before claiming a release tested there; archive availability is not a runtime test.
+The reviewed payloads cover Windows x64, macOS arm64, macOS x64 and Linux x64 (amd64),
+with the system requirements of Playwright 1.63.0 / Chromium revision 1243.
+Windows ARM64 and Linux ARM64 are unsupported. Verify each target natively before
+claiming that a release has been tested there. Linux needs the pinned browser's
+shared libraries and a non-root account with working user namespaces, including
+within the target container's security policy.
+
+Linux cache reuse requires directories and files that other accounts cannot modify.
+Use the final runtime account and its cache path when preinstalling in a Linux image.
+For a root-owned installation, the runtime account must be able to traverse the
+cache directories, read the installation marker and browser files, and run the
+executables. Keep the cache protected from writes by other accounts. The installer
+checks the presence and size of the pinned Linux startup files and the permissions
+of the launch helpers. If a revision is incomplete, it reports the failure before
+downloading and preserves the directory for inspection.
 
 The dedicated browser uses Chromium sandboxing and an allowlist of environment
 variables, has no personal browser profile, and exposes no CDP endpoint to WebUI.
@@ -98,7 +109,9 @@ their CSP. Office files retain the existing download/local application workflow.
 - cli/tools/browser.ts copies the complete licensed playwright-core runtime into
   dist/runtime/playwright; dynamic files must not be bundled away.
 - src/browser-artifacts.json pins OS/architecture, URL, revision, SHA-256, size and
-  executable layout. Update it only after downloading and checking each archive.
+  executable layout. For Linux, it also records the uncompressed sizes and
+  execute requirements of key runtime files. Update these from the verified
+  archive when updating the pin.
 - Keep playwright-core and Chromium aligned; retain their licenses and notices.
 
 The normal CLI build performs runtime preparation. An independently packed copy

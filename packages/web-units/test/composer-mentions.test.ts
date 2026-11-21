@@ -100,7 +100,7 @@ describe('file chips in the draft', () => {
     })
     // The chip shows the type icon and name; the full local path shows on hover.
     expect(chip.textContent).toContain('boot portal.html')
-    expect(chip.textContent).not.toContain('@')
+    expect(chip.querySelector('.composer-mention-at')?.textContent).toBe('@')
     expect(chip.title).toBe(portal.path)
     expect(chip.querySelector('svg')).toBeTruthy()
     expect(handle.getAttachmentBlocks()).toEqual([

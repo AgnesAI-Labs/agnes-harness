@@ -34,7 +34,8 @@ export async function scanAccessibility(
     ),
   )
   try {
-    const scanner = new AxeBuilder({ page })
+    // Axe owns the outer document and all child frames, rather than the local application's DOM view.
+    const scanner = new AxeBuilder({ page: page.mainFrame().page() })
     return await (rules
       ? scanner.withRules(rules)
       : scanner.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

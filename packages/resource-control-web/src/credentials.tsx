@@ -11,6 +11,7 @@ import {
   Loadable,
   Menu,
   reportSuccess,
+  resolveFeedback,
   SettingsCheckbox,
   SettingsDrill,
   SettingsList,
@@ -21,10 +22,16 @@ import {
   useSettingsSubpages,
   useUiText,
 } from '@agnes/web-ui'
-import { type ComponentProps, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { type ComponentProps, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { CredentialEditor } from './credential-editor.js'
 import {
+  beginCredentialMutation,
+  credentialReplacementScopes,
+  pendingCredentialMutations,
+} from './credential-mutations.js'
+import {
   CREDENTIALS_CHANGED,
+  CredentialError,
   type CredentialFailure,
   CredentialsApi,
   cloudCredentialUsage,
@@ -56,6 +63,14 @@ function References({ item }: { item: AdminCredentialMetadata }) {
   )
 }
 const defaultApi = new CredentialsApi()
+
+function referenceKey(item: AdminCredentialMetadata) {
+  return item.references
+    .map(({ kind, profile, configId }) => JSON.stringify([kind, profile, configId]))
+    .sort()
+    .join('\n')
+}
+
 export function CredentialsPage({
   api = defaultApi,
   section = false,
@@ -67,83 +82,122 @@ export function CredentialsPage({
   const { t, locale } = useUiText('@agnes/credentials', credentialsCatalog)
   const [items, setItems] = useState<AdminCredentialMetadata[]>()
   const [context, setContext] = useState<PackageAdminContext>()
-  const [error, setError] = useState<CredentialFailure>()
-  const [busy, setBusy] = useState(false)
-  const [revision, setRevision] = useState(0)
+  const [listError, setListError] = useState<CredentialFailure>()
+  const [listLoading, setListLoading] = useState(true)
   const [editor, setEditor] = useState<{
     mode: 'create' | 'rename' | 'replace'
     item?: AdminCredentialMetadata
   }>()
-  const [removing, setRemoving] = useState<AdminCredentialMetadata>()
-  const [confirmed, setConfirmed] = useState(false)
+  const [removalTarget, setRemovalTarget] = useState<AdminCredentialMetadata>()
+  const [confirmedReferences, setConfirmedReferences] = useState<string>()
+  const [deleteError, setDeleteError] = useState<CredentialFailure>()
+  const [deleting, setDeleting] = useState(false)
+  const currentRemoval = removalTarget && items?.find((item) => item.id === removalTarget.id)
+  const removing = currentRemoval ?? removalTarget
+  const referenceSet = currentRemoval && referenceKey(currentRemoval)
+  const confirmed = !listError && referenceSet !== undefined && referenceSet === confirmedReferences
+  const removalError =
+    deleteError ?? (removing && !currentRemoval && items && !deleting ? 'missing' : undefined)
+  const pending = useSyncExternalStore(
+    pendingCredentialMutations.subscribe,
+    pendingCredentialMutations.getSnapshot,
+  )
   const lifetime = useRef(true)
-  const deleting = useRef(false)
+  const listRequest = useRef<AbortController>()
   const blocked = credentialWriteFailure(context)
   useEffect(() => {
+    if (!confirmed && confirmedReferences !== undefined) setConfirmedReferences(undefined)
+  }, [confirmed, confirmedReferences])
+  const refreshList = useCallback(async () => {
+    listRequest.current?.abort()
+    const abort = new AbortController()
+    listRequest.current = abort
+    setListLoading(true)
+    try {
+      const access = await api.context(abort.signal)
+      if (abort.signal.aborted) return
+      setContext(access)
+      if (!access.permissions.includes('credentials.read') || !access.permissions.includes('packages.read')) {
+        setItems(undefined)
+        throw new CredentialError('denied')
+      }
+      const next = await api.list(abort.signal)
+      if (abort.signal.aborted) return
+      setItems(next)
+      setListError(undefined)
+      return { items: next, access, signal: abort.signal }
+    } catch (cause) {
+      if (!abort.signal.aborted) {
+        setListError(credentialFailure(cause))
+        setConfirmedReferences(undefined)
+      }
+    } finally {
+      if (!abort.signal.aborted) setListLoading(false)
+    }
+  }, [api])
+  useEffect(() => {
     lifetime.current = true
+    const refresh = () => void refreshList()
+    window.addEventListener(CREDENTIALS_CHANGED, refresh)
+    refresh()
     return () => {
       lifetime.current = false
+      listRequest.current?.abort()
+      window.removeEventListener(CREDENTIALS_CHANGED, refresh)
     }
-  }, [])
-  // biome-ignore lint/correctness/useExhaustiveDependencies: revision explicitly refreshes the metadata.
-  useEffect(() => {
-    const abort = new AbortController()
-    setBusy(true)
-    setError(undefined)
-    void (async () => {
-      try {
-        const access = await api.context(abort.signal)
-        if (abort.signal.aborted) return
-        setContext(access)
-        if (
-          !access.permissions.includes('credentials.read') ||
-          !access.permissions.includes('packages.read')
-        ) {
-          setItems(undefined)
-          throw new Error('denied')
-        }
-        const next = await api.list(abort.signal)
-        if (!abort.signal.aborted) setItems(next)
-      } catch (cause) {
-        if (!abort.signal.aborted)
-          setError(cause instanceof Error && cause.message === 'denied' ? 'denied' : credentialFailure(cause))
-      } finally {
-        if (!abort.signal.aborted) setBusy(false)
-      }
-    })()
-    return () => abort.abort()
-  }, [api, revision])
-  async function remove(force = false) {
-    if (!removing || blocked || deleting.current || (force && !confirmed)) return
-    deleting.current = true
-    setBusy(true)
-    setError(undefined)
+  }, [refreshList])
+  async function remove() {
+    if (!currentRemoval || blocked || deleting || listLoading) return
+    const { id, references } = currentRemoval
+    const finish = beginCredentialMutation(id)
+    if (!finish) return
+    setRemovalTarget(currentRemoval)
+    setDeleting(true)
+    setDeleteError(undefined)
+    const force = references.length > 0 && confirmed
     try {
-      await api.delete({ id: removing.id, ...(force ? { force: true, confirm: true } : {}) })
-      if (!lifetime.current) return
-      setItems((current) => current?.filter((item) => item.id !== removing.id))
-      setRemoving(undefined)
-      reportSuccess('credentials', t('deleted'))
+      if (force) {
+        // Recheck the exact list the user acknowledged before sending a destructive request.
+        const latest = await refreshList()
+        if (!lifetime.current) return
+        const target = latest?.items.find((item) => item.id === id)
+        if (!latest || latest.signal.aborted || !target || referenceKey(target) !== confirmedReferences) {
+          setConfirmedReferences(undefined)
+          return
+        }
+        const refusal = credentialWriteFailure(latest.access)
+        if (refusal) {
+          setConfirmedReferences(undefined)
+          setDeleteError(refusal)
+          return
+        }
+      }
+      await api.delete({ id, ...(force ? { force: true, confirm: true } : {}) })
+      const scopes = credentialReplacementScopes(id)
+      for (const scope of Object.values(scopes)) resolveFeedback(scope)
+      // Replace any still-visible replacement toast for this credential.
+      reportSuccess(scopes.success, t('deleted'))
+      if (lifetime.current) {
+        setItems((current) => current?.filter((item) => item.id !== id))
+        setRemovalTarget(undefined)
+      }
       window.dispatchEvent(new Event(CREDENTIALS_CHANGED))
     } catch (cause) {
       if (!lifetime.current) return
       const reason = credentialFailure(cause)
-      setError(reason)
+      setDeleteError(reason)
       if (reason === 'referenced') {
-        try {
-          const next = await api.list()
-          if (!lifetime.current) return
-          setItems(next)
-          setRemoving(next.find((item) => item.id === removing.id) ?? removing)
-          setConfirmed(false)
-        } catch {
-          /* Preserve the refusal and never infer missing references. */
-        }
+        setConfirmedReferences(undefined)
+        await refreshList()
       }
     } finally {
-      deleting.current = false
-      if (lifetime.current) setBusy(false)
+      finish()
+      if (lifetime.current) setDeleting(false)
     }
+  }
+  // The inner dialog still consumes Escape while a deletion is pending.
+  const cancelRemoval = () => {
+    if (!deleting) setRemovalTarget(undefined)
   }
   // As a section of a settings page the editor is a page of that page; standalone it is a dialog.
   const pages = useSettingsSubpages()
@@ -157,7 +211,6 @@ export function CredentialsPage({
     wasOpen.current = pageOpen
   }, [pageOpen])
   const edit = (next: NonNullable<typeof editor>) => {
-    setError(undefined)
     setEditor(next)
     if (inPage) pages.open(CREDENTIAL_PAGE)
   }
@@ -165,14 +218,15 @@ export function CredentialsPage({
     pageBody.current?.dispatchEvent(new CustomEvent(SUBPAGE_CLOSE_EVENT, { bubbles: true }))
   const saved = (mode: NonNullable<typeof editor>['mode'], item: AdminCredentialMetadata) => {
     setItems((current) => [item, ...(current ?? []).filter((old) => old.id !== item.id)])
-    reportSuccess(
-      'credentials',
-      t(mode === 'create' ? 'saved' : mode === 'rename' ? 'renamed' : 'replaced'),
-      mode === 'replace' ? { kind: 'reconnect-required', message: t('reconnect') } : undefined,
-    )
+    if (mode !== 'replace') reportSuccess('credentials', t(mode === 'create' ? 'saved' : 'renamed'))
     setEditor(undefined)
   }
   const open = (mode: 'rename' | 'replace', item: AdminCredentialMetadata) => edit({ mode, item })
+  const refreshAction = {
+    label: t('retry'),
+    onSelect: () => void refreshList(),
+    busy: listLoading || deleting,
+  }
   // As a page the list fills the pane; as a section it is one titled group on the host page.
   const Frame = section ? SettingsSection : CredentialsFrame
   return (
@@ -186,13 +240,13 @@ export function CredentialsPage({
             name="refresh-cw"
             label={t('retry')}
             data-testid="credentials-refresh"
-            disabled={busy}
-            onClick={() => setRevision((value) => value + 1)}
+            disabled={listLoading}
+            onClick={() => void refreshList()}
           />
           <Button
             appearance={section ? 'secondary' : 'primary'}
             data-testid="credential-create"
-            disabled={busy || !!blocked}
+            disabled={listLoading || !!blocked}
             {...(blocked ? { disabledReason: t(`error.${blocked}`) } : {})}
             onClick={() => edit({ mode: 'create' })}
           >
@@ -202,16 +256,12 @@ export function CredentialsPage({
       }
     >
       {blocked && context && <Banner tone="warning">{t(`error.${blocked}`)}</Banner>}
-      {error && !removing && (
-        <StatusMessage
-          kind="error"
-          data-testid="credentials-error"
-          action={{ label: t('retry'), onSelect: () => setRevision((value) => value + 1), busy }}
-        >
-          {t(`error.${error}`)}
+      {listError && !removing && (
+        <StatusMessage kind="error" data-testid="credentials-error" action={refreshAction}>
+          {t(`error.${listError}`)}
         </StatusMessage>
       )}
-      {busy && !items && <Loadable loading hasData={false} shape="rows" />}
+      {listLoading && !items && <Loadable loading hasData={false} shape="rows" />}
       {items?.length === 0 && (
         <EmptyState icon={<Icon name="key-round" />} title={t('empty')} description={t('emptyHelp')} />
       )}
@@ -227,27 +277,37 @@ export function CredentialsPage({
               meta={
                 <>
                   {t('type')} · {t('created', { date: new Date(item.createdAt).toLocaleDateString(locale) })}
+                  <span role="status">{pending.has(item.id) ? ` · ${t('updatePending')}` : ''}</span>
                 </>
               }
               actions={
                 <Menu
                   label={t('menu', { name: item.label })}
                   trigger={<IconButton name="ellipsis" label={t('menu', { name: item.label })} />}
-                  items={(['rename', 'delete'] as const).map((mode) => ({
-                    id: mode,
-                    label: t(mode),
-                    testId: `credential-${mode}`,
-                    danger: mode === 'delete',
-                    disabled: busy || !!blocked,
-                    ...(blocked ? { disabledReason: t(`error.${blocked}`) } : {}),
-                    onSelect: () => {
-                      if (mode === 'delete') {
-                        setError(undefined)
-                        setConfirmed(false)
-                        setRemoving(item)
-                      } else open(mode, item)
-                    },
-                  }))}
+                  items={(['rename', 'replace', 'delete'] as const).map((mode) => {
+                    const waiting = mode !== 'rename' && pending.has(item.id)
+                    const disabledReason = blocked
+                      ? t(`error.${blocked}`)
+                      : waiting
+                        ? t('updatePending')
+                        : undefined
+                    return {
+                      id: mode,
+                      label: t(mode),
+                      testId: `credential-${mode}`,
+                      danger: mode === 'delete',
+                      disabled: listLoading || !!disabledReason,
+                      ...(disabledReason ? { disabledReason } : {}),
+                      onSelect: () => {
+                        if (mode !== 'rename' && pendingCredentialMutations.getSnapshot().has(item.id)) return
+                        if (mode === 'delete') {
+                          setDeleteError(undefined)
+                          setConfirmedReferences(undefined)
+                          setRemovalTarget(item)
+                        } else open(mode, item)
+                      },
+                    }
+                  })}
                 />
               }
             >
@@ -294,27 +354,21 @@ export function CredentialsPage({
           open
           destroyOnHidden
           title={t('deleteTitle', { name: removing.label })}
-          closable={!busy}
-          keyboard={!busy}
-          mask={{ closable: !busy }}
-          onCancel={() => {
-            if (!busy) setRemoving(undefined)
-          }}
+          closable={!deleting}
+          keyboard
+          mask={{ closable: !deleting }}
+          onCancel={cancelRemoval}
           footer={
             <>
-              <Button
-                data-testid="credential-delete-cancel"
-                disabled={busy}
-                onClick={() => setRemoving(undefined)}
-              >
+              <Button data-testid="credential-delete-cancel" disabled={deleting} onClick={cancelRemoval}>
                 {t('cancel')}
               </Button>
               <Button
                 data-testid="credential-delete-confirm"
                 appearance="primary"
                 danger
-                disabled={busy || !!blocked}
-                onClick={() => void remove(removing.references.length > 0 && confirmed)}
+                disabled={!currentRemoval || deleting || listLoading || !!blocked || pending.has(removing.id)}
+                onClick={() => void remove()}
               >
                 {t(removing.references.length && confirmed ? 'force' : 'delete')}
               </Button>
@@ -323,9 +377,14 @@ export function CredentialsPage({
         >
           <p>{t('deleteHelp')}</p>
           <References item={removing} />
-          {error && (
+          {listError && (
+            <StatusMessage kind="error" data-testid="credential-delete-refresh-error" action={refreshAction}>
+              {t('deleteRefreshFailed')} {t(`error.${listError}`)}
+            </StatusMessage>
+          )}
+          {removalError && (
             <Banner tone="error" data-testid="credential-delete-error">
-              {t(`error.${error}`)}
+              {t(`error.${removalError}`)}
             </Banner>
           )}
           {removing.references.length > 0 && (
@@ -333,8 +392,8 @@ export function CredentialsPage({
               data-testid="credential-force-confirm"
               label={t('forceConfirm')}
               checked={confirmed}
-              disabled={busy}
-              onChange={(event) => setConfirmed(event.target.checked)}
+              disabled={deleting || listLoading || !!listError || !!blocked || !currentRemoval}
+              onChange={(event) => setConfirmedReferences(event.target.checked ? referenceSet : undefined)}
             />
           )}
         </Dialog>

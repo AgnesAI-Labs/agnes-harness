@@ -7,6 +7,7 @@ import {
   appServerErrorMessage,
   bindDialogSheets,
   createCatalogTranslator,
+  createExternalStore,
   preserveRouteParams,
   reportSuccess,
   searchParamRoute,
@@ -38,6 +39,7 @@ import { createTurnController } from './app/turn-controller.js'
 import { openApplicationHome, projectApplication, requestNewSession } from './application.js'
 import { installCloudConnectionSettings } from './backends/cloud-connection-settings.js'
 import { backendFrameStartup, installBackendFrameBridge } from './backends/frame-bridge.js'
+import { requestDiagnosticBackend } from './backends/frame-context.js'
 import { readyRosterModules } from './client-modules/reconcile/roster.js'
 import { ComposerDrafts, switchComposerDraft } from './composer-drafts.js'
 import { frontendBackendIdentity } from './remote-frontend.js'
@@ -242,6 +244,7 @@ export interface AppSessionContext {
 const sessionBinding = new SessionBindingOwner()
 const submissions = new SubmissionOwner(sessionBinding)
 const sessionActivity = new SessionActivityView()
+let runtimePlatform: string | undefined
 const appSessionContext: AppSessionContext = {
   sessionActivity,
   invalidateSessionRuntime: (id) => sessionActions.invalidateRuntime(id),
@@ -664,7 +667,7 @@ const appSessionContext: AppSessionContext = {
   },
 }
 const commandController = createCommandController(appSessionContext)
-const composerController = createComposerController(appSessionContext)
+const composerController = createComposerController(appSessionContext, () => runtimePlatform)
 const submissionController = createSubmissionController(appSessionContext)
 const sessionController = createSessionController(appSessionContext, sessionBinding)
 const turnController = createTurnController(appSessionContext)
@@ -685,6 +688,7 @@ onPageHide(
     client,
     (id) => sessionLabels.get(id),
     (action, id, title, trigger) => void sessionActions.act(action, id, title, trigger),
+    (section) => void openSettingsSection(section, true).catch(showError),
   ),
 )
 // Before plugins load, retain develop's owner-only method reservation.
@@ -961,31 +965,29 @@ if (!tracePanel) throw new Error('missing trace region')
 factChainLinks.register((target) => tracePanel.focusFact?.(target) ?? false)
 const stopTerminalNavigation = bindTerminalNavigation(() => settings.close())
 const statusCheck = mountStatusCheck({
-  details: () =>
-    run(async () => {
-      settingsRegion.open('model')
-      await settings.open()
-      settingsRegion.route('diagnostics')
-    }),
+  details: () => run(() => openSettingsSection('diagnostics')),
 })
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')
 onPageHide(installCloudConnectionSettings(clientModules.locale))
-const openSettingsSection = (section: string) => {
+const openSettingsSection = async (section: string, fromWorkbench = false) => {
+  if (!fromWorkbench && requestDiagnosticBackend(section)) return
   settingsRegion.open('model')
-  run(async () => {
-    await settings.open()
-    settingsRegion.route(section)
-  })
+  const loading = settings.open(section)
+  settingsRegion.route(section)
+  await loading
 }
 // The sidebar's application switch asks for the settings page in place; its href stays the fallback.
 const stopSurfaceSettings = onSurfaceEvent('agnes:open-settings', (event) => {
   const section = (event as CustomEvent<{ section?: string }>).detail?.section
   if (!section) return
   event.preventDefault()
-  openSettingsSection(section)
+  run(() => openSettingsSection(section))
 })
 // Home entries open full pages in the main area; the built-in three register like any plugin's.
+const skillsWorkspace = createExternalStore<string | undefined | null | false>(null)
+const initialSkillsBinding = sessionBinding.capture()
+let startupSkillsScope: 'loading' | 'ready' | 'unavailable' = 'loading'
 const homePages = mountHomePages(hosts.homePage, {
   locale: clientModules.locale,
   data: {
@@ -994,7 +996,7 @@ const homePages = mountHomePages(hosts.homePage, {
     requestProfileApproval: clientModules.requestProfileApproval,
     channelCall: callChannel,
     selectedWorkspace: () => (selectedWorkspace?.available ? selectedWorkspace.path : undefined),
-    openSettings: openSettingsSection,
+    openSettings: (section) => run(() => openSettingsSection(section)),
     startDraft: (prompt) =>
       run(async () => {
         requestNewSession()
@@ -1005,7 +1007,7 @@ const homePages = mountHomePages(hosts.homePage, {
     plugins: {
       actualSlots: clientModules.actualSlots,
       runtime: clientModules.reconciler,
-      workspaceId: () => paneWorkspaceId(),
+      skillsWorkspace,
     },
   },
 })
@@ -1106,11 +1108,6 @@ const requestedLoop = startupRequest.get('loop') ?? undefined
 const requestedPreset = startupRequest.get('preset') ?? undefined
 const requestedBundles = startupRequest.getAll('bundle')
 const requestedPrompt = startupRequest.get('prompt') ?? undefined
-// `/admin/resources?workspaceId=…` forwards here: the link names the workspace its resources are for.
-const requestedWorkspaceId = (() => {
-  const id = startupRequest.get('workspaceId')
-  return id && /^[a-f0-9]{64}$/.test(id) ? id : undefined
-})()
 const settingsText = (key: string): string =>
   createCatalogTranslator(
     settingsCatalog,
@@ -1215,7 +1212,6 @@ function updateTitle(id: string, title: string): void {
   if (sessionBinding.session?.id === id) topbarRuntime.setTaskTitle(title)
   updateSidebar()
 }
-let runtimePlatform: string | undefined
 let sessionRows: PageSessionMeta['items'] = []
 let workspaceRows: WorkspaceEntry[] = []
 // The search panel's footer total follows the sidebar snapshot; the panel itself never reads pages.
@@ -1307,6 +1303,8 @@ const settings = createSettingsController({
   },
 })
 const restoreSettingsLocation = () => {
+  // A history traversal takes over settings restoration even during startup.
+  startupSettingsDismissed = true
   const moved = rewriteMovedSettingsLink()
   if (moved?.kind === 'page') {
     settings.close()
@@ -1622,7 +1620,20 @@ function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'clo
 }
 const dockControlsHost = hosts.dockControls
 function renderControls(): void {
+  updateSkillsWorkspace()
   composerController.renderControls()
+}
+function updateSkillsWorkspace(): void {
+  // The first scope comes from startup or an explicit selection that supersedes it.
+  if (sessionBinding.isCurrent(initialSkillsBinding) && startupSkillsScope !== 'ready') {
+    skillsWorkspace.set(startupSkillsScope === 'loading' ? null : false)
+    return
+  }
+  const cwd = sessionBinding.session?.cwd
+  const id =
+    selectedWorkspace?.workspaceId ?? (cwd && workspaceRows.find((row) => row.path === cwd)?.workspaceId)
+  const workspace = id && /^[a-f0-9]{64}$/.test(id) ? id : undefined
+  skillsWorkspace.set(sessionPending ? null : (workspace ?? (workspaceController.loaded ? undefined : false)))
 }
 // During streaming every event makes the trace panel walk all nodes, costing more than the timeline in long sessions.
 // While busy, throttle panel updates to 500ms with a trailing update using the latest view; terminal and idle paths
@@ -1724,8 +1735,12 @@ function beginExplicitNewDraft(showWorkspacePicker = true, workspace?: Workspace
   requestNewSession()
   return beginNewDraft(showWorkspacePicker, workspace)
 }
-async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
-  if (sessionPending || submissions.sending) return
+async function beginNewDraft(
+  showWorkspacePicker = true,
+  workspace?: WorkspaceEntry,
+  supersedeSessionLoad = false,
+): Promise<void> {
+  if (submissions.sending || (sessionPending && !(supersedeSessionLoad && sessionBinding.targetId))) return
   // A new draft the current filter would hide reads as a lost session: show the live list first.
   if (sessionInventory.getSnapshot().mode === 'archived') sessionInventory.setMode('active')
   sessionInventory.invalidate()
@@ -2093,15 +2108,6 @@ clientModules.locale.subscribe(() => {
 })
 onPageHide(composerCommands.subscribe(() => queueMicrotask(renderControls)))
 
-/**
- * The workspace the admin panes are scoped to: the workbench's current one, else the one the
- * address named. Only a canonical 64-hex directory id is passed on.
- */
-function paneWorkspaceId(): string | undefined {
-  const id = selectedWorkspace?.workspaceId
-  return id && /^[a-f0-9]{64}$/.test(id) ? id : requestedWorkspaceId
-}
-
 function handleComposerWorkspace(): void {
   composerController.handleComposerWorkspace()
 }
@@ -2215,13 +2221,22 @@ onPageVisible(() => {
 onHistoryNavigation(() => {
   const params = new URL(location.href).searchParams
   const id = params.get('session')
-  if (!id && params.has('settings')) return
+  if (!id && params.has('settings') && !params.has('new')) return
   run(async () => {
     if (id) {
       if (sessionBinding.session?.id !== id) await open(id)
       return
     }
-    if (sessionBinding.session || !draftingNew) await beginNewDraft(!homeNavigation.getSnapshot())
+    const workspace =
+      params.get('new') === '1'
+        ? workspaceRows.find((row) => row.available && row.workspaceId === params.get('workspaceId'))
+        : undefined
+    if (sessionBinding.session || !draftingNew)
+      await beginNewDraft(!homeNavigation.getSnapshot() && !params.has('settings'), workspace, true)
+    else if (workspace && workspace !== selectedWorkspace) {
+      workspaceController.resolveDraft(workspace)
+      renderControls()
+    }
   })
 })
 async function refreshModelConfiguration(): Promise<void> {
@@ -2320,7 +2335,8 @@ const startup = backendFrameStartup(async () => {
   if (workspaces.status === 'fulfilled') {
     workspaceController.apply(workspaces.value)
     // A link that names a workspace selects it, unless the reader has already chosen one.
-    const requested = workspaceRows.find((row) => row.workspaceId === requestedWorkspaceId)
+    const workspaceId = new URLSearchParams(location.search).get('workspaceId')
+    const requested = workspaceRows.find((row) => row.workspaceId === workspaceId)
     if (requested && !selectedWorkspace && sessionBinding.isCurrent(startupSelection))
       selectedWorkspace = requested
   } else showError(new Error(t('app.workspaceList.unreadable'), { cause: workspaces.reason }))
@@ -2374,16 +2390,19 @@ const startup = backendFrameStartup(async () => {
         }),
     })
   }
+  const currentAddress = new URLSearchParams(location.search)
   const guided =
     empty &&
-    !startupRequest.get('settings') &&
+    !currentAddress.get('settings') &&
     !homeNavigation.getSnapshot() &&
-    !startupRequest.get('session') &&
+    !currentAddress.get('session') &&
     needsFirstRun(snapshot)
   // A user selection made while startup was loading owns the current view.
   if (!sessionBinding.isCurrent(startupSelection)) return
-  const selected = new URL(location.href).searchParams.get('session')
-  if (startupRequest.get('new') === '1') {
+  const selected = currentAddress.get('session')
+  // A link can restore a draft underneath a home page or the settings dialog.
+  const startNew = currentAddress.get('new') === '1'
+  if (startNew && !currentAddress.has('settings') && !homeNavigation.getSnapshot()) {
     await awaitModels()
     if (!sessionBinding.isCurrent(startupSelection)) return
     requestNewSession()
@@ -2442,23 +2461,28 @@ const startup = backendFrameStartup(async () => {
       notice.setText(() => t('app.session.notFound'))
       renderControls()
     }
-  } else if (first) await open(first.sessionId)
-  else if (empty) {
+  } else if (first && !startNew) await open(first.sessionId)
+  else if (empty || startNew) {
     await awaitModels()
     if (!sessionBinding.isCurrent(startupSelection)) return
     // Finishing or skipping the guide already starts a draft. Its Host catalogs must not
     // delay account setup; that draft still waits for the same catalogs before submission.
-    if (!guided)
+    if (!guided) {
+      if (startNew) sessionPending = false
       await beginNewDraft(
         configured && !startupSection && !startupTerminal && !startupMoved && !homeNavigation.getSnapshot(),
       )
-    // The guide opens over the shell: its sidebar and composer still come from the profile roster.
-    else scheduleClientRosterRead(true)
+    } else {
+      // The guide opens over the shell: its sidebar and composer still come from the profile roster.
+      scheduleClientRosterRead(true)
+    }
   } else {
     scheduleClientRosterRead(true)
     sessionPending = false
     renderControls()
   }
+  startupSkillsScope = 'ready'
+  updateSkillsWorkspace()
   const modelSelection = sessionBinding.capture()
   await awaitModels()
   if (!sessionBinding.isCurrent(modelSelection)) return
@@ -2490,4 +2514,14 @@ const startup = backendFrameStartup(async () => {
     settingsRegion.route(target)
   }
 })
-run(startup)
+run(async () => {
+  try {
+    await startup()
+  } catch (error) {
+    if (startupSkillsScope === 'loading') {
+      startupSkillsScope = 'unavailable'
+      updateSkillsWorkspace()
+    }
+    throw error
+  }
+})

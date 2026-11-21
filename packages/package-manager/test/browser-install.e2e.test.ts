@@ -2,25 +2,50 @@ import { type ChildProcess, fork } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { once } from 'node:events'
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  truncate,
+  utimes,
+  writeFile,
+} from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 
 // Copy the production ESM unchanged; only the reviewed payload and engine are synthetic.
-async function fixture(packagedLock = true) {
+async function fixture(packagedLock = true, key = process.platform + '-' + process.arch) {
   const root = await mkdtemp(join(tmpdir(), 'agh-browser-install-中文 #%-'))
   const plugin = join(root, 'plugin')
-  const key = process.platform + '-' + process.arch
-  const info = { revision: 'fixture', executable: 'chromium', url: 'https://invalid.test/browser.zip' }
+  const files = [
+    { path: 'chromium', contents: 'fixture executable' },
+    { path: 'runtime-helper', contents: 'fixture helper', executable: true },
+  ]
+  const info = {
+    revision: 'fixture',
+    executable: 'chromium',
+    url: 'https://invalid.test/browser.zip',
+    runtimeFiles: files.map(({ path, contents, executable }) => ({
+      path,
+      size: Buffer.byteLength(contents),
+      executable,
+    })),
+  }
   const payload = Buffer.from('synthetic browser archive')
   const lock = join(root, 'cache', info.revision + '-' + key + '.lock')
   const children: ChildProcess[] = []
   await mkdir(join(plugin, 'src'), { recursive: true })
   await mkdir(join(plugin, 'dist/runtime/playwright'), { recursive: true })
   await mkdir(join(root, 'cache'))
-  for (const name of ['launcher.mjs', 'policy.mjs'])
+  for (const name of ['cache.mjs', 'launcher.mjs', 'policy.mjs'])
     await copyFile(
       new URL('../bundled-plugins/browser/src/' + name, import.meta.url),
       join(plugin, 'src', name),
@@ -43,7 +68,12 @@ async function fixture(packagedLock = true) {
   await writeFile(join(engine, 'index.js'), 'exports.chromium = {}')
   await writeFile(
     join(engine, 'lib/coreBundle.js'),
-    `exports.utils = { extractZip: async (_, { dir }) => require('node:fs/promises').writeFile(require('node:path').join(dir, 'chromium'), 'fixture executable') }`,
+    `const { writeFile } = require('node:fs/promises')
+      const { join } = require('node:path')
+      exports.utils = { async extractZip(_, { dir }) {
+        for (const file of ${JSON.stringify(files)})
+          await writeFile(join(dir, file.path), file.contents, { mode: file.executable ? 0o755 : 0o644 })
+      } }`,
   )
   await writeFile(join(root, 'payload'), payload)
   await writeFile(
@@ -78,6 +108,7 @@ async function fixture(packagedLock = true) {
   }
   return {
     root,
+    cache: join(root, 'cache', info.revision + '-' + key),
     lock,
     worker,
     async downloads() {
@@ -94,6 +125,102 @@ async function fixture(packagedLock = true) {
     },
   }
 }
+
+it('refuses a platform with no reviewed archive before downloading', async () => {
+  const f = await fixture(true, 'unavailable-host')
+  try {
+    const next = await f.worker()
+    next.child.send('prepare')
+    const result = await next.wait('state', 'failed')
+    expect(result.errorCode).toBe('UNSUPPORTED_PLATFORM')
+    expect(existsSync(join(f.root, 'downloads'))).toBe(false)
+    expect(await readdir(join(f.root, 'cache'))).toEqual([])
+  } finally {
+    await f.close()
+  }
+})
+
+it.each([
+  'missing executable',
+  'truncated executable',
+  'missing runtime helper',
+  'invalid marker',
+  ...(process.platform === 'win32' ? [] : ['missing execute bit', 'non-executable runtime helper']),
+])('refuses a cache with %s before downloading again', async (damage) => {
+  const f = await fixture()
+  try {
+    const next = await f.worker()
+    next.child.send('prepare')
+    await next.wait('downloading')
+    next.child.send('continue')
+    await next.wait('state', 'ready')
+    const executable = join(f.cache, 'chromium')
+    const helper = join(f.cache, 'runtime-helper')
+    const marker = join(f.cache, 'agnes-install.json')
+    if (damage === 'missing executable') await rename(executable, executable + '.aside')
+    else if (damage === 'truncated executable') await truncate(executable, 1)
+    else if (damage === 'missing runtime helper') await rename(helper, helper + '.aside')
+    else if (damage === 'invalid marker') await writeFile(marker, 'null')
+    else await chmod(damage === 'missing execute bit' ? executable : helper, 0o644)
+    await expect.poll(() => existsSync(f.lock)).toBe(false)
+
+    const retry = await f.worker()
+    retry.child.send('check')
+    expect(await retry.wait('checked')).toMatchObject({ checkedState: 'failed', errorCode: 'CACHE_INVALID' })
+    retry.child.send('launch')
+    await retry.wait('launchError', 'CACHE_INVALID')
+    retry.child.send('prepare')
+    expect(await retry.wait('state', 'failed')).toMatchObject({ errorCode: 'CACHE_INVALID' })
+    expect(await f.downloads()).toBe(1)
+    expect(existsSync(f.cache)).toBe(true)
+    expect(existsSync(f.lock)).toBe(false)
+
+    await rename(f.cache, f.cache + '.quarantine')
+    const recovered = await f.worker()
+    recovered.child.send('prepare')
+    await recovered.wait('downloading')
+    recovered.child.send('continue')
+    await recovered.wait('state', 'ready')
+    expect(await f.downloads()).toBe(2)
+  } finally {
+    await f.close()
+  }
+})
+
+it.skipIf(process.platform !== 'linux').each(['writable ancestor', 'cache symlink', 'writable runtime file'])(
+  'refuses a Linux cache with %s',
+  async (damage) => {
+    const f = await fixture()
+    try {
+      const next = await f.worker()
+      next.child.send('prepare')
+      await next.wait('downloading')
+      next.child.send('continue')
+      await next.wait('state', 'ready')
+      await expect.poll(() => existsSync(f.lock)).toBe(false)
+      if (damage === 'writable ancestor') await chmod(f.root, 0o777)
+      else if (damage === 'cache symlink') {
+        await rename(f.cache, f.cache + '.aside')
+        await symlink(f.cache + '.aside', f.cache)
+      } else {
+        const companion = join(f.cache, 'browser-helper')
+        await writeFile(companion, 'fixture companion')
+        await chmod(companion, 0o666)
+      }
+
+      const retry = await f.worker()
+      retry.child.send('check')
+      expect(await retry.wait('checked')).toMatchObject({ checkedState: 'failed', errorCode: 'CACHE_UNSAFE' })
+      retry.child.send('launch')
+      await retry.wait('launchError', 'CACHE_UNSAFE')
+      retry.child.send('prepare')
+      expect(await retry.wait('state', 'failed')).toMatchObject({ errorCode: 'CACHE_UNSAFE' })
+      expect(await f.downloads()).toBe(1)
+    } finally {
+      await f.close()
+    }
+  },
+)
 
 it.each([true, false])(
   'recovers a dead owner without network access (packaged lock: %s)',
@@ -172,10 +299,13 @@ it('waits for cancelled preparation to release its install lock before handing o
   const f = await fixture()
   const plugin = join(f.root, 'plugin')
   const source = new URL('../bundled-plugins/browser/', import.meta.url)
+  const linuxCache = join(f.root, 'xdg-cache')
   const cache =
     process.platform === 'win32'
       ? join(f.root, 'Agnes', 'browser')
-      : join(f.root, 'Library', 'Caches', 'Agnes', 'browser')
+      : process.platform === 'linux'
+        ? join(linuxCache, 'Agnes', 'browser')
+        : join(f.root, 'Library', 'Caches', 'Agnes', 'browser')
   let release!: () => void, entered!: () => void, aborted!: () => void
   const pending = new Promise<void>((resolve) => {
     release = resolve
@@ -191,9 +321,11 @@ it('waits for cancelled preparation to release its install lock before handing o
   try {
     await copyFile(new URL('index.mjs', source), join(plugin, 'index.mjs'))
     for (const name of await readdir(new URL('src/', source)))
-      if (name.endsWith('.mjs')) await copyFile(new URL('src/' + name, source), join(plugin, 'src', name))
+      if (name.endsWith('.mjs') || name === 'file-types.json')
+        await copyFile(new URL(`src/${name}`, source), join(plugin, 'src', name))
     vi.stubEnv('LOCALAPPDATA', f.root)
     vi.stubEnv('HOME', f.root)
+    vi.stubEnv('XDG_CACHE_HOME', linuxCache)
     const payload = await readFile(join(f.root, 'payload'))
     let interrupt = true
     vi.stubGlobal('fetch', async (_url: unknown, { signal }: { signal: AbortSignal }) => {
@@ -357,7 +489,10 @@ it.each(['checksum', 'undersize', 'oversize', 'missing-installer'])(
       if (damage === 'missing-installer') {
         expect(result.error).toContain('@agnes/system-node/owner-lock')
         expect(existsSync(join(f.root, 'downloads'))).toBe(false)
-      } else expect(result.error).toMatch(/reviewed (manifest|size)/)
+      } else {
+        expect(result.errorCode).toBe('INTEGRITY')
+        expect(result.error).toMatch(/reviewed (manifest|size)/)
+      }
       await expect.poll(() => existsSync(f.lock)).toBe(false)
       expect(await readdir(join(f.root, 'cache'))).toEqual([])
       await writeFile(file, original)

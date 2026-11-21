@@ -2,6 +2,7 @@ name: Prepare Web declarations
 on:
   workflow_call:
     inputs:
+      runner: { type: string, default: ubuntu-24.04 }
       artifact: { type: string, default: '' }
       native: { type: string, required: true }
       nightly: { type: boolean, default: false }
@@ -13,7 +14,7 @@ permissions: { contents: read }
 env: { AGNES_NATIVE_BUILDER: glibc228 }
 jobs:
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 15
     outputs:
       artifact: ${{ steps.identity.outputs.artifact }}

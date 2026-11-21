@@ -183,19 +183,6 @@ async function mountExtensions(ctx: AssemblyContext, f: Foundation, t: Tree, c: 
     extensionLeases: c.extensionLeases,
     seams: t.seams,
   })
-  const bundled = createBundledExtensions(ctx, f.pkgs, host, t.rowHosts)
-  const rows = await mountExtensionRows(ctx, {
-    kernel,
-    bootRows: t.bootRows,
-    rowHosts: t.rowHosts,
-    runtimeTarget: t.runtimeTarget,
-    host,
-    bundled,
-    pkgs: f.pkgs,
-    skillState: t.skillState,
-    buildEcosystemContext: t.ecosystem.buildEcosystemContext,
-  })
-  const skillRefresh = createSkillRefresh(ctx, { skillState: t.skillState, bootRows: t.bootRows, host, rows })
   ctx.rollback.push('extensions', () => host.managed.disposeAll())
   // A row that replaced a builtin row's extension (or the builtin coming back) evicts the
   // incumbent without waiting for its wind-down (`ExtensionOwners.claim`); the eviction still runs
@@ -211,6 +198,19 @@ async function mountExtensions(ctx: AssemblyContext, f: Foundation, t: Tree, c: 
   // Managed shutdown still needs the current plugin registrations and streams. Drain it before
   // disposing the tree; the earlier registration also protects partially assembled Hosts.
   ctx.rollback.push('profile-managed-drain', () => f.proc.profileManaged.close())
+  const bundled = createBundledExtensions(ctx, f.pkgs, host, t.rowHosts)
+  const rows = await mountExtensionRows(ctx, {
+    kernel,
+    bootRows: t.bootRows,
+    rowHosts: t.rowHosts,
+    runtimeTarget: t.runtimeTarget,
+    host,
+    bundled,
+    pkgs: f.pkgs,
+    skillState: t.skillState,
+    buildEcosystemContext: t.ecosystem.buildEcosystemContext,
+  })
+  const skillRefresh = createSkillRefresh(ctx, { skillState: t.skillState, bootRows: t.bootRows, host, rows })
   return { host, rows, skillRefresh }
 }
 type Extensions = Awaited<ReturnType<typeof mountExtensions>>

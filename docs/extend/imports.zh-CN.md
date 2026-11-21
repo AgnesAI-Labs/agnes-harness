@@ -24,7 +24,7 @@
 | 实现 Loop 步骤与 checkpoint | `@agnes/extension-api` | `loopCheckpointCodec`；类型 `LoopFactory`、`LoopContext`、`LoopDriver`、`LoopCheckpoint`、`ProviderPluginContext` | 作者合同；见 [Loop 模板](../../templates/loop/src/index.ts)。使用受控模型/工具端口和传入的取消信号。 |
 | 定义模型适配器 | `@agnes/plugin-runtime` | `defineModelAdapter`、`defineAgnesPlugin` | 作者面。注入 `providers`，调用 `ctx.providers.register(modelAdapterKind, adapter)`。 |
 | 实现适配器配置和流式输出 | `@agnes/extension-api` | 类型 `ModelAdapter`、`ModelAdapterConfig`、`ModelAdapterInstance`、`ModelAdapterEvent`、`ProviderPluginContext` | 作者合同；见[适配器模板](../../templates/model-adapter/src/index.ts)。 |
-| 复用兼容 OpenAI 的线协议适配器 | `@agnes/ai/model-adapter` | `PiAdapter`、`isChatModelId` | Host 提供的模型适配辅助入口；使用部署方配置的地址和私有按请求凭证解析。可选 `ModelAdapter.contributeRoutes(signal)` 在内存中装配自有路由；API 必须匹配注册 ID，重名拒绝，不改写 profile 或默认模型。 |
+| 复用兼容 OpenAI 的线协议适配器 | `@agnes/ai/model-adapter` | `PiAdapter`、`isChatModelId`、`getModelCatalogueFacts` | Host 提供的模型适配辅助入口；使用部署方配置的地址和私有按请求凭证解析。可选 `ModelAdapter.contributeRoutes(signal)` 在内存中装配自有路由；API 必须匹配注册 ID，重名拒绝，不改写 profile 或默认模型。 |
 | 打包 MCP + Skills | `@agnes/plugin-runtime`、`@agnes/protocol` | 分别为 `defineAgnesPlugin`、类型 `Context`；类型 `McpServerDefinitionInput` | 作者面。MCP 定义和 `SKILL.md` 是包数据，不是工具 helper。注入 `skills`，调用 `ctx.skills.register(...)`；源码模板导入 `@agnes/resource-control-runtime` 以获得 context 类型。该包不是 Host 提供的 external；候选 creator 会省略此导入。见[模板](../../templates/mcp-skills/src/index.ts)和 [MCP 管理](../guide/mcp.zh-CN.md)。 |
 | 声明包 capabilities / scopes | `@agnes/protocol` | 类型 `PluginCapabilities` | 作者面。描述 `package.json` → 各 `agnes.plugins[].capabilities`（文件系统路径、网络主机、exec 命令、model/UI 标记）。见[能力格式](../guide/packages.zh-CN.md#能力声明)；metadata 不授予授权。 |
 | 描述扩展能力 / 工具审批策略 | `@agnes/extension-api` | 类型 `ExtensionCapabilities`、`ExtensionManifest`、`ToolMeta`、`ResolvedToolCallPolicy` | 作者合同。描述文件能力与包能力的形状不同。使用调用时的 `ToolContext` 端口执行已授权 I/O；见[工具策略](tool-runtime.zh-CN.md)。 |
@@ -34,6 +34,8 @@
 | 检查专用 provider 生命周期合同 | `@agnes/extension-api/testkit` | `runProviderConformance`、`loopConformance`、`modelAdapterConformance`、`compactionConformance`、`toolRuntimeConformance`、`toolPolicyConformance`、`persistenceConformance`、`sandboxConformance`、`childAgentConformance`、`memoryParagraphConformance` | 专用合同。需要真实 Host 注册/会话 probe，不是第二套 starter testkit。可选 Vitest 持久化 suites 位于 `@agnes/extension-api/testkit/persistence-contract`。 |
 
 profile 页面从 `react` 导入 React，通过 `ctx.profile.services.query/effect/readOperation` 调用已声明的后端服务，参见[浏览器作者参考](../reference/plugin-author-api.zh-CN.md)和可运行的[面板模板](../../templates/tool-with-panel/)。Node DOM 测试从 `@agnes/web-client/testkit` 导入 `createClientPanelTestHost`，仅替换 `profileCaller` 参数。`createPluginTestHost` 支持隔离的 `storeDir` 验证重建后的持久化，`invokeProfileService` 验证已注册 handler 的合同；原生准入和审批不在此轻量 fixture 范围内。
+
+`await getModelCatalogueFacts(api, baseUrl, { byId: true })` 返回独立的只读模型事实快照，仅含 `input`、`contextWindow`、`maxTokens`。它仅读取 Core 已安装目录，不联网、不读取凭据或用户配置。精确匹配 API 与地址时优先使用该目录；否则按完全相同的模型 ID 取输入类型交集及容量最小值。`byId` 默认 `true`，设为 `false` 时只允许精确地址匹配；未知 ID 不补值、不猜别名，也不推断 `reasoning` 或思考档位。插件须与实际授权的模型列表取交集，不能据此增加可用模型。
 
 ## Kind token
 

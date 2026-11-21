@@ -1,5 +1,5 @@
 import { remoteFrontendOrigin } from '@agnes/protocol'
-import { cloudCredentialUsage } from '@agnes/resource-control-web/credentials-api'
+import { CREDENTIALS_CHANGED, cloudCredentialUsage } from '@agnes/resource-control-web/credentials-api'
 import { backendFrame } from './frame-context.js'
 import { BACKEND_FRAME_MESSAGE } from './frame-contract.js'
 import type { CloudConnectionState } from './workbench-state.js'
@@ -11,6 +11,7 @@ export type CloudConnectionAction =
   | { action: 'reconnect' }
   | { action: 'refresh-credentials' }
   | { action: 'manage-credentials' }
+  | { action: 'credential-replaced'; credentialRef: string }
 
 const credentialReference = (value: unknown): value is string =>
   typeof value === 'string' && /^secret:\/\/generic\/[a-f0-9-]{36}$/u.test(value)
@@ -19,6 +20,10 @@ export function cloudConnectionAction(value: unknown): CloudConnectionAction | u
   if (!value || typeof value !== 'object') return
   const message = value as Record<string, unknown>
   if (message.type !== BACKEND_FRAME_MESSAGE || message.kind !== 'cloud-action') return
+  if (message.action === 'credential-replaced') {
+    if ('key' in message || !credentialReference(message.credentialRef)) return
+    return { action: message.action, credentialRef: message.credentialRef }
+  }
   if (
     message.action === 'disconnect' ||
     message.action === 'reconnect' ||
@@ -50,6 +55,12 @@ export const cloudSettingsState = {
 
 export function installCloudSettingsProjection(): () => void {
   if (!backendFrame() || backendFrame()?.remote) return () => {}
+  const replaced = (event: Event) => {
+    const detail = (event as CustomEvent<{ mode?: unknown; id?: unknown }>).detail
+    if (detail?.mode !== 'replace' || !credentialReference(detail.id) || detail.id !== state.credentialRef)
+      return
+    requestCloudConnection({ action: 'credential-replaced', credentialRef: detail.id })
+  }
   const receive = (event: MessageEvent) => {
     if (event.source !== window.parent || event.origin !== location.origin) return
     const value = event.data
@@ -96,8 +107,10 @@ export function installCloudSettingsProjection(): () => void {
     } catch {}
   }
   window.addEventListener('message', receive)
+  window.addEventListener(CREDENTIALS_CHANGED, replaced)
   return () => {
     window.removeEventListener('message', receive)
+    window.removeEventListener(CREDENTIALS_CHANGED, replaced)
     cloudCredentialUsage.set(undefined)
   }
 }
