@@ -47,3 +47,18 @@ export function applyCloudFrameAppearance(value: unknown): void {
   for (const key of [LOCALE_STORAGE_KEY, THEME_STORAGE_KEY, FONT_SCALE_STORAGE_KEY])
     window.dispatchEvent(new StorageEvent('storage', { key }))
 }
+
+export function syncWorkbenchAppearance(): void {
+  document.body.dataset.aghBackendWorkbench = 'true'
+  const storage = safeThemeStorage()
+  const sync = () => {
+    applyDocumentLocale(document.documentElement, readLocalePreference(storage))
+    applyTheme(
+      document.documentElement,
+      resolveTheme(readThemePreference(storage), matchMedia('(prefers-color-scheme: dark)').matches),
+    )
+    applyFontScale(document.documentElement, readFontScale(storage))
+  }
+  sync()
+  window.addEventListener('storage', sync)
+}

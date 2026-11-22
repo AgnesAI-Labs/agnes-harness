@@ -1,5 +1,6 @@
 import { remoteFrontendOrigin } from '@agnes/protocol'
 import { CREDENTIALS_CHANGED, cloudCredentialUsage } from '@agnes/resource-control-web/credentials-api'
+import { bumpCloudCredentialGeneration } from './cloud-key.js'
 import { backendFrame } from './frame-context.js'
 import { BACKEND_FRAME_MESSAGE } from './frame-contract.js'
 import type { CloudConnectionState } from './workbench-state.js'
@@ -11,7 +12,7 @@ export type CloudConnectionAction =
   | { action: 'reconnect' }
   | { action: 'refresh-credentials' }
   | { action: 'manage-credentials' }
-  | { action: 'credential-replaced'; credentialRef: string }
+  | { action: 'credential-replaced'; credentialRef: string; generation?: string }
 
 const credentialReference = (value: unknown): value is string =>
   typeof value === 'string' && /^secret:\/\/generic\/[a-f0-9-]{36}$/u.test(value)
@@ -22,7 +23,18 @@ export function cloudConnectionAction(value: unknown): CloudConnectionAction | u
   if (message.type !== BACKEND_FRAME_MESSAGE || message.kind !== 'cloud-action') return
   if (message.action === 'credential-replaced') {
     if ('key' in message || !credentialReference(message.credentialRef)) return
-    return { action: message.action, credentialRef: message.credentialRef }
+    const generation =
+      typeof message.generation === 'string' &&
+      message.generation.length > 0 &&
+      message.generation.length <= 128
+        ? message.generation
+        : undefined
+    if (message.generation !== undefined && !generation) return
+    return {
+      action: message.action,
+      credentialRef: message.credentialRef,
+      ...(generation ? { generation } : {}),
+    }
   }
   if (
     message.action === 'disconnect' ||
@@ -57,9 +69,10 @@ export function installCloudSettingsProjection(): () => void {
   if (!backendFrame() || backendFrame()?.remote) return () => {}
   const replaced = (event: Event) => {
     const detail = (event as CustomEvent<{ mode?: unknown; id?: unknown }>).detail
-    if (detail?.mode !== 'replace' || !credentialReference(detail.id) || detail.id !== state.credentialRef)
-      return
-    requestCloudConnection({ action: 'credential-replaced', credentialRef: detail.id })
+    if (detail?.mode !== 'replace' || !credentialReference(detail.id)) return
+    const generation = bumpCloudCredentialGeneration(detail.id)
+    if (detail.id !== state.credentialRef) return
+    requestCloudConnection({ action: 'credential-replaced', credentialRef: detail.id, generation })
   }
   const receive = (event: MessageEvent) => {
     if (event.source !== window.parent || event.origin !== location.origin) return

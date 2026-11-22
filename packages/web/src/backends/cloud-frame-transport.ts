@@ -25,6 +25,7 @@ export function requestCloudFrameAuthorization(
   remote: string,
   signal: AbortSignal,
   onGateway?: (value: boolean) => void,
+  fresh = false,
 ): Promise<string> {
   const context = backendFrame()
   if (!context?.remote || context.remote !== remote) return Promise.reject(new Error('CLOUD_ORIGIN_DENIED'))
@@ -76,7 +77,12 @@ export function requestCloudFrameAuthorization(
       return
     }
     window.parent.postMessage(
-      { type: BACKEND_FRAME_MESSAGE, kind: 'authorization-request', requestId },
+      {
+        type: BACKEND_FRAME_MESSAGE,
+        kind: 'authorization-request',
+        requestId,
+        ...(fresh ? { fresh: true } : {}),
+      },
       context.parentOrigin,
     )
   })

@@ -150,6 +150,7 @@ it('relays only confirmed replacement of the selected local cloud credential and
           kind: 'cloud-action',
           action: 'credential-replaced',
           credentialRef: ref,
+          generation: expect.any(String),
         },
         location.origin,
       ],
@@ -763,7 +764,9 @@ it.each(['managed', 'direct', 'local-selected'] as const)(
     const ref = 'secret://generic/11111111-1111-1111-1111-111111111111'
     bindCloudCredential(fixture.remote, ref, [{ id: ref }])
     if (mode !== 'direct') localStorage.setItem('agnes.cloud.auto-credential.v1', ref)
-    const token = `${(Date.now() + 3600000).toString(36)}.${'a'.repeat(22)}.${'b'.repeat(43)}`
+    const oldToken = `${(Date.now() + 3600000).toString(36)}.${'a'.repeat(22)}.${'b'.repeat(43)}`
+    const replacementToken = `${(Date.now() + 3600000).toString(36)}.${'c'.repeat(22)}.${'d'.repeat(43)}`
+    let activeToken = oldToken
     const fetcher = vi.spyOn(window, 'fetch').mockImplementation(async (input) => {
       if (String(input).endsWith('/admin/api/credentials'))
         return Response.json({
@@ -772,7 +775,12 @@ it.each(['managed', 'direct', 'local-selected'] as const)(
           ],
         })
       if (new URL(String(input)).pathname !== CLOUD_AUTHORIZATION_PATH) throw Error('unexpected request')
-      return Response.json({ token, expiresAt: Date.now() + 3600000, proxied: true, origin: fixture.remote })
+      return Response.json({
+        token: activeToken,
+        expiresAt: Date.now() + 3600000,
+        proxied: true,
+        origin: fixture.remote,
+      })
     })
     const action = { kind: 'cloud-action', action: 'credential-replaced', credentialRef: ref }
     try {
@@ -790,6 +798,15 @@ it.each(['managed', 'direct', 'local-selected'] as const)(
       if (mode === 'local-selected')
         await fixture.message('local', { kind: 'sidebar-select', backend: 'local' })
       const previous = fixture.frame('cloud')
+      const previousPost = vi.spyOn(previous.contentWindow!, 'postMessage').mockImplementation(() => {})
+      await fixture.message('cloud', { kind: 'authorization-request', requestId: crypto.randomUUID() })
+      expect(previousPost.mock.calls.find(([value]) => value.kind === 'authorization')?.[0]).toMatchObject({
+        remote: fixture.remote,
+        path: remoteFrontendSessionPath(oldToken),
+      })
+      previousPost.mockRestore()
+      fetcher.mockClear()
+      activeToken = replacementToken
       await fixture.message('cloud', action)
       await fixture.message('local', {
         ...action,
@@ -816,7 +833,7 @@ it.each(['managed', 'direct', 'local-selected'] as const)(
       await fixture.message('cloud', { kind: 'authorization-request', requestId: crypto.randomUUID() })
       expect(post.mock.calls.find(([value]) => value.kind === 'authorization')?.[0]).toMatchObject({
         remote: fixture.remote,
-        path: remoteFrontendSessionPath(token),
+        path: remoteFrontendSessionPath(replacementToken),
       })
       post.mockRestore()
       expect(
@@ -825,6 +842,9 @@ it.each(['managed', 'direct', 'local-selected'] as const)(
             init?.method !== 'POST' || new URL(String(input)).pathname === CLOUD_AUTHORIZATION_PATH,
         ),
       ).toBe(true)
+      fetcher.mockImplementationOnce(async () => Response.json({ items: [] }))
+      await fixture.message('local', action)
+      expect(document.querySelector('[data-testid="backend-frame-cloud"]')).toBeNull()
       await fixture.message('local', { kind: 'cloud-action', action: 'disconnect' })
       fetcher.mockClear()
       await fixture.message('local', action)
@@ -852,7 +872,7 @@ it('does not let a late credential replacement cancel a different pending cloud 
     return reply
   })
   try {
-    const previous = fixture.frame('cloud')
+    expect(fixture.frame('cloud')).toBeTruthy()
     await fixture.message('local', { kind: 'cloud-action', action: 'connect', credentialRef: nextRef })
     expect(fetcher).toHaveBeenCalledOnce()
     await fixture.message('local', {
@@ -862,7 +882,7 @@ it('does not let a late credential replacement cancel a different pending cloud 
     })
     expect(fetcher).toHaveBeenCalledOnce()
     expect(signal?.aborted).toBe(false)
-    expect(fixture.frame('cloud')).toBe(previous)
+    expect(document.querySelector('[data-testid="backend-frame-cloud"]')).toBeNull()
     await fixture.message('local', { kind: 'cloud-action', action: 'disconnect' })
     expect(signal?.aborted).toBe(true)
     await act(async () =>
@@ -918,6 +938,132 @@ it('renews the current cloud credential after a different connection attempt has
     expect(fetcher).toHaveBeenCalledTimes(2)
     expect(fixture.frame('cloud')).not.toBe(previous)
     expect(new URL(fixture.frame('cloud').src).searchParams.get('session')).toBe('kept-session')
+
+    // Rotating the active credential while a different candidate attempt is still pending recovers the active frame if that candidate fails.
+    let resolvePendingSwitch: ((response: Response) => void) | undefined
+    fetcher.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolvePendingSwitch = resolve
+        }),
+    )
+    const beforeMidAttempt = fixture.frame('cloud')
+    await fixture.message('local', { kind: 'cloud-action', action: 'connect', credentialRef: rejected })
+    await fixture.message('local', {
+      kind: 'cloud-action',
+      action: 'credential-replaced',
+      credentialRef: ref,
+    })
+    expect(document.querySelector('[data-testid="backend-frame-cloud"]')).toBeNull()
+    await act(async () =>
+      resolvePendingSwitch?.(
+        Response.json({
+          items: [
+            {
+              id: ref,
+              label: 'current',
+              kind: 'api-key',
+              createdAt: '2026-11-20T00:00:00Z',
+              references: [],
+            },
+          ],
+        }),
+      ),
+    )
+    const recoveredFrame = fixture.frame('cloud')
+    expect(recoveredFrame).not.toBe(beforeMidAttempt)
+    expect(recoveredFrame.dataset.backendOrigin).toBe(fixture.remote)
+    const localPost = vi
+      .spyOn(fixture.frame('local').contentWindow!, 'postMessage')
+      .mockImplementation(() => {})
+    await fixture.message('cloud', {
+      kind: 'state',
+      snapshot: {
+        ready: true,
+        connected: true,
+        more: false,
+        rows: [],
+        activity: [],
+        selected: 'kept-session',
+      },
+    })
+    expect(localPost.mock.calls.findLast(([msg]) => msg?.kind === 'cloud-state')?.[0].state).toMatchObject({
+      status: 'ready',
+      error: 'CLOUD_CREDENTIAL_NOT_FOUND',
+    })
+    localPost.mockRestore()
+
+    // Peer rotation via StorageEvent retires and renews an observing tab's Cloud frame without a local child message, and deduplicates a racing local-frame message for the same generation.
+    fetcher.mockClear()
+    await act(async () => {
+      localStorage.setItem(`agnes.cloud.credential-gen.v1:${ref}`, 'peer-rotation-gen')
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: `agnes.cloud.credential-gen.v1:${ref}`,
+          newValue: 'peer-rotation-gen',
+        }),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    const afterPeerFrame = fixture.frame('cloud')
+    expect(afterPeerFrame).not.toBe(recoveredFrame)
+    expect(fetcher).toHaveBeenCalledOnce()
+    await fixture.message('local', {
+      kind: 'cloud-action',
+      action: 'credential-replaced',
+      credentialRef: ref,
+      generation: 'peer-rotation-gen',
+    })
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(fixture.frame('cloud')).toBe(afterPeerFrame)
+
+    // Peer disconnecting while a peer-rotation refresh is waiting on the credential list does not recreate the binding or shared origin.
+    let resolveDisconnectRaceList: ((response: Response) => void) | undefined
+    fetcher.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveDisconnectRaceList = resolve
+        }),
+    )
+    await act(async () => {
+      localStorage.setItem(`agnes.cloud.credential-gen.v1:${ref}`, 'peer-rotation-race')
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: `agnes.cloud.credential-gen.v1:${ref}`,
+          newValue: 'peer-rotation-race',
+        }),
+      )
+    })
+    expect(document.querySelector('[data-testid="backend-frame-cloud"]')).toBeNull()
+    localStorage.removeItem(`agnes.cloud.credential.v1:${fixture.remote}`)
+    localStorage.removeItem('agnes.cloud.origin.v1')
+    await act(async () => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: 'agnes.cloud.origin.v1',
+          oldValue: fixture.remote,
+          newValue: null,
+        }),
+      )
+    })
+    await act(async () =>
+      resolveDisconnectRaceList?.(
+        Response.json({
+          items: [
+            {
+              id: ref,
+              label: 'current',
+              kind: 'api-key',
+              createdAt: '2026-11-20T00:00:00Z',
+              references: [],
+            },
+          ],
+        }),
+      ),
+    )
+    expect(localStorage.getItem('agnes.cloud.origin.v1')).toBeNull()
+    expect(localStorage.getItem(`agnes.cloud.credential.v1:${fixture.remote}`)).toBeNull()
+    expect(document.querySelector('[data-testid="backend-frame-cloud"]')).toBeNull()
   } finally {
     fetcher.mockRestore()
     await fixture.close()

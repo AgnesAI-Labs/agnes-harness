@@ -11,7 +11,15 @@ import {
   withRemoteFrontend,
 } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
-import { bindCloudCredential, readCloudCredentialRef } from '../src/backends/cloud-key.js'
+import {
+  bindCloudCredential,
+  bumpCloudCredentialGeneration,
+  CLOUD_CREDENTIAL_GENERATION_PREFIX,
+  forgetCloudCredential,
+  readCloudCredentialGeneration,
+  readCloudCredentialRef,
+  subscribeCloudCredentialReplacement,
+} from '../src/backends/cloud-key.js'
 import {
   authorizeRemoteFrontend,
   discoverCloudOrigin,
@@ -31,23 +39,37 @@ it('discovers a managed sandbox with only a credential reference and rejects uns
   const token = `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`
   const reply = { origin, token, expiresAt: Date.now() + 60000, proxied: true }
   const before = JSON.stringify(localStorage)
-  expect(
-    await discoverCloudOrigin(credentialRef, new AbortController().signal, async (url, init) => {
-      expect(String(url)).toBe(new URL(CLOUD_AUTHORIZATION_PATH, location.origin).href)
-      expect(JSON.parse(String(init?.body))).toEqual({ credentialRef })
-      return Response.json(reply)
-    }),
-  ).toBe(origin)
-  expect(JSON.stringify(localStorage)).toBe(before)
-  for (const invalid of [
-    { ...reply, origin: 'http://127.0.0.1:80' },
-    { ...reply, origin: 'https://foreign.example' },
-    { ...reply, origin: undefined },
-    { ...reply, proxied: false },
-  ])
-    await expect(
-      discoverCloudOrigin(credentialRef, new AbortController().signal, async () => Response.json(invalid)),
-    ).rejects.toThrow('CLOUD_INVALID_AUTHORIZATION')
+  try {
+    expect(
+      await discoverCloudOrigin(credentialRef, new AbortController().signal, async (url, init) => {
+        expect(String(url)).toBe(new URL(CLOUD_AUTHORIZATION_PATH, location.origin).href)
+        expect(JSON.parse(String(init?.body))).toEqual({ credentialRef })
+        return Response.json(reply)
+      }),
+    ).toBe(origin)
+    expect(JSON.stringify(localStorage)).toBe(before)
+    const neverCalled = vi.fn() as unknown as typeof fetch
+    await expect(authorizeRemoteFrontend(origin, new AbortController().signal, neverCalled)).rejects.toThrow(
+      'CLOUD_CREDENTIAL_REQUIRED',
+    )
+    bindCloudCredential(origin, credentialRef, [{ id: credentialRef }])
+    expect(await authorizeRemoteFrontend(origin, new AbortController().signal, neverCalled)).toBe(
+      remoteFrontendSessionPath(token),
+    )
+    expect(neverCalled).not.toHaveBeenCalled()
+    for (const invalid of [
+      { ...reply, origin: 'http://127.0.0.1:80' },
+      { ...reply, origin: 'https://foreign.example' },
+      { ...reply, origin: undefined },
+      { ...reply, proxied: false },
+    ])
+      await expect(
+        discoverCloudOrigin(credentialRef, new AbortController().signal, async () => Response.json(invalid)),
+      ).rejects.toThrow('CLOUD_INVALID_AUTHORIZATION')
+  } finally {
+    forgetCloudCredential(origin)
+    forgetRemoteAccess(origin)
+  }
 })
 
 it('binds only A’s listed credential references without creating or replacing secret values', () => {
@@ -118,6 +140,102 @@ it('requires the saved Key, exchanges it once and routes backend resources throu
       CLOUD_AUTHORIZATION_PATH,
     )
     expect(calls.every((call) => !call.url.includes(key))).toBe(true)
+    const replacementToken = `zzzzzzzz.${'C'.repeat(22)}.${'D'.repeat(43)}`
+    bumpCloudCredentialGeneration(credentialRef)
+    expect(
+      await authorizeRemoteFrontend(remote, new AbortController().signal, async () =>
+        Response.json({ token: replacementToken, expiresAt: Date.now() + 3_600_000 }),
+      ),
+    ).toBe(remoteFrontendSessionPath(replacementToken))
+
+    const preEventToken = `zzzzzzzz.${'E'.repeat(22)}.${'F'.repeat(43)}`
+    const preEventGen = `${Date.now().toString(36)}.persisted-before-events`
+    const notified: string[] = []
+    const offSub = subscribeCloudCredentialReplacement((_ref, gen) => notified.push(gen))
+    try {
+      localStorage.setItem(`${CLOUD_CREDENTIAL_GENERATION_PREFIX}${credentialRef}`, preEventGen)
+      expect(
+        await authorizeRemoteFrontend(remote, new AbortController().signal, async () =>
+          Response.json({ token: preEventToken, expiresAt: Date.now() + 3_600_000 }),
+        ),
+      ).toBe(remoteFrontendSessionPath(preEventToken))
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: `${CLOUD_CREDENTIAL_GENERATION_PREFIX}${credentialRef}`,
+          newValue: preEventGen,
+        }),
+      )
+      expect(notified).toEqual([preEventGen])
+
+      const candidateRef = 'secret://generic/22222222-2222-2222-2222-222222222222'
+      const candidateOrigin = 'https://8443-candidate.ap-shanghai.tencentags.com'
+      const oldDiscoveryToken = `zzzzzzzz.${'G'.repeat(22)}.${'H'.repeat(43)}`
+      const freshDiscoveryToken = `zzzzzzzz.${'I'.repeat(22)}.${'J'.repeat(43)}`
+      const skewedNewerToken = `zzzzzzzz.${'K'.repeat(22)}.${'L'.repeat(43)}`
+      const olderGen = 'v1:9999999999999999:00000009:older'
+      const newerGen = 'v1:0001700000000002:00000002:newer'
+      const skewedThirdGen = 'v1:0001700000000001:00000001:skewed'
+      localStorage.setItem(`${CLOUD_CREDENTIAL_GENERATION_PREFIX}${candidateRef}`, olderGen)
+      let finishDiscovery: ((response: Response) => void) | undefined
+      const pendingDiscovery = discoverCloudOrigin(
+        candidateRef,
+        new AbortController().signal,
+        async () =>
+          new Promise<Response>((resolve) => {
+            finishDiscovery = resolve
+          }),
+      )
+      const rejection = expect(pendingDiscovery).rejects.toThrow('Authorization invalidated')
+      localStorage.setItem(`${CLOUD_CREDENTIAL_GENERATION_PREFIX}${candidateRef}`, newerGen)
+      expect(readCloudCredentialGeneration(candidateRef)).toBe(newerGen)
+      const peerChannel = new BroadcastChannel('agnes.cloud.credentials.v1')
+      const ackChannel = new BroadcastChannel('agnes.cloud.credentials.v1')
+      try {
+        await new Promise<void>((resolve) => {
+          ackChannel.addEventListener('message', () => resolve(), { once: true })
+          peerChannel.postMessage({
+            kind: 'credential-replaced',
+            credentialRef: candidateRef,
+            generation: olderGen,
+            persisted: true,
+          })
+        })
+        expect(readCloudCredentialGeneration(candidateRef)).toBe(newerGen)
+        finishDiscovery?.(
+          Response.json({
+            origin: candidateOrigin,
+            token: oldDiscoveryToken,
+            expiresAt: Date.now() + 3_600_000,
+            proxied: true,
+          }),
+        )
+        await rejection
+        bindCloudCredential(candidateOrigin, candidateRef, [{ id: candidateRef }])
+        const freshFetch = vi.fn(async () =>
+          Response.json({ token: freshDiscoveryToken, expiresAt: Date.now() + 3_600_000 }),
+        )
+        expect(await authorizeRemoteFrontend(candidateOrigin, new AbortController().signal, freshFetch)).toBe(
+          remoteFrontendSessionPath(freshDiscoveryToken),
+        )
+        expect(freshFetch).toHaveBeenCalledOnce()
+
+        localStorage.setItem(`${CLOUD_CREDENTIAL_GENERATION_PREFIX}${candidateRef}`, skewedThirdGen)
+        expect(
+          await authorizeRemoteFrontend(candidateOrigin, new AbortController().signal, async () =>
+            Response.json({ token: skewedNewerToken, expiresAt: Date.now() + 3_600_000 }),
+          ),
+        ).toBe(remoteFrontendSessionPath(skewedNewerToken))
+      } finally {
+        ackChannel.close()
+        peerChannel.close()
+        forgetCloudCredential(candidateOrigin)
+        forgetRemoteAccess(candidateOrigin)
+        localStorage.removeItem(`${CLOUD_CREDENTIAL_GENERATION_PREFIX}${candidateRef}`)
+      }
+    } finally {
+      offSub()
+      localStorage.removeItem(`${CLOUD_CREDENTIAL_GENERATION_PREFIX}${credentialRef}`)
+    }
   } finally {
     localStorage.removeItem(`agnes.cloud.credential.v1:${remote}`)
     forgetRemoteAccess(remote)
@@ -225,7 +343,16 @@ it('selects an explicit backend origin and refuses credential-bearing or CSP-inj
   ])
     expect(() => remoteFrontendOrigin(value)).toThrow()
   expect(() =>
-    frontendPublication({ enabled: true, access: 'public-owner', host: '0.0.0.0', port: -1 }),
+    frontendPublication({ enabled: true, access: 'public-owner', host: '0.0.0.0', port: 8443 }),
+  ).toThrow()
+  expect(() =>
+    frontendPublication({
+      enabled: true,
+      access: 'key-owner',
+      auth: { keySha256: 'a'.repeat(64) },
+      host: '0.0.0.0',
+      port: -1,
+    }),
   ).toThrow()
   expect(() => frontendPublication({ enabled: true, access: 'local', host: '0.0.0.0', port: 8443 })).toThrow()
   const keyed = { enabled: true, access: 'key-owner', host: '0.0.0.0', port: 8443 }

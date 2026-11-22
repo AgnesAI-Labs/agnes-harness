@@ -67,7 +67,6 @@ describe('protocol src boundary', () => {
         'REMOTE_FRONTEND_KEY_VERSION',
         'REMOTE_FRONTEND_SERVICE',
         'REMOTE_FRONTEND_SESSION_PREFIX',
-        'REMOTE_FRONTEND_VERSION',
         'REMOTE_FRONTEND_WS',
         'frontendPublication',
         'remoteFrontendOrigin',

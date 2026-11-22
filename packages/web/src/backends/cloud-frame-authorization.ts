@@ -9,10 +9,15 @@ export function installCloudFrameAuthorization(
     remote: string | undefined
     frame: HTMLIFrameElement | undefined
   },
+  onControl?: (abort: () => void) => void,
 ): () => void {
   const frameOrigin = cloudFrameOrigin()
   let pending: { controller: AbortController; frame: HTMLIFrameElement; remote: string } | undefined
   let disposed = false
+  onControl?.(() => {
+    pending?.controller.abort()
+    pending = undefined
+  })
   const appearance = () =>
     current().frame?.contentWindow?.postMessage(
       {
@@ -36,19 +41,21 @@ export function installCloudFrameAuthorization(
       value?.type !== BACKEND_FRAME_MESSAGE ||
       value.kind !== 'authorization-request' ||
       typeof value.requestId !== 'string' ||
-      !/^[a-f0-9-]{36}$/u.test(value.requestId)
+      !/^[a-f0-9-]{36}$/u.test(value.requestId) ||
+      (value.fresh !== undefined && typeof value.fresh !== 'boolean')
     )
       return
+    const fresh = value.fresh === true
     if (pending?.frame === frame && pending.remote === remote) return
     pending?.controller.abort()
     const request = new AbortController()
     pending = { controller: request, frame, remote }
-    forgetRemoteAccess(remote)
+    if (fresh) forgetRemoteAccess(remote)
     void (async () => {
       let authorization: { path: string; proxied?: boolean } | { error: string }
       try {
         authorization = {
-          path: await authorizeRemoteFrontend(remote, request.signal, window.fetch.bind(window)),
+          path: await authorizeRemoteFrontend(remote, request.signal, window.fetch.bind(window), fresh),
           proxied: remoteUsesGateway(remote),
         }
       } catch (error) {
@@ -73,12 +80,23 @@ export function installCloudFrameAuthorization(
       if (pending?.controller === request) pending = undefined
     })
   }
+  const rootObserver =
+    typeof MutationObserver === 'function' && document.documentElement
+      ? new MutationObserver(appearance)
+      : undefined
+  rootObserver?.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['lang', 'data-theme', 'style'],
+  })
   window.addEventListener('message', receive)
   window.addEventListener('storage', appearance)
+  window.addEventListener('agnes:theme-changed', appearance)
   return () => {
     disposed = true
     pending?.controller.abort()
+    rootObserver?.disconnect()
     window.removeEventListener('message', receive)
     window.removeEventListener('storage', appearance)
+    window.removeEventListener('agnes:theme-changed', appearance)
   }
 }

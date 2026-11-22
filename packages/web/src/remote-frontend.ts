@@ -80,7 +80,7 @@ export async function readRemoteFrontendInfo(remote: string, signal: AbortSignal
   })
   if (response.status === 401) {
     forgetRemoteAccess(remote)
-    const renewed = await authorizeRemoteFrontend(remote, signal, fetcher)
+    const renewed = await authorizeRemoteFrontend(remote, signal, fetcher, true)
     response = await fetcher(`${remoteTransportOrigin(remote)}${renewed}${REMOTE_FRONTEND_INFO}`, {
       credentials: 'omit',
       redirect: 'error',

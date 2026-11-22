@@ -9,7 +9,8 @@ const lease: PublicationLease = {
   identity: 'current-plugin-1',
   publication: {
     enabled: true,
-    access: 'public-owner',
+    access: 'key-owner',
+    auth: { keySha256: 'a'.repeat(64) },
     host: '127.0.0.1',
     port: 8443,
   },

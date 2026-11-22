@@ -1,6 +1,5 @@
 /** Public, plugin-owned publication contract; it is not an RPC authentication credential. */
 export const REMOTE_FRONTEND_SERVICE = 'frontend.publish'
-export const REMOTE_FRONTEND_VERSION = 'agh-public-frontend/v1'
 export const REMOTE_FRONTEND_INFO = '/_agnes/remote-frontend'
 export const REMOTE_FRONTEND_WS = '/_agnes/remote-frontend/ws'
 export const REMOTE_FRONTEND_AUTH = '/_agnes/remote-frontend/auth'
@@ -11,10 +10,10 @@ export const CLOUD_AUTHORIZATION_PATH = '/_agnes/cloud-connection/authorize'
 
 export type FrontendPublication = {
   enabled: boolean
-  /** Enabling this contract explicitly publishes this profile's local-owner authority. */
-  access: 'public-owner' | 'key-owner'
+  /** Enabling this contract explicitly publishes this profile's local-owner authority behind key verification. */
+  access: 'key-owner'
   /** A verifier only. The original third-party Key stays in the cloud plugin. */
-  auth?: { keySha256: string }
+  auth: { keySha256: string }
   host: string
   port: number
   tls?: { certFile: string; keyFile: string }
@@ -25,7 +24,7 @@ export function frontendPublication(value: unknown): FrontendPublication {
   const p = value as Record<string, unknown>
   if (
     typeof p.enabled !== 'boolean' ||
-    !['public-owner', 'key-owner'].includes(String(p.access)) ||
+    p.access !== 'key-owner' ||
     typeof p.host !== 'string' ||
     !p.host ||
     /[\s/\\]/u.test(p.host) ||
@@ -42,20 +41,16 @@ export function frontendPublication(value: unknown): FrontendPublication {
       throw new Error('invalid publication TLS')
     tls = { certFile: t.certFile, keyFile: t.keyFile }
   }
-  let auth: FrontendPublication['auth']
-  if (p.access === 'key-owner') {
-    const value = p.auth as Record<string, unknown> | undefined
-    if (!value || typeof value.keySha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(value.keySha256))
-      throw new Error('invalid publication authentication')
-    auth = { keySha256: value.keySha256 }
-  } else if (p.auth !== undefined) throw new Error('invalid publication authentication')
+  const authValue = p.auth as Record<string, unknown> | undefined
+  if (!authValue || typeof authValue.keySha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(authValue.keySha256))
+    throw new Error('invalid publication authentication')
   return {
     enabled: p.enabled,
-    access: p.access as FrontendPublication['access'],
+    access: 'key-owner',
+    auth: { keySha256: authValue.keySha256 },
     host: p.host,
     port: Number(p.port),
     ...(tls ? { tls } : {}),
-    ...(auth ? { auth } : {}),
   }
 }
 

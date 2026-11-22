@@ -171,7 +171,9 @@ async function listen(server: Server) {
   return `http://127.0.0.1:${addr.port}`
 }
 
-it('publishes complete HTTP services with explicit public-owner authority and revokes new access', async () => {
+it('refuses legacy public-owner mode and relays key-owner CORS, canonical redirects, revocation, and WebSocket shutdown', async () => {
+  const key = 'fixture-key-owner-service-key'
+  const digest = createHash('sha256').update(key).digest('hex')
   let current = true
   const seen: {
     method: string | undefined
@@ -195,17 +197,44 @@ it('publishes complete HTTP services with explicit public-owner authority and re
     res.writeHead(200, { 'content-type': 'application/json' }).end('{"from":"B"}')
   })
   const origin = await listen(upstream)
+  await expect(
+    createPublishedFrontend({
+      publication: {
+        enabled: true,
+        access: 'public-owner' as never,
+        auth: { keySha256: digest },
+        host: '127.0.0.1',
+        port: 0,
+      },
+      webOrigin: origin,
+      instanceId: 'fixture-B',
+      wsUrl: () => origin.replace('http:', 'ws:'),
+      current: async () => current,
+    }),
+  ).rejects.toThrow('publication disabled')
   const gateway = await createPublishedFrontend({
-    publication: { enabled: true, access: 'public-owner', host: '127.0.0.1', port: 0 },
+    publication: {
+      enabled: true,
+      access: 'key-owner',
+      auth: { keySha256: digest },
+      host: '127.0.0.1',
+      port: 0,
+    },
     webOrigin: origin,
     instanceId: 'fixture-B',
     wsUrl: () => origin.replace('http:', 'ws:'),
     current: async () => current,
   })
   try {
-    const info = await fetch(`${gateway.url}${REMOTE_FRONTEND_INFO}`)
-    expect(await info.json()).toMatchObject({ access: 'public-owner', wsPath: REMOTE_FRONTEND_WS })
-    const preflight = await fetch(`${gateway.url}/admin/packages/api/remove`, {
+    const exchange = await fetch(`${gateway.url}${REMOTE_FRONTEND_AUTH}`, {
+      method: 'POST',
+      body: JSON.stringify({ key }),
+    })
+    const session = (await exchange.json()) as { token: string }
+    const prefix = remoteFrontendSessionPath(session.token)
+    const info = await fetch(`${gateway.url}${prefix}${REMOTE_FRONTEND_INFO}`)
+    expect(await info.json()).toMatchObject({ access: 'key-owner', wsPath: REMOTE_FRONTEND_WS })
+    const preflight = await fetch(`${gateway.url}${prefix}/admin/packages/api/remove`, {
       method: 'OPTIONS',
       headers: {
         origin: 'http://computer-a:4177',
@@ -214,7 +243,7 @@ it('publishes complete HTTP services with explicit public-owner authority and re
     })
     expect(preflight.status).toBe(204)
     expect(preflight.headers.get('access-control-allow-origin')).toBe('*')
-    const reply = await fetch(`${gateway.url}/admin/packages/api/remove`, {
+    const reply = await fetch(`${gateway.url}${prefix}/admin/packages/api/remove`, {
       method: 'POST',
       headers: {
         origin: 'http://computer-a:4177',
@@ -234,14 +263,14 @@ it('publishes complete HTTP services with explicit public-owner authority and re
         body: '{"packageId":"fixture"}',
       },
     ])
-    const redirect = await fetch(gateway.url, { redirect: 'manual' })
+    const redirect = await fetch(`${gateway.url}${prefix}/`, { redirect: 'manual' })
     expect(redirect.status).toBe(307)
     expect(
       new URL(redirect.headers.get('location') ?? '/missing', gateway.url).searchParams.get('remote'),
     ).toBe(gateway.url)
     current = false
-    expect((await fetch(`${gateway.url}${REMOTE_FRONTEND_INFO}`)).status).toBe(503)
-    expect((await fetch(`${gateway.url}/api/config`)).status).toBe(503)
+    expect((await fetch(`${gateway.url}${prefix}${REMOTE_FRONTEND_INFO}`)).status).toBe(503)
+    expect((await fetch(`${gateway.url}${prefix}/api/config`)).status).toBe(503)
     expect(seen).toHaveLength(1)
   } finally {
     await gateway.close()
@@ -249,7 +278,9 @@ it('publishes complete HTTP services with explicit public-owner authority and re
   }
 })
 
-it('relays browser WebSockets to the fixed daemon and closes them on shutdown', async () => {
+it('relays authenticated browser WebSockets to the fixed daemon and closes them on shutdown', async () => {
+  const key = 'fixture-key-owner-ws-shutdown'
+  const digest = createHash('sha256').update(key).digest('hex')
   const peers = new Set<Duplex>()
   let observed: { origin: string | undefined; path: string | undefined } | undefined
   const upstream = createServer()
@@ -268,13 +299,27 @@ it('relays browser WebSockets to the fixed daemon and closes them on shutdown', 
   })
   const origin = await listen(upstream)
   const gateway = await createPublishedFrontend({
-    publication: { enabled: true, access: 'public-owner', host: '127.0.0.1', port: 0 },
+    publication: {
+      enabled: true,
+      access: 'key-owner',
+      auth: { keySha256: digest },
+      host: '127.0.0.1',
+      port: 0,
+    },
     webOrigin: origin,
     instanceId: 'fixture-B',
     wsUrl: () => origin.replace('http:', 'ws:'),
     current: async () => true,
   })
-  const socket = new WebSocket(`${gateway.url.replace('http:', 'ws:')}${REMOTE_FRONTEND_WS}`, ['agnes-v1'])
+  const exchange = await fetch(`${gateway.url}${REMOTE_FRONTEND_AUTH}`, {
+    method: 'POST',
+    body: JSON.stringify({ key }),
+  })
+  const session = (await exchange.json()) as { token: string }
+  const prefix = remoteFrontendSessionPath(session.token)
+  const socket = new WebSocket(`${gateway.url.replace('http:', 'ws:')}${prefix}${REMOTE_FRONTEND_WS}`, [
+    'agnes-v1',
+  ])
   try {
     const text = await new Promise((resolve) =>
       socket.addEventListener('message', (event) => resolve(event.data), { once: true }),
