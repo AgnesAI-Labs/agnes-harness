@@ -292,10 +292,11 @@ it('relays browser WebSockets to the fixed daemon and closes them on shutdown', 
   }
 })
 
-it('isolates capability signing keys per publication and terminates ongoing HTTP streams at capability expiry', async () => {
+it('isolates capability signing keys per publication and terminates ongoing HTTP streams and pending WebSocket upgrades at capability expiry', async () => {
   const key = 'fixture-publication-signing-isolation-key'
   const digest = createHash('sha256').update(key).digest('hex')
   const timers = new Set<ReturnType<typeof setInterval>>()
+  const pendingPeers: Duplex[] = []
   const upstream = createServer((req, res) => {
     if (req.url === '/api/stream') {
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' })
@@ -311,6 +312,22 @@ it('isolates capability signing keys per publication and terminates ongoing HTTP
       return
     }
     res.writeHead(200).end(req.headers['e2b-traffic-access-token'] ?? 'clean')
+  })
+  upstream.on('upgrade', (req, peer) => {
+    peer.on('error', () => {})
+    if (req.url === '/pending-ws') {
+      peer.resume()
+      peer.once('end', () => peer.destroy())
+      pendingPeers.push(peer)
+      return
+    }
+    const accept = createHash('sha1')
+      .update(`${req.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+      .digest('base64')
+    peer.write(
+      `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
+    )
+    peer.write(Buffer.concat([Buffer.from([0x81, 2]), Buffer.from('ok')]))
   })
   const origin = await listen(upstream)
   const openPublication = (instanceId: string) =>
@@ -364,9 +381,25 @@ it('isolates capability signing keys per publication and terminates ongoing HTTP
     } finally {
       nowSpy.mockRestore()
     }
+    const wsNowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 8 * 60 * 60 * 1000 + 90)
+    let shortWsAuth: { token: string; expiresAt: number }
+    try {
+      shortWsAuth = (await (
+        await fetch(`${first.url}${REMOTE_FRONTEND_AUTH}`, { method: 'POST', body: JSON.stringify({ key }) })
+      ).json()) as { token: string; expiresAt: number }
+    } finally {
+      wsNowSpy.mockRestore()
+    }
     const longAuth = (await (
       await fetch(`${first.url}${REMOTE_FRONTEND_AUTH}`, { method: 'POST', body: JSON.stringify({ key }) })
     ).json()) as { token: string; expiresAt: number }
+    const pendingWs = new WebSocket(
+      `${first.url.replace('http:', 'ws:')}${remoteFrontendSessionPath(shortWsAuth.token)}/pending-ws`,
+    )
+    const pendingWsClosed = new Promise<void>((resolve) => {
+      pendingWs.addEventListener('close', () => resolve(), { once: true })
+      pendingWs.addEventListener('error', () => resolve(), { once: true })
+    })
     const shortStream = await fetch(`${first.url}${remoteFrontendSessionPath(shortAuth.token)}/api/stream`)
     const longStream = await fetch(`${first.url}${remoteFrontendSessionPath(longAuth.token)}/api/stream`)
     expect(shortStream.status).toBe(200)
@@ -388,6 +421,11 @@ it('isolates capability signing keys per publication and terminates ongoing HTTP
       }
     })()
     expect(drained).toBe(true)
+    await pendingWsClosed
+    expect(pendingWs.readyState).not.toBe(WebSocket.OPEN)
+    for (let i = 0; i < 20 && !pendingPeers[0]?.destroyed; i++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(pendingPeers[0]?.destroyed).toBe(true)
     expect((await fetch(`${first.url}${remoteFrontendSessionPath(shortAuth.token)}/api/check`)).status).toBe(
       401,
     )
@@ -395,6 +433,7 @@ it('isolates capability signing keys per publication and terminates ongoing HTTP
     await longReader.cancel()
   } finally {
     for (const timer of timers) clearInterval(timer)
+    for (const peer of pendingPeers) peer.destroy()
     await first.close()
     await second.close()
     await new Promise<void>((resolve) => upstream.close(() => resolve()))

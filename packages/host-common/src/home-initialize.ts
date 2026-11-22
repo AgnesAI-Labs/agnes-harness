@@ -9,7 +9,7 @@ import {
   mkdirSync,
   openSync,
   readdirSync,
-  readFileSync,
+  readSync,
   renameSync,
   unlinkSync,
   writeFileSync,
@@ -17,7 +17,7 @@ import {
 import { basename, dirname, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createPrivateFileSync, hasPrivateDaclSync, renameWriteThroughSync } from '@agnes/system-node'
-import { withConfigurationLock } from './configuration-lock.js'
+import { isValidConfigurationLockFileSync, withConfigurationLock } from './configuration-lock.js'
 import { HOME_LAYOUT_VERSION, homeVersionFault, inspectHome } from './home-layout.js'
 import { createHomeDirectory, prepareHomeLock, prepareWindowsHomeDirectories } from './home-private.js'
 import {
@@ -26,6 +26,7 @@ import {
   LLMSG_KEY_FILE,
   type LlmsgKeyEnvironment,
   llmsgFallbackKey,
+  validateLlmsgKeyReadOnly,
 } from './llmsg-home-key.js'
 
 const MARKER = 'home-layout.json'
@@ -59,21 +60,51 @@ function directory(path: string, boundary?: string): void {
   mkdirSync(path, { mode: 0o700 })
 }
 
+function isInterruptedLlmsgMarkerText(bytes: string): boolean {
+  // A crash during the write can leave a prefix of the marker. Leave other content untouched.
+  return (
+    LLMSG_MARKER_PREFIX.startsWith(bytes) ||
+    (bytes.startsWith(LLMSG_MARKER_PREFIX) &&
+      /^[0-9a-f-]{0,36}(?:"(?:\}\n?)?)?$/u.test(bytes.slice(LLMSG_MARKER_PREFIX.length)))
+  )
+}
+
+function validatePendingLlmsgMarkerReadOnly(path: string): void {
+  let fd: number
+  try {
+    fd = openSync(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw homeFault('E_HOME_UNSAFE')
+  }
+  try {
+    const stat = fstatSync(fd)
+    if (
+      !stat.isFile() ||
+      stat.nlink !== 1 ||
+      stat.size > 128 ||
+      (typeof process.getuid === 'function' && stat.uid !== process.getuid()) ||
+      (!windows && (stat.mode & 0o077) !== 0) ||
+      !hasPrivateDaclSync(path)
+    )
+      throw homeFault('E_HOME_UNSAFE')
+    const buf = Buffer.alloc(129)
+    let size = 0
+    while (size < buf.length) {
+      const chunk = readSync(fd, buf, size, buf.length - size, null)
+      if (chunk === 0) break
+      size += chunk
+    }
+    if (size > 128 || !isInterruptedLlmsgMarkerText(buf.subarray(0, size).toString('utf8')))
+      throw homeFault('E_HOME_UNSAFE')
+  } finally {
+    closeSync(fd)
+  }
+}
+
 function discardInterruptedLlmsgMarker(path: string): void {
   if (!present(path)) return
-  const stat = lstatSync(path)
-  if (!stat.isFile() || stat.nlink !== 1 || stat.size > 128 || !hasPrivateDaclSync(path))
-    throw homeFault('E_HOME_UNSAFE')
-  const bytes = readFileSync(path, 'utf8')
-  // A crash during the write can leave a prefix of the marker. Leave other content untouched.
-  if (
-    !LLMSG_MARKER_PREFIX.startsWith(bytes) &&
-    !(
-      bytes.startsWith(LLMSG_MARKER_PREFIX) &&
-      /^[0-9a-f-]{0,36}(?:"(?:\}\n?)?)?$/u.test(bytes.slice(LLMSG_MARKER_PREFIX.length))
-    )
-  )
-    throw homeFault('E_HOME_UNSAFE')
+  validatePendingLlmsgMarkerReadOnly(path)
   unlinkSync(path)
 }
 
@@ -193,8 +224,23 @@ function tightenAcceptedLlmsgHome(home: string): void {
   }
 }
 
+function validateAcceptedLlmsgHomeReadOnly(home: string): void {
+  if (!present(home)) return
+  const stat = lstatSync(home)
+  if (
+    stat.isSymbolicLink() ||
+    !stat.isDirectory() ||
+    (typeof process.getuid === 'function' && stat.uid !== process.getuid())
+  )
+    throw homeFault('E_HOME_UNSAFE')
+}
+
 function llmsgBootstrapContents(home: string): boolean {
-  return readdirSync(home).every((name) => name === LLMSG_KEY_FILE || name === LLMSG_PENDING_MARKER)
+  const names = readdirSync(home)
+  if (!names.every((name) => name === LLMSG_KEY_FILE || name === LLMSG_PENDING_MARKER)) return false
+  if (names.includes(LLMSG_PENDING_MARKER))
+    validatePendingLlmsgMarkerReadOnly(join(home, LLMSG_PENDING_MARKER))
+  return true
 }
 
 async function initializeWithLock(
@@ -205,26 +251,33 @@ async function initializeWithLock(
 ) {
   const initial = inspectHome(home, profile)
   const canonicalHome = resolve(home)
+  if (llmsg) validateAcceptedLlmsgHomeReadOnly(canonicalHome)
   const lock = join(dirname(canonicalHome), `.${basename(canonicalHome)}.initialize.sqlite`)
-  if (llmsg && llmsg.phase === 'persist-key' && initial.state !== 'current' && !present(lock))
+  const validLock = isValidConfigurationLockFileSync(lock)
+  if (llmsg && llmsg.phase === 'persist-key' && initial.state !== 'current' && !validLock)
     throw homeVersionFault(home, 'unversioned')
   // An existing initializer may have created directories without publishing its marker yet.
   // Wait for that lock and inspect again; unknown homes without a lock remain untouched.
-  if (initial.state === 'unsupported' && !present(lock) && !(llmsg && llmsgBootstrapContents(canonicalHome)))
+  if (initial.state === 'unsupported' && !validLock && !(llmsg && llmsgBootstrapContents(canonicalHome)))
     throw homeVersionFault(home, 'unversioned')
+  if (llmsg && llmsg.phase === 'layout' && !validLock && initial.state !== 'current') {
+    if (!validateLlmsgKeyReadOnly(canonicalHome)) llmsgFallbackKey(llmsg.env)
+  }
   // Keep the lock outside a fresh home so inspection cannot mistake it for unknown user data.
   if (windows) createHomeDirectory(dirname(canonicalHome))
   else directory(dirname(canonicalHome))
   if (windows) prepareHomeLock(lock)
   return withConfigurationLock(lock, async () => {
     if (!llmsg) return initializeHome(canonicalHome, profile, options)
+    validateAcceptedLlmsgHomeReadOnly(canonicalHome)
     const info = inspectHome(canonicalHome, profile)
     if (llmsg.phase === 'persist-key' && info.state !== 'current')
       throw homeVersionFault(canonicalHome, 'unversioned')
     if (info.state === 'unsupported' && !llmsgBootstrapContents(canonicalHome))
       throw homeVersionFault(canonicalHome, 'unversioned')
-    if (llmsg.phase === 'layout' && !hasLlmsgKey(canonicalHome)) llmsgFallbackKey(llmsg.env)
+    if (llmsg.phase === 'layout' && !validateLlmsgKeyReadOnly(canonicalHome)) llmsgFallbackKey(llmsg.env)
     tightenAcceptedLlmsgHome(canonicalHome)
+    if (llmsg.phase === 'layout') hasLlmsgKey(canonicalHome)
     if (!hasPrivateDaclSync(canonicalHome)) throw homeFault('E_HOME_UNSAFE')
     if (info.state !== 'current') {
       // Publish before creating Core directories: a killed initializer can retry either side of the rename.

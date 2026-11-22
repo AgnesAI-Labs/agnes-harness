@@ -29,6 +29,34 @@ const HOP_HEADERS = new Set([
   'upgrade',
 ])
 
+const MAX_TIMEOUT_MS = 2_147_483_647
+
+function scheduleDeadline(expiresAt: number, onExpire: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let cancelled = false
+  const arm = () => {
+    if (cancelled) return
+    const remaining = expiresAt - Date.now()
+    const step = Math.min(MAX_TIMEOUT_MS, Math.max(0, remaining))
+    const finalLeg = remaining <= MAX_TIMEOUT_MS
+    timer = setTimeout(() => {
+      timer = undefined
+      if (cancelled) return
+      if (finalLeg || Date.now() >= expiresAt) onExpire()
+      else arm()
+    }, step)
+    timer.unref()
+  }
+  arm()
+  return () => {
+    cancelled = true
+    if (timer) {
+      clearTimeout(timer)
+      timer = undefined
+    }
+  }
+}
+
 function headers(source: IncomingHttpHeaders): IncomingHttpHeaders {
   const skip = new Set([
     ...HOP_HEADERS,
@@ -182,18 +210,18 @@ export async function createPublishedFrontend(input: {
         },
       )
       const stop = () => {
+        cancelExpiry?.()
         upstream.destroy()
         res.destroy()
       }
-      const expiry = authorized ? setTimeout(stop, Math.max(0, authorized.expiresAt - Date.now())) : undefined
-      expiry?.unref()
+      const cancelExpiry = authorized ? scheduleDeadline(authorized.expiresAt, stop) : undefined
       upstream.on('error', () => {
         if (!res.headersSent) res.writeHead(502, cors)
         res.end()
       })
       req.once('aborted', () => upstream.destroy())
       res.once('close', () => {
-        if (expiry) clearTimeout(expiry)
+        cancelExpiry?.()
         upstream.destroy()
       })
       req.pipe(upstream)
@@ -232,7 +260,25 @@ export async function createPublishedFrontend(input: {
         throw new Error('invalid local target')
       const h = forwarded(req.headers, true)
       h.host = target.host
-      const upstream = httpRequest({
+      let upstream: ReturnType<typeof httpRequest> | undefined
+      let peerSocket: Duplex | undefined
+      const stop = () => {
+        cancelExpiry?.()
+        upstream?.destroy()
+        peerSocket?.destroy()
+        socket.destroy()
+      }
+      const cancelExpiry = authorized ? scheduleDeadline(authorized.expiresAt, stop) : undefined
+      socket.on('error', () => stop())
+      socket.once('close', () => {
+        cancelExpiry?.()
+        upstream?.destroy()
+      })
+      if (closed || socket.destroyed || (authorized && authorized.expiresAt <= Date.now())) {
+        stop()
+        return
+      }
+      upstream = httpRequest({
         hostname: target.hostname,
         port: target.port,
         path: rpc ? '/' : requestUrl,
@@ -240,40 +286,47 @@ export async function createPublishedFrontend(input: {
         headers: h,
       })
       upstream.on('upgrade', (reply, peer, initial) => {
-        if (closed) {
-          peer.destroy()
-          socket.destroy()
-          return
-        }
+        peerSocket = peer
         sockets.add(peer)
-        peer.once('close', () => sockets.delete(peer))
-        const lines = Object.entries(reply.headers).flatMap(([key, value]) =>
-          value === undefined
-            ? []
-            : Array.isArray(value)
-              ? value.map((v) => `${key}: ${v}`)
-              : [`${key}: ${value}`],
-        )
-        socket.write(`HTTP/1.1 101 Switching Protocols\r\n${lines.join('\r\n')}\r\n\r\n`)
-        if (initial.length) socket.write(initial)
-        if (head.length) peer.write(head)
-        peer.on('error', () => socket.destroy())
-        socket.on('error', () => peer.destroy())
-        socket.once('close', () => peer.destroy())
-        peer.once('close', () => socket.destroy())
-        socket.pipe(peer).pipe(socket)
-        if (authorized) {
-          const timer = setTimeout(() => socket.destroy(), Math.max(0, authorized.expiresAt - Date.now()))
-          timer.unref()
-          socket.once('close', () => clearTimeout(timer))
-        }
+        peer.on('error', () => stop())
+        peer.once('close', () => {
+          sockets.delete(peer)
+          stop()
+        })
+        void (async () => {
+          if (
+            closed ||
+            socket.destroyed ||
+            peer.destroyed ||
+            (authorized && authorized.expiresAt <= Date.now()) ||
+            !(await allowed()) ||
+            (authorized && authorized.expiresAt <= Date.now()) ||
+            socket.destroyed ||
+            peer.destroyed
+          ) {
+            stop()
+            return
+          }
+          const lines = Object.entries(reply.headers).flatMap(([key, value]) =>
+            value === undefined
+              ? []
+              : Array.isArray(value)
+                ? value.map((v) => `${key}: ${v}`)
+                : [`${key}: ${value}`],
+          )
+          socket.write(`HTTP/1.1 101 Switching Protocols\r\n${lines.join('\r\n')}\r\n\r\n`)
+          if (initial.length) socket.write(initial)
+          if (head.length) peer.write(head)
+          socket.once('close', () => peer.destroy())
+          socket.pipe(peer).pipe(socket)
+        })().catch(() => stop())
       })
       upstream.on('response', (reply) => {
+        cancelExpiry?.()
         reply.resume()
         socket.end(`HTTP/1.1 ${reply.statusCode ?? 502} Unavailable\r\nConnection: close\r\n\r\n`)
       })
-      upstream.on('error', () => socket.destroy())
-      socket.once('close', () => upstream.destroy())
+      upstream.on('error', () => stop())
       upstream.end()
     })().catch(() => socket.destroy())
   })

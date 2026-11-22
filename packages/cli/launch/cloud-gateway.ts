@@ -15,12 +15,41 @@ import {
 } from '@agnes/protocol'
 import type { AdminCloudAuthorization } from '@agnes/protocol/gen/app-server'
 
+const MAX_TIMEOUT_MS = 2_147_483_647
+
+function scheduleDeadline(expiresAt: number, onExpire: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let cancelled = false
+  const arm = () => {
+    if (cancelled) return
+    const remaining = expiresAt - Date.now()
+    const step = Math.min(MAX_TIMEOUT_MS, Math.max(1, remaining))
+    const finalLeg = remaining <= MAX_TIMEOUT_MS
+    timer = setTimeout(() => {
+      timer = undefined
+      if (cancelled) return
+      if (finalLeg || Date.now() >= expiresAt) onExpire()
+      else arm()
+    }, step)
+    timer.unref()
+  }
+  arm()
+  return () => {
+    cancelled = true
+    if (timer) {
+      clearTimeout(timer)
+      timer = undefined
+    }
+  }
+}
+
 /** A transport-only relay on the isolated cloud origin. It cannot reach local management routes. */
 export function createCloudGateway() {
   type Grant = {
     origin: string
     trafficToken: string
     expiresAt: number
+    epoch: number
     refresh?: () => Promise<AdminCloudAuthorization>
     refreshing?: Promise<void>
     checking?: Promise<void>
@@ -29,7 +58,7 @@ export function createCloudGateway() {
     retryAt: number
     sockets: Set<Duplex>
     exchanges: Set<() => void>
-    timer?: ReturnType<typeof setTimeout>
+    cancelTimer?: () => void
   }
   const grants = new Map<string, Grant>()
   const requests = new Set<ClientRequest>()
@@ -37,9 +66,10 @@ export function createCloudGateway() {
   const revoke = (prefix: string, except?: () => void) => {
     const grant = grants.get(prefix)
     grants.delete(prefix)
-    if (grant?.timer) clearTimeout(grant.timer)
+    if (grant) grant.epoch += 1
+    grant?.cancelTimer?.()
     for (const abort of [...(grant?.exchanges ?? [])]) if (abort !== except) abort()
-    for (const socket of grant?.sockets ?? []) socket.destroy()
+    for (const socket of [...(grant?.sockets ?? [])]) socket.destroy()
   }
   const register = (origin: string, result: AdminCloudAuthorization, refresh?: Grant['refresh']) => {
     if (closed) throw Error('cloud gateway closed')
@@ -64,6 +94,7 @@ export function createCloudGateway() {
       origin: target.origin,
       trafficToken: result.trafficToken,
       expiresAt: result.expiresAt,
+      epoch: 0,
       ...(refresh ? { refresh } : {}),
       rejected: false,
       reconnect: false,
@@ -72,10 +103,7 @@ export function createCloudGateway() {
       exchanges: new Set(),
     })
     const grant = grants.get(prefix)
-    if (grant) {
-      grant.timer = setTimeout(() => revoke(prefix), Math.max(1, result.expiresAt - Date.now()))
-      grant.timer.unref()
-    }
+    if (grant) grant.cancelTimer = scheduleDeadline(result.expiresAt, () => revoke(prefix))
     return true
   }
   const resolve = (request: IncomingMessage) => {
@@ -100,10 +128,11 @@ export function createCloudGateway() {
   }
   const rejectGrant = (prefix: string, grant: Grant, except?: () => void) => {
     if (!grant.refresh) return revoke(prefix, except)
+    grant.epoch += 1
     grant.rejected = true
     grant.trafficToken = ''
     for (const abort of [...grant.exchanges]) if (abort !== except) abort()
-    for (const socket of grant.sockets) socket.destroy()
+    for (const socket of [...grant.sockets]) socket.destroy()
   }
   const renew = async (prefix: string, grant: Grant) => {
     if (grant.refreshing) return grant.refreshing
@@ -219,15 +248,19 @@ export function createCloudGateway() {
         response.writeHead(401, { 'cache-control': 'no-store' }).end()
         return true
       }
+      if (route.grant.rejected) {
+        request.resume()
+        response.writeHead(503, { 'cache-control': 'no-store', 'retry-after': '30' }).end()
+        return true
+      }
       let upstream: ClientRequest | undefined
       const abort = () => {
-        clearTimeout(expiry)
+        cancelExpiry()
         route.grant.exchanges.delete(abort)
         upstream?.destroy()
         response.destroy()
       }
-      const expiry = setTimeout(abort, Math.max(1, route.grant.expiresAt - Date.now()))
-      expiry.unref()
+      const cancelExpiry = scheduleDeadline(route.grant.expiresAt, abort)
       route.grant.exchanges.add(abort)
       upstream = own(
         (route.url.protocol === 'https:' ? httpsRequest : httpRequest)(
@@ -273,7 +306,7 @@ export function createCloudGateway() {
       request.once('aborted', () => upstream.destroy())
       request.once('error', () => upstream.destroy())
       response.once('close', () => {
-        clearTimeout(expiry)
+        cancelExpiry()
         route.grant.exchanges.delete(abort)
         upstream.destroy()
       })
@@ -296,18 +329,51 @@ export function createCloudGateway() {
         }
       }
       if (closed || socket.destroyed) return true
-      const upstream = own(
+      if (grants.get(route.prefix) !== route.grant || route.grant.expiresAt <= Date.now()) {
+        revoke(route.prefix)
+        socket.destroy()
+        return true
+      }
+      if (route.grant.rejected) {
+        socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nRetry-After: 30\r\n\r\n')
+        return true
+      }
+      const observedEpoch = route.grant.epoch
+      let upstream: ClientRequest | undefined
+      let peerSocket: Duplex | undefined
+      const abortUpgrade = () => {
+        cancelExpiry()
+        route.grant.exchanges.delete(abortUpgrade)
+        route.grant.sockets.delete(socket)
+        if (peerSocket) route.grant.sockets.delete(peerSocket)
+        upstream?.destroy()
+        peerSocket?.destroy()
+        socket.destroy()
+      }
+      const cancelExpiry = scheduleDeadline(route.grant.expiresAt, abortUpgrade)
+      route.grant.exchanges.add(abortUpgrade)
+      upstream = own(
         httpsRequest(route.url, {
           headers: headers(request, route.grant.origin, route.grant.trafficToken, true),
         }),
       )
-      upstream.setTimeout(10_000, () => upstream.destroy())
+      upstream.setTimeout(10_000, () => abortUpgrade())
       upstream.on('upgrade', (incoming, peer, upstreamHead) => {
-        if (closed || socket.destroyed || grants.get(route.prefix) !== route.grant) {
+        if (
+          closed ||
+          socket.destroyed ||
+          grants.get(route.prefix) !== route.grant ||
+          route.grant.rejected ||
+          route.grant.epoch !== observedEpoch ||
+          route.grant.expiresAt <= Date.now()
+        ) {
           peer.destroy()
+          abortUpgrade()
           return
         }
-        upstream.setTimeout(0)
+        peerSocket = peer
+        route.grant.exchanges.delete(abortUpgrade)
+        upstream?.setTimeout(0)
         const raw = ['HTTP/1.1 101 Switching Protocols', 'Connection: Upgrade', 'Upgrade: websocket']
         for (const name of ['sec-websocket-accept', 'sec-websocket-protocol', 'sec-websocket-extensions']) {
           const value = incoming.headers[name]
@@ -318,21 +384,9 @@ export function createCloudGateway() {
         if (upstreamHead.length) socket.write(upstreamHead)
         route.grant.sockets.add(socket)
         route.grant.sockets.add(peer)
-        const timer = setTimeout(
-          () => {
-            socket.destroy()
-            peer.destroy()
-          },
-          Math.max(1, route.grant.expiresAt - Date.now()),
-        )
-        timer.unref()
         const close = () => {
-          clearTimeout(timer)
-          route.grant.sockets.delete(socket)
-          route.grant.sockets.delete(peer)
           route.grant.reconnect = true
-          socket.destroy()
-          peer.destroy()
+          abortUpgrade()
         }
         socket.once('close', close)
         peer.once('close', close)
@@ -341,15 +395,21 @@ export function createCloudGateway() {
         socket.pipe(peer).pipe(socket)
       })
       upstream.on('response', async (incoming) => {
+        cancelExpiry()
+        route.grant.exchanges.delete(abortUpgrade)
         incoming.on('error', () => socket.destroy())
         incoming.once('aborted', () => socket.destroy())
         incoming.resume()
-        if (incoming.statusCode === 401) rejectGrant(route.prefix, route.grant)
-        else if (incoming.statusCode === 403) await checkForbidden(route.prefix, route.grant)
+        if (incoming.statusCode === 401) rejectGrant(route.prefix, route.grant, abortUpgrade)
+        else if (incoming.statusCode === 403) await checkForbidden(route.prefix, route.grant, abortUpgrade)
         socket.destroy()
       })
-      upstream.on('error', () => socket.destroy())
-      socket.once('close', () => upstream.destroy())
+      upstream.on('error', () => abortUpgrade())
+      socket.once('close', () => {
+        cancelExpiry()
+        route.grant.exchanges.delete(abortUpgrade)
+        upstream?.destroy()
+      })
       upstream.end()
       return true
     },

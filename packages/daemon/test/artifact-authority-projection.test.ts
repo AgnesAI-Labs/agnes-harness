@@ -679,16 +679,17 @@ describe('cold recorded artifact authority', () => {
       })
       const inflight = projection.scope.resolve(target, new AbortController().signal)
       await started
-      // Worker lifecycle detachment fences the old epoch without permanently banning future cold reads.
+      // Worker lifecycle detachment fences the old epoch without permanently banning future cold reads,
+      // and a reader arriving immediately starts a fresh epoch-scoped cold load instead of joining the stale one.
       projection.detachSession('session-a')
-      releaseFirst()
-      await expect(inflight).resolves.toBeUndefined()
-      expect(f.index.resolve('session-a', 'main', f.sha256)).toBeUndefined()
-
-      await expect(projection.scope.resolve(target, new AbortController().signal)).resolves.toEqual({
+      const freshAfterDetach = projection.scope.resolve(target, new AbortController().signal)
+      await expect(freshAfterDetach).resolves.toEqual({
         sessionId: 'session-a',
         laneId: 'main',
       })
+      expect(calls).toBe(2)
+      releaseFirst()
+      await expect(inflight).resolves.toBeUndefined()
       expect(f.index.resolve('session-a', 'main', f.sha256)).toBeDefined()
 
       projection.detachSession('session-a')

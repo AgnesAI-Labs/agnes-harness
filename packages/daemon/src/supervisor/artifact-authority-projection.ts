@@ -153,7 +153,12 @@ function recordedArtifactScope(input: {
       )
         return undefined
       if (!state && history && coldAllowed(target.sessionId, target.laneId)) {
-        const key = JSON.stringify([target.sessionId, target.laneId])
+        const key = JSON.stringify([
+          target.sessionId,
+          target.laneId,
+          observedEpoch.session,
+          observedEpoch.lane,
+        ])
         let load = coldLoads.get(key)
         if (!load) {
           if (coldLoads.size >= 4096) return undefined

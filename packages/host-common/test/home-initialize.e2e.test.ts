@@ -1,6 +1,9 @@
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import {
+  chmodSync,
+  chownSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -246,6 +249,61 @@ describe.runIf(process.platform === 'linux')('LLMSG home bootstrap', () => {
     expect(readdirSync(shared)).toEqual(['foreign.txt'])
     expect(readdirSync(parent)).not.toContain('.shared-legacy.initialize.sqlite')
 
+    // A corrupt 0644 sibling lock file next to an unsupported 0755 home must not have either mode mutated.
+    const corruptLock = join(parent, '.shared-legacy.initialize.sqlite')
+    writeFileSync(corruptLock, 'corrupt-not-sqlite', { mode: 0o644 })
+    chmodSync(corruptLock, 0o644)
+    await expect(initializeLlmsgHomeLocked(shared, 'local-dev', env)).rejects.toMatchObject({
+      code: 'E_HOME_VERSION',
+    })
+    expect(lstatSync(shared).mode & 0o777).toBe(0o755)
+    expect(lstatSync(corruptLock).mode & 0o777).toBe(0o644)
+    rmSync(corruptLock)
+
+    // A 0755 home containing a corrupt or non-private pending marker must be refused without 0700 tightening or lock creation.
+    const corruptPendingHome = join(parent, 'corrupt-pending-home')
+    mkdirSync(corruptPendingHome, { mode: 0o755 })
+    chmodSync(corruptPendingHome, 0o755)
+    writeFileSync(join(corruptPendingHome, '.llmsg-home-layout.pending'), 'fixture-old-data', {
+      mode: 0o600,
+    })
+    await expect(initializeLlmsgHomeLocked(corruptPendingHome, 'local-dev', env)).rejects.toMatchObject({
+      code: 'E_HOME_UNSAFE',
+    })
+    expect(lstatSync(corruptPendingHome).mode & 0o777).toBe(0o755)
+    expect(readdirSync(parent)).not.toContain('.corrupt-pending-home.initialize.sqlite')
+
+    if (process.getuid?.() === 0) {
+      const foreignHome = join(parent, 'foreign-uid-home')
+      mkdirSync(foreignHome, { mode: 0o755 })
+      chmodSync(foreignHome, 0o755)
+      const foreignKey = join(foreignHome, 'cloud-key')
+      writeFileSync(foreignKey, preseeded, { mode: 0o644 })
+      chmodSync(foreignKey, 0o644)
+      chownSync(foreignKey, 1000, 1000)
+      chownSync(foreignHome, 1000, 1000)
+      await expect(initializeLlmsgHomeLocked(foreignHome, 'local-dev', env)).rejects.toMatchObject({
+        code: 'E_HOME_UNSAFE',
+      })
+      expect(lstatSync(foreignHome).mode & 0o777).toBe(0o755)
+      expect(lstatSync(foreignKey).mode & 0o777).toBe(0o644)
+      expect(readdirSync(parent)).not.toContain('.foreign-uid-home.initialize.sqlite')
+
+      const foreignKeyOnlyHome = join(parent, 'foreign-key-home')
+      mkdirSync(foreignKeyOnlyHome, { mode: 0o755 })
+      chmodSync(foreignKeyOnlyHome, 0o755)
+      const untrustedKey = join(foreignKeyOnlyHome, 'cloud-key')
+      writeFileSync(untrustedKey, preseeded, { mode: 0o644 })
+      chmodSync(untrustedKey, 0o644)
+      chownSync(untrustedKey, 1000, 1000)
+      await expect(initializeLlmsgHomeLocked(foreignKeyOnlyHome, 'local-dev', env)).rejects.toMatchObject({
+        code: 'E_HOME_UNSAFE',
+      })
+      expect(lstatSync(foreignKeyOnlyHome).mode & 0o777).toBe(0o755)
+      expect(lstatSync(untrustedKey).mode & 0o777).toBe(0o644)
+      expect(readdirSync(parent)).not.toContain('.foreign-key-home.initialize.sqlite')
+    }
+
     const mounted = join(parent, 'mounted-home')
     mkdirSync(mounted, { mode: 0o755 })
     await initializeLlmsgHomeLocked(mounted, 'local-dev', env)
@@ -294,6 +352,28 @@ describe.runIf(process.platform === 'linux')('LLMSG home bootstrap', () => {
       expect(readFileSync(key, 'utf8')).toBe(invalid)
     }
     rmSync(key)
+    const broadHome = join(parent, 'broad-invalid-key-home')
+    mkdirSync(broadHome, { mode: 0o755 })
+    chmodSync(broadHome, 0o755)
+    const broadKey = join(broadHome, 'cloud-key')
+    writeFileSync(broadKey, ' \n', { mode: 0o644 })
+    chmodSync(broadKey, 0o644)
+    await expect(initializeLlmsgHomeLocked(broadHome, 'local-dev', env)).rejects.toMatchObject({
+      code: 'E_LLMSG_KEY',
+    })
+    expect(lstatSync(broadHome).mode & 0o777).toBe(0o755)
+    expect(lstatSync(broadKey).mode & 0o777).toBe(0o644)
+    expect(readdirSync(parent)).not.toContain('.broad-invalid-key-home.initialize.sqlite')
+    const linkedTarget = join(parent, 'hardlinked-key')
+    writeFileSync(linkedTarget, preseeded, { mode: 0o644 })
+    chmodSync(linkedTarget, 0o644)
+    rmSync(broadKey)
+    linkSync(linkedTarget, broadKey)
+    await expect(initializeLlmsgHomeLocked(broadHome, 'local-dev', env)).rejects.toMatchObject({
+      code: 'E_LLMSG_KEY',
+    })
+    expect(lstatSync(broadHome).mode & 0o777).toBe(0o755)
+    expect(lstatSync(broadKey).mode & 0o777).toBe(0o644)
     await expect(initializeLlmsgHomeLocked(home, 'local-dev', {})).rejects.toMatchObject({
       code: 'E_LLMSG_KEY',
     })

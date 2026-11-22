@@ -1294,12 +1294,97 @@ describe('production supervisor storage', () => {
       ],
     })
     await seeded.release(sessionId, 'artifact-fixture')
+    const heavySessionId = 'agnes:local:default:daemon:dm:recorded-heavy'
+    ownership.run(
+      `INSERT INTO session_principal_ownership
+       (session_id, principal_id, reservation_kind, reservation_state, parent_session_id, boundary_seq)
+       VALUES (?, ?, 'new', 'active', NULL, NULL)`,
+      [heavySessionId, 'local'],
+    )
+    const heavyTarget = artifacts[0]
+    if (!heavyTarget) throw new Error('missing heavy target fixture')
+    await seeded.open(heavySessionId, { writerRunId: 'heavy-fixture', ttlMs: 30_000 })
+    const crockford = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+    const ulid = (n: number) => {
+      let rest = n
+      let suffix = ''
+      for (let k = 0; k < 6; k++) {
+        suffix = crockford[rest % 32] + suffix
+        rest = Math.floor(rest / 32)
+      }
+      return `01ARZ3NDEKTSV4RRFFQ6${suffix}`
+    }
+    // Commit a >4MiB same-lane non-artifact tool/result plus 2,049 unsized-then-sized roots (>4,096 rows total).
+    await seeded.commit(heavySessionId, {
+      expectedWriterRunId: 'heavy-fixture',
+      events: [
+        {
+          ...common,
+          id: ulid(1),
+          type: 'tool/result',
+          origin: 'tool:read',
+          data: {
+            toolUseId: 'large-non-artifact-read',
+            isError: false,
+            content: Array.from({ length: 6 }, () => ({ type: 'text', text: 'z'.repeat(750_000) })),
+            enforcement: { level: 'full', scope: [] },
+            authz: { decisionId: 'n/a' },
+          },
+        },
+        {
+          ...common,
+          id: ulid(2),
+          type: 'x/core/artifact.registered',
+          origin: 'system',
+          ignorable: true,
+          data: { artifact: heavyTarget.artifact },
+        },
+      ],
+    })
+    for (let batch = 0; batch < 2049; batch += 200) {
+      const end = Math.min(2049, batch + 200)
+      const unsizedEvents: Array<Omit<import('@agnes/protocol').EventEnvelope, 'seq'>> = []
+      const sizedEvents: Array<Omit<import('@agnes/protocol').EventEnvelope, 'seq'>> = []
+      for (let idx = batch; idx < end; idx++) {
+        const sha256 = (idx + 100).toString(16).padStart(64, '0')
+        unsizedEvents.push({
+          ...common,
+          id: ulid(10 + idx),
+          type: 'tool/result',
+          origin: 'tool:present',
+          data: {
+            toolUseId: `u-p-${idx}`,
+            isError: false,
+            content: [
+              { type: 'resource_link', name: 'f', uri: `artifact://${sha256}`, mimeType: 'text/plain' },
+            ],
+            enforcement: { level: 'full', scope: [] },
+            authz: { decisionId: 'n/a' },
+          },
+        })
+        sizedEvents.push({
+          ...common,
+          id: ulid(5000 + idx),
+          type: 'x/core/artifact.registered',
+          origin: 'system',
+          ignorable: true,
+          data: { artifact: { sha256, size: 8, mime: 'text/plain' } },
+        })
+      }
+      await seeded.commit(heavySessionId, { expectedWriterRunId: 'heavy-fixture', events: unsizedEvents })
+      await seeded.commit(heavySessionId, { expectedWriterRunId: 'heavy-fixture', events: sizedEvents })
+    }
+    await seeded.release(heavySessionId, 'heavy-fixture')
     await seeded.close()
     const opened = vi.spyOn(WorkerRegistry.prototype, 'open')
     const required = vi.spyOn(WorkerRegistry.prototype, 'require')
     const noExecution = () => {
-      expect(opened.mock.calls.filter(([input]) => input.key === sessionId)).toEqual([])
-      expect(required.mock.calls.filter(([key]) => key === sessionId)).toEqual([])
+      expect(
+        opened.mock.calls.filter(([input]) => [sessionId, heavySessionId].includes(input.key ?? '')),
+      ).toEqual([])
+      expect(required.mock.calls.filter(([key]) => [sessionId, heavySessionId].includes(key ?? ''))).toEqual(
+        [],
+      )
     }
     let supervisor: Awaited<ReturnType<typeof startProductionSupervisor>> | undefined
     let rpc: Awaited<ReturnType<typeof client>> | undefined
@@ -1341,6 +1426,18 @@ describe('production supervisor storage', () => {
               code: 'artifact_forbidden',
             })
         }
+        await expect(
+          rpc.call(12, '_agnes/v1/artifact.read', {
+            sessionId: heavySessionId,
+            laneId: 'main',
+            artifact: heavyTarget.artifact,
+          }),
+        ).resolves.toMatchObject({
+          ok: true,
+          status: 200,
+          artifact: heavyTarget.artifact,
+          base64: heavyTarget.bytes.toString('base64'),
+        })
         noExecution()
         if (restart === 0) {
           rpc.close()

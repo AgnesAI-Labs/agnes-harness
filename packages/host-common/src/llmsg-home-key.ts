@@ -24,8 +24,7 @@ function keyText(text: string): string {
   return key
 }
 
-/** Read and protect the same inode, even if LLMSG replaces the path while we have it open. */
-export function hasLlmsgKey(home: string): boolean {
+function inspectLlmsgKey(home: string, tighten: boolean): boolean {
   let fd: number
   try {
     fd = openSync(
@@ -40,6 +39,8 @@ export function hasLlmsgKey(home: string): boolean {
   try {
     const stat = fstatSync(fd)
     if (!stat.isFile() || stat.size > MAX_FILE_BYTES) throw invalid()
+    if (typeof process.getuid === 'function' && stat.uid !== process.getuid())
+      throw Object.assign(new Error('E_HOME_UNSAFE'), { code: 'E_HOME_UNSAFE' })
     const bytes = Buffer.alloc(MAX_FILE_BYTES + 1)
     let size = 0
     while (size < bytes.length) {
@@ -51,12 +52,21 @@ export function hasLlmsgKey(home: string): boolean {
     keyText(bytes.subarray(0, size).toString('utf8'))
     if ((stat.mode & 0o7777) !== 0o600) {
       if (stat.nlink > 1) throw invalid()
-      fchmodSync(fd, 0o600)
+      if (tighten) fchmodSync(fd, 0o600)
     }
     return true
   } finally {
     closeSync(fd)
   }
+}
+
+export function validateLlmsgKeyReadOnly(home: string): boolean {
+  return inspectLlmsgKey(home, false)
+}
+
+/** Read and protect the same inode, even if LLMSG replaces the path while we have it open. */
+export function hasLlmsgKey(home: string): boolean {
+  return inspectLlmsgKey(home, true)
 }
 
 export function llmsgFallbackKey(env: LlmsgKeyEnvironment): string {

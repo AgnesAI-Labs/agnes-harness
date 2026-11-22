@@ -19,8 +19,78 @@ export type SessionViewRead = (
 ) => Promise<unknown>
 
 const MAX_RETAINED_ARTIFACT_ROOTS = 4096
-const MAX_SINGLE_EVENT_BYTES = 4 * 1024 * 1024
+const MAX_SINGLE_EVENT_BYTES = 16 * 1024 * 1024 + 65_536
 const MAX_SCANNED_CANDIDATE_ROWS = 250_000
+
+type RetainedArtifactRoot = {
+  ref: Readonly<{ sha256: string; mime: string; size?: number }>
+  seq: number
+  ts: string
+  id: string
+  actor: EventEnvelope['actor']
+}
+
+function compactArtifactHistoryEnvelopes(
+  laneId: string,
+  roots: Iterable<RetainedArtifactRoot>,
+): EventEnvelope[] {
+  const envelopes: EventEnvelope[] = []
+  const unsized: RetainedArtifactRoot[] = []
+  for (const entry of roots) {
+    if (entry.ref.size !== undefined) {
+      envelopes.push({
+        seq: entry.seq,
+        ts: entry.ts,
+        id: entry.id,
+        lane: laneId,
+        type: 'x/core/artifact.registered',
+        v: 1,
+        actor: entry.actor,
+        origin: 'system',
+        trust: 'trusted',
+        ignorable: true,
+        data: {
+          artifact: {
+            sha256: entry.ref.sha256,
+            size: entry.ref.size,
+            mime: entry.ref.mime,
+          },
+        },
+      } as unknown as EventEnvelope)
+    } else {
+      unsized.push(entry)
+    }
+  }
+  for (let i = 0; i < unsized.length; i += 256) {
+    const chunk = unsized.slice(i, i + 256)
+    const anchor = chunk.at(-1)
+    if (!anchor) continue
+    envelopes.push({
+      seq: anchor.seq,
+      ts: anchor.ts,
+      id: anchor.id,
+      lane: laneId,
+      type: 'tool/result',
+      v: 1,
+      actor: anchor.actor,
+      origin: 'tool:present',
+      trust: 'trusted',
+      data: {
+        toolUseId: `artifact-history-${i}`,
+        isError: false,
+        content: chunk.map(({ ref }) => ({
+          type: 'resource_link',
+          name: 'artifact',
+          uri: `artifact://${ref.sha256}`,
+          mimeType: ref.mime,
+        })),
+        enforcement: { level: 'full', scope: [] },
+        authz: { decisionId: 'n/a' },
+      },
+    } as unknown as EventEnvelope)
+  }
+  return envelopes
+}
 
 /** Bounded, read-only roots from the daemon-owned ledger; never opens a worker or writer lease. */
 export function artifactHistoryReader(
@@ -29,8 +99,7 @@ export function artifactHistoryReader(
   return Object.freeze({
     async read(sessionId, laneId, signal) {
       const scan = read(sessionId)
-      const rows: EventEnvelope[] = []
-      const seenRoots = new Map<string, number | undefined>()
+      const seenRoots = new Map<string, RetainedArtifactRoot>()
       let fromSeq = 1,
         scanned = 0,
         pages = 0
@@ -67,29 +136,23 @@ export function artifactHistoryReader(
           if (!checked.ok) throw new Error('artifact history unavailable')
           const roots = sessionArtifactRoots(checked.value as EventEnvelope)
           if (!roots?.length) continue
-          let keep = false
           for (const ref of roots) {
             const identity = `${ref.sha256}:${ref.mime}`
-            if (!seenRoots.has(identity)) {
-              seenRoots.set(identity, ref.size)
-              keep = true
-            } else {
-              const prev = seenRoots.get(identity)
-              if (prev === undefined && ref.size !== undefined) {
-                seenRoots.set(identity, ref.size)
-                keep = true
-              } else if (prev !== undefined && ref.size !== undefined && prev !== ref.size) {
-                keep = true
-              }
+            const prev = seenRoots.get(identity)
+            if (!prev) {
+              seenRoots.set(identity, { ref, seq: row.seq, ts: row.ts, id: row.id, actor: row.actor })
+            } else if (prev.ref.size === undefined && ref.size !== undefined) {
+              seenRoots.set(identity, { ref, seq: row.seq, ts: row.ts, id: row.id, actor: row.actor })
+            } else if (prev.ref.size !== undefined && ref.size !== undefined && prev.ref.size !== ref.size) {
+              throw new Error('artifact history unavailable')
             }
             if (seenRoots.size > MAX_RETAINED_ARTIFACT_ROOTS) throw new Error('artifact history unavailable')
           }
-          if (keep) rows.push(row)
         }
         if (page.length < 100) break
       }
       check()
-      return rows
+      return compactArtifactHistoryEnvelopes(laneId, seenRoots.values())
     },
   })
 }

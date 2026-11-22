@@ -613,9 +613,15 @@ it.each([401, 403])(
   },
 )
 
-it('terminates in-flight HTTP streams on grant replacement, eviction and expiry while preserving active grants', async () => {
+it('terminates in-flight HTTP streams and pending WebSocket upgrades on rejection, replacement, eviction and expiry', async () => {
   const timers = new Set<ReturnType<typeof setInterval>>()
+  const delayedUpgrades: Array<{ key: string; socket: Duplex; release: () => void }> = []
+  let status = 200
   const upstream = createServer((req, res) => {
+    if (req.url?.endsWith('/deny')) {
+      res.writeHead(status).end('denied')
+      return
+    }
     if (req.url?.endsWith('/stream')) {
       res.writeHead(200, { 'content-type': 'text/event-stream' })
       res.write('data: start\n\n')
@@ -631,12 +637,44 @@ it('terminates in-flight HTTP streams on grant replacement, eviction and expiry 
     }
     res.writeHead(200).end('ok')
   })
+  upstream.on('upgrade', (req, socket) => {
+    socket.on('error', () => {})
+    const respond101 = () => {
+      if (socket.destroyed) return
+      const accept = createHash('sha1')
+        .update(`${req.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+        .digest('base64')
+      socket.write(
+        `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
+      )
+      socket.write(
+        Buffer.concat([
+          Buffer.from([0x81, String(req.headers['e2b-traffic-access-token']).length]),
+          Buffer.from(String(req.headers['e2b-traffic-access-token'])),
+        ]),
+      )
+      socket.once('end', () => socket.destroy())
+      socket.once('data', () => socket.destroy())
+    }
+    if (req.url?.endsWith('/pending-ws')) {
+      delayedUpgrades.push({
+        key: String(req.headers['e2b-traffic-access-token']),
+        socket,
+        release: respond101,
+      })
+      return
+    }
+    respond101()
+  })
   upstream.listen(0, '127.0.0.1')
   await once(upstream, 'listening')
   fixture.origin = `http://127.0.0.1:${(upstream.address() as { port: number }).port}`
   const gateway = createCloudGateway()
   const server = createServer(async (request, response) => {
     if (!(await gateway.handleHttp(request, response))) response.writeHead(404).end()
+  })
+  server.on('upgrade', (request, socket, head) => {
+    void gateway.handleUpgrade(request, socket, head)
   })
   server.listen(0, '127.0.0.1')
   await once(server, 'listening')
@@ -659,10 +697,68 @@ it('terminates in-flight HTTP streams on grant replacement, eviction and expiry 
     const tokenEvicted = makeToken(1)
     const tokenShort = makeToken(2)
     const tokenSurvivor = makeToken(3)
+    const tokenRefreshable = makeToken(4)
+    const tokenFarFuture = makeToken(5)
+    let refreshGen = 1
     gateway.register(origin, { token: tokenEvicted, expiresAt: Date.now() + 60_000, trafficToken: 't-1' })
-    gateway.register(origin, { token: tokenShort, expiresAt: Date.now() + 90, trafficToken: 't-2' })
     gateway.register(origin, { token: tokenSurvivor, expiresAt: Date.now() + 60_000, trafficToken: 't-3' })
+    gateway.register(
+      origin,
+      { token: tokenRefreshable, expiresAt: Date.now() + 60_000, trafficToken: 'r-1' },
+      async () => ({
+        token: tokenRefreshable,
+        expiresAt: Date.now() + 60_000,
+        trafficToken: `r-${++refreshGen}`,
+      }),
+    )
+    gateway.register(origin, {
+      token: tokenFarFuture,
+      expiresAt: Date.now() + 3_000_000_000,
+      trafficToken: 't-far',
+    })
 
+    // Far-future deadlines (> 2^31 - 1 ms) must not overflow setTimeout into a 1 ms immediate expiry.
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    expect((await fetch(local + remoteFrontendSessionPath(tokenFarFuture) + '/check')).status).toBe(200)
+
+    // Pending WebSocket handshake on a refreshable grant must abort immediately on 401 and never bind after refresh.
+    const refreshPrefix = remoteFrontendSessionPath(tokenRefreshable)
+    const pendingRefreshWs = new WebSocket(local.replace('http:', 'ws:') + refreshPrefix + '/pending-ws')
+    const pendingRefreshClosed = new Promise<void>((resolve) => {
+      pendingRefreshWs.addEventListener('close', () => resolve(), { once: true })
+      pendingRefreshWs.addEventListener('error', () => resolve(), { once: true })
+    })
+    for (let i = 0; i < 40 && delayedUpgrades.length < 1; i++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(delayedUpgrades[0]?.key).toBe('r-1')
+    status = 401
+    expect((await fetch(local + refreshPrefix + '/deny')).status).toBe(401)
+    status = 200
+    await pendingRefreshClosed
+    expect((await fetch(local + refreshPrefix + '/check')).status).toBe(200)
+    delayedUpgrades[0]?.release()
+    expect(pendingRefreshWs.readyState).not.toBe(WebSocket.OPEN)
+
+    const freshWs = new WebSocket(local.replace('http:', 'ws:') + refreshPrefix + '/live-ws')
+    const freshMsg = await new Promise<string>((resolve, reject) => {
+      freshWs.addEventListener('message', (event) => resolve(String(event.data)), { once: true })
+      freshWs.addEventListener('error', () => reject(new Error('fresh ws failed')), { once: true })
+    })
+    expect(freshMsg).toBe('r-2')
+    freshWs.close()
+
+    // Pending WebSocket handshake on a non-refreshable grant must also abort when the grant is replaced.
+    const pendingSurvivorWs = new WebSocket(
+      local.replace('http:', 'ws:') + remoteFrontendSessionPath(tokenSurvivor) + '/pending-ws',
+    )
+    const pendingSurvivorClosed = new Promise<void>((resolve) => {
+      pendingSurvivorWs.addEventListener('close', () => resolve(), { once: true })
+      pendingSurvivorWs.addEventListener('error', () => resolve(), { once: true })
+    })
+    for (let i = 0; i < 40 && delayedUpgrades.length < 2; i++)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+
+    gateway.register(origin, { token: tokenShort, expiresAt: Date.now() + 90, trafficToken: 't-2' })
     const evictedRes = await fetch(local + remoteFrontendSessionPath(tokenEvicted) + '/stream')
     const shortRes = await fetch(local + remoteFrontendSessionPath(tokenShort) + '/stream')
     const survivorRes = await fetch(local + remoteFrontendSessionPath(tokenSurvivor) + '/stream')
@@ -677,7 +773,7 @@ it('terminates in-flight HTTP streams on grant replacement, eviction and expiry 
     expect((await fetch(local + remoteFrontendSessionPath(tokenShort) + '/check')).status).toBe(401)
     expect((await survivorReader.read()).done).toBe(false)
 
-    for (let id = 10; id < 41; id++)
+    for (let id = 10; id < 39; id++)
       gateway.register(origin, {
         token: makeToken(id),
         expiresAt: Date.now() + 60_000,
@@ -692,8 +788,11 @@ it('terminates in-flight HTTP streams on grant replacement, eviction and expiry 
       trafficToken: 't-3-new',
     })
     expect(await drainUntilClosed(survivorReader)).toBe(true)
+    await pendingSurvivorClosed
+    expect(pendingSurvivorWs.readyState).not.toBe(WebSocket.OPEN)
   } finally {
     for (const timer of timers) clearInterval(timer)
+    for (const entry of delayedUpgrades) entry.socket.destroy()
     gateway.close()
     server.closeAllConnections()
     upstream.closeAllConnections()
