@@ -35,17 +35,7 @@ const INTERNAL_ROOT_SYMBOLS =
 function packageShape(pkg: Package): PackageShape {
   const dependencies = {
     ...(pkg.json.dependencies as Record<string, string> | undefined),
-    ...Object.fromEntries(
-      Object.entries((pkg.json.peerDependencies as Record<string, string> | undefined) ?? {}).filter(
-        ([name]) =>
-          !(
-            pkg.name === RUNTIME &&
-            name === HOST &&
-            (pkg.json.peerDependenciesMeta as Record<string, { optional?: boolean }> | undefined)?.[name]
-              ?.optional
-          ),
-      ),
-    ),
+    ...(pkg.json.peerDependencies as Record<string, string> | undefined),
   }
   const exports = pkg.json.exports as Record<string, string> | string | undefined
   return {

@@ -65,26 +65,3 @@ export function HomePageFrame({
     </article>
   )
 }
-
-/** One titled group of rows or cards on a full page. */
-export function HomePageSection({
-  title,
-  actions,
-  children,
-}: {
-  title?: ReactNode
-  actions?: ReactNode
-  children?: ReactNode
-}) {
-  return (
-    <section className="home-page-section">
-      {(title || actions) && (
-        <div className="home-page-section-heading">
-          {title && <h2>{title}</h2>}
-          {actions}
-        </div>
-      )}
-      {children}
-    </section>
-  )
-}
