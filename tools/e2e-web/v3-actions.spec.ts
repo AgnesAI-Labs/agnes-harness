@@ -572,7 +572,7 @@ it('v3 home entries keep the selected workspace in a default draft', async ({ pa
   await mkdir(workspace)
   await client.workspace.add(workspace)
   const { items: workspaces } = await client.workspace.list()
-  const local = page.getByTestId('backend-frame-local').contentFrame()
+  const local = page
   const workspaceChip = local.locator('#composer-workspace')
   const query = (key: string) => new URL(page.url()).searchParams.get(key)
 
@@ -762,7 +762,7 @@ it('v3 home entries resolve the Skills scope before the first startup read', asy
     if (new URL(request.url()).pathname === '/admin/resources/api/skills/list')
       requests.push(request.postDataJSON()?.workspaceId)
   })
-  const local = page.getByTestId('backend-frame-local').contentFrame()
+  const local = page
   const route = `${runtime.url}/?page=plugins&tab=skills`
   const open = async (url?: string) => {
     delete startup.release

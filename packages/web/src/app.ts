@@ -39,7 +39,8 @@ import { createTurnController } from './app/turn-controller.js'
 import { openApplicationHome, projectApplication, requestNewSession } from './application.js'
 import { installCloudConnectionSettings } from './backends/cloud-connection-settings.js'
 import { backendFrameStartup, installBackendFrameBridge } from './backends/frame-bridge.js'
-import { requestDiagnosticBackend } from './backends/frame-context.js'
+import { backendFrame, requestDiagnosticBackend } from './backends/frame-context.js'
+import { localLocationUrl, localStartupSearchParams } from './backends/local-workbench-bus.js'
 import { readyRosterModules } from './client-modules/reconcile/roster.js'
 import { ComposerDrafts, switchComposerDraft } from './composer-drafts.js'
 import { frontendBackendIdentity } from './remote-frontend.js'
@@ -117,13 +118,17 @@ import {
 import { mountSessionSearch } from './session-search.js'
 import { createTitleRefresh } from './session-title.js'
 import {
+  applySettingsSectionRoute,
   clearSettingsLink,
   consumeSettingsLink,
+  isDeferredCloudSettings,
   movedSettingsTarget,
   needsModelNotice,
   openMovedSettings,
   openMovedSettingsLink,
+  resolveRestoredSettingsLink,
   rewriteMovedSettingsLink,
+  settingsLinkTarget,
 } from './settings-redirects.js'
 import { createSidebarPagination } from './sidebar-pagination.js'
 import { openStartupAnchors } from './startup-anchors.js'
@@ -974,7 +979,7 @@ const openSettingsSection = async (section: string, fromWorkbench = false) => {
   if (!fromWorkbench && requestDiagnosticBackend(section)) return
   settingsRegion.open('model')
   const loading = settings.open(section)
-  settingsRegion.route(section)
+  if (settings.isOpen()) settingsRegion.route(applySettingsSectionRoute(section))
   await loading
 }
 // The sidebar's application switch asks for the settings page in place; its href stays the fallback.
@@ -1077,7 +1082,7 @@ let approvalSearch: 'idle' | 'searching' | 'not-found' = 'idle'
 let approvalSearchTicket: string | undefined
 let streamFrame: number | undefined
 let stopping = false
-let sessionPending = new URLSearchParams(location.search).get('new') === '1'
+let sessionPending = localStartupSearchParams().get('new') === '1'
 let stopAfterSeq = 0
 let approvalBusy = false
 let runtimeModels: ModelPickerOption[] = []
@@ -1099,10 +1104,9 @@ let draftPermission: PermissionMode | undefined
 let draftBundles: string[] = []
 let sessionIsolation: import('./app/isolation-note.js').SessionIsolation | undefined
 let runtimeCatalog: import('@agnes/protocol').RuntimeAdminSnapshot | undefined
-const startupRequest = new URLSearchParams(location.search)
+const startupRequest = localStartupSearchParams()
 // Settings and nested pages keep their address across reload and history traversal.
 const startupSettingsLink = consumeSettingsLink()
-const startupSettingsAnchor = startupSettingsLink.anchor
 let startupSettingsDismissed = false
 const requestedLoop = startupRequest.get('loop') ?? undefined
 const requestedPreset = startupRequest.get('preset') ?? undefined
@@ -1298,33 +1302,36 @@ const settings = createSettingsController({
       history.pushState(null, '', address.href([settingsRegion.form()?.dataset.settingsSection ?? 'model']))
   },
   onClose: () => {
+    if (isDeferredCloudSettings()) return
     startupSettingsDismissed = true
     clearSettingsLink()
   },
 })
 const restoreSettingsLocation = () => {
+  if (isDeferredCloudSettings()) return
   // A history traversal takes over settings restoration even during startup.
   startupSettingsDismissed = true
-  const moved = rewriteMovedSettingsLink()
-  if (moved?.kind === 'page') {
-    settings.close()
-    homeNavigation.open(moved.page, moved.tab ? { tab: moved.tab } : undefined)
-    return
-  }
-  const id = consumeSettingsLink().id
-  if (!id) {
-    if (settings.isOpen()) settings.close()
-    return
-  }
-  if (movedSettingsTarget(id)) {
-    openMovedSettingsLink(id, {
+  const resolved = resolveRestoredSettingsLink(
+    () => settings.close(),
+    (page, tab) => homeNavigation.open(page, tab ? { tab } : undefined),
+  )
+  if (!resolved) return
+  if (movedSettingsTarget(resolved.id)) {
+    openMovedSettingsLink(resolved.id, {
       searchSessions: () => sessionSearch.open(),
       showArchived: () => sessionInventory.setMode('archived'),
     })
     return
   }
-  settingsRegion.route(id)
-  if (!settings.isOpen()) run(() => settings.open())
+  if (!settings.isOpen()) {
+    settingsRegion.open('model')
+    run(async () => {
+      await settings.open(resolved.id)
+      if (settings.isOpen()) settingsRegion.route(resolved.target)
+    })
+    return
+  }
+  settingsRegion.route(resolved.target)
 }
 const stopSettingsRouting = onHistoryNavigation(restoreSettingsLocation)
 clientModules.locale.subscribe(() => settings.refreshLocale())
@@ -1775,7 +1782,7 @@ async function beginNewDraft(
   liveApproval?.finish({ unanswered: 'detached' })
   liveApproval = undefined
   renderer.reset()
-  const url = new URL(location.href)
+  const url = localLocationUrl()
   url.searchParams.delete('session')
   const settingsHash =
     url.searchParams.has('settings') && url.hash.startsWith('#settings-subsection-') ? url.hash : ''
@@ -2220,6 +2227,7 @@ onPageVisible(() => {
 })
 onHistoryNavigation(() => {
   const params = new URL(location.href).searchParams
+  if (!backendFrame() && params.has('remote')) return
   const id = params.get('session')
   if (!id && params.has('settings') && !params.has('new')) return
   run(async () => {
@@ -2335,7 +2343,7 @@ const startup = backendFrameStartup(async () => {
   if (workspaces.status === 'fulfilled') {
     workspaceController.apply(workspaces.value)
     // A link that names a workspace selects it, unless the reader has already chosen one.
-    const workspaceId = new URLSearchParams(location.search).get('workspaceId')
+    const workspaceId = startupRequest.get('workspaceId')
     const requested = workspaceRows.find((row) => row.workspaceId === workspaceId)
     if (requested && !selectedWorkspace && sessionBinding.isCurrent(startupSelection))
       selectedWorkspace = requested
@@ -2390,7 +2398,7 @@ const startup = backendFrameStartup(async () => {
         }),
     })
   }
-  const currentAddress = new URLSearchParams(location.search)
+  const currentAddress = localStartupSearchParams()
   const guided =
     empty &&
     !currentAddress.get('settings') &&
@@ -2493,25 +2501,18 @@ const startup = backendFrameStartup(async () => {
     !empty || Boolean(startupSection || startupTerminal || startupMoved || homeNavigation.getSnapshot()),
   )
   if (guided && !shown) await beginNewDraft(true)
-  if (startupMoved)
+  if (startupMoved && !isDeferredCloudSettings())
     openMovedSettingsLink(startupSettings, {
       searchSessions: () => sessionSearch.open(),
       showArchived: () => sessionInventory.setMode('archived'),
     })
   showModelNotice()
   const settingsSelection = sessionBinding.capture()
-  if ((startupSection || startupTerminal) && !startupSettingsDismissed) {
-    settingsRegion.open('model')
-    await settings.open()
-    // A choice made while the dialog was loading owns the view.
-    if (!sessionBinding.isCurrent(settingsSelection)) return
-    const anchoredSettings = startupSettingsAnchor.replace(/^settings-subsection-/, '')
-    const anchoredRoute = settingsRoute(anchoredSettings)
-    const target =
-      anchoredRoute.id === startupSettings && anchoredRoute.anchor === startupSettingsAnchor
-        ? anchoredSettings
-        : startupSettings
-    settingsRegion.route(target)
+  if ((startupSection || startupTerminal) && !startupSettingsDismissed && !isDeferredCloudSettings()) {
+    if (!backendFrame()) settingsRegion.open('model')
+    await settings.open(startupRequest.get('settings') ?? startupSettings)
+    if (!sessionBinding.isCurrent(settingsSelection) || !settings.isOpen()) return
+    settingsRegion.route(settingsLinkTarget(startupSettingsLink))
   }
 })
 run(async () => {

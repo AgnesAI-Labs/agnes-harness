@@ -3,7 +3,9 @@ import {
   type SettingsController,
   type SettingsControllerOptions,
 } from '@agnes/web-admin/settings'
-import { requestLocalManagement } from './frame-context.js'
+import { settingsRoute } from '@agnes/web-units/shell'
+import { isDeferredCloudSettings, redirectFrameSettingsLink } from '../settings-redirects.js'
+import { backendFrame, requestLocalManagement } from './frame-context.js'
 
 /** Dialog shortcuts and account-error links follow the same local destination as the sidebar. */
 export function routeLocalSettings(
@@ -12,9 +14,11 @@ export function routeLocalSettings(
   return {
     ...controller,
     open: (section: string = 'model') =>
-      requestLocalManagement({ kind: 'settings', section }) ? Promise.resolve() : controller.open(),
+      redirectFrameSettingsLink(section) || requestLocalManagement({ kind: 'settings', section })
+        ? Promise.resolve()
+        : controller.open(),
     openAccount: (route) =>
-      requestLocalManagement({ kind: 'settings', section: 'model' })
+      redirectFrameSettingsLink('model') || requestLocalManagement({ kind: 'settings', section: 'model' })
         ? Promise.resolve()
         : controller.openAccount(route),
   }
@@ -23,5 +27,36 @@ export function routeLocalSettings(
 export function createLocalManagementSettings(
   options: SettingsControllerOptions,
 ): ReturnType<typeof routeLocalSettings> {
-  return routeLocalSettings(createSettingsController(options))
+  let pendingSection: string | undefined
+  const withSection = <T>(section: string, work: () => T): T => {
+    const previous = pendingSection
+    pendingSection = section
+    try {
+      return work()
+    } finally {
+      pendingSection = previous
+    }
+  }
+  const routed = routeLocalSettings(
+    createSettingsController({
+      ...options,
+      beforeOpen: () =>
+        isDeferredCloudSettings() ||
+        redirectFrameSettingsLink(
+          pendingSection ?? (new URLSearchParams(location.search).get('settings') || 'model'),
+        ),
+    }),
+  )
+  return {
+    ...routed,
+    open: (section: string = 'model') =>
+      withSection(section, () => {
+        if (!isDeferredCloudSettings() && !(backendFrame() && section.split('/')[0] !== 'diagnostics')) {
+          const form = document.getElementById('config-form')
+          if (form) form.dataset.settingsSection = settingsRoute(section.split('/')[0] || section).id
+        }
+        return routed.open(section)
+      }),
+    openAccount: (route) => withSection('model', () => routed.openAccount(route)),
+  }
 }

@@ -17,7 +17,7 @@ describe('single-run coverage routing', () => {
   it('has one 02:00 Shanghai scheduler that dispatches the full suite on develop', () => {
     const directory = new URL('../../.github/workflows/', import.meta.url)
     const scheduled = readdirSync(directory).filter((file) =>
-      /^ {2}schedule:/m.test(readFileSync(new URL(file, directory), 'utf8')),
+      /^  schedule:/m.test(readFileSync(new URL(file, directory), 'utf8')),
     )
     expect(scheduled).toEqual(['e2e-web-nightly.yml'])
     const dispatcher = readFileSync(new URL(scheduled[0]!, directory), 'utf8')

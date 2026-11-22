@@ -32,13 +32,22 @@ export function CloudConnectionSettings({
   const catalog = workbenchCatalog[language === 'zh-CN' ? 'zh-CN' : 'en']
   const t = (key: keyof typeof catalog) => catalog[key]
   const [credentialRef, setCredentialRef] = useState(state.credentialRef ?? '')
+  const [selecting, setSelecting] = useState(false)
   const [error, setError] = useState('')
-  useEffect(() => setCredentialRef(state.credentialRef ?? ''), [state.credentialRef])
+  useEffect(() => {
+    setSelecting(false)
+    setCredentialRef(state.credentialRef ?? '')
+  }, [state.credentialRef])
+  useEffect(() => {
+    if (!selecting && (state.status !== 'connecting' || Boolean(state.error)))
+      setCredentialRef(state.credentialRef ?? '')
+  }, [selecting, state.credentialRef, state.status, state.error])
   const connect = () => {
     if (!state.credentialOptions?.some((item) => item.id === credentialRef)) {
       setError(t('keyRequired'))
       return
     }
+    setSelecting(false)
     onAction({ action: 'connect', credentialRef })
     setError('')
   }
@@ -55,6 +64,7 @@ export function CloudConnectionSettings({
             disabled={!state.credentialOptions || state.status === 'connecting'}
             onFocus={() => onAction({ action: 'refresh-credentials' })}
             onChange={(event) => {
+              setSelecting(true)
               setCredentialRef(event.target.value)
               setError('')
             }}
@@ -110,7 +120,7 @@ function CloudConnectionSection() {
 
 /** Browser connection settings belong to A, independent of the selected backend's configuration. */
 export function installCloudConnectionSettings(locale: LocaleService): () => void {
-  if (!backendFrame() || backendFrame()?.remote) return () => {}
+  if (backendFrame()) return () => {}
   const projectionOff = installCloudSettingsProjection()
   const localeOff = locale.register('@agnes/cloud-connection', {
     en: { 'settings-shell.page.cloud-connection': 'Cloud connection' },

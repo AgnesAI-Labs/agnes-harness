@@ -157,7 +157,7 @@ export function SidebarDshFrame({
         ),
         panellist: (
           <>
-            <BackendSelector />
+            {!projection && <BackendSelector />}
             {outlet('sidebar.panellist')}
           </>
         ),

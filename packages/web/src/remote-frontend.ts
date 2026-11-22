@@ -8,6 +8,7 @@ import {
   remoteFrontendOrigin,
 } from '@agnes/protocol'
 import { backendFrame } from './backends/frame-context.js'
+import { isLocalWorkbenchHost } from './backends/local-workbench-bus.js'
 import {
   authorizeRemoteFrontend,
   forgetRemoteAccess,
@@ -17,12 +18,15 @@ import {
 } from './remote-authorization.js'
 
 export function selectedRemoteOrigin(search?: string): string | undefined {
-  const frame = search === undefined ? backendFrame() : undefined
-  const value = frame
-    ? (frame.remote ?? '')
-    : new URLSearchParams(search ?? globalThis.location?.search ?? '').get('remote')
-  if (value === '') return undefined
-  return value === null ? undefined : remoteFrontendOrigin(value)
+  if (search !== undefined) {
+    const explicit = new URLSearchParams(search).get('remote')
+    return !explicit ? undefined : remoteFrontendOrigin(explicit)
+  }
+  const frame = backendFrame()
+  if (frame) return frame.remote ? remoteFrontendOrigin(frame.remote) : undefined
+  if (isLocalWorkbenchHost()) return undefined
+  const value = new URLSearchParams(globalThis.location?.search ?? '').get('remote')
+  return !value ? undefined : remoteFrontendOrigin(value)
 }
 
 export function frontendBackendIdentity(): string {

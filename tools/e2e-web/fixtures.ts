@@ -2,54 +2,7 @@ import { test as base, expect, type Page } from '@playwright/test'
 import { testCertificatePath } from './oauth-fixture.js'
 import { isolatedRuntime, type Runtime } from './runtime.js'
 
-/** Exercise the real workbench while locating the local application's DOM in its own frame. */
-function applicationPage(page: Page): Page {
-  const application = page.frameLocator('[data-testid="backend-frame-local"]')
-  const dom = new Set([
-    'locator',
-    'getByRole',
-    'getByTestId',
-    'getByText',
-    'getByLabel',
-    'getByPlaceholder',
-    'getByTitle',
-    'getByAltText',
-  ])
-  let synthetic = false
-  // bootstrap.ts renders the explicit recovery route in the outer document, including Back/Forward.
-  const standalone = () => synthetic || new URL(page.url()).searchParams.has('admin')
-  return new Proxy(page, {
-    get(target, key, receiver) {
-      if (typeof key === 'string' && dom.has(key))
-        return (...args: unknown[]) => {
-          const scope = standalone() ? target : application
-          return Reflect.apply(Reflect.get(scope, key), scope, args)
-        }
-      if (key === 'evaluate')
-        return async (...args: unknown[]) => {
-          if (standalone()) return Reflect.apply(Reflect.get(target, key), target, args)
-          const element = await target.getByTestId('backend-frame-local').elementHandle()
-          try {
-            const scope = await element?.contentFrame()
-            if (!scope) throw new Error('The real local workbench frame is unavailable')
-            return await Reflect.apply(Reflect.get(scope, key), scope, args)
-          } finally {
-            await element?.dispose()
-          }
-        }
-      if (key === 'goto' || key === 'setContent')
-        return (...args: unknown[]) => {
-          synthetic = key === 'setContent'
-          return Reflect.apply(Reflect.get(target, key), target, args)
-        }
-      // Navigation, URL, input, networking and screenshots still belong to the outer browser page.
-      const value = Reflect.get(target, key, receiver)
-      return typeof value === 'function' ? value.bind(target) : value
-    },
-  })
-}
-
-/** Explicit outer-workbench cases own their frame locators and use the real browser Page. */
+/** All local surfaces mount directly in the top-level document; only Cloud B uses an isolated frame. */
 export const root = base.extend<{
   runtime: Runtime
   browserHealth: undefined
@@ -169,9 +122,5 @@ export const root = base.extend<{
     { auto: true },
   ],
 })
-export const test = root.extend({
-  page: async ({ page }, use) => {
-    await use(applicationPage(page))
-  },
-})
+export const test = root
 export { expect }

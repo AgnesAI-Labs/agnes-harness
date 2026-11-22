@@ -49,7 +49,6 @@ export function applyCloudFrameAppearance(value: unknown): void {
 }
 
 export function syncWorkbenchAppearance(): void {
-  document.body.dataset.aghBackendWorkbench = 'true'
   const storage = safeThemeStorage()
   const sync = () => {
     applyDocumentLocale(document.documentElement, readLocalePreference(storage))

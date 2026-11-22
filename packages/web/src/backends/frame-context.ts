@@ -1,7 +1,10 @@
 import { cloudFailureCode } from './cloud-errors.js'
 import type { BackendCommand } from './frame-contract.js'
-export type BackendFrameContext = { remote?: string; parentOrigin: string }
-/** Each backend keeps its own Window, SDK connection, plugin runtime and request routing. */
+import { dispatchDiagnosticBackendRoute, dispatchWorkbenchSelect } from './local-workbench-bus.js'
+
+export type BackendFrameContext = { remote: string; parentOrigin: string }
+
+/** Only the isolated Cloud B iframe runs inside a child frame; Local A runs natively at top level. */
 export function backendFrame(): BackendFrameContext | undefined {
   if (typeof window === 'undefined' || window.parent === window) return undefined
   const meta = document.querySelector<HTMLMetaElement>('meta#agnes-config')
@@ -10,9 +13,9 @@ export function backendFrame(): BackendFrameContext | undefined {
   try {
     const frame = window.frameElement
     const remote = frame?.getAttribute('data-backend-origin')
-    if (frame?.getAttribute('data-agh-backend-frame') === '1')
+    if (frame?.getAttribute('data-agh-backend-frame') === '1' && remote)
       return {
-        ...(remote ? { remote } : {}),
+        remote,
         parentOrigin: location.origin,
       }
   } catch {
@@ -44,7 +47,15 @@ export function requestLocalManagement(
   command: Extract<BackendCommand, { kind: 'home' | 'settings' }>,
 ): boolean {
   const context = backendFrame()
-  if (!context?.remote) return false
+  if (!context) {
+    if (
+      typeof document !== 'undefined' &&
+      document.body?.dataset.aghActiveBackend === 'cloud' &&
+      !(command.kind === 'settings' && command.section.split('/')[0] === 'diagnostics')
+    )
+      dispatchWorkbenchSelect('local')
+    return false
+  }
   if (command.kind === 'settings' && command.section.split('/')[0] === 'diagnostics') return false
   window.parent.postMessage(
     { type: 'agh.backend.frame/v1', kind: 'local-management', command },
@@ -68,20 +79,14 @@ export function cloudFrameOrigin(): string {
   return url.origin
 }
 
-/** Ask the workbench to choose diagnostics before the local settings page starts reading A. */
+/** Ask the workbench to route diagnostics to Cloud B when Cloud is the active diagnostic target. */
 export function requestDiagnosticBackend(section: unknown): boolean {
-  const context = backendFrame()
   if (
-    !context ||
-    context.remote ||
+    backendFrame() ||
     typeof section !== 'string' ||
     section.length > 128 ||
     section.split('/')[0] !== 'diagnostics'
   )
     return false
-  window.parent.postMessage(
-    { type: 'agh.backend.frame/v1', kind: 'local-management', command: { kind: 'settings', section } },
-    context.parentOrigin,
-  )
-  return true
+  return dispatchDiagnosticBackendRoute(section)
 }

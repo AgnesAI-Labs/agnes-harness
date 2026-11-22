@@ -1,33 +1,24 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { SESSION_SEARCH_EVENT } from '../regions/session-tools.js'
 import { backendFrame } from './frame-context.js'
+import type { BackendCommand, BackendId } from './frame-contract.js'
 import {
-  BACKEND_FRAME_COMMAND,
-  BACKEND_FRAME_MESSAGE,
-  type BackendCommand,
-  type BackendId,
-  type BackendSnapshot,
-} from './frame-contract.js'
+  dispatchWorkbenchCommand,
+  dispatchWorkbenchSelect,
+  localSidebarProjection,
+  type SidebarProjection,
+} from './local-workbench-bus.js'
 
-type Projection = { active: BackendId; cloud?: string; states: Partial<Record<BackendId, BackendSnapshot>> }
-/** The renderer is a vendor export: subscribe in the component, never a private cross-bundle singleton. */
-export function useSidebarProjection(): Projection | undefined {
-  const [projection, setProjection] = useState<Projection>()
-  useEffect(() => {
-    const context = backendFrame()
-    if (!context || context.remote) return
-    const receive = (event: MessageEvent) => {
-      if (
-        event.source === window.parent &&
-        event.origin === context.parentOrigin &&
-        event.data?.type === BACKEND_FRAME_MESSAGE &&
-        event.data.kind === 'sidebar-projection'
-      )
-        setProjection(event.data.projection)
-    }
-    window.addEventListener('message', receive)
-    return () => window.removeEventListener('message', receive)
-  }, [])
+const subscribeEmpty = () => () => {}
+const readEmpty = (): SidebarProjection | undefined => undefined
+
+/** Subscribe in the component through the local workbench store; Cloud frames hide their own sidebar. */
+export function useSidebarProjection(): SidebarProjection | undefined {
+  const remote = Boolean(backendFrame())
+  const projection = useSyncExternalStore(
+    remote ? subscribeEmpty : localSidebarProjection.subscribe,
+    remote ? readEmpty : localSidebarProjection.read,
+  )
   useEffect(() => {
     if (projection?.active !== 'cloud') return
     const redirect = (event: Event) => {
@@ -42,41 +33,12 @@ export function useSidebarProjection(): Projection | undefined {
 }
 
 export function sidebarCommand(backend: BackendId, command: BackendCommand): void {
-  const context = backendFrame()
-  if (!context || context.remote) return
-  window.parent.postMessage(
-    {
-      type: BACKEND_FRAME_MESSAGE,
-      kind: 'sidebar-command',
-      backend,
-      command: { type: BACKEND_FRAME_COMMAND, ...command },
-    },
-    context.parentOrigin,
-  )
+  if (backendFrame()) return
+  dispatchWorkbenchCommand(backend, command)
 }
 
-/** Select an existing view without creating a session or rebuilding either frame. */
+/** Select an existing view without creating a session or rebuilding the cloud frame. */
 export function selectSidebarBackend(backend: BackendId): void {
-  const context = backendFrame()
-  if (!context || context.remote) return
-  window.parent.postMessage(
-    { type: BACKEND_FRAME_MESSAGE, kind: 'sidebar-select', backend },
-    context.parentOrigin,
-  )
-}
-
-export function publishSidebarLayout(): void {
-  const context = backendFrame()
-  if (!context || context.remote) return
-  const mobile = matchMedia('(max-width: 900px)').matches
-  const right = mobile ? 0 : (document.querySelector('.sidebar')?.getBoundingClientRect().right ?? 0)
-  window.parent.postMessage(
-    {
-      type: BACKEND_FRAME_MESSAGE,
-      kind: 'sidebar-layout',
-      right: Math.max(0, right),
-      open: document.body.classList.contains('sidebar-open'),
-    },
-    context.parentOrigin,
-  )
+  if (backendFrame()) return
+  dispatchWorkbenchSelect(backend, { keepSidebar: true })
 }

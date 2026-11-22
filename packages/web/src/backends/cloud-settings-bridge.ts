@@ -1,9 +1,9 @@
 import { remoteFrontendOrigin } from '@agnes/protocol'
-import { CREDENTIALS_CHANGED, cloudCredentialUsage } from '@agnes/resource-control-web/credentials-api'
+import { CREDENTIALS_CHANGED } from '@agnes/resource-control-web/credentials-api'
 import { bumpCloudCredentialGeneration } from './cloud-key.js'
 import { backendFrame } from './frame-context.js'
 import { BACKEND_FRAME_MESSAGE } from './frame-contract.js'
-import type { CloudConnectionState } from './workbench-state.js'
+import { dispatchWorkbenchCloudAction, localCloudSettings } from './local-workbench-bus.js'
 
 export const CLOUD_SETTINGS_SECTION = 'cloud-connection'
 export type CloudConnectionAction =
@@ -14,7 +14,7 @@ export type CloudConnectionAction =
   | { action: 'manage-credentials' }
   | { action: 'credential-replaced'; credentialRef: string; generation?: string }
 
-const credentialReference = (value: unknown): value is string =>
+export const credentialReference = (value: unknown): value is string =>
   typeof value === 'string' && /^secret:\/\/generic\/[a-f0-9-]{36}$/u.test(value)
 
 export function cloudConnectionAction(value: unknown): CloudConnectionAction | undefined {
@@ -55,83 +55,27 @@ export function cloudConnectionAction(value: unknown): CloudConnectionAction | u
   }
 }
 
-let state: CloudConnectionState = { status: 'unconfigured' }
-const listeners = new Set<() => void>()
 export const cloudSettingsState = {
-  read: () => state,
-  subscribe(listener: () => void) {
-    listeners.add(listener)
-    return () => listeners.delete(listener)
-  },
+  read: () => localCloudSettings.read(),
+  subscribe: (listener: () => void) => localCloudSettings.subscribe(listener),
 }
 
 export function installCloudSettingsProjection(): () => void {
-  if (!backendFrame() || backendFrame()?.remote) return () => {}
+  if (backendFrame()) return () => {}
   const replaced = (event: Event) => {
     const detail = (event as CustomEvent<{ mode?: unknown; id?: unknown }>).detail
     if (detail?.mode !== 'replace' || !credentialReference(detail.id)) return
     const generation = bumpCloudCredentialGeneration(detail.id)
-    if (detail.id !== state.credentialRef) return
+    if (detail.id !== localCloudSettings.read().credentialRef) return
     requestCloudConnection({ action: 'credential-replaced', credentialRef: detail.id, generation })
   }
-  const receive = (event: MessageEvent) => {
-    if (event.source !== window.parent || event.origin !== location.origin) return
-    const value = event.data
-    if (value?.type !== BACKEND_FRAME_MESSAGE || value.kind !== 'cloud-state') return
-    const next = value.state
-    if (
-      !next ||
-      !['unconfigured', 'connecting', 'ready', 'disconnected', 'error'].includes(next.status) ||
-      (next.error !== undefined && (typeof next.error !== 'string' || next.error.length > 4096)) ||
-      (next.credentialRef !== undefined && !credentialReference(next.credentialRef)) ||
-      (next.credentialError !== undefined && typeof next.credentialError !== 'boolean') ||
-      (next.credentialOptions !== undefined &&
-        (!Array.isArray(next.credentialOptions) ||
-          next.credentialOptions.length > 4096 ||
-          next.credentialOptions.some(
-            (item: { id?: unknown; label?: unknown } | null) =>
-              !item ||
-              !credentialReference(item.id) ||
-              typeof item.label !== 'string' ||
-              item.label.length > 128,
-          )))
-    )
-      return
-    try {
-      const origin = next.origin === undefined ? undefined : remoteFrontendOrigin(next.origin)
-      if (['ready', 'disconnected'].includes(next.status) && !origin) return
-      state = {
-        status: next.status,
-        ...(origin ? { origin } : {}),
-        ...(next.error ? { error: next.error } : {}),
-        ...(next.credentialRef ? { credentialRef: next.credentialRef } : {}),
-        ...(next.credentialOptions
-          ? {
-              credentialOptions: next.credentialOptions.map((item: { id: string; label: string }) => ({
-                id: item.id,
-                label: item.label,
-              })),
-            }
-          : {}),
-        ...(typeof next.credentialError === 'boolean' ? { credentialError: next.credentialError } : {}),
-      }
-      cloudCredentialUsage.set(state.credentialRef)
-      for (const listener of listeners) listener()
-    } catch {}
-  }
-  window.addEventListener('message', receive)
   window.addEventListener(CREDENTIALS_CHANGED, replaced)
   return () => {
-    window.removeEventListener('message', receive)
     window.removeEventListener(CREDENTIALS_CHANGED, replaced)
-    cloudCredentialUsage.set(undefined)
+    localCloudSettings.reset()
   }
 }
 
 export function requestCloudConnection(action: CloudConnectionAction): void {
-  if (backendFrame() && !backendFrame()?.remote)
-    window.parent.postMessage(
-      { type: BACKEND_FRAME_MESSAGE, kind: 'cloud-action', ...action },
-      location.origin,
-    )
+  if (!backendFrame()) dispatchWorkbenchCloudAction(action)
 }

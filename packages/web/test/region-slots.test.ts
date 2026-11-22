@@ -7,6 +7,7 @@ import { getByRole } from '@testing-library/dom'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as frameContext from '../src/backends/frame-context.js'
+import { localSidebarProjection, registerWorkbenchController } from '../src/backends/local-workbench-bus.js'
 import {
   APPROVAL_SLOT,
   CONVERSATION_SLOT,
@@ -279,20 +280,17 @@ describe('migrated sidebar region', () => {
   })
 
   it('declares and renders the first DSH sidebar child slots without replacing the shell', async () => {
-    vi.spyOn(frameContext, 'backendFrame').mockReturnValue({ parentOrigin: location.origin })
+    vi.spyOn(frameContext, 'backendFrame').mockReturnValue(undefined)
     const project = (active: 'local' | 'cloud') =>
-      window.dispatchEvent(
-        new MessageEvent('message', {
-          source: window.parent,
-          origin: location.origin,
-          data: {
-            type: 'agh.backend.frame/v1',
-            kind: 'sidebar-projection',
-            projection: { active, cloud: 'https://cloud.test', states: {} },
-          },
-        }),
-      )
-    const messages = vi.spyOn(window.parent, 'postMessage').mockImplementation(() => {})
+      localSidebarProjection.publish({ active, cloud: 'https://cloud.test', states: {} })
+    const events: Record<string, unknown>[] = []
+    const unregister = registerWorkbenchController({
+      select: (backend) => events.push({ kind: 'sidebar-select', backend }),
+      command: (backend, command) => events.push({ kind: 'sidebar-command', backend, command }),
+      cloudAction: () => {},
+      routeDiagnostics: () => false,
+      localSnapshot: () => {},
+    })
     const slots = await registry()
     const sidebar = document.createElement('aside')
     sidebar.className = 'sidebar'
@@ -314,42 +312,47 @@ describe('migrated sidebar region', () => {
       ),
     )
 
-    const remove = slots.register(
-      { name: 'sidebar.footer.action', id: 'fixture-footer-action', owner: 'fixture' },
-      () => createElement('button', { id: 'fixture-sidebar-action', type: 'button' }, '扩展动作'),
-    )
-    project('cloud')
-    await vi.waitFor(() => {
-      expect(sidebar.querySelector('#new')).toBeTruthy()
-      expect(sidebar.querySelector('#fixture-sidebar-action')?.textContent).toBe('扩展动作')
-      expect(getByRole(sidebar, 'tab', { name: /Local|本地/ })).toBeTruthy()
-      expect(getByRole(sidebar, 'tab', { name: /Cloud|云端/ }).getAttribute('aria-selected')).toBe('true')
-      expect(sidebar.querySelector('[data-testid=backend-group-cloud]')).toBeTruthy()
-      expect(sidebar.querySelector('#fixture-sidebar-action')?.closest('.sidebar-footer')).toBeTruthy()
-      expect(slots.entriesByOwner('fixture').map((entry) => entry.name)).toEqual(['sidebar.footer.action'])
-    }, committed)
-    remove()
-    sidebar.querySelector<HTMLButtonElement>('#settings')?.click()
-    expect(messages.mock.calls.at(-1)?.[0]).toMatchObject({
-      kind: 'sidebar-command',
-      backend: 'local',
-      command: { kind: 'settings', section: 'model' },
-    })
-    sidebar.querySelector<HTMLButtonElement>('#new')?.click()
-    expect(messages.mock.calls.at(-1)?.[0]).toMatchObject({
-      kind: 'sidebar-command',
-      backend: 'cloud',
-      command: { kind: 'new' },
-    })
-    getByRole(sidebar, 'tab', { name: /Local|本地/ }).click()
-    expect(messages.mock.calls.at(-1)?.[0]).toMatchObject({ kind: 'sidebar-select', backend: 'local' })
-    project('local')
-    await vi.waitFor(() => {
-      const panel = getByRole(sidebar, 'tabpanel')
-      expect(panel.querySelector('.backend-session-native')).toBeTruthy()
-      expect(panel.querySelector('[data-section="workspaces"]')).toBeTruthy()
-      expect(sidebar.querySelector('.sidebar-section-heading')).toBeNull()
-    }, committed)
+    try {
+      const remove = slots.register(
+        { name: 'sidebar.footer.action', id: 'fixture-footer-action', owner: 'fixture' },
+        () => createElement('button', { id: 'fixture-sidebar-action', type: 'button' }, '扩展动作'),
+      )
+      project('cloud')
+      await vi.waitFor(() => {
+        expect(sidebar.querySelector('#new')).toBeTruthy()
+        expect(sidebar.querySelector('#fixture-sidebar-action')?.textContent).toBe('扩展动作')
+        expect(getByRole(sidebar, 'tab', { name: /Local|本地/ })).toBeTruthy()
+        expect(getByRole(sidebar, 'tab', { name: /Cloud|云端/ }).getAttribute('aria-selected')).toBe('true')
+        expect(sidebar.querySelector('[data-testid=backend-group-cloud]')).toBeTruthy()
+        expect(sidebar.querySelector('#fixture-sidebar-action')?.closest('.sidebar-footer')).toBeTruthy()
+        expect(slots.entriesByOwner('fixture').map((entry) => entry.name)).toEqual(['sidebar.footer.action'])
+      }, committed)
+      remove()
+      sidebar.querySelector<HTMLButtonElement>('#settings')?.click()
+      expect(events.at(-1)).toMatchObject({
+        kind: 'sidebar-command',
+        backend: 'local',
+        command: { kind: 'settings', section: 'model' },
+      })
+      sidebar.querySelector<HTMLButtonElement>('#new')?.click()
+      expect(events.at(-1)).toMatchObject({
+        kind: 'sidebar-command',
+        backend: 'cloud',
+        command: { kind: 'new' },
+      })
+      getByRole(sidebar, 'tab', { name: /Local|本地/ }).click()
+      expect(events.at(-1)).toMatchObject({ kind: 'sidebar-select', backend: 'local' })
+      project('local')
+      await vi.waitFor(() => {
+        const panel = getByRole(sidebar, 'tabpanel')
+        expect(panel.querySelector('.backend-session-native')).toBeTruthy()
+        expect(panel.querySelector('[data-section="workspaces"]')).toBeTruthy()
+        expect(sidebar.querySelector('.sidebar-section-heading')).toBeNull()
+      }, committed)
+    } finally {
+      unregister()
+      localSidebarProjection.publish(undefined)
+    }
   })
 
   it('keeps the workspace directory flow as a nested DSH outlet', async () => {

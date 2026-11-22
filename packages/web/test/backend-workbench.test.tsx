@@ -6,39 +6,80 @@ import { CREDENTIALS_CHANGED, cloudCredentialUsage } from '@agnes/resource-contr
 import type { Client } from '@agnes/sdk/browser'
 import type { SettingsController } from '@agnes/web-admin/settings'
 import { SlotRegistry, settingsSections } from '@agnes/web-client'
-import { mountApplication, unmountApplication } from '@agnes/web-ui'
+import {
+  createConfirmController,
+  createRegionRenderer,
+  mountApplication,
+  unmountApplication,
+} from '@agnes/web-ui'
 import { getByRole, queryByRole } from '@testing-library/dom'
 import type { Window as HappyWindow } from 'happy-dom'
-import { act, useState } from 'react'
+import { act, useState, useSyncExternalStore } from 'react'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import { RemoteFrontendFailure } from '../src/backend-selector.js'
 import { CloudConnectionSettings } from '../src/backends/cloud-connection-settings.js'
 import { cloudFailureText } from '../src/backends/cloud-errors.js'
 import { applyCloudFrameAppearance } from '../src/backends/cloud-frame-appearance.js'
 import { installCloudFrameAuthorization } from '../src/backends/cloud-frame-authorization.js'
-import { bindCloudCredential } from '../src/backends/cloud-key.js'
+import {
+  bindCloudCredential,
+  bumpCloudCredentialGeneration,
+  CLOUD_CREDENTIAL_GENERATION_PREFIX,
+  forgetCloudCredential,
+  readCloudCredentialGeneration,
+  readCloudCredentialRef,
+  subscribeCloudCredentialReplacement,
+} from '../src/backends/cloud-key.js'
 import { watchCloudOrigin } from '../src/backends/cloud-recovery.js'
 import {
   type CloudConnectionAction,
   cloudConnectionAction,
+  cloudSettingsState,
   installCloudSettingsProjection,
+  requestCloudConnection,
 } from '../src/backends/cloud-settings-bridge.js'
 import { installBackendFrameBridge } from '../src/backends/frame-bridge.js'
 import * as frameContext from '../src/backends/frame-context.js'
 import {
+  type BackendCommand,
   type BackendSnapshot,
   backendCommand,
   backendSnapshot,
   commandBackend,
   localManagementCommand,
 } from '../src/backends/frame-contract.js'
-import { routeLocalSettings } from '../src/backends/local-management.js'
+import { createLocalManagementSettings, routeLocalSettings } from '../src/backends/local-management.js'
 import { localWorkbenchRoute, skillsWorkspaceId } from '../src/backends/local-route.js'
+import {
+  consumeWorkbenchBoot,
+  executeLocalBackendCommand,
+  localCloudSettings,
+  localSidebarProjection,
+  prepareLocalWorkbenchBoot,
+  publishLocalBackendSnapshot,
+  readCurrentLocalRoute,
+  registerLocalCommandExecutor,
+  registerWorkbenchController,
+  restoreInitialCloudLocation,
+} from '../src/backends/local-workbench-bus.js'
+import { selectSidebarBackend, sidebarCommand } from '../src/backends/sidebar-projection.js'
 import { mountBackendWorkbench } from '../src/backends/workbench.js'
 import { BackendSessionGroups } from '../src/backends/workbench-groups.js'
 import { workbenchCatalog } from '../src/backends/workbench-locale.js'
-import { initialWorkbench, workbenchAddress } from '../src/backends/workbench-state.js'
+import {
+  type CloudConnectionState,
+  initialWorkbench,
+  workbenchAddress,
+} from '../src/backends/workbench-state.js'
 import type { SettingsRegionMount } from '../src/regions/settings.js'
+import { authorizeRemoteFrontend, discoverCloudOrigin } from '../src/remote-authorization.js'
+import {
+  applySettingsSectionRoute,
+  clearSettingsLink,
+  consumeSettingsLink,
+  isDeferredCloudSettings,
+  redirectFrameSettingsLink,
+} from '../src/settings-redirects.js'
 
 let dispose: (() => void) | undefined
 beforeAll(() => vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true))
@@ -72,44 +113,37 @@ it('delegates clipboard access only to the configured cloud frame while retainin
       'allow-scripts allow-same-origin allow-forms allow-downloads allow-popups',
     )
     expect(new URL(cloud?.src ?? '').origin).toBe(meta.dataset.cloudOrigin)
-    expect(local?.hasAttribute('allow')).toBe(false)
+    expect(local).toBeNull()
   } finally {
     await act(async () => unmountApplication(document))
-    delete document.body.dataset.aghBackendWorkbench
     meta.remove()
     settings.disableIframePageLoading = previousIframeLoading
     vi.stubGlobal('location', new URL(previousLocation))
   }
 })
 
-it('projects browser credential usage only from the local parent and clears it on disconnect or disposal', () => {
-  const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue({ parentOrigin: location.origin })
+it('projects browser credential usage only from in-process local settings and ignores cross-window messages', () => {
+  const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue(undefined)
   const ref = 'secret://generic/11111111-1111-1111-1111-111111111111'
   const off = installCloudSettingsProjection()
-  const message = (origin: string, credentialRef?: string) =>
+  try {
     window.dispatchEvent(
       new MessageEvent('message', {
-        source: window.parent,
-        origin,
+        source: window,
+        origin: 'https://untrusted.test',
         data: {
           type: 'agh.backend.frame/v1',
           kind: 'cloud-state',
-          state: credentialRef
-            ? { status: 'ready', origin: 'https://cloud.test', credentialRef }
-            : { status: 'unconfigured' },
+          state: { status: 'ready', origin: 'https://cloud.test', credentialRef: ref },
         },
       }),
     )
-  try {
-    message('https://untrusted.test', ref)
     expect(cloudCredentialUsage.read()).toBeUndefined()
-    message(location.origin, ref)
+    localCloudSettings.publish({ status: 'ready', origin: 'https://cloud.test', credentialRef: ref })
     expect(cloudCredentialUsage.read()).toBe(ref)
-    message(location.origin, 'invalid-ref')
-    expect(cloudCredentialUsage.read()).toBe(ref)
-    message(location.origin)
+    localCloudSettings.publish({ status: 'unconfigured' })
     expect(cloudCredentialUsage.read()).toBeUndefined()
-    message(location.origin, ref)
+    localCloudSettings.publish({ status: 'ready', origin: 'https://cloud.test', credentialRef: ref })
   } finally {
     off()
     frame.mockRestore()
@@ -118,55 +152,43 @@ it('projects browser credential usage only from the local parent and clears it o
 })
 
 it('relays only confirmed replacement of the selected local cloud credential and removes its listener', () => {
-  const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue({ parentOrigin: location.origin })
-  const post = vi.spyOn(window.parent, 'postMessage').mockImplementation(() => {})
+  const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue(undefined)
+  const actions: CloudConnectionAction[] = []
+  const unregister = registerWorkbenchController({
+    select: () => {},
+    command: () => {},
+    cloudAction: (action) => actions.push(action),
+    routeDiagnostics: () => false,
+    localSnapshot: () => {},
+  })
   const ref = 'secret://generic/11111111-1111-1111-1111-111111111111'
   const off = installCloudSettingsProjection()
   const changed = (id: string, mode = 'replace') =>
     window.dispatchEvent(new CustomEvent(CREDENTIALS_CHANGED, { detail: { id, mode } }))
   try {
-    window.dispatchEvent(
-      new MessageEvent('message', {
-        source: window.parent,
-        origin: location.origin,
-        data: {
-          type: 'agh.backend.frame/v1',
-          kind: 'cloud-state',
-          state: { status: 'ready', origin: 'https://cloud.test', credentialRef: ref },
-        },
-      }),
-    )
+    localCloudSettings.publish({ status: 'ready', origin: 'https://cloud.test', credentialRef: ref })
     window.dispatchEvent(new Event(CREDENTIALS_CHANGED))
     changed(ref, 'create')
     changed(ref, 'rename')
     changed(ref, 'delete')
     changed('secret://generic/22222222-2222-2222-2222-222222222222')
-    expect(post).not.toHaveBeenCalled()
+    expect(actions).toEqual([])
     changed(ref)
-    expect(post.mock.calls).toEqual([
-      [
-        {
-          type: 'agh.backend.frame/v1',
-          kind: 'cloud-action',
-          action: 'credential-replaced',
-          credentialRef: ref,
-          generation: expect.any(String),
-        },
-        location.origin,
-      ],
+    expect(actions).toEqual([
+      { action: 'credential-replaced', credentialRef: ref, generation: expect.any(String) },
     ])
     off()
     changed(ref)
-    expect(post).toHaveBeenCalledOnce()
+    expect(actions).toHaveLength(1)
     frame.mockReturnValue({ parentOrigin: location.origin, remote: 'https://cloud.test' })
     const remoteOff = installCloudSettingsProjection()
     changed(ref)
     remoteOff()
-    expect(post).toHaveBeenCalledOnce()
+    expect(actions).toHaveLength(1)
   } finally {
     off()
+    unregister()
     frame.mockRestore()
-    post.mockRestore()
   }
 })
 
@@ -414,7 +436,9 @@ it('connects by credential without exposing sandbox addresses and rejects unsafe
 })
 
 it('shows only recovery guidance when a cloud page cannot start, keeping address inputs in settings', async () => {
-  const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue({ parentOrigin: location.origin })
+  const frame = vi
+    .spyOn(frameContext, 'backendFrame')
+    .mockReturnValue({ parentOrigin: location.origin, remote: 'https://cloud.test' })
   const host = document.createElement('div')
   document.body.append(host)
   try {
@@ -627,6 +651,12 @@ it('authorizes only the configured cloud from its exact frame, ignoring sender-s
     const reply = post.mock.calls.at(-1)?.[0]
     expect(reply).toMatchObject({ kind: 'authorization', remote, path: remoteFrontendSessionPath(token) })
     expect(JSON.stringify(reply)).not.toContain(credentialRef)
+    post.mockClear()
+    window.dispatchEvent(new CustomEvent('agnes:theme-changed'))
+    expect(post).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'appearance' }),
+      'http://127.0.0.1:4178',
+    )
   } finally {
     stop()
     meta.remove()
@@ -688,33 +718,63 @@ async function diagnosticWorkbench(active: 'local' | 'cloud') {
   document.head.append(meta)
   const host = document.body.appendChild(document.createElement('div'))
   host.id = 'app-root'
+  const localCommands: BackendCommand[] = []
+  const unregisterLocal = registerLocalCommandExecutor((command) => localCommands.push(command))
+  prepareLocalWorkbenchBoot()
   await act(async () => mountBackendWorkbench())
-  const frame = (id: 'local' | 'cloud') => {
+  restoreInitialCloudLocation()
+  expect(host.querySelector('[data-testid="backend-frame-local"]')).toBeNull()
+  const frame = (id: 'cloud') => {
     const node = host.querySelector<HTMLIFrameElement>(`[data-testid="backend-frame-${id}"]`)
     if (!node) throw new Error('fixture backend frame missing')
-    // Happy-DOM disables the child loader; supply only the message port owned by this fixture.
     if (!node.contentWindow) Object.defineProperty(node, 'contentWindow', { value: { postMessage: vi.fn() } })
     return node
   }
-  const message = async (id: 'local' | 'cloud', data: object) => {
-    const source = frame(id)
-    await act(async () =>
-      window.dispatchEvent(
-        new MessageEvent('message', {
-          source: source.contentWindow,
-          origin: new URL(source.src, location.origin).origin,
-          data: { type: 'agh.backend.frame/v1', ...data },
-        }),
-      ),
-    )
+  const message = async (id: 'local' | 'cloud', data: Record<string, unknown>) => {
+    if (id === 'cloud') {
+      const source = frame('cloud')
+      await act(async () =>
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            source: source.contentWindow,
+            origin: new URL(source.src, location.origin).origin,
+            data: { type: 'agh.backend.frame/v1', ...data },
+          }),
+        ),
+      )
+      return
+    }
+    await act(async () => {
+      if (data.kind === 'state' && data.snapshot)
+        publishLocalBackendSnapshot(data.snapshot as BackendSnapshot)
+      else if (data.kind === 'sidebar-select' && (data.backend === 'local' || data.backend === 'cloud'))
+        selectSidebarBackend(data.backend)
+      else if (data.kind === 'sidebar-command' && (data.backend === 'local' || data.backend === 'cloud')) {
+        const command = backendCommand(data.command)
+        if (command) sidebarCommand(data.backend, command)
+      } else if (data.kind === 'local-route' && typeof data.route === 'string') {
+        if (data.operation === 'push') history.pushState(history.state, '', data.route)
+        else history.replaceState(history.state, '', data.route)
+      } else if (data.kind === 'cloud-action') {
+        const parsed = cloudConnectionAction({ type: 'agh.backend.frame/v1', ...data })
+        if (parsed) requestCloudConnection(parsed)
+      } else if (data.kind === 'local-management' && data.command) {
+        const command = data.command as { kind?: unknown; section?: unknown }
+        if (command.kind === 'settings' && typeof command.section === 'string') {
+          if (!frameContext.requestDiagnosticBackend(command.section))
+            localCommands.push({ kind: 'settings', section: command.section })
+        }
+      }
+    })
   }
   return {
     remote,
     frame,
+    localCommands,
     message,
     async close() {
+      unregisterLocal()
       await act(async () => unmountApplication(document))
-      delete document.body.dataset.aghBackendWorkbench
       host.remove()
       meta.remove()
       settings.disableIframePageLoading = previousLoading
@@ -744,8 +804,7 @@ it.each([
     await fixture.close()
     fixture = undefined
     fixture = await diagnosticWorkbench('cloud')
-    const local = new URL(fixture.frame('local').src, location.origin)
-    expect(`${local.pathname}${local.search}${local.hash}`).toBe(route)
+    expect(readCurrentLocalRoute()).toBe(route)
     await fixture.message('local', { kind: 'sidebar-select', backend: 'local' })
     expect(push.mock.calls.at(-1)?.[2]).toBe(route)
     expect(saved).toMatchObject({ unrelated: 'retained' })
@@ -815,7 +874,7 @@ it.each(['managed', 'direct', 'local-selected'] as const)(
       await act(async () =>
         window.dispatchEvent(
           new MessageEvent('message', {
-            source: fixture.frame('local').contentWindow,
+            source: window,
             origin: 'https://untrusted.test',
             data: { type: 'agh.backend.frame/v1', ...action },
           }),
@@ -930,24 +989,47 @@ it('renews the current cloud credential after a different connection attempt has
     await fixture.message('local', { kind: 'cloud-action', action: 'connect', credentialRef: rejected })
     expect(fetcher).toHaveBeenCalledOnce()
     const previous = fixture.frame('cloud')
+    let finishSameRef: ((response: Response) => void) | undefined
+    fetcher.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          finishSameRef = resolve
+        }),
+    )
     await fixture.message('local', {
       kind: 'cloud-action',
       action: 'credential-replaced',
       credentialRef: ref,
     })
+    expect(document.querySelector('[data-testid="backend-frame-cloud"]')).toBeNull()
+    await act(async () =>
+      finishSameRef?.(
+        Response.json({
+          items: [
+            {
+              id: ref,
+              label: 'current',
+              kind: 'api-key',
+              createdAt: '2026-11-20T00:00:00Z',
+              references: [],
+            },
+          ],
+        }),
+      ),
+    )
     expect(fetcher).toHaveBeenCalledTimes(2)
     expect(fixture.frame('cloud')).not.toBe(previous)
     expect(new URL(fixture.frame('cloud').src).searchParams.get('session')).toBe('kept-session')
 
-    // Rotating the active credential while a different candidate attempt is still pending recovers the active frame if that candidate fails.
-    let resolvePendingSwitch: ((response: Response) => void) | undefined
+    // Also verify rotation WHILE another attempt is in flight immediately retires the old frame without cancelling the attempt, and reconnects once the failed attempt settles.
+    const activeBeforeFailure = fixture.frame('cloud')
+    let failAttempt: ((response: Response) => void) | undefined
     fetcher.mockImplementationOnce(
       () =>
         new Promise<Response>((resolve) => {
-          resolvePendingSwitch = resolve
+          failAttempt = resolve
         }),
     )
-    const beforeMidAttempt = fixture.frame('cloud')
     await fixture.message('local', { kind: 'cloud-action', action: 'connect', credentialRef: rejected })
     await fixture.message('local', {
       kind: 'cloud-action',
@@ -955,115 +1037,22 @@ it('renews the current cloud credential after a different connection attempt has
       credentialRef: ref,
     })
     expect(document.querySelector('[data-testid="backend-frame-cloud"]')).toBeNull()
-    await act(async () =>
-      resolvePendingSwitch?.(
-        Response.json({
-          items: [
-            {
-              id: ref,
-              label: 'current',
-              kind: 'api-key',
-              createdAt: '2026-11-20T00:00:00Z',
-              references: [],
-            },
-          ],
-        }),
-      ),
-    )
-    const recoveredFrame = fixture.frame('cloud')
-    expect(recoveredFrame).not.toBe(beforeMidAttempt)
-    expect(recoveredFrame.dataset.backendOrigin).toBe(fixture.remote)
-    const localPost = vi
-      .spyOn(fixture.frame('local').contentWindow!, 'postMessage')
-      .mockImplementation(() => {})
-    await fixture.message('cloud', {
-      kind: 'state',
-      snapshot: {
-        ready: true,
-        connected: true,
-        more: false,
-        rows: [],
-        activity: [],
-        selected: 'kept-session',
-      },
-    })
-    expect(localPost.mock.calls.findLast(([msg]) => msg?.kind === 'cloud-state')?.[0].state).toMatchObject({
-      status: 'ready',
+    await act(async () => failAttempt?.(Response.json({ items: [] })))
+    expect(fixture.frame('cloud')).not.toBe(activeBeforeFailure)
+    expect(localCloudSettings.read()).toMatchObject({
+      credentialRef: ref,
       error: 'CLOUD_CREDENTIAL_NOT_FOUND',
     })
-    localPost.mockRestore()
 
-    // Peer rotation via StorageEvent retires and renews an observing tab's Cloud frame without a local child message, and deduplicates a racing local-frame message for the same generation.
-    fetcher.mockClear()
-    await act(async () => {
-      localStorage.setItem(`agnes.cloud.credential-gen.v1:${ref}`, 'peer-rotation-gen')
-      window.dispatchEvent(
-        new StorageEvent('storage', {
-          key: `agnes.cloud.credential-gen.v1:${ref}`,
-          newValue: 'peer-rotation-gen',
-        }),
-      )
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
-    const afterPeerFrame = fixture.frame('cloud')
-    expect(afterPeerFrame).not.toBe(recoveredFrame)
-    expect(fetcher).toHaveBeenCalledOnce()
+    // Failed active rotation surfaces the error on the Cloud sidebar instead of leaving it on Connecting.
+    fetcher.mockImplementationOnce(async () => Response.json({ items: [] }))
     await fixture.message('local', {
       kind: 'cloud-action',
       action: 'credential-replaced',
       credentialRef: ref,
-      generation: 'peer-rotation-gen',
-    })
-    expect(fetcher).toHaveBeenCalledOnce()
-    expect(fixture.frame('cloud')).toBe(afterPeerFrame)
-
-    // Peer disconnecting while a peer-rotation refresh is waiting on the credential list does not recreate the binding or shared origin.
-    let resolveDisconnectRaceList: ((response: Response) => void) | undefined
-    fetcher.mockImplementationOnce(
-      () =>
-        new Promise<Response>((resolve) => {
-          resolveDisconnectRaceList = resolve
-        }),
-    )
-    await act(async () => {
-      localStorage.setItem(`agnes.cloud.credential-gen.v1:${ref}`, 'peer-rotation-race')
-      window.dispatchEvent(
-        new StorageEvent('storage', {
-          key: `agnes.cloud.credential-gen.v1:${ref}`,
-          newValue: 'peer-rotation-race',
-        }),
-      )
     })
     expect(document.querySelector('[data-testid="backend-frame-cloud"]')).toBeNull()
-    localStorage.removeItem(`agnes.cloud.credential.v1:${fixture.remote}`)
-    localStorage.removeItem('agnes.cloud.origin.v1')
-    await act(async () => {
-      window.dispatchEvent(
-        new StorageEvent('storage', {
-          key: 'agnes.cloud.origin.v1',
-          oldValue: fixture.remote,
-          newValue: null,
-        }),
-      )
-    })
-    await act(async () =>
-      resolveDisconnectRaceList?.(
-        Response.json({
-          items: [
-            {
-              id: ref,
-              label: 'current',
-              kind: 'api-key',
-              createdAt: '2026-11-20T00:00:00Z',
-              references: [],
-            },
-          ],
-        }),
-      ),
-    )
-    expect(localStorage.getItem('agnes.cloud.origin.v1')).toBeNull()
-    expect(localStorage.getItem(`agnes.cloud.credential.v1:${fixture.remote}`)).toBeNull()
-    expect(document.querySelector('[data-testid="backend-frame-cloud"]')).toBeNull()
+    expect(localSidebarProjection.read()?.states.cloud?.error).toBe('CLOUD_CREDENTIAL_NOT_FOUND')
   } finally {
     fetcher.mockRestore()
     await fixture.close()
@@ -1074,9 +1063,7 @@ it.each(['local', 'cloud'] as const)(
   'keeps the diagnostic backend %s and never falls back to A when B is offline',
   async (backend) => {
     const fixture = await diagnosticWorkbench(backend)
-    const local = fixture.frame('local'),
-      cloud = fixture.frame('cloud')
-    const localPost = vi.spyOn(local.contentWindow!, 'postMessage')
+    const cloud = fixture.frame('cloud')
     const cloudPost = vi.spyOn(cloud.contentWindow!, 'postMessage')
     const snapshot = {
       ready: true,
@@ -1089,17 +1076,12 @@ it.each(['local', 'cloud'] as const)(
     try {
       await fixture.message('local', { kind: 'state', snapshot })
       await fixture.message('cloud', { kind: 'state', snapshot })
-      // Settings is administered on A, but diagnostics still belong to the selected execution host.
       await fixture.message('local', {
         kind: 'sidebar-command',
         backend,
         command: { type: 'agh.backend.command/v1', kind: 'settings', section: 'model' },
       })
-      const pending = localPost.mock.calls
-        .map(([value]) => value)
-        .findLast((value) => value.kind === 'settings')
-      if (pending) await fixture.message('local', { kind: 'ack', commandId: pending.commandId })
-      localPost.mockClear()
+      fixture.localCommands.length = 0
       cloudPost.mockClear()
       await fixture.message('local', {
         kind: 'local-route',
@@ -1113,46 +1095,41 @@ it.each(['local', 'cloud'] as const)(
           ),
         ).toBe(true)
         expect(
-          localPost.mock.calls.some(
-            ([value]) => value.kind === 'settings' && value.section.startsWith('diagnostics'),
+          fixture.localCommands.some(
+            (value) => value.kind === 'settings' && value.section.startsWith('diagnostics'),
           ),
         ).toBe(false)
         await fixture.message('cloud', {
           kind: 'state',
           snapshot: { ...snapshot, connected: false, ready: false },
         })
-        localPost.mockClear()
+        fixture.localCommands.length = 0
         await fixture.message('local', {
           kind: 'local-management',
           command: { type: 'agh.backend.command/v1', kind: 'settings', section: 'diagnostics' },
         })
         expect(fixture.frame('cloud').hidden).toBe(false)
         expect(
-          localPost.mock.calls.some(
-            ([value]) => value.kind === 'settings' && value.section === 'diagnostics',
-          ),
+          fixture.localCommands.some((value) => value.kind === 'settings' && value.section === 'diagnostics'),
         ).toBe(false)
         // A late B snapshot must not reclaim the user's newly selected local target.
         await fixture.message('local', { kind: 'sidebar-select', backend: 'local' })
         await fixture.message('cloud', { kind: 'state', snapshot })
         expect(fixture.frame('cloud').hidden).toBe(true)
-        localPost.mockClear()
+        fixture.localCommands.length = 0
         cloudPost.mockClear()
         await fixture.message('local', {
           kind: 'local-management',
           command: { kind: 'settings', section: 'diagnostics' },
         })
         expect(
-          localPost.mock.calls.some(
-            ([value]) => value.kind === 'settings' && value.section === 'diagnostics',
-          ),
+          fixture.localCommands.some((value) => value.kind === 'settings' && value.section === 'diagnostics'),
         ).toBe(true)
         expect(cloudPost.mock.calls.some(([value]) => value.kind === 'settings')).toBe(false)
       } else expect(cloudPost.mock.calls.some(([value]) => value.kind === 'settings')).toBe(false)
       expect(commandBackend(backend, { kind: 'settings', section: 'diagnostics' })).toBe(backend)
       expect(commandBackend(backend, { kind: 'settings', section: 'model' })).toBe('local')
     } finally {
-      localPost.mockRestore()
       cloudPost.mockRestore()
       await fixture.close()
     }
@@ -1325,30 +1302,35 @@ it('passes the diagnostic backend section through the existing settings controll
   }
 })
 
-it.each(['local', 'cloud', 'native'] as const)(
-  'chooses the diagnostic backend before reading settings in a %s frame',
+it.each(['cloud-selected', 'cloud', 'local-selected'] as const)(
+  'chooses the diagnostic backend before reading settings (%s)',
   async (mode) => {
     const post = vi.fn()
+    const routed: string[] = []
+    const unregister = registerWorkbenchController({
+      select: () => {},
+      command: () => {},
+      cloudAction: () => {},
+      routeDiagnostics: (section) => {
+        if (mode !== 'cloud-selected') return false
+        routed.push(section)
+        return true
+      },
+      localSnapshot: () => {},
+    })
     const parent = vi
       .spyOn(window, 'parent', 'get')
-      .mockReturnValue(mode === 'native' ? window : ({ postMessage: post } as unknown as Window))
+      .mockReturnValue(mode === 'cloud' ? ({ postMessage: post } as unknown as Window) : window)
     const frame = document.createElement('iframe')
     frame.setAttribute('data-agh-backend-frame', '1')
     if (mode === 'cloud') frame.setAttribute('data-backend-origin', 'https://cloud.test')
     const previousElement = Object.getOwnPropertyDescriptor(window, 'frameElement')
-    Object.defineProperty(window, 'frameElement', { value: frame, configurable: true })
+    if (mode === 'cloud') Object.defineProperty(window, 'frameElement', { value: frame, configurable: true })
     let off: (() => void) | undefined
     try {
-      expect(frameContext.requestDiagnosticBackend('diagnostics/errors')).toBe(mode === 'local')
-      if (mode === 'local') {
-        expect(post).toHaveBeenCalledWith(
-          {
-            type: 'agh.backend.frame/v1',
-            kind: 'local-management',
-            command: { kind: 'settings', section: 'diagnostics/errors' },
-          },
-          location.origin,
-        )
+      expect(frameContext.requestDiagnosticBackend('diagnostics/errors')).toBe(mode === 'cloud-selected')
+      if (mode === 'cloud-selected') {
+        expect(routed).toEqual(['diagnostics/errors'])
         const form = document.body.appendChild(document.createElement('form'))
         const localRead = vi.fn()
         form.addEventListener('agnes:settings-route', localRead)
@@ -1358,6 +1340,7 @@ it.each(['local', 'cloud', 'native'] as const)(
           new CustomEvent('agnes:settings-route', { detail: 'diagnostics', bubbles: true, cancelable: true }),
         )
         expect(localRead).not.toHaveBeenCalled()
+        expect(routed).toEqual(['diagnostics/errors', 'diagnostics'])
         off()
         off = undefined
         form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'diagnostics', bubbles: true }))
@@ -1368,6 +1351,7 @@ it.each(['local', 'cloud', 'native'] as const)(
       expect(frameContext.requestLocalManagement({ kind: 'settings', section: 'diagnostics' })).toBe(false)
     } finally {
       off?.()
+      unregister()
       if (previousElement) Object.defineProperty(window, 'frameElement', previousElement)
       else Reflect.deleteProperty(window, 'frameElement')
       parent.mockRestore()
@@ -1376,6 +1360,7 @@ it.each(['local', 'cloud', 'native'] as const)(
 )
 
 it('cancels cloud instance recovery on explicit disconnect and ignores the old instance reply', async () => {
+  const replace = vi.spyOn(history, 'replaceState')
   const fixture = await diagnosticWorkbench('cloud')
   vi.useFakeTimers()
   const ref = 'secret://generic/11111111-1111-1111-1111-111111111111'
@@ -1418,8 +1403,31 @@ it('cancels cloud instance recovery on explicit disconnect and ignores the old i
     })
     expect(document.querySelector('[data-testid="backend-frame-cloud"]')).toBeNull()
     expect(localStorage.getItem('agnes.cloud.auto-credential.v1')).toBeNull()
+    expect(readCloudCredentialRef(fixture.remote)).toBeUndefined()
+    const stateSpy = vi
+      .spyOn(history, 'state', 'get')
+      .mockReturnValue({ aghLocalRoute: '/?session=local-kept' })
+    vi.stubGlobal(
+      'location',
+      new URL(`http://127.0.0.1:4177/?remote=${encodeURIComponent(fixture.remote)}&session=kept-session`),
+    )
+    replace.mockClear()
+    await act(async () => {
+      window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }))
+    })
+    stateSpy.mockRestore()
+    expect(replace).toHaveBeenCalledWith(
+      expect.objectContaining({ aghLocalRoute: '/?session=local-kept' }),
+      '',
+      '/?session=local-kept',
+    )
+    expect(fixture.localCommands.at(-1)).toEqual({
+      kind: 'restore-local-route',
+      route: '/?session=local-kept',
+    })
     expect(fetcher).toHaveBeenCalledOnce()
   } finally {
+    replace.mockRestore()
     fetcher.mockRestore()
     await fixture.close()
     vi.useRealTimers()
@@ -1429,13 +1437,19 @@ it('cancels cloud instance recovery on explicit disconnect and ignores the old i
 it.each(['parent', 'button', 'link'] as const)(
   'applies the diagnostic backend %s route before local reads through the real settings region',
   async (mode) => {
-    const post = vi.fn()
-    const source = { postMessage: post } as unknown as Window
-    const parent = vi.spyOn(window, 'parent', 'get').mockReturnValue(source)
-    const frame = document.createElement('iframe')
-    frame.setAttribute('data-agh-backend-frame', '1')
-    const previousElement = Object.getOwnPropertyDescriptor(window, 'frameElement')
-    Object.defineProperty(window, 'frameElement', { value: frame, configurable: true })
+    const routed: string[] = []
+    let interceptCloud = true
+    const unregister = registerWorkbenchController({
+      select: () => {},
+      command: () => {},
+      cloudAction: () => {},
+      routeDiagnostics: (section) => {
+        if (!interceptCloud) return false
+        routed.push(section)
+        return true
+      },
+      localSnapshot: () => {},
+    })
     const fetcher = vi
       .spyOn(globalThis, 'fetch')
       .mockImplementation(async () =>
@@ -1454,7 +1468,6 @@ it.each(['parent', 'button', 'link'] as const)(
       session: { list: async () => ({ items: [] }), activity: async () => ({ items: [] }) },
     } as unknown as Client
     try {
-      // Load the real region after isolating HTTP; its default diagnostics API captures fetch.
       const { mountSettingsPaneRegion } = await import('../src/regions/settings.js')
       await context.plugin(SlotRegistry)
       const registry = (context as unknown as { slots: SlotRegistry }).slots
@@ -1495,27 +1508,16 @@ it.each(['parent', 'button', 'link'] as const)(
         expect(form.dataset.runtimePage).not.toBe('diagnostics')
         expect(fetcher.mock.calls).toHaveLength(pendingReadCount)
         expect(window.location.href).toBe(previousAddress)
-        expect(
-          post.mock.calls.find(([value]) => value.kind === 'local-management')?.[0].command.section,
-        ).toBe(mode === 'link' ? 'diagnostics/errors' : 'diagnostics')
-        expect(post.mock.calls.filter(([value]) => value.kind === 'local-management')).toHaveLength(1)
-        // Account management remains local and does not cause another parent selection.
+        expect(routed).toEqual([mode === 'link' ? 'diagnostics/errors' : 'diagnostics'])
         const account = form.querySelector<HTMLButtonElement>('button[data-settings-section="model"]')
         if (!account) throw new Error('actual account navigation button missing')
         await act(async () => account.click())
         expect(form.dataset.settingsSection).toBe('model')
-        expect(post.mock.calls.filter(([value]) => value.kind === 'local-management')).toHaveLength(1)
-        post.mockClear()
+        expect(routed).toHaveLength(1)
+        routed.length = 0
       }
-      const command = {
-        type: 'agh.backend.command/v1',
-        kind: 'settings',
-        section: 'diagnostics',
-        commandId: crypto.randomUUID(),
-      }
-      await act(async () =>
-        window.dispatchEvent(new MessageEvent('message', { source, origin: location.origin, data: command })),
-      )
+      interceptCloud = false
+      await act(async () => executeLocalBackendCommand({ kind: 'settings', section: 'diagnostics' }))
       expect(open).toHaveBeenCalledOnce()
       expect(applied).toEqual([])
       await act(async () => {
@@ -1524,8 +1526,8 @@ it.each(['parent', 'button', 'link'] as const)(
       })
       expect(applied).toEqual(['diagnostics'])
       expect(region?.form()?.dataset.runtimePage).toBe('diagnostics')
-      expect(post.mock.calls.filter(([value]) => value.kind === 'local-management')).toHaveLength(0)
-      // A subsequent user request still goes to the parent, which can choose B.
+      expect(routed).toHaveLength(0)
+      interceptCloud = true
       await act(async () =>
         region
           ?.form()
@@ -1533,20 +1535,15 @@ it.each(['parent', 'button', 'link'] as const)(
             new CustomEvent('agnes:settings-route', { detail: 'diagnostics/errors', bubbles: true }),
           ),
       )
-      expect(post.mock.calls.filter(([value]) => value.kind === 'local-management')).toHaveLength(1)
-      expect(post.mock.calls.find(([value]) => value.kind === 'local-management')?.[0].command.section).toBe(
-        'diagnostics/errors',
-      )
+      expect(routed).toEqual(['diagnostics/errors'])
       expect(applied).toEqual(['diagnostics'])
     } finally {
       resume?.()
       stop?.()
+      unregister()
       await act(async () => region?.dispose())
       await context.fiber.dispose()
       fetcher.mockRestore()
-      if (previousElement) Object.defineProperty(window, 'frameElement', previousElement)
-      else Reflect.deleteProperty(window, 'frameElement')
-      parent.mockRestore()
     }
   },
 )
@@ -1571,5 +1568,736 @@ it('stops cloud instance recovery during rejected credential backoff after disco
   } finally {
     off()
     vi.useRealTimers()
+  }
+})
+
+it('suspends open local overlay dialogs when switching to cloud without erasing the saved local settings route', async () => {
+  const fixture = await diagnosticWorkbench('local')
+  const overlay = document.body.appendChild(document.createElement('div'))
+  overlay.id = 'agnes-overlay-container'
+  overlay.innerHTML = `
+    <dialog id="config" open></dialog>
+    <dialog id="admin-confirm">
+      <h2 id="admin-confirm-title"></h2>
+      <p id="admin-confirm-description"></p>
+      <div id="admin-confirm-preview"></div>
+      <button id="admin-confirm-cancel" type="button"></button>
+      <button id="admin-confirm-action" type="button"></button>
+    </dialog>
+  `
+  const dialog = overlay.querySelector<HTMLDialogElement>('#config')
+  const confirmDialog = overlay.querySelector<HTMLDialogElement>('#admin-confirm')
+  const confirm = createConfirmController()
+  try {
+    history.pushState(null, '', '/?settings=security')
+    expect(readCurrentLocalRoute()).toBe('/?settings=security')
+    const decision = confirm.ask({ title: 'Enable', description: 'Skill?' })
+    expect(confirmDialog?.open).toBe(true)
+    await act(async () => selectSidebarBackend('cloud'))
+    expect(document.body.dataset.aghActiveBackend).toBe('cloud')
+    expect(dialog?.open).toBe(false)
+    expect(confirmDialog?.open).toBe(false)
+    await expect(decision).resolves.toBe(false)
+    const reopened = confirm.ask({ title: 'Enable again', description: 'MCP?' })
+    confirmDialog?.querySelector<HTMLButtonElement>('#admin-confirm-cancel')?.click()
+    await expect(reopened).resolves.toBe(false)
+    clearSettingsLink()
+    expect(readCurrentLocalRoute()).toBe('/?settings=security')
+  } finally {
+    overlay.remove()
+    await fixture.close()
+  }
+})
+
+it('guards linked account subpages during cloud boot and redirects child frame history traversals', async () => {
+  const previousLocation = location.href
+  let savedState: unknown = { aghLocalRoute: '/?settings=model/add-account' }
+  let currentUrl = new URL('http://127.0.0.1:4177/?remote=https%3A%2F%2Fcloud.test')
+  vi.stubGlobal('location', currentUrl)
+  const stateSpy = vi.spyOn(history, 'state', 'get').mockImplementation(() => savedState)
+  const replaceSpy = vi.spyOn(history, 'replaceState').mockImplementation((value, _unused, url) => {
+    savedState = value
+    if (url != null) {
+      currentUrl = new URL(String(url), currentUrl)
+      vi.stubGlobal('location', currentUrl)
+    }
+  })
+  const post = vi.fn()
+  const parent = vi.spyOn(window, 'parent', 'get').mockReturnValue({ postMessage: post } as unknown as Window)
+  const frame = document.createElement('iframe')
+  frame.setAttribute('data-agh-backend-frame', '1')
+  frame.setAttribute('data-backend-origin', 'https://cloud.test')
+  const previousElement = Object.getOwnPropertyDescriptor(window, 'frameElement')
+  const context = new Context()
+  let region: SettingsRegionMount | undefined
+  try {
+    const boot = prepareLocalWorkbenchBoot()
+    try {
+      expect(location.search).toBe('?settings=model/add-account')
+      expect(isDeferredCloudSettings()).toBe(true)
+      consumeWorkbenchBoot()
+      const { mountSettingsPaneRegion } = await import('../src/regions/settings.js')
+      await context.plugin(SlotRegistry)
+      const registry = (context as unknown as { slots: SlotRegistry }).slots
+      const config = document.body.appendChild(document.createElement('dialog'))
+      config.id = 'config'
+      await act(async () => {
+        region = mountSettingsPaneRegion(registry, config, { sections: settingsSections })
+      })
+      let openedSection = ''
+      const localBootSettings = createLocalManagementSettings({
+        client: {
+          config: {
+            get: async () => ({
+              profile: 'local',
+              revision: 1,
+              configured: true,
+              provider: null,
+              accounts: [],
+              effect: 'new-sessions',
+            }),
+            save: async () => ({
+              profile: 'local',
+              revision: 1,
+              configured: true,
+              provider: null,
+              accounts: [],
+              effect: 'new-sessions',
+            }),
+            test: async () => ({ verified: true, models: [] }),
+            providers: async () => ({ providers: [] }),
+          },
+        } as unknown as Client,
+        onOpen: () => {
+          openedSection = document.getElementById('config-form')?.dataset.settingsSection ?? ''
+        },
+        onSaved: async () => {},
+        onError: () => {},
+      })
+      await act(async () => {
+        await Promise.resolve()
+      })
+      expect(isDeferredCloudSettings()).toBe(true)
+      expect(localBootSettings.isOpen()).toBe(false)
+
+      Object.defineProperty(window, 'frameElement', { value: frame, configurable: true })
+      await act(async () => {
+        await localBootSettings.open('diagnostics')
+      })
+      expect(post).not.toHaveBeenCalled()
+      expect(localBootSettings.isOpen()).toBe(true)
+      expect(openedSection).toBe('diagnostics')
+      localBootSettings.close()
+      Reflect.deleteProperty(window, 'frameElement')
+    } finally {
+      restoreInitialCloudLocation(boot)
+    }
+    expect(location.search).toBe('?remote=https%3A%2F%2Fcloud.test')
+    expect(isDeferredCloudSettings()).toBe(true)
+
+    Object.defineProperty(window, 'frameElement', { value: frame, configurable: true })
+    history.replaceState(null, '', '/?remote=https%3A%2F%2Fcloud.test&settings=model/add-account')
+    expect(redirectFrameSettingsLink()).toBe(true)
+    expect(post).toHaveBeenLastCalledWith(
+      {
+        type: 'agh.backend.frame/v1',
+        kind: 'local-management',
+        command: { kind: 'settings', section: 'model/add-account' },
+      },
+      location.origin,
+    )
+    history.replaceState(null, '', '/?remote=https%3A%2F%2Fcloud.test&settings=model/account&account=acc-1')
+    expect(redirectFrameSettingsLink()).toBe(true)
+    expect(post).toHaveBeenLastCalledWith(
+      {
+        type: 'agh.backend.frame/v1',
+        kind: 'local-management',
+        command: { kind: 'settings', section: 'model' },
+      },
+      location.origin,
+    )
+    expect(new URLSearchParams(location.search).has('settings')).toBe(false)
+    expect(new URLSearchParams(location.search).has('account')).toBe(false)
+
+    Reflect.deleteProperty(window, 'frameElement')
+    history.replaceState(null, '', '/')
+    expect(applySettingsSectionRoute('model/add-account')).toBe('model')
+    expect(location.search).toBe('?settings=model/add-account')
+    expect(cloudFailureText('CLOUD_DISCOVERY_TIMEOUT', 'zh-CN')).toContain('超时')
+  } finally {
+    await act(async () => region?.dispose())
+    document.getElementById('config')?.remove()
+    await context.fiber.dispose()
+    if (previousElement) Object.defineProperty(window, 'frameElement', previousElement)
+    else Reflect.deleteProperty(window, 'frameElement')
+    parent.mockRestore()
+    replaceSpy.mockRestore()
+    stateSpy.mockRestore()
+    vi.stubGlobal('location', new URL(previousLocation))
+  }
+})
+
+it('binds cached capabilities to the active credential across tabs, keeps saved local diagnostics off cloud B during boot, and resets failed credential switches in settings', async () => {
+  const refA = 'secret://generic/11111111-1111-1111-1111-111111111111'
+  const refB = 'secret://generic/22222222-2222-2222-2222-222222222222'
+  const sandbox = 'https://8443-tab-sync.ap-shanghai.tencentags.com'
+  const tokenA = `${(Date.now() + 3600000).toString(36)}.${'a'.repeat(22)}.${'b'.repeat(43)}`
+  const tokenB = `${(Date.now() + 3600000).toString(36)}.${'c'.repeat(22)}.${'d'.repeat(43)}`
+  let calls = 0
+  const authFetch: typeof fetch = async (_input, init) => {
+    calls++
+    const body = JSON.parse(String(init?.body ?? '{}')) as { credentialRef?: string }
+    return Response.json({
+      token: body.credentialRef === refA ? tokenA : tokenB,
+      expiresAt: Date.now() + 3600000,
+      proxied: true,
+      origin: sandbox,
+    })
+  }
+  await discoverCloudOrigin(refA, new AbortController().signal, authFetch)
+  bindCloudCredential(sandbox, refA, [{ id: refA }, { id: refB }])
+  expect(await authorizeRemoteFrontend(sandbox, new AbortController().signal, authFetch)).toContain(tokenA)
+  expect(calls).toBe(1)
+
+  // Another tab rebinding or removing the credential invalidates the cached grant.
+  bindCloudCredential(sandbox, refB, [{ id: refA }, { id: refB }])
+  expect(await authorizeRemoteFrontend(sandbox, new AbortController().signal, authFetch)).toContain(tokenB)
+  expect(calls).toBe(2)
+  forgetCloudCredential(sandbox)
+  await expect(authorizeRemoteFrontend(sandbox, new AbortController().signal, authFetch)).rejects.toThrow(
+    'CLOUD_CREDENTIAL_REQUIRED',
+  )
+
+  // Saved local diagnostics in aghLocalRoute never dispatches a diagnostics command to Cloud B on reload.
+  const previousLocation = location.href
+  const happySettings = (window as unknown as HappyWindow).happyDOM.settings
+  const previousIframe = happySettings.disableIframePageLoading
+  happySettings.disableIframePageLoading = true
+  let saved: unknown = { aghLocalRoute: '/?settings=diagnostics' }
+  let bootUrl = new URL(`http://127.0.0.1:4177/?remote=${encodeURIComponent(sandbox)}&session=c1`)
+  vi.stubGlobal('location', bootUrl)
+  const stateSpy = vi.spyOn(history, 'state', 'get').mockImplementation(() => saved)
+  const replaceSpy = vi.spyOn(history, 'replaceState').mockImplementation((value, _unused, url) => {
+    saved = value
+    if (url != null) {
+      bootUrl = new URL(String(url), bootUrl)
+      vi.stubGlobal('location', bootUrl)
+    }
+  })
+  const meta = document.head.appendChild(document.createElement('meta'))
+  meta.id = 'agnes-config'
+  meta.dataset.cloudOrigin = 'http://127.0.0.1:4178'
+  const bootHost = document.body.appendChild(document.createElement('div'))
+  bootHost.id = 'app-root'
+  try {
+    const boot = prepareLocalWorkbenchBoot()
+    try {
+      await act(async () => mountBackendWorkbench())
+      expect(consumeSettingsLink().id).toBe('diagnostics')
+      history.replaceState(history.state, '', '/?settings=diagnostics')
+    } finally {
+      restoreInitialCloudLocation(boot)
+    }
+    const cloudFrame = bootHost.querySelector<HTMLIFrameElement>('[data-testid="backend-frame-cloud"]')
+    const cloudPost = vi.fn()
+    if (cloudFrame && !cloudFrame.contentWindow)
+      Object.defineProperty(cloudFrame, 'contentWindow', { value: { postMessage: cloudPost } })
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: cloudFrame?.contentWindow ?? null,
+          origin: 'http://127.0.0.1:4178',
+          data: {
+            type: 'agh.backend.frame/v1',
+            kind: 'state',
+            snapshot: { ready: true, connected: true, more: false, rows: [], activity: [], selected: 'c1' },
+          },
+        }),
+      )
+    })
+    expect(cloudPost.mock.calls.some(([msg]) => msg?.kind === 'settings')).toBe(false)
+  } finally {
+    await act(async () => unmountApplication(document))
+    bootHost.remove()
+    meta.remove()
+    happySettings.disableIframePageLoading = previousIframe
+    replaceSpy.mockRestore()
+    stateSpy.mockRestore()
+    vi.stubGlobal('location', new URL(previousLocation))
+  }
+
+  // CloudConnectionSettings resets the selector to the active credential when a switch attempt fails.
+  const host = document.body.appendChild(document.createElement('div'))
+  function Harness() {
+    const [state, setState] = useState<CloudConnectionState>({
+      status: 'ready',
+      origin: sandbox,
+      credentialRef: refA,
+      credentialOptions: [
+        { id: refA, label: 'Deployment A' },
+        { id: refB, label: 'Deployment B' },
+      ],
+    })
+    return (
+      <>
+        <CloudConnectionSettings
+          state={state}
+          onAction={(action) => {
+            if (action.action === 'connect')
+              setState(({ error: _error, ...s }) => ({ ...s, status: 'connecting' }))
+          }}
+        />
+        <button
+          type="button"
+          data-testid="settle-failed-switch"
+          onClick={() => setState((s) => ({ ...s, status: 'ready', error: 'CLOUD_CREDENTIAL_REJECTED' }))}
+        />
+      </>
+    )
+  }
+  await act(async () => mountApplication(host, <Harness />))
+  try {
+    const select = host.querySelector<HTMLSelectElement>('#cloud-service-credential')
+    expect(select?.value).toBe(refA)
+    await act(async () => {
+      if (select) {
+        select.value = refB
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    })
+    expect(select?.value).toBe(refB)
+    await act(async () => getByRole(host, 'button', { name: workbenchCatalog.en.saveConnect }).click())
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="settle-failed-switch"]')?.click(),
+    )
+    expect(select?.value).toBe(refA)
+    expect(getByRole(host, 'alert').textContent).toContain('rejected')
+  } finally {
+    await act(async () => unmountApplication(document))
+    host.remove()
+  }
+
+  // Replacing a secret in one tab (even when another credential is selected there) bumps generation for other tabs andobserver storage events never delete newer shared state.
+  const offProjection = installCloudSettingsProjection()
+  try {
+    bindCloudCredential(sandbox, refA, [{ id: refA }, { id: refB }])
+    expect(await authorizeRemoteFrontend(sandbox, new AbortController().signal, authFetch)).toContain(tokenA)
+    const callsBeforeReplace = calls
+    const beforeGen = readCloudCredentialGeneration(refA)
+    localCloudSettings.publish({ status: 'ready', origin: sandbox, credentialRef: refB })
+    window.dispatchEvent(new CustomEvent(CREDENTIALS_CHANGED, { detail: { mode: 'replace', id: refA } }))
+    const afterGen = readCloudCredentialGeneration(refA)
+    expect(afterGen).not.toBe(beforeGen)
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: `${CLOUD_CREDENTIAL_GENERATION_PREFIX}${refA}`,
+        newValue: afterGen,
+      }),
+    )
+    await authorizeRemoteFrontend(sandbox, new AbortController().signal, authFetch)
+    expect(calls).toBe(callsBeforeReplace + 1)
+  } finally {
+    offProjection()
+    forgetCloudCredential(sandbox)
+    localStorage.clear()
+  }
+
+  // Queued origin-removal StorageEvent reconciles live storage without deleting a newer connection or blocking changed-origin recovery after candidateError.
+  const tabFixture = await diagnosticWorkbench('cloud')
+  const activeRef = 'secret://generic/33333333-3333-3333-3333-333333333333'
+  const candidateRef = 'secret://generic/44444444-4444-4444-4444-444444444444'
+  const migratedOrigin = 'https://8443-migrated.ap-shanghai.tencentags.com'
+  bindCloudCredential(tabFixture.remote, activeRef, [{ id: activeRef }])
+  localStorage.setItem('agnes.cloud.auto-credential.v1', activeRef)
+  let pendingCancel: ((response: Response) => void) | undefined
+  const tabFetch = vi.spyOn(window, 'fetch').mockImplementation(async () =>
+    Response.json({
+      items: [
+        {
+          id: activeRef,
+          label: 'active',
+          kind: 'api-key',
+          createdAt: '2026-11-20T00:00:00Z',
+          references: [],
+        },
+      ],
+    }),
+  )
+  try {
+    await tabFixture.message('cloud', {
+      kind: 'state',
+      snapshot: {
+        ready: true,
+        connected: true,
+        more: false,
+        rows: [],
+        activity: [],
+        selected: 'kept-session',
+      },
+    })
+    await act(async () => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'agnes.cloud.origin.v1', newValue: null }))
+    })
+    expect(localStorage.getItem('agnes.cloud.origin.v1')).toBe(tabFixture.remote)
+    expect(readCloudCredentialRef(tabFixture.remote)).toBe(activeRef)
+    expect(tabFixture.frame('cloud')).toBeTruthy()
+
+    // Unrelated candidate switch failure sets candidateError without setting configurationError, keeping recovery active.
+    await tabFixture.message('local', {
+      kind: 'cloud-action',
+      action: 'connect',
+      credentialRef: candidateRef,
+    })
+    expect(localCloudSettings.read()).toMatchObject({
+      status: 'ready',
+      credentialRef: activeRef,
+      error: 'CLOUD_CREDENTIAL_NOT_FOUND',
+    })
+
+    // Storage cancellation clears connectionIntent so a subsequent active rotation reconnects instead of hanging.
+    tabFetch.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          pendingCancel = resolve
+        }),
+    )
+    await tabFixture.message('local', {
+      kind: 'cloud-action',
+      action: 'connect',
+      credentialRef: candidateRef,
+    })
+    await act(async () => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: `agnes.cloud.credential.v1:${tabFixture.remote}`,
+          newValue: activeRef,
+        }),
+      )
+    })
+    pendingCancel?.(Response.json({ items: [] }))
+    tabFetch.mockImplementationOnce(async () =>
+      Response.json({
+        items: [
+          {
+            id: activeRef,
+            label: 'active',
+            kind: 'api-key',
+            createdAt: '2026-11-20T00:00:00Z',
+            references: [],
+          },
+        ],
+      }),
+    )
+    tabFetch.mockImplementationOnce(async () =>
+      Response.json({
+        token: tokenA,
+        expiresAt: Date.now() + 3600000,
+        proxied: true,
+        origin: migratedOrigin,
+      }),
+    )
+    await tabFixture.message('local', {
+      kind: 'cloud-action',
+      action: 'credential-replaced',
+      credentialRef: activeRef,
+    })
+    expect(new URL(tabFixture.frame('cloud').src).searchParams.get('session')).toBe('kept-session')
+    expect(tabFixture.frame('cloud').dataset.backendOrigin).toBe(migratedOrigin)
+
+    // Same-credential origin migration across tabs preserves the observing tab's selected session.
+    const nextMigrated = 'https://8443-migrated-2.ap-shanghai.tencentags.com'
+    bindCloudCredential(nextMigrated, activeRef, [{ id: activeRef }])
+    localStorage.setItem('agnes.cloud.origin.v1', nextMigrated)
+    await act(async () => {
+      window.dispatchEvent(
+        new StorageEvent('storage', { key: 'agnes.cloud.origin.v1', newValue: nextMigrated }),
+      )
+    })
+    expect(tabFixture.frame('cloud').dataset.backendOrigin).toBe(nextMigrated)
+    expect(new URL(tabFixture.frame('cloud').src).searchParams.get('session')).toBe('kept-session')
+
+    // Quota failure writing generation still invalidates cached capability via in-memory generation.
+    expect(await authorizeRemoteFrontend(nextMigrated, new AbortController().signal, authFetch)).toContain(
+      tokenB,
+    )
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('QuotaExceededError', 'QuotaExceededError')
+    })
+    try {
+      const callsBeforeQuota = calls
+      window.dispatchEvent(
+        new CustomEvent(CREDENTIALS_CHANGED, { detail: { mode: 'replace', id: activeRef } }),
+      )
+      bumpCloudCredentialGeneration(activeRef)
+      await authorizeRemoteFrontend(nextMigrated, new AbortController().signal, authFetch)
+      expect(calls).toBe(callsBeforeQuota + 1)
+    } finally {
+      setItemSpy.mockRestore()
+    }
+
+    // Replacing BOTH active A and candidate B while B's credential list is pending still recovers A on B's generation mismatch.
+    let resolveBothList: ((response: Response) => void) | undefined
+    tabFetch.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveBothList = resolve
+        }),
+    )
+    await tabFixture.message('local', {
+      kind: 'cloud-action',
+      action: 'connect',
+      credentialRef: candidateRef,
+    })
+    await tabFixture.message('local', {
+      kind: 'cloud-action',
+      action: 'credential-replaced',
+      credentialRef: activeRef,
+    })
+    expect(document.querySelector('[data-testid="backend-frame-cloud"]')).toBeNull()
+    bumpCloudCredentialGeneration(candidateRef)
+    tabFetch.mockImplementationOnce(async () =>
+      Response.json({
+        items: [
+          {
+            id: activeRef,
+            label: 'active',
+            kind: 'api-key',
+            createdAt: '2026-11-20T00:00:00Z',
+            references: [],
+          },
+        ],
+      }),
+    )
+    tabFetch.mockImplementationOnce(async () =>
+      Response.json({
+        token: tokenB,
+        expiresAt: Date.now() + 3600000,
+        proxied: true,
+        origin: nextMigrated,
+      }),
+    )
+    await act(async () =>
+      resolveBothList?.(
+        Response.json({
+          items: [
+            {
+              id: candidateRef,
+              label: 'candidate',
+              kind: 'api-key',
+              createdAt: '2026-11-20T00:00:00Z',
+              references: [],
+            },
+          ],
+        }),
+      ),
+    )
+    expect(tabFixture.frame('cloud').dataset.backendOrigin).toBe(nextMigrated)
+  } finally {
+    tabFetch.mockRestore()
+    await tabFixture.close()
+  }
+
+  // Deduplicates rotation notifications across both StorageEvent -> BroadcastChannel and BroadcastChannel -> StorageEvent delivery orders.
+  const seenGenerations: string[] = []
+  const offSub = subscribeCloudCredentialReplacement((_ref, gen) => seenGenerations.push(gen))
+  const peerChannel = new BroadcastChannel('agnes.cloud.credentials.v1')
+  try {
+    const genStorageFirst = `${Date.now().toString(36)}.storage-first`
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: `${CLOUD_CREDENTIAL_GENERATION_PREFIX}${refA}`,
+        newValue: genStorageFirst,
+      }),
+    )
+    peerChannel.postMessage({ kind: 'credential-replaced', credentialRef: refA, generation: genStorageFirst })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(seenGenerations).toEqual([genStorageFirst])
+
+    const genBroadcastFirst = `${Date.now().toString(36)}.broadcast-first`
+    peerChannel.postMessage({
+      kind: 'credential-replaced',
+      credentialRef: refA,
+      generation: genBroadcastFirst,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: `${CLOUD_CREDENTIAL_GENERATION_PREFIX}${refA}`,
+        newValue: genBroadcastFirst,
+      }),
+    )
+    expect(seenGenerations).toEqual([genStorageFirst, genBroadcastFirst])
+    // Persisted peer generation read before queued events invalidates cached capability immediately and still notifies listeners once when events arrive.
+    bindCloudCredential(sandbox, refA, [{ id: refA }])
+    expect(await authorizeRemoteFrontend(sandbox, new AbortController().signal, authFetch)).toContain(tokenA)
+    const callsBeforePreEvent = calls
+    const genPreEvent = `${Date.now().toString(36)}.pre-event`
+    localStorage.setItem(`${CLOUD_CREDENTIAL_GENERATION_PREFIX}${refA}`, genPreEvent)
+    await authorizeRemoteFrontend(sandbox, new AbortController().signal, authFetch)
+    expect(calls).toBe(callsBeforePreEvent + 1)
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: `${CLOUD_CREDENTIAL_GENERATION_PREFIX}${refA}`,
+        newValue: genPreEvent,
+      }),
+    )
+    peerChannel.postMessage({ kind: 'credential-replaced', credentialRef: refA, generation: genPreEvent })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(seenGenerations).toEqual([genStorageFirst, genBroadcastFirst, genPreEvent])
+  } finally {
+    peerChannel.close()
+    offSub()
+  }
+
+  // Opening a private bookmark X (bound or unbound) in a second tab keeps X across shared Y disconnect/reconnect, neither overwrites Y on refresh nor broadcasts replacement on Disconnect, and follows Y once idle.
+  function LiveCloudSettings() {
+    const state = useSyncExternalStore(cloudSettingsState.subscribe, cloudSettingsState.read)
+    return <CloudConnectionSettings state={state} onAction={requestCloudConnection} />
+  }
+  const privateOrigin = 'http://private-bookmark.test:8443'
+  bindCloudCredential(privateOrigin, refA, [{ id: refA }])
+  bindCloudCredential(sandbox, refA, [{ id: refA }])
+  await authorizeRemoteFrontend(sandbox, new AbortController().signal, authFetch)
+  const callsAfterSharedWarm = calls
+  localStorage.setItem('agnes.cloud.origin.v1', sandbox)
+  localStorage.setItem('agnes.cloud.auto-credential.v1', refA)
+  const prevUrl = location.href
+  const happy = (window as unknown as HappyWindow).happyDOM.settings
+  const prevIframe = happy.disableIframePageLoading
+  happy.disableIframePageLoading = true
+  vi.stubGlobal('location', new URL(`http://127.0.0.1:4177/?remote=${encodeURIComponent(privateOrigin)}`))
+  const bookmarkMeta = document.head.appendChild(document.createElement('meta'))
+  bookmarkMeta.id = 'agnes-config'
+  bookmarkMeta.dataset.cloudOrigin = 'http://127.0.0.1:4178'
+  const bookmarkHost = document.body.appendChild(document.createElement('div'))
+  bookmarkHost.id = 'app-root'
+  const settingsHost = document.body.appendChild(document.createElement('div'))
+  const offBookmarkProjection = installCloudSettingsProjection()
+  const privateFetch = vi.spyOn(window, 'fetch').mockImplementation(async (input) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    if (!url.endsWith('/admin/api/credentials')) throw new Error(`Unexpected discovery call: ${url}`)
+    return Response.json({
+      items: [
+        { id: refA, label: 'private', kind: 'api-key', createdAt: '2026-11-20T00:00:00Z', references: [] },
+      ],
+    })
+  })
+  try {
+    await act(async () => {
+      mountBackendWorkbench()
+      const region = createRegionRenderer(settingsHost)
+      region.render(<LiveCloudSettings />)
+      region.flush()
+    })
+    expect(cloudSettingsState.read()).toMatchObject({ origin: privateOrigin, credentialRef: refA })
+    expect(localStorage.getItem('agnes.cloud.origin.v1')).toBe(sandbox)
+
+    // Peer disconnecting Y -> null and reconnecting null -> Y leaves explicit private X untouched.
+    localStorage.removeItem('agnes.cloud.origin.v1')
+    await act(async () => {
+      window.dispatchEvent(
+        new StorageEvent('storage', { key: 'agnes.cloud.origin.v1', oldValue: sandbox, newValue: null }),
+      )
+    })
+    expect(
+      bookmarkHost.querySelector('[data-testid="backend-frame-cloud"]')?.getAttribute('data-backend-origin'),
+    ).toBe(privateOrigin)
+    localStorage.setItem('agnes.cloud.origin.v1', sandbox)
+    await act(async () => {
+      window.dispatchEvent(
+        new StorageEvent('storage', { key: 'agnes.cloud.origin.v1', oldValue: null, newValue: sandbox }),
+      )
+    })
+    expect(
+      bookmarkHost.querySelector('[data-testid="backend-frame-cloud"]')?.getAttribute('data-backend-origin'),
+    ).toBe(privateOrigin)
+
+    await act(async () => {
+      requestCloudConnection({ action: 'credential-replaced', credentialRef: refA })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(privateFetch.mock.calls.map(([u]) => String(u))).toEqual(['/admin/api/credentials'])
+    expect(localStorage.getItem('agnes.cloud.origin.v1')).toBe(sandbox)
+    expect(localStorage.getItem('agnes.cloud.auto-credential.v1')).toBe(refA)
+    expect(
+      bookmarkHost.querySelector('[data-testid="backend-frame-cloud"]')?.getAttribute('data-backend-origin'),
+    ).toBe(privateOrigin)
+
+    // Even if peer moves shared CLOUD_ORIGIN_KEY to privateOrigin (X) before private tab X clicks Disconnect, disconnecting private X preserves X's shared binding and CLOUD_ORIGIN_KEY.
+    await authorizeRemoteFrontend(sandbox, new AbortController().signal, authFetch)
+    expect(calls).toBe(callsAfterSharedWarm + 1)
+    const callsBeforePrivateDisconnect = calls
+    localStorage.setItem('agnes.cloud.origin.v1', privateOrigin)
+    await act(async () => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: 'agnes.cloud.origin.v1',
+          oldValue: sandbox,
+          newValue: privateOrigin,
+        }),
+      )
+    })
+    const disconnectBroadcasts: string[] = []
+    const offDisconnectSub = subscribeCloudCredentialReplacement((_ref, gen) =>
+      disconnectBroadcasts.push(gen),
+    )
+    try {
+      await act(async () =>
+        getByRole(settingsHost, 'button', { name: workbenchCatalog.en.disconnect }).click(),
+      )
+      expect(disconnectBroadcasts).toEqual([])
+      expect(readCloudCredentialRef(privateOrigin)).toBe(refA)
+      await authorizeRemoteFrontend(sandbox, new AbortController().signal, authFetch)
+      expect(calls).toBe(callsBeforePrivateDisconnect)
+    } finally {
+      offDisconnectSub()
+    }
+    expect(bookmarkHost.querySelector('[data-testid="backend-frame-cloud"]')).toBeNull()
+    expect(localStorage.getItem('agnes.cloud.origin.v1')).toBe(privateOrigin)
+    expect(localStorage.getItem('agnes.cloud.auto-credential.v1')).toBe(refA)
+    localStorage.setItem('agnes.cloud.origin.v1', sandbox)
+
+    // Once private X is disconnected, this now-idle tab follows a subsequent Y -> null -> Y reconnect.
+    localStorage.removeItem('agnes.cloud.origin.v1')
+    await act(async () => {
+      window.dispatchEvent(
+        new StorageEvent('storage', { key: 'agnes.cloud.origin.v1', oldValue: sandbox, newValue: null }),
+      )
+    })
+    localStorage.setItem('agnes.cloud.origin.v1', sandbox)
+    await act(async () => {
+      window.dispatchEvent(
+        new StorageEvent('storage', { key: 'agnes.cloud.origin.v1', oldValue: null, newValue: sandbox }),
+      )
+    })
+    expect(
+      bookmarkHost.querySelector('[data-testid="backend-frame-cloud"]')?.getAttribute('data-backend-origin'),
+    ).toBe(sandbox)
+
+    // Unbound bookmark clicking its Disconnect button also leaves shared Y and CLOUD_DISCOVERY_KEY intact.
+    await act(async () => unmountApplication(document))
+    localStorage.setItem('agnes.cloud.auto-credential.v1', refB)
+    vi.stubGlobal('location', new URL('http://127.0.0.1:4177/?remote=https%3A%2F%2Funbound-bookmark.test'))
+    await act(async () => {
+      mountBackendWorkbench()
+      const region = createRegionRenderer(settingsHost)
+      region.render(<LiveCloudSettings />)
+      region.flush()
+    })
+    expect(localStorage.getItem('agnes.cloud.origin.v1')).toBe(sandbox)
+    await act(async () => getByRole(settingsHost, 'button', { name: workbenchCatalog.en.disconnect }).click())
+    expect(bookmarkHost.querySelector('[data-testid="backend-frame-cloud"]')).toBeNull()
+    expect(localStorage.getItem('agnes.cloud.origin.v1')).toBe(sandbox)
+    expect(localStorage.getItem('agnes.cloud.auto-credential.v1')).toBe(refB)
+  } finally {
+    privateFetch.mockRestore()
+    await act(async () => unmountApplication(document))
+    offBookmarkProjection()
+    settingsHost.remove()
+    bookmarkHost.remove()
+    bookmarkMeta.remove()
+    happy.disableIframePageLoading = prevIframe
+    localStorage.clear()
+    vi.stubGlobal('location', new URL(prevUrl))
   }
 })

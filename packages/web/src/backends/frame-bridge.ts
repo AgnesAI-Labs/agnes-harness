@@ -13,9 +13,17 @@ import {
   type BackendSnapshot,
   backendCommand,
 } from './frame-contract.js'
-import { installLocalFrameRouting } from './local-frame-routing.js'
-import { isDraftRoute } from './local-route.js'
-import { publishSidebarLayout } from './sidebar-projection.js'
+import { isDraftRoute, localWorkbenchRoute } from './local-route.js'
+import {
+  localLocationUrl,
+  publishLocalBackendSnapshot,
+  rawHistoryOps,
+  readCurrentLocalRoute,
+  registerLocalCommandExecutor,
+  withLocalRouteRestore,
+} from './local-workbench-bus.js'
+
+const CLOUD_RECONCILE_INTERVAL_MS = 15_000
 
 export function backendFrameStartup(op: () => Promise<void>): () => Promise<void> {
   return async () => {
@@ -27,7 +35,115 @@ export function backendFrameStartup(op: () => Promise<void>): () => Promise<void
   }
 }
 
-/** A projection/command bridge only: all session admission and execution remains in its backend. */
+function executeRuntimeCommand(
+  command: BackendCommand,
+  remote: boolean,
+  sessionAction?: (action: BackendSessionAction, id: string, title: string, trigger: HTMLElement) => void,
+  openSettings?: (section: string) => void,
+  onMore?: () => void,
+): void {
+  if (command.kind === 'settings' && openSettings) {
+    openSettings(command.section)
+    return
+  }
+  if (command.kind === 'restore-local-route') {
+    if (remote) return
+    const route = localWorkbenchRoute(command.route)
+    if (!route) return
+    const current = localWorkbenchRoute(`/${location.search}${location.hash}`)
+    if (route !== current) rawHistoryOps().replace(history.state, '', route)
+    withLocalRouteRestore(() => window.dispatchEvent(new PopStateEvent('popstate', { state: history.state })))
+    return
+  }
+  if (command.kind === 'session' || command.kind === 'new') {
+    if (!remote && command.kind === 'session') homeNavigation.close()
+    const url = remote ? new URL(location.href) : localLocationUrl()
+    url.searchParams.delete('view')
+    url.searchParams.delete('settings')
+    if (remote) {
+      for (const key of ['page', 'pagePackage', 'tab', 'account']) url.searchParams.delete(key)
+      if (url.hash.startsWith('#settings-subsection-')) url.hash = ''
+    }
+    if (command.kind === 'session') {
+      if (!remote && isDraftRoute(url.searchParams)) url.searchParams.delete('workspaceId')
+      url.searchParams.delete('new')
+      url.searchParams.set('session', command.sessionId)
+    } else url.searchParams.delete('session')
+    if (remote || command.kind === 'new') history.replaceState(history.state, '', url)
+    else history.pushState(history.state, '', url)
+    if (command.kind === 'new') requestNewSession()
+    window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }))
+  } else if (command.kind === 'search') {
+    document.dispatchEvent(new CustomEvent(SESSION_SEARCH_EVENT))
+  } else if (command.kind === 'workspace') {
+    document.getElementById('workspace-add')?.click()
+  } else if (command.kind === 'session-action') {
+    sessionAction?.(
+      command.action,
+      command.sessionId,
+      command.title,
+      document.getElementById('prompt') ?? document.body,
+    )
+  } else if (command.kind === 'home') {
+    homeNavigation.open(command.page)
+  } else if (command.kind === 'more') {
+    onMore?.()
+  }
+}
+
+function installNativeLocalBridge(
+  sessionAction?: (action: BackendSessionAction, id: string, title: string, trigger: HTMLElement) => void,
+  openSettings?: (section: string) => void,
+): () => void {
+  let ready = false
+  const snapshot = (): BackendSnapshot => {
+    const source = new URL(
+      location.search.includes('remote=') ? readCurrentLocalRoute() : location.href,
+      location.origin,
+    )
+    const selected = source.searchParams.get('session')
+    const home = homeNavigation.getSnapshot()
+    return {
+      ready,
+      connected: true,
+      rows: [],
+      activity: [],
+      more: false,
+      ...(selected ? { selected } : {}),
+      ...(home ? { page: home.id } : {}),
+    }
+  }
+  const publish = () => publishLocalBackendSnapshot(snapshot())
+  const diagnosticRoute = (event: Event) => {
+    if (isSettingsRegionRoute(event)) return
+    if (!requestDiagnosticBackend((event as CustomEvent<unknown>).detail)) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  }
+  document.addEventListener('agnes:settings-route', diagnosticRoute, true)
+  const unregisterExecutor = registerLocalCommandExecutor((command) => {
+    executeRuntimeCommand(command, false, sessionAction, openSettings)
+    publish()
+  })
+  const readyOff = onBroadcast('agnes:backend-frame-ready', () => {
+    ready = true
+    publish()
+  })
+  const historyOff = onHistoryNavigation(publish)
+  const homeOff = homeNavigation.subscribe(publish)
+  return () => {
+    document.removeEventListener('agnes:settings-route', diagnosticRoute, true)
+    unregisterExecutor()
+    readyOff()
+    historyOff()
+    homeOff()
+  }
+}
+
+/**
+ * Top-level Local A registers in-process without polling or postMessage; isolated Cloud B frames bridge
+ * state and commands to A over origin-verified postMessage with cached capability negotiation.
+ */
 export function installBackendFrameBridge(
   client: Client,
   label?: (id: string) => string | undefined,
@@ -35,20 +151,19 @@ export function installBackendFrameBridge(
   openSettings?: (section: string) => void,
 ): () => void {
   const context = backendFrame()
-  if (!context) return () => {}
-  const routing = context.remote ? undefined : installLocalFrameRouting(context.parentOrigin)
+  if (!context) return installNativeLocalBridge(sessionAction, openSettings)
   let disposed = false
   let ready = false
   let reading = false
   let count = 100
   let promptTitlesDowngraded = false
+  let initPromise: ReturnType<Client['initialize']> | undefined
   let queued: { command: BackendCommand; commandId: string } | undefined
   const completed = new Set<string>()
   let last: BackendSnapshot = { ready: false, connected: false, rows: [], activity: [], more: false }
   const publish = (snapshot: BackendSnapshot) => {
     if (disposed) return
     last = snapshot
-    publishSidebarLayout()
     window.parent.postMessage({ type: BACKEND_FRAME_MESSAGE, kind: 'state', snapshot }, context.parentOrigin)
   }
   const refresh = async () => {
@@ -56,11 +171,14 @@ export function installBackendFrameBridge(
     reading = true
     try {
       const rows: BackendSnapshot['rows'] = []
-      const info = await client.initialize()
+      initPromise ??= client.initialize().catch((error: unknown) => {
+        initPromise = undefined
+        throw error
+      })
+      const info = await initPromise
       if (disposed) return
       const meta = info.capabilities._meta as Record<string, { sessionPromptTitles?: boolean }> | undefined
-      let includePromptTitles =
-        Boolean(context.remote) && !promptTitlesDowngraded && meta?.[META_KEY]?.sessionPromptTitles === true
+      let includePromptTitles = !promptTitlesDowngraded && meta?.[META_KEY]?.sessionPromptTitles === true
       let cursor: string | undefined
       do {
         const params = {
@@ -83,7 +201,6 @@ export function installBackendFrameBridge(
               error.data.path !== '/includePromptTitles'
             )
               throw error
-            // Read-only compatibility retry; remember the downgrade for subsequent refreshes.
             promptTitlesDowngraded = true
             includePromptTitles = false
             return client.session.list(params)
@@ -126,60 +243,23 @@ export function installBackendFrameBridge(
       reading = false
     }
   }
-  const invoke = (command: BackendCommand) => {
-    if (command.kind === 'restore-local-route') {
-      routing?.restore(command.route)
-    } else if (command.kind === 'session' || command.kind === 'new') {
-      if (!context.remote && command.kind === 'session') homeNavigation.close()
-      const url = new URL(location.href)
-      url.searchParams.delete('view')
-      url.searchParams.delete('settings')
-      if (context.remote) {
-        // The workbench owns cloud conversation history. Clear the old page before running its router.
-        for (const key of ['page', 'pagePackage', 'tab', 'account']) url.searchParams.delete(key)
-        if (url.hash.startsWith('#settings-subsection-')) url.hash = ''
-      }
-      if (command.kind === 'session') {
-        if (!context.remote && isDraftRoute(url.searchParams)) url.searchParams.delete('workspaceId')
-        url.searchParams.delete('new')
-        url.searchParams.set('session', command.sessionId)
-      } else url.searchParams.delete('session')
-      if (context.remote || command.kind === 'new') history.replaceState({}, '', url)
-      else history.pushState({}, '', url)
-      if (command.kind === 'new') requestNewSession()
-      window.dispatchEvent(new PopStateEvent('popstate'))
-    } else if (command.kind === 'search') {
-      document.dispatchEvent(new CustomEvent(SESSION_SEARCH_EVENT))
-    } else if (command.kind === 'workspace') {
-      document.getElementById('workspace-add')?.click()
-    } else if (command.kind === 'session-action') {
-      sessionAction?.(
-        command.action,
-        command.sessionId,
-        command.title,
-        document.getElementById('prompt') ?? document.body,
-      )
-    } else if (command.kind === 'home') homeNavigation.open(command.page)
-    else if (command.kind === 'more') count = Math.min(5000, count + 100)
-    void refresh()
-  }
   const accept = (entry: { command: BackendCommand; commandId: string }) => {
-    if (!ready && entry.command.kind !== 'restore-local-route') {
+    if (!ready) {
       queued = entry
       return
     }
     const { command, commandId } = entry
-    const acknowledge = () => {
-      if (disposed) return
+    if (!completed.has(commandId)) {
+      executeRuntimeCommand(command, true, sessionAction, openSettings, () => {
+        count = Math.min(5000, count + 100)
+      })
+      void refresh()
+    }
+    if (!disposed) {
       completed.add(commandId)
       if (completed.size > 256) completed.delete(completed.values().next().value ?? '')
       window.parent.postMessage({ type: BACKEND_FRAME_MESSAGE, kind: 'ack', commandId }, context.parentOrigin)
     }
-    if (!completed.has(commandId)) {
-      if (command.kind === 'settings' && openSettings) openSettings(command.section)
-      else invoke(command)
-    }
-    acknowledge()
   }
   const receive = (event: MessageEvent) => {
     if (event.source !== window.parent || event.origin !== backendFrame()?.parentOrigin) return
@@ -200,13 +280,6 @@ export function installBackendFrameBridge(
     )
       homeNavigation.close()
   })
-  const diagnosticRoute = (event: Event) => {
-    if (isSettingsRegionRoute(event)) return
-    if (!requestDiagnosticBackend((event as CustomEvent<unknown>).detail)) return
-    event.preventDefault()
-    event.stopImmediatePropagation()
-  }
-  document.addEventListener('agnes:settings-route', diagnosticRoute, true)
   const localSettings = (event: Event) => {
     const section = (event as CustomEvent<{ section?: unknown }>).detail?.section
     if (
@@ -220,10 +293,8 @@ export function installBackendFrameBridge(
     event.stopImmediatePropagation()
   }
   document.addEventListener('agnes:open-settings', localSettings, true)
-
   const readyOff = onBroadcast('agnes:backend-frame-ready', () => {
     ready = true
-    routing?.sync()
     const command = queued
     queued = undefined
     if (command) accept(command)
@@ -232,36 +303,29 @@ export function installBackendFrameBridge(
   const noticeOff = client.on('notice', () => {
     void refresh()
   })
-  const offline = () => publish({ ...last, connected: false })
+  const offline = () => {
+    initPromise = undefined
+    publish({ ...last, connected: false })
+  }
   const reconnectingOff = client.on('reconnecting', offline)
   const closedOff = client.on('closed', offline)
   const reconnectedOff = client.on('reconnected', () => {
+    initPromise = undefined
     void refresh()
   })
   const historyOff = onHistoryNavigation(() => {
     void refresh()
   })
-  const layoutObserver = new ResizeObserver(publishSidebarLayout)
-  const sidebar = document.querySelector('.sidebar')
-  if (sidebar) layoutObserver.observe(sidebar)
-  const layoutChanges = new MutationObserver(publishSidebarLayout)
-  layoutChanges.observe(document.body, { attributes: true, attributeFilter: ['class'] })
-  window.addEventListener('resize', publishSidebarLayout)
   const timer = setInterval(() => {
-    void refresh()
-  }, 2000)
+    if (!document.hidden) void refresh()
+  }, CLOUD_RECONCILE_INTERVAL_MS)
   return () => {
     disposed = true
-    routing?.dispose()
-    layoutObserver.disconnect()
-    layoutChanges.disconnect()
-    window.removeEventListener('resize', publishSidebarLayout)
     clearInterval(timer)
     queued = undefined
     window.removeEventListener('message', receive)
-    homeOff()
     document.removeEventListener('agnes:open-settings', localSettings, true)
-    document.removeEventListener('agnes:settings-route', diagnosticRoute, true)
+    homeOff()
     readyOff()
     noticeOff()
     reconnectingOff()

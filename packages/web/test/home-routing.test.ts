@@ -6,6 +6,7 @@ import { homeNavigation } from '@agnes/web-client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { installBackendFrameBridge } from '../src/backends/frame-bridge.js'
 import * as frameContext from '../src/backends/frame-context.js'
+import { executeLocalBackendCommand } from '../src/backends/local-workbench-bus.js'
 import { bindHomeRouting } from '../src/pages/host.js'
 
 afterEach(() => {
@@ -15,14 +16,18 @@ afterEach(() => {
 })
 
 it.each(['supported', 'old', 'mismatch', 'local'] as const)(
-  'negotiates display labels and caches an exact old-parameter downgrade (%s)',
+  'negotiates display labels on cloud frames, caches capability/downgrade, and skips polling on native local (%s)',
   async (mode) => {
     vi.useFakeTimers()
-    const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue({
-      parentOrigin: location.origin,
-      ...(mode === 'local' ? {} : { remote: 'http://cloud.test:8443' }),
-    })
+    const frame = vi
+      .spyOn(frameContext, 'backendFrame')
+      .mockReturnValue(
+        mode === 'local' ? undefined : { parentOrigin: location.origin, remote: 'http://cloud.test:8443' },
+      )
     const publish = vi.spyOn(window.parent, 'postMessage')
+    const initialize = vi.fn(async () => ({
+      capabilities: { _meta: { [META_KEY]: { sessionPromptTitles: mode !== 'old' } } },
+    }))
     const list = vi.fn(async (params: { includePromptTitles?: boolean }) => {
       if (mode === 'mismatch' && params.includePromptTitles)
         throw new JsonRpcError(
@@ -35,15 +40,20 @@ it.each(['supported', 'old', 'mismatch', 'local'] as const)(
       return { items: [] }
     })
     const client = {
-      initialize: async () => ({
-        capabilities: { _meta: { [META_KEY]: { sessionPromptTitles: mode !== 'old' } } },
-      }),
+      initialize,
       on: () => () => {},
       session: { list, activity: async () => ({ items: [] }) },
     } as unknown as Client
     const stop = installBackendFrameBridge(client)
     try {
       window.dispatchEvent(new CustomEvent('agnes:backend-frame-ready'))
+      if (mode === 'local') {
+        await vi.advanceTimersByTimeAsync(15_000)
+        expect(initialize).not.toHaveBeenCalled()
+        expect(list).not.toHaveBeenCalled()
+        expect(publish).not.toHaveBeenCalled()
+        return
+      }
       await vi.waitFor(() =>
         expect(
           publish.mock.calls.some(([message]) => message.kind === 'state' && message.snapshot.connected),
@@ -52,7 +62,8 @@ it.each(['supported', 'old', 'mismatch', 'local'] as const)(
       expect(list.mock.calls.map(([params]) => params.includePromptTitles)).toEqual(
         mode === 'mismatch' ? [true, undefined] : [mode === 'supported' ? true : undefined],
       )
-      await vi.advanceTimersByTimeAsync(2000)
+      await vi.advanceTimersByTimeAsync(15_000)
+      expect(initialize).toHaveBeenCalledTimes(1)
       expect(list.mock.calls.at(-1)?.[0].includePromptTitles).toBe(mode === 'supported' ? true : undefined)
       expect(list).toHaveBeenCalledTimes(mode === 'mismatch' ? 3 : 2)
     } finally {
@@ -107,7 +118,9 @@ it('does not start a display-list read when disposed during capability negotiati
     return { capabilities: {} }
   })
   const list = vi.fn(async () => ({ items: [] }))
-  const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue({ parentOrigin: location.origin })
+  const frame = vi
+    .spyOn(frameContext, 'backendFrame')
+    .mockReturnValue({ parentOrigin: location.origin, remote: 'http://cloud.test:8443' })
   const stop = installBackendFrameBridge({
     initialize,
     on: () => () => {},
@@ -173,7 +186,9 @@ it.each([undefined, 'http://cloud.test:8443'])(
     const url = new URL('/?session=current&workspaceId=w', location.origin)
     if (remote) url.searchParams.set('remote', remote)
     history.replaceState(null, '', url)
-    const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue({ parentOrigin: location.origin })
+    const frame = vi
+      .spyOn(frameContext, 'backendFrame')
+      .mockReturnValue(remote ? { parentOrigin: location.origin, remote } : undefined)
     const stopRouting = bindHomeRouting()
     const client = {
       initialize: async () => ({ capabilities: {} }),
@@ -188,18 +203,22 @@ it.each([undefined, 'http://cloud.test:8443'])(
         if (page.includes('#')) homeNavigation.openRef(page, { tab: 'details' })
         else homeNavigation.open(page, { tab: 'details' })
         expect(homeNavigation.getSnapshot()).toBeDefined()
-        window.dispatchEvent(
-          new MessageEvent('message', {
-            origin: location.origin,
-            source: window.parent,
-            data: {
-              type: 'agh.backend.command/v1',
-              commandId: crypto.randomUUID(),
-              kind: 'session',
-              sessionId,
-            },
-          }),
-        )
+        if (remote) {
+          window.dispatchEvent(
+            new MessageEvent('message', {
+              origin: location.origin,
+              source: window.parent,
+              data: {
+                type: 'agh.backend.command/v1',
+                commandId: crypto.randomUUID(),
+                kind: 'session',
+                sessionId,
+              },
+            }),
+          )
+        } else {
+          executeLocalBackendCommand({ kind: 'session', sessionId })
+        }
         expect(homeNavigation.getSnapshot()).toBeUndefined()
         const params = new URLSearchParams(location.search)
         expect(params.get('session')).toBe(sessionId)

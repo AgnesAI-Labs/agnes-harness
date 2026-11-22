@@ -18,7 +18,9 @@ import {
   type UiLocaleSource,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useSyncExternalStore } from 'react'
+import { backendFrame } from '../backends/frame-context.js'
 import { isDraftRoute, skillsWorkspaceId } from '../backends/local-route.js'
+import { localLocationUrl } from '../backends/local-workbench-bus.js'
 import { ChannelDialogHost } from './channel-dialog.js'
 import { isBuiltinHomeEntry } from './entries.js'
 import { useWorkLaunchQuiet, workLaunch } from './work-launch.js'
@@ -187,6 +189,7 @@ export function bindHomeRouting(): () => void {
   let restoring = false
   const readLocation = () => {
     const params = new URLSearchParams(location.search)
+    if (!backendFrame() && params.has('remote')) return
     const page = params.get('page')
     restoring = true
     try {
@@ -212,7 +215,7 @@ export function bindHomeRouting(): () => void {
     const requested = homeNavigation.getSnapshot()
     // App defaults are transient presentation, not explicit URL/user choices.
     if ((requested?.selection as { applicationDefault?: string } | undefined)?.applicationDefault) return
-    const url = new URL(location.href)
+    const url = localLocationUrl()
     const before = url.href
     const scopedSkills = skillsWorkspaceId(url.searchParams)
     const tab = (requested?.selection as { tab?: unknown } | undefined)?.tab
@@ -233,7 +236,7 @@ export function bindHomeRouting(): () => void {
     if (!isDraftRoute(url.searchParams) && scopedSkills !== skillsWorkspaceId(url.searchParams))
       url.searchParams.delete('workspaceId')
     const address = preserveRouteParams(url)
-    if (new URL(address, location.href).href !== before) history.pushState(null, '', address)
+    if (new URL(address, url.origin).href !== before) history.pushState(null, '', address)
   })
   window.addEventListener('popstate', readLocation)
   return () => {

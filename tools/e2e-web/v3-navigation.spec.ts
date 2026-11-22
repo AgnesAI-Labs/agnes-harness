@@ -73,7 +73,7 @@ it('v3 home entries, deep links and browser back/forward retain the selected pag
     preset: 'standard',
     permission: 'full-access',
   })
-  const local = page.getByTestId('backend-frame-local').contentFrame()
+  const local = page
   const localTab = local.getByRole('tab', { name: 'Local', exact: true })
   const query = (name: string) => new URL(page.url()).searchParams.get(name)
   const automation = local.getByTestId('schedules-new')
@@ -171,7 +171,7 @@ it('v3 home entries preserve local routes across cloud and session switches', as
   const newer = await newSession()
   const link = (session: string) => `${runtime.url}/?session=${encodeURIComponent(session)}`
   const query = (name: string) => new URL(page.url()).searchParams.get(name)
-  const local = page.getByTestId('backend-frame-local').contentFrame()
+  const local = page
   const cloudFrame = page.getByTestId('backend-frame-cloud')
   const cloud = cloudFrame.contentFrame()
   const tabs = local.locator('.backend-session-tabs')
@@ -455,7 +455,7 @@ it('v3 home entries restore the draft when Back interrupts a pending session loa
     preset: 'standard',
     permission: 'full-access',
   })
-  const local = page.getByTestId('backend-frame-local').contentFrame()
+  const local = page
   const query = (key: string) => new URL(page.url()).searchParams.get(key)
   let release: (() => void) | undefined
   let cancelled = false
@@ -573,7 +573,7 @@ it('v3 settings exposes four everyday pages, persistent advanced settings and le
     preset: 'standard',
     permission: 'full-access',
   })
-  const local = page.getByTestId('backend-frame-local').contentFrame()
+  const local = page
   const setSection = (id: string) => local.getByTestId(`settings-nav-${id}`).click()
   const route = () => new URL(page.url()).searchParams.get('settings')
   const advancedGroup = local.getByTestId('settings-advanced')
@@ -719,7 +719,7 @@ test('browser locale initializes the shell and a saved choice wins after reload'
       expect(await page.evaluate(() => navigator.language)).toBe(locale)
       expect(await page.evaluate(() => localStorage.getItem('agnes-locale'))).toBeNull()
       if (locale === 'zh-CN') {
-        const local = page.frameLocator('[data-testid="backend-frame-local"]')
+        const local = page
         await expect(local.locator('#new')).toContainText('新对话')
         await info.attach('browser-zh-CN.png', { body: await page.screenshot(), contentType: 'image/png' })
         await info.attach('browser-locale.json', {

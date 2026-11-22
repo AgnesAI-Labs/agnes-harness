@@ -20,6 +20,7 @@ import {
   readCloudCredentialRef,
   subscribeCloudCredentialReplacement,
 } from '../src/backends/cloud-key.js'
+import { setLocalWorkbenchHost } from '../src/backends/local-workbench-bus.js'
 import {
   authorizeRemoteFrontend,
   discoverCloudOrigin,
@@ -148,6 +149,7 @@ it('requires the saved Key, exchanges it once and routes backend resources throu
       ),
     ).toBe(remoteFrontendSessionPath(replacementToken))
 
+    // A durable peer rotation persisted before queued StorageEvent/BroadcastChannel arrival invalidates the cached capability immediately without suppressing the later listener delivery.
     const preEventToken = `zzzzzzzz.${'E'.repeat(22)}.${'F'.repeat(43)}`
     const preEventGen = `${Date.now().toString(36)}.persisted-before-events`
     const notified: string[] = []
@@ -167,6 +169,7 @@ it('requires the saved Key, exchanges it once and routes backend resources throu
       )
       expect(notified).toEqual([preEventGen])
 
+      // A delayed older BroadcastChannel message after a newer durable generation is observed (even when the newer ID sorts lexicographically below the older ID, e.g. clock skew) must neither ignore the durable replacement nor regress memory.
       const candidateRef = 'secret://generic/22222222-2222-2222-2222-222222222222'
       const candidateOrigin = 'https://8443-candidate.ap-shanghai.tencentags.com'
       const oldDiscoveryToken = `zzzzzzzz.${'G'.repeat(22)}.${'H'.repeat(43)}`
@@ -219,6 +222,7 @@ it('requires the saved Key, exchanges it once and routes backend resources throu
         )
         expect(freshFetch).toHaveBeenCalledOnce()
 
+        // A subsequent durable replacement with an even lower-sorting ID still invalidates the cached capability.
         localStorage.setItem(`${CLOUD_CREDENTIAL_GENERATION_PREFIX}${candidateRef}`, skewedThirdGen)
         expect(
           await authorizeRemoteFrontend(candidateOrigin, new AbortController().signal, async () =>
@@ -333,6 +337,16 @@ it('reports a rejected credential and refuses an old public publication instead 
 it('selects an explicit backend origin and refuses credential-bearing or CSP-injecting addresses', () => {
   expect(selectedRemoteOrigin('')).toBeUndefined()
   expect(selectedRemoteOrigin('?remote=http%3A%2F%2Fcomputer-b%3A8443')).toBe('http://computer-b:8443')
+  const savedHref = location.href
+  try {
+    history.replaceState({}, '', '/?remote=http%3A%2F%2Fcomputer-b%3A8443&session=cloud-a')
+    expect(selectedRemoteOrigin()).toBe('http://computer-b:8443')
+    setLocalWorkbenchHost(true)
+    expect(selectedRemoteOrigin()).toBeUndefined()
+  } finally {
+    setLocalWorkbenchHost(false)
+    history.replaceState({}, '', savedHref)
+  }
   for (const value of [
     'https://user:secret@host/',
     'file:///tmp/x',

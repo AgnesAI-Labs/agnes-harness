@@ -11,7 +11,7 @@ test('credentials create inline, replace in place, rename and protect referenced
   runtime,
   expectedBrowserErrors,
 }) => {
-  const workbench = page.getByTestId('backend-frame-local').contentFrame()
+  const workbench = page
   const canary = `synthetic-canary-${crypto.randomUUID()}`
   const leakedResponses: boolean[] = []
   const responseChecks: Promise<void>[] = []
