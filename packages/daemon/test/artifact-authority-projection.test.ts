@@ -3,11 +3,11 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createAuthenticatedArtifactReadHandler } from '@agnes/daemon-rpc/local/artifact-read'
+import { PersistentArtifactReadAuthorityIndex } from '@agnes/daemon-rpc/local/artifact-read-authority'
 import { createLocalArtifactReadStore } from '@agnes/host'
 import { validateEvent } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
-import { PersistentArtifactReadAuthorityIndex } from '../src/local/artifact-read-authority.js'
 import { createArtifactAuthorityProjection } from '../src/supervisor/artifact-authority-projection.js'
 
 const roots: string[] = []

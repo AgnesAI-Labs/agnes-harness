@@ -1164,9 +1164,6 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@agnes/sandbox-remote':
-        specifier: workspace:*
-        version: link:../sandbox-remote
       '@agnes/system-node':
         specifier: workspace:*
         version: link:../system-node

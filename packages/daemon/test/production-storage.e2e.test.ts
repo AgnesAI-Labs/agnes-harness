@@ -14,6 +14,7 @@ import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PersistentArtifactReadAuthorityIndex } from '@agnes/daemon-rpc/local/artifact-read-authority'
 import {
   canonicalJson,
   createPlatform,
@@ -28,7 +29,6 @@ import { telemetrySnapshot } from '@agnes/observability'
 import { hasPrivateDaclSync } from '@agnes/system-node'
 import { describe, expect, it, vi } from 'vitest'
 import { pendingDecision } from '../../core-ledger/testkit/decision.js'
-import { PersistentArtifactReadAuthorityIndex } from '../src/local/artifact-read-authority.js'
 import { MemoryTickets } from '../src/storage/lister.js'
 import { buildConfig, type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import { encodeFrame, JsonlDecoder } from '../src/supervisor/framing.js'

@@ -233,7 +233,6 @@
     "@agnes/git-worktree-contract",
     "@agnes/host-common",
     "@agnes/protocol",
-    "@agnes/sandbox-remote",
     "@agnes/system-node",
     "@agnes/core-ledger",
     "@agnes/package-manager"

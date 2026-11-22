@@ -6,7 +6,6 @@ import { validateFsPolicy } from '@agnes/core'
 import { assertWorkspaceBinding, type WorkspaceBinding } from '@agnes/host-common/workspace-authority'
 import type { WorkspacePathSemantics } from '@agnes/host-common/workspace-policy'
 import { type SessionEnvironment, WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
-import type { RemoteWorkspacePool } from '@agnes/sandbox-remote'
 import type { WorkspaceRuntimeFence, WorkspaceRuntimeHandle } from '../session-workspace-runtime.js'
 import { createPolicyExec, createPolicyOpenProcess, type ExecAdapter, type ExecGateState } from './exec.js'
 import { createFs, type FencedFs, type FsBinding } from './fs.js'
@@ -17,6 +16,15 @@ import type { PlatformBackend } from './platform.js'
 import { probeCaseSensitive } from './platform-posix.js'
 import type { RemoteTransport } from './remote-transport.js'
 import { withSessionEnvironment } from './session-environment.js'
+
+export type RemoteWorkspaceLeasePort = Readonly<{
+  root: string
+  close(): Promise<void>
+}>
+
+export type RemoteWorkspacePoolPort = Readonly<{
+  acquire(ownerKey: string): Promise<RemoteWorkspaceLeasePort>
+}>
 
 type HandleState = Readonly<{
   sessionKey: string
@@ -93,7 +101,7 @@ export function createSessionWorkspaceAdapterFactory(
     platform: PlatformBackend
     exec: ExecAdapter
     transport?: RemoteTransport
-    remotePool?: RemoteWorkspacePool
+    remotePool?: RemoteWorkspacePoolPort
     /** Skill directories local reads may reach; a remote workspace never gets them. */
     skillReadRoots?: (sessionKey: string) => readonly string[]
     /** The installation's own state, read-only under full file access; ignored for a remote workspace. */
