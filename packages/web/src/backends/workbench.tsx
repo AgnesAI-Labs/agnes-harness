@@ -378,23 +378,27 @@ export function CloudWorkbenchStage({ children }: { children?: ReactNode } = {})
           throw Error('CLOUD_CREDENTIAL_NOT_FOUND')
         if (credentialRef !== undefined && value !== undefined && !automatic)
           forgetRemoteAccess(remoteFrontendOrigin(value))
+        const canApply = () => {
+          ownsSharedNow =
+            !automatic || (ownedSharedBefore && ownsShared(followingShared.current, initialCloud))
+          return !(
+            timedOut ||
+            revision !== connectionRevision.current ||
+            request.signal.aborted ||
+            (credentialRef !== undefined && readCloudCredentialGeneration(credentialRef) !== initialGen) ||
+            (automatic &&
+              (!initialCloud ||
+                latest.current.cloud !== initialCloud ||
+                readCloudCredentialRef(initialCloud) !== credentialRef ||
+                (ownedSharedBefore && !ownsSharedNow)))
+          )
+        }
         next =
           value === undefined
-            ? await discoverCloudOrigin(credentialRef ?? '', request.signal)
+            ? await discoverCloudOrigin(credentialRef ?? '', request.signal, undefined, canApply)
             : remoteFrontendOrigin(value)
         if (timedOut) throw Error('CLOUD_DISCOVERY_TIMEOUT')
-        ownsSharedNow = !automatic || (ownedSharedBefore && ownsShared(followingShared.current, initialCloud))
-        if (
-          revision !== connectionRevision.current ||
-          request.signal.aborted ||
-          (credentialRef !== undefined && readCloudCredentialGeneration(credentialRef) !== initialGen) ||
-          (automatic &&
-            (!initialCloud ||
-              latest.current.cloud !== initialCloud ||
-              readCloudCredentialRef(initialCloud) !== credentialRef ||
-              (ownedSharedBefore && !ownsSharedNow)))
-        )
-          return
+        if (!canApply()) return
         if (credentialRef !== undefined) {
           bindCloudCredential(next, credentialRef, items ?? [])
           if (ownsSharedNow) {
@@ -715,16 +719,15 @@ export function CloudWorkbenchStage({ children }: { children?: ReactNode } = {})
     if (!ref || readCloudCredentialRef(cloud) !== ref) return
     if (connectionIntent.current && connectionIntent.current !== ref) return
     const revision = connectionEpoch
+    const canWatch = () =>
+      connectionRevision.current === revision &&
+      latest.current.cloud === cloud &&
+      readCloudCredentialRef(cloud) === ref
     return watchCloudOrigin(
       cloud,
-      (signal) => discoverCloudOrigin(ref, signal),
+      (signal) => discoverCloudOrigin(ref, signal, undefined, canWatch),
       (origin) => {
-        if (
-          connectionRevision.current === revision &&
-          latest.current.cloud === cloud &&
-          readCloudCredentialRef(cloud) === ref
-        )
-          void connect(origin, false, ref, true)
+        if (canWatch()) void connect(origin, false, ref, true)
       },
       (reason) => {
         if (connectionRevision.current === revision && latest.current.cloud === cloud)

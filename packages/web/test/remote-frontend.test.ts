@@ -58,6 +58,17 @@ it('discovers a managed sandbox with only a credential reference and rejects uns
       remoteFrontendSessionPath(token),
     )
     expect(neverCalled).not.toHaveBeenCalled()
+    forgetRemoteAccess(origin)
+    expect(
+      await discoverCloudOrigin(
+        credentialRef,
+        new AbortController().signal,
+        async () => Response.json(reply),
+        () => false,
+      ),
+    ).toBe(origin)
+    await expect(authorizeRemoteFrontend(origin, new AbortController().signal, neverCalled)).rejects.toThrow()
+    expect(neverCalled).toHaveBeenCalledOnce()
     for (const invalid of [
       { ...reply, origin: 'http://127.0.0.1:80' },
       { ...reply, origin: 'https://foreign.example' },

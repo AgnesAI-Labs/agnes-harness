@@ -210,7 +210,7 @@ export function consumeWorkbenchBoot(): WorkbenchBootSnapshot {
   const state = bus()
   if (state.bootSnapshot) {
     const current = state.bootSnapshot
-    state.bootSnapshot = undefined
+    if (!state.pendingCloudBoot) state.bootSnapshot = undefined
     return current
   }
   const initialSearch = location.search

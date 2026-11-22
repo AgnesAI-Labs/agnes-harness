@@ -126,6 +126,7 @@ export async function discoverCloudOrigin(
   credentialRef: string,
   signal: AbortSignal,
   fetcher: typeof fetch = fetch,
+  shouldCommit?: (origin: string) => boolean,
 ): Promise<string> {
   const reset = clearEpoch
   const generation = readCloudCredentialGeneration(credentialRef)
@@ -142,13 +143,14 @@ export async function discoverCloudOrigin(
     throw new Error('CLOUD_INVALID_AUTHORIZATION')
   if (signal.aborted || clearEpoch !== reset || readCloudCredentialGeneration(credentialRef) !== generation)
     throw new DOMException('Authorization invalidated', 'AbortError')
-  sessions.set(origin, {
-    token: value.token,
-    expiresAt: value.expiresAt,
-    proxied: true,
-    credentialRef,
-    credentialGeneration: generation,
-  })
+  if (!shouldCommit || shouldCommit(origin))
+    sessions.set(origin, {
+      token: value.token,
+      expiresAt: value.expiresAt,
+      proxied: true,
+      credentialRef,
+      credentialGeneration: generation,
+    })
   return origin
 }
 

@@ -98,7 +98,7 @@ function installNativeLocalBridge(
   let ready = false
   const snapshot = (): BackendSnapshot => {
     const source = new URL(
-      location.search.includes('remote=') ? readCurrentLocalRoute() : location.href,
+      new URLSearchParams(location.search).has('remote') ? readCurrentLocalRoute() : location.href,
       location.origin,
     )
     const selected = source.searchParams.get('session')

@@ -72,7 +72,11 @@ import {
   workbenchAddress,
 } from '../src/backends/workbench-state.js'
 import type { SettingsRegionMount } from '../src/regions/settings.js'
-import { authorizeRemoteFrontend, discoverCloudOrigin } from '../src/remote-authorization.js'
+import {
+  authorizeRemoteFrontend,
+  discoverCloudOrigin,
+  forgetRemoteAccess,
+} from '../src/remote-authorization.js'
 import {
   applySettingsSectionRoute,
   clearSettingsLink,
@@ -677,6 +681,54 @@ it('authorizes only the configured cloud from its exact frame, ignoring sender-s
       expect.objectContaining({ kind: 'appearance' }),
       'http://127.0.0.1:4178',
     )
+
+    // Coalesce concurrent non-fresh requests onto one flight and preempt hung requests when `fresh: true` arrives.
+    forgetRemoteAccess(remote)
+    post.mockClear()
+    fetcher.mockClear()
+    let releaseFirst: ((value: Response) => void) | undefined
+    const freshToken = `${(Date.now() + 60_000).toString(36)}.${'c'.repeat(22)}.${'d'.repeat(43)}`
+    let firstSignal: AbortSignal | undefined
+    fetcher
+      .mockImplementationOnce(async (_input, init) => {
+        firstSignal = init?.signal ?? undefined
+        return new Promise<Response>((resolve) => {
+          releaseFirst = resolve
+        })
+      })
+      .mockImplementationOnce(
+        async () => new Response(JSON.stringify({ token: freshToken, expiresAt: Date.now() + 60_000 })),
+      )
+    const id1 = crypto.randomUUID()
+    const id2 = crypto.randomUUID()
+    const id3 = crypto.randomUUID()
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: 'http://127.0.0.1:4178',
+        source: frameWindow,
+        data: { type: 'agh.backend.frame/v1', kind: 'authorization-request', requestId: id1 },
+      }),
+    )
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: 'http://127.0.0.1:4178',
+        source: frameWindow,
+        data: { type: 'agh.backend.frame/v1', kind: 'authorization-request', requestId: id2 },
+      }),
+    )
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: 'http://127.0.0.1:4178',
+        source: frameWindow,
+        data: { type: 'agh.backend.frame/v1', kind: 'authorization-request', requestId: id3, fresh: true },
+      }),
+    )
+    expect(firstSignal?.aborted).toBe(true)
+    releaseFirst?.(new Response(JSON.stringify({ token, expiresAt: Date.now() + 60_000 })))
+    await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(3))
+    expect(post.mock.calls.map(([msg]) => msg.requestId)).toEqual([id1, id2, id3])
+    expect(post.mock.calls.every(([msg]) => msg.path === remoteFrontendSessionPath(freshToken))).toBe(true)
   } finally {
     stop()
     meta.remove()
@@ -1812,6 +1864,7 @@ it('binds cached capabilities to the active credential across tabs, keeps saved 
   try {
     const boot = prepareLocalWorkbenchBoot()
     try {
+      expect(consumeWorkbenchBoot()).toBe(boot)
       await act(async () => mountBackendWorkbench())
       expect(consumeSettingsLink().id).toBe('diagnostics')
       history.replaceState(history.state, '', '/?settings=diagnostics')

@@ -3,6 +3,8 @@ import { cloudFrameAppearance } from './cloud-frame-appearance.js'
 import { cloudFrameOrigin } from './frame-context.js'
 import { BACKEND_FRAME_MESSAGE } from './frame-contract.js'
 
+const PARENT_AUTHORIZATION_TIMEOUT_MS = 25_000
+
 /** A alone resolves credentials. The cloud can request only its already configured connection. */
 export function installCloudFrameAuthorization(
   current: () => {
@@ -12,12 +14,23 @@ export function installCloudFrameAuthorization(
   onControl?: (abort: () => void) => void,
 ): () => void {
   const frameOrigin = cloudFrameOrigin()
-  let pending: { controller: AbortController; frame: HTMLIFrameElement; remote: string } | undefined
+  let pending:
+    | {
+        controller: AbortController
+        timer: ReturnType<typeof setTimeout>
+        frame: HTMLIFrameElement
+        remote: string
+        requestIds: Set<string>
+      }
+    | undefined
   let disposed = false
-  onControl?.(() => {
-    pending?.controller.abort()
+  const abortPending = () => {
+    if (!pending) return
+    clearTimeout(pending.timer)
+    pending.controller.abort()
     pending = undefined
-  })
+  }
+  onControl?.(abortPending)
   const appearance = () =>
     current().frame?.contentWindow?.postMessage(
       {
@@ -46,10 +59,25 @@ export function installCloudFrameAuthorization(
     )
       return
     const fresh = value.fresh === true
-    if (pending?.frame === frame && pending.remote === remote) return
-    pending?.controller.abort()
+    let requestIds: Set<string>
+    if (pending?.frame === frame && pending.remote === remote) {
+      if (!fresh) {
+        pending.requestIds.add(value.requestId)
+        return
+      }
+      requestIds = new Set([...pending.requestIds, value.requestId])
+    } else {
+      requestIds = new Set([value.requestId])
+    }
+    abortPending()
     const request = new AbortController()
-    pending = { controller: request, frame, remote }
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      request.abort()
+    }, PARENT_AUTHORIZATION_TIMEOUT_MS)
+    const entry = { controller: request, timer, frame, remote, requestIds }
+    pending = entry
     if (fresh) forgetRemoteAccess(remote)
     void (async () => {
       let authorization: { path: string; proxied?: boolean } | { error: string }
@@ -59,25 +87,39 @@ export function installCloudFrameAuthorization(
           proxied: remoteUsesGateway(remote),
         }
       } catch (error) {
+        if (!timedOut && (disposed || request.signal.aborted)) return
         authorization = {
-          error: error instanceof Error ? error.message.slice(0, 4096) : 'CLOUD_AUTH_UNAVAILABLE',
+          error: timedOut
+            ? 'CLOUD_AUTH_UNAVAILABLE'
+            : error instanceof Error
+              ? error.message.slice(0, 4096)
+              : 'CLOUD_AUTH_UNAVAILABLE',
         }
       }
       const next = current()
-      if (!disposed && !request.signal.aborted && next.remote === remote && next.frame === frame)
-        frame.contentWindow?.postMessage(
-          {
-            type: BACKEND_FRAME_MESSAGE,
-            kind: 'authorization',
-            requestId: value.requestId,
-            remote,
-            ...authorization,
-            appearance: cloudFrameAppearance(),
-          },
-          frameOrigin,
-        )
+      if (
+        !disposed &&
+        (!request.signal.aborted || timedOut) &&
+        next.remote === remote &&
+        next.frame === frame
+      ) {
+        const snapshot = cloudFrameAppearance()
+        for (const requestId of entry.requestIds)
+          frame.contentWindow?.postMessage(
+            {
+              type: BACKEND_FRAME_MESSAGE,
+              kind: 'authorization',
+              requestId,
+              remote,
+              ...authorization,
+              appearance: snapshot,
+            },
+            frameOrigin,
+          )
+      }
     })().finally(() => {
-      if (pending?.controller === request) pending = undefined
+      clearTimeout(timer)
+      if (pending === entry) pending = undefined
     })
   }
   const rootObserver =
@@ -93,7 +135,7 @@ export function installCloudFrameAuthorization(
   window.addEventListener('agnes:theme-changed', appearance)
   return () => {
     disposed = true
-    pending?.controller.abort()
+    abortPending()
     rootObserver?.disconnect()
     window.removeEventListener('message', receive)
     window.removeEventListener('storage', appearance)
