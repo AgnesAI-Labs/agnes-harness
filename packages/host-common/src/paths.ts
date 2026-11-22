@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, parse, sep } from 'node:path'
 import { AGH_DIR, WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
@@ -71,22 +70,6 @@ export function cacheDir(home: string): string {
 /** One path inside dataDir, for a caller that wants a file or child directory, not the root. */
 export function inDataDir(home: string, sub: string): string {
   return join(dataDir(home), sub)
-}
-
-/**
- * Where a pre-fix installation -- or any profile that left dataDir unset before the default moved
- * -- would have written its session database: directly under the home root instead of under
- * `data/`. This is detection only. Nothing in this module reads the file, moves it or deletes it;
- * whether a database sitting here still matters is a call only the person who owns the data can
- * make, so the most this function does is make the question answerable.
- */
-export function legacySessionsDbPath(home: string): string {
-  return join(home, 'sessions.db')
-}
-
-/** True when a database from the old home-root default is still sitting where doctor can find it. */
-export function hasLegacySessionsDb(home: string): boolean {
-  return existsSync(legacySessionsDbPath(home))
 }
 
 /**

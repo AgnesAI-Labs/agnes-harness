@@ -17,7 +17,7 @@ RUN . /etc/os-release && test "$ID:$VERSION_CODENAME:$(dpkg --print-architecture
  && install -d -m 0755 -o node -g node /data /workspace /workspace/data /data/agh-assets \
  && install -d -m 0700 -o node -g node /data/agh /run/agh-sync
 
-ENV HOME=/home/node XDG_CACHE_HOME=/home/node/.cache
+ENV HOME=/home/node XDG_CACHE_HOME=/home/node/.cache AGH_TELEMETRY_DISABLED=1
 USER node
 
 # Reuse the browser plugin's installer and the reviewed archive in its manifest.

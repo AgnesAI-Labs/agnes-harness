@@ -64,7 +64,6 @@ These are the six bindable kinds in the Host-provided public author namespaces. 
 | Entry | Status | Use instead |
 | --- | --- | --- |
 | `@agnes/plugin-runtime/testkit` + `@agnes/host/testkit` (`createPluginTestHost` + `createPluginTestRegistration`) | Legacy composition; don't use in new author templates. Kept for existing integration tests and explicit registration bridges. | `createPluginTestHost(plugin)` from `@agnes/host/author-testkit`. |
-| Provider conformance re-exports from `@agnes/plugin-runtime/testkit` | Legacy alias; don't use in new documentation. | The owning `@agnes/extension-api/testkit` contract entry. |
 | `@agnes/plugin-runtime/host`, `@agnes/plugin-runtime/provided-externals`, Host implementation paths, Core/daemon private modules | Internal; don't use in plugins. Exported infrastructure is not an author contract. | Public author helpers, contracts and controlled context ports. |
 | Host's internal `feedbackKind` | Internal; don't use. Not a public contract export. | Supported tools/services; no author token import exists for this internal binding. |
 

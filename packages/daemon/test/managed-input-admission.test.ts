@@ -1,8 +1,6 @@
-import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { RECOVERY_CONTINUATION_TEXT } from '../src/supervisor/managed-input-admission.js'
-import { managedSessionActor } from '../src/supervisor/managed-sessions.js'
-import { caller, inputWorld, owner, receipt } from './fixtures/fake-input-ports.js'
+import { inputWorld, owner, receipt } from './fixtures/fake-input-ports.js'
 
 const refused = (reason: string) => ({ data: { code: 'CAPABILITY_DENIED', reason } })
 const ownerMessage = (receiptId: string) => ({ kind: 'ownerMessage' as const, receiptId })
@@ -58,14 +56,8 @@ describe('owner input admission', () => {
 
   it.each([
     ['target', ownerMessage('r1'), ownerMessage('r1'), { taskGeneration: 2 }],
-    ['kind', ownerMessage('r1'), { kind: 'legacyOwnerMessage', text: 'hi', originalInbox: null }, {}],
+    ['kind', ownerMessage('r1'), { kind: 'recoveryContinuation', turnEndSeq: 3 }, {}],
     ['receiptId', ownerMessage('r1'), ownerMessage('r2'), {}],
-    [
-      'legacy text',
-      { kind: 'legacyOwnerMessage', text: 'a', originalInbox: null },
-      { kind: 'legacyOwnerMessage', text: 'b', originalInbox: null },
-      {},
-    ],
     [
       'turnEndSeq',
       { kind: 'recoveryContinuation', turnEndSeq: 5 },
@@ -95,7 +87,7 @@ describe('owner input admission', () => {
     expect(w.inputs.get(owner, 's1', 'k1')).toBeUndefined()
   })
 
-  it('a pre-upgrade session is bound only by its own manager naming its own start key', async () => {
+  it('an unbound session is bound only by its own manager naming its own start key', async () => {
     const w = world()
     w.open('s0', null)
     const stranger = { ...w.ctx('s0'), owner: 'another#row' }
@@ -229,23 +221,6 @@ describe('owner input admission', () => {
     expect(w.core.state.submits).toHaveLength(1)
   })
 
-  it('legacyOwnerMessage always returns recoveryUnknown legacySourceUnknown and never submits', async () => {
-    const w = world()
-    const result = await w.admit('k1', {
-      kind: 'legacyOwnerMessage',
-      text: 'old words',
-      originalInbox: 'inbox-1',
-    })
-    expect(result).toMatchObject({ state: 'recoveryUnknown', reason: 'legacySourceUnknown' })
-    await w.engine.advance('s1')
-    await w.engine.sweep()
-    expect(w.core.state.submits).toEqual([])
-    expect(w.inputs.get(owner, 's1', 'k1')).toMatchObject({
-      text: 'old words',
-      source: { originalInbox: 'inbox-1' },
-    })
-  })
-
   it('a queued row left by a crash after reserve is completed by the next admitInput', async () => {
     let crash = true
     const w = world({
@@ -264,25 +239,19 @@ describe('owner input admission', () => {
     expect(w.core.state.submits).toHaveLength(1)
   })
 
-  it('inputResult returns legacySend consumed, pending or unknown from the sends ledger and never replays', async () => {
+  it('inputResult only reports admissions, even when a send has used the same key', async () => {
     const w = world()
-    const actor = managedSessionActor(caller.owner, w.ctx('s1').record)
-    const sendId = (key: string) =>
-      `${actor.id}:send:${createHash('sha256').update(key).digest('hex').slice(0, 32)}`
-    w.records.setSend(owner, 's1', 'old-1', 'sent')
-    w.records.setSend(owner, 's1', 'old-2', 'pending')
-    w.records.setSend(owner, 's1', 'old-3', 'sent')
-    await w.core.ports.submitInput('s1', { text: 'old', actor, commandId: sendId('old-1'), dedupe: false })
-    w.core.take('s1')
-    const submits = w.core.state.submits.length
-    const result = (key: string) => w.engine.result(w.ctx('s1'), { key })
-    expect(await result('old-1')).toEqual({ state: 'legacySend', delivery: 'consumed' })
-    expect(await result('old-2')).toEqual({ state: 'legacySend', delivery: 'pending' })
-    expect(await result('old-3')).toEqual({ state: 'legacySend', delivery: 'unknown' })
-    expect(w.core.state.submits).toHaveLength(submits)
+    for (const state of ['pending', 'sent'] as const) {
+      w.records.setSend(owner, 's1', 'send-key', state)
+      expect(await w.engine.result(w.ctx('s1'), { key: 'send-key' })).toEqual({
+        state: 'absent',
+        historyCoverage: 'complete',
+      })
+    }
+    expect(w.core.state.submits).toEqual([])
   })
 
-  it('inputResult returns absent complete for an owned session, a pre-upgrade one included', async () => {
+  it('inputResult returns absent complete for both bound and unbound sessions', async () => {
     const w = world()
     w.open('s0', null)
     expect(await w.engine.result(w.ctx('s1'), { key: 'nope' })).toEqual({
@@ -310,12 +279,13 @@ describe('owner input admission', () => {
     expect(consumed).toMatchObject({ version: row?.version })
   })
 
-  it('refuses malformed requests with INVALID_PARAMS and a NUL in legacy text before storing it', async () => {
+  it('refuses malformed requests with INVALID_PARAMS before storing them', async () => {
     const w = world()
     for (const input of [
-      { kind: 'legacyOwnerMessage', text: 'a\0b', originalInbox: null },
+      ownerMessage('a\0b'),
       { kind: 'ownerMessage' },
       { kind: 'recoveryContinuation', turnEndSeq: 0 },
+      { kind: 'legacyOwnerMessage', text: 'unsigned owner text', originalInbox: null },
       { kind: 'other' },
     ])
       await expect(w.admit('k1', input)).rejects.toMatchObject({ data: { code: 'INVALID_PARAMS' } })
@@ -323,5 +293,22 @@ describe('owner input admission', () => {
       data: { code: 'INVALID_PARAMS' },
     })
     expect(w.inputs.get(owner, 's1', 'k1')).toBeUndefined()
+
+    await w.admit('retired-row', ownerMessage('r1'), {
+      kind: 'unresolved',
+      receiptId: 'r1',
+      reason: 'receiptUnknown',
+    })
+    w.table.exec("UPDATE managed_session_inputs SET kind = 'legacyOwnerMessage' WHERE key = 'retired-row'")
+    await w.admit('valid-row', ownerMessage('r2'), {
+      kind: 'unresolved',
+      receiptId: 'r2',
+      reason: 'receiptUnknown',
+    })
+    expect(w.inputs.get(owner, 's1', 'retired-row')).toBeUndefined()
+    await expect(w.admit('retired-row', ownerMessage('r3'), receipt('r3'))).rejects.toMatchObject(
+      refused('OWNER_INPUT_KEY_REUSED'),
+    )
+    expect(w.inputs.attention(Number.MAX_SAFE_INTEGER, 10).map((entry) => entry.key)).toEqual(['valid-row'])
   })
 })

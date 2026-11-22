@@ -2,6 +2,8 @@
 
 `Dockerfile.browser` builds a browser-enabled variant of an existing AGH Linux amd64 runtime image for local Docker validation. It needs a Debian 12 base with the `node` user (UID 1000), bubblewrap, and the bundled AGH runtime under `/opt/agh/runtime`. The build installs the system libraries, fonts, Bash and Zsh, then uses the browser plugin's own installer to download and verify its pinned Chromium as `node`.
 
+The LLMSG entrypoint and images default `AGH_TELEMETRY_DISABLED` to `1`. Set it to `0` to allow telemetry subject to the saved user preference.
+
 From the repository root, set `AGH_BASE_IMAGE` to your local AGH runtime image tag, then build:
 
 ```sh

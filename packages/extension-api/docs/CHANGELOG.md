@@ -2,6 +2,17 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## Unreleased
+
+- Managed input admission accepts a channel receipt (`ownerMessage`) or a turn end
+  (`recoveryContinuation`). Callers with an unverified continuation receive
+  `recoveryUnknown` with reason `recoveryUnverified`. `inputResult` reports
+  `absent` with `historyCoverage: 'complete'` for a key with no admission, including
+  keys used only by `send`. The `legacySend` result and `legacyOwnerMessage` admission
+  with reason `legacySourceUnknown` have been removed. Supply a recorded receipt
+  for owner text and start with fresh runtime data if it contains retired admissions.
+- Import the provider conformance runners from `@agnes/extension-api/testkit`.
+
 ## 5.23.0
 
 ### Added

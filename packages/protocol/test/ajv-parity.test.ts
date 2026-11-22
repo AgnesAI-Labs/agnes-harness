@@ -2540,12 +2540,12 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     valid: {
       input: {
         key: 'k1',
-        kind: 'legacyOwnerMessage',
+        kind: 'recoveryContinuation',
         state: 'consumed',
         reason: 'eligible',
         version: 2,
         text: null,
-        source: { kind: 'legacy' },
+        source: { turnEndSeq: 7 },
         binding: { taskId: 'T-1', taskGeneration: 0, startKey: 'start' },
         turn: 3,
         seq: 9,

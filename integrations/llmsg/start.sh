@@ -5,6 +5,7 @@ set -euo pipefail
 : "${AGH_CLOUD_API_BASE_URL:?缺少第三方注入的 AGH_CLOUD_API_BASE_URL}"
 : "${LLMSG_TRACK_URL:?缺少第三方注入的 LLMSG_TRACK_URL}"
 
+export AGH_TELEMETRY_DISABLED="${AGH_TELEMETRY_DISABLED:-1}"
 export AGH_HOME="${AGH_HOME:-/data/agh}"
 export WORKSPACE_DIR="${WORKSPACE_DIR:-/workspace/data}"
 export AGNES_PROFILE="${AGNES_PROFILE:-local-dev}"

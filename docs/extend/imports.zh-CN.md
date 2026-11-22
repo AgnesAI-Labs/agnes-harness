@@ -64,7 +64,6 @@ Host 提供的公开作者命名空间共有以下六个可绑定 kind。请从�
 | 入口 | 状态 | 改用 |
 | --- | --- | --- |
 | `@agnes/plugin-runtime/testkit` + `@agnes/host/testkit`（`createPluginTestHost` + `createPluginTestRegistration`） | 旧组合，新作者模板不要使用。保留供已有集成测试及显式注册桥使用。 | 从 `@agnes/host/author-testkit` 导入 `createPluginTestHost(plugin)`。 |
-| `@agnes/plugin-runtime/testkit` 的 provider conformance 重导出 | 旧别名，新文档不要使用。 | 所属合同入口 `@agnes/extension-api/testkit`。 |
 | `@agnes/plugin-runtime/host`、`@agnes/plugin-runtime/provided-externals`、Host 实现路径、Core/daemon 私有模块 | 内部入口，插件不要使用。基础设施的导出不等于作者合同。 | 公开作者 helper、合同与受控 context 端口。 |
 | Host 内部 `feedbackKind` | 内部入口，不要使用；不是公开合同导出。 | 受支持的工具/服务；此内部绑定没有可供作者导入的 token。 |
 

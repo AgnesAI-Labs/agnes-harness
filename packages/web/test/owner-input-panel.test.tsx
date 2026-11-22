@@ -4,26 +4,28 @@ import { renderRegion, unmountRegion } from '@agnes/web-ui'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { OwnerInputPanel } from '../src/owner-input-panel.js'
 
+const recoveryText = 'Continue the interrupted turn without treating this recovery as a new owner decision.'
+
 const read = (
   version = 3,
   state = 'recoveryUnknown',
-  reason = 'legacySourceUnknown',
+  reason = 'recoveryUnverified',
 ): ManagedInputGetResult => ({
   input: {
     key: 'k1',
-    kind: 'legacyOwnerMessage',
+    kind: 'recoveryContinuation',
     state: state as never,
     reason,
     version,
-    text: 'ship the release notes',
-    source: { channel: 'feishu', eventId: 'evt-9' },
+    text: recoveryText,
+    source: { turnEndSeq: 9 },
     binding: { taskId: 'T-0045', taskGeneration: 2, startKey: 'start-7' },
     history: [
       { version: 1, state: 'queued', reason: 'eligible', at: '2026-11-14T01:00:00.000Z', by: 'platform' },
       {
         version: 2,
         state: 'recoveryUnknown',
-        reason: 'legacySourceUnknown',
+        reason: 'recoveryUnverified',
         at: '2026-11-14T01:00:01.000Z',
         by: 'platform',
       },
@@ -67,15 +69,14 @@ afterEach(() => {
 it('the panel shows original text, source, binding, current state and reason, and the version history', async () => {
   const call = vi.fn(async (_method: string, _params: unknown) => read())
   panel(call)
-  await vi.waitFor(() => expect(bodyText()).toContain('ship the release notes'))
+  await vi.waitFor(() => expect(bodyText()).toContain(recoveryText))
   expect(call).toHaveBeenCalledWith('_agnes/v1/managedInput.get', { sessionId: 's1', key: 'k1' })
   for (const shown of [
-    'feishu',
-    'evt-9',
+    'turnEndSeq',
     'T-0045',
     'start-7',
     'Waiting for your decision',
-    'legacySourceUnknown',
+    'recoveryUnverified',
     'v1',
     'v2',
     'v3',

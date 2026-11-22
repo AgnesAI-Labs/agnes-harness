@@ -99,9 +99,7 @@ export {
   cacheDir,
   dataDir,
   fileSecretsDir,
-  hasLegacySessionsDb,
   inDataDir,
-  legacySessionsDbPath,
   ownStateRoots,
   privateStateRoots,
 } from '@agnes/host-common/paths'

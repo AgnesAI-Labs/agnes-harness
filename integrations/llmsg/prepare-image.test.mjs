@@ -93,7 +93,7 @@ test('prepares committed matching sources and refuses dirty, mismatched or occup
   }
 })
 
-test('start.sh refuses unrecognized AGH_HOME before mutating directory mode or creating WORKSPACE_DIR', () => {
+test('start.sh passes the telemetry setting to home initialization and refuses an unrecognized home', () => {
   const parent = resolve(tmpdir())
   const temp = mkdtempSync(join(parent, 'agh-start-entry-'))
   const source = dirname(fileURLToPath(import.meta.url))
@@ -115,6 +115,7 @@ test('start.sh refuses unrecognized AGH_HOME before mutating directory mode or c
       `#!${process.execPath}\n` +
         'const fs = require("node:fs"), path = require("node:path");\n' +
         'const home = process.env.AGH_HOME;\n' +
+        'console.log(process.env.AGH_TELEMETRY_DISABLED);\n' +
         'if (fs.existsSync(home) && fs.readdirSync(home).some((n) => n !== "cloud-key")) process.exit(1);\n' +
         'fs.mkdirSync(home, { recursive: true, mode: 0o700 });\n' +
         'fs.chmodSync(home, 0o700);\n',
@@ -126,17 +127,25 @@ test('start.sh refuses unrecognized AGH_HOME before mutating directory mode or c
     chmodSync(occupied, 0o755)
     writeFileSync(join(occupied, 'existing.txt'), 'preserve')
 
-    const failed = spawnSync('/bin/bash', [join(source, 'start.sh')], {
-      env: {
-        PATH: `${bin}:/usr/bin:/bin`,
-        AGH_CLOUD_API_BASE_URL: 'https://models.example.com/v1',
-        LLMSG_TRACK_URL: 'https://models.example.com/llmsg/api/track/tool_calls',
-        AGH_HOME: occupied,
-        WORKSPACE_DIR: workspace,
-      },
-      encoding: 'utf8',
-    })
-    assert.notEqual(failed.status, 0)
+    for (const [setting, expected] of [
+      [undefined, '1'],
+      ['', '1'],
+      ['0', '0'],
+    ]) {
+      const failed = spawnSync('/bin/bash', [join(source, 'start.sh')], {
+        env: {
+          PATH: `${bin}:/usr/bin:/bin`,
+          AGH_CLOUD_API_BASE_URL: 'https://models.example.com/v1',
+          LLMSG_TRACK_URL: 'https://models.example.com/llmsg/api/track/tool_calls',
+          AGH_HOME: occupied,
+          WORKSPACE_DIR: workspace,
+          ...(setting === undefined ? {} : { AGH_TELEMETRY_DISABLED: setting }),
+        },
+        encoding: 'utf8',
+      })
+      assert.equal(failed.status, 1, failed.stderr)
+      assert.equal(failed.stdout.trim(), expected)
+    }
     assert.equal(lstatSync(occupied).mode & 0o777, 0o755)
     assert.equal(readFileSync(join(occupied, 'existing.txt'), 'utf8'), 'preserve')
     assert.equal(existsSync(workspace), false)

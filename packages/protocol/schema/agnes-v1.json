@@ -9810,7 +9810,7 @@
               ],
               "properties": {
                 "key": { "type": "string", "minLength": 1, "maxLength": 256 },
-                "kind": { "enum": ["ownerMessage", "recoveryContinuation", "legacyOwnerMessage"] },
+                "kind": { "enum": ["ownerMessage", "recoveryContinuation"] },
                 "state": {
                   "enum": [
                     "queued",
@@ -9908,7 +9908,7 @@
             "properties": {
               "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
               "key": { "type": "string", "minLength": 1, "maxLength": 256 },
-              "kind": { "enum": ["ownerMessage", "recoveryContinuation", "legacyOwnerMessage"] },
+              "kind": { "enum": ["ownerMessage", "recoveryContinuation"] },
               "state": {
                 "enum": [
                   "queued",

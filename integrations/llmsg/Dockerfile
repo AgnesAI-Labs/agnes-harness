@@ -27,6 +27,7 @@ RUN cd /out/runtime && find . -type f -print0 | sort -z | xargs -0 sha256sum > /
  && cd /out && sha256sum cloud.tgz > cloud.SHA256SUMS
 
 FROM ${AGH_BASE_IMAGE} AS runtime
+ENV AGH_TELEMETRY_DISABLED=1
 ARG CORE_REVISION
 ARG CLOUD_PLUGIN_REVISION
 ARG LLMSG_ENTRYPOINT_REVISION
