@@ -104,6 +104,13 @@ it('delegates clipboard access only to the configured cloud frame while retainin
   const host = document.createElement('div')
   host.id = 'app-root'
   document.body.append(host)
+  const media = window.matchMedia('(max-width: 900px)')
+  let narrow = true
+  Object.defineProperty(media, 'matches', { configurable: true, get: () => narrow })
+  const originalMatchMedia = window.matchMedia.bind(window)
+  vi.stubGlobal('matchMedia', (query: string) =>
+    query === '(max-width: 900px)' ? media : originalMatchMedia(query),
+  )
   try {
     await act(async () => mountBackendWorkbench())
     const cloud = host.querySelector<HTMLIFrameElement>('[data-testid="backend-frame-cloud"]')
@@ -114,7 +121,20 @@ it('delegates clipboard access only to the configured cloud frame while retainin
     )
     expect(new URL(cloud?.src ?? '').origin).toBe(meta.dataset.cloudOrigin)
     expect(local).toBeNull()
+    await act(async () => {
+      document.body.classList.add('sidebar-open')
+    })
+    expect(cloud?.hidden).toBe(true)
+    expect(cloud?.hasAttribute('inert')).toBe(true)
+    await act(async () => {
+      narrow = false
+      media.dispatchEvent(new Event('change'))
+    })
+    expect(cloud?.hidden).toBe(false)
+    expect(cloud?.hasAttribute('inert')).toBe(false)
   } finally {
+    document.body.classList.remove('sidebar-open')
+    vi.stubGlobal('matchMedia', originalMatchMedia)
     await act(async () => unmountApplication(document))
     meta.remove()
     settings.disableIframePageLoading = previousIframeLoading

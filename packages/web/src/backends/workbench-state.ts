@@ -20,6 +20,31 @@ export function sessionFrameSearch(session: string | undefined): string | undefi
 export function errorCloudSnapshot(error: string, rows: BackendSnapshot['rows'] = []): BackendSnapshot {
   return { ready: false, connected: false, rows, activity: [], more: false, error }
 }
+
+const NARROW_SIDEBAR_QUERY = '(max-width: 900px)'
+
+export function isNarrowSidebarOpen(): boolean {
+  return (
+    typeof document !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia(NARROW_SIDEBAR_QUERY).matches &&
+    document.body.classList.contains('sidebar-open')
+  )
+}
+
+export function observeNarrowSidebarOpen(onChange: (open: boolean) => void): () => void {
+  if (typeof document === 'undefined') return () => {}
+  const narrow = typeof window.matchMedia === 'function' ? window.matchMedia(NARROW_SIDEBAR_QUERY) : undefined
+  const sync = () => onChange(Boolean(narrow?.matches) && document.body.classList.contains('sidebar-open'))
+  const observer = new MutationObserver(sync)
+  observer.observe(document.body, { attributes: true, attributeFilter: ['class'] })
+  narrow?.addEventListener('change', sync)
+  sync()
+  return () => {
+    observer.disconnect()
+    narrow?.removeEventListener('change', sync)
+  }
+}
 export type CloudConnectionStatus = 'unconfigured' | 'connecting' | 'ready' | 'disconnected' | 'error'
 export type CloudConnectionState = {
   status: CloudConnectionStatus

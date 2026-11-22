@@ -52,7 +52,9 @@ import {
   cloudConnectionState,
   cloudFrameSource,
   errorCloudSnapshot,
+  isNarrowSidebarOpen,
   isSharedCloudOrigin,
+  observeNarrowSidebarOpen,
   sessionFrameSearch,
 } from './workbench-state.js'
 
@@ -80,9 +82,7 @@ export function CloudWorkbenchStage({ children }: { children?: ReactNode } = {})
     search: undefined as string | undefined,
     retired: false,
   })
-  const [sidebarOpen, setSidebarOpen] = useState(
-    () => typeof document !== 'undefined' && document.body.classList.contains('sidebar-open'),
-  )
+  const [sidebarOpen, setSidebarOpen] = useState(isNarrowSidebarOpen)
   const credentialRequest = useRef<AbortController | undefined>(undefined)
   const connectionRevision = useRef(0)
   const [connectionEpoch, setConnectionEpoch] = useState(0)
@@ -136,15 +136,14 @@ export function CloudWorkbenchStage({ children }: { children?: ReactNode } = {})
     }
   }, [active, cloud])
 
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      const open = document.body.classList.contains('sidebar-open')
-      setSidebarOpen(open)
-      cloudFrameRef.current?.toggleAttribute('inert', open)
-    })
-    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] })
-    return () => observer.disconnect()
-  }, [])
+  useEffect(
+    () =>
+      observeNarrowSidebarOpen((open) => {
+        setSidebarOpen(open)
+        cloudFrameRef.current?.toggleAttribute('inert', open)
+      }),
+    [],
+  )
 
   const loadCredentials = useCallback(() => {
     credentialRequest.current?.abort()
