@@ -38,23 +38,47 @@ type ChildEventState = {
   droppedOutOfOrder: number
 }
 
+const MAX_CHILD_EVENTS = 1000
+const ONE_CREDIT_MICRO = 1_000_000n
+
 /**
- * Unconsumed budget reserved by non-terminal direct child scopes under `ancestorScopeId`.
- * Computed live inside the synchronous admission transaction so terminal transitions and
- * cancelled creations release unused capacity automatically without drift or double-counting.
+ * Unconsumed budget reserved by non-terminal direct children under `ancestorScopeId`:
+ * - Explicit child scopes reserve `max(0, capMicro - settledMicro - heldMicro)` (direct children only,
+ *   so multi-generation descendants never double-count at ancestor levels).
+ * - Unbounded direct children (sharing `ancestorScopeId`) reserve a lightweight floor unit
+ *   `min(1 credit, cap / maxFanOut)` so mixed unbounded + explicit spawns cannot breach the cap.
  */
 export function unconsumedChildCapMicro(
   scopes: ReadonlyMap<string, BudgetScopeRecord>,
   tasks: ReadonlyMap<SessionKey, ChildTaskRecord>,
   ancestorScopeId: string,
+  ancestorCapMicro: bigint,
+  maxFanOut: number,
 ): bigint {
   let reserved = 0n
+  const explicitChildren = new Set<SessionKey>()
   for (const scope of scopes.values()) {
     if (scope.parentScopeId !== ancestorScopeId || scope.childKey === null) continue
+    explicitChildren.add(scope.childKey)
     const task = tasks.get(scope.childKey)
     if (!task || task.creationPhase === 'cancelled' || isTerminalChildState(task.state)) continue
     const remaining = scope.capMicro - scope.settledMicro - scope.heldMicro
     if (remaining > 0n) reserved += remaining
+  }
+  const fanDiv = BigInt(Math.max(1, maxFanOut))
+  const perUnboundedFloor =
+    ancestorCapMicro / fanDiv < ONE_CREDIT_MICRO ? ancestorCapMicro / fanDiv : ONE_CREDIT_MICRO
+  if (perUnboundedFloor > 0n) {
+    for (const task of tasks.values()) {
+      if (
+        task.budgetScopeId !== ancestorScopeId ||
+        explicitChildren.has(task.childKey) ||
+        task.creationPhase === 'cancelled' ||
+        isTerminalChildState(task.state)
+      )
+        continue
+      reserved += perUnboundedFloor
+    }
   }
   return reserved
 }
@@ -64,17 +88,20 @@ export function checkAncestorBudget(
   tasks: ReadonlyMap<SessionKey, ChildTaskRecord>,
   ancestorScopeIds: readonly string[],
   childCapMicro: bigint | null,
+  maxFanOut: number,
 ): string | null {
   if (childCapMicro !== null && childCapMicro <= 0n) return 'child budget must be positive'
+  const fanDiv = BigInt(Math.max(1, maxFanOut))
   for (const id of ancestorScopeIds) {
     const scope = scopes.get(id)
     if (!scope) return `unknown ancestor scope ${id}`
-    const reserved = unconsumedChildCapMicro(scopes, tasks, scope.scopeId)
+    const reserved = unconsumedChildCapMicro(scopes, tasks, scope.scopeId, scope.capMicro, maxFanOut)
     const remaining = scope.capMicro - scope.settledMicro - scope.heldMicro - reserved
     if (childCapMicro !== null) {
       if (childCapMicro > remaining) return 'child budget exceeds remaining ancestor cap'
-    } else if (remaining <= 0n) {
-      return 'ancestor budget cap is exhausted'
+    } else {
+      const floor = scope.capMicro / fanDiv < ONE_CREDIT_MICRO ? scope.capMicro / fanDiv : ONE_CREDIT_MICRO
+      if (remaining <= 0n || (floor > 0n && remaining < floor)) return 'ancestor budget cap is exhausted'
     }
   }
   return null
@@ -122,6 +149,12 @@ export function memoryChildEventPort(tasks: ReadonlyMap<SessionKey, ChildTaskRec
       s.highWaterSeq = seq
       s.events.push(envelope)
       s.eventIds.set(envelope.eventId, envelope)
+      while (s.events.length > MAX_CHILD_EVENTS) {
+        const dropIdx = s.events.findIndex((e) => !e.state || !isTerminalChildState(e.state))
+        if (dropIdx < 0) break
+        const [dropped] = s.events.splice(dropIdx, 1)
+        if (dropped) s.eventIds.delete(dropped.eventId)
+      }
       return { accepted: true, envelope }
     },
 

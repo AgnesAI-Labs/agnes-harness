@@ -475,12 +475,11 @@ export interface ToolContext {
       status: import('./child-agent.js').ChildAgentStatus
       executionState: import('./child-control.js').ChildExecutionState
     }>
-    recap?(opts?: { mode?: 'hybrid' | 'deterministic' }): Promise<{
+    recap?(): Promise<{
       snapshot: import('./child-control.js').RecapFactSnapshot
-      narrativeSource: 'llm' | 'deterministic_fallback' | 'deterministic'
       markdown: string
-      valid: boolean
-      violations: readonly string[]
+      allowedArtifactPaths: readonly string[]
+      hasIncompleteWork: boolean
     }>
     list?(): Promise<readonly ChildAgentListing[]>
     models?(): Promise<readonly ChildAgentModel[]>

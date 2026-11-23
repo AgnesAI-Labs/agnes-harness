@@ -12,6 +12,8 @@ export type ChildAgentCapabilities = Readonly<{
   continuable: boolean
   /** Stops the current turn without disposing the child. */
   interrupt: boolean
+  /** Supports checkpoint-boundary pause and resume while preserving context and artifacts. */
+  pause?: boolean
   /** Honors `options.model`. */
   modelSelection: boolean
   /** Can seed the child from the parent conversation (`options.fork`). */

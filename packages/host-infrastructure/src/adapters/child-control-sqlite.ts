@@ -522,7 +522,7 @@ export function sqliteChildControl(
         for (const id of ancestorScopeIds) {
           const scope = scopeOf(id)
           if (!scope) return { status: 'refused', reason: 'budget', message: `unknown ancestor scope ${id}` }
-          const reserved = sqliteUnconsumedChildCapMicro(db, scope.scopeId)
+          const reserved = sqliteUnconsumedChildCapMicro(db, scope.scopeId, scope.capMicro, input.maxFanOut)
           const remaining = scope.capMicro - scope.settledMicro - scope.heldMicro - reserved
           if (input.childCapMicro !== null) {
             if (input.childCapMicro > remaining)
@@ -531,8 +531,11 @@ export function sqliteChildControl(
                 reason: 'budget',
                 message: 'child budget exceeds remaining ancestor cap',
               }
-          } else if (remaining <= 0n) {
-            return { status: 'refused', reason: 'budget', message: 'ancestor budget cap is exhausted' }
+          } else {
+            const fanDiv = BigInt(Math.max(1, input.maxFanOut))
+            const floor = scope.capMicro / fanDiv < 1_000_000n ? scope.capMicro / fanDiv : 1_000_000n
+            if (remaining <= 0n || (floor > 0n && remaining < floor))
+              return { status: 'refused', reason: 'budget', message: 'ancestor budget cap is exhausted' }
           }
         }
         if (!q.session.get(input.parentKey))

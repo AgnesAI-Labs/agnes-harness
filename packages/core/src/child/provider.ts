@@ -18,6 +18,7 @@ export const IN_PROCESS_CHILD_PROVIDER_ID = 'in-process'
 export const IN_PROCESS_CHILD_CAPABILITIES: ChildAgentCapabilities = Object.freeze({
   continuable: true,
   interrupt: true,
+  pause: true,
   modelSelection: true,
   inheritsParentContext: true,
   // Git worktree preparation belongs to the official tool's deferred-start path.

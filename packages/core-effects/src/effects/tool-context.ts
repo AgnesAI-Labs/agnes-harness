@@ -104,12 +104,11 @@ export type ChildrenFactory = {
     status: import('@agnes/extension-api').ChildAgentStatus
     executionState: import('@agnes/extension-api').ChildExecutionState
   }>
-  recap?(opts?: { mode?: 'hybrid' | 'deterministic' }): Promise<{
+  recap?(): Promise<{
     snapshot: import('@agnes/extension-api').RecapFactSnapshot
-    narrativeSource: 'llm' | 'deterministic_fallback' | 'deterministic'
     markdown: string
-    valid: boolean
-    violations: readonly string[]
+    allowedArtifactPaths: readonly string[]
+    hasIncompleteWork: boolean
   }>
   cancel?(childKey: string): Promise<void>
   list?(): Promise<readonly ChildAgentListing[]>
@@ -594,7 +593,7 @@ export function buildToolContext(
         : {}),
       ...(d.children.recap
         ? {
-            recap: (opts?: { mode?: 'hybrid' | 'deterministic' }) => d.children.recap!(opts),
+            recap: () => d.children.recap!(),
           }
         : {}),
     },

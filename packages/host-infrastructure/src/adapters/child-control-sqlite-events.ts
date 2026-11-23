@@ -11,6 +11,9 @@ import {
 
 type Db = Pick<DatabaseSync, 'prepare' | 'exec'>
 
+const MAX_CHILD_EVENTS = 1000
+const ONE_CREDIT_MICRO = 1_000_000n
+
 const CHILD_EVENTS_DDL = [
   `CREATE TABLE IF NOT EXISTS child_events (
      child_key TEXT NOT NULL, seq INTEGER NOT NULL, event_id TEXT NOT NULL, ts INTEGER NOT NULL,
@@ -66,7 +69,12 @@ function parseLease(row: Record<string, unknown>): ChildLeaseRecord {
  * Computes unconsumed cap reserved by active/non-terminal direct child scopes under `ancestorScopeId`.
  * Runs inside the same SQLite transaction as `createDelegatedChild`, preventing concurrent over-allocation.
  */
-export function sqliteUnconsumedChildCapMicro(db: Db, ancestorScopeId: string): bigint {
+export function sqliteUnconsumedChildCapMicro(
+  db: Db,
+  ancestorScopeId: string,
+  ancestorCapMicro: bigint,
+  maxFanOut: number,
+): bigint {
   const rows = db
     .prepare(
       `SELECT bs.cap_micro, bs.settled_micro, bs.held_micro
@@ -82,6 +90,23 @@ export function sqliteUnconsumedChildCapMicro(db: Db, ancestorScopeId: string): 
   for (const row of rows) {
     const remaining = BigInt(row.cap_micro) - BigInt(row.settled_micro) - BigInt(row.held_micro)
     if (remaining > 0n) reserved += remaining
+  }
+  const fanDiv = BigInt(Math.max(1, maxFanOut))
+  const perUnboundedFloor =
+    ancestorCapMicro / fanDiv < ONE_CREDIT_MICRO ? ancestorCapMicro / fanDiv : ONE_CREDIT_MICRO
+  if (perUnboundedFloor > 0n) {
+    const unbounded = db
+      .prepare(
+        `SELECT COUNT(*) AS n
+         FROM child_tasks ct
+         WHERE ct.budget_scope_id = ?
+           AND ct.creation_phase != 'cancelled'
+           AND ct.state NOT IN ('completed', 'failed', 'cancelled')
+           AND NOT EXISTS (SELECT 1 FROM budget_scopes bs WHERE bs.child_key = ct.child_key)`,
+      )
+      .get(ancestorScopeId) as { n: number } | undefined
+    const count = BigInt(Number(unbounded?.n ?? 0))
+    if (count > 0n) reserved += count * perUnboundedFloor
   }
   return reserved
 }
@@ -155,6 +180,14 @@ export function sqliteChildEventPort(db: Db, tx: <T>(fn: () => T) => T) {
           `INSERT INTO child_event_meta (child_key, high_water_seq, dropped_out_of_order) VALUES (?, ?, 0)
            ON CONFLICT(child_key) DO UPDATE SET high_water_seq = excluded.high_water_seq`,
         ).run(event.childKey, seq)
+        db.prepare(
+          `DELETE FROM child_events
+           WHERE child_key = ?
+             AND (state IS NULL OR state NOT IN ('completed', 'failed', 'cancelled'))
+             AND seq NOT IN (
+               SELECT seq FROM child_events WHERE child_key = ? ORDER BY seq DESC LIMIT ?
+             )`,
+        ).run(event.childKey, event.childKey, MAX_CHILD_EVENTS)
         return { accepted: true, envelope: Object.freeze({ ...event, seq }) }
       })
     },

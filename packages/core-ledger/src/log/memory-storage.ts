@@ -22,11 +22,7 @@ import {
   type TreeUsage,
 } from '@agnes/core-child-control/child/types'
 import { type Clock, CoreError, type Event, type Seq, type SessionKey } from '@agnes/core-common/types'
-import {
-  assertMemoryCreationCas,
-  checkAncestorBudget,
-  memoryChildEventPort,
-} from './memory-child-events.js'
+import { assertMemoryCreationCas, checkAncestorBudget, memoryChildEventPort } from './memory-child-events.js'
 import { lostChildPort, transitionMemoryChild } from './memory-child-state.js'
 import { MemoryStorageBase } from './memory-storage-base.js'
 import {
@@ -575,6 +571,7 @@ export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, 
       this.childTasks,
       ancestorScopeIds,
       input.childCapMicro,
+      input.maxFanOut,
     )
     if (budgetRefusal) return { status: 'refused', reason: 'budget', message: budgetRefusal }
 
