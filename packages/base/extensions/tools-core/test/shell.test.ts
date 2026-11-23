@@ -930,6 +930,30 @@ describe('shell without a job registry', () => {
   })
 })
 
+it.each([
+  '$c = Get-Content -Raw -Encoding utf8 (session-file://3/1; $null) 2>$null; exit 1',
+  "Get-Content -LiteralPath 'session-file://3/1'",
+])('directs a PowerShell attachment read to the session read tool: %s', async (command) => {
+  const base = fakeToolContext({ exec: () => ({ code: 1, stdout: '', stderr: 'PowerShell error' }) })
+  const ctx = { ...base, platform: { ...base.platform, shell: 'powershell' as const } }
+  const result = await shellTool.execute({ command }, ctx)
+  expect(result.isError).toBe(true)
+  expect(textOf(result)).toContain('Use read with path "session-file://3/1"')
+  expect(textOf(result)).toContain('save_to')
+  expect(base.calls.exec).toEqual([])
+})
+
+it.each([
+  "Get-Content -LiteralPath 'proofread.txt' -Encoding utf8",
+  "Get-Content -LiteralPath 'proofread.txt' | Select-String 'session-file://3/1'",
+  "Write-Output 'session-file://3/1'",
+])('passes ordinary PowerShell commands through unchanged: %s', async (command) => {
+  const base = fakeToolContext({ exec: () => ({ code: 0, stdout: 'ok', stderr: '' }) })
+  const ctx = { ...base, platform: { ...base.platform, shell: 'powershell' as const } }
+  expect(textOf(await shellTool.execute({ command }, ctx))).toContain('[exit 0]')
+  expect(base.calls.exec).toEqual([[SHELL_SENTINEL, command]])
+})
+
 it('reports measured descendant cleanup and PowerShell wrapper guidance, without claiming a timeout cause', async () => {
   const original = fakeToolContext({ sessionKey: 'shell-guidance' })
   const ctx = { ...original, platform: { ...original.platform, shell: 'powershell' as const } }
