@@ -112,14 +112,35 @@ export async function readRemoteFrontendInfo(remote: string, signal: AbortSignal
   return { instanceId: info.instanceId }
 }
 
+let activeRemoteSessionPath = ''
+let activeRemoteInstanceId = ''
+let nativeRemoteFetch: typeof fetch | undefined
+
+export async function needsRemoteFrontendReload(
+  remote: string,
+  signal: AbortSignal,
+  manual = false,
+): Promise<boolean> {
+  const info = await readRemoteFrontendInfo(remote, signal, nativeRemoteFetch ?? fetch)
+  return (
+    manual ||
+    remoteAccessPath(remote) !== activeRemoteSessionPath ||
+    info.instanceId !== activeRemoteInstanceId
+  )
+}
+
 export async function prepareRemoteFrontend(): Promise<void> {
   const remote = selectedRemoteOrigin()
   if (!remote) return
   const original = window.fetch.bind(window)
+  nativeRemoteFetch = original
   const info = await readRemoteFrontendInfo(remote, AbortSignal.timeout(25_000), original)
+  const accessPath = remoteAccessPath(remote)
+  activeRemoteSessionPath = accessPath
+  activeRemoteInstanceId = info.instanceId
   const meta = document.querySelector<HTMLMetaElement>('meta#agnes-config')
   if (!meta) throw new Error('missing frontend configuration')
-  meta.dataset.ws = `${remoteTransportOrigin(remote).replace(/^http/u, 'ws')}${remoteAccessPath(remote)}${REMOTE_FRONTEND_WS}`
+  meta.dataset.ws = `${remoteTransportOrigin(remote).replace(/^http/u, 'ws')}${accessPath}${REMOTE_FRONTEND_WS}`
   meta.dataset.backend = JSON.stringify([remote, info.instanceId])
   window.fetch = remoteFrontendFetch(original, remote, location.origin)
   const NativeSocket = window.WebSocket

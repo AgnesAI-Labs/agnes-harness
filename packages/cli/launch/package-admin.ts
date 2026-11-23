@@ -140,7 +140,7 @@ export function localPackageAdmin(
       throw error
     }))
   const examples = localClientExamples(backend, client, initialize)
-  const cloudGateway = createCloudGateway()
+  const cloudGateway = createCloudGateway(new URL(origin).origin)
   const handleCloudAuthorization = cloudAuthorizationRelay(
     origin,
     async (input) => {

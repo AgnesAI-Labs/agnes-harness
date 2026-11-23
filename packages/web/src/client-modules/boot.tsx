@@ -91,6 +91,7 @@ import {
 import { ProfileApprovals, ProfileAttentionEntry } from '../regions/profile-approvals.js'
 import { profileAttentionCaller } from '../regions/profile-attention-caller.js'
 import { createProfileAttention } from '../regions/profile-attention-state.js'
+import { backendResourceUrl } from '../remote-frontend.js'
 import { sessionInventory } from '../session-inventory.js'
 import type { SidebarActions, SidebarState } from '../sidebar.js'
 import type { VoiceController } from '../voice/controller.js'
@@ -181,7 +182,10 @@ export async function startClientModules(options: {
   voice?: VoiceController | false | undefined
 }): Promise<ClientModulesRuntime> {
   const ctx = new Context()
-  const presentation: PresentationHost = { ...options.presentation }
+  const presentation: PresentationHost = {
+    resolveResourceUrl: (url) => backendResourceUrl(url),
+    ...options.presentation,
+  }
   new PresentationService(ctx, presentation)
   await ctx.plugin(SlotRegistry)
   const builtinUnits = new BuiltinWebUnitRegistry()

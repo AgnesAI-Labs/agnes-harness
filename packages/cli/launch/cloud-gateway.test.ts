@@ -18,6 +18,7 @@ import {
   createPluginStreamGateway,
   type StreamPrincipal,
 } from '../../plugin-streams/src/index.js'
+import { uiComponentFrame } from '../../web-server/src/ui-component-frame.js'
 
 const fixture = vi.hoisted(() => ({ origin: '' }))
 vi.mock('node:https', async () => ({
@@ -39,7 +40,9 @@ it('admits streams across the real cloud/publication/proxy chain without trustin
   const lifetime = new AbortController()
   const servers: ReturnType<typeof createServer>[] = []
   const peers = new Set<Duplex>()
-  const gateway = createCloudGateway()
+  const ownerOrigin = 'http://127.0.0.1:4177'
+  const gateway = createCloudGateway(ownerOrigin)
+  let expectedFrameCsp = ''
   let proxy: ReturnType<typeof pluginStreamProxy> | undefined
   let streams: ReturnType<typeof createPluginStreamGateway> | undefined
   let publication: Awaited<ReturnType<typeof createPublishedFrontend>> | undefined
@@ -123,6 +126,23 @@ it('admits streams across the real cloud/publication/proxy chain without trustin
       if (request.url === '/api/write') {
         writes++
         response.writeHead(401).end()
+        return
+      }
+      if (
+        request.url ===
+        '/plugins/generations/11111111-1111-1111-1111-111111111111/sample/ui.mjs?agnes_ui_frame=1'
+      ) {
+        const frame = uiComponentFrame('export const renderers = {}')
+        expectedFrameCsp = frame.csp
+        response
+          .writeHead(200, {
+            'content-type': 'text/html; charset=utf-8',
+            'cache-control': 'no-store',
+            'content-security-policy': frame.csp,
+            'referrer-policy': 'no-referrer',
+            'x-content-type-options': 'nosniff',
+          })
+          .end(frame.body)
         return
       }
       response.writeHead(404).end()
@@ -209,7 +229,41 @@ it('admits streams across the real cloud/publication/proxy chain without trustin
     const local = await listen(server)
     const target = 'https://8443-fixture.ap-shanghai.tencentags.com'
     expect((await fetch(local + prefix + REMOTE_FRONTEND_INFO)).status).toBe(401)
+    const unauthOwnerProbe = await fetch(local + prefix + REMOTE_FRONTEND_INFO, {
+      headers: { origin: ownerOrigin, 'sec-fetch-site': 'same-site' },
+    })
+    expect(unauthOwnerProbe.status).toBe(401)
+    expect(unauthOwnerProbe.headers.get('access-control-allow-origin')).toBe(ownerOrigin)
     gateway.register(target, { ...grant, trafficToken: 'synthetic-platform-proof' })
+    const ownerInfo = await fetch(local + prefix + REMOTE_FRONTEND_INFO, {
+      headers: { origin: ownerOrigin, 'sec-fetch-site': 'same-site' },
+    })
+    expect(ownerInfo.status).toBe(200)
+    expect(ownerInfo.headers.get('access-control-allow-origin')).toBe(ownerOrigin)
+    expect(
+      (
+        await fetch(local + prefix + REMOTE_FRONTEND_INFO, {
+          headers: { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' },
+        })
+      ).status,
+    ).toBe(401)
+    expect(
+      (
+        await fetch(`${local}${prefix}/api/write`, {
+          headers: { origin: ownerOrigin, 'sec-fetch-site': 'same-site' },
+        })
+      ).status,
+    ).toBe(401)
+    const componentPath =
+      '/plugins/generations/11111111-1111-1111-1111-111111111111/sample/ui.mjs?agnes_ui_frame=1'
+    const componentFrame = await fetch(local + prefix + componentPath)
+    expect(componentFrame.status).toBe(200)
+    expect(expectedFrameCsp).toContain("default-src 'none'")
+    expect(expectedFrameCsp).toContain("connect-src 'none'")
+    expect(componentFrame.headers.get('content-security-policy')).toBe(expectedFrameCsp)
+    expect(componentFrame.headers.get('referrer-policy')).toBe('no-referrer')
+    expect(componentFrame.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(componentFrame.headers.get('cache-control')).toBe('no-store')
     const main = new WebSocket(local.replace('http:', 'ws:') + prefix + REMOTE_FRONTEND_WS)
     const next = (socket: WebSocket) =>
       new Promise<string>((resolve, reject) => {

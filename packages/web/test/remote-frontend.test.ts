@@ -29,6 +29,8 @@ import {
 } from '../src/remote-authorization.js'
 import {
   backendResourceUrl,
+  needsRemoteFrontendReload,
+  prepareRemoteFrontend,
   readRemoteFrontendInfo,
   remoteFrontendFetch,
   selectedRemoteOrigin,
@@ -474,6 +476,56 @@ it('keeps a late canceled cloud instance recovery ticket out of the authorizatio
     )
     expect(fetcher).toHaveBeenCalledOnce()
   } finally {
+    forgetRemoteAccess(remote)
+    localStorage.removeItem(`agnes.cloud.credential.v1:${remote}`)
+  }
+})
+
+it('reloads a standalone remote frontend only when its capability or instance changes', async () => {
+  const remote = 'https://8443-standalone.ap-shanghai.tencentags.com'
+  const ref = 'secret://generic/11111111-1111-1111-1111-111111111111'
+  const frameOrigin = `http://${location.hostname}:49996`
+  const savedHref = location.href
+  const originalFetch = window.fetch
+  const OriginalSocket = window.WebSocket
+  const meta = document.createElement('meta')
+  meta.id = 'agnes-config'
+  meta.dataset.cloudOrigin = frameOrigin
+  document.head.append(meta)
+  bindCloudCredential(remote, ref, [{ id: ref }])
+  history.replaceState({}, '', `/?remote=${encodeURIComponent(remote)}`)
+  const makeToken = (expiresAt: number, tag: string) =>
+    `${expiresAt.toString(36)}.${tag.repeat(22).slice(0, 22)}.${'B'.repeat(43)}`
+  let activeToken = makeToken(Date.now() + 8 * 60 * 60 * 1000, 'A')
+  let instanceId = 'standalone-1'
+  window.fetch = vi.fn(async (input) => {
+    const url = String(input)
+    if (url.endsWith(CLOUD_AUTHORIZATION_PATH))
+      return Response.json({
+        token: activeToken,
+        expiresAt: Date.now() + 8 * 60 * 60 * 1000,
+        proxied: true,
+      })
+    if (!url.includes(remoteFrontendSessionPath(activeToken))) return new Response('', { status: 401 })
+    return Response.json({
+      version: REMOTE_FRONTEND_KEY_VERSION,
+      access: 'key-owner',
+      wsPath: REMOTE_FRONTEND_WS,
+      instanceId,
+    })
+  }) as unknown as typeof fetch
+  try {
+    await prepareRemoteFrontend()
+    expect(await needsRemoteFrontendReload(remote, new AbortController().signal)).toBe(false)
+    expect(await needsRemoteFrontendReload(remote, new AbortController().signal, true)).toBe(true)
+    activeToken = makeToken(Date.now() + 8 * 60 * 60 * 1000, 'C')
+    instanceId = 'standalone-2'
+    expect(await needsRemoteFrontendReload(remote, new AbortController().signal)).toBe(true)
+  } finally {
+    window.fetch = originalFetch
+    window.WebSocket = OriginalSocket
+    meta.remove()
+    history.replaceState({}, '', savedHref)
     forgetRemoteAccess(remote)
     localStorage.removeItem(`agnes.cloud.credential.v1:${remote}`)
   }

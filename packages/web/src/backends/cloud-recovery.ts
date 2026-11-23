@@ -1,9 +1,13 @@
+import { discoverCloudOrigin, forgetRemoteAccess } from '../remote-authorization.js'
+import { readRemoteFrontendInfo } from '../remote-frontend.js'
+
 /** Re-discover an existing offline instance, with bounded attempts and no business replay. */
 export function watchCloudOrigin(
   origin: string,
   discover: (signal: AbortSignal) => Promise<string>,
   changed: (origin: string) => void,
   failed: (reason: string) => void,
+  verify?: (origin: string, signal: AbortSignal) => Promise<boolean>,
 ): () => void {
   const request = new AbortController()
   let delay = 1000,
@@ -21,7 +25,9 @@ export function watchCloudOrigin(
       const next = await discover(attempt.signal)
       if (request.signal.aborted) return
       attempt.signal.throwIfAborted()
-      if (next !== origin) {
+      if (next !== origin || (verify && (await verify(next, attempt.signal)))) {
+        if (request.signal.aborted) return
+        attempt.signal.throwIfAborted()
         changed(next)
         return
       }
@@ -53,4 +59,31 @@ export function watchCloudOrigin(
     request.abort()
     clearTimeout(timer)
   }
+}
+
+export function watchCloudBackendRecovery(options: {
+  cloud: string
+  credentialRef: string
+  managed: boolean
+  canWatch: () => boolean
+  onRecovered: (origin: string) => void
+  onFailed: (reason: string) => void
+}): () => void {
+  return watchCloudOrigin(
+    options.cloud,
+    (signal) =>
+      options.managed
+        ? discoverCloudOrigin(options.credentialRef, signal, undefined, options.canWatch)
+        : Promise.resolve(options.cloud),
+    (origin) => {
+      if (options.canWatch()) options.onRecovered(origin)
+    },
+    options.onFailed,
+    async (origin, signal) => {
+      if (!options.canWatch()) return false
+      if (!options.managed) forgetRemoteAccess(origin)
+      await readRemoteFrontendInfo(origin, signal)
+      return options.canWatch()
+    },
+  )
 }

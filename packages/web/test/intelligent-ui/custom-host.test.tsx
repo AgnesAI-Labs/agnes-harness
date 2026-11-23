@@ -2,6 +2,7 @@
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true })
 
 import { Context } from '@agnes/cordis'
+import { remoteFrontendSessionPath } from '@agnes/protocol'
 import type { UiCustomComponent } from '@agnes/protocol/gen/intelligent-ui'
 import type { ClientModuleRosterRow } from '@agnes/protocol/gen/package-admin'
 import { ThemeService } from '@agnes/web-client'
@@ -13,6 +14,8 @@ import {
   CustomUiHost,
   selectCustomUiModule,
 } from '../../../web-conversation/src/intelligent-ui/custom-host.js'
+import { authorizeRemoteFrontend, forgetRemoteAccess } from '../../src/remote-authorization.js'
+import { backendResourceUrl } from '../../src/remote-frontend.js'
 import { financeRecord } from './fixture.js'
 
 const declaration = {
@@ -83,12 +86,36 @@ describe('reviewed custom host', () => {
     ).toBeUndefined()
   })
   it('uses text for an untrusted module and isolates renderer failure while gating action ids', async () => {
+    const settings = (window as unknown as { happyDOM: { settings: { disableIframePageLoading: boolean } } })
+      .happyDOM.settings
+    const prevIframe = settings.disableIframePageLoading
+    settings.disableIframePageLoading = true
     const container = document.createElement('div')
     document.body.append(container)
     const root = createRoot(container)
     const theme = new ThemeService(new Context(), 'light')
+    const remote = 'https://8443-fixture.ap-shanghai.tencentags.com'
+    const frameOrigin = `http://${location.hostname}:49997`
+    const token = `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`
+    const prefix = remoteFrontendSessionPath(token)
+    const meta = document.createElement('meta')
+    meta.id = 'agnes-config'
+    meta.dataset.cloudOrigin = frameOrigin
+    document.head.append(meta)
+    localStorage.setItem(
+      `agnes.cloud.credential.v1:${remote}`,
+      'secret://generic/11111111-1111-1111-1111-111111111111',
+    )
+    await authorizeRemoteFrontend(remote, new AbortController().signal, async () =>
+      Response.json({ token, expiresAt: Date.now() + 60_000, proxied: true }),
+    )
     let rows: ClientModuleRosterRow[] = [{ ...row, phase: 'blocked' }]
-    const source = { theme, list: async () => rows, subscribe: () => () => {} }
+    const source = {
+      theme,
+      list: async () => rows,
+      subscribe: () => () => {},
+      resolveUrl: (url: string) => backendResourceUrl(url, remote, frameOrigin),
+    }
     const onAction = vi.fn()
     const render = async (disabled = false) => {
       await act(async () =>
@@ -109,6 +136,7 @@ describe('reviewed custom host', () => {
       )
       const frame = container.querySelector('iframe')!
       expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
+      expect(frame.getAttribute('src')).toBe(`${frameOrigin}${prefix}${row.entryUrl}?agnes_ui_frame=1`)
       await act(async () => message(frame, { type: 'agnes-ui-action', id: 'undeclared' }))
       expect(onAction).not.toHaveBeenCalled()
       await act(async () => message(frame, { type: 'agnes-ui-ready' }))
@@ -126,6 +154,10 @@ describe('reviewed custom host', () => {
       expect(container.querySelector('iframe')).toBeNull()
       await act(async () => second.unmount())
     } finally {
+      settings.disableIframePageLoading = prevIframe
+      forgetRemoteAccess(remote)
+      localStorage.removeItem(`agnes.cloud.credential.v1:${remote}`)
+      meta.remove()
       container.remove()
     }
   })

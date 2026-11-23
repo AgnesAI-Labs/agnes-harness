@@ -1,6 +1,10 @@
 import { createClient, localStorageJournal } from '@agnes/sdk/browser'
 import { bootstrapProbe } from '../reconnect.js'
-import { frontendBackendIdentity, readRemoteFrontendInfo, selectedRemoteOrigin } from '../remote-frontend.js'
+import {
+  frontendBackendIdentity,
+  needsRemoteFrontendReload,
+  selectedRemoteOrigin,
+} from '../remote-frontend.js'
 
 /** One page owns one immutable backend context; switching creates a fresh context before replay. */
 export function createBackendConnection(wsUrl: string | undefined) {
@@ -17,11 +21,7 @@ export function createBackendConnection(wsUrl: string | undefined) {
       journal: localStorageJournal(sessionStorage, namespace),
     }),
     probe: remote
-      ? async (signal: AbortSignal) => {
-          await readRemoteFrontendInfo(remote, signal)
-          // A reload renews the authenticated transport and its backend-scoped journal.
-          return true
-        }
+      ? (signal: AbortSignal, manual: boolean) => needsRemoteFrontendReload(remote, signal, manual)
       : bootstrapProbe((input, init) => fetch(input, init), wsUrl ?? ''),
   }
 }

@@ -1,7 +1,13 @@
 // @vitest-environment happy-dom
 
 import { Context } from '@agnes/cordis'
-import { CLOUD_AUTHORIZATION_PATH, remoteFrontendSessionPath } from '@agnes/protocol'
+import {
+  CLOUD_AUTHORIZATION_PATH,
+  REMOTE_FRONTEND_INFO,
+  REMOTE_FRONTEND_KEY_VERSION,
+  REMOTE_FRONTEND_WS,
+  remoteFrontendSessionPath,
+} from '@agnes/protocol'
 import { CREDENTIALS_CHANGED, cloudCredentialUsage } from '@agnes/resource-control-web/credentials-api'
 import type { Client } from '@agnes/sdk/browser'
 import type { SettingsController } from '@agnes/web-admin/settings'
@@ -1277,55 +1283,186 @@ it.each(['cloud', 'local', 'transient-rejected'] as const)(
   },
 )
 
-it.each(['changed', 'unchanged', 'denied', 'missing', 'invalid', 'timeout'] as const)(
-  'bounds cloud instance recovery and cleans up its %s attempts',
-  async (mode) => {
+it.each(['same-origin-restart', 'capability-expired-managed', 'capability-expired-explicit'] as const)(
+  'recovers %s on the same origin after verifying metadata without replaying commands',
+  async (scenario) => {
+    const fixture = await diagnosticWorkbench('cloud')
     vi.useFakeTimers()
-    const changed = vi.fn(),
-      failed = vi.fn()
-    let calls = 0
-    const discover = vi.fn(async (signal: AbortSignal) => {
-      calls++
-      if (mode === 'denied') throw new Error('CLOUD_CREDENTIAL_REJECTED')
-      if (mode === 'missing') throw new Error('CLOUD_CREDENTIAL_NOT_FOUND')
-      if (mode === 'invalid') throw new Error('CLOUD_INVALID_AUTHORIZATION')
-      if (mode === 'timeout')
-        return new Promise<string>((_resolve, reject) => {
-          signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+    const ref = 'secret://generic/11111111-1111-1111-1111-111111111111'
+    const managed = scenario !== 'capability-expired-explicit'
+    bindCloudCredential(fixture.remote, ref, [{ id: ref }])
+    if (managed) localStorage.setItem('agnes.cloud.auto-credential.v1', ref)
+    else localStorage.removeItem('agnes.cloud.auto-credential.v1')
+    const makeToken = (expiresAt: number, tag: string) =>
+      `${expiresAt.toString(36)}.${tag.repeat(22).slice(0, 22)}.${'B'.repeat(43)}`
+    const initialExpiresAt = Date.now() + 8 * 60 * 60 * 1000
+    const tokenOld = makeToken(initialExpiresAt, 'A')
+    let activeToken = tokenOld
+    let instanceId = 'instance-1'
+    let booting = scenario === 'same-origin-restart'
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = new URL(String(input), location.origin)
+      if (url.pathname.endsWith('/admin/api/credentials'))
+        return Response.json({
+          items: [
+            { id: ref, label: 'fixture', kind: 'api-key', createdAt: '2026-11-20T00:00:00Z', references: [] },
+          ],
         })
-      if (mode === 'changed' && calls === 1) throw new Error('CLOUD_AUTH_UNAVAILABLE')
-      return mode === 'changed' && calls >= 3 ? 'https://new.test' : 'https://old.test'
-    })
-    const off = watchCloudOrigin('https://old.test', discover, changed, failed)
-    try {
-      await vi.advanceTimersByTimeAsync(400000)
-      if (mode === 'changed') {
-        expect(changed).toHaveBeenCalledExactlyOnceWith('https://new.test')
-        expect(failed).not.toHaveBeenCalled()
-        expect(calls).toBe(3)
-      } else {
-        expect(changed).not.toHaveBeenCalled()
-        expect(failed).toHaveBeenCalledExactlyOnceWith(
-          mode === 'denied'
-            ? 'CLOUD_CREDENTIAL_REJECTED'
-            : mode === 'missing'
-              ? 'CLOUD_CREDENTIAL_NOT_FOUND'
-              : mode === 'invalid'
-                ? 'CLOUD_INVALID_AUTHORIZATION'
-                : 'CLOUD_AUTH_UNAVAILABLE',
-        )
-        expect(calls).toBe(mode === 'missing' || mode === 'invalid' ? 1 : 8)
+      if (url.pathname === CLOUD_AUTHORIZATION_PATH) {
+        const expiresAt = Date.now() + 8 * 60 * 60 * 1000
+        activeToken = makeToken(expiresAt, 'C')
+        return Response.json({
+          token: activeToken,
+          expiresAt,
+          proxied: true,
+          ...(managed ? { origin: fixture.remote } : {}),
+        })
       }
-      const before = calls
-      off()
-      await vi.advanceTimersByTimeAsync(400000)
-      expect(calls).toBe(before)
+      if (url.origin === 'http://127.0.0.1:4178' && url.pathname.endsWith(REMOTE_FRONTEND_INFO)) {
+        if (booting) {
+          booting = false
+          return new Response('', { status: 503 })
+        }
+        const prefix = remoteFrontendSessionPath(activeToken)
+        if (!url.pathname.startsWith(`${prefix}/`)) return new Response('', { status: 401 })
+        return Response.json({
+          version: REMOTE_FRONTEND_KEY_VERSION,
+          access: 'key-owner',
+          wsPath: REMOTE_FRONTEND_WS,
+          instanceId,
+        })
+      }
+      throw new Error(`unexpected fixture request: ${url.href}`)
+    })
+    try {
+      await authorizeRemoteFrontend(fixture.remote, new AbortController().signal, async () =>
+        Response.json({ token: tokenOld, expiresAt: initialExpiresAt, proxied: true }),
+      )
+      const previousFrame = fixture.frame('cloud')
+      await fixture.message('cloud', {
+        kind: 'state',
+        snapshot: {
+          ready: true,
+          connected: true,
+          more: false,
+          rows: [],
+          activity: [],
+          selected: 'kept-session',
+        },
+      })
+      if (scenario === 'same-origin-restart') {
+        activeToken = makeToken(Date.now() + 8 * 60 * 60 * 1000, 'X')
+        instanceId = 'instance-2'
+      } else {
+        await act(async () => vi.advanceTimersByTimeAsync(8 * 60 * 60 * 1000 + 1_000))
+      }
+      // Queue an unacknowledged command while unready/offline; recovery must drop it, never replay it.
+      await fixture.message('cloud', {
+        kind: 'state',
+        snapshot: {
+          ready: false,
+          connected: false,
+          more: false,
+          rows: [],
+          activity: [],
+          selected: 'kept-session',
+        },
+      })
+      await act(async () => sidebarCommand('cloud', { kind: 'search' }))
+      await act(async () => vi.advanceTimersByTimeAsync(6_000))
+      const nextFrame = fixture.frame('cloud')
+      expect(nextFrame).not.toBe(previousFrame)
+      expect(nextFrame.dataset.backendOrigin).toBe(fixture.remote)
+      expect(new URL(nextFrame.src).searchParams.get('session')).toBe('kept-session')
+      const post = vi.spyOn(nextFrame.contentWindow!, 'postMessage')
+      await fixture.message('cloud', {
+        kind: 'state',
+        snapshot: {
+          ready: true,
+          connected: true,
+          more: false,
+          rows: [],
+          activity: [],
+          selected: 'kept-session',
+        },
+      })
+      expect(post).not.toHaveBeenCalled()
+      expect(localCloudSettings.read()?.error).toBeUndefined()
+      expect(await authorizeRemoteFrontend(fixture.remote, new AbortController().signal, fetcher)).toBe(
+        remoteFrontendSessionPath(activeToken),
+      )
     } finally {
-      off()
+      forgetRemoteAccess(fixture.remote)
+      fetcher.mockRestore()
+      await fixture.close()
       vi.useRealTimers()
     }
   },
 )
+
+it.each([
+  'changed',
+  'unchanged',
+  'same-verified',
+  'same-unverified',
+  'denied',
+  'missing',
+  'invalid',
+  'timeout',
+] as const)('bounds cloud instance recovery and cleans up its %s attempts', async (mode) => {
+  vi.useFakeTimers()
+  const changed = vi.fn(),
+    failed = vi.fn()
+  let calls = 0
+  const discover = vi.fn(async (signal: AbortSignal) => {
+    calls++
+    if (mode === 'denied') throw new Error('CLOUD_CREDENTIAL_REJECTED')
+    if (mode === 'missing') throw new Error('CLOUD_CREDENTIAL_NOT_FOUND')
+    if (mode === 'invalid') throw new Error('CLOUD_INVALID_AUTHORIZATION')
+    if (mode === 'timeout')
+      return new Promise<string>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+      })
+    if (mode === 'changed' && calls === 1) throw new Error('CLOUD_AUTH_UNAVAILABLE')
+    return mode === 'changed' && calls >= 3 ? 'https://new.test' : 'https://old.test'
+  })
+  const verify =
+    mode === 'same-verified' || mode === 'same-unverified'
+      ? vi.fn(async () => mode === 'same-verified' && calls >= 2)
+      : undefined
+  const off = watchCloudOrigin('https://old.test', discover, changed, failed, verify)
+  try {
+    await vi.advanceTimersByTimeAsync(400000)
+    if (mode === 'changed') {
+      expect(changed).toHaveBeenCalledExactlyOnceWith('https://new.test')
+      expect(failed).not.toHaveBeenCalled()
+      expect(calls).toBe(3)
+    } else if (mode === 'same-verified') {
+      expect(changed).toHaveBeenCalledExactlyOnceWith('https://old.test')
+      expect(failed).not.toHaveBeenCalled()
+      expect(calls).toBe(2)
+    } else {
+      expect(changed).not.toHaveBeenCalled()
+      expect(failed).toHaveBeenCalledExactlyOnceWith(
+        mode === 'denied'
+          ? 'CLOUD_CREDENTIAL_REJECTED'
+          : mode === 'missing'
+            ? 'CLOUD_CREDENTIAL_NOT_FOUND'
+            : mode === 'invalid'
+              ? 'CLOUD_INVALID_AUTHORIZATION'
+              : 'CLOUD_AUTH_UNAVAILABLE',
+      )
+      expect(calls).toBe(mode === 'missing' || mode === 'invalid' ? 1 : 8)
+    }
+    const before = calls
+    off()
+    await vi.advanceTimersByTimeAsync(400000)
+    expect(calls).toBe(before)
+  } finally {
+    off()
+    vi.useRealTimers()
+  }
+})
 
 it('ignores late cloud instance recovery after disposal and aborts the pending discovery', async () => {
   vi.useFakeTimers()

@@ -44,7 +44,15 @@ function scheduleDeadline(expiresAt: number, onExpire: () => void): () => void {
 }
 
 /** A transport-only relay on the isolated cloud origin. It cannot reach local management routes. */
-export function createCloudGateway() {
+export function createCloudGateway(ownerOrigin?: string) {
+  const canonicalOwnerOrigin = ownerOrigin ? new URL(ownerOrigin).origin : undefined
+  const isOwnerInfoRequest = (request: IncomingMessage, pathname: string, prefix: string) =>
+    canonicalOwnerOrigin !== undefined &&
+    (request.method === 'GET' || request.method === 'HEAD') &&
+    pathname === `${prefix}${REMOTE_FRONTEND_INFO}` &&
+    request.headers.origin === canonicalOwnerOrigin &&
+    (!request.headers['sec-fetch-site'] ||
+      ['same-origin', 'same-site', 'none'].includes(String(request.headers['sec-fetch-site'])))
   type Grant = {
     origin: string
     trafficToken: string
@@ -106,7 +114,7 @@ export function createCloudGateway() {
     if (grant) grant.cancelTimer = scheduleDeadline(result.expiresAt, () => revoke(prefix))
     return true
   }
-  const resolve = (request: IncomingMessage) => {
+  const resolve = (request: IncomingMessage, upgrade = false) => {
     const path = request.url ?? ''
     if (!path.startsWith(REMOTE_FRONTEND_SESSION_PREFIX)) return
     const url = new URL(path, 'http://127.0.0.1')
@@ -118,6 +126,8 @@ export function createCloudGateway() {
     }
     // Never route user-supplied absolute URLs, authority changes or normalized dot-segment escapes.
     if (!path.startsWith(`${prefix}/`) || !url.pathname.startsWith(`${prefix}/`)) return null
+    if (!upgrade && isOwnerInfoRequest(request, url.pathname, prefix))
+      return { grant, prefix, url: new URL(`${url.pathname}${url.search}`, grant.origin) }
     if (request.headers.origin && request.headers.origin !== `http://${request.headers.host}`) return null
     if (
       request.headers['sec-fetch-site'] &&
@@ -225,11 +235,20 @@ export function createCloudGateway() {
   return {
     register,
     async handleHttp(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+      const requestPath = request.url ?? ''
+      const parsedPath = requestPath.startsWith(REMOTE_FRONTEND_SESSION_PREFIX)
+        ? new URL(requestPath, 'http://127.0.0.1').pathname
+        : ''
+      const requestPrefix = parsedPath ? parsedPath.split('/').slice(0, 4).join('/') : ''
+      const ownerCors: Record<string, string> =
+        canonicalOwnerOrigin && parsedPath && isOwnerInfoRequest(request, parsedPath, requestPrefix)
+          ? { 'access-control-allow-origin': canonicalOwnerOrigin, vary: 'Origin' }
+          : {}
       const route = resolve(request)
       if (route === undefined) return false
       if (!route) {
         request.resume()
-        response.writeHead(401, { 'cache-control': 'no-store' }).end()
+        response.writeHead(401, { 'cache-control': 'no-store', ...ownerCors }).end()
         return true
       }
       if (route.grant.rejected) {
@@ -237,7 +256,7 @@ export function createCloudGateway() {
           await renew(route.prefix, route.grant)
         } catch {
           request.resume()
-          response.writeHead(503, { 'cache-control': 'no-store', 'retry-after': '30' }).end()
+          response.writeHead(503, { 'cache-control': 'no-store', 'retry-after': '30', ...ownerCors }).end()
           return true
         }
       }
@@ -245,12 +264,12 @@ export function createCloudGateway() {
       if (grants.get(route.prefix) !== route.grant || route.grant.expiresAt <= Date.now()) {
         revoke(route.prefix)
         request.resume()
-        response.writeHead(401, { 'cache-control': 'no-store' }).end()
+        response.writeHead(401, { 'cache-control': 'no-store', ...ownerCors }).end()
         return true
       }
       if (route.grant.rejected) {
         request.resume()
-        response.writeHead(503, { 'cache-control': 'no-store', 'retry-after': '30' }).end()
+        response.writeHead(503, { 'cache-control': 'no-store', 'retry-after': '30', ...ownerCors }).end()
         return true
       }
       let upstream: ClientRequest | undefined
@@ -281,17 +300,28 @@ export function createCloudGateway() {
             }
             if (status >= 300 && status < 400 && status !== 304) {
               incoming.resume()
-              response.writeHead(502, { 'cache-control': 'no-store' }).end()
+              response.writeHead(502, { 'cache-control': 'no-store', ...ownerCors }).end()
               return
             }
             const safe: Record<string, string> = {
               'cache-control': 'no-store',
               'referrer-policy': 'no-referrer',
               'x-content-type-options': 'nosniff',
+              ...ownerCors,
             }
-            for (const name of ['content-type', 'content-range', 'accept-ranges', 'content-disposition']) {
+            for (const name of [
+              'content-type',
+              'content-range',
+              'accept-ranges',
+              'content-disposition',
+              'content-security-policy',
+            ]) {
               const value = incoming.headers[name]
-              if (typeof value === 'string') safe[name] = value
+              if (typeof value === 'string' && value && !/[\r\n\0]/u.test(value)) safe[name] = value
+              else if (Array.isArray(value)) {
+                const clean = value.filter((item) => item && !/[\r\n\0]/u.test(item))
+                if (clean.length > 0) safe[name] = clean.join(', ')
+              }
             }
             response.writeHead(status, safe)
             incoming.pipe(response)
@@ -301,7 +331,7 @@ export function createCloudGateway() {
       upstream.setTimeout(30_000, () => upstream.destroy())
       upstream.on('error', () => {
         if (response.headersSent) response.destroy()
-        else response.writeHead(502, { 'cache-control': 'no-store' }).end()
+        else response.writeHead(502, { 'cache-control': 'no-store', ...ownerCors }).end()
       })
       request.once('aborted', () => upstream.destroy())
       request.once('error', () => upstream.destroy())
@@ -314,7 +344,7 @@ export function createCloudGateway() {
       return true
     },
     async handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): Promise<boolean> {
-      const route = resolve(request)
+      const route = resolve(request, true)
       if (route === undefined) return false
       if (!route) {
         socket.destroy()

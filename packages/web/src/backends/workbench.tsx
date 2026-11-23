@@ -21,7 +21,7 @@ import {
   readCloudCredentialRef,
   recordCloudCredentialGeneration,
 } from './cloud-key.js'
-import { watchCloudOrigin } from './cloud-recovery.js'
+import { watchCloudBackendRecovery } from './cloud-recovery.js'
 import { CLOUD_SETTINGS_SECTION, type CloudConnectionAction } from './cloud-settings-bridge.js'
 import { backendFrame, cloudFrameOrigin } from './frame-context.js'
 import {
@@ -715,25 +715,26 @@ export function CloudWorkbenchStage({ children }: { children?: ReactNode } = {})
       configurationError
     )
       return
-    const ref = safeThemeStorage().getItem(CLOUD_DISCOVERY_KEY)
-    if (!ref || readCloudCredentialRef(cloud) !== ref) return
+    const ref = readCloudCredentialRef(cloud)
+    if (!ref) return
     if (connectionIntent.current && connectionIntent.current !== ref) return
+    const managed = safeThemeStorage().getItem(CLOUD_DISCOVERY_KEY) === ref
     const revision = connectionEpoch
     const canWatch = () =>
       connectionRevision.current === revision &&
       latest.current.cloud === cloud &&
       readCloudCredentialRef(cloud) === ref
-    return watchCloudOrigin(
+    return watchCloudBackendRecovery({
       cloud,
-      (signal) => discoverCloudOrigin(ref, signal, undefined, canWatch),
-      (origin) => {
-        if (canWatch()) void connect(origin, false, ref, true)
-      },
-      (reason) => {
+      credentialRef: ref,
+      managed,
+      canWatch,
+      onRecovered: (origin) => void connect(origin, false, ref, true),
+      onFailed: (reason) => {
         if (connectionRevision.current === revision && latest.current.cloud === cloud)
           setConfigurationError(reason)
       },
-    )
+    })
   }, [cloud, cloudConnected, configurationError, connect, connectionEpoch, discovering])
 
   useLayoutEffect(() => {

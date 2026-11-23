@@ -9,6 +9,8 @@ import {
 } from '@agnes/web-ui'
 import { Approval } from '@agnes/web-units'
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { authorizeRemoteFrontend } from '../../../packages/web/src/remote-authorization.js'
+import { backendResourceUrl } from '../../../packages/web/src/remote-frontend.js'
 import { Dock } from '../../../packages/web/src/workbench/dock.js'
 import {
   financeRecord as baseFinanceRecord,
@@ -158,6 +160,11 @@ const locale = new LocaleService(new Context(), language)
 locale.register(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
 const source = createDocumentLocaleSource({ [INTELLIGENT_UI_NAMESPACE]: intelligentUiCatalog })
 const client = new IntelligentUiClient('session-finance', server, sessionStorage)
+const cloudRemote =
+  customMode === 'cloud-ready' ? 'https://8443-fixture.ap-shanghai.tencentags.com' : undefined
+if (cloudRemote) {
+  await authorizeRemoteFrontend(cloudRemote, new AbortController().signal, fetch)
+}
 let version = 0,
   target: ReturnType<UiPlacementBinding['target']>
 const listeners = new Set<() => void>()
@@ -167,6 +174,9 @@ const binding: UiPlacementBinding = {
         customModules: {
           theme: new ThemeService(new Context(), 'light'),
           subscribe: () => () => {},
+          ...(cloudRemote
+            ? { resolveUrl: (url: string) => backendResourceUrl(url, cloudRemote, location.origin) }
+            : {}),
           list: async () => [
             {
               rowId: 'web:finance',

@@ -3,25 +3,32 @@ import { expect, test } from '@playwright/test'
 
 // Runs current production UI against a fake App Server. Backend tool authorization and
 // finance business validation belong to the parallel plugin acceptance suite.
-let fixture: ChildProcess, url: string
+let fixture: ChildProcess, url: string, cloudUrl: string, cloudPrefix: string
 test.beforeAll(async () => {
   fixture = spawn(process.execPath, ['tools/e2e-web/serve-intelligent-ui-fixture.mjs'], {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
-  url = await new Promise<string>((resolve, reject) => {
-    let output = '',
-      errors = ''
-    fixture.stdout?.on('data', (chunk) => {
-      output += String(chunk)
-      const found = output.match(/http:\/\/127\.0\.0\.1:\d+/)
-      if (found) resolve(found[0])
-    })
-    fixture.stderr?.on('data', (chunk) => {
-      errors += String(chunk)
-    })
-    fixture.once('error', reject)
-    fixture.once('exit', (code) => reject(new Error(`Intelligent UI fixture exited ${code}: ${errors}`)))
-  })
+  const started = await new Promise<{ url: string; cloudUrl: string; cloudPrefix: string }>(
+    (resolve, reject) => {
+      let output = '',
+        errors = ''
+      fixture.stdout?.on('data', (chunk) => {
+        output += String(chunk)
+        const found = output.match(
+          /(http:\/\/127\.0\.0\.1:\d+) cloud=(http:\/\/127\.0\.0\.1:\d+) prefix=(\S+)/,
+        )
+        if (found) resolve({ url: found[1]!, cloudUrl: found[2]!, cloudPrefix: found[3]! })
+      })
+      fixture.stderr?.on('data', (chunk) => {
+        errors += String(chunk)
+      })
+      fixture.once('error', reject)
+      fixture.once('exit', (code) => reject(new Error(`Intelligent UI fixture exited ${code}: ${errors}`)))
+    },
+  )
+  url = started.url
+  cloudUrl = started.cloudUrl
+  cloudPrefix = started.cloudPrefix
 })
 test.afterAll(async () => {
   if (!fixture || fixture.exitCode !== null) return
@@ -148,15 +155,33 @@ for (const locale of ['en', 'zh-CN'])
     expect(errors).toEqual([])
   })
 
-for (const mode of ['ready', 'blocked', 'error'])
+for (const mode of ['ready', 'cloud-ready', 'blocked', 'error'])
   test(`reviewed custom renderer preserves fallback and the normal action flow (${mode})`, async ({
     page,
   }) => {
-    await page.goto(`${url}/?custom=${mode}&locale=en`)
-    await page.getByTestId('intelligent-ui-inline').getByTestId('ui-expand').click()
-    const card = page.getByTestId('intelligent-ui-panel')
+    const blockedRequests: string[] = []
+    await page.context().route('https://csp-blocked.invalid/**', (route) => {
+      blockedRequests.push(route.request().url())
+      return route.fulfill({ status: 200, body: '' })
+    })
+    if (mode === 'cloud-ready') {
+      await page.goto(`${cloudUrl}/`)
+      const unproxiedStatus = await page.evaluate(async () => {
+        const res = await fetch(
+          '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/reviewed/diff.mjs?agnes_ui_frame=1',
+        )
+        return res.status
+      })
+      expect(unproxiedStatus).toBe(404)
+      await page.goto(`${url}/?host=cloud&locale=en`)
+    } else {
+      await page.goto(`${url}/?custom=${mode}&locale=en`)
+    }
+    const rootScope = mode === 'cloud-ready' ? page.frameLocator('[data-testid="cloud-stage"]') : page
+    await rootScope.getByTestId('intelligent-ui-inline').getByTestId('ui-expand').click()
+    const card = rootScope.getByTestId('intelligent-ui-panel')
     await expect(card.getByTestId('ui-table-differences')).toBeVisible()
-    if (mode !== 'ready') {
+    if (mode !== 'ready' && mode !== 'cloud-ready') {
       await expect(card.getByTestId('ui-custom-fallback-custom')).toContainText(
         'Review the preset differences table.',
       )
@@ -166,8 +191,15 @@ for (const mode of ['ready', 'blocked', 'error'])
       for (const action of await actions.all()) await expect(action).toBeEnabled()
       return
     }
+    if (mode === 'cloud-ready') {
+      await expect(card.getByTestId('ui-custom-frame-custom')).toHaveAttribute(
+        'src',
+        `${cloudUrl}${cloudPrefix}/plugins/generations/11111111-1111-1111-1111-111111111111/finance/reviewed/diff.mjs?agnes_ui_frame=1`,
+      )
+    }
     const frame = card.frameLocator('[data-testid="ui-custom-frame-custom"]')
     await expect(frame.getByText('Delta cents: 250')).toBeVisible()
+    expect(blockedRequests).toEqual([])
     expect(
       await frame.locator('body').evaluate(() => ({
         fetch: typeof fetch,

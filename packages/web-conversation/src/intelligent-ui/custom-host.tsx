@@ -15,6 +15,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 export interface CustomUiModuleSource {
   list(sessionId: string): Promise<readonly ClientModuleRosterRow[]>
   subscribe(listener: () => void): () => void
+  resolveUrl?(url: string): string
   theme: ThemeService
 }
 export function selectCustomUiModule(
@@ -138,17 +139,19 @@ export function CustomUiHost(
     }
   }, [module, theme, locale, props.component, props.surface])
   const declaration = module?.intelligentComponents?.find((item) => item.kind === props.component.kind)
+  const rawFrameUrl = module?.entryUrl ? `${module.entryUrl}?agnes_ui_frame=1` : undefined
+  const frameSrc = rawFrameUrl ? (props.source.resolveUrl?.(rawFrameUrl) ?? rawFrameUrl) : undefined
   return (
     <div data-testid={`ui-custom-host-${props.component.id}`}>
       {(!ready || failed) && <CustomUiFallback component={props.component} />}
-      {module?.entryUrl && !failed && (
+      {frameSrc && !failed && (
         <iframe
-          key={`${module.entryUrl}:${epoch}:${theme}:${locale}`}
+          key={`${frameSrc}:${epoch}:${theme}:${locale}`}
           ref={(element) => {
             frame.current = element
             element?.toggleAttribute('inert', props.disabled)
           }}
-          src={`${module.entryUrl}?agnes_ui_frame=1`}
+          src={frameSrc}
           title={declaration?.accessibility.label ?? props.component.title ?? props.component.id}
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"

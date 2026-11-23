@@ -10,6 +10,7 @@ export interface PresentationHost {
   focusApproval?(): void
   listComponents?(sessionId: string): Promise<readonly ClientModuleRosterRow[]>
   subscribeComponents?(listener: () => void): () => void
+  resolveResourceUrl?(url: string): string
 }
 export class PresentationService extends Service {
   constructor(
