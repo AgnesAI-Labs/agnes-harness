@@ -175,7 +175,7 @@ const specs: readonly ProviderSpec[] = [
     id: 'qwen',
     displayName: 'Qwen',
     api: 'openai-completions',
-    baseUrl: 'https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
+    baseUrl: 'https://token-plan.maas.qwencloudapi.com/compatible-mode/v1',
     sourceProviderId: 'qwen-token-plan',
     load: () => load(import('@earendil-works/pi-ai/providers/qwen-token-plan'), 'qwenTokenPlanProvider'),
   },
