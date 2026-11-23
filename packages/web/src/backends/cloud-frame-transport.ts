@@ -1,4 +1,8 @@
-import { REMOTE_FRONTEND_SESSION_PREFIX, remoteFrontendSessionPath } from '@agnes/protocol'
+import {
+  CLOUD_AUTHORIZATION_TIMEOUT_MS,
+  REMOTE_FRONTEND_SESSION_PREFIX,
+  remoteFrontendSessionPath,
+} from '@agnes/protocol'
 import { applyCloudFrameAppearance } from './cloud-frame-appearance.js'
 import { backendFrame } from './frame-context.js'
 import { BACKEND_FRAME_MESSAGE } from './frame-contract.js'
@@ -64,7 +68,7 @@ export function requestCloudFrameAuthorization(
         reject(new Error('CLOUD_AUTH_UNAVAILABLE'))
       }
     }
-    const timer = setTimeout(fail, 25_000)
+    const timer = setTimeout(fail, CLOUD_AUTHORIZATION_TIMEOUT_MS + 15_000)
     const cleanup = () => {
       clearTimeout(timer)
       window.removeEventListener('message', receive)

@@ -62,8 +62,8 @@ export function createCloudGateway(ownerOrigin?: string) {
     refreshing?: Promise<void>
     checking?: Promise<void>
     rejected: boolean
-    reconnect: boolean
     retryAt: number
+    failures: number
     sockets: Set<Duplex>
     exchanges: Set<() => void>
     cancelTimer?: () => void
@@ -105,8 +105,8 @@ export function createCloudGateway(ownerOrigin?: string) {
       epoch: 0,
       ...(refresh ? { refresh } : {}),
       rejected: false,
-      reconnect: false,
       retryAt: 0,
+      failures: 0,
       sockets: new Set(),
       exchanges: new Set(),
     })
@@ -156,10 +156,10 @@ export function createCloudGateway(ownerOrigin?: string) {
         // Keep this browser capability's original expiry and B session path; refresh only transport access.
         grant.trafficToken = next.trafficToken
         grant.rejected = false
-        grant.reconnect = false
         grant.retryAt = 0
+        grant.failures = 0
       } catch {
-        grant.retryAt = Date.now() + 30_000
+        grant.retryAt = Date.now() + ([2_000, 5_000, 10_000][Math.min(grant.failures++, 2)] ?? 10_000)
         throw Error('cloud authorization unavailable')
       }
     })().finally(() => {
@@ -167,6 +167,7 @@ export function createCloudGateway(ownerOrigin?: string) {
     })
     return grant.refreshing
   }
+  const retryAfter = (grant: Grant) => String(Math.max(1, Math.ceil((grant.retryAt - Date.now()) / 1000)))
   const own = (request: ClientRequest) => {
     requests.add(request)
     request.once('close', () => requests.delete(request))
@@ -256,7 +257,13 @@ export function createCloudGateway(ownerOrigin?: string) {
           await renew(route.prefix, route.grant)
         } catch {
           request.resume()
-          response.writeHead(503, { 'cache-control': 'no-store', 'retry-after': '30', ...ownerCors }).end()
+          response
+            .writeHead(503, {
+              'cache-control': 'no-store',
+              'retry-after': retryAfter(route.grant),
+              ...ownerCors,
+            })
+            .end()
           return true
         }
       }
@@ -269,7 +276,13 @@ export function createCloudGateway(ownerOrigin?: string) {
       }
       if (route.grant.rejected) {
         request.resume()
-        response.writeHead(503, { 'cache-control': 'no-store', 'retry-after': '30', ...ownerCors }).end()
+        response
+          .writeHead(503, {
+            'cache-control': 'no-store',
+            'retry-after': retryAfter(route.grant),
+            ...ownerCors,
+          })
+          .end()
         return true
       }
       let upstream: ClientRequest | undefined
@@ -350,11 +363,13 @@ export function createCloudGateway(ownerOrigin?: string) {
         socket.destroy()
         return true
       }
-      if (route.grant.rejected || (route.grant.reconnect && route.grant.refresh)) {
+      if (route.grant.rejected) {
         try {
           await renew(route.prefix, route.grant)
         } catch {
-          socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nRetry-After: 30\r\n\r\n')
+          socket.end(
+            `HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nRetry-After: ${retryAfter(route.grant)}\r\n\r\n`,
+          )
           return true
         }
       }
@@ -365,7 +380,9 @@ export function createCloudGateway(ownerOrigin?: string) {
         return true
       }
       if (route.grant.rejected) {
-        socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nRetry-After: 30\r\n\r\n')
+        socket.end(
+          `HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nRetry-After: ${retryAfter(route.grant)}\r\n\r\n`,
+        )
         return true
       }
       const observedEpoch = route.grant.epoch
@@ -387,7 +404,7 @@ export function createCloudGateway(ownerOrigin?: string) {
           headers: headers(request, route.grant.origin, route.grant.trafficToken, true),
         }),
       )
-      upstream.setTimeout(10_000, () => abortUpgrade())
+      upstream.setTimeout(20_000, () => abortUpgrade())
       upstream.on('upgrade', (incoming, peer, upstreamHead) => {
         if (
           closed ||
@@ -414,10 +431,7 @@ export function createCloudGateway(ownerOrigin?: string) {
         if (upstreamHead.length) socket.write(upstreamHead)
         route.grant.sockets.add(socket)
         route.grant.sockets.add(peer)
-        const close = () => {
-          route.grant.reconnect = true
-          abortUpgrade()
-        }
+        const close = abortUpgrade
         socket.once('close', close)
         peer.once('close', close)
         socket.on('error', close)

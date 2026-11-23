@@ -627,12 +627,13 @@ it.each([401, 403])(
         socket.close()
         await ended
       }
-      expect(handshakes).toEqual(['business-1', 'business-2'])
+      expect(handshakes).toEqual(['business-1', 'business-1'])
+      expect(refresh).not.toHaveBeenCalled()
       status = deniedStatus
       expect(
         (await fetch(local + prefix + '/api/write', { method: 'POST', body: 'failed-write' })).status,
       ).toBe(deniedStatus)
-      expect(seen).toEqual([{ key: 'business-2', body: 'failed-write' }])
+      expect(seen).toEqual([{ key: 'business-1', body: 'failed-write' }])
       status = 200
       const response = await fetch(local + prefix + '/api/write', {
         method: 'POST',
@@ -640,8 +641,8 @@ it.each([401, 403])(
       })
       expect(response.status).toBe(200)
       expect(seen).toEqual([
-        { key: 'business-2', body: 'failed-write' },
-        { key: 'business-3', body: 'new-user-request' },
+        { key: 'business-1', body: 'failed-write' },
+        { key: 'business-2', body: 'new-user-request' },
       ])
       status = deniedStatus
       await fetch(local + prefix + '/api/test')
@@ -650,10 +651,31 @@ it.each([401, 403])(
       for (let n = 0; n < 3; n++) {
         const denied = await fetch(local + prefix + '/api/test')
         expect(denied.status).toBe(503)
-        expect(denied.headers.get('retry-after')).toBe('30')
+        expect(denied.headers.get('retry-after')).toBe('2')
         expect(await denied.text()).not.toContain('private-traffic-key')
       }
       expect(refresh.mock.calls.length - before).toBe(1)
+      const now = Date.now()
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 2_001)
+      try {
+        const retry = await fetch(local + prefix + '/api/test')
+        expect(retry.status).toBe(503)
+        expect(retry.headers.get('retry-after')).toBe('5')
+        clock.mockReturnValue(now + 7_002)
+        const secondRetry = await fetch(local + prefix + '/api/test')
+        expect(secondRetry.headers.get('retry-after')).toBe('10')
+        // A manual reconnect supplies a newly authorized grant; old cooldown cannot block it.
+        unavailable = false
+        status = 200
+        gateway.register(origin, grant(), refresh)
+        expect((await fetch(local + prefix + '/api/test')).status).toBe(200)
+        status = deniedStatus
+        await fetch(local + prefix + '/api/test')
+        unavailable = true
+        expect((await fetch(local + prefix + '/api/test')).headers.get('retry-after')).toBe('2')
+      } finally {
+        clock.mockRestore()
+      }
       expect(seen.filter((row) => row.body === 'failed-write')).toHaveLength(1)
     } finally {
       gateway.close()

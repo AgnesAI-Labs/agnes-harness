@@ -6,6 +6,23 @@ import { expect, it, vi } from 'vitest'
 import { authorizeCloudConnection } from '../src/cloud-authorization.js'
 import { createCredentialAdmin } from '../src/credentials.js'
 
+vi.mock('node:timers/promises', async (original) => ({
+  ...(await original<typeof import('node:timers/promises')>()),
+  setTimeout: (ms: number, value: unknown, options: { signal?: AbortSignal } = {}) =>
+    new Promise((resolve, reject) => {
+      const finish = (error?: unknown) => {
+        clearTimeout(timer)
+        options.signal?.removeEventListener('abort', abort)
+        if (error) reject(error)
+        else resolve(value)
+      }
+      const abort = () => finish(options.signal?.reason)
+      const timer = setTimeout(() => finish(), ms)
+      if (options.signal?.aborted) abort()
+      else options.signal?.addEventListener('abort', abort, { once: true })
+    }),
+}))
+
 it('resolves managed cloud credentials privately, refuses rejected/missing credentials and sanitizes platform failures', async () => {
   const scratch = await mkdtemp(join(tmpdir(), 'agh-cloud-credential-'))
   const store = createCredentialStore({ root: join(scratch, 'home') })
@@ -197,6 +214,102 @@ it('resolves managed cloud credentials privately, refuses rejected/missing crede
   } finally {
     vi.unstubAllEnvs()
     await rm(scratch, { recursive: true, force: true })
+  }
+})
+
+it('bounds transient cloud authorization retries across both stages and admits slow successful responses', async () => {
+  vi.useFakeTimers()
+  const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+    const controller = new AbortController()
+    setTimeout(() => controller.abort(new DOMException('Timed out', 'TimeoutError')), ms)
+    return controller.signal
+  })
+  vi.stubEnv('AGH_LLMSG_API_BASE_URL', 'https://broker.fixture')
+  const input = { credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111' }
+  const store = {
+    read: async () => ({
+      version: 1 as const,
+      kind: 'api-key' as const,
+      provider: 'generic',
+      label: 'fixture',
+      value: 'agh_sk_synthetic',
+    }),
+  }
+  const origin = 'https://8443-fixture.ap-shanghai.tencentags.com'
+  const token = `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`
+  const connection = () =>
+    Response.json({ code: 200, data: { sandbox_url: origin, traffic_token: 'fixture' } })
+  try {
+    let calls = 0
+    const slow = authorizeCloudConnection(input, store, async (url, init) => {
+      calls++
+      if (calls === 1) return new Response('', { status: 502 })
+      await new Promise((resolve) =>
+        setTimeout(resolve, String(url).endsWith('/connection') ? 23_000 : 12_000),
+      )
+      init?.signal?.throwIfAborted()
+      return String(url).endsWith('/connection')
+        ? connection()
+        : Response.json({ token, expiresAt: Date.now() + 60_000 })
+    })
+    const accepted = expect(slow).resolves.toMatchObject({ origin, token, trafficToken: 'fixture' })
+    await vi.advanceTimersByTimeAsync(36_000)
+    await accepted
+    expect(calls).toBe(3)
+    for (const [status, reason] of [
+      [400, 'CLOUD_CONNECTION_INVALID'],
+      [401, 'CONFIG_CREDENTIAL_REJECTED'],
+      [403, 'CONFIG_CREDENTIAL_REJECTED'],
+      [409, 'CLOUD_SANDBOX_NOT_READY'],
+      [429, 'CLOUD_RATE_LIMITED'],
+    ] as const) {
+      calls = 0
+      await expect(
+        authorizeCloudConnection(input, store, async () => {
+          calls++
+          return new Response('', { status })
+        }),
+      ).rejects.toMatchObject({ data: { reason } })
+      expect(calls, 'permanent refusals must not consume an automatic retry').toBe(1)
+    }
+    for (const failure of [502, 503, 504, 'network', 'timeout'] as const) {
+      calls = 0
+      const pending = authorizeCloudConnection(input, store, async () => {
+        calls++
+        if (failure === 'network') throw new TypeError('private network detail')
+        if (failure === 'timeout') throw new DOMException('private timeout detail', 'TimeoutError')
+        return new Response('private upstream detail', { status: failure })
+      })
+      const rejected = expect(pending).rejects.toMatchObject({ data: { reason: 'CONFIG_AUTH_UNAVAILABLE' } })
+      await vi.advanceTimersByTimeAsync(1000)
+      await rejected
+      expect(calls).toBe(2)
+    }
+    calls = 0
+    const shared = authorizeCloudConnection(input, store, async (url) => {
+      calls++
+      if (calls === 1) return new Response('', { status: 503 })
+      return String(url).endsWith('/connection') ? connection() : new Response('', { status: 502 })
+    })
+    const rejected = expect(shared).rejects.toMatchObject({ data: { reason: 'CONFIG_AUTH_UNAVAILABLE' } })
+    await vi.advanceTimersByTimeAsync(1000)
+    await rejected
+    expect(calls, 'sandbox failure cannot start another retry after discovery used the budget').toBe(3)
+    calls = 0
+    const hung = authorizeCloudConnection(input, store, async (_url, init) => {
+      calls++
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+      })
+    })
+    const bounded = expect(hung).rejects.toMatchObject({ data: { reason: 'CONFIG_AUTH_UNAVAILABLE' } })
+    await vi.advanceTimersByTimeAsync(45_000)
+    await bounded
+    expect(calls, 'one retry must remain inside the original total deadline').toBe(2)
+  } finally {
+    timeout.mockRestore()
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
   }
 })
 

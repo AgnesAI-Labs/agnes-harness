@@ -735,6 +735,42 @@ it('authorizes only the configured cloud from its exact frame, ignoring sender-s
     await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(3))
     expect(post.mock.calls.map(([msg]) => msg.requestId)).toEqual([id1, id2, id3])
     expect(post.mock.calls.every(([msg]) => msg.path === remoteFrontendSessionPath(freshToken))).toBe(true)
+    // A successful 36-second backend exchange must outlive the former 25-second parent deadline.
+    vi.useFakeTimers()
+    try {
+      forgetRemoteAccess(remote)
+      post.mockClear()
+      fetcher.mockImplementationOnce(async (_input, init) => {
+        await new Promise((resolve) => setTimeout(resolve, 36_000))
+        init?.signal?.throwIfAborted()
+        return Response.json({ token: freshToken, expiresAt: Date.now() + 60_000 })
+      })
+      send('http://127.0.0.1:4178', frameWindow)
+      await vi.advanceTimersByTimeAsync(36_000)
+      expect(post.mock.calls.at(-1)?.[0]).toMatchObject({
+        kind: 'authorization',
+        path: remoteFrontendSessionPath(freshToken),
+      })
+      // A hung exchange is still bounded and disposal cannot publish a late authorization.
+      forgetRemoteAccess(remote)
+      post.mockClear()
+      fetcher.mockImplementationOnce(
+        async (_input, init) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), {
+              once: true,
+            })
+          }),
+      )
+      send('http://127.0.0.1:4178', frameWindow)
+      await vi.advanceTimersByTimeAsync(55_000)
+      expect(post.mock.calls.at(-1)?.[0]).toMatchObject({
+        kind: 'authorization',
+        error: 'CLOUD_AUTH_UNAVAILABLE',
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   } finally {
     stop()
     meta.remove()
@@ -1432,7 +1468,7 @@ it.each([
       : undefined
   const off = watchCloudOrigin('https://old.test', discover, changed, failed, verify)
   try {
-    await vi.advanceTimersByTimeAsync(400000)
+    await vi.advanceTimersByTimeAsync(800000)
     if (mode === 'changed') {
       expect(changed).toHaveBeenCalledExactlyOnceWith('https://new.test')
       expect(failed).not.toHaveBeenCalled()
@@ -1456,7 +1492,7 @@ it.each([
     }
     const before = calls
     off()
-    await vi.advanceTimersByTimeAsync(400000)
+    await vi.advanceTimersByTimeAsync(800000)
     expect(calls).toBe(before)
   } finally {
     off()

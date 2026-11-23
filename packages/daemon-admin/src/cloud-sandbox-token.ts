@@ -47,7 +47,6 @@ export async function cloudSandboxConnection(
     body: JSON.stringify(origin ? { sandbox_url: origin } : {}),
     redirect: 'error',
     cache: 'no-store',
-    signal: AbortSignal.timeout(8000),
   })
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined)

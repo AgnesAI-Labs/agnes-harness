@@ -1,5 +1,6 @@
 import {
   CLOUD_AUTHORIZATION_PATH,
+  CLOUD_AUTHORIZATION_TIMEOUT_MS,
   REMOTE_FRONTEND_AUTH,
   REMOTE_FRONTEND_INFO,
   REMOTE_FRONTEND_KEY_VERSION,
@@ -134,7 +135,11 @@ export async function prepareRemoteFrontend(): Promise<void> {
   if (!remote) return
   const original = window.fetch.bind(window)
   nativeRemoteFetch = original
-  const info = await readRemoteFrontendInfo(remote, AbortSignal.timeout(25_000), original)
+  const info = await readRemoteFrontendInfo(
+    remote,
+    AbortSignal.timeout(CLOUD_AUTHORIZATION_TIMEOUT_MS + 20_000),
+    original,
+  )
   const accessPath = remoteAccessPath(remote)
   activeRemoteSessionPath = accessPath
   activeRemoteInstanceId = info.instanceId

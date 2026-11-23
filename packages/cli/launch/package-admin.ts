@@ -27,12 +27,14 @@ import type {
   SessionGenerationMigrationParams,
 } from '@agnes/protocol'
 import {
+  CLOUD_AUTHORIZATION_TIMEOUT_MS,
   httpRpcError,
   METHODS,
   normalizeRpcError,
   type RpcError,
   validatePackageAdminCall,
 } from '@agnes/protocol'
+import type { AdminCloudAuthorize } from '@agnes/protocol/gen/app-server'
 import type {
   ClientModuleEffectCallResult,
   ClientModuleServiceCallResult,
@@ -141,17 +143,17 @@ export function localPackageAdmin(
     }))
   const examples = localClientExamples(backend, client, initialize)
   const cloudGateway = createCloudGateway(new URL(origin).origin)
+  const authorizeCloud = async (input: AdminCloudAuthorize) => {
+    const deadline = Date.now() + CLOUD_AUTHORIZATION_TIMEOUT_MS + 5_000
+    await initialize()
+    const timeoutMs = deadline - Date.now()
+    if (timeoutMs <= 0) throw Error('cloud authorization unavailable')
+    return client.request('_agnes/v1/admin.cloud.authorize', input, { timeoutMs })
+  }
   const handleCloudAuthorization = cloudAuthorizationRelay(
     origin,
-    async (input) => {
-      await initialize()
-      return client.request('_agnes/v1/admin.cloud.authorize', input)
-    },
-    (origin, result, binding) =>
-      cloudGateway.register(origin, result, async () => {
-        await initialize()
-        return client.request('_agnes/v1/admin.cloud.authorize', binding)
-      }),
+    authorizeCloud,
+    (origin, result, binding) => cloudGateway.register(origin, result, () => authorizeCloud(binding)),
   )
   // createAdminSurface validates each schema before dispatching this fixed typed mapping.
   const invoke = async (action: AdminSurfaceAction, params: unknown): Promise<unknown> => {
