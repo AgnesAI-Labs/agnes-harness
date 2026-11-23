@@ -872,8 +872,6 @@ export class KernelChildren implements ChildrenFactory {
             (!child.ac.signal.aborted || this.humanStopped.has(record.childKey)) &&
             (result.reason === 'completed' || result.reason === 'aborted' || result.reason === 'interrupted')
           ) {
-            state = 'ready'
-            this.continued.add(record.childKey)
             residentHold = true
             const queued = (child.latest('inbox') as { items?: unknown[] } | undefined)?.items?.length
             const status: ChildAgentStatus = result.reason === 'completed' ? 'idle' : 'interrupted'
@@ -885,6 +883,8 @@ export class KernelChildren implements ChildrenFactory {
                 parked.stateRevision,
                 result.reason === 'completed' ? (queued ? 'ready' : 'idle') : 'interrupted',
               )
+            state = 'ready'
+            this.continued.add(record.childKey)
             noteChildIdle(child, status === 'idle')
             if (status === 'idle')
               await notify('completed', {

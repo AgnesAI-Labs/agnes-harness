@@ -68,12 +68,19 @@ export function renderTruthBase(snapshot: RecapFactSnapshot): string {
     : counts.total
       ? '全部完成'
       : '没有子任务'
+  const nonZero = [
+    counts.running ? `Running ${counts.running}` : '',
+    counts.paused ? `Paused ${counts.paused}` : '',
+    counts.disconnected ? `Disconnected ${counts.disconnected}` : '',
+    counts.failed ? `Failed ${counts.failed}` : '',
+    counts.cancelled ? `Cancelled ${counts.cancelled}` : '',
+  ].filter(Boolean)
   const pending = subtasks.filter((x) => x.status !== 'completed' || x.approvalPending)
   return [
     '## 运行时账本事实 · Runtime ledger facts',
     '',
     `**${banner}（已完成 ${counts.completed}/${counts.total}）**`,
-    `Running ${counts.running} · Paused ${counts.paused} · Disconnected ${counts.disconnected} · Failed ${counts.failed} · Cancelled ${counts.cancelled}`,
+    ...(nonZero.length ? [nonZero.join(' · ')] : []),
     '',
     '| taskId | role | status | executionState | summary (recorded child output) |',
     '| --- | --- | --- | --- | --- |',
@@ -102,13 +109,18 @@ const priority: readonly ChildAgentStatus[] = [
 export function renderDeterministicNarrative(snapshot: RecapFactSnapshot): string {
   const { counts } = snapshot
   if (!counts.total) return 'No child tasks are recorded.'
-  const actions = priority.flatMap((status) =>
-    snapshot.subtasks
-      .filter((t) => t.status === status)
-      .map(
-        (t) => `- [${literal(t.taskId)}] ${status}. ${literal(t.nextStep ?? 'Review the recorded state.')}`,
-      ),
-  )
+  const actions = [
+    ...priority.flatMap((status) =>
+      snapshot.subtasks
+        .filter((t) => t.status === status)
+        .map(
+          (t) => `- [${literal(t.taskId)}] ${status}. ${literal(t.nextStep ?? 'Review the recorded state.')}`,
+        ),
+    ),
+    ...snapshot.subtasks
+      .filter((t) => t.status === 'completed' && t.nextStep)
+      .map((t) => `- [${literal(t.taskId)}] completed. ${literal(t.nextStep ?? '')}`),
+  ]
   return [
     `${counts.completed} of ${counts.total} tasks completed.`,
     ...(actions.length ? ['', 'Next actions', ...actions] : []),
