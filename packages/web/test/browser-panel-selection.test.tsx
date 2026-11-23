@@ -132,6 +132,43 @@ it('automatically displays agent pages without a load button or an input connect
     expect(stream.open.mock.calls.map(([name]) => name)).toEqual(['browser.pages'])
     expect(effect).not.toHaveBeenCalled()
     expect(query).not.toHaveBeenCalled()
+    const open = container.querySelector<HTMLButtonElement>('[aria-label="browser.open"]')
+    const address = container.querySelector<HTMLInputElement>('input[aria-label="browser.address"]')
+    const form = address?.form
+    if (!open || !address || !form) throw new Error('Missing browser address form')
+    const submit = () =>
+      act(async () => {
+        form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      })
+    const failed = (errorCode: string) =>
+      act(async () =>
+        callbacks.get('browser.pages')?.({ enabled: true, state: 'failed', errorCode, pages: [] }),
+      )
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        address,
+        'http://localhost:5173/',
+      )
+      address.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await failed('UNSUPPORTED_MACOS')
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('browser.unsupportedMacOS')
+    expect(open.disabled).toBe(true)
+    await submit()
+    await failed('LAUNCH_FAILED')
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('browser.launchFailed')
+    expect(open.disabled).toBe(false)
+    expect(effect).not.toHaveBeenCalled()
+    effect.mockImplementationOnce(async () => ({ status: 'refused', code: 'LAUNCH_FAILED' }))
+    await submit()
+    expect(effect).toHaveBeenCalledWith('browser.open', { url: 'http://localhost:5173/' }, expect.anything())
+    expect(container.querySelector('[aria-label="browser.checkAction"]')).toBeNull()
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('browser.launchFailed')
+    effect.mockClear()
+    await submit()
+    expect(effect).toHaveBeenCalledWith('browser.open', { url: 'http://localhost:5173/' }, expect.anything())
+    effect.mockClear()
+    await publish([])
     call.mockRejectedValueOnce(new Error('Session pages unavailable'))
     await act(async () => callbacks.get('browser.pages')?.({ enabled: true, state: 'ready', changed: true }))
     expect(container.querySelector('[role="status"]')?.textContent).toBe('browser.pagesUnavailable')

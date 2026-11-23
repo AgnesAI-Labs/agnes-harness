@@ -3,6 +3,14 @@ const messages: Record<string, [string, string]> = {
   sessionUnavailable: ['Pages appear when the conversation connects.', '会话连接后自动显示页面。'],
   pagesUnavailable: ['Pages unavailable. Reconnecting automatically.', '页面暂不可用，正在自动重连。'],
   preparing: ['Preparing browser…', '正在准备浏览器…'],
+  launchFailed: [
+    'The built-in browser could not start. Try opening the address again.',
+    '内置浏览器启动失败。请重新打开此地址。',
+  ],
+  unsupportedMacOS: [
+    'The built-in browser requires macOS 13 Ventura or later.',
+    '内置浏览器需要 macOS 13 Ventura 或更高版本。',
+  ],
   lockHelp: ['Show installation lock recovery steps', '查看安装锁恢复步骤'],
   lockRecovery: [
     'Ask an administrator to inspect the lock path below. Legacy directory locks have no owner ID: stop every installer sharing this cache and verify none remain before moving the lock. Never remove a live lock. Restart this AGH instance and reopen the conversation. This button changes no files.',

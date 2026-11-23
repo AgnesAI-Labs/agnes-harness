@@ -20,6 +20,7 @@ export type BrowserState = {
   enabled: boolean
   state: string
   error?: string | null | undefined
+  errorCode?: string | null
   pages: BrowserPage[]
   pagesUnavailable?: boolean
   sessionId?: string | undefined
@@ -81,6 +82,7 @@ export class BrowserClient {
       enabled: value.enabled,
       state: value.state,
       error: typeof value.error === 'string' ? value.error : null,
+      errorCode: typeof value.errorCode === 'string' ? value.errorCode : null,
     }
     this.#profileLive = true
     this.update({ ...this.#snapshot, ...this.#status })
@@ -231,6 +233,7 @@ export class BrowserClient {
         pages: this.#snapshot.sessionId === selected.sessionId ? this.#snapshot.pages : [],
         state: 'failed',
         error: String(error),
+        errorCode: null,
       })
     } finally {
       this.#refreshing = false

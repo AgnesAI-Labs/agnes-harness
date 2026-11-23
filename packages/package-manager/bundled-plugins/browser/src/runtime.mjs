@@ -51,6 +51,7 @@ export class BrowserRuntime {
       capabilities: ['ai-snapshot', 'hover', 'drag', 'select', 'dialog', 'upload', 'pointer'],
       epoch: this.epoch,
       error: this.error ?? null,
+      errorCode: this.errorCode ?? null,
       cleanupRequired: !!this.cleanupRequired,
     }
   }
@@ -80,8 +81,18 @@ export class BrowserRuntime {
     if (!this.starting) {
       const epoch = this.epoch
       this.state = 'preparing'
+      this.error = undefined
+      this.errorCode = undefined
       this.notify()
       this.starting = this.launch()
+        .catch((cause) => {
+          if (isBrowserRefusal(cause)) throw cause
+          // No page was opened. Keep the raw Playwright command and paths out of client results.
+          throw Object.assign(
+            failure('LAUNCH_FAILED', 'The built-in browser could not start. Try opening the address again.'),
+            { cause },
+          )
+        })
         .then(async (browser) => {
           try {
             this.guard(epoch)
@@ -115,6 +126,7 @@ export class BrowserRuntime {
           if (this.enabled && epoch === this.epoch) {
             this.state = 'failed'
             this.error = String(error.message).slice(0, 500)
+            this.errorCode = isBrowserRefusal(error) ? error.code : undefined
             this.notify()
           }
           throw error
@@ -923,6 +935,7 @@ export class BrowserRuntime {
       this.cleanupRequired = false
       this.state = 'stopped'
       this.error = undefined
+      this.errorCode = undefined
     } catch {
       this.cleanupRequired = true
       this.state = 'failed'

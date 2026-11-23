@@ -13,10 +13,10 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { arch, homedir, platform } from 'node:os'
+import { arch, homedir, platform, release } from 'node:os' // guards-allow-platform: native browser payload selection
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { failure } from './policy.mjs'
+import { failure, isBrowserRefusal } from './policy.mjs'
 
 const VERSION = '1.63.0'
 const packaged = new URL('../dist/runtime/playwright/package.json', import.meta.url)
@@ -40,8 +40,14 @@ function owned(parent, target) {
     throw failure('CACHE_PATH', 'Browser cache path escaped its owner.')
   return target
 }
+export function browserHostKey(os = platform(), cpu = arch(), kernel = release()) {
+  // The pinned Chrome 153 requires macOS 13 (Darwin 22) on both Mac architectures.
+  if (os === 'darwin' && Number.parseInt(kernel, 10) < 22)
+    throw failure('UNSUPPORTED_MACOS', 'The built-in browser requires macOS 13 Ventura or later.')
+  return `${os}-${cpu}`
+}
 async function artifact(cacheRoot) {
-  const key = platform() + '-' + arch()
+  const key = browserHostKey()
   const values = JSON.parse(await readFile(new URL('./browser-artifacts.json', import.meta.url), 'utf8'))
   const value = values[key]
   if (!value || !/^[a-f0-9]{64}$/.test(value.sha256))
@@ -77,9 +83,12 @@ export function createLauncher({ cacheRoot, fetchArchive = fetch } = {}) {
       if (!runtime.enabled) return
       try {
         runtime.state = (await installed(await artifact(cacheRoot))) ? 'ready' : 'stopped'
+        runtime.error = undefined
+        runtime.errorCode = undefined
       } catch (error) {
         runtime.state = 'failed'
         runtime.error = String(error.message).slice(0, 500)
+        runtime.errorCode = isBrowserRefusal(error) ? error.code : undefined
       }
     },
     prepare(runtime) {
@@ -92,6 +101,7 @@ export function createLauncher({ cacheRoot, fetchArchive = fetch } = {}) {
       const signal = controller.signal
       runtime.state = 'preparing'
       runtime.error = undefined
+      runtime.errorCode = undefined
       runtime.notify()
       installing = (async () => {
         const info = await artifact(cacheRoot)
@@ -189,6 +199,7 @@ export function createLauncher({ cacheRoot, fetchArchive = fetch } = {}) {
             runtime.state = 'failed'
             runtime.error =
               error.code === 'INSTALL_BUSY' ? error.message : String(error.message).slice(0, 500)
+            runtime.errorCode = isBrowserRefusal(error) ? error.code : undefined
             runtime.notify()
           }
         })

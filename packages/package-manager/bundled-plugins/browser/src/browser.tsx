@@ -9,6 +9,10 @@ import { BrowserScreen, type BrowserScreenHandle, type HumanControl } from './br
 export function apply(ctx: ClientContext) {
   const client = new BrowserClient(ctx)
   const t = (key: string) => ctx.locale.t('browser.' + key)
+  const startupMessage = (code?: string | null) => {
+    if (code === 'LAUNCH_FAILED') return t('launchFailed')
+    if (code === 'UNSUPPORTED_MACOS') return t('unsupportedMacOS')
+  }
   const useBrowser = () => {
     useSyncExternalStore(ctx.locale.subscribe, ctx.locale.getSnapshot)
     return useSyncExternalStore(client.subscribe, client.getSnapshot)
@@ -51,6 +55,9 @@ export function apply(ctx: ClientContext) {
     const page = state.pages.find((p) => p.pageId === preferred) ?? state.pages[0]
     // A user's selected tab stays put while the model works in another tab.
     const selectPage = (pageId: string) => setSelected(pageId)
+    const canOpen =
+      state.enabled &&
+      (state.state === 'ready' || (!page && state.state === 'failed' && state.errorCode === 'LAUNCH_FAILED'))
     const pageId = page?.pageId
     const target = useRef(pageId)
     target.current = pageId
@@ -103,15 +110,16 @@ export function apply(ctx: ClientContext) {
       } catch (error) {
         const code = (error as { code?: string })?.code
         setError(
-          code === 'PROTECTED_TARGET'
-            ? t('protectedTarget')
-            : code === 'INVALID_URL'
-              ? t('invalidUrl')
-              : code === 'FILE_DENIED'
-                ? t('fileDenied')
-                : code === 'UNSUPPORTED_FILE'
-                  ? t('unsupportedFile')
-                  : String(error),
+          startupMessage(code) ??
+            (code === 'PROTECTED_TARGET'
+              ? t('protectedTarget')
+              : code === 'INVALID_URL'
+                ? t('invalidUrl')
+                : code === 'FILE_DENIED'
+                  ? t('fileDenied')
+                  : code === 'UNSUPPORTED_FILE'
+                    ? t('unsupportedFile')
+                    : String(error)),
         )
         return undefined
       } finally {
@@ -151,6 +159,7 @@ export function apply(ctx: ClientContext) {
       }
     }
     if (!state.sessionId) return <p>{t('noSession')}</p>
+    const alert = error || startupMessage(state.errorCode) || state.error
     return (
       <section className="agh-browser-panel">
         {page && (
@@ -191,7 +200,7 @@ export function apply(ctx: ClientContext) {
           className="agh-browser-address"
           onSubmit={(event) => {
             event.preventDefault()
-            if (busy || state.state !== 'ready') return
+            if (busy || !canOpen) return
             if (page) {
               screen.current?.interact({ type: 'navigate', url: address })
               return
@@ -219,12 +228,7 @@ export function apply(ctx: ClientContext) {
             onChange={(event) => setAddress(event.currentTarget.value)}
           />
           {(!page || address !== page.url) && (
-            <IconButton
-              name="arrow-right"
-              label={t('open')}
-              htmlType="submit"
-              disabled={busy || state.state !== 'ready'}
-            />
+            <IconButton name="arrow-right" label={t('open')} htmlType="submit" disabled={busy || !canOpen} />
           )}
           {page && (
             <>
@@ -260,7 +264,7 @@ export function apply(ctx: ClientContext) {
             </>
           )}
         </form>
-        {(error || state.error) && <p role="alert">{error || state.error}</p>}
+        {alert && <p role="alert">{alert}</p>}
         {state.pagesUnavailable && <p role={page ? 'alert' : 'status'}>{t('pagesUnavailable')}</p>}
         {state.error?.includes('Browser install lock ') && (
           <section>
