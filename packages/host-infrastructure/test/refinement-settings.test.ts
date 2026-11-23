@@ -176,24 +176,54 @@ describe('RefinementSettingsStore', () => {
     }
     plant(dir, 'p', JSON.stringify(settings))
     expect(new RefinementSettingsStore(dir, 'p').read().settings).toEqual({ ...settings, baseUrl })
+    // A legacy binding still belongs to llm.sg if a deployment reorders or removes that gateway.
+    expect(new RefinementSettingsStore(dir, 'p', dir, [retiredUrl, baseUrl]).read().settings).toEqual({
+      ...settings,
+      baseUrl,
+    })
+    expect(new RefinementSettingsStore(dir, 'p', dir, [retiredUrl]).currentWithKey()).toMatchObject({
+      snapshot: { settings: { enabled: false, mode: 'auto', baseUrl: retiredUrl } },
+      key: undefined,
+    })
   })
 
-  it('falls back to the default without enabling a profile whose gateway was removed', async () => {
-    expect(REFINEMENT_ENDPOINTS).toEqual(['https://api.llm.sg/v1'])
-    const dir = await dataDir()
-    const previous = new RefinementSettingsStore(dir, 'p', dir, [baseUrl, retiredUrl])
-    const selected = { credentialRef, model, enabled: true, mode: 'auto', baseUrl: retiredUrl } as const
-    const { revision } = previous.save(selected, previous.read().revision, {
+  it('retains allowed gateways across restarts and drops a retired gateway’s bindings on fallback', async () => {
+    expect(REFINEMENT_ENDPOINTS).toEqual([
+      'https://api.llm.sg/v1',
+      'https://api.agnes-ai.cn/v1',
+      'https://apihub.agnes-ai.com/v1',
+    ])
+    const option = {
       id: model,
       name: 'Review',
       contextWindow: 100_000,
       maxTokens: 2048,
-    })
+    }
+    const on = { credentialRef, model, enabled: true, mode: 'auto' } as const
+    for (const gateway of REFINEMENT_ENDPOINTS) {
+      const dir = await dataDir()
+      const store = new RefinementSettingsStore(dir, 'p')
+      const paused = { enabled: false, mode: 'auto', baseUrl: gateway } as const
+      const selected = { ...on, baseUrl: gateway }
+      const switched = store.save(paused, store.read().revision)
+      const saved = store.save(selected, switched.revision, option)
+      expect(new RefinementSettingsStore(dir, 'p').currentWithKey()).toEqual({
+        key: 'fixture-review-key',
+        snapshot: { settings: selected, endpoints: REFINEMENT_ENDPOINTS, modelOption: option, ...saved },
+      })
+    }
+    const dir = await dataDir()
+    const previous = new RefinementSettingsStore(dir, 'p', dir, [retiredUrl])
+    const selected = { ...on, baseUrl: retiredUrl }
+    const { revision } = previous.save(selected, previous.read().revision, option)
     const current = new RefinementSettingsStore(dir, 'p', dir)
-    expect(current.current()).toEqual({
-      settings: { ...selected, enabled: false, baseUrl },
-      revision: expect.any(String),
-      endpoints: [baseUrl],
+    expect(current.currentWithKey()).toEqual({
+      key: undefined,
+      snapshot: {
+        settings: { mode: 'auto', enabled: false, baseUrl },
+        revision: expect.any(String),
+        endpoints: REFINEMENT_ENDPOINTS,
+      },
     })
     expect(current.read().revision).not.toBe(revision)
     expect(refinementSettingsRevision({ ...selected, baseUrl })).not.toBe(
@@ -220,8 +250,10 @@ describe('RefinementSettingsStore', () => {
     const credentials = createCredentialStore({ root: dir })
     const nextRef = 'secret://generic/00000000-0000-4000-8000-000000000002'
     const original = { credentialRef, model, enabled: true, mode: 'auto' } as const
-    const next = { ...original, credentialRef: nextRef }
-    expect(refinementSettingsRevision(next)).not.toBe(refinementSettingsRevision(original))
+    const next = { ...original, credentialRef: nextRef, baseUrl: retiredUrl }
+    expect(refinementSettingsRevision({ ...original, credentialRef: nextRef })).not.toBe(
+      refinementSettingsRevision(original),
+    )
     expect(refinementSettingsRevision({ ...original, model: 'company/another-review' })).not.toBe(
       refinementSettingsRevision(original),
     )
@@ -233,10 +265,14 @@ describe('RefinementSettingsStore', () => {
       endpoints: [baseUrl, retiredUrl],
       credentialMissing: true,
     })
-    const switched = store.save({ ...original, enabled: false, baseUrl: retiredUrl }, saved.revision)
-    expect(store.read()).toMatchObject({
-      settings: { ...original, enabled: false, baseUrl: retiredUrl },
-      credentialMissing: true,
+    const paused = { enabled: false, mode: 'auto', baseUrl: retiredUrl } as const
+    for (const binding of [{ credentialRef }, { model }, original])
+      expect(() => store.save({ ...paused, ...binding }, saved.revision)).toThrow('CONFIG_INVALID_INPUT')
+    const switched = store.save(paused, saved.revision)
+    expect(store.read()).toEqual({
+      settings: paused,
+      endpoints: [baseUrl, retiredUrl],
+      ...switched,
     })
     const metadata = { label: 'Replacement', createdAt: new Date(0).toISOString() }
     await credentials.putGeneric(nextRef, '\u200b', metadata)
@@ -246,7 +282,7 @@ describe('RefinementSettingsStore', () => {
     expect(replacement.revision).not.toBe(saved.revision)
     expect(store.read()).toEqual({
       ...replacement,
-      settings: { ...next, baseUrl },
+      settings: next,
       endpoints: [baseUrl, retiredUrl],
     })
   })
@@ -290,6 +326,12 @@ describe('RefinementSettingsStore', () => {
       closeSync(restored)
     }
     expect(store.current()).not.toHaveProperty('credentialMissing')
+    // A worker dispatch must see a gateway switch made by another process even inside the hot-read window.
+    other.save(on, store.read().revision)
+    expect(store.currentWithKey()).toMatchObject({ snapshot: { settings: on }, key: 'fixture-review-key' })
+    const paused = { enabled: false, mode: 'auto', baseUrl: 'https://api.agnes-ai.cn/v1' } as const
+    plant(dir, 'p', JSON.stringify({ settings: paused, nonce: randomUUID() }))
+    expect(store.currentWithKey()).toMatchObject({ snapshot: { settings: paused }, key: undefined })
   })
 
   it('serves the port: current() is the store snapshot', async () => {

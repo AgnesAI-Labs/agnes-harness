@@ -138,6 +138,20 @@ it('v3 home entries, deep links and browser back/forward retain the selected pag
 
   await local.getByTestId('home-entry-rsi').click()
   await expect(local.getByRole('heading', { name: 'RSI', exact: true })).toBeVisible()
+  const address = local.getByTestId('refinement-endpoint')
+  const gateways = [
+    'https://api.llm.sg/v1',
+    'https://api.agnes-ai.cn/v1',
+    'https://apihub.agnes-ai.com/v1',
+  ] as const
+  await expect(address.locator('option')).toHaveText([...gateways])
+  await expect(address).toHaveValue(gateways[0])
+  for (const baseUrl of gateways.slice(1)) {
+    await address.selectOption(baseUrl)
+    await expect
+      .poll(async () => (await client.refinement.get()).settings)
+      .toEqual({ baseUrl, enabled: false, mode: 'manual' })
+  }
   for (const note of ['allows-install', 'allows-undo', 'approvals', 'cost']) {
     await expect(local.getByTestId(`refinement-${note}`)).toHaveCSS('margin-block-end', '0px')
   }
@@ -146,6 +160,7 @@ it('v3 home entries, deep links and browser back/forward retain the selected pag
   await expect.poll(() => query('page'), { timeout: 30_000 }).toBe('rsi')
   expect(query('settings')).toBeNull()
   await expect(rsi).toBeVisible()
+  await expect(address).toHaveValue(gateways[2])
 
   await local.locator('#settings').click()
   await local.getByTestId('settings-nav-general').click()

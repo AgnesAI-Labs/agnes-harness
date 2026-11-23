@@ -7,6 +7,7 @@ import {
   type OperationFeedback,
   UiLocaleProvider,
 } from '@agnes/web-ui'
+import { fireEvent, getByLabelText, getByRole } from '@testing-library/dom'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -25,8 +26,9 @@ afterEach(async () => {
 const credentialRef = 'secret://generic/review'
 const model = 'company/review-a'
 const another = 'company/review-b'
-const baseUrl = 'https://review.example/v1'
-const alternateUrl = 'https://alternate-review.example/v1'
+const baseUrl = 'https://api.llm.sg/v1'
+const alternatives = ['https://api.agnes-ai.cn/v1', 'https://apihub.agnes-ai.com/v1']
+const endpoints = [baseUrl, ...alternatives]
 const catalogue = {
   models: [
     { id: model, name: 'Company Review A', contextWindow: 65536, maxTokens: 4096 },
@@ -140,7 +142,7 @@ it('the settings panel saves with revision and shows the permission text', async
     field(host, 'refinement-enabled').closest('.agnes-settings-item'),
   )
   expect(billing.textContent).toBe(
-    'Reviews use your llm.sg key and are billed by usage. AGH does not know the price; the token budget limits how much each session uses.',
+    'Reviews are billed to the key for the selected gateway. AGH does not know the price. A token budget limits usage in each session.',
   )
   expect(field(host, 'refinement-approvals').textContent).toMatch(/^More command approvals: .*more commands/)
 
@@ -157,51 +159,60 @@ it('the settings panel saves with revision and shows the permission text', async
   expect(host.textContent).not.toMatch(/restart/i)
 })
 
-it.each([true, false])('switches service addresses with the saved key (keeps model: %s)', async (keep) => {
-  const initial = { credentialRef, model, mode: 'manual', enabled: true, baseUrl } as const
-  const api = fakeApi(initial)
-  api.read.mockResolvedValue({ revision: REV0, settings: initial, endpoints: [baseUrl, alternateUrl] })
-  const selected = keep ? model : another
-  let release = () => {}
-  const nextCatalogue = new Promise<typeof catalogue>((resolve) => {
-    release = () => resolve({ models: catalogue.models.filter(({ id }) => id === selected) })
-  })
-  api.models.mockResolvedValueOnce(catalogue).mockReturnValueOnce(nextCatalogue)
-  const host = await mount(api)
-  const endpointSelect = field(host, 'refinement-endpoint') as HTMLSelectElement
-  const modelSelect = field(host, 'refinement-model') as HTMLSelectElement
-  const enable = field(host, 'refinement-enabled') as HTMLButtonElement
-  expect(Array.from(endpointSelect.options, ({ value }) => value)).toEqual([baseUrl, alternateUrl])
-  expect(endpointSelect.value).toBe(baseUrl)
-  expect(
-    endpointSelect.closest('.agnes-settings-item')?.querySelector('.agnes-settings-item-description')
-      ?.textContent,
-  ).toBe('Switching pauses learning and reloads its models.')
-
-  await choose(host, 'refinement-endpoint', alternateUrl)
-  const paused = { ...initial, enabled: false, baseUrl: alternateUrl }
-  expect(endpointSelect.value).toBe(alternateUrl)
-  expect(api.save).toHaveBeenLastCalledWith(paused, REV0)
-  expect(api.models).toHaveBeenCalledTimes(2)
-  expect(api.createKey).not.toHaveBeenCalled()
-  expect(enable.getAttribute('aria-checked')).toBe('false')
-  expect(enable.disabled).toBe(true)
-  expect(modelSelect.disabled).toBe(true)
-
-  await act(async () => release())
-  // The saved model stays saved, offered or not: only the person's own choice replaces it.
-  expect(modelSelect.value).toBe(model)
-  expect(api.save).toHaveBeenCalledTimes(1)
-  if (!keep) {
-    expect(host.textContent).toContain(`The saved model ${model} is not in the service's current list.`)
+it.each(alternatives)(
+  'pauses on a switch to %s and loads models only after its key is bound',
+  async (url) => {
+    const initial = { credentialRef, model, mode: 'manual', enabled: true, baseUrl } as const
+    const api = fakeApi(initial)
+    api.read.mockResolvedValue({ revision: REV0, settings: initial, endpoints })
+    const nextRef = 'secret://generic/alternate'
+    api.createKey = vi.fn(async () => nextRef)
+    let release = () => {}
+    const oldCatalogue = new Promise<typeof catalogue>((resolve) => {
+      release = () => resolve(catalogue)
+    })
+    api.models.mockReturnValueOnce(oldCatalogue).mockResolvedValue({
+      models: catalogue.models.filter(({ id }) => id === another),
+    })
+    const host = await mount(api)
+    const endpointSelect = field(host, 'refinement-endpoint') as HTMLSelectElement
+    const modelSelect = field(host, 'refinement-model') as HTMLSelectElement
+    const enable = field(host, 'refinement-enabled') as HTMLButtonElement
+    expect(Array.from(endpointSelect.options, ({ value }) => value)).toEqual(endpoints)
+    expect(endpointSelect.value).toBe(baseUrl)
+    expect(
+      endpointSelect.closest('.agnes-settings-item')?.querySelector('.agnes-settings-item-description')
+        ?.textContent,
+    ).toContain('Switching gateways pauses learning')
+    await act(async () => getByRole(host, 'button', { name: 'Replace key' }).click())
+    const keyInput = () => getByLabelText<HTMLInputElement>(host, 'Service key')
+    await act(async () => fireEvent.input(keyInput(), { target: { value: 'unsaved-old-site-key' } }))
+    await choose(host, 'refinement-endpoint', url)
+    const paused = { mode: initial.mode, enabled: false, baseUrl: url }
+    expect(endpointSelect.value).toBe(url)
+    expect(api.save).toHaveBeenLastCalledWith(paused, REV0)
+    expect(api.models).toHaveBeenCalledTimes(1)
+    expect(api.createKey).not.toHaveBeenCalled()
+    expect(enable.getAttribute('aria-checked')).toBe('false')
     expect(enable.disabled).toBe(true)
-    await choose(host, 'refinement-model', selected)
-    expect(api.save).toHaveBeenLastCalledWith({ ...paused, model: selected }, REV1)
-  }
-  expect(enable.disabled).toBe(false)
-  await toggle(host, 'refinement-enabled')
-  expect(api.save).toHaveBeenLastCalledWith({ ...paused, enabled: true, model: selected }, keep ? REV1 : REV2)
-})
+    expect(modelSelect.disabled).toBe(true)
+
+    expect(modelSelect.value).toBe('')
+    expect(host.textContent).toContain('Save a key issued by this gateway')
+    expect(keyInput().value).toBe('')
+    await act(async () => fireEvent.input(keyInput(), { target: { value: 'new-site-key' } }))
+    await act(async () => getByRole(host, 'button', { name: 'Save key' }).click())
+    const bound = { ...paused, credentialRef: nextRef }
+    expect(api.save).toHaveBeenLastCalledWith(bound, REV1)
+    expect(api.models).toHaveBeenCalledTimes(2)
+    await act(async () => release())
+    expect(Array.from(modelSelect.options, ({ value }) => value)).toEqual(['', another])
+    expect(modelSelect.value).toBe(another)
+    expect(enable.disabled).toBe(false)
+    await toggle(host, 'refinement-enabled')
+    expect(api.save).toHaveBeenLastCalledWith({ ...bound, enabled: true, model: another }, REV2)
+  },
+)
 
 it('shows the sole service address before a key is saved', async () => {
   const api = fakeApi(DEFAULT_REFINEMENT_SETTINGS)
@@ -215,7 +226,31 @@ it('shows the sole service address before a key is saved', async () => {
   expect(select.disabled).toBe(true)
   expect(
     select.closest('.agnes-settings-item')?.querySelector('.agnes-settings-item-description')?.textContent,
-  ).toBe('Dedicated company review gateway.')
+  ).toBe('This deployment offers one review gateway.')
+  expect(api.models).not.toHaveBeenCalled()
+})
+
+it('waits for a keyless gateway switch to commit before accepting the destination key', async () => {
+  const initial = { ...DEFAULT_REFINEMENT_SETTINGS, baseUrl }
+  const api = fakeApi(initial)
+  api.read.mockResolvedValue({ revision: REV0, settings: initial, endpoints })
+  let commit = () => {}
+  api.save.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        commit = () => resolve({ revision: REV1 })
+      }),
+  )
+  const host = await mount(api)
+  const input = getByLabelText<HTMLInputElement>(host, 'Service key')
+  await act(async () => fireEvent.input(input, { target: { value: 'unsaved-old-site-key' } }))
+  await choose(host, 'refinement-endpoint', 'https://api.agnes-ai.cn/v1')
+  expect(input.value).toBe('')
+  expect(input.disabled).toBe(true)
+  expect(getByRole<HTMLButtonElement>(host, 'button', { name: 'Save key' }).disabled).toBe(true)
+  await act(async () => commit())
+  expect(input.disabled).toBe(false)
+  expect(api.createKey).not.toHaveBeenCalled()
   expect(api.models).not.toHaveBeenCalled()
 })
 
@@ -477,20 +512,20 @@ it('tells a failed save and a failed read apart from a conflict', async () => {
 it('shows the section in Chinese', async () => {
   document.documentElement.lang = 'zh-CN'
   const api = fakeApi()
-  api.read.mockResolvedValue({ revision: REV0, settings: OFF, endpoints: [baseUrl] })
+  api.read.mockResolvedValue({ revision: REV0, settings: OFF, endpoints })
   const host = await mount(api)
   expect(
     field(host, 'refinement-endpoint')
       .closest('.agnes-settings-item')
       ?.querySelector('.agnes-settings-item-description')?.textContent,
-  ).toBe('公司的专用复盘服务节点。')
+  ).toContain('切换站点会暂停学习')
   const text = host.textContent ?? ''
   expect(switchHelp(host)?.getAttribute('aria-label')).toBe(
     '打开后，之后新开的会话生效；已经打开的会话不受影响。关闭立即对所有会话生效。要把经验留给之后的会话，还需打开工作区记忆（设置 → 通用 → 个性化 → 记忆：「先问我」或「自动」）；记忆为「关闭」时，经验只在学到它的会话里有效。',
   )
   expect(text).not.toContain('重启')
   expect(field(host, 'refinement-billing').textContent).toBe(
-    '复盘使用你的 llm.sg 密钥，按实际用量计费。AGH 不知道价格；每个会话的用量受 token 预算限制。',
+    '复盘使用所选站点的密钥，按实际用量计费。AGH 不知道单价，每个会话的用量受 token 预算限制。',
   )
   expect(field(host, 'refinement-approvals').textContent).toContain('可能出现更多命令审批：')
   expect(field(host, 'refinement-permissions').textContent).not.toContain('后续版本')

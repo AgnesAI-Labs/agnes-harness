@@ -28,12 +28,6 @@ import {
 } from './scripted-session.js'
 import { reviewCredential, reviewModel, routeReviewToLoopback, syntheticKey } from './service-key.js'
 
-const { alternateUrl } = vi.hoisted(() => ({ alternateUrl: 'https://alternate-review.example/v1' }))
-vi.mock(import('@agnes/distribution/refinement-model'), async (original) => {
-  const service = await original()
-  return { ...service, REFINEMENT_ENDPOINTS: [service.DEFAULT_REFINEMENT_BASE_URL, alternateUrl] as const }
-})
-
 const baseDir = fileURLToPath(new URL('../../../base/', import.meta.url))
 const baselineFile = fileURLToPath(new URL('../fixtures/refinement/off-baseline.json', import.meta.url))
 const apis = ['anthropic-messages', 'openai-completions'] as const
@@ -311,7 +305,10 @@ describe('the refinement loop in an assembled host', () => {
     const advertised = { id: nextModel, name: 'Review B', contextWindow: 96_000, maxTokens: 2048 }
     const signal = new AbortController().signal
     const pending = gate()
+    const alternateUrl = 'https://apihub.agnes-ai.com/v1'
+    const alternateRef = 'secret://generic/00000000-0000-4000-8000-000000000002'
     const alternateKey = 'synthetic-alternate-review-key'
+    const catalogueKeys: (string | undefined)[] = []
     await withDataDir(async (dataDir) => {
       await withHost(
         {
@@ -326,8 +323,9 @@ describe('the refinement loop in an assembled host', () => {
           alternate: {
             baseUrl: alternateUrl,
             key: alternateKey,
-            models: (auth) =>
-              auth === `Bearer ${alternateKey}`
+            models: (auth) => {
+              catalogueKeys.push(auth)
+              return auth === `Bearer ${alternateKey}`
                 ? {
                     status: 200,
                     body: {
@@ -336,7 +334,8 @@ describe('the refinement loop in an assembled host', () => {
                       ],
                     },
                   }
-                : { status: 403, body: {} },
+                : { status: 403, body: {} }
+            },
           },
           models: (auth) => {
             if (auth === 'Bearer unauthorized') return { status: 401, body: {} }
@@ -378,11 +377,10 @@ describe('the refinement loop in an assembled host', () => {
           await expect(
             fetchRefinementModels(DEFAULT_REFINEMENT_BASE_URL, 'unavailable', signal),
           ).rejects.toThrow('REFINEMENT_MODELS_UNAVAILABLE')
-          const savedModels = () => {
-            const { baseUrl, credentialRef } = store.current().settings
-            const key = credentialRef && store.serviceKey(credentialRef)
+          const savedModels = async () => {
+            const { snapshot, key } = store.currentWithKey()
             if (!key) throw new Error('Missing fixture key')
-            return fetchRefinementModels(baseUrl, key, signal)
+            return fetchRefinementModels(snapshot.settings.baseUrl, key, signal)
           }
           expect(await savedModels()).toEqual([fallback])
           const first = store.save(
@@ -399,29 +397,24 @@ describe('the refinement loop in an assembled host', () => {
             await until('the first review reaches the gateway', () => planner().length === 1)
             queued = await requestRefinement(session, undefined, undefined, true)
             expect(session.state.refinementRuns.get(queued.runId)?.state).toBe('queued')
-            // The test key is already in the local store when the owner changes addresses.
-            await createCredentialStore({ root: dataDir }).putGeneric(credentialRef, alternateKey, {
-              label: 'Fixture alternate gateway key',
-              createdAt: new Date(0).toISOString(),
-            })
-            await expect(savedModels()).rejects.toThrow('REFINEMENT_KEY_INVALID')
-            const paused = { ...store.read().settings, baseUrl: alternateUrl, enabled: false } as const
+            const paused = { mode: 'manual', baseUrl: alternateUrl, enabled: false } as const
             const switched = store.save(paused, first.revision)
-            expect(store.read().settings).toEqual({ ...paused, credentialRef })
+            expect(store.read().settings).toEqual(paused)
             await expect(requestRefinement(session)).rejects.toMatchObject({
               data: { reason: 'refinement-off' },
             })
+            await expect(savedModels()).rejects.toThrow('Missing fixture key')
+            expect(catalogueKeys).toEqual([])
+            expect(alternatePlanner()).toEqual([])
+            await createCredentialStore({ root: dataDir }).putGeneric(alternateRef, alternateKey, {
+              label: 'Fixture alternate gateway key',
+              createdAt: new Date(0).toISOString(),
+            })
+            const binding = { ...paused, credentialRef: alternateRef }
+            const bound = store.save(binding, switched.revision)
             expect(await savedModels()).toEqual([advertised])
-            const { revision } = store.save(
-              { ...paused, model: advertised.id },
-              switched.revision,
-              advertised,
-            )
-            store.save(
-              { ...paused, enabled: true, credentialRef, model: advertised.id },
-              revision,
-              advertised,
-            )
+            expect(catalogueKeys).toEqual([`Bearer ${alternateKey}`])
+            store.save({ ...binding, enabled: true, model: advertised.id }, bound.revision, advertised)
           } finally {
             pending.open()
           }

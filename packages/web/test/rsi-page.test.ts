@@ -20,7 +20,8 @@ it('opens RSI from the sidebar and applies settings and workspace skill actions 
   const runtime = await mountRenderedIndex()
   const revision = () => String(saved.length).padStart(64, '0')
   const saved: RefinementSettingsSaveParams[] = []
-  const endpoints = ['https://review.example/v1', 'https://alternate.example/v1']
+  const baseUrl = 'https://api.llm.sg/v1'
+  const endpoints = [baseUrl, 'https://api.agnes-ai.cn/v1', 'https://apihub.agnes-ai.com/v1']
   const credential = {
     id: 'secret://generic/00000000-0000-4000-8000-000000000000',
     label: 'Task experience service key',
@@ -37,21 +38,30 @@ it('opens RSI from the sidebar and applies settings and workspace skill actions 
     initiator: 'user',
     previous: [],
   }
+  const alternate = { ...credential, id: 'secret://generic/00000000-0000-4000-8000-000000000001' }
+  const replacement = { ...credential, id: 'secret://generic/00000000-0000-4000-8000-000000000002' }
+  const discoveries: Array<[string | undefined, string | undefined]> = []
   const call = vi.fn(async (method: string, params: unknown) => {
     switch (method) {
       case '_agnes/v1/refinement.get':
         return {
-          settings: saved.at(-1)?.settings ?? DEFAULT_REFINEMENT_SETTINGS,
+          settings: saved.at(-1)?.settings ?? { ...DEFAULT_REFINEMENT_SETTINGS, baseUrl },
           revision: revision(),
           endpoints,
         } satisfies RefinementSettingsSnapshot
-      case '_agnes/v1/refinement.models':
+      case '_agnes/v1/refinement.models': {
+        const settings = saved.at(-1)?.settings
+        const otherSite = settings?.baseUrl === endpoints[1]
+        discoveries.push([settings?.baseUrl, settings?.credentialRef])
         return {
-          models: (saved.at(-1)?.settings.baseUrl === endpoints[1]
-            ? ['alternate', 'preferred']
-            : ['default']
-          ).map((id) => ({ id, name: id, contextWindow: 65536, maxTokens: 4096 })),
+          models: (otherSite ? ['alternate', 'preferred'] : ['default']).map((id) => ({
+            id,
+            name: id,
+            contextWindow: 65536,
+            maxTokens: 4096,
+          })),
         }
+      }
       case '_agnes/v1/refinement.save':
         expect(params).toMatchObject({ expectedRevision: revision() })
         saved.push(params as RefinementSettingsSaveParams)
@@ -72,8 +82,7 @@ it('opens RSI from the sidebar and applies settings and workspace skill actions 
         throw new Error(`Unexpected page call: ${method}`)
     }
   })
-  const replacement = { ...credential, id: 'secret://generic/00000000-0000-4000-8000-000000000001' }
-  const created = [credential, replacement]
+  const created = [credential, alternate, replacement]
   const fetch = vi.fn(async (url: string, _init: RequestInit) =>
     Response.json(url === '/admin/api/credentials/create' ? created.shift() : {}),
   )
@@ -98,6 +107,9 @@ it('opens RSI from the sidebar and applies settings and workspace skill actions 
     const select = (id: string) => getByTestId<HTMLSelectElement>(page, id)
     const model = select('refinement-model')
     const enabled = getByTestId(page, 'refinement-enabled')
+    const endpoint = select('refinement-endpoint')
+    expect(Array.from(endpoint.options, ({ value }) => value)).toEqual(endpoints)
+    expect(endpoint.value).toBe(endpoints[0])
 
     fireEvent.input(getByLabelText(page, 'Service key'), {
       target: { value: 'synthetic-rsi-key' },
@@ -115,7 +127,24 @@ it('opens RSI from the sidebar and applies settings and workspace skill actions 
     expect(call).toHaveBeenCalledWith('_agnes/v1/refinement.models', {})
 
     await vi.waitFor(() => expect(model.disabled).toBe(false))
-    fireEvent.change(select('refinement-endpoint'), { target: { value: endpoints[1] } })
+    enabled.click()
+    await vi.waitFor(() => expect(enabled.getAttribute('aria-checked')).toBe('true'))
+    fireEvent.change(endpoint, { target: { value: endpoints[1] } })
+    const newKey = await vi.waitFor(() => {
+      const input = getByLabelText<HTMLInputElement>(page, 'Service key')
+      expect(input.disabled).toBe(false)
+      return input
+    })
+    expect(saved.at(-1)?.settings).toEqual({ enabled: false, mode: 'manual', baseUrl: endpoints[1] })
+    expect(enabled.getAttribute('aria-checked')).toBe('false')
+    expect(model.value).toBe('')
+    expect(model.disabled).toBe(true)
+    expect(discoveries).toEqual([[baseUrl, credential.id]])
+    fireEvent.input(newKey, { target: { value: 'synthetic-china-key' } })
+    await vi.waitFor(() =>
+      expect(getByRole<HTMLButtonElement>(page, 'button', { name: 'Save key' }).disabled).toBe(false),
+    )
+    getByRole(page, 'button', { name: 'Save key' }).click()
     await vi.waitFor(() => {
       expect(model.value).toBe('alternate')
       expect(model.disabled).toBe(false)
@@ -145,10 +174,17 @@ it('opens RSI from the sidebar and applies settings and workspace skill actions 
     await vi.waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
         '/admin/api/credentials/delete',
-        expect.objectContaining({ method: 'POST', body: JSON.stringify({ id: credential.id }) }),
+        expect.objectContaining({ method: 'POST', body: JSON.stringify({ id: alternate.id }) }),
       ),
     )
     expect(saved.at(-1)?.settings).toMatchObject({ credentialRef: replacement.id, enabled: false })
+    await vi.waitFor(() =>
+      expect(discoveries).toEqual([
+        [baseUrl, credential.id],
+        [endpoints[1], alternate.id],
+        [endpoints[1], replacement.id],
+      ]),
+    )
 
     const skills = getByTestId(page, 'refinement-saved-skills')
     await vi.waitFor(() => expect(getByText(skills, skill.name)).toBeTruthy())

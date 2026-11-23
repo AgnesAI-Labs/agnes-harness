@@ -95,8 +95,8 @@ request's catalogue.
 `agh/run-agh.ts --arms off,on,oracle` adds a third arm to the runs. The default is still `on,off`, and
 `--settings` (on and off only) is the same option under its older name.
 
-The `on` arm also requires `RSI_EVAL_REVIEW_API_KEY` and `RSI_EVAL_REVIEW_MODEL` for the dedicated
-task-experience gateway, `https://api.llm.sg/v1`. The runner stores the review key in the run home's
+The `on` arm also requires `RSI_EVAL_REVIEW_API_KEY` and `RSI_EVAL_REVIEW_MODEL` for the runner's
+default task-experience gateway, `https://api.llm.sg/v1`. The runner stores the review key in the run home's
 private credential store while the host is open and removes it on close. The other arms use only the
 conversation credentials from `keyEnv`.
 
