@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { createWebServer } from '../src/server.js'
 import { fileName } from '../src/server-assets.js'
+import { mhsFrameSources, resolveMhsSiteOrigin } from '../src/server-security.js'
 
 it('serves the main Web while Surface paths are retryable, then distinguishes a successful empty table', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-web-surface-ready-'))
@@ -284,3 +285,35 @@ it('characterizes every guarded route across origin, fetch-site, method and raw 
     rmSync(root, { recursive: true, force: true })
   }
 }, 30_000)
+
+it('admits exact MHS origins in index frame-src and rejects non-HTTPS non-private overrides', () => {
+  expect(mhsFrameSources()).toBe(
+    "'self' blob: https://agh.agnes-ai.cn https://agnes-hardware-website-test.aisi-devops.com",
+  )
+  expect(mhsFrameSources({ developmentReload: true })).toBe(
+    "'self' blob: https://agh.agnes-ai.cn https://agnes-hardware-website-test.aisi-devops.com http://127.0.0.1:4321 http://127.0.0.1:4173",
+  )
+  expect(
+    mhsFrameSources(undefined, {
+      AGNES_MHS_HUB_URL: 'https://hub.example.com/app',
+      AGNES_MHS_SITE_URL: 'http://evil.example.com',
+    }),
+  ).toBe(
+    "'self' blob: https://agh.agnes-ai.cn https://agnes-hardware-website-test.aisi-devops.com https://hub.example.com",
+  )
+  expect(
+    mhsFrameSources(undefined, {
+      AGNES_MHS_HUB_URL: 'http://10.20.30.40:8080/console',
+    }),
+  ).toBe(
+    "'self' blob: https://agh.agnes-ai.cn https://agnes-hardware-website-test.aisi-devops.com http://10.20.30.40:8080",
+  )
+  expect(resolveMhsSiteOrigin({})).toBe('https://agh.agnes-ai.cn')
+  expect(resolveMhsSiteOrigin({ AGNES_MHS_SITE_URL: 'http://127.0.0.1:4321/' })).toBe('http://127.0.0.1:4321')
+  expect(resolveMhsSiteOrigin({ AGNES_MHS_SITE_URL: 'https://site.example.com/en/' })).toBe(
+    'https://site.example.com',
+  )
+  expect(resolveMhsSiteOrigin({ AGNES_MHS_SITE_URL: 'http://evil.example.com' })).toBe(
+    'https://agh.agnes-ai.cn',
+  )
+})

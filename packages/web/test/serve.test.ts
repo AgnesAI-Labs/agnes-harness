@@ -202,7 +202,10 @@ it('issues a fresh CSP style nonce for each served HTML document', async () => {
   })
   try {
     const nonceMarker = '<meta name="agnes-csp-nonce" content="__AGNES_CSP_NONCE__">'
-    await writeFile(join(root, 'index.html'), `${nonceMarker}<meta data-ws="__AGNES_WS_URL__">`)
+    await writeFile(
+      join(root, 'index.html'),
+      `${nonceMarker}<meta id="agnes-config" data-ws="__AGNES_WS_URL__" data-mhs-site="__AGNES_MHS_SITE_URL__">`,
+    )
     await writeFile(join(root, 'admin.html'), nonceMarker)
     await writeFile(join(root, 'resources.html'), nonceMarker)
 
@@ -229,8 +232,15 @@ it('issues a fresh CSP style nonce for each served HTML document', async () => {
       )
       const cdn = ['https://cos-agent-default.agnes-ai.cn', 'https://cos-agent-default.agnes-ai.com']
       if (new URL(document.url).pathname === '/') {
+        expect(body).toContain('data-mhs-site="https://agh.agnes-ai.cn"')
+        expect(body).not.toContain('__AGNES_MHS_SITE_URL__')
         expect(directives['img-src']).toEqual(["'self'", 'blob:', ...cdn])
-        expect(directives['frame-src']).toEqual(["'self'", 'blob:'])
+        expect(directives['frame-src']).toEqual([
+          "'self'",
+          'blob:',
+          'https://agh.agnes-ai.cn',
+          'https://agnes-hardware-website-test.aisi-devops.com',
+        ])
         expect(directives['media-src']).toEqual(["'self'", 'blob:', ...cdn])
       } else {
         expect(directives['img-src']).toBeUndefined()
@@ -245,6 +255,19 @@ it('issues a fresh CSP style nonce for each served HTML document', async () => {
       nonces.push(nonce as string)
     }
     expect(new Set(nonces).size).toBe(nonces.length)
+
+    const previousMhsSiteUrl = process.env.AGNES_MHS_SITE_URL
+    try {
+      process.env.AGNES_MHS_SITE_URL = 'https://site.example.com/en/'
+      const overridden = await fetch(`${server.url}/`)
+      expect(overridden.status).toBe(200)
+      const overriddenBody = await overridden.text()
+      expect(overriddenBody).toContain('data-mhs-site="https://site.example.com"')
+      expect(overridden.headers.get('content-security-policy')).toContain('https://site.example.com')
+    } finally {
+      if (previousMhsSiteUrl === undefined) delete process.env.AGNES_MHS_SITE_URL
+      else process.env.AGNES_MHS_SITE_URL = previousMhsSiteUrl
+    }
   } finally {
     await server.close()
     await rm(root, { recursive: true, force: true })

@@ -40,7 +40,9 @@ import {
   loopbackHost,
   loopbackOrigin,
   loopbackWs,
+  mhsFrameSources,
   port,
+  resolveMhsSiteOrigin,
 } from './server-security.js'
 
 type WatchedPluginBuild = {
@@ -530,7 +532,10 @@ void poll();\n`,
         const marker = '__AGNES_WS_URL__'
         const occurrences = html.split(marker).length - 1
         if (occurrences !== 1) throw new Error('Web index is missing its connection marker')
-        body = Buffer.from(html.replace(marker, wsUrl.href))
+        let rendered = html.replace(marker, wsUrl.href)
+        const mhsMarker = '__AGNES_MHS_SITE_URL__'
+        if (rendered.includes(mhsMarker)) rendered = rendered.replaceAll(mhsMarker, resolveMhsSiteOrigin())
+        body = Buffer.from(rendered)
       }
       if (documentNonce) {
         const html = body.toString()
@@ -554,7 +559,7 @@ void poll();\n`,
           ? `${contentSecurityPolicy.replace(
               "media-src 'self' blob:",
               "media-src 'self' blob: https://cos-agent-default.agnes-ai.cn https://cos-agent-default.agnes-ai.com",
-            )}; img-src 'self' blob: https://cos-agent-default.agnes-ai.cn https://cos-agent-default.agnes-ai.com; frame-src 'self' blob:`
+            )}; img-src 'self' blob: https://cos-agent-default.agnes-ai.cn https://cos-agent-default.agnes-ai.com; frame-src ${mhsFrameSources(options)}`
           : contentSecurityPolicy
       const responseCsp = documentNonce
         ? documentCsp.replace("style-src 'self'", `style-src 'self' 'nonce-${documentNonce}'`)

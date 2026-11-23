@@ -128,3 +128,57 @@ export function acceptsWebRequest(
   }
   return true
 }
+
+export const DEFAULT_MHS_SITE_ORIGIN = 'https://agh.agnes-ai.cn'
+const DEFAULT_MHS_HUB_ORIGIN = 'https://agnes-hardware-website-test.aisi-devops.com'
+const DEV_MHS_ORIGINS = ['http://127.0.0.1:4321', 'http://127.0.0.1:4173']
+
+/** Exact MHS site origin injected into `index.html`; falls back to production when unset or unsafe. */
+export function resolveMhsSiteOrigin(env: NodeJS.ProcessEnv = process.env): string {
+  return exactEmbedOrigin(env.AGNES_MHS_SITE_URL) ?? DEFAULT_MHS_SITE_ORIGIN
+}
+
+function privateIpv4Host(hostname: string): boolean {
+  const parts = hostname.split('.')
+  if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part) || Number(part) > 255)) return false
+  const [first, second] = parts.map(Number)
+  return (
+    first === 10 ||
+    (first === 192 && second === 168) ||
+    (first === 172 && second !== undefined && second >= 16 && second <= 31)
+  )
+}
+
+function exactEmbedOrigin(raw: string | undefined): string | undefined {
+  if (!raw) return undefined
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    return undefined
+  }
+  if (parsed.username || parsed.password) return undefined
+  if (parsed.protocol === 'https:') return parsed.origin
+  if (
+    parsed.protocol === 'http:' &&
+    (LOOPBACK_NAMES.includes(parsed.hostname) || privateIpv4Host(parsed.hostname))
+  )
+    return parsed.origin
+  return undefined
+}
+
+/** Exact origins `index.html` admits in `frame-src` for embedded MHS surfaces; never wildcards. */
+export function mhsFrameSources(
+  options?: { developmentReload?: boolean },
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const origins = new Set<string>(["'self'", 'blob:', DEFAULT_MHS_SITE_ORIGIN, DEFAULT_MHS_HUB_ORIGIN])
+  if (options?.developmentReload) {
+    for (const origin of DEV_MHS_ORIGINS) origins.add(origin)
+  }
+  for (const candidate of [env.AGNES_MHS_SITE_URL, env.AGNES_MHS_HUB_URL]) {
+    const origin = exactEmbedOrigin(candidate)
+    if (origin) origins.add(origin)
+  }
+  return [...origins].join(' ')
+}

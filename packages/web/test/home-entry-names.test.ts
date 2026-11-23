@@ -17,6 +17,7 @@ import { createReconciler, type ReadyClientModule } from '../src/client-modules/
 import { deferHomePage } from '../src/pages/deferred.js'
 import { registerBuiltinHomeEntries } from '../src/pages/entries.js'
 import { activeHomeEntry } from '../src/pages/host.js'
+import { DEFAULT_MHS_SITE_URL, resolveMhsSiteUrl } from '../src/pages/mhs-site-url.js'
 import { HomeEntriesNav } from '../src/regions/home-entries.js'
 import { enT, zhLocaleService, zhT } from './helpers/locale.js'
 
@@ -48,6 +49,63 @@ describe('home entry names', () => {
     expect(zhT(titleKey)).toBe(name)
     dispose = registerBuiltinHomeEntries()
     expect(homeEntries.get(id)).toMatchObject({ order, icon, titleKey, placement: 'primary' })
+  })
+  it('renders MHS as a bilingual embedded in-app iframe page', async () => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+    expect(resolveMhsSiteUrl('zh-CN', 'http://127.0.0.1:4321')).toBe('http://127.0.0.1:4321/')
+    expect(resolveMhsSiteUrl('en', 'http://127.0.0.1:4321/')).toBe('http://127.0.0.1:4321/en/')
+    const configMeta = document.head.appendChild(document.createElement('meta'))
+    configMeta.id = 'agnes-config'
+    configMeta.dataset.mhsSite = 'http://127.0.0.1:4321'
+    try {
+      expect(resolveMhsSiteUrl('zh-CN')).toBe('http://127.0.0.1:4321/')
+      expect(resolveMhsSiteUrl('en')).toBe('http://127.0.0.1:4321/en/')
+    } finally {
+      configMeta.remove()
+    }
+    dispose = registerBuiltinHomeEntries()
+    expect(homeEntries.get('mhs')?.placement).toBe('primary')
+    expect(homeEntries.get('mhs2')).toBeUndefined()
+    const host = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(host)
+    try {
+      await act(async () => root.render(createElement(HomeEntriesNav, { t: zhT })))
+      const mhsButton = host.querySelector('[data-testid="home-entry-mhs"]')
+      expect(mhsButton?.tagName).toBe('BUTTON')
+      expect(mhsButton?.getAttribute('aria-current')).toBeNull()
+      if (!mhsButton) throw new Error('mhs button missing')
+      await act(async () => {
+        fireEvent.click(mhsButton)
+      })
+      expect(homeNavigation.getSnapshot()?.id).toBe('mhs')
+      expect(host.querySelector('[data-testid="home-entry-mhs"]')?.getAttribute('aria-current')).toBe('page')
+      const mhsEntry = homeEntries.get('mhs')
+      if (!mhsEntry) throw new Error('mhs entry missing')
+      const MhsEmbeddedPage = mhsEntry.component
+      document.body.classList.remove('sidebar-collapsed')
+      await act(async () => root.render(createElement(MhsEmbeddedPage, { context: { t: zhT } })))
+      const zhFrame = await waitFor(() => {
+        const frame = host.querySelector('[data-testid="mhs-embed-frame"]')
+        if (!frame) throw new Error('mhs zh iframe missing')
+        return frame
+      })
+      expect(zhFrame.tagName).toBe('IFRAME')
+      expect(zhFrame.getAttribute('src')).toBe(`${DEFAULT_MHS_SITE_URL}/`)
+      expect(document.body.classList.contains('sidebar-collapsed')).toBe(true)
+      await act(async () => root.render(createElement(MhsEmbeddedPage, { context: { t: enT } })))
+      const enFrame = await waitFor(() => {
+        const frame = host.querySelector('[data-testid="mhs-embed-frame"]')
+        if (!frame) throw new Error('mhs en iframe missing')
+        return frame
+      })
+      expect(enFrame.getAttribute('src')).toBe(`${DEFAULT_MHS_SITE_URL}/en/`)
+      await act(async () => root.unmount())
+      expect(document.body.classList.contains('sidebar-collapsed')).toBe(false)
+    } finally {
+      document.body.classList.remove('sidebar-collapsed')
+      await act(async () => root.unmount())
+      host.remove()
+    }
   })
   it('shows only the adopted application in primary navigation while keeping both installed pages reachable', async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
