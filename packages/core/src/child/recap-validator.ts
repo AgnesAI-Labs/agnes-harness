@@ -1,5 +1,9 @@
+import { externalChildren } from '@agnes/core-child-control/child/directory'
+import { hasChildControl } from '@agnes/core-child-control/child/store'
 import type { ChildAgentStatus, RecapFactSnapshot, SubtaskFactRecord } from '@agnes/extension-api'
+import type { SessionImpl } from '../step/session.js'
 import { composeRecapMarkdown, renderDeterministicNarrative, renderTruthBase } from './recap-formatter.js'
+import { buildRecapFactSnapshot } from './recap-snapshot.js'
 
 type Violation = { code: string; detail: string }
 type Validation = { valid: boolean; violations: readonly Violation[] }
@@ -157,5 +161,42 @@ export function guardParentRecapReply(replyText: string, snapshot: RecapFactSnap
   return {
     replyText: valid ? replyText : composeRecapMarkdown(snapshot, renderDeterministicNarrative(snapshot)),
     recapExitViolations: violations,
+  }
+}
+
+const HARD_EXIT_VIOLATIONS = new Set([
+  'FALSE_COMPLETION_CLAIM',
+  'FABRICATED_ARTIFACT',
+  'STATUS_MISMATCH',
+  'AMBIGUOUS_SAME_NAME_ARTIFACT',
+])
+
+/** Parent final-reply exit gate: intercepts redline hallucinations or dropped items after subagent_recap. */
+export async function guardSessionRecapExit(parent: SessionImpl, replyText: string, turnStartSeq: number) {
+  const storage = parent.d.log.storage
+  const hasLocal = hasChildControl(storage) && (await storage.listByParent(parent.key)).length > 0
+  if (!hasLocal && externalChildren(parent.key).length === 0) return { text: replyText }
+  const snapshot = await buildRecapFactSnapshot(parent)
+  if (!snapshot.subtasks.length) return { text: replyText }
+  const { valid, violations } = validateRecapOutput(replyText, snapshot)
+  if (valid) return { text: replyText }
+  let enforce = violations.some((v) => HARD_EXIT_VIOLATIONS.has(v.code))
+  if (!enforce) {
+    const calls = await parent.scan({
+      type: 'tool/call',
+      fromSeq: turnStartSeq,
+      lane: parent.lane,
+      limit: 64,
+    })
+    enforce = calls.some((row) => (row.data as { name?: string }).name === 'subagent_recap')
+  }
+  if (!enforce) return { text: replyText }
+  return {
+    text: composeRecapMarkdown(snapshot, renderDeterministicNarrative(snapshot)),
+    event: parent.ev(
+      'x/core/recap-exit-guard',
+      { violations: violations.map((v) => ({ code: v.code, detail: v.detail })) },
+      { ignorable: true },
+    ),
   }
 }

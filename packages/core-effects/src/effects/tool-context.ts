@@ -471,9 +471,23 @@ export function buildToolContext(
         }
       },
       resume: async (childKey) => {
+        const before = await d.children.inspect?.(childKey)
         const child = d.children.resume ? await d.children.resume(childKey) : d.children.get?.(childKey)
         if (!child) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
-        return { childKey: child.key, ...(child.worktree ? { worktree: child.worktree } : {}) }
+        const after = await d.children.inspect?.(childKey)
+        const statusOf = (snap?: ChildStatus | null) =>
+          snap as (ChildStatus & { status?: string; executionState?: string }) | null | undefined
+        const prev = statusOf(before)?.status as import('@agnes/extension-api').ChildAgentStatus | undefined
+        const next = statusOf(after)
+        return {
+          childKey: child.key,
+          ...(child.worktree ? { worktree: child.worktree } : {}),
+          ...(prev ? { previousStatus: prev } : {}),
+          ...(next?.status ? { status: next.status as import('@agnes/extension-api').ChildAgentStatus } : {}),
+          ...(next?.executionState
+            ? { executionState: next.executionState as import('@agnes/extension-api').ChildExecutionState }
+            : {}),
+        }
       },
       collect: async (childKey, opts) => {
         const snapshot = async () => {
@@ -583,17 +597,22 @@ export function buildToolContext(
       ...(d.children.pause
         ? {
             pause: (childKey: string, opts?: { reason?: 'user_pause' | 'parent_pause' | 'budget_pause' }) =>
-              d.children.pause!(childKey, opts),
+              d.children.pause?.(childKey, opts) ??
+              Promise.reject(new CoreError('E_UNSUPPORTED', 'child pause is not available')),
           }
         : {}),
       ...(d.children.close
         ? {
-            close: (childKey: string) => d.children.close!(childKey),
+            close: (childKey: string) =>
+              d.children.close?.(childKey) ??
+              Promise.reject(new CoreError('E_UNSUPPORTED', 'child close is not available')),
           }
         : {}),
       ...(d.children.recap
         ? {
-            recap: () => d.children.recap!(),
+            recap: () =>
+              d.children.recap?.() ??
+              Promise.reject(new CoreError('E_UNSUPPORTED', 'child recap is not available')),
           }
         : {}),
     },

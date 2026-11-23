@@ -53,12 +53,13 @@ export async function computeRemainingTreeCredits(
 export function formatSpawnBudgetRefusal(error: unknown) {
   if (!(error instanceof CoreError) || error.code !== 'E_BUDGET') return undefined
   const { remainingCredits, requestedCredits } = error.detail ?? {}
+  if (typeof remainingCredits !== 'number') return undefined
   return {
     isError: true as const,
     content: [{ type: 'text' as const, text: error.message }],
     details: {
       code: error.code,
-      remainingCredits: typeof remainingCredits === 'number' ? remainingCredits : null,
+      remainingCredits,
       requestedCredits: typeof requestedCredits === 'number' ? requestedCredits : null,
     },
   }

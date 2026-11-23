@@ -80,11 +80,12 @@ type CursorProvider = Omit<ChildAgentProvider, 'start' | 'adopt'> & {
 function handleEvents(stream: ChildEventStream | undefined, id: string) {
   if (!stream) {
     const queue = createChildEventQueue()
-    return { queue, publish: queue.push, stop: () => {} }
+    return { queue, publish: queue.push, stop: () => {}, advanceTurn: async () => {} }
   }
   // Turn text is handle-local. Preserve it for late readers without allocating a journal cursor.
   const texts: Array<{ after: number; event: ChildAgentEvent }> = []
   let lastSeq = 0
+  let turnCursor = 0
   const bus = new ChildEventBus({
     scan: async (after) => {
       const retained = texts.filter((text) => text.after >= after)
@@ -107,9 +108,20 @@ function handleEvents(stream: ChildEventStream | undefined, id: string) {
     if (event.type === 'envelope') lastSeq = event.envelope.seq
     bus.notify(providerFrame(event))
   })
+  const queue = createChildEventQueue(bus)
   return {
-    queue: createChildEventQueue(bus),
+    queue: {
+      ...queue,
+      events: (cursor?: ChildCursor) =>
+        queue.events(
+          cursor?.afterSeq === undefined && turnCursor > 0 ? { ...cursor, afterSeq: turnCursor } : cursor,
+        ),
+    },
     stop,
+    async advanceTurn() {
+      const { highWaterSeq } = await stream.store.scanChildEvents(id)
+      turnCursor = Math.max(turnCursor, lastSeq, highWaterSeq)
+    },
     publish(event: ChildAgentEvent) {
       if (event.type !== 'text') return
       texts.push({ after: lastSeq, event })
@@ -255,7 +267,10 @@ export function inProcessChildAgentProvider(
       providerId: IN_PROCESS_CHILD_PROVIDER_ID,
       capabilities,
       events: queue.events,
-      sendMessage: (text, signal) => backend.sendMessage(started.id, text, signal),
+      sendMessage: async (text, signal) => {
+        await events.advanceTurn()
+        return backend.sendMessage(started.id, text, signal)
+      },
       interrupt: () => backend.interrupt(started.id),
       result: () => queue.result,
       dispose,

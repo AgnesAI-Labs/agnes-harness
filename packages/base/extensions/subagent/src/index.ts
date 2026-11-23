@@ -1,6 +1,8 @@
 import { applyChildAgentConfig } from '@agnes/core'
 import type { Disposer } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
+import { subagentCloseTool, subagentPauseTool, subagentResumeTool } from './lifecycle-tools.js'
+import { subagentRecapTool } from './recap-tool.js'
 import {
   listSubagentModelsTool,
   resetSubagentRuntime,
@@ -14,6 +16,8 @@ import {
   subagentSpawnTool,
 } from './tools.js'
 
+export * from './lifecycle-tools.js'
+export * from './recap-tool.js'
 export * from './tools.js'
 export * from './worktree.js'
 
@@ -34,6 +38,10 @@ export function createSubagentExtension(deps: SubagentDeps) {
         ctx.tools.register(subagentListTool),
         ctx.tools.register(subagentSendMessageTool),
         ctx.tools.register(subagentInterruptTool),
+        ctx.tools.register(subagentPauseTool),
+        ctx.tools.register(subagentResumeTool),
+        ctx.tools.register(subagentCloseTool),
+        ctx.tools.register(subagentRecapTool),
         ctx.tools.register(listSubagentModelsTool),
       ]
       return () => {

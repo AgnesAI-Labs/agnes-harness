@@ -5,7 +5,9 @@ import {
   childFailureSuffix,
   externalChild,
   externalChildren,
+  formatSpawnBudgetRefusal,
   IN_PROCESS_CHILD_PROVIDER_ID,
+  pollWaitMetadata,
 } from '@agnes/core'
 import type {
   ChildAgentAllowlistConfig,
@@ -28,6 +30,7 @@ export type SubagentLimits = {
 }
 
 type ChildRecord = {
+  polls?: number
   running: boolean
   worktree?: string
   cleanup?: Promise<WorktreeFinishResult>
@@ -386,6 +389,8 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
         if (childKey) await ctx.subagent.cancel(childKey)
         await rollbackWorktree(deps, ctx, worktree)
         // Core's admission limit refuses creation; failures after a child handle remain uncertain.
+        const budget = !childKey && formatSpawnBudgetRefusal(error)
+        if (budget) return budget
         if (!childKey && error instanceof CoreError && error.code === 'E_CHILD_LIMIT')
           return { ...fail(error.message), details: { code: error.code } }
         // Core refuses an unusable model before it creates anything.
@@ -484,6 +489,12 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
         ...failureDetails(result),
         ...(result.credits === undefined ? {} : { credits: result.credits }),
       }
+
+      if (result.status === 'running' && args.wait === false) {
+        const polls = record?.polls ?? 0
+        Object.assign(details, pollWaitMetadata(polls))
+        if (record) record.polls = polls + 1
+      } else if (record) delete record.polls
 
       if (result.status !== 'running' && record) {
         record.running = false

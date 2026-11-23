@@ -8,8 +8,9 @@ import type { Actor } from '@agnes/protocol'
 import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
 import { noteChildIdle } from './idle-retirement.js'
-import { childControls } from './pause-control.js'
+import { ChildLifecycleControls, childControls } from './pause-control.js'
 import { recordedChildRole } from './roles.js'
+import { childBackend } from './sessions.js'
 import { type Checkpoint, checkpointOpenOptions } from './status.js'
 
 type Owner = {
@@ -152,4 +153,71 @@ export async function activateCheckpointChild(
     else void handle.run(record.inputText).catch(bestEffort(parent.d.logger, 'checkpoint-resume'))
   } else if (cached && record.state === 'idle') port.pump()
   else await port.legacyResume()
+}
+
+export function createFactoryLifecycleControls(
+  parent: () => SessionImpl,
+  port: {
+    session(key: string): SessionImpl | undefined
+    handle(key: string): ChildHandle | undefined
+    resumeUnpaused(key: string): Promise<ChildHandle>
+    open(record: ChildTaskRecord, options: ReturnType<typeof checkpointOpenOptions>): Promise<ChildHandle>
+    pump(key: string): void
+    release(key: string, outcome: 'completed' | 'cancelled' | 'failed'): Promise<void>
+  },
+): ChildLifecycleControls {
+  return new ChildLifecycleControls(parent, {
+    live: port.session,
+    activate: (record, checkpoint) =>
+      activateCheckpointChild(parent(), record, checkpoint, {
+        cached: () => port.handle(record.childKey),
+        legacyResume: () => port.resumeUnpaused(record.childKey),
+        open: (options) => port.open(record, options),
+        pump: () => port.pump(record.childKey),
+      }),
+    release: port.release,
+    retain: (key) => retainAttachedChild(port.session(key)),
+  }).bind()
+}
+
+export function controlNotRunning(error: unknown): boolean {
+  return (
+    error instanceof CoreError &&
+    error.code === 'E_RELATION' &&
+    error.detail?.reason === 'CONTROL_NOT_RUNNING'
+  )
+}
+
+export async function cancelChildSubtree(
+  store: ReturnType<typeof requireChildControl>,
+  childKey: string,
+  port: { handle(key: string): ChildHandle | undefined; session(key: string): SessionImpl | undefined },
+): Promise<void> {
+  const record = await store.lookupByKey(childKey)
+  if (!record) return
+  const descendants = childBackend(childKey)
+  const children = await store.listByParent(childKey)
+  const handle = port.handle(childKey)
+  port.session(childKey)?.ac.abort()
+  const results = await Promise.allSettled(
+    children.map((kid) =>
+      descendants ? descendants.cancel(kid.childKey) : cancelChildSubtree(store, kid.childKey, port),
+    ),
+  )
+  try {
+    if (handle?.cancel) await handle.cancel()
+    else {
+      const live = await store.lookupByKey(childKey)
+      if (live && !isTerminalChildState(live.state))
+        await store.casState(childKey, live.stateRevision, 'cancelling')
+    }
+  } catch (error) {
+    results.push({ status: 'rejected', reason: error })
+  }
+  const failures = results.filter((result) => result.status === 'rejected')
+  if (failures.length)
+    throw new AggregateError(
+      failures.map((result) => result.reason),
+      'Child subtree cleanup failed',
+    )
 }

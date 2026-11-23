@@ -4,6 +4,7 @@ import type { ChildHandle } from '@agnes/core-effects/effects/tool-context'
 import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
 import { deliverChildCompletion } from './completion-notice.js'
+import { protectChildLeases } from './heartbeat.js'
 import { recoverRoleChildren } from './resume-role.js'
 import { type ChildRolePort, recordedChildRole } from './roles.js'
 
@@ -38,9 +39,17 @@ export async function recoverChildren(
   },
 ): Promise<void> {
   await recoverRoleChildren(parent, roles, here.handle, here.resume)
-  await settleLostChildren(parent, (key) => here.handle(key) || here.opening(key)).catch(
-    bestEffort(parent.d.logger, 'lost-child-settle'),
+  const store = parent.d.log.storage
+  const lostKeys = new Set(
+    hasChildControl(store) && store.listLostChildren
+      ? (await store.listLostChildren(parent.key).catch(() => [])).map((row) => row.childKey)
+      : [],
   )
+  const leased = await protectChildLeases(parent, (key) => here.handle(key) || here.opening(key))
+  await settleLostChildren(
+    parent,
+    (key) => here.handle(key) || here.opening(key) || (!lostKeys.has(key) && leased(key)),
+  ).catch(bestEffort(parent.d.logger, 'lost-child-settle'))
 }
 
 /**

@@ -13,6 +13,7 @@ import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import { isNestedCall, type SurfaceNode } from '@agnes/core-ledger/project/surface'
 import type { BudgetState } from '@agnes/core-ledger/reduce/shapes'
 import type { InferenceEvent, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
+import { guardSessionRecapExit } from '../../child/recap-validator.js'
 import { childReceiptNarrative } from '../../child/receipts.js'
 import {
   releaseTreeReservation,
@@ -1281,6 +1282,13 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     // An empty text block is not shipped. It is content the model never produced, it goes back to the
     // provider on the next request as part of the assistant turn, and a provider that rejects empty
     // text blocks refuses the whole request over a block core invented.
+    const stopReason = truncated ? 'max_tokens' : calls.length ? 'tool_use' : 'end_turn'
+    const guarded =
+      stopReason === 'end_turn' && text
+        ? await guardSessionRecapExit(s, text, cur.meta.triggerSeq)
+        : undefined
+    const finalText = guarded?.text ?? text
+    if (guarded?.event) events.push(guarded.event)
     const content = [
       ...(thinking
         ? [
@@ -1291,9 +1299,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
             },
           ]
         : []),
-      ...(text ? [{ type: 'text' as const, text }] : []),
+      ...(finalText ? [{ type: 'text' as const, text: finalText }] : []),
     ]
-    const stopReason = truncated ? 'max_tokens' : calls.length ? 'tool_use' : 'end_turn'
     await s.loopEvents.dispatch(
       'after_model_response',
       { content, stopReason },

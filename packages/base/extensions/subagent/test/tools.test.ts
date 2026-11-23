@@ -178,12 +178,20 @@ describe('subagent tool definitions', () => {
       'subagent_list',
       'subagent_send_message',
       'subagent_interrupt',
+      'subagent_pause',
+      'subagent_resume',
+      'subagent_close',
+      'subagent_recap',
       'list_subagent_models',
     ])
     expect(dispose).toBeTypeOf('function')
     ;(dispose as () => void)()
     expect(disposed).toEqual([
       'list_subagent_models',
+      'subagent_recap',
+      'subagent_close',
+      'subagent_resume',
+      'subagent_pause',
       'subagent_interrupt',
       'subagent_send_message',
       'subagent_list',
@@ -608,7 +616,7 @@ describe('subagent_collect', () => {
     await subagentSpawnTool(d).execute({ task: 'one' }, c.ctx)
     const running = await subagentCollectTool(d).execute({ childKey: 'c1', wait: false }, c.ctx)
     expect(c.calls.collect[0]).toEqual(['c1', { wait: false }])
-    expect(running.details).toEqual({ childKey: 'c1', status: 'running' })
+    expect(running.details).toEqual({ childKey: 'c1', status: 'running', suggestedWaitMs: 5000 })
     expect(wt.calls.finish).toEqual([])
     expect((await subagentSpawnTool(d).execute({ task: 'blocked' }, c.ctx)).isError).toBe(true)
 
