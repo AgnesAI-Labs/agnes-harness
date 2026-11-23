@@ -399,9 +399,19 @@ export async function handleCommand(
       return session.controls.state(typeof p.afterSeq === 'number' ? p.afterSeq : undefined)
     case 'control':
       if (
-        !['pause', 'resume', 'cancel', 'interrupt', 'promote', 'child-stop', 'child-continue'].includes(
-          String(p.action),
-        )
+        ![
+          'pause',
+          'resume',
+          'cancel',
+          'interrupt',
+          'promote',
+          'child-stop',
+          'child-continue',
+          'child-pause',
+          'child-resume',
+          'child-close',
+          'child-retain',
+        ].includes(String(p.action))
       )
         throw new TypeError('invalid session control')
       return session.controls

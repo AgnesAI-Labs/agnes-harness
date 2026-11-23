@@ -605,7 +605,19 @@
           "minimum": 1
         },
         "action": {
-          "enum": ["pause", "resume", "cancel", "interrupt", "promote", "child-stop", "child-continue"]
+          "enum": [
+            "pause",
+            "resume",
+            "cancel",
+            "interrupt",
+            "promote",
+            "child-stop",
+            "child-continue",
+            "child-pause",
+            "child-resume",
+            "child-close",
+            "child-retain"
+          ]
         },
         "itemId": {
           "type": "string",
@@ -694,7 +706,35 @@
           "type": "string"
         },
         "status": {
-          "enum": ["starting", "running", "idle", "completed", "failed", "cancelled", "interrupted"]
+          "enum": [
+            "starting",
+            "running",
+            "waiting_approval",
+            "paused",
+            "disconnected",
+            "idle",
+            "completed",
+            "failed",
+            "cancelled",
+            "interrupted"
+          ]
+        },
+        "executionState": {
+          "enum": [
+            "creating",
+            "ready",
+            "idle",
+            "paused",
+            "interrupted",
+            "running",
+            "waiting_approval",
+            "disconnected",
+            "recovery_pending",
+            "cancelling",
+            "completed",
+            "failed",
+            "cancelled"
+          ]
         },
         "controls": {
           "type": "object",
@@ -706,8 +746,45 @@
             },
             "continue": {
               "type": "boolean"
+            },
+            "pause": {
+              "type": "boolean"
+            },
+            "resume": {
+              "type": "boolean"
+            },
+            "close": {
+              "type": "boolean"
+            },
+            "retain": {
+              "type": "boolean"
+            },
+            "cancel": {
+              "type": "boolean"
             }
           }
+        },
+        "lastHeartbeatAt": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "leaseUntil": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "durationMs": {
           "anyOf": [

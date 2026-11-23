@@ -197,7 +197,18 @@ export type PlanItem = {
 }
 export type ChildStatus = {
   childKey: string
-  status: 'running' | 'idle' | 'interrupted' | 'completed' | 'failed' | 'cancelled'
+  status:
+    | 'starting'
+    | 'running'
+    | 'waiting_approval'
+    | 'paused'
+    | 'disconnected'
+    | 'idle'
+    | 'interrupted'
+    | 'completed'
+    | 'failed'
+    | 'cancelled'
+  executionState?: import('./child-control.js').ChildExecutionState
   text?: string
   /**
    * Why a `failed` child's last turn ended in error, as its ledger recorded it. `message` is clipped
@@ -442,7 +453,35 @@ export interface ToolContext {
     ): Promise<{ childKey: string; worktree?: string; role?: import('./child-agent.js').ChildRole }>
     collect(childKey: string, opts?: { wait?: boolean }): Promise<ChildStatus>
     cancel(childKey: string): Promise<ChildStatus>
-    resume(childKey: string): Promise<{ childKey: string }>
+    resume(childKey: string): Promise<{
+      childKey: string
+      previousStatus?: import('./child-agent.js').ChildAgentStatus
+      status?: import('./child-agent.js').ChildAgentStatus
+      executionState?: import('./child-control.js').ChildExecutionState
+    }>
+    pause?(
+      childKey: string,
+      opts?: { reason?: 'user_pause' | 'parent_pause' | 'budget_pause' },
+    ): Promise<{
+      childKey: string
+      previousStatus: import('./child-agent.js').ChildAgentStatus
+      status: import('./child-agent.js').ChildAgentStatus
+      executionState: import('./child-control.js').ChildExecutionState
+      pausePending?: boolean
+    }>
+    close?(childKey: string): Promise<{
+      childKey: string
+      previousStatus: import('./child-agent.js').ChildAgentStatus
+      status: import('./child-agent.js').ChildAgentStatus
+      executionState: import('./child-control.js').ChildExecutionState
+    }>
+    recap?(opts?: { mode?: 'hybrid' | 'deterministic' }): Promise<{
+      snapshot: import('./child-control.js').RecapFactSnapshot
+      narrativeSource: 'llm' | 'deterministic_fallback' | 'deterministic'
+      markdown: string
+      valid: boolean
+      violations: readonly string[]
+    }>
     list?(): Promise<readonly ChildAgentListing[]>
     models?(): Promise<readonly ChildAgentModel[]>
     sendMessage?(childKey: string, text: string, signal?: AbortSignal): Promise<{ messageId: string }>

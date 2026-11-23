@@ -22,6 +22,11 @@ import {
   type TreeUsage,
 } from '@agnes/core-child-control/child/types'
 import { type Clock, CoreError, type Event, type Seq, type SessionKey } from '@agnes/core-common/types'
+import {
+  assertMemoryCreationCas,
+  checkAncestorBudget,
+  memoryChildEventPort,
+} from './memory-child-events.js'
 import { lostChildPort, transitionMemoryChild } from './memory-child-state.js'
 import { MemoryStorageBase } from './memory-storage-base.js'
 import {
@@ -426,7 +431,7 @@ export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, 
       row.deferredFact.creationId === input.creationId
     )
       return row.deferredFact
-    this.assertCreationCas(row, input, 'creating')
+    assertMemoryCreationCas(row, input, 'creating')
     const fact = Object.freeze({
       childKey: input.childKey,
       creationId: input.creationId,
@@ -449,7 +454,7 @@ export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, 
     )
       return true
     try {
-      this.assertCreationCas(row, input, 'creating')
+      assertMemoryCreationCas(row, input, 'creating')
     } catch (error) {
       if (error instanceof CoreError && error.code === 'E_CAS') return false
       throw error
@@ -467,7 +472,7 @@ export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, 
       row.cancelledFact.creationId === input.creationId
     )
       return row.cancelledFact
-    this.assertCreationCas(row, input, 'creating')
+    assertMemoryCreationCas(row, input, 'creating')
     const fact = Object.freeze({
       childKey: input.childKey,
       creationId: input.creationId,
@@ -486,26 +491,6 @@ export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, 
     return fact
   }
 
-  private assertCreationCas(
-    row: ChildTaskRecord | undefined,
-    input: ChildCreationCasInput,
-    expectedPhase: ChildTaskRecord['creationPhase'],
-  ): asserts row is ChildTaskRecord {
-    if (
-      !row ||
-      row.creationId !== input.creationId ||
-      row.attemptId !== input.attemptId ||
-      row.creationRevision !== input.expectedRevision ||
-      row.creationPhase !== expectedPhase
-    )
-      throw new CoreError('E_CAS', 'child creation attempt changed', {
-        childKey: input.childKey,
-        creationId: input.creationId,
-        attemptId: input.attemptId,
-        expectedRevision: input.expectedRevision,
-      })
-  }
-
   async casState(
     childKey: SessionKey,
     expectedRevision: number,
@@ -517,8 +502,14 @@ export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, 
 
   private readonly writerLive = (key: SessionKey) => (this.books.get(key)?.lease?.until ?? -1) >= this.clock()
   private readonly lost = lostChildPort(this.childTasks, this.writerLive)
+  private readonly childEvents = memoryChildEventPort(this.childTasks)
   readonly listLostChildren = this.lost.listLostChildren
   readonly settleLostChild = this.lost.settleLostChild
+  readonly appendChildEvent = this.childEvents.appendChildEvent
+  readonly scanChildEvents = this.childEvents.scanChildEvents
+  readonly upsertChildLease = this.childEvents.upsertChildLease
+  readonly lookupChildLease = this.childEvents.lookupChildLease
+  readonly listChildLeasesByParent = this.childEvents.listChildLeasesByParent
   private readonly slot = this.lost.takesSlot
 
   async nextOrdinal(parentKey: SessionKey, effectId: string): Promise<number> {
@@ -579,15 +570,13 @@ export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, 
     if (!root) return { status: 'refused', reason: 'budget', message: 'tree budget scope is missing' }
     const parentTask = this.childTasks.get(input.parentKey) ?? null
     const ancestorScopeIds = inheritAncestorScopeIds(parentTask, root.scopeId)
-    for (const id of ancestorScopeIds) {
-      const scope = this.scopes.get(id)
-      if (!scope) return { status: 'refused', reason: 'budget', message: `unknown ancestor scope ${id}` }
-      if (
-        input.childCapMicro !== null &&
-        input.childCapMicro > scope.capMicro - scope.settledMicro - scope.heldMicro
-      )
-        return { status: 'refused', reason: 'budget', message: 'child budget exceeds remaining ancestor cap' }
-    }
+    const budgetRefusal = checkAncestorBudget(
+      this.scopes,
+      this.childTasks,
+      ancestorScopeIds,
+      input.childCapMicro,
+    )
+    if (budgetRefusal) return { status: 'refused', reason: 'budget', message: budgetRefusal }
 
     const parent = this.books.get(input.parentKey)
     if (!parent) throw new CoreError('E_STORAGE_FAULT', 'parent session missing', { parent: input.parentKey })

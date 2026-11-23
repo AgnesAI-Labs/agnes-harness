@@ -7,9 +7,11 @@
     ".": "./src/index.ts",
     "./child/admission": "./src/child/admission.ts",
     "./child/allowlist": "./src/child/allowlist.ts",
+    "./child/child-lock": "./src/child/child-lock.ts",
     "./child/credits": "./src/child/credits.ts",
     "./child/directory": "./src/child/directory.ts",
     "./child/events": "./src/child/events.ts",
+    "./child/status-projection": "./src/child/status-projection.ts",
     "./child/store": "./src/child/store.ts",
     "./child/types": "./src/child/types.ts"
   },

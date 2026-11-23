@@ -88,6 +88,29 @@ export type ChildrenFactory = {
   /** Release owned child instances when the parent session closes. */
   dispose?(): Promise<void>
   resume?(childKey: string): Promise<ChildHandle>
+  pause?(
+    childKey: string,
+    opts?: { reason?: 'user_pause' | 'parent_pause' | 'budget_pause' },
+  ): Promise<{
+    childKey: string
+    previousStatus: import('@agnes/extension-api').ChildAgentStatus
+    status: import('@agnes/extension-api').ChildAgentStatus
+    executionState: import('@agnes/extension-api').ChildExecutionState
+    pausePending?: boolean
+  }>
+  close?(childKey: string): Promise<{
+    childKey: string
+    previousStatus: import('@agnes/extension-api').ChildAgentStatus
+    status: import('@agnes/extension-api').ChildAgentStatus
+    executionState: import('@agnes/extension-api').ChildExecutionState
+  }>
+  recap?(opts?: { mode?: 'hybrid' | 'deterministic' }): Promise<{
+    snapshot: import('@agnes/extension-api').RecapFactSnapshot
+    narrativeSource: 'llm' | 'deterministic_fallback' | 'deterministic'
+    markdown: string
+    valid: boolean
+    violations: readonly string[]
+  }>
   cancel?(childKey: string): Promise<void>
   list?(): Promise<readonly ChildAgentListing[]>
   roles?(): Promise<readonly import('@agnes/extension-api').ChildRole[]>
@@ -556,6 +579,22 @@ export function buildToolContext(
         ? {
             interrupt: (childKey: string) =>
               d.children.interrupt?.(childKey) ?? Promise.resolve({ accepted: false }),
+          }
+        : {}),
+      ...(d.children.pause
+        ? {
+            pause: (childKey: string, opts?: { reason?: 'user_pause' | 'parent_pause' | 'budget_pause' }) =>
+              d.children.pause!(childKey, opts),
+          }
+        : {}),
+      ...(d.children.close
+        ? {
+            close: (childKey: string) => d.children.close!(childKey),
+          }
+        : {}),
+      ...(d.children.recap
+        ? {
+            recap: (opts?: { mode?: 'hybrid' | 'deterministic' }) => d.children.recap!(opts),
           }
         : {}),
     },

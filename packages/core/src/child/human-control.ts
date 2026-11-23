@@ -21,11 +21,15 @@ type Owner = {
 /** The pinned human control path, called inside the child's shared admission fence. */
 export async function applyHumanChildControl(
   owner: Owner,
-  action: 'stop' | 'continue',
+  action: 'stop' | 'continue' | 'pause' | 'resume' | 'close' | 'retain',
   actor: Actor,
   admissionId: string,
   text?: string,
 ): Promise<number> {
+  if (action === 'pause' || action === 'resume' || action === 'close' || action === 'retain')
+    throw new CoreError('E_UNSUPPORTED', `Child control ${action} is not enabled on this backend`, {
+      control: action,
+    })
   const parent = owner.parent
   const childKey = owner.child.key
   const record = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)

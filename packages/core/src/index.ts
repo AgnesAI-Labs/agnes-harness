@@ -15,6 +15,7 @@ export {
   resetChildAgentAllowlists,
   setChildAgentAllowlist,
 } from '@agnes/core-child-control/child/allowlist'
+export { ChildLock } from '@agnes/core-child-control/child/child-lock'
 export {
   capToMicrocredits,
   chargeToMicrocredits,
@@ -28,23 +29,40 @@ export {
   updateExternalChild,
 } from '@agnes/core-child-control/child/directory'
 export { createChildEventQueue } from '@agnes/core-child-control/child/events'
+export {
+  type ProjectedChildStatus,
+  projectChildStatus,
+  resolveTerminalChildState,
+} from '@agnes/core-child-control/child/status-projection'
 export type { ChildControlStore } from '@agnes/core-child-control/child/store'
 export { hasChildControl, recoverCreatingChildAttempts } from '@agnes/core-child-control/child/store'
 export type {
+  AppendChildEventInput,
+  AppendChildEventResult,
   BeginChildAttemptInput,
   CancelCreatingChildInput,
   CancelledChildFact,
+  ChildCheckpointRecord,
   ChildCreationCasInput,
   ChildCreationPhase,
+  ChildEventEnvelope,
+  ChildEventKind,
+  ChildEventReplayResult,
+  ChildExecutionState,
+  ChildLeaseRecord,
   ChildTaskRecord,
   CreateDelegatedChildInput,
   CreateDelegatedChildResult,
   DeferCreatingChildInput,
   DeferredChildFact,
+  NonInterruptibleStopReceipt,
   PlannedWorkspace,
+  RecapFactSnapshot,
   ReserveRequest,
   ReserveResult,
   SettleRequest,
+  SubtaskArtifactRef,
+  SubtaskFactRecord,
   TreeUsage,
 } from '@agnes/core-child-control/child/types'
 export { canTransitionChildState, isTerminalChildState } from '@agnes/core-child-control/child/types'

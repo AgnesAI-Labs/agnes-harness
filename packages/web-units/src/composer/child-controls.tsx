@@ -17,6 +17,9 @@ type ChildStatus = SessionControlledChild['status']
 const CHILD_MARK: Record<ChildStatus, { dot: StatusDotTone; tag?: 'ok' | 'warn' | 'bad' | 'info' }> = {
   starting: { dot: 'accent', tag: 'info' },
   running: { dot: 'accent', tag: 'info' },
+  waiting_approval: { dot: 'warning', tag: 'warn' },
+  paused: { dot: 'warning', tag: 'warn' },
+  disconnected: { dot: 'warning', tag: 'warn' },
   idle: { dot: 'neutral' },
   completed: { dot: 'success', tag: 'ok' },
   failed: { dot: 'danger', tag: 'bad' },

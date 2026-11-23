@@ -214,6 +214,21 @@ function bridge(
     ...(childControl.clearWriterLease
       ? { clearWriterLease: childControl.clearWriterLease.bind(childControl) }
       : {}),
+    ...(childControl.appendChildEvent
+      ? { appendChildEvent: childControl.appendChildEvent.bind(childControl) }
+      : {}),
+    ...(childControl.scanChildEvents
+      ? { scanChildEvents: childControl.scanChildEvents.bind(childControl) }
+      : {}),
+    ...(childControl.upsertChildLease
+      ? { upsertChildLease: childControl.upsertChildLease.bind(childControl) }
+      : {}),
+    ...(childControl.lookupChildLease
+      ? { lookupChildLease: childControl.lookupChildLease.bind(childControl) }
+      : {}),
+    ...(childControl.listChildLeasesByParent
+      ? { listChildLeasesByParent: childControl.listChildLeasesByParent.bind(childControl) }
+      : {}),
   }
   // Core recovery recognizes typed CAS/budget errors, independent of the provider's error class.
   for (const [key, operation] of Object.entries(children))

@@ -24,9 +24,11 @@ export type ChildExecutionState =
   | 'creating'
   | 'ready'
   | 'idle'
+  | 'paused'
   | 'interrupted'
   | 'running'
   | 'waiting_approval'
+  | 'disconnected'
   | 'recovery_pending'
   | 'cancelling'
   | 'completed'
@@ -216,6 +218,120 @@ export type TreeUsage = {
   unknownHeld: boolean
 }
 
+export type ChildEventKind =
+  | 'status'
+  | 'heartbeat'
+  | 'text'
+  | 'artifact'
+  | 'approval_requested'
+  | 'approval_resolved'
+  | 'lifecycle'
+  | 'error'
+
+export type ChildEventEnvelope = Readonly<{
+  eventId: string
+  childKey: SessionKey
+  seq: number
+  ts: number
+  kind: ChildEventKind
+  state?: ChildExecutionState
+  status?: import('./child-agent.js').ChildAgentStatus
+  leaseUntil?: number
+  payload?: Readonly<Record<string, import('@agnes/protocol').JsonValue>>
+}>
+
+export type AppendChildEventInput = Omit<ChildEventEnvelope, 'seq'> & Readonly<{ seq?: number }>
+
+export type AppendChildEventResult = Readonly<{
+  accepted: boolean
+  duplicate?: boolean
+  outOfOrder?: boolean
+  terminalLocked?: boolean
+  envelope: ChildEventEnvelope
+}>
+
+export type ChildEventReplayResult = Readonly<{
+  events: readonly ChildEventEnvelope[]
+  highWaterSeq: number
+  droppedOutOfOrder: number
+}>
+
+export type ChildLeaseRecord = Readonly<{
+  childKey: SessionKey
+  parentKey?: SessionKey
+  ownerRunId: string
+  lastHeartbeatAt: number
+  leaseUntil: number
+  heartbeatSeq: number
+  missedCount: number
+  disconnectedAt?: number
+}>
+
+export type ChildCheckpointRecord = Readonly<{
+  childKey: SessionKey
+  pausedAt: number
+  pausedAtSeq: Seq
+  reason: 'user_pause' | 'parent_pause' | 'budget_pause'
+  completedEffectIds: readonly string[]
+  artifactPaths: readonly string[]
+}>
+
+export type NonInterruptibleStopReceipt = Readonly<{
+  childKey: SessionKey
+  toolUseId: string
+  toolName: string
+  cancelRequestedAt: number
+  toolReturnedAt: number | null
+  terminalConfirmedAt: number | null
+  disposition: 'drained_clean' | 'timed_out_unknown'
+}>
+
+export type SubtaskArtifactRef = Readonly<{
+  path: string
+  kind: 'file' | 'patch' | 'report' | 'log' | 'other'
+  verified: boolean
+  sha256?: string
+}>
+
+export type SubtaskFactRecord = Readonly<{
+  taskId: string
+  label: string
+  role?: string
+  executionState: ChildExecutionState
+  status: import('./child-agent.js').ChildAgentStatus
+  summaryText: string
+  artifacts: readonly SubtaskArtifactRef[]
+  blockerReason?: string
+  approvalPending?: Readonly<{
+    requestId: string
+    toolName?: string
+    summary: string
+  }>
+  resumable?: boolean
+  requestCount?: number
+  nextStep?: string
+  creditsUsed?: number
+  updatedAt: number
+}>
+
+export type RecapFactSnapshot = Readonly<{
+  parentKey: SessionKey
+  generatedAt: number
+  counts: Readonly<{
+    total: number
+    completed: number
+    running: number
+    waitingApproval: number
+    paused: number
+    disconnected: number
+    failed: number
+    cancelled: number
+  }>
+  hasIncompleteWork: boolean
+  subtasks: readonly SubtaskFactRecord[]
+  allowedArtifactPaths: readonly string[]
+}>
+
 export interface ChildControlStore {
   childControlFormat(): number
   assertWritableFormat(): void
@@ -288,4 +404,12 @@ export interface ChildControlStore {
     requestHash: string,
   ): Promise<ReservationRecord | null>
   clearWriterLease?(key: SessionKey): Promise<void>
+  appendChildEvent?(event: AppendChildEventInput): Promise<AppendChildEventResult>
+  scanChildEvents?(
+    childKey: SessionKey,
+    opts?: { afterSeq?: number; limit?: number },
+  ): Promise<ChildEventReplayResult>
+  upsertChildLease?(lease: ChildLeaseRecord): Promise<void>
+  lookupChildLease?(childKey: SessionKey): Promise<ChildLeaseRecord | null>
+  listChildLeasesByParent?(parentKey: SessionKey): Promise<ChildLeaseRecord[]>
 }

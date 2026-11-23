@@ -98,11 +98,15 @@ async function refuse(
   await s.d.log.append([s.controls.fact(name, 'refused', actor, { admissionId, childId, reason })])
 }
 
+export type ChildControlAction = 'stop' | 'continue' | 'pause' | 'resume' | 'close' | 'retain'
+
 function loopRefusal(
-  action: 'stop' | 'continue',
+  action: ChildControlAction,
   listing: ChildAgentListing,
 ): 'CONTROL_NOT_RUNNING' | 'LOOP_CONTROL_UNSUPPORTED' | undefined {
   const finished = TERMINAL_CHILD.has(listing.status)
+  if (action === 'pause' || action === 'resume' || action === 'close' || action === 'retain')
+    return 'LOOP_CONTROL_UNSUPPORTED'
   if (action === 'stop') {
     if (listing.interrupt !== true) return 'LOOP_CONTROL_UNSUPPORTED'
     if (listing.status !== 'running') return 'CONTROL_NOT_RUNNING'
@@ -116,13 +120,13 @@ function loopRefusal(
 export async function applyChildControl(
   s: SessionImpl,
   id: string,
-  action: 'stop' | 'continue',
+  action: ChildControlAction,
   actor: Actor,
   admissionId: string,
   text?: string,
 ): Promise<number> {
   if (action === 'continue' && !text?.trim()) throw new CoreError('E_ENVELOPE', 'Continue requires a message')
-  const name = action === 'stop' ? 'child-stop' : 'child-continue'
+  const name = `child-${action}`
   const resolved = await resolveControlledChild(s, id)
   if (resolved.kind === 'ambiguous') {
     await refuse(s, name, actor, admissionId, id, 'CHILD_OWNERSHIP_AMBIGUOUS')

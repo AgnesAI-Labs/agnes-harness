@@ -1124,7 +1124,7 @@ export class KernelChildren implements ChildrenFactory {
   /** Parent-owned Web controls use the same pinned session controls as top-level turns. */
   humanControl(
     childKey: string,
-    action: 'stop' | 'continue',
+    action: 'stop' | 'continue' | 'pause' | 'resume' | 'close' | 'retain',
     actor: Actor,
     admissionId: string,
     text?: string,

@@ -372,7 +372,9 @@ it('handles rejected keys, retries model discovery and saves only an explicit se
 it.each([false, true])(
   'never switches a saved model the service no longer offers, and saves nothing (learning on: %s)',
   async (enabled) => {
-    const stored = { ...OFF, model: 'retired-review', enabled }
+    const stored: RefinementSettings = enabled
+      ? { enabled: true, mode: 'manual', credentialRef, model: 'retired-review' }
+      : { enabled: false, mode: 'manual', credentialRef, model: 'retired-review' }
     const api = fakeApi(stored)
     const host = await mount(api)
     await macrotask()

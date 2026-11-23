@@ -97,6 +97,7 @@ function fitsCap(settled: bigint, held: bigint, q: bigint, cap: bigint): boolean
 }
 
 import type { DatabaseSync } from 'node:sqlite'
+import { sqliteChildEventPort, sqliteUnconsumedChildCapMicro } from './child-control-sqlite-events.js'
 
 type Db = Pick<DatabaseSync, 'prepare' | 'exec'>
 
@@ -516,18 +517,23 @@ export function sqliteChildControl(
         if (parentTask && !ancestorScopeIds.includes(parentTask.budgetScopeId))
           ancestorScopeIds.push(parentTask.budgetScopeId)
         if (!ancestorScopeIds.includes(root.scopeId)) ancestorScopeIds.unshift(root.scopeId)
+        if (input.childCapMicro !== null && input.childCapMicro <= 0n)
+          return { status: 'refused', reason: 'budget', message: 'child budget must be positive' }
         for (const id of ancestorScopeIds) {
           const scope = scopeOf(id)
           if (!scope) return { status: 'refused', reason: 'budget', message: `unknown ancestor scope ${id}` }
-          if (
-            input.childCapMicro !== null &&
-            input.childCapMicro > scope.capMicro - scope.settledMicro - scope.heldMicro
-          )
-            return {
-              status: 'refused',
-              reason: 'budget',
-              message: 'child budget exceeds remaining ancestor cap',
-            }
+          const reserved = sqliteUnconsumedChildCapMicro(db, scope.scopeId)
+          const remaining = scope.capMicro - scope.settledMicro - scope.heldMicro - reserved
+          if (input.childCapMicro !== null) {
+            if (input.childCapMicro > remaining)
+              return {
+                status: 'refused',
+                reason: 'budget',
+                message: 'child budget exceeds remaining ancestor cap',
+              }
+          } else if (remaining <= 0n) {
+            return { status: 'refused', reason: 'budget', message: 'ancestor budget cap is exhausted' }
+          }
         }
         if (!q.session.get(input.parentKey))
           throw new CoreError('E_STORAGE_FAULT', 'parent session missing', { parent: input.parentKey })
@@ -808,6 +814,7 @@ export function sqliteChildControl(
         unknownHeld,
       }
     },
+    ...sqliteChildEventPort(db, tx),
   }
   return store
 }
