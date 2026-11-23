@@ -1,16 +1,24 @@
 import { assertChildAgentAllowed } from '@agnes/core-child-control/child/allowlist'
-import { createChildEventQueue } from '@agnes/core-child-control/child/events'
+import {
+  type ChildCursor,
+  ChildEventBus,
+  createChildEventQueue,
+  providerFrame,
+} from '@agnes/core-child-control/child/events'
+import { projectChildStatus } from '@agnes/core-child-control/child/status-projection'
 import type {
   ChildAgentCapabilities,
   ChildAgentEvent,
   ChildAgentHandle,
   ChildAgentListing,
   ChildAgentProvider,
+  ChildAgentProviderStartOptions,
   ChildAgentResult,
   ChildAgentStartOptions,
   ChildAgentStatus,
   ChildAgentToolFilter,
 } from '@agnes/extension-api'
+import type { ChildEventStream } from './event-stream.js'
 import { childBackend } from './sessions.js'
 
 export const IN_PROCESS_CHILD_PROVIDER_ID = 'in-process'
@@ -42,6 +50,7 @@ export type ResidentTurn = { text: string; status: ChildAgentStatus }
 
 /** The session-scoped backend today's in-process children already are. */
 export interface InProcessChildBackend {
+  readonly childEvents?: ChildEventStream | undefined
   startResident(input: ResidentStart): Promise<{ id: string }>
   adoptResident?(input: ResidentStart & { invocationId: string }): Promise<{ id: string }>
   startFork(input: ResidentStart): Promise<{ id: string; text: string }>
@@ -57,6 +66,87 @@ function requireCapability(ok: boolean, message: string): void {
   if (!ok) throw new Error(message)
 }
 
+type CursorHandle = Omit<ChildAgentHandle, 'events'> & {
+  events(cursor?: ChildCursor): AsyncIterable<ChildAgentEvent>
+}
+type CursorProvider = Omit<ChildAgentProvider, 'start' | 'adopt'> & {
+  start(task: string, options: ChildAgentProviderStartOptions): Promise<CursorHandle>
+  adopt(
+    task: string,
+    options: ChildAgentProviderStartOptions & { invocationId: string },
+  ): Promise<CursorHandle>
+}
+
+function handleEvents(stream: ChildEventStream | undefined, id: string) {
+  if (!stream) {
+    const queue = createChildEventQueue()
+    return { queue, publish: queue.push, stop: () => {} }
+  }
+  // Turn text is handle-local. Preserve it for late readers without allocating a journal cursor.
+  const texts: Array<{ after: number; event: ChildAgentEvent }> = []
+  let lastSeq = 0
+  const bus = new ChildEventBus({
+    scan: async (after) => {
+      const retained = texts.filter((text) => text.after >= after)
+      const snapshot = await stream.snapshot(id, after)
+      const frames: ChildAgentEvent[] = []
+      const pending = retained.values()
+      let next = pending.next()
+      for (const frame of snapshot) {
+        while (!next.done && next.value.after < frame.envelope.seq) {
+          frames.push(next.value.event)
+          next = pending.next()
+        }
+        frames.push(providerFrame(frame))
+      }
+      if (!next.done) frames.push(next.value.event, ...Array.from(pending, (text) => text.event))
+      return frames
+    },
+  })
+  const stop = stream.listen(id, (event) => {
+    if (event.type === 'envelope') lastSeq = event.envelope.seq
+    bus.notify(providerFrame(event))
+  })
+  return {
+    queue: createChildEventQueue(bus),
+    stop,
+    publish(event: ChildAgentEvent) {
+      if (event.type !== 'text') return
+      texts.push({ after: lastSeq, event })
+      bus.notify(event)
+    },
+  }
+}
+
+async function listChildren(backend: InProcessChildBackend | undefined, parentKey: string) {
+  if (!backend) return []
+  const listings = await backend.list()
+  const store = backend.childEvents?.store
+  if (!store) return listings
+  const [records, leases] = await Promise.all([
+    store.listByParent(parentKey),
+    store.listChildLeasesByParent(parentKey),
+  ])
+  const tasks = new Map(records.map((record) => [record.childKey, record]))
+  const beats = new Map(leases.map((lease) => [lease.childKey, lease]))
+  return listings.map((listing) => {
+    const record = tasks.get(listing.id)
+    if (!record) return listing
+    const lease = beats.get(listing.id)
+    const hints =
+      record.state === 'running'
+        ? { humanStopped: listing.status === 'interrupted', residentIdle: listing.status === 'idle' }
+        : undefined
+    const { status, executionState } = projectChildStatus(record, hints)
+    return {
+      ...listing,
+      status,
+      executionState,
+      ...(lease ? { lastHeartbeatAt: lease.lastHeartbeatAt, leaseUntil: lease.leaseUntil } : {}),
+    }
+  })
+}
+
 /**
  * The default provider. It delegates to the parent session's existing child factory.
  * Pass `resolve` only from tests; production uses the session binding.
@@ -64,13 +154,13 @@ function requireCapability(ok: boolean, message: string): void {
 export function inProcessChildAgentProvider(
   resolve: (sessionKey: string) => InProcessChildBackend | undefined = (sessionKey) =>
     childBackend(sessionKey),
-): ChildAgentProvider {
+): CursorProvider {
   const capabilities = IN_PROCESS_CHILD_CAPABILITIES
   const connect = async (
     task: string,
     options: ChildAgentStartOptions,
     recovering: boolean,
-  ): Promise<ChildAgentHandle> => {
+  ): Promise<CursorHandle> => {
     if (!task) throw new Error('child task must not be empty')
     options.signal.throwIfAborted()
     assertChildAgentAllowed(options.sessionKey, {
@@ -100,16 +190,17 @@ export function inProcessChildAgentProvider(
       ...(options.fork ? { fork: true } : {}),
       ...(options.toolFilter ? { toolFilter: options.toolFilter } : {}),
     }
-    const queue = createChildEventQueue()
-    const publish = (event: ChildAgentEvent) => queue.push(event)
-    if (recovering && (!backend.adoptResident || !options.invocationId))
-      throw new Error('in-process backend cannot adopt this invocation')
-    const started = recovering
-      ? await backend.adoptResident!({ ...input, invocationId: options.invocationId! })
-      : await backend.startResident(input)
+    let started: { id: string }
+    if (recovering) {
+      if (!backend.adoptResident || !options.invocationId)
+        throw new Error('in-process backend cannot adopt this invocation')
+      started = await backend.adoptResident({ ...input, invocationId: options.invocationId })
+    } else started = await backend.startResident(input)
+    const events = handleEvents(backend.childEvents, started.id)
+    const { queue, publish } = events
     publish({ type: 'status', status: 'running' })
     let observedTurn = false
-    const stop = backend.onTurn(started.id, (event) => {
+    const stopTurn = backend.onTurn(started.id, (event) => {
       observedTurn = true
       if (event.text) publish({ type: 'text', text: event.text })
       publish({ type: 'status', status: event.status })
@@ -119,6 +210,10 @@ export function inProcessChildAgentProvider(
           text: event.text,
         })
     })
+    const stop = () => {
+      stopTurn()
+      events.stop()
+    }
     if (recovering) {
       const snapshot = (await backend.list()).find((child) => child.id === started.id)
       if (!observedTurn && snapshot?.text) publish({ type: 'text', text: snapshot.text })
@@ -138,9 +233,12 @@ export function inProcessChildAgentProvider(
     const dispose = () => {
       disposal ??= (async () => {
         options.signal.removeEventListener('abort', onAbort)
-        stop()
-        await backend.cancel(started.id)
-        queue.settle({ status: 'cancelled', text: '' })
+        try {
+          await backend.cancel(started.id)
+          queue.settle({ status: 'cancelled', text: '' })
+        } finally {
+          stop()
+        }
       })()
       return disposal
     }
@@ -156,7 +254,7 @@ export function inProcessChildAgentProvider(
       id: started.id,
       providerId: IN_PROCESS_CHILD_PROVIDER_ID,
       capabilities,
-      events: () => queue.events(),
+      events: queue.events,
       sendMessage: (text, signal) => backend.sendMessage(started.id, text, signal),
       interrupt: () => backend.interrupt(started.id),
       result: () => queue.result,
@@ -167,7 +265,7 @@ export function inProcessChildAgentProvider(
     id: IN_PROCESS_CHILD_PROVIDER_ID,
     version: '1.0.0',
     capabilities,
-    list: async (sessionKey) => (await resolve(sessionKey)?.list()) ?? [],
+    list: (sessionKey) => listChildren(resolve(sessionKey), sessionKey),
     start: (task, options) => connect(task, options, false),
     adopt: (task, options) => connect(task, options, true),
   }
