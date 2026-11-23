@@ -394,6 +394,25 @@ describe('API-key provider registry', () => {
     })
   })
 
+  it('publishes the current Qwen Token Plan gateway in the startup catalogue', async () => {
+    const baseUrl = 'https://token-plan.maas.qwencloudapi.com/compatible-mode/v1'
+    expect(getApiKeyProvider('qwen')).toMatchObject({
+      sourceProviderId: 'qwen-token-plan',
+      api: 'openai-completions',
+      baseUrl,
+    })
+
+    const configs = await createApiKeyProviderConfigs()
+    expect(configs.find(({ id }) => id === 'qwen')?.routes).toMatchObject([
+      {
+        route: 'qwen',
+        api: 'openai-completions',
+        baseUrl,
+        models: expect.arrayContaining([expect.objectContaining({ id: 'qwen4-max-preview', baseUrl })]),
+      },
+    ])
+  })
+
   // Calls are read out of prose only for a family shown to write them there despite native tool
   // calling (replay case 0011, a Qwen answer). Terminal-Bench's deepseek-flash stays native-only.
   it('opts only the Qwen family into reading calls from prose', async () => {

@@ -1482,11 +1482,13 @@ export function createConfigurationService(
             return [chatModels.compatibleRoute(row, entry.api, await catalogInputs(entry.api, row.baseUrl))]
           const catalogue = await staticCatalogue(entry)
           const byId = new Map(catalogue.records.map((record) => [record.id, record]))
-          const records = row.models.map((model) => {
+          const records: { record: ModelRecord; model: ConfigModel }[] = []
+          // Saved catalogues can outlive individual upstream models. Don't publish missing
+          // entries or alter the saved list; the selected model still has to resolve below.
+          for (const model of row.models) {
             const record = byId.get(model.id)
-            if (!record) throw new ConfigurationError('CONFIG_MODEL_UNAVAILABLE')
-            return { record, model }
-          })
+            if (record) records.push({ record, model })
+          }
           const selected = records.find(({ model }) => model.id === row.model)
           if (!selected) throw new ConfigurationError('CONFIG_MODEL_UNAVAILABLE')
           const selectedApi =
