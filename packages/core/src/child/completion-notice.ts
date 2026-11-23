@@ -1,4 +1,4 @@
-import { hasChildControl } from '@agnes/core-child-control/child/store'
+import { hasChildControl, requireChildControl } from '@agnes/core-child-control/child/store'
 import type { ChildTaskRecord } from '@agnes/core-child-control/child/types'
 import { isTerminalChildState } from '@agnes/core-child-control/child/types'
 import { sha256Hex } from '@agnes/core-common/request/hash'
@@ -8,6 +8,7 @@ import type { SessionImpl } from '../step/session.js'
 import { childResultCollected, childResultSequence } from './collected-result.js'
 import { type ChildEnd, childEnd, childFailureSuffix, clipText as clip } from './failure.js'
 import { retiredCompletionIdentity } from './idle-retirement-fact.js'
+import { childBatchCounts } from './recap-snapshot.js'
 import { recordedChildRole } from './roles.js'
 
 export const CHILD_COMPLETION_SOURCE = 'agnes/child'
@@ -73,12 +74,24 @@ export type ChildCompletionOptions = {
   end?: ChildEnd | undefined
 }
 
-/**
- * `data` is `{ childKey, status, continuable?, error?, result?, truncated?, credits? }`. `status` is the child's
- * durable terminal state, or `budget_stopped` when it failed because its turn ended on a budget or step cap.
- * `error` is `{ code, message }` of a `failed` child whose last turn ended in error; the message is
- * clipped adapter text, and the notice is enqueued untrusted.
- */
+async function batchFacts(parent: SessionImpl) {
+  const counts = await childBatchCounts(parent)
+  const { completed, total, waitingApproval, running, paused, disconnected, failed } = counts
+  const hasIncompleteWork = completed < total
+  const line = `[Batch State: completed=${completed}/${total}, waiting_approval=${waitingApproval}, running=${running}, paused=${paused}, disconnected=${disconnected}, failed=${failed}]`
+  const warning = 'DO NOT report overall batch completion; unresolved subtasks remain.'
+  return {
+    suffix: hasIncompleteWork ? `\n${line}\n${warning}` : `\n${line}`,
+    data: {
+      batchState: { ...counts, hasIncompleteWork },
+      pendingApprovalsCount: waitingApproval,
+      activeSiblingsCount: running,
+      pausedCount: paused,
+      disconnectedCount: disconnected,
+    },
+  }
+}
+
 export async function childCompletionInput(
   parent: SessionImpl,
   record: ChildTaskRecord,
@@ -98,6 +111,8 @@ export async function childCompletionInput(
       : record.inputText.trim().split('\n', 1)[0] || record.childKey,
     MAX_LABEL_CHARS,
   )
+  const batch = await batchFacts(parent)
+  const summaryLimit = MAX_SUMMARY_CHARS - batch.suffix.length
   const result = text.trim()
   const truncated = result.length > MAX_RESULT_CHARS
   const handled = role ? `Handled by ${clip(role.title.en, MAX_LABEL_CHARS)} / 由 ${label} 处理. ` : ''
@@ -107,19 +122,21 @@ export async function childCompletionInput(
   // The result gives way first: who ended and why must fit the summary limit whole.
   const more = ' Call subagent_collect with its childKey for the full output.'
   const head = `${handled}${lead} Result:\n`
-  const room = Math.min(MAX_SUMMARY_RESULT_CHARS, MAX_SUMMARY_CHARS - head.length - more.length)
-  const summary = clip(
-    !result
-      ? `${handled}${lead}`
-      : room < 1
-        ? `${handled}${lead}${more}`
-        : `${head}${clip(result, room)}${result.length > room ? more : ''}`,
-    MAX_SUMMARY_CHARS,
-  )
+  const room = Math.min(MAX_SUMMARY_RESULT_CHARS, summaryLimit - head.length - more.length)
+  const summary =
+    clip(
+      !result
+        ? `${handled}${lead}`
+        : room < 1
+          ? `${handled}${lead}${more}`
+          : `${head}${clip(result, room)}${result.length > room ? more : ''}`,
+      summaryLimit,
+    ) + batch.suffix
   const system: SystemInput = {
     source: CHILD_COMPLETION_SOURCE,
     type: CHILD_COMPLETED,
     data: {
+      ...batch.data,
       childKey: record.childKey,
       ...(role ? { role } : {}),
       status,
@@ -173,6 +190,47 @@ export async function deliverChildCompletion(
     {
       dedupeByCommandId: true,
       skipIf: () => childResultCollected(parent, record.childKey, commandId, resultSeq),
+    },
+  )
+}
+
+/** A revision identifies one occurrence. Retried delivery dedupes, a later recurrence can wake the parent. */
+export async function deliverChildStateNotice(
+  parent: SessionImpl,
+  record: ChildTaskRecord,
+  state: 'waiting_approval' | 'disconnected' | 'paused',
+  detail?: string,
+): Promise<void> {
+  if (parent.closingOrClosed || !isBackgroundChild(parent, record)) return
+  const { childKey, stateRevision } = record
+  const batch = await batchFacts(parent)
+  const text = detail ? clip(detail, MAX_SUMMARY_RESULT_CHARS) : ''
+  const lead = `Background child ${childKey} is ${state}.${text ? ` ${text}` : ''}`
+  const summary = clip(lead, MAX_SUMMARY_CHARS - batch.suffix.length) + batch.suffix
+  const commandId = `child-state:${sha256Hex(JSON.stringify([childKey, stateRevision, state]))}`
+  const system: SystemInput = {
+    source: CHILD_COMPLETION_SOURCE,
+    type: 'child-state',
+    summary,
+    data: { ...batch.data, childKey, state, ...(text ? { detail: text } : {}) },
+  }
+  await parent.enqueue(
+    'next-turn',
+    {
+      content: [{ type: 'text', text: summary }],
+      system,
+      actor: parent.d.actor,
+      commandId,
+      kind: 'follow_up',
+      trust: 'untrusted',
+      origin: 'system',
+    },
+    {
+      dedupeByCommandId: true,
+      skipIf: async () => {
+        const current = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
+        return current?.state !== state || current.stateRevision !== stateRevision
+      },
     },
   )
 }
