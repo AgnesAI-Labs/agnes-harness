@@ -54,6 +54,20 @@ function traceWorkspace({ workspaces, workspaceCatalog }: StoresState, key: stri
   return { ...(cwd ? { cwd } : {}), extraRoots: workspaceCatalog.extraRoots(key) }
 }
 
+function observeLiveWorkerEvent(
+  automationEvents: { observe(sessionKey: string, event: EventEnvelope): void },
+  sessionActivity: { observe(sessionKey: string, event: EventEnvelope): void },
+  pool: WorkerPool,
+  childFollowUps: { wake?: (sessionKey: string) => void },
+  sessionKey: string,
+  event: EventEnvelope,
+) {
+  automationEvents.observe(sessionKey, event)
+  sessionActivity.observe(sessionKey, event)
+  observeSessionRequests(pool, sessionKey, event)
+  if (hasChildFollowUpInbox(event)) childFollowUps.wake?.(sessionKey)
+}
+
 export async function openWorkers(state: AssemblyBase & StoresState, lifetime: AssemblyLifetime) {
   const {
     o,
@@ -134,10 +148,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
 
     onEvent: (sessionKey, e) =>
       deliverWorkerEvent(registry, tickets, clock, sessionKey, e, workspaces, () => {
-        automationEvents.observe(sessionKey, e)
-        sessionActivity.observe(sessionKey, e)
-        observeSessionRequests(pool, sessionKey, e)
-        if (hasChildFollowUpInbox(e)) childFollowUps.wake?.(sessionKey)
+        observeLiveWorkerEvent(automationEvents, sessionActivity, pool, childFollowUps, sessionKey, e)
         o.telemetry?.observe(sessionKey, e, () => traceWorkspace(state, sessionKey))
       }),
     onPreview: (sessionKey, p) => registry.deliverPreview(sessionKey, p),

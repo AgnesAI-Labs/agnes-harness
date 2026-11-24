@@ -493,9 +493,11 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
   const requestMedia = composeProductionRequestMedia({
     readArtifact: async ({ sessionKey, lane, nodeSeq, sha256, signal }) => {
       try {
-        const before = sessionOwnership.resolve(sessionKey)
+        const ownerKey = sessionKey.includes('/') ? sessionKey.slice(0, sessionKey.indexOf('/')) : sessionKey
+        const before = sessionOwnership.resolve(ownerKey)
         const session = mediaHost?.kernel.get(sessionKey)
         if (!before?.active || !session || signal.aborted) return undefined
+        if (ownerKey !== sessionKey && !session.key.startsWith(`${ownerKey}/`)) return undefined
         const [event] = await session.scan({ fromSeq: nodeSeq, toSeq: nodeSeq, order: 'asc', limit: 1 })
         if (
           !event ||
@@ -518,7 +520,7 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
         })
         if (!authorized || signal.aborted) return undefined
         return await readScreenshotBytes(artifacts, sha256, signal, () => {
-          const after = sessionOwnership.resolve(sessionKey)
+          const after = sessionOwnership.resolve(ownerKey)
           return (
             !!after?.active &&
             after.principalId === before.principalId &&
