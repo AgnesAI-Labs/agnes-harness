@@ -1057,10 +1057,10 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
   const community: NonNullable<PackageCatalogPage['communityIndex']> = {
     state: 'ready',
     error: null,
-    totalReported: 13,
+    totalReported: 25,
     lastSuccessAt: new Date().toISOString(),
     nextAttemptAt: null,
-    items: Array.from({ length: 13 }, (_, id) => ({
+    items: Array.from({ length: 25 }, (_, id) => ({
       id: `author/repo-${id}`,
       name: `author/repo-${id}`,
       fullName: `author/repo-${id}`,
@@ -1081,6 +1081,9 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
   const fetcher = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('No external fetch expected'))
   const catalog = vi.fn(async () => ({ items: [], nextCursor: null, community }))
   const inspect = vi.fn()
+  const loadCatalog = vi.fn(async (): Promise<void> => {
+    view.state.loading = true
+  })
   const view = {
     state: {
       community,
@@ -1113,16 +1116,42 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
     inspecting: () => false,
     inspectFailure: () => undefined,
     primaryAction: () => ({ disabled: false, run: () => undefined }),
-    loadCatalog: vi.fn(),
+    loadCatalog,
     inspect,
   } as unknown as PluginView
   const host = document.body.appendChild(document.createElement('div'))
   const root = createRoot(host)
+  const renderMarket = () => root.render(createElement(MarketTab, { view, t: (key) => key }))
+  const communityCards = () => host.querySelectorAll('[data-testid="community-card"]')
+  let notifyTail: ((isIntersecting: boolean) => void) | undefined
   try {
-    flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(private readonly callback: IntersectionObserverCallback) {}
+        observe(target: Element) {
+          if (!target.matches('.plugins-page-gallery-tail')) return
+          notifyTail = (isIntersecting) =>
+            this.callback(
+              [{ target, isIntersecting } as IntersectionObserverEntry],
+              this as unknown as IntersectionObserver,
+            )
+        }
+        disconnect() {
+          notifyTail = undefined
+        }
+      },
+    )
+    flushSync(renderMarket)
     expect(host.querySelectorAll('[data-testid="market-list"]')).toHaveLength(1)
     expect(host.querySelectorAll('[data-testid="market-card"]')).toHaveLength(1)
-    expect(host.querySelectorAll('[data-testid="community-card"]')).toHaveLength(11)
+    expect(communityCards()).toHaveLength(11)
+    expect(host.querySelector('.plugin-more')).toBeNull()
+    await act(async () => notifyTail!(false))
+    expect(communityCards()).toHaveLength(11)
+    expect(loadCatalog).not.toHaveBeenCalled()
+    await act(async () => notifyTail!(true))
+    expect(communityCards()).toHaveLength(23)
     expect(host.querySelectorAll('.community-market-topics a')).toHaveLength(0)
     expect(host.textContent).not.toContain('community.coverage')
     expect(host.textContent).not.toContain('community.updated')
@@ -1131,7 +1160,7 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
       source.value = 'community'
       source.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    expect(host.querySelectorAll('[data-testid="community-card"]')).toHaveLength(12)
+    expect(communityCards()).toHaveLength(12)
     expect(host.querySelectorAll('[data-testid="market-card"]')).toHaveLength(0)
     expect(host.querySelector('.community-market-card p')?.textContent).toBe('<script>not markup</script>')
     expect(host.querySelector('script')).toBeNull()
@@ -1168,25 +1197,62 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
       'install',
       check,
     )
-    const next = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
-      (button) => button.textContent === 'market.more',
-    )!
-    await act(async () => next.click())
-    expect(host.querySelectorAll('[data-testid="community-card"]')).toHaveLength(13)
+    await act(async () => notifyTail!(true))
+    expect(communityCards()).toHaveLength(24)
+    await act(async () => notifyTail!(false))
+    expect(communityCards()).toHaveLength(24)
+    await act(async () => notifyTail!(true))
+    expect(communityCards()).toHaveLength(25)
+    expect(notifyTail).toBeUndefined()
+    expect(loadCatalog).not.toHaveBeenCalled()
+
+    view.state.nextCursor = 'page-2'
+    flushSync(renderMarket)
+    await act(async () => notifyTail!(false))
+    expect(loadCatalog).not.toHaveBeenCalled()
+    const notifyPage = notifyTail!
+    await act(async () => {
+      notifyPage(true)
+      notifyPage(true)
+    })
+    expect(loadCatalog).toHaveBeenCalledTimes(1)
+    expect(loadCatalog).toHaveBeenLastCalledWith('page-2')
+    expect(notifyTail).toBeUndefined()
+    view.state.loading = false
+    view.state.nextCursor = 'page-3'
+    flushSync(renderMarket)
+    await act(async () => notifyTail!(true))
+    expect(loadCatalog).toHaveBeenCalledTimes(2)
+    expect(loadCatalog).toHaveBeenLastCalledWith('page-3')
+    view.state.loading = false
+    view.state.error = { code: 'CATALOG_ERROR', message: 'Catalog unavailable' }
+    flushSync(renderMarket)
+    expect(notifyTail).toBeUndefined()
+
+    view.kind = 'tool'
+    flushSync(renderMarket)
+    expect(communityCards()).toHaveLength(0)
+    view.kind = ''
+    flushSync(renderMarket)
+    expect(communityCards()).toHaveLength(12)
+    await act(async () => notifyTail!(true))
+    view.query = 'author/repo-'
+    flushSync(renderMarket)
+    expect(communityCards()).toHaveLength(12)
     view.query = 'repo-5'
-    flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
-    expect(host.querySelectorAll('[data-testid="community-card"]')).toHaveLength(1)
+    flushSync(renderMarket)
+    expect(communityCards()).toHaveLength(1)
     expect(host.textContent).toContain('author/repo-5')
     view.query = 'no-match'
     view.state.community = { ...community, state: 'syncing' }
-    flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
+    flushSync(renderMarket)
     expect(host.textContent).toContain('market.none')
     expect(host.textContent).not.toContain('market.loading')
     view.state.community = { ...community, items: [], state: 'syncing' }
-    flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
+    flushSync(renderMarket)
     expect(host.textContent).toContain('market.none')
     view.state.community = { ...community, items: [], state: 'pending', lastSuccessAt: null }
-    flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
+    flushSync(renderMarket)
     expect(host.textContent).toContain('market.loading')
     expect(fetcher).not.toHaveBeenCalled()
     expect(catalog).not.toHaveBeenCalled()
@@ -1196,6 +1262,7 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
   } finally {
     flushSync(() => root.unmount())
     fetcher.mockRestore()
+    vi.unstubAllGlobals()
   }
 })
 

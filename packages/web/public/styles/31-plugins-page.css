@@ -243,6 +243,9 @@
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 16.875rem), 1fr));
     gap: var(--s12);
   }
+  .plugins-page-gallery-tail {
+    height: 1px;
+  }
   .community-market-actions,
   .community-market-details .community-market-topics {
     display: flex;
