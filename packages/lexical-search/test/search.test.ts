@@ -53,6 +53,11 @@ describe('bilingual lexical retrieval', () => {
     }
     expect(search(db, 'absent" OR * OR missing')).toEqual([])
     expect(buildQuery('continuous integration').en).toContain('"ci"')
+    const stopped = buildQuery("How many doctor's appointments did I've been having?")
+    for (const drop of ['how', 'many', 's', 'did', 've', 'been', 'having'])
+      expect(stopped.en).not.toContain(`"${drop}"`)
+    expect(stopped.en).toContain('"doctor"')
+    expect(stopped.en).toContain('"appointments"')
   })
 
   it('loads bidirectional per-root aliases, including phrases', () => {

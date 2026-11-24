@@ -15,6 +15,51 @@ function excerpt(text: string, words: string[]) {
   return (start ? '…' : '') + text.slice(start, start + 160) + (text.length > start + 160 ? '…' : '')
 }
 
+const singleEnglishWord = /^[a-z]{4,}$/
+
+function englishVariants(term: string): string[] {
+  if (!singleEnglishWord.test(term)) return []
+  const variants: string[] = []
+  if (term.endsWith('ies') && term.length >= 5) variants.push(`${term.slice(0, -3)}y`)
+  else if (/(?:sh|ch|x|z|s)es$/u.test(term) && term.length >= 5) variants.push(term.slice(0, -2))
+  else if (term.endsWith('s') && !/(?:ss|us|is)$/u.test(term) && term.length >= 5)
+    variants.push(term.slice(0, -1))
+  else variants.push(`${term}s`)
+
+  if (term.endsWith('ing') && term.length >= 6) {
+    const stem = term.slice(0, -3)
+    variants.push(stem, `${stem}e`)
+    if (/(.)\1$/u.test(stem) && stem.length >= 4) variants.push(stem.slice(0, -1))
+  } else if (term.endsWith('ed') && term.length >= 5) {
+    const stem = term.slice(0, -2)
+    variants.push(stem, term.slice(0, -1))
+    if (/(.)\1$/u.test(stem) && stem.length >= 4) variants.push(stem.slice(0, -1))
+  } else if (!/(?:s|ed|ing)$/u.test(term)) {
+    variants.push(`${term}ed`, `${term}ing`)
+  }
+  return variants
+}
+
+function expandEnglishInflections(match: string): string {
+  if (!match) return ''
+  const terms = new Set<string>()
+  for (const part of match.matchAll(/"((?:[^"]|"")*)"/gu)) {
+    const term = part[1]!.replaceAll('""', '"')
+    if (term) terms.add(term)
+  }
+  for (const term of [...terms]) {
+    for (const variant of englishVariants(term)) {
+      if (terms.size >= 128) break
+      terms.add(variant)
+    }
+    if (terms.size >= 128) break
+  }
+  return Array.from(terms)
+    .slice(0, 128)
+    .map((term) => `"${term.replaceAll('"', '""')}"`)
+    .join(' OR ')
+}
+
 export function recallEvents(
   db: DatabaseSync,
   request: HistoryQuery,
@@ -42,7 +87,22 @@ export function recallEvents(
     }
     return rows
   }
-  const ranked = fuse([channel('docs_fts', query.en), channel('docs_cjk', query.cjk)], (row) => row.id)
+  const fused = fuse(
+    [channel('docs_fts', expandEnglishInflections(query.en)), channel('docs_cjk', query.cjk)],
+    (row) => row.id,
+  )
+  const ranked = !request.sessionId
+    ? (() => {
+        const seen = new Map<string, number>()
+        return fused
+          .map((entry, order) => {
+            const count = seen.get(entry.item.sessionId) ?? 0
+            seen.set(entry.item.sessionId, count + 1)
+            return { ...entry, score: entry.score / (1 + count), order }
+          })
+          .sort((a, b) => b.score - a.score || a.order - b.order)
+      })()
+    : fused
   return {
     items: ranked.slice(0, limit).map(({ item: { id: _, ...item } }) => item),
     truncated: ranked.length > limit,

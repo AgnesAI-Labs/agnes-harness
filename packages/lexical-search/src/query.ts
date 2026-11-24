@@ -2,9 +2,18 @@ import { type AliasMap, technicalAliases } from './aliases.js'
 import { normalize, tokenize } from './tokenize.js'
 
 const stop = new Set(
-  'a an and are as at be by for from how i in is it of on or that the to was what when where which with'.split(
-    ' ',
-  ),
+  [
+    'a about after again all also am an and any are as at be because been before being between',
+    'both but by can could d did do does doing don down during each few for from further get go',
+    'had has have having he her here hers herself him himself his how i if in into is it its',
+    'itself just ll m many me might more most much must my myself no nor not now of off on once',
+    'only or other our ours ourselves out over own re s same she should so some such t than that',
+    'the their theirs them themselves then there these they this those through to too under',
+    'until up ve very was we were what when where which while who whom why will with would you',
+    'your yours yourself yourselves',
+  ]
+    .join(' ')
+    .split(' '),
 )
 const quote = (term: string) => `"${term.replaceAll('"', '""')}"`
 const expression = (terms: Set<string>) => Array.from(terms).slice(0, 128).map(quote).join(' OR ')
