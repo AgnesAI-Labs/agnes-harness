@@ -53,9 +53,11 @@ async function shutdown(child: ChildProcess, exited: Promise<number | null>, hom
 it('a fresh home does not evaluate repository plugins or other repository code until explicit workspace trust', async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-clone-trust-')))
   const home = join(root, 'home'),
-    workspace = join(root, 'repository')
+    workspace = join(root, 'repository'),
+    localAppData = join(root, 'localappdata')
   const source = join(workspace, '.agh', 'plugins', 'side-effect')
   mkdirSync(source, { recursive: true })
+  mkdirSync(localAppData, { recursive: true })
   initializeHome(home, 'local-dev')
   const marker = join(workspace, 'plugin-evaluated')
   const otherMarker = join(workspace, 'other-code-executed')
@@ -95,7 +97,16 @@ it('a fresh home does not evaluate repository plugins or other repository code u
     JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: script }] }] } }),
   )
   const child = spawn(process.execPath, ['--import', 'tsx', fixture, home, workspace], {
-    env: { PATH: process.env.PATH, TMPDIR: tmpdir(), AGH_HOME: home },
+    env: {
+      PATH: process.env.PATH,
+      SystemRoot: process.env.SystemRoot,
+      PATHEXT: process.env.PATHEXT,
+      TEMP: root,
+      TMP: root,
+      TMPDIR: tmpdir(),
+      LOCALAPPDATA: localAppData,
+      AGH_HOME: home,
+    },
     stdio: ['ignore', 'ignore', 'pipe'],
   })
   const exited = new Promise<number | null>((resolve) => child.once('exit', resolve))

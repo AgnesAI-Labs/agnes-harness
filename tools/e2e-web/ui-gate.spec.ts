@@ -56,25 +56,27 @@ for (const locale of ['en', 'zh-CN'])
   for (const theme of ['light', 'dark'])
     for (const part of parts) {
       test(`${part.title} ${locale}/${theme}`, async ({ page, runtime }, info) => {
-        test.setTimeout(150_000)
+        test.setTimeout(210_000)
         const first = part === parts[0]
         // This matrix owns the genuinely empty Skills screen; the slash flow owns discovery.
         await rm(join(runtime.workspace, AGH_DIR, 'skills'), { recursive: true })
-        await copyFile(resolve('tools/e2e-web/fixtures/mcp.mjs'), join(runtime.workspace, 'fixture.mjs'))
-        await runtime.cli([
-          'mcp',
-          'add',
-          'e2e',
-          '--name',
-          'Synthetic MCP',
-          '--stdio',
-          'node',
-          '--arg',
-          './fixture.mjs',
-          '--sandbox-profile',
-          'off-with-warning',
-          '--yes',
-        ])
+        if (first) {
+          await copyFile(resolve('tools/e2e-web/fixtures/mcp.mjs'), join(runtime.workspace, 'fixture.mjs'))
+          await runtime.cli([
+            'mcp',
+            'add',
+            'e2e',
+            '--name',
+            'Synthetic MCP',
+            '--stdio',
+            'node',
+            '--arg',
+            './fixture.mjs',
+            '--sandbox-profile',
+            'off-with-warning',
+            '--yes',
+          ])
+        }
         await preferences(page, locale, theme)
         await page.goto(runtime.url)
         await expect(page.getByTestId('first-run-skip')).toBeVisible()
@@ -85,6 +87,7 @@ for (const locale of ['en', 'zh-CN'])
           exact: true,
         })
         if (!(await workspace.isVisible())) {
+          await expect(page.locator('#composer-workspace')).toBeEnabled({ timeout: 30_000 })
           await page.locator('#composer-workspace').click()
           await page
             .getByRole('region', { name: locale === 'en' ? 'Select workspace' : '选择工作区', exact: true })

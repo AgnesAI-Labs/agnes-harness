@@ -48,8 +48,10 @@ function useSkillInstall({
   }, [])
   const cancel = useCallback(
     async (value = current.current) => {
-      if (value?.proposalId && ['prepared', 'running'].includes(value.state))
+      if (value?.proposalId && ['prepared', 'running'].includes(value.state)) {
+        if (current.current === value) current.current = { ...value, state: 'cancelled' }
         await api?.skillImport({ action: 'cancel', proposalId: value.proposalId })
+      }
     },
     [api],
   )

@@ -3361,8 +3361,11 @@ describe('image composer submissions', () => {
       expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false),
     )
     // Local preview remains available; the text-only model still receives the file reference below.
-    const preview = document.querySelector('.composer-image-preview img')
-    expect(preview?.getAttribute('src')).toBe('blob:old-image')
+    await vi.waitFor(() =>
+      expect(document.querySelector('.composer-image-preview img')?.getAttribute('src')).toBe(
+        'blob:old-image',
+      ),
+    )
     expect(document.getElementById('composer-attach')?.getAttribute('aria-disabled')).toBe('false')
     submit('')
     await vi.waitFor(() =>

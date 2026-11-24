@@ -53,14 +53,14 @@ afterEach(async () => {
   expect(exits).toHaveLength(2)
   for (const exit of exits)
     expect(exit, `Worker ${exit.pid} must exit cleanly`).toMatchObject({ code: 0, signal: null })
-})
+}, 30_000)
 
 // One shared Worker serves every live session; daemon restart starts its replacement. Each one
 // assembles the production package graph from TypeScript source before it says hello, which takes
-// about 30 s on a loaded hosted runner. The SDK request and history-load idle budgets must both
-// cover that startup window; allow both generations plus fixture/RPC cleanup.
+// about 30-70 s on a loaded hosted runner. The SDK request and history-load idle budgets must both
+// cover that startup window; allow both generations plus hot replacement and fixture/RPC cleanup.
 const sourceWorkerStartupMs = 90_000
-const integrationTimeoutMs = sourceWorkerStartupMs * 2 + 10_000
+const integrationTimeoutMs = sourceWorkerStartupMs * 3
 it(
   'Web saves one profile, CLI executes it, both retain history after daemon restart',
   async () => {

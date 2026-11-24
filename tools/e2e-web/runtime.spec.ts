@@ -148,8 +148,9 @@ test('session admission keeps history readable, drafts editable and sending gate
   await input.press('Enter')
   await expect(input).toHaveValue('/plan Local draft A')
   await expect(page.locator('#send')).toBeDisabled()
-  // The pending recorded history is a read-only preview until admission: the composer says so.
-  await expect(input).toHaveAttribute('placeholder', /read-only/i)
+  // Until admission finishes, commands stay withheld and the composer hint reports preparation.
+  await expect(input).toHaveAttribute('placeholder', 'Describe what you want to do, @ to reference files')
+  await expect(page.locator('#composer-hint')).toHaveText('Preparing session…')
   await expect(page.getByTestId('attachment-file-input')).toBeDisabled()
   await page.getByText('Admission B', { exact: true }).first().click()
   await input.fill('Local draft B')
@@ -169,6 +170,7 @@ test('session admission keeps history readable, drafts editable and sending gate
   await expect(page).toHaveURL(new RegExp(`session=${b.id}`))
   await page.getByText('Admission A', { exact: true }).first().click()
   await expect(input).toHaveValue('/plan Local draft A')
+  await expect(input).toHaveAttribute('placeholder', /\/ for commands/)
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
   expect(sent.some((m) => m.method === 'session/load' || m.method === 'session/prompt')).toBe(false)
 })

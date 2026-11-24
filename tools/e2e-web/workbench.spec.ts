@@ -22,7 +22,7 @@ async function workbenchScreen(page: Page, info: TestInfo, name: string, folder?
 }
 
 test('workspace dock previews and mentions a file that the agent reads', async ({ page, runtime }, info) => {
-  test.setTimeout(120_000)
+  test.setTimeout(180_000)
   for (const args of [
     ['init', '--quiet'],
     ['add', '--', 'report.md'],

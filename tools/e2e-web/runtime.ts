@@ -237,35 +237,51 @@ export async function isolatedRuntime(
     start,
     starts: () => starts,
     connect: async (transport: 'local' | 'web' = 'local', registerWorkspace = true) => {
-      let ws = ''
-      let socketPath = ''
-      let serverIdentity: { pid: number; processStartId: string } | undefined
-      if (transport === 'web') {
-        // Discover only the served document's endpoint; administrative operations use SDK RPC.
-        const html = await (await fetch(url)).text()
-        ws = html.match(/data-ws="([^"]+)"/)?.[1] ?? ''
-        if (!ws) throw new Error('The real workbench did not advertise a daemon WebSocket')
-      } else {
-        const owner = JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8'))
-        socketPath = owner.socketPath
-        if (sep === '\\') serverIdentity = { pid: owner.pid, processStartId: owner.processStartId }
+      const deadline = Date.now() + (sep === '\\' ? 120_000 : 25_000)
+      let client: ReturnType<typeof createClient> | undefined
+      while (!client) {
+        let ws = ''
+        let socketPath = ''
+        let serverIdentity: { pid: number; processStartId: string } | undefined
+        try {
+          if (transport === 'web') {
+            // Discover only the served document's endpoint; administrative operations use SDK RPC.
+            const html = await (await fetch(url)).text()
+            ws = html.match(/data-ws="([^"]+)"/)?.[1] ?? ''
+            if (!ws) throw new Error('The real workbench did not advertise a daemon WebSocket')
+          } else {
+            const owner = JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8'))
+            if (!owner?.socketPath) throw new Error('daemon owner has no socketPath')
+            socketPath = owner.socketPath
+            if (sep === '\\') serverIdentity = { pid: owner.pid, processStartId: owner.processStartId }
+          }
+          const candidate = createClient({
+            // Cold Windows Host assembly is measured separately from browser interaction assertions.
+            ...(sep === '\\' ? { timeouts: { request: 120_000 } } : {}),
+            transport:
+              transport === 'local'
+                ? { kind: 'unix', path: socketPath }
+                : { kind: 'ws', url: ws, protocols: ['agnes-v1'] },
+            transportFactories: {
+              unix: () =>
+                measured(unixTransport({ path: socketPath, ...(serverIdentity ? { serverIdentity } : {}) })),
+              ws: (options) => measured(wsTransport({ ...options, url: ws, headers: { Origin: url } })),
+            },
+            auth: { kind: 'local' },
+            journal: memoryJournal(),
+          })
+          try {
+            await candidate.initialize()
+            client = candidate
+          } catch (error) {
+            await candidate.close().catch(() => undefined)
+            throw error
+          }
+        } catch (error) {
+          if (transport === 'web' || Date.now() >= deadline) throw error
+          await new Promise((done) => setTimeout(done, 50))
+        }
       }
-      const client = createClient({
-        // Cold Windows Host assembly is measured separately from browser interaction assertions.
-        ...(sep === '\\' ? { timeouts: { request: 120_000 } } : {}),
-        transport:
-          transport === 'local'
-            ? { kind: 'unix', path: socketPath }
-            : { kind: 'ws', url: ws, protocols: ['agnes-v1'] },
-        transportFactories: {
-          unix: () =>
-            measured(unixTransport({ path: socketPath, ...(serverIdentity ? { serverIdentity } : {}) })),
-          ws: (options) => measured(wsTransport({ ...options, url: ws, headers: { Origin: url } })),
-        },
-        auth: { kind: 'local' },
-        journal: memoryJournal(),
-      })
-      await client.initialize()
       clients.add(client)
       if (registerWorkspace) {
         const registered = await client.workspace.add(workspace)

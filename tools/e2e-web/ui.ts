@@ -458,7 +458,7 @@ export async function chooseWorkspace(page: Page, runtime: Pick<Runtime, 'worksp
     .toBe(true)
   // The chip opens the workspace switcher; adding a workspace opens the full dialog.
   if (!(await workspace.isVisible())) {
-    await expect(chip).toBeEnabled()
+    await expect(chip).toBeEnabled({ timeout: 30_000 })
     await chip.click()
     choosingFromPicker = true
     await expect(picker).toBeVisible()

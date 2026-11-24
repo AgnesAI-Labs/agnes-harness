@@ -105,6 +105,18 @@ async function usable(page: Page, info: TestInfo, name: string) {
         issues.push(`${label}: target ${Math.round(width)}×${Math.round(height)}`)
       const scrollable = (axis: 'x' | 'y') => {
         for (let parent = target.parentElement; parent; parent = parent.parentElement) {
+          if (
+            axis === 'x' &&
+            parent.classList.contains('ant-tabs-nav-wrap') &&
+            (parent.classList.contains('ant-tabs-nav-wrap-ping-left') ||
+              parent.classList.contains('ant-tabs-nav-wrap-ping-right') ||
+              Boolean(
+                parent.parentElement?.querySelector(
+                  '.ant-tabs-nav-operations:not(.ant-tabs-nav-operations-hidden)',
+                ),
+              ))
+          )
+            return true
           const style = getComputedStyle(parent)
           if (
             /auto|scroll/.test(axis === 'x' ? style.overflowX : style.overflowY) &&
@@ -278,7 +290,8 @@ for (const [locale, theme] of [
       // Traverse every wizard step with a real loopback account.
       const catalog = (await client.config.test({ providerId: 'deepseek' })).models
       const model = catalog[0]?.id
-      if (!model) throw new Error('The installed provider must declare a fixture model')
+      const modelLabel = catalog[0]?.name ?? model
+      if (!model || !modelLabel) throw new Error('The installed provider must declare a fixture model')
       const { startProviderFixture } = await import('../acceptance/provider-fixture.js')
       const provider = await startProviderFixture('NARROW_READY', undefined, model)
       try {
@@ -370,7 +383,7 @@ for (const [locale, theme] of [
         await expect(page.getByTestId('workbench-right-toggle')).toHaveAttribute('aria-expanded', 'false')
         for (const viewport of [auditViewport]) {
           await page.setViewportSize(viewport)
-          await expect(page.locator('#model')).toContainText(model)
+          await expect(page.locator('#model')).toContainText(modelLabel)
           await expect(page.locator('#model')).toBeEnabled()
           await expect(page.locator('#composer-hint')).not.toHaveText(
             name(

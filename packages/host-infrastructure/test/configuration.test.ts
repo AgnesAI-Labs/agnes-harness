@@ -367,7 +367,7 @@ it('keeps an OpenRouter account usable when a secondary model leaves the install
   await service.save({
     providerId: 'openrouter',
     baseUrl: server.baseUrl,
-    apiKey: 'router-test-value',
+    apiKey: 'or-test-value',
     model,
   })
   const configPath = await savedModelPath(root)

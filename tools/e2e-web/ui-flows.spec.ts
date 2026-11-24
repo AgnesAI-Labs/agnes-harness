@@ -674,7 +674,9 @@ test('UI FDE bundle selection runs and restores its durable deliverable', async 
     contentType: 'text/plain',
   })
   await settled(page)
-  await page.getByRole('checkbox', { name: /knowledge-qa/ }).check()
+  await page.getByTestId('new-session-bundles').click()
+  await page.getByRole('option', { name: /knowledge-qa/ }).click()
+  await page.keyboard.press('Escape')
   await page.keyboard.press('Escape')
   await turn(page, 'What is the refund window and who reviews refund requests?')
   const session = await current(page, runtime)
@@ -780,8 +782,13 @@ test('Checking a source with no plugin manifest explains that it is not a plugin
   await source.getByRole('combobox', { name: 'Source type', exact: true }).selectOption('file')
   await source.getByRole('textbox', { name: 'Source reference', exact: true }).fill(`file:${folder}`)
   await source.getByRole('button', { name: 'Check source', exact: true }).click()
-  await expect(page.locator('#source-error')).toContainText('a SKILL.md alone is a Skill, not a plugin')
+  await expect(source).toBeHidden()
+  const skillImport = page.getByRole('dialog', { name: 'Check and install', exact: true })
+  await expect(skillImport).toContainText('sticker')
+  await expect(skillImport).toContainText('Ready for content review')
   await expect(page.getByText('The plugin operation could not complete.')).toHaveCount(0)
+  await skillImport.getByRole('button', { name: 'Cancel installation', exact: true }).click()
+  await expect(skillImport).toBeHidden()
 })
 
 test('Settings jobs session picker lists the same sessions as the sidebar', async ({ page, runtime }) => {

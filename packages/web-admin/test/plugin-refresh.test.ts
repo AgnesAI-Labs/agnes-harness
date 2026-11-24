@@ -252,7 +252,7 @@ it.each([
       if (offered) {
         expect(importSource).toHaveBeenCalledWith({ type, ref: `${type}:fixture/skills` })
         expect(view.sourceError).toBeUndefined()
-        expect(view.sourceDialog.open).toBe(true)
+        expect(view.sourceDialog.open).toBe(false)
       } else {
         expect(importSource).not.toHaveBeenCalled()
         expect(view.sourceError?.sourceFailure).toBe(reason)

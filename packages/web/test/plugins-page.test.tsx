@@ -822,9 +822,9 @@ it('groups marketplace releases and opens or installs the selected release', asy
   }
 })
 
-it.each([true, false])(
-  'reviews complete Skill content and cleans up abandoned review (commit=%s)',
-  async (commit) => {
+it.each(['commit', 'unmount', 'cancel-button'] as const)(
+  'reviews complete Skill content and cleans up abandoned review (%s)',
+  async (outcome) => {
     vi.useFakeTimers()
     const prepared = {
       state: 'prepared',
@@ -867,7 +867,8 @@ it.each([true, false])(
       await act(async () => vi.advanceTimersByTimeAsync(300))
       expect(host.textContent).toContain('skill.import.env.satisfied')
       expect(host.textContent).toContain('skill.import.unverified')
-      if (!commit) return
+      if (outcome === 'cancel-button') await act(async () => button('skill.import.cancel')?.click())
+      if (outcome !== 'commit') return
       await act(async () => button('skill.import.confirm')?.click())
       expect(skillImport).toHaveBeenLastCalledWith({
         action: 'commit',
@@ -880,8 +881,10 @@ it.each([true, false])(
       flushSync(() => root.unmount())
       host.remove()
       vi.useRealTimers()
-      if (!commit)
+      if (outcome !== 'commit') {
         expect(skillImport).toHaveBeenLastCalledWith({ action: 'cancel', proposalId: prepared.proposalId })
+        expect(skillImport.mock.calls.filter(([arg]) => arg.action === 'cancel')).toHaveLength(1)
+      }
     }
   },
 )

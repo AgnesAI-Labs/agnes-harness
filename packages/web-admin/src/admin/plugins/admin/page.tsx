@@ -1014,6 +1014,7 @@ export class PluginAdminPage {
         const source = this.#source.compatibleSource(operation, this.#state.context?.features)
         if (source && this.#surface?.importSource) {
           this.#source.error = undefined
+          this.closeSourceDialog()
           this.#surface.importSource(source)
           this.render()
           return
