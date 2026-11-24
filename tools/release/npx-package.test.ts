@@ -37,7 +37,7 @@ describe('publishable npx manifest', () => {
   })
 })
 
-function packedFixture(): Map<string, Buffer> {
+function packedFixture(distribution = 'true ? "npm" : void 0'): Map<string, Buffer> {
   const files = new Map<string, Buffer>()
   for (const path of [
     'bin/agh',
@@ -47,6 +47,8 @@ function packedFixture(): Map<string, Buffer> {
     'dist/agnes.mjs',
     'dist/daemon.mjs',
     'dist/worker.mjs',
+    'dist/agnes-main.mjs',
+    'dist/worker-main.mjs',
     'dist/authoring-sdk.mjs',
     'dist/authoring-sdk-exports.json',
     'dist/prebuilds/index.json',
@@ -78,6 +80,15 @@ function packedFixture(): Map<string, Buffer> {
     'dist/web/vendor/react.js',
   ])
     files.set(path, Buffer.from('runtime payload'))
+  files.set(
+    'dist/daemon-main.mjs',
+    Buffer.from(`const other = { distribution: "npm" };
+function telemetryRuntime(distribution, compiled = {
+  version: true ? "0.1.0" : void 0,
+  distribution: ${distribution}
+}) { return compiled; }
+`),
+  )
   files.set('dist/vendor/sharp/package.json', Buffer.from('{"name":"sharp"}'))
   files.set('dist/license-provenance/sources.json', Buffer.from('[]'))
   for (const directory of [
@@ -100,9 +111,18 @@ function packedFixture(): Map<string, Buffer> {
 }
 
 describe('pack guard', () => {
-  it('accepts a self-contained prebuilt candidate', () => {
-    expect(() => guardPackedFiles(packedFixture(), 'darwin-arm64')).not.toThrow()
+  it.each(['true ? "npm" : void 0', '"npm"'])('accepts a prebuilt candidate with %s', (distribution) => {
+    expect(() => guardPackedFiles(packedFixture(distribution), 'darwin-arm64')).not.toThrow()
   })
+
+  it.each(['true ? "dev" : void 0', '"dev"', 'void 0'])(
+    'rejects a compiled telemetry default of %s',
+    (distribution) => {
+      expect(() => guardPackedFiles(packedFixture(distribution), 'darwin-arm64')).toThrow(
+        /Expected compiled npm telemetry distribution/,
+      )
+    },
+  )
 
   it.each([
     ['workspace dependency', { dependencies: { example: 'workspace:*' } }, /Workspace protocol/],
@@ -136,6 +156,9 @@ describe('pack guard', () => {
     'NOTICE',
     'dist/vendor/sharp/lib/index.js',
     'dist/worker.mjs',
+    'dist/agnes-main.mjs',
+    'dist/daemon-main.mjs',
+    'dist/worker-main.mjs',
     'dist/prebuilds/darwin-arm64/agnes-system.node',
     'dist/web/app.js',
     'dist/web/vendor/react.js',

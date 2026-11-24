@@ -857,7 +857,7 @@ it('re-queues unacknowledged sessions after a daemon restart, a bounded number p
 })
 
 it('configures the production collector when no endpoint is supplied', () => {
-  const { endpoint, endpointConfigured, disabledByEnv } = telemetryEnvironment({}, false)
+  const { endpoint, endpointConfigured, disabledByEnv } = telemetryEnvironment({}, false, () => false)
   expect(endpoint?.href).toBe('https://agh-telemetry.agnes-ai.cn/')
   expect(endpointConfigured).toBe(true)
   expect(disabledByEnv).toBe(false)
@@ -866,10 +866,19 @@ it('configures the production collector when no endpoint is supplied', () => {
 it.each([
   [{ AGH_TELEMETRY_DISABLED: '1' }, true],
   [{ AGH_TELEMETRY_DISABLED: 'true' }, true],
-  [{ AGH_TELEMETRY_DISABLED: 'TrUe' }, true],
+  [{ AGH_TELEMETRY_DISABLED: ' TrUe ' }, true],
   [{ DO_NOT_TRACK: '1' }, true],
   [{ CI: 'true' }, true],
+  [{ CI: '1' }, true],
+  [{ CI: 'TRUE' }, true],
   [{ VITEST: 'true' }, true],
+  [{ VITEST: '1' }, true],
+  [{ GITHUB_ACTIONS: 'true' }, true],
+  [{ GITLAB_CI: 'true' }, true],
+  [{ BUILDKITE: 'true' }, true],
+  [{ TF_BUILD: 'True' }, true],
+  [{ CNB: 'true' }, true],
+  [{ CONTAINER: 'docker' }, true],
   [{ AGH_TELEMETRY_ENDPOINT: '' }, false],
   [{ AGH_TELEMETRY_ENDPOINT: '   ' }, false],
   [{ AGH_TELEMETRY_ENDPOINT: 'file:///invalid' }, false],
@@ -881,7 +890,7 @@ it.each([
 ] as const)('stays silent with env override %j', async (env, disabledByEnv) => {
   const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Unexpected telemetry request'))
   cleanups.push(() => fetch.mockRestore())
-  const { home, telemetry, row, scan } = await fixture({ AGH_TELEMETRY_ENDPOINT: undefined, ...env }, false)
+  const { home, telemetry, row, scan } = await fixture(env, !disabledByEnv)
   telemetry.sessionCreated(KEY, 'web')
   row('session/start', { key: KEY })
   row('turn/start', { trigger: 'prompt' })
@@ -894,6 +903,33 @@ it.each([
   expect(fetch).not.toHaveBeenCalled()
   expect(scan).not.toHaveBeenCalled()
   await expect(stat(join(home, 'telemetry-id'))).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
+it.each([false, true])('applies the container default with allowInTest=%s', (allowInTest) => {
+  expect(telemetryEnvironment({}, allowInTest, () => true).disabledByEnv).toBe(!allowInTest)
+})
+
+it.each(['0', 'false', ' FaLsE '])(
+  'allows telemetry in CI and containers with an explicit %s',
+  (override) => {
+    const env = { AGH_TELEMETRY_DISABLED: override, CI: '1', GITHUB_ACTIONS: 'true' }
+    const isContainer = () => true
+    expect(telemetryEnvironment(env, false, isContainer).disabledByEnv).toBe(false)
+    expect(telemetryEnvironment({ ...env, DO_NOT_TRACK: '1' }, false, isContainer).disabledByEnv).toBe(true)
+  },
+)
+
+it('allows test fixtures while honoring a hard disable', () => {
+  const env = { CI: ' 1 ', CONTAINER: 'podman' }
+  expect(telemetryEnvironment(env, true, () => true).disabledByEnv).toBe(false)
+  expect(
+    telemetryEnvironment({ ...env, AGH_TELEMETRY_DISABLED: ' 1 ' }, true, () => true).disabledByEnv,
+  ).toBe(true)
+})
+
+it('ignores empty and false automation markers', () => {
+  const env = { CI: 'false', VITEST: '0', GITHUB_ACTIONS: ' FALSE ', GITLAB_CI: '  ', CONTAINER: '0' }
+  expect(telemetryEnvironment(env, false, () => false).disabledByEnv).toBe(false)
 })
 
 it('reuses a private UUID across daemon opens', async () => {

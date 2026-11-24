@@ -81,6 +81,8 @@ The sidebar lists **New conversation**, **Plugins**, **Agents**, **Automation**,
 
 **Settings → General → Upload Session Log when using model APIs** is on by default. When enabled, the daemon sends incremental batches of redacted Session Log data after a turn ends or feedback arrives. Set `AGH_TELEMETRY_ENDPOINT` to override the default collector address. Turn the setting off to stop that upload immediately. Activity totals contain counts and model usage, and have a separate setting under `agh settings telemetry`. Set `AGH_TELEMETRY_DISABLED=1` or `DO_NOT_TRACK=1` on the daemon to suppress both uploads.
 
+Both uploads are off by default when the daemon detects CI, Vitest, or a container. For an intentional telemetry test in one of these environments, set `AGH_TELEMETRY_DISABLED=0` or `AGH_TELEMETRY_DISABLED=false` on the daemon. `DO_NOT_TRACK=1` always disables both uploads.
+
 In **Settings → Application → Advanced interface choices**, preview and choose individual navigation,
 conversation, composer, goal, interaction or deliverables implementations from trusted enabled plugins.
 Rows show **Default / Application / Your choice**. **Restore default** removes just one role override.

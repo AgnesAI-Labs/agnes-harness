@@ -77,6 +77,8 @@ node agnes.mjs serve --port 4180
 
 **设置 → 通用 → 在使用模型API时上传Session Log**默认开启。开启时，守护进程会在问答结束或收到反馈时增量上传脱敏的 Session Log。可通过 `AGH_TELEMETRY_ENDPOINT` 覆盖默认接收地址。关闭开关立即停止这一路上传。活跃统计只包含计数和模型用量，可通过 `agh settings telemetry` 独立设置。在守护进程环境中设置 `AGH_TELEMETRY_DISABLED=1` 或 `DO_NOT_TRACK=1` 可停止两路上报。
 
+守护进程检测到 CI、Vitest 或容器环境时，两路上报默认关闭。需要在这些环境中联调遥测时，可在守护进程环境中设置 `AGH_TELEMETRY_DISABLED=0` 或 `AGH_TELEMETRY_DISABLED=false`。`DO_NOT_TRACK=1` 始终禁用两路上报。
+
 在 **设置 → 应用 → 高级界面选择** 中，可从受信且启用的插件预览并选择导航、对话、输入框、目标、交互或交付物实现。每行标明 **默认 / 应用 / 你的选择**。“恢复默认”仅清除单个角色覆盖。不可用的选择保留为 unresolved，并回落到应用或宿主。`/?admin` 和 `agh app clear` 同时清除应用及全部界面实现选择，执行配置保持不变。
 
 桌面端收起侧栏后，会保留「新对话、插件、智能体、自动化、MHS、RSI、搜索会话、设置」图标栏。图标保持相同操作，鼠标悬停或键盘聚焦时显示名称，并标记当前页面。窄屏端收起侧栏则会隐藏整个抽屉。

@@ -7,13 +7,70 @@ import {
   OPTIONAL_BUNDLED_PACKAGES,
 } from '@agnes/package-manager'
 import { expect, it, vi } from 'vitest'
-import { copyBundledExamples } from '../tools/build-local.js'
+import {
+  copyBundledExamples,
+  parseBuildArgs,
+  resolveBuildMetadata,
+  resolveBuildTarget,
+} from '../tools/build-local.js'
 import { bundledReleaseVersion, stampBundledPackageVersion } from '../tools/bundled-version.js'
 import { PUBLIC_PACKAGE_VERSION } from '../tools/release-version.mjs'
 
 vi.mock('@agnes/package-manager', async (original) => {
   const module = await original<typeof import('@agnes/package-manager')>()
   return { ...module, BUNDLED_EXAMPLES: [{ family: 'fixtures', name: 'parent-example' }] }
+})
+
+it.each([
+  ['workspace', [], '0.0.0', undefined, PUBLIC_PACKAGE_VERSION, '0.0.0', 'dev'],
+  ['version override', ['--version', '0.1.0'], '0.0.0', undefined, '0.1.0', '0.1.0', 'npm'],
+  ['version override ignores dirty env dev', ['--version', '0.1.0'], '0.0.0', 'dev', '0.1.0', '0.1.0', 'npm'],
+  ['explicit channel', ['--distribution', 'npm'], '0.0.0', 'dev', PUBLIC_PACKAGE_VERSION, '0.0.0', 'npm'],
+  [
+    'explicit dev release',
+    ['--version', '0.1.0', '--distribution', 'dev'],
+    '0.0.0',
+    'sea',
+    '0.1.0',
+    '0.1.0',
+    'dev',
+  ],
+  ['declared release', [], '0.1.0', undefined, '0.1.0', '0.1.0', 'npm'],
+  ['declared release ignores dirty env dev', [], '0.1.0', ' dev ', '0.1.0', '0.1.0', 'npm'],
+  ['SEA environment', [], '0.1.0', ' sea ', '0.1.0', '0.1.0', 'sea'],
+  ['desktop environment', [], '0.1.0', 'desktop', '0.1.0', '0.1.0', 'desktop'],
+  ['unknown channel', [], '0.1.0', 'preview', '0.1.0', '0.1.0', 'npm'],
+  ['padded channel', [], '0.0.0', ' npm ', PUBLIC_PACKAGE_VERSION, '0.0.0', 'npm'],
+] as const)(
+  'resolves %s build metadata',
+  (_name, args, declaredVersion, envDistribution, version, payloadVersion, distribution) => {
+    const parsed = parseBuildArgs(args)
+    const expected = { version, payloadVersion, distribution }
+    expect(
+      resolveBuildMetadata({
+        declaredVersion,
+        versionOverride: parsed.version,
+        distributionOverride: parsed.distribution,
+        envDistribution,
+      }),
+    ).toEqual(expected)
+    expect(resolveBuildTarget(parsed, declaredVersion, envDistribution)).toMatchObject(expected)
+  },
+)
+
+it.each(['dev', 'npm', 'sea', 'desktop'])(
+  'parses --distribution %s alongside other options',
+  (distribution) => {
+    const out = join(tmpdir(), 'agh-build-target')
+    const parsed = parseBuildArgs(['--distribution', distribution, '--version', '0.1.0', '--output-dir', out])
+    expect(parsed).toEqual({ distribution, version: '0.1.0', out })
+    expect(resolveBuildTarget(parsed, '0.0.0').out).toBe(out)
+  },
+)
+
+it.each([undefined, 'preview', 'NPM'])('rejects --distribution value %s', (distribution) => {
+  const args = distribution === undefined ? ['--distribution'] : ['--distribution', distribution]
+  expect(() => parseBuildArgs(args)).toThrow(/Expected --distribution/)
 })
 
 it.each([...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES])(
