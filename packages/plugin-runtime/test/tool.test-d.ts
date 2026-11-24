@@ -223,6 +223,7 @@ describe('tool types', () => {
       | 'lease'
       | 'log'
       | 'sideCall'
+      | 'memory'
     >()
     expectTypeOf<ToolContext['platform']['shell']>().toEqualTypeOf<'posix' | 'powershell'>()
     expectTypeOf<ReturnType<ToolContext['platform']['capability']>>().toEqualTypeOf<CapabilityReport>()

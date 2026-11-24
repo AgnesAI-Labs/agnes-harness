@@ -13,6 +13,9 @@
       "path": "../extension-api"
     },
     {
+      "path": "../lexical-search"
+    },
+    {
       "path": "../system-node"
     }
   ]

@@ -99,6 +99,7 @@ const LAYER: Record<string, number> = {
   '@agnes/resource-control-contracts': -1,
   '@agnes/protocol-validation': -1,
   '@agnes/error-sanitization': -1,
+  '@agnes/lexical-search': -1,
   '@agnes/package-isolation': -1,
   '@agnes/system-node': -2, // OS primitives sit below infrastructure leaves and have no package dependencies.
   '@agnes/web-server': 1,

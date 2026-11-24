@@ -49,6 +49,7 @@ describe('repo', () => {
       '@agnes/intelligent-ui-contract',
       '@agnes/judgment',
       '@agnes/judgment-ui',
+      '@agnes/lexical-search',
       '@agnes/loop-default',
       '@agnes/loop-jev',
       '@agnes/memory-file',

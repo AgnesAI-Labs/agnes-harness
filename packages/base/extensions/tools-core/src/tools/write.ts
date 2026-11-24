@@ -8,7 +8,12 @@ import { ABSENT, observe, observedVersion, UNKNOWN_VERSION, versionOf } from '..
 import { looksTruncated } from '../guards/truncation.js'
 import { usesCrlf, writeContent } from '../line-endings.js'
 import { normalizeWorkspacePath } from '../paths.js'
-import { isHiddenParagraphs, refusalCode, WRITE_HIDDEN_TEXT } from './hidden-paragraphs.js'
+import {
+  isHiddenParagraphs,
+  memoryProtectedRefusal,
+  refusalCode,
+  WRITE_HIDDEN_TEXT,
+} from './hidden-paragraphs.js'
 import { withLspNote } from './lsp-note.js'
 import { MAX_READ_BYTES } from './read.js'
 import { WriteParams } from './schemas.js'
@@ -107,6 +112,8 @@ export function createWriteTool(record?: FileChangeRecorder, lsp?: LspSessions) 
           // Left to propagate, a refusal that wrote nothing would reach the model as a call whose
           // outcome is unknown, and nothing in it would say the policy said no.
           if (isHiddenParagraphs(e)) return toolFailure(ctx, refusalCode(e), WRITE_HIDDEN_TEXT)
+          const protectedRefusal = memoryProtectedRefusal(e)
+          if (protectedRefusal) return toolFailure(ctx, protectedRefusal.code, protectedRefusal.text)
           if ((e as { code?: string }).code !== 'E_FS_DENIED') throw e
           return fsFailure(ctx, 'write before writing', args.path, e)
         }

@@ -9,7 +9,9 @@ import type {
   MemorySource,
   MemoryValidityView,
 } from '@agnes/extension-api'
+import { appendAudit } from './audit.js'
 import { defaults, diff, fault, file, validateContent } from './content.js'
+import type { MetaStore } from './meta.js'
 import {
   applyParagraphChanges,
   markerLines,
@@ -17,10 +19,17 @@ import {
   parseParagraphs,
   validityOf,
 } from './paragraphs.js'
+import type { CommitIntent, MemoryClock, MemoryPipeline, ViewContext } from './pipeline.js'
 import type { MemoryStore } from './store.js'
 
 const INDEX = 'MEMORY.md'
 const SEPARATOR = '\n\n'
+
+export type UserParagraphPortHooks = Readonly<{
+  pipeline: MemoryPipeline
+  userMeta: MetaStore
+  clock: MemoryClock
+}>
 
 /**
  * User memory as the agent reads it. A file without any marker is shown exactly as stored. Otherwise the
@@ -117,6 +126,7 @@ export function userParagraphPort(
   view: MemoryValidityView | undefined,
   source: MemorySource,
   signal: AbortSignal,
+  hooks?: UserParagraphPortHooks,
 ): MemoryParagraphPort {
   if (
     source.maintenance !== undefined &&
@@ -124,7 +134,17 @@ export function userParagraphPort(
   )
     throw fault('MEMORY_INVALID_METADATA')
   const answer = validityOf(view)
-  const made = new WeakMap<MemoryProposal, MemoryFile>()
+  const made = new WeakMap<MemoryProposal, { candidate: MemoryFile; intent: CommitIntent }>()
+  const actor = source.maintenance ? `host:${source.maintenance}` : `host:${source.sessionKey}`
+  const makeContext = (now: number): ViewContext => ({
+    layer: 'user',
+    files: user.files(),
+    userFiles: user.files(),
+    userEnabled: true,
+    now,
+    validity: answer,
+    meta: hooks!.userMeta,
+  })
   return Object.freeze<MemoryParagraphPort>({
     async list() {
       signal.throwIfAborted()
@@ -159,6 +179,43 @@ export function userParagraphPort(
         const used = bytesOf(layerOf(candidate.content, (id) => (puts.has(id) ? 'valid' : answer(id))))
         if (used.handWritten + used.rsiInForce > budget) throw fault('MEMORY_USER_BUDGET')
       }
+      const intent: CommitIntent = {
+        origin: 'host',
+        actor,
+        path: INDEX,
+        before,
+        candidate,
+        via: 'paragraph',
+        layer: 'user',
+        source,
+        changes: list,
+      }
+      if (hooks) {
+        const now = hooks.clock()
+        const verdict = hooks.pipeline.checkGuards(intent, makeContext(now))
+        if (verdict.kind === 'refuse') {
+          try {
+            appendAudit(hooks.userMeta, {
+              at: new Date(now).toISOString(),
+              path: INDEX,
+              action: 'refused',
+              code: verdict.code,
+              origin: intent.origin,
+              actor: intent.actor,
+              sessionKey: source.sessionKey,
+              ...(source.maintenance ? { maintenance: source.maintenance } : {}),
+              beforeHash: before.hash,
+              afterHash: candidate.hash,
+            })
+          } catch {
+            // Best-effort refusal audit must not mask guard error.
+          }
+          throw Object.assign(
+            fault(verdict.code),
+            verdict.detail ? { message: `${verdict.code}: ${verdict.detail}` } : {},
+          )
+        }
+      }
       const proposal: MemoryProposal = Object.freeze({
         path: join(user.root, INDEX),
         baseHash: before.hash,
@@ -166,14 +223,30 @@ export function userParagraphPort(
         diff: diff(before.content, candidate.content),
         source,
       })
-      made.set(proposal, candidate)
+      made.set(proposal, { candidate, intent })
       return proposal
     },
     async commit(proposal, admission) {
       signal.throwIfAborted()
-      const candidate = made.get(proposal)
-      if (!candidate) throw fault('MEMORY_PROPOSAL_UNKNOWN')
-      const committed = await user.commit(candidate, proposal.baseHash, source, false, signal, admission)
+      const entry = made.get(proposal)
+      if (!entry) throw fault('MEMORY_PROPOSAL_UNKNOWN')
+      const committed = await user.commit(
+        entry.candidate,
+        proposal.baseHash,
+        source,
+        false,
+        signal,
+        admission,
+        hooks
+          ? (actualBefore, saved) => {
+              hooks.pipeline.runObservers(
+                { ...entry.intent, before: actualBefore },
+                saved,
+                makeContext(hooks.clock()),
+              )
+            }
+          : undefined,
+      )
       return { hash: committed.hash }
     },
   })

@@ -48,6 +48,13 @@ Extension API 5.5.0 新增有效性答案 `delivered` 和可选的 `MemoryValidi
 - 视图 `delivers` 时，写入用户记忆的段落不占智能体看到的内容，`propose` 不会因为用户记忆预算拒绝它；索引的大小和行数上限照旧。
 - 早于 5.5.0 的 provider 把 `delivered` 当作 `unknown`，略去该段落并加省略行；Host 照样交付它。
 
+## 可选的按需召回与人工编辑保护（5.23.0）
+
+Extension API 5.23.0 新增可选的只读 `MemoryFilePort.recall?(query)`（仅当所选 provider 提供它时由 Core 作为 `ToolContext.memory` 传入）、人工编辑方法 `MemorySession.editFile` 上可选的 `options?: Readonly<{ actor?: string }>`，以及 `MemoryParagraphChange`（`op: 'put'`）上可选的 `expectTextHash?: string`。
+
+- **同轮读写绑定语义**：同一轮重复调用 `snapshot(turn)` 仍返回同一修订。智能体读取（`read`/`list`/`stat`/`revision`）与 `recall` 会立即排除轮中变为失效的内容（有效性丧失、到达过期标注时间、引用对象已撤回、文件被删或清空），新增/修改内容从下一轮开始可见。整文件 `write` 的 CAS 基准继续绑定本轮快照（遇到并发人工编辑仍报 `MEMORY_CONFLICT`）；`replaceExact` 读取当前存储文件与当前读取视图。
+- **提交前受保护拒绝**：在调用审批之前，文件端口或段落端口可无副作用地拒绝写入并返回 `MEMORY_HUMAN_EDITED`（智能体/后台试图修改或删除人工段落）、`MEMORY_PARAGRAPH_EDITED`（`expectTextHash` 或历史记录不匹配）或 `MEMORY_PREFERENCE_CONFLICT`（结构化偏好与人工值冲突），以及任意带隐藏读取内容文件上的 `MEMORY_HIDDEN_PARAGRAPHS`。Core 为这些提交前拒绝签发无效果证明，避免触发未知结果确认。
+
 - Agent 默认关闭。询问模式在写入前审批精确文件候选，绑定 `baseHash`、`newHash`、完整 diff、会话/轮次；full-access 自动允许并记录每项精确提案，其他预设的宽泛授权不能代替该审批。拒绝、取消、冲突的候选不能注入。
 - 同轮请求保持索引与主题修订。主题正文按需进入模型上下文；人工修改下轮可见。关闭在下次请求生效，即使该轮之前已生成快照。
 - 存储上限与注入预算独立；每层有自己的字节上限，固定头不计入。超限时按整行截断，并用可见的结尾行说明还有多少没显示、去哪里读。超限整合失败不能截断索引文件。

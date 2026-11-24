@@ -2,6 +2,12 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.23.0
+
+- Optional `MemoryFilePort.recall?(query)` (`MemoryRecallQuery`, `MemoryRecallHit`, `MemoryRecallResult`) and optional `ToolContext.memory?: Readonly<{ recall(query): Promise<MemoryRecallResult> }>` (exposed by Core only when the selected memory provider's file port offers `recall`).
+- Optional `options?: Readonly<{ actor?: string }>` on `MemorySession.editFile(...)` (`editFile` always records a human edit, with optional authenticated actor identity).
+- Optional `expectTextHash?: string` on `MemoryParagraphChange` (`op: 'put'`) to detect human edits to managed paragraphs (`MEMORY_PARAGRAPH_EDITED`).
+
 ## 5.22.0
 
 - Optional `ProfileManagedInit.bundledApp` (`BundledAppGrant`, `BundledAppChannels`) gives a release-whitelisted bundled package a platform-chosen state directory, an owner-level local SDK client (typed `unknown`; narrow it with the SDK client type) and channel group access. Only release assembly grants it, for a payload matching the shipped digest; package code, manifests and configuration cannot request it. `assertCurrent()` refuses with `CAPABILITY_DENIED` after disable or activation change, and the client is closed.

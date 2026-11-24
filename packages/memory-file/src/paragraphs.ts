@@ -1,5 +1,6 @@
 import type { MemoryParagraphValidity, MemoryValidityView } from '@agnes/extension-api'
-import { fault, omissionLine } from './content.js'
+import { fault, hash, omissionLine } from './content.js'
+import { buildView, type HideRange, replaceInMemoryView, type Segment } from './view.js'
 
 /**
  * Managed paragraphs: text the Host saved into the workspace index, wrapped in one marker line before
@@ -128,8 +129,6 @@ export function parseParagraphs(text: string): {
   return { paragraphs, anomalies }
 }
 
-type Segment = Readonly<{ view: number; raw?: number; length: number }>
-
 /** What the agent sees of a stored file, and how its offsets map back onto the stored text. */
 export type ParagraphView = Readonly<{
   content: string
@@ -186,6 +185,47 @@ export function plainView(text: string): ParagraphView {
   }
 }
 
+export function managedParagraphRanges(
+  text: string,
+  validity: (id: string) => MemoryParagraphValidity,
+): { managed: boolean; markers: readonly MarkerLine[]; ranges: HideRange[] } {
+  const markers = markerLines(text)
+  if (!markers.length) return { managed: false, markers, ranges: [] }
+  const { paragraphs, anomalies } = parseParagraphs(text)
+  const ranges: HideRange[] = []
+  for (const anomaly of anomalies) {
+    ranges.push({
+      start: anomaly.start,
+      end: anomaly.end,
+      appliesTo: 'both',
+      reason: 'managed-omitted',
+      mergeGroup: 'managed',
+      ...(anomaly.id ? { omittedIds: [anomaly.id] } : {}),
+    })
+  }
+  for (const paragraph of paragraphs) {
+    const answer = validity(paragraph.id)
+    if (answer !== 'valid' && answer !== 'delivered') {
+      ranges.push({
+        start: paragraph.start,
+        end: paragraph.end,
+        appliesTo: 'both',
+        reason: 'managed-omitted',
+        mergeGroup: 'managed',
+        omittedIds: [paragraph.id],
+      })
+    } else if (answer === 'delivered') {
+      ranges.push({
+        start: paragraph.start,
+        end: paragraph.end,
+        appliesTo: 'note',
+        reason: 'managed-delivered',
+      })
+    }
+  }
+  return { managed: true, markers, ranges }
+}
+
 /**
  * What the agent is shown of a stored index. `read` (files the agent opens) shows a `delivered`
  * paragraph like a `valid` one; `note` (the memory snapshot) leaves it out without an omission line,
@@ -196,54 +236,21 @@ export function paragraphView(
   validity: (id: string) => MemoryParagraphValidity,
   use: 'note' | 'read' = 'read',
 ): ParagraphView {
-  const markers = markerLines(text)
-  if (!markers.length) return plainView(text)
-  const { paragraphs, anomalies } = parseParagraphs(text)
-  const shown = (id: string) => {
-    const answer = validity(id)
-    return answer === 'valid' || answer === 'delivered'
-  }
-  const left = [...anomalies, ...paragraphs.filter((paragraph) => !shown(paragraph.id))]
-  const silent =
-    use === 'note' ? paragraphs.filter((paragraph) => validity(paragraph.id) === 'delivered') : []
-  const regions = [
-    ...left.map(({ start, end }) => ({ start, end, silent: false })),
-    ...silent.map(({ start, end }) => ({ start, end, silent: true })),
-  ]
-    .sort((a, b) => a.start - b.start || b.end - a.end)
-    .filter((region, index, all) => index === 0 || region.start >= all[index - 1]!.end)
-  const ids = new Set(left.flatMap((entry) => (entry.id ? [entry.id] : [])))
-  const segments: Segment[] = []
-  let content = ''
-  let cursor = 0
-  const keep = (from: number, to: number) => {
-    if (to > from) segments.push({ view: content.length, raw: from, length: to - from })
-    content += text.slice(from, to)
-  }
-  for (let i = 0; i < regions.length; ) {
-    keep(cursor, regions[i]!.start)
-    if (regions[i]!.silent) {
-      cursor = regions[i]!.end
-      i++
-      continue
-    }
-    let j = i
-    while (j + 1 < regions.length && !regions[j + 1]!.silent && regions[j + 1]!.start === regions[j]!.end) j++
-    const end = regions[j]!.end
-    const note = omissionLine(j - i + 1) + (text[end - 1] === '\n' ? '\n' : '')
-    segments.push({ view: content.length, length: note.length })
-    content += note
-    cursor = end
-    i = j + 1
-  }
-  keep(cursor, text.length)
+  const { managed, markers, ranges } = managedParagraphRanges(text, validity)
+  if (!managed) return plainView(text)
+  const built = buildView(
+    { path: 'MEMORY.md', content: text, hash: '', bytes: Buffer.byteLength(text), lines: 0 },
+    ranges,
+    use,
+    (group, count) => (group === 'managed' ? omissionLine(count) : ''),
+  )
   return {
-    content,
+    content: built.content,
     managed: true,
-    omittedIds: [...ids].sort(),
-    hidden: regions.some((region) => !region.silent),
+    omittedIds: built.omitted,
+    hidden: built.hidden,
     markers,
-    segments,
+    segments: built.segments,
   }
 }
 
@@ -273,23 +280,25 @@ export function markerSet(text: string): string {
  * lie in text the view shows as stored (not on an omission line) and touch no marker line.
  */
 export function replaceInView(stored: string, view: ParagraphView, oldText: string, newText: string): string {
-  const first = oldText ? view.content.indexOf(oldText) : -1
-  if (first === -1) throw fault('MEMORY_REPLACE_NOT_FOUND')
-  if (view.content.indexOf(oldText, first + 1) !== -1) throw fault('MEMORY_REPLACE_AMBIGUOUS')
-  const segment = view.segments.find(
-    (entry) => first >= entry.view && first + oldText.length <= entry.view + entry.length,
+  return replaceInMemoryView(
+    stored,
+    {
+      path: 'MEMORY.md',
+      content: view.content,
+      segments: view.segments,
+      hidden: view.hidden,
+      omitted: view.omittedIds,
+    },
+    view.markers,
+    oldText,
+    newText,
+    markerSet,
   )
-  if (segment?.raw === undefined) throw fault('MEMORY_HIDDEN_PARAGRAPHS')
-  const start = segment.raw + (first - segment.view)
-  const end = start + oldText.length
-  if (view.markers.some((marker) => start < marker.end && end > marker.start))
-    throw fault('MEMORY_MARKER_CHANGED')
-  const result = stored.slice(0, start) + newText + stored.slice(end)
-  if (markerSet(result) !== markerSet(stored)) throw fault('MEMORY_MARKER_CHANGED')
-  return result
 }
 
-export type ParagraphChange = Readonly<{ op: 'put'; id: string; text: string } | { op: 'remove'; id: string }>
+export type ParagraphChange = Readonly<
+  { op: 'put'; id: string; text: string; expectTextHash?: string } | { op: 'remove'; id: string }
+>
 
 const wrap = (id: string, text: string, newline: boolean) =>
   `<!-- refinement:${id} -->\n${text}\n<!-- /refinement:${id} -->${newline ? '\n' : ''}`
@@ -316,6 +325,11 @@ export function applyParagraphChanges(stored: string, changes: readonly Paragrap
     ids.add(change.id)
     if (change.op === 'put') {
       if (typeof change.text !== 'string') throw fault('MEMORY_PARAGRAPH_INVALID')
+      if (
+        change.expectTextHash !== undefined &&
+        (typeof change.expectTextHash !== 'string' || !change.expectTextHash)
+      )
+        throw fault('MEMORY_PARAGRAPH_INVALID')
       if (markerLines(change.text).length) throw fault('MEMORY_MARKER_CHANGED')
     } else if (change.op !== 'remove') throw fault('MEMORY_PARAGRAPH_INVALID')
   }
@@ -325,6 +339,8 @@ export function applyParagraphChanges(stored: string, changes: readonly Paragrap
     if (anomalies.some((anomaly) => anomaly.id === change.id)) throw fault('MEMORY_PARAGRAPH_ANOMALY')
     const found = paragraphs.find((paragraph) => paragraph.id === change.id)
     if (change.op === 'put') {
+      if (change.expectTextHash !== undefined && (!found || hash(found.text) !== change.expectTextHash))
+        throw fault('MEMORY_PARAGRAPH_EDITED')
       if (found)
         text =
           text.slice(0, found.start) +

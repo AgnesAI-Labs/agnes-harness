@@ -101,6 +101,82 @@ async function runTool(memory: MemorySession | undefined, approved: boolean) {
   }
 }
 
+async function runWriteOrRecall(options: { writeErrorCode?: string; withRecall?: boolean; query?: string }) {
+  const seen: { hasMemory?: boolean; recallResult?: unknown } = {}
+  const memory: MemorySession = {
+    root: '/w/memory',
+    snapshot: async () => undefined,
+    files: (fallback): MemoryFilePort => ({
+      ...fallback,
+      write: async () => {
+        if (options.writeErrorCode) {
+          throw Object.assign(new Error(options.writeErrorCode), { code: options.writeErrorCode })
+        }
+      },
+      ...(options.withRecall
+        ? {
+            recall: async (query) => ({
+              revision: 'rev-r0',
+              hits: [
+                {
+                  layer: 'workspace' as const,
+                  path: 'MEMORY.md',
+                  lineStart: 3,
+                  lineEnd: 4,
+                  text: `hit:${query.query}`,
+                  score: 1,
+                },
+              ],
+              truncated: false,
+            }),
+          }
+        : {}),
+    }),
+    inspect: async () => {
+      throw new Error('unused')
+    },
+    configure: async () => {
+      throw new Error('unused')
+    },
+    readFile: async () => {
+      throw new Error('unused')
+    },
+    editFile: async () => {
+      throw new Error('unused')
+    },
+  }
+  const registry = new ToolRegistry()
+  registry.add(
+    memoryTool(async (_args, ctx) => {
+      seen.hasMemory = ctx.memory !== undefined
+      if (options.query !== undefined && ctx.memory) {
+        seen.recallResult = await ctx.memory.recall({ query: options.query })
+      }
+      if (options.writeErrorCode) await ctx.fs.write(MEMORY, 'next')
+      return { content: [{ type: 'text', text: 'done' }] }
+    }),
+    { source: 'fixture/memory-editor', trust: 'builtin' },
+  )
+  const opened = await openSession({
+    memory,
+    registry,
+    seams: fakeSeams(),
+    provider: fakeProvider([toolTurn('memory_editor', {}), textTurn('ok')]),
+  })
+  try {
+    await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
+    await opened.session.run({ until: 'turn-end', signal: new AbortController().signal })
+    const rows = await opened.log.scan({ fromSeq: 1, toSeq: opened.log.lastSeq })
+    return {
+      seen,
+      result: rows.find((row) => row.type === 'tool/result')?.data,
+      runState: opened.session.state,
+    }
+  } finally {
+    await opened.session.close()
+  }
+}
+
 describe('ToolContext.fs.replaceExact', () => {
   it('reaches the memory port when the port offers it', async () => {
     const replaced: unknown[] = []
@@ -125,6 +201,30 @@ describe('ToolContext.fs.replaceExact', () => {
       isError: true,
       code: 'TOOL_REJECTED_BEFORE_EFFECT',
       structured: { effect: 'none', code: 'MEMORY_APPROVAL_REJECTED' },
+    })
+  })
+
+  it.each(['MEMORY_HUMAN_EDITED', 'MEMORY_PARAGRAPH_EDITED', 'MEMORY_PREFERENCE_CONFLICT'])(
+    'treats %s as a pre-effect refusal without parking the session',
+    async (code) => {
+      const { result, runState } = await runWriteOrRecall({ writeErrorCode: code })
+      expect(result).toMatchObject({
+        isError: true,
+        code: 'TOOL_REJECTED_BEFORE_EFFECT',
+        structured: { effect: 'none', code },
+      })
+      expect(runState).not.toBe('parked')
+    },
+  )
+
+  it('exposes ToolContext.memory only when the provider file port supplies recall', async () => {
+    const without = await runWriteOrRecall({ withRecall: false })
+    expect(without.seen.hasMemory).toBe(false)
+    const withRecall = await runWriteOrRecall({ withRecall: true, query: 'pnpm' })
+    expect(withRecall.seen.hasMemory).toBe(true)
+    expect(withRecall.seen.recallResult).toMatchObject({
+      revision: 'rev-r0',
+      hits: [{ path: 'MEMORY.md', lineStart: 3, lineEnd: 4, text: 'hit:pnpm' }],
     })
   })
 })

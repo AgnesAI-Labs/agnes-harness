@@ -21,6 +21,7 @@
   "@agnes/protocol": ["@agnes/resource-control-contracts", "@agnes/protocol-validation"],
   "@agnes/protocol-validation": [],
   "@agnes/error-sanitization": [],
+  "@agnes/lexical-search": [],
   "@agnes/package-isolation": ["@agnes/system-node"],
   "@agnes/web-server": ["@agnes/protocol", "@agnes/history-index"],
   "@agnes/resource-control-runtime": ["@agnes/cordis", "@agnes/protocol", "@agnes/system-node"],
@@ -62,7 +63,7 @@
     "@agnes/resource-control-contracts",
     "@agnes/sdk"
   ],
-  "@agnes/history-index": [],
+  "@agnes/history-index": ["@agnes/lexical-search"],
   "@agnes/extension-api": ["@agnes/protocol"],
   "@agnes/batch": ["@agnes/extension-api", "@agnes/protocol", "@agnes/sdk"],
   "@agnes/core": [
@@ -359,7 +360,7 @@
     "@agnes/error-sanitization",
     "@agnes/system-node"
   ],
-  "@agnes/memory-file": ["@agnes/extension-api", "@agnes/system-node"],
+  "@agnes/memory-file": ["@agnes/extension-api", "@agnes/lexical-search", "@agnes/system-node"],
   "@agnes/deliverables-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/document-reader": [],
   "@agnes/jev-loop": [],

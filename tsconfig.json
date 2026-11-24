@@ -131,6 +131,9 @@
       "path": "packages/loop-jev"
     },
     {
+      "path": "packages/lexical-search"
+    },
+    {
       "path": "packages/history-index"
     },
     {

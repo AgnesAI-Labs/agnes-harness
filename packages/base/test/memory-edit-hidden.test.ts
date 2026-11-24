@@ -6,6 +6,7 @@ import { fileMemoryProvider } from '@agnes/memory-file'
 import { afterEach, describe, expect, it } from 'vitest'
 import { editTool } from '../extensions/tools-core/src/tools/edit.js'
 import { readTool } from '../extensions/tools-core/src/tools/read.js'
+import { writeTool } from '../extensions/tools-core/src/tools/write.js'
 import { fakeToolContext } from '../testkit/tool-context.js'
 
 // The real memory provider behind the real edit tool: a stored paragraph that expired is hidden from
@@ -125,4 +126,32 @@ describe('edit through the memory provider with a hidden paragraph', () => {
     expect(result.isError).toBe(true)
     expect(await readFile(index, 'utf8')).toBe(STORED)
   })
+
+  it.each(['MEMORY_HUMAN_EDITED', 'MEMORY_PREFERENCE_CONFLICT'])(
+    'returns explicit non-written guidance on %s without throwing from write or edit',
+    async (code) => {
+      const { ctx, index } = await setup()
+      ctx.fs.write = async () => {
+        throw Object.assign(new Error(code), { code })
+      }
+      ctx.fs.replaceExact = async () => {
+        throw Object.assign(new Error(code), { code })
+      }
+      const wRes = await writeTool.execute(
+        { path: index, content: STORED.replace('Use pnpm.', 'Use npm.') },
+        ctx,
+      )
+      expect(wRes.isError).toBe(true)
+      expect(JSON.stringify(wRes)).toContain('Nothing was written')
+      expect(JSON.stringify(wRes)).toContain(code)
+
+      const eRes = await editTool.execute(
+        { path: index, edits: [{ oldText: 'Use pnpm.', newText: 'Use npm.' }] },
+        ctx,
+      )
+      expect(eRes.isError).toBe(true)
+      expect(JSON.stringify(eRes)).toContain('Nothing was written')
+      expect(JSON.stringify(eRes)).toContain(code)
+    },
+  )
 })

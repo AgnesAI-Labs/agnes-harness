@@ -42,6 +42,17 @@ export class MemoryStore {
       throw error
     }
   }
+  fileSize(path: string): number | undefined {
+    name(path)
+    const absolute = join(this.root, path)
+    safe(this.protectedRoot, absolute)
+    try {
+      return statSync(absolute).size
+    } catch (error) {
+      if (missing(error)) return undefined
+      throw error
+    }
+  }
   files(): MemoryFile[] {
     safe(this.protectedRoot, this.root)
     if (!existsSync(this.root)) return []
@@ -204,6 +215,7 @@ export class MemoryStore {
     agentMode: false | 'ask' | 'auto',
     signal?: AbortSignal,
     admission?: MemoryEffectAdmission,
+    onCommitted?: (before: MemoryFile, committed: MemoryFile) => void,
   ): Promise<MemoryFile> {
     const commit = () => {
       admission?.assertActive()
@@ -239,6 +251,7 @@ export class MemoryStore {
           ...(this.acknowledged() ?? hashes(all)),
           [candidate.path]: candidate.hash,
         })
+        onCommitted?.(current, candidate)
       } catch {
         throw fault('MEMORY_COMMITTED_METADATA_FAILED')
       }

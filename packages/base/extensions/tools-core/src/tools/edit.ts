@@ -13,6 +13,7 @@ import {
   type ExactOutcome,
   exactFailure,
   isHiddenParagraphs,
+  memoryProtectedRefusal,
   refusalCode,
   replaceOneByOne,
   viewAfter,
@@ -167,6 +168,16 @@ export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions, l
             if (exact.applied.length === 0) return exactFailure(ctx, exact, planned.length)
             text = await viewAfter(ctx, args.path, exact.failure ? original : text)
           } else {
+            const protectedRefusal = memoryProtectedRefusal(e)
+            if (protectedRefusal)
+              return editFailure(
+                ctx,
+                protectedRefusal.code,
+                'write_failed',
+                null,
+                false,
+                protectedRefusal.text,
+              )
             const code = failureCode(e, 'FS_WRITE_FAILED')
             const hint =
               code === 'E_FS_DENIED'

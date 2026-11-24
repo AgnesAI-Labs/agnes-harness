@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@agnes/extension-api": "workspace:*",
+    "@agnes/lexical-search": "workspace:*",
     "@agnes/system-node": "workspace:*"
   },
   "devDependencies": {

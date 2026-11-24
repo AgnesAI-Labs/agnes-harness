@@ -677,3 +677,21 @@ describe('the truncation notice and delivered paragraphs', () => {
     expect(checked).toBeGreaterThan(100)
   })
 })
+
+describe('paragraph-level CAS (expectTextHash)', () => {
+  it('accepts put when expectTextHash matches and rejects MEMORY_PARAGRAPH_EDITED when stale or missing', async () => {
+    const f = await fixture({ validity: view({ [A]: 'valid' }).view })
+    await f.session.configure({ mode: 'auto' })
+    const port = f.paragraphs()
+    await port.commit(await port.propose({ op: 'put', id: A, text: 'Alpha' }))
+    await port.commit(await port.propose({ op: 'put', id: A, text: 'Beta', expectTextHash: sha('Alpha') }))
+    expect(parseParagraphs(await f.raw()).paragraphs.find((p) => p.id === A)?.text).toBe('Beta')
+    await expect(
+      port.propose({ op: 'put', id: A, text: 'Gamma', expectTextHash: sha('Alpha') }),
+    ).rejects.toMatchObject({ code: 'MEMORY_PARAGRAPH_EDITED' })
+    await expect(
+      port.propose({ op: 'put', id: B, text: 'New', expectTextHash: sha('New') }),
+    ).rejects.toMatchObject({ code: 'MEMORY_PARAGRAPH_EDITED' })
+    expect(parseParagraphs(await f.raw()).paragraphs.find((p) => p.id === A)?.text).toBe('Beta')
+  })
+})

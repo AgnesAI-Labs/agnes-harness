@@ -24,7 +24,23 @@ import type { Actor } from '@agnes/protocol'
 import type { CheckpointWorkspaceContext, WorkspaceHookSandbox } from '../workspace/runtime.js'
 import { ToolEffectScope } from './effect-scope.js'
 import { assertNotDenied } from './fs-guard.js'
+import type { RejectedBeforeEffectError } from './tool-dispatch.js'
 import type { SeamRuntime } from './wrap.js'
+
+const MEMORY_PRE_EFFECT_REFUSALS: Readonly<Record<string, string>> = {
+  MEMORY_HIDDEN_PARAGRAPHS: 'Memory file hides managed paragraphs from whole-file writes',
+  MEMORY_PARAGRAPH_TEXT_CHANGED: 'Whole-file write would alter a managed paragraph',
+  MEMORY_HUMAN_EDITED: 'Human-authored memory content cannot be modified or deleted by the agent',
+  MEMORY_PARAGRAPH_EDITED: 'Managed paragraph text was edited by a human',
+  MEMORY_PREFERENCE_CONFLICT: 'Structured preference conflicts with human-authored value',
+}
+
+function memoryRefusedBeforeEffect(error: unknown): RejectedBeforeEffectError | undefined {
+  const code = (error as { code?: unknown } | null)?.code
+  if (typeof code !== 'string') return undefined
+  const message = MEMORY_PRE_EFFECT_REFUSALS[code]
+  return message ? { code, message } : undefined
+}
 
 export type ChildStatus = {
   state: 'running' | 'done' | 'error'
@@ -575,12 +591,14 @@ export function buildToolContext(
     },
     log: d.log,
   }
+  const refuseMemory = d.memory ? memoryRefusedBeforeEffect : undefined
   return effects.bind({
     ...(call.sideCall ? { sideCall: effects.guard(call.sideCall, ['invoke']) } : {}),
     ...effects.guard(context, ['exec', 'requestCompaction']),
+    ...(files.recall ? { memory: Object.freeze({ recall: (query) => files.recall!(query) }) } : {}),
     fs: {
       read: (path, options) => files.read(path, options),
-      write: (path, content) => effects.write(() => files.write(path, content)),
+      write: (path, content) => effects.write(() => files.write(path, content), refuseMemory),
       ...(d.fsOps.create
         ? {
             create: (path: string, data: Uint8Array) =>
@@ -607,7 +625,7 @@ export function buildToolContext(
       ...(files.replaceExact
         ? {
             replaceExact: (path: string, oldText: string, newText: string) =>
-              effects.write(() => files.replaceExact!(path, oldText, newText)),
+              effects.write(() => files.replaceExact!(path, oldText, newText), refuseMemory),
           }
         : {}),
       checkpointOf: (path) => checkpoints.get(path),

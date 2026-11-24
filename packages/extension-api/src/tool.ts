@@ -321,6 +321,10 @@ export interface ToolContext {
   readonly wake?: import('./profile-services.js').SessionWakePort
   readonly approval?: Readonly<{ requestId: string; subjectRevision: string; answeredBy: Actor }>
   readonly actor: Actor // recorded on the call; never the basis for an authorization decision
+  /** Optional since 5.23.0. Present only when the selected memory provider's file port has `recall`. */
+  readonly memory?: Readonly<{
+    recall(query: import('./memory.js').MemoryRecallQuery): Promise<import('./memory.js').MemoryRecallResult>
+  }>
   /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
    * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.
    * Session defaults currently equal workspaceRoot; explicit process/child overrides do not change workspace identity.

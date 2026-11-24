@@ -24,6 +24,26 @@ export type MemorySnapshot = Readonly<{
    */
   externalChanges?: readonly string[]
 }>
+export type MemoryRecallQuery = Readonly<{
+  query: string
+  limit?: number
+  maxBytes?: number
+  includeUser?: boolean
+}>
+export type MemoryRecallHit = Readonly<{
+  layer: 'workspace' | 'user'
+  path: string
+  lineStart: number
+  lineEnd: number
+  text: string
+  score: number
+}>
+export type MemoryRecallResult = Readonly<{
+  revision: string
+  hits: readonly MemoryRecallHit[]
+  truncated: boolean
+}>
+
 export type MemoryFilePort = Readonly<{
   read(path: string, options?: { offset?: number; limit?: number }): Promise<Uint8Array>
   write(path: string, content: Uint8Array | string): Promise<void>
@@ -36,6 +56,10 @@ export type MemoryFilePort = Readonly<{
    * write takes the same review, approval and compare-and-swap path as `write`.
    */
   replaceExact?(path: string, oldText: string, newText: string): Promise<void>
+  /**
+   * Optional since 5.23.0. Read-only search over what this tool call may read.
+   */
+  recall?(query: MemoryRecallQuery): Promise<MemoryRecallResult>
 }>
 export type MemoryInspection = Readonly<import('@agnes/protocol/gen/app-server').MemoryInspection>
 
@@ -84,7 +108,14 @@ export type MemoryParagraph = Readonly<{ id: string; text: string; validity: Mem
 
 /** Put inserts a new paragraph or replaces one with the same id in place; remove deletes it. */
 export type MemoryParagraphChange = Readonly<
-  { op: 'put'; id: string; text: string } | { op: 'remove'; id: string }
+  | {
+      op: 'put'
+      id: string
+      text: string
+      /** Optional since 5.23.0: refuse with `MEMORY_PARAGRAPH_EDITED` when stored text hash differs. */
+      expectTextHash?: string
+    }
+  | { op: 'remove'; id: string }
 >
 
 /** The managed paragraphs of the stored file and the hash of the file they were read from. */
@@ -128,7 +159,13 @@ export interface MemorySession {
   inspect(): Promise<MemoryInspection>
   configure(settings: Partial<MemorySettings>): Promise<MemoryInspection>
   readFile(path: string): Promise<MemoryFile>
-  editFile(path: string, content: string, baseHash: string): Promise<MemoryFile>
+  /** Always a human edit (editor or memory-page action). `options` optional since 5.23.0. */
+  editFile(
+    path: string,
+    content: string,
+    baseHash: string,
+    options?: Readonly<{ actor?: string }>,
+  ): Promise<MemoryFile>
   /**
    * Optional since 5.2.0. Its presence is the provider's statement that it keeps managed paragraphs
    * and honours the validity view; the Host does not save managed paragraphs to a provider without it.

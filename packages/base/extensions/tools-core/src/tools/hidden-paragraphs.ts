@@ -6,6 +6,10 @@ import { editFailure } from './edit-feedback.js'
 export const HIDDEN_PARAGRAPHS = 'MEMORY_HIDDEN_PARAGRAPHS'
 /** What it raises for a whole-file write that changes the text of a managed paragraph. */
 export const PARAGRAPH_TEXT_CHANGED = 'MEMORY_PARAGRAPH_TEXT_CHANGED'
+/** Protected human-edit / preference refusals that abort before any file write. */
+export const HUMAN_EDITED = 'MEMORY_HUMAN_EDITED'
+export const PARAGRAPH_EDITED = 'MEMORY_PARAGRAPH_EDITED'
+export const PREFERENCE_CONFLICT = 'MEMORY_PREFERENCE_CONFLICT'
 
 /** The refusals after which a change must go through as single exact replacements. */
 export const isHiddenParagraphs = (error: unknown): boolean => {
@@ -17,6 +21,22 @@ export const refusalCode = (error: unknown): string =>
   (error as { code?: unknown } | null)?.code === PARAGRAPH_TEXT_CHANGED
     ? PARAGRAPH_TEXT_CHANGED
     : HIDDEN_PARAGRAPHS
+
+const PROTECTED_TEXT: Readonly<Record<string, string>> = {
+  [HUMAN_EDITED]:
+    'write refused: this block was edited by a human and is protected. Nothing was written; inform the user of your suggestion and ask them to update it on the Memory page, or append new text outside human-edited blocks.',
+  [PARAGRAPH_EDITED]:
+    'write refused: the managed paragraph text was edited since last recorded. Nothing was written; read the file and leave human changes intact.',
+  [PREFERENCE_CONFLICT]:
+    'write refused: this preference key conflicts with a human-authored preference. Nothing was written; inform the user of the conflict and ask them to update it on the Memory page.',
+}
+
+export function memoryProtectedRefusal(error: unknown): { code: string; text: string } | undefined {
+  const code = (error as { code?: unknown } | null)?.code
+  if (typeof code !== 'string') return undefined
+  const text = PROTECTED_TEXT[code]
+  return text ? { code, text } : undefined
+}
 
 export const WRITE_HIDDEN_TEXT =
   'write refused: this memory file has managed paragraphs (some may be hidden), so it cannot be overwritten as a whole. Nothing was written; use edit to change only the part you mean to.'
@@ -103,6 +123,7 @@ export function exactFailure(ctx: ToolContext, outcome: ExactOutcome, total: num
                   : `edits ${nth(rest)} were not attempted`,
               ]),
           'This memory file has managed paragraphs, so its edits are applied one replacement at a time and an earlier one is not undone; read the file again and resend only the edits that are not applied.',
+          ...(PROTECTED_TEXT[code] ? [PROTECTED_TEXT[code]] : []),
         ]
   const message = parts.join(index === null ? '. ' : '; ')
   return editFailure(ctx, code, 'write_failed', index, applied.length > 0, message, { applied, notApplied })

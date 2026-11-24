@@ -2,9 +2,25 @@ import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os'
 import { join, parse } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { MemoryApprovalResult, MemoryFilePort, MemoryProposal } from '@agnes/extension-api'
+import type {
+  MemoryApprovalResult,
+  MemoryFilePort,
+  MemoryParagraphValidity,
+  MemoryProposal,
+  MemoryValidityView,
+} from '@agnes/extension-api'
 import { afterEach, describe, expect, it } from 'vitest'
-import { fileMemoryProvider } from '../src/index.js'
+import {
+  buildView,
+  createDefaultPipeline,
+  fileMemoryProvider,
+  MetaStore,
+  mapViewSpanToRawLines,
+  openMemory,
+  readAuditEntries,
+} from '../src/index.js'
+import { roots } from '../src/paths.js'
+import { MemoryStore } from '../src/store.js'
 
 const homes: string[] = []
 const PINNED_REVISION = 'd3c51a67de415b2e6c0e255064e93eb77fee5963d901fa3d060bcd478f922787'
@@ -554,5 +570,313 @@ describe('the injection limits, in bytes', () => {
     expect(Number(line)).toBe(shown.split('\n').length + 1)
     expect(all.slice(Number(line) - 1).join('\n')).toBe(text.slice(shown.length + 1))
     expect(Number(kb)).toBeGreaterThan(0)
+  })
+})
+
+describe('phase 0 view pipeline, same-turn R1-R6 overlay and audit log', () => {
+  const block = (id: string, body: string) =>
+    `<!-- refinement:${id} -->\n${body}\n<!-- /refinement:${id} -->\n`
+  const makeValidity = (initial: Record<string, MemoryParagraphValidity>) => {
+    const map = new Map(Object.entries(initial))
+    let rev = 1
+    return {
+      view: {
+        revision: () => `v${rev}`,
+        validity: (id: string) => map.get(id) ?? 'unknown',
+      } satisfies MemoryValidityView,
+      set(id: string, val: MemoryParagraphValidity) {
+        map.set(id, val)
+        rev++
+      },
+    }
+  }
+
+  it('keeps snapshot(1) fixed while R2 overlay hides withdrawn, expired, deleted and emptied entries', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'agh-phase0-r2-'))
+    homes.push(home)
+    let now = 1_000
+    const validity = makeValidity({ ra000000001: 'valid', rb000000002: 'expired' })
+    const pipeline = createDefaultPipeline()
+    pipeline.addViewFilter((entry, ctx) => {
+      if (entry.path !== 'topic-exp.md' || ctx.now < 2_000) return []
+      const at = entry.content.indexOf('EXPIRES_SOON')
+      return at === -1
+        ? []
+        : [
+            {
+              start: at,
+              end: entry.content.length,
+              appliesTo: 'both',
+              reason: 'test-expiry',
+              notice: '[expired]',
+            },
+          ]
+    })
+    pipeline.addNextExpiry((files) => (files.some((f) => f.path === 'topic-exp.md') ? 2_000 : undefined))
+
+    const session = openMemory({
+      home,
+      workspaceRoot: home,
+      sessionKey: 'r2',
+      validity: validity.view,
+      clock: () => now,
+      pipeline,
+    })
+    await session.configure({ mode: 'auto' })
+    const index = join(session.root, 'MEMORY.md')
+    const topicExp = join(session.root, 'topic-exp.md')
+    const topicDel = join(session.root, 'topic-del.md')
+    const emptyFile = join(session.root, 'empty.md')
+    await writeFile(
+      index,
+      `${block('ra000000001', 'RULE_VALID')}${block('rb000000002', 'RULE_RENEWED')}- base\n`,
+    )
+    await writeFile(topicExp, 'keep\nEXPIRES_SOON\n')
+    await writeFile(topicDel, 'gone soon\n')
+    await writeFile(emptyFile, 'will clear\n')
+
+    const s1a = await session.snapshot(1)
+    const p1 = session.files(
+      fallback,
+      { sessionKey: 'r2', turn: 1, toolUseId: 't1' },
+      new AbortController().signal,
+      async () => ({ status: 'approved' }),
+    )
+    expect(Buffer.from(await p1.read(index)).toString('utf8')).toContain('RULE_VALID')
+    expect(Buffer.from(await p1.read(topicExp)).toString('utf8')).toContain('EXPIRES_SOON')
+
+    validity.set('ra000000001', 'unknown')
+    validity.set('rb000000002', 'valid')
+    now = 2_500
+    await rm(topicDel)
+    await writeFile(emptyFile, '')
+
+    const s1b = await session.snapshot(1)
+    expect(s1b?.revision).toBe(s1a?.revision)
+    expect(s1b?.content).toBe(s1a?.content)
+
+    const readIndex = Buffer.from(await p1.read(index)).toString('utf8')
+    expect(readIndex).not.toContain('RULE_VALID')
+    expect(readIndex).not.toContain('RULE_RENEWED')
+    if (!p1.revision) throw new Error('expected revision port')
+    expect(await p1.revision(index)).not.toBe(s1a?.revision)
+    expect(Buffer.from(await p1.read(topicExp)).toString('utf8')).not.toContain('EXPIRES_SOON')
+    await expect(p1.read(topicDel)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(p1.stat(topicDel)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(p1.revision(topicDel)).rejects.toMatchObject({ code: 'ENOENT' })
+    const names = (await p1.list(session.root)).map((e) => e.name)
+    expect(names).not.toContain('topic-del.md')
+    expect(names).toContain('empty.md')
+    expect(Buffer.from(await p1.read(emptyFile)).toString('utf8')).toBe('')
+    expect((await p1.stat(emptyFile)).size).toBe(0)
+
+    const s2 = await session.snapshot(2)
+    expect(s2?.content).toContain('RULE_RENEWED')
+    expect(s2?.content).not.toContain('RULE_VALID')
+    expect(s2?.revision).not.toBe(s1a?.revision)
+  })
+
+  it('preserves R3 conflicts, R4 replaceExact + line mapping on hidden topics, R5 recall and R6 writes', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'agh-phase0-r35-'))
+    homes.push(home)
+    const validity = makeValidity({ rc000000003: 'valid' })
+    const pipeline = createDefaultPipeline()
+    const topicFilter = (entry: { path: string; content: string }) => {
+      if (entry.path !== 'topic.md') return []
+      const at = entry.content.indexOf('SECRET_HIDDEN\n')
+      return at === -1
+        ? []
+        : [
+            {
+              start: at,
+              end: at + 'SECRET_HIDDEN\n'.length,
+              appliesTo: 'both' as const,
+              reason: 'secret-hide',
+              notice: '[hidden block]',
+            },
+          ]
+    }
+    pipeline.addViewFilter(topicFilter)
+    pipeline.setRecall(async (query, env) => {
+      const hits = []
+      for (const entry of env.workspaceFiles) {
+        const view = env.workspaceViews.get(entry.path)
+        if (!view) continue
+        const idx = view.content.indexOf(query.query)
+        if (idx === -1) continue
+        const span = mapViewSpanToRawLines(entry.content, view, idx, idx + query.query.length)
+        if (span)
+          hits.push({
+            layer: 'workspace' as const,
+            path: entry.path,
+            lineStart: span.lineStart,
+            lineEnd: span.lineEnd,
+            text: query.query,
+            score: 1,
+          })
+      }
+      return { revision: env.revision, hits, truncated: false }
+    })
+
+    const session = openMemory({
+      home,
+      workspaceRoot: home,
+      sessionKey: 'r35',
+      validity: validity.view,
+      pipeline,
+    })
+    await session.configure({ mode: 'auto' })
+    const index = join(session.root, 'MEMORY.md')
+    const topic = join(session.root, 'topic.md')
+    const extra = join(session.root, 'extra.md')
+    await writeFile(index, `${block('rc000000003', 'RECALL_ME')}tabs=2\n`)
+    await writeFile(topic, 'line1\nSECRET_HIDDEN\nvisible tail\n')
+
+    const s1 = await session.snapshot(1)
+    const p1 = session.files(
+      fallback,
+      { sessionKey: 'r35', turn: 1, toolUseId: 't' },
+      new AbortController().signal,
+      async () => ({ status: 'approved' }),
+    )
+    expect(Buffer.from(await p1.read(index)).toString('utf8')).toContain('tabs=2')
+
+    await session.editFile(
+      'MEMORY.md',
+      `${block('rc000000003', 'RECALL_ME')}tabs=4\n`,
+      (await session.readFile('MEMORY.md')).hash,
+      { actor: 'bob' },
+    )
+    expect(Buffer.from(await p1.read(index)).toString('utf8')).toContain('tabs=2')
+    await expect(
+      p1.write(index, `${block('rc000000003', 'RECALL_ME')}tabs=2\nextra\n`),
+    ).rejects.toMatchObject({ code: 'MEMORY_CONFLICT' })
+
+    await expect(p1.write(topic, 'overwrite\n')).rejects.toMatchObject({ code: 'MEMORY_HIDDEN_PARAGRAPHS' })
+    await expect(p1.replaceExact?.(topic, '[hidden block]', 'x')).rejects.toMatchObject({
+      code: 'MEMORY_HIDDEN_PARAGRAPHS',
+    })
+    await expect(p1.replaceExact?.(topic, 'SECRET_HIDDEN', 'x')).rejects.toMatchObject({
+      code: 'MEMORY_REPLACE_NOT_FOUND',
+    })
+    await p1.replaceExact?.(topic, 'visible tail', 'visible tail v2')
+    expect(await readFile(topic, 'utf8')).toBe('line1\nSECRET_HIDDEN\nvisible tail v2\n')
+
+    const rawTopic = await readFile(topic, 'utf8')
+    const topicFile = {
+      path: 'topic.md',
+      content: rawTopic,
+      hash: '',
+      bytes: Buffer.byteLength(rawTopic),
+      lines: 4,
+    }
+    const mappedView = buildView(topicFile, topicFilter(topicFile), 'read')
+    const visAt = mappedView.content.indexOf('visible tail v2')
+    expect(mapViewSpanToRawLines(rawTopic, mappedView, visAt, visAt + 'visible tail v2'.length)).toEqual({
+      lineStart: 3,
+      lineEnd: 3,
+    })
+
+    await p1.write(extra, 'BRAND_NEW_FACT\n')
+    expect((await session.snapshot(1))?.revision).toBe(s1?.revision)
+    expect((await p1.recall?.({ query: 'BRAND_NEW_FACT' }))?.hits).toEqual([])
+
+    validity.set('rc000000003', 'unknown')
+    expect((await p1.recall?.({ query: 'RECALL_ME' }))?.hits).toEqual([])
+    const p2 = session.files(
+      fallback,
+      { sessionKey: 'r35', turn: 2, toolUseId: 't2' },
+      new AbortController().signal,
+      async () => ({ status: 'approved' }),
+    )
+    expect((await p2.recall?.({ query: 'BRAND_NEW_FACT' }))?.hits).toMatchObject([
+      { path: 'extra.md', lineStart: 1, lineEnd: 1 },
+    ])
+  })
+
+  it('writes audit entries, rejects before approve(), rotates at 1 MiB, and runs close hooks', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'agh-phase0-audit-'))
+    homes.push(home)
+    let closed = false
+    const pipeline = createDefaultPipeline()
+    pipeline.addGuard((intent) =>
+      intent.origin !== 'human' && intent.candidate.content.includes('CLOBBER_HUMAN')
+        ? { kind: 'refuse', code: 'MEMORY_HUMAN_EDITED', detail: 'protected' }
+        : { kind: 'allow' },
+    )
+    pipeline.addCloseHook(() => {
+      closed = true
+    })
+
+    const session = openMemory({
+      home,
+      workspaceRoot: home,
+      sessionKey: 'aud',
+      clock: () => 1_700_000_000_000,
+      pipeline,
+    })
+    await session.configure({ mode: 'auto' })
+    const topic = join(session.root, 'topic.md')
+    await session.editFile(
+      'topic.md',
+      'SECRET_DO_NOT_LOG_BODY\n',
+      (await session.readFile('topic.md')).hash,
+      { actor: 'alice' },
+    )
+    let approveCalls = 0
+    const pAuto = session.files(
+      fallback,
+      { sessionKey: 'aud', turn: 1, toolUseId: 'w1' },
+      new AbortController().signal,
+      async () => {
+        approveCalls++
+        return { status: 'approved' }
+      },
+    )
+    await pAuto.write(topic, 'AGENT_BODY\n')
+    const para = session.paragraphs?.(
+      { sessionKey: 'aud', turn: 0, maintenance: 'run-7' },
+      new AbortController().signal,
+    )
+    await para?.commit(await para.propose({ op: 'put', id: 'ra000000001', text: 'HOST_BODY' }))
+
+    await session.configure({ mode: 'ask' })
+    const pAsk = session.files(
+      fallback,
+      { sessionKey: 'aud', turn: 2, toolUseId: 'w2' },
+      new AbortController().signal,
+      async () => {
+        approveCalls++
+        return { status: 'approved' }
+      },
+    )
+    await expect(pAsk.write(topic, 'CLOBBER_HUMAN\n')).rejects.toMatchObject({ code: 'MEMORY_HUMAN_EDITED' })
+    expect(approveCalls).toBe(0)
+
+    const p = roots(home, home)
+    const meta = new MetaStore(new MemoryStore(p.protectedRoot, p.root))
+    const entries = readAuditEntries(meta)
+    expect(entries.map((e) => [e.action, e.origin, e.actor, e.code ?? null])).toEqual([
+      ['commit', 'human', 'alice', null],
+      ['commit', 'agent', 'agent:aud:w1', null],
+      ['commit', 'host', 'host:run-7', null],
+      ['refused', 'agent', 'agent:aud:w2', 'MEMORY_HUMAN_EDITED'],
+    ])
+    const serialized = JSON.stringify(entries)
+    expect(serialized).not.toContain('SECRET_DO_NOT_LOG_BODY')
+    expect(serialized).not.toContain('CLOBBER_HUMAN')
+
+    await writeFile(
+      meta.pathOf('audit.jsonl'),
+      `${JSON.stringify({ seq: 99, at: '2026-01-01T00:00:00.000Z', path: 'topic.md', action: 'commit', origin: 'human', actor: 'pad', beforeHash: '0', afterHash: '1', pad: 'x'.repeat(1024 * 1024) })}\n`,
+    )
+    await session.editFile('topic.md', 'AFTER_ROTATE\n', (await session.readFile('topic.md')).hash, {
+      actor: 'alice',
+    })
+    expect(JSON.parse((await readFile(meta.pathOf('audit.jsonl'), 'utf8')).trim()).seq).toBe(100)
+    expect(await readFile(meta.pathOf('audit.1.jsonl'), 'utf8')).toContain('"seq":99')
+
+    await session.close?.()
+    expect(closed).toBe(true)
   })
 })

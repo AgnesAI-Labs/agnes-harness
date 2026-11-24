@@ -24,14 +24,26 @@ export class ToolEffectScope {
     const proof = error && typeof error === 'object' ? this.refused.get(error) : undefined
     return proof?.safe && !this.started && this.writes === 0 ? proof.diagnostic : undefined
   }
-  async write<T>(run: () => Promise<T>): Promise<T> {
+  async write<T>(
+    run: () => Promise<T>,
+    refusedBeforeEffect?: (error: unknown) => RejectedBeforeEffectError | undefined,
+  ): Promise<T> {
+    const clean = !this.started && this.writes === 0
     this.writes++
     try {
       const result = await run()
       this.beginEffect()
       return result
     } catch (error) {
-      if (!error || typeof error !== 'object' || !this.refused.has(error)) this.beginEffect()
+      if (!error || typeof error !== 'object' || !this.refused.has(error)) {
+        const diagnostic = clean && !this.started ? refusedBeforeEffect?.(error) : undefined
+        if (diagnostic) {
+          const refusal = Object.assign(new Error(diagnostic.message), { code: diagnostic.code })
+          this.refused.set(refusal, { diagnostic, safe: true })
+          throw refusal
+        }
+        this.beginEffect()
+      }
       throw error
     } finally {
       this.writes--

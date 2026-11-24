@@ -49,6 +49,9 @@ const NOT_WRITTEN: Readonly<Record<string, SaveRefusal>> = {
   MEMORY_MARKER_CHANGED: 'source-rules',
   MEMORY_PARAGRAPH_INVALID: 'source-rules',
   MEMORY_MISSING_TOPIC: 'source-rules',
+  MEMORY_HUMAN_EDITED: 'source-rules',
+  MEMORY_PARAGRAPH_EDITED: 'source-rules',
+  MEMORY_PREFERENCE_CONFLICT: 'source-rules',
 }
 /** The refusal a memory error stands for when it came before any write; `unavailable` for the rest. */
 export const refusalOf = (error: unknown): SaveRefusal => NOT_WRITTEN[code(error) ?? ''] ?? 'unavailable'

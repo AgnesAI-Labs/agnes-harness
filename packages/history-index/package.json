@@ -10,5 +10,8 @@
     "test": "vitest run",
     "typecheck": "tsc -b"
   },
+  "dependencies": {
+    "@agnes/lexical-search": "workspace:*"
+  },
   "license": "Apache-2.0"
 }
