@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
+import { cjkWriter } from './cjk-backfill.js'
 import { HistoryIndexError } from './errors.js'
 import {
   type LedgerEvent,
@@ -71,6 +72,10 @@ function statements(db: DatabaseSync) {
     // The FTS table holds no text of its own: it is told each row, and a delete must repeat the row's
     // text. Kept here rather than in triggers, which made each insert several times slower.
     index: db.prepare('INSERT INTO docs_fts(rowid, text) VALUES (?, ?)'),
+    indexCjk: cjkWriter(db),
+    removeCjk: db.prepare(
+      'DELETE FROM docs_cjk WHERE rowid IN (SELECT rowid FROM docs WHERE session_id=? AND seq BETWEEN ? AND ?)',
+    ),
     unindex: db.prepare(
       `INSERT INTO docs_fts(docs_fts, rowid, text)
        SELECT 'delete', rowid, text FROM docs WHERE session_id = ? AND seq BETWEEN ? AND ?`,
@@ -309,9 +314,11 @@ function insertDoc(sql: Statements, event: LedgerEvent): void {
     event.truncated ? 1 : 0,
   )
   sql.index.run(lastInsertRowid, event.text)
+  if (event.seq >= 1) sql.indexCjk(lastInsertRowid, event.text)
 }
 
 function removeDocs(sql: Statements, key: string, from: number, to: number): void {
+  sql.removeCjk.run(key, from, to)
   sql.unindex.run(key, from, to)
   sql.remove.run(key, from, to)
 }

@@ -117,24 +117,33 @@ function windowCount(value: number | undefined): number {
   return Math.min(value, 20)
 }
 
-export function runSessionSearch(query: string, ctx: ToolContext): ToolResult {
+function findEarlier(kind: 'search' | 'recall', query: string, limit: number, ctx: ToolContext): ToolResult {
   try {
     const index = ready()
     const access = accessOf(index, ctx)
     const page = index.query({
       access,
-      kind: 'search',
+      kind,
       query,
       title: '',
       workspace: '',
       sessionId: '',
       omitSelf: true,
-      limit: 20,
+      limit,
     })
-    return textResult(renderPage(page, false))
+    const body = renderPage(page, kind === 'recall')
+    return textResult(page.partial ? body + '\n\nChinese history indexing is still in progress.' : body)
   } catch (error) {
     return fail(error)
   }
+}
+
+export function runSessionSearch(query: string, ctx: ToolContext): ToolResult {
+  return findEarlier('search', query, 20, ctx)
+}
+
+export function runSessionRecall(query: string, limit: number | undefined, ctx: ToolContext): ToolResult {
+  return findEarlier('recall', query, limit ?? 8, ctx)
 }
 
 export function runSessionEventSearch(sessionId: string, query: string, ctx: ToolContext): ToolResult {

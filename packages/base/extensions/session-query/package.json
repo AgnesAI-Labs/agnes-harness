@@ -20,6 +20,7 @@
             "prefix": "",
             "names": [
               "session_search",
+              "session_recall",
               "session_event_search",
               "session_trace",
               "session_event_trace",

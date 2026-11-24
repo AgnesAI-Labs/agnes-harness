@@ -233,6 +233,58 @@ describe('incremental history sync', () => {
     book.close()
   })
 
+  it('backfills legacy v4 rows in bounded batches and resets only CJK on tokenizer changes', () => {
+    const dir = tempDir()
+    const path = join(dir, 'history-index.db')
+    const book = ledger(dir)
+    book.session('a')
+    book.say('a', '旧城街道设计')
+    book.many('a', 2010)
+    book.say('a', '高原气候研究')
+    const first = open(path)
+    first.sync(dir)
+    first.close()
+    const before = dump(path)
+    using db = new DatabaseSync(path)
+    db.exec("DROP TABLE docs_cjk; DELETE FROM meta WHERE key LIKE 'cjk_%'")
+    const index = open(path)
+    const request = {
+      kind: 'recall' as const,
+      access: { kind: 'local' as const, principal: '' },
+      title: '',
+      workspace: '',
+      sessionId: '',
+      omitSelf: false,
+      query: '街道',
+    }
+    expect(index.query(request)).toMatchObject({ items: [], partial: true })
+    expect(index.query({ ...request, query: 'kestrel' }).items.length).toBeGreaterThan(0)
+    book.say('a', '今日通车计划')
+    index.sync(dir)
+    expect(index.query(request)).toMatchObject({ items: [{ sessionId: 'a', seq: 1 }], partial: true })
+    expect(index.query({ ...request, query: '通车' })).toMatchObject({
+      items: [{ seq: 2013 }],
+      partial: true,
+    })
+    expect(index.query({ ...request, query: '高原' }).items).toEqual([])
+    expect(
+      Number(db.prepare("SELECT value FROM meta WHERE key='cjk_backfill_rowid'").get()?.value),
+    ).toBeLessThanOrEqual(2000)
+    for (let i = 0; i < 20 && index.query(request).partial; i++) index.sync(dir)
+    expect(index.query(request).partial).toBeUndefined()
+    expect(index.query({ ...request, query: '高原' }).items).toMatchObject([{ seq: 2012 }])
+    expect(index.query({ ...request, kind: 'search', sessionId: 'a', query: '高原' }).items).toEqual([])
+    expect(dump(path).docs.slice(0, -1)).toEqual(before.docs)
+    const current = dump(path)
+    db.exec("UPDATE meta SET value='previous-ICU' WHERE key='cjk_tokenizer_version'")
+    index.sync(dir)
+    expect(index.query(request).partial).toBe(true)
+    expect(index.query({ ...request, query: '高原' }).items).toEqual([])
+    expect(dump(path)).toEqual(current)
+    expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 4 })
+    book.close()
+  })
+
   it('keeps an indexed session without ledger rows while a side table still names it, like a fresh build', () => {
     const dir = tempDir()
     const book = ledger(dir)

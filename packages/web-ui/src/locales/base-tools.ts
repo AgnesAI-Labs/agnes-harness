@@ -51,6 +51,7 @@ const titles: Record<string, readonly [string, string]> = {
   list_mcp_resources: ['List resources', '列出资源'],
   list_mcp_resource_templates: ['List resource templates', '列出资源模板'],
   read_mcp_resource: ['Read resource', '读取资源'],
+  session_recall: ['Recall session events', '召回会话事件'],
   session_search: ['Find sessions', '查找会话'],
   session_event_search: ['Search session events', '搜索会话事件'],
   session_trace: ['Read session trace', '查看会话轨迹'],
