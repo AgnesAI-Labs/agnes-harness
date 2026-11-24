@@ -6,6 +6,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { type McpConnection, type McpSkippedTool, registerRemoteToolsStrict } from '../../src/mcp/register.js'
 import { remoteInputSchema } from '../../src/mcp-json-schema.js'
 
+const DRAFT_07 = 'http://json-schema.org/draft-07/schema'
+const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema'
+
 async function registered(inputSchema: Record<string, unknown>): Promise<ToolDef> {
   const { tool } = await attempted(inputSchema)
   if (!tool) throw new Error('tool was not registered')
@@ -68,13 +71,26 @@ describe('MCP remote schema in the core argument validator', () => {
     },
   )
 
-  it('accepts empty object arguments and preserves the provider JSON schema', async () => {
-    const schema = { type: 'object', properties: {}, additionalProperties: false }
-    const tool = await registered(schema)
-    expect(validateAgainst(tool.parameters, {}).ok).toBe(true)
-    expect(validateAgainst(tool.parameters, { injected: true }).ok).toBe(false)
-    expect(JSON.parse(JSON.stringify(tool.parameters))).toEqual(schema)
-  })
+  it.each([undefined, DRAFT_2020_12, `${DRAFT_2020_12}#`])(
+    'validates 2020-12 constraints and preserves the provider JSON schema ($schema=%s)',
+    async (dialect) => {
+      const schema = {
+        ...(dialect === undefined ? {} : { $schema: dialect }),
+        type: 'object',
+        properties: {
+          labels: { type: 'array', prefixItems: [{ type: 'string' }], minItems: 1, items: false },
+        },
+        additionalProperties: false,
+      }
+      const tool = await registered(schema)
+      expect(validateAgainst(tool.parameters, {}).ok).toBe(true)
+      expect(validateAgainst(tool.parameters, { labels: ['open'] }).ok).toBe(true)
+      expect(validateAgainst(tool.parameters, { labels: [1] }).ok).toBe(false)
+      expect(validateAgainst(tool.parameters, { labels: ['open', 'extra'] }).ok).toBe(false)
+      expect(validateAgainst(tool.parameters, { injected: true }).ok).toBe(false)
+      expect(JSON.parse(JSON.stringify(tool.parameters))).toEqual(schema)
+    },
+  )
 
   it('validates nested required fields, arrays, ranges and additional properties without mutation', async () => {
     const tool = await registered({
@@ -126,6 +142,27 @@ describe('MCP remote schema in the core argument validator', () => {
     expect(JSON.parse(JSON.stringify(tool.parameters))).toEqual(schema)
   })
 
+  it('validates draft-07 date-time and preserves annotations without enforcing their values', async () => {
+    const schema = {
+      $schema: `${DRAFT_07}#`,
+      type: 'object',
+      'x-mcp-native': { label: 'record event' },
+      properties: {
+        recordedAt: { type: 'string', format: 'date-time', 'x-mcp-native': true },
+      },
+      required: ['recordedAt'],
+      additionalProperties: false,
+    }
+    const before = structuredClone(schema)
+    const tool = await registered(schema)
+    const args = { recordedAt: '2026-02-28T12:34:56Z' }
+    expect(validateAgainst(tool.parameters, args).ok).toBe(true)
+    expect(validateAgainst(tool.parameters, { recordedAt: '2026-02-30T12:34:56Z' }).ok).toBe(false)
+    expect(validateAgainst(tool.parameters, { ...args, injected: true }).ok).toBe(false)
+    expect(JSON.parse(JSON.stringify(tool.parameters))).toEqual(before)
+    expect(schema).toEqual(before)
+  })
+
   it.each([
     { type: 'bogus' },
     { type: 'string' },
@@ -137,27 +174,52 @@ describe('MCP remote schema in the core argument validator', () => {
     { type: 'object', $async: true },
     { type: 'object', $ref: 'https://example.invalid/private-schema' },
     { type: 'object', properties: { x: { type: 'string', format: 'unknown-format' } } },
+    { $schema: 'http://json-schema.org/draft-06/schema#', type: 'object' },
+    { $schema: 'http://json-schema.org/schema#', type: 'object' },
+    { $schema: `${DRAFT_2020_12}#/`, type: 'object' },
+    { $schema: '', type: 'object' },
+    { $schema: null, type: 'object' },
+    { $schema: DRAFT_07, type: 'object', properties: { x: { type: 'string', minLenght: 1 } } },
+    { $schema: DRAFT_07, type: 'object', properties: { x: { type: 'string', format: 'unknown-format' } } },
+    { $schema: DRAFT_07, type: 'object', properties: { x: { type: 'array', items: [{ type: 'string' }] } } },
+    {
+      type: 'object',
+      properties: { x: { type: 'array', items: [{ type: 'string' }], minItems: 1, additionalItems: false } },
+    },
   ])('skips a tool with an invalid or unsupported schema before registration: %j', async (schema) => {
     await expect(attempted(schema)).resolves.toEqual({ skipped: [{ code: 'invalid-schema', name: 'probe' }] })
   })
 })
 
-it('retains validation in real core registry snapshots and copied parameter objects', async () => {
-  const tool = await registered({
-    type: 'object',
-    properties: { count: { type: 'integer' } },
-    required: ['count'],
-    additionalProperties: false,
-  })
-  const registry = new ToolRegistry()
-  registry.add(tool, { source: 'mcp-schema-test', trust: 'builtin' })
-  const parameters = registry.snapshot(0).byName.get(tool.name)?.parameters
-  expect(parameters).toBeDefined()
-  if (!parameters) throw new Error('missing snapshot schema')
-  expect(validateAgainst(parameters, { count: 1 }).ok).toBe(true)
-  expect(validateAgainst({ ...parameters }, { count: '1' }).ok).toBe(false)
-  expect(JSON.stringify(parameters)).not.toContain('AgnesMcp')
-})
+it.each([DRAFT_07, `${DRAFT_07}#`])(
+  'retains draft-07 tuple validation in real core registry snapshots and copied parameters ($schema=%s)',
+  async (dialect) => {
+    const schema = {
+      $schema: dialect,
+      type: 'object',
+      properties: {
+        entry: {
+          type: 'array',
+          items: [{ type: 'string' }, { type: 'integer' }],
+          minItems: 2,
+          additionalItems: false,
+        },
+      },
+      required: ['entry'],
+      additionalProperties: false,
+    }
+    const tool = await registered(schema)
+    const registry = new ToolRegistry()
+    registry.add(tool, { source: 'mcp-schema-test', trust: 'builtin' })
+    const parameters = registry.snapshot(0).byName.get(tool.name)?.parameters
+    if (!parameters) throw new Error('missing snapshot schema')
+    expect(validateAgainst(parameters, { entry: ['open', 1] }).ok).toBe(true)
+    expect(validateAgainst(parameters, { entry: ['open'] }).ok).toBe(false)
+    expect(validateAgainst(parameters, { entry: ['open', 1, 2] }).ok).toBe(false)
+    expect(validateAgainst({ ...parameters }, { entry: ['open', '1'] }).ok).toBe(false)
+    expect(JSON.parse(JSON.stringify(parameters))).toEqual(schema)
+  },
+)
 
 it('enforces schema-valued extra properties and does not insert schema defaults', async () => {
   const tool = await registered({
