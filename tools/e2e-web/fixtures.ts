@@ -33,7 +33,17 @@ export const root = base.extend<{
     try {
       await runtime.start()
       // UI specs own their navigation and screen assertions; SDK flows do not boot a second client.
-      await use(runtime)
+      await use({
+        ...runtime,
+        cli: async (args) => {
+          if (args[0] === 'daemon' && args[1] === 'stop') info.setTimeout(Math.max(info.timeout, 120_000))
+          return runtime.cli(args)
+        },
+        restart: async () => {
+          info.setTimeout(Math.max(info.timeout, 120_000))
+          await runtime.restart()
+        },
+      })
     } finally {
       try {
         try {

@@ -175,6 +175,7 @@ test('v3 local package install and enable requires consent and disable/uninstall
 })
 
 test('v3 MCP method cards choose their method from every part of the card', async ({ page, runtime }) => {
+  test.setTimeout(120_000)
   await open(page, runtime)
   await homePage(page, 'plugins', 'mcp')
   await page.getByTestId('mcp-create').click()

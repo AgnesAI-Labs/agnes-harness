@@ -23,7 +23,10 @@ const fixture = fileURLToPath(new URL('./fixtures/source-loop-daemon.ts', import
 // The source-form worker transpiles the whole bundled-plugin graph (~1500 modules, node_modules
 // included) through jiti with forceTranspile, so no cache applies. Measured on a cold home: boot ~9s,
 // first session/new ~35s, reloadLocal ~20s. Every step needs headroom over the SDK's 30s default.
-const STEP_MS = 120_000
+// Windows CI reached 120s during the first session's cold worker load.
+const STEP_MS = process.platform === 'win32' ? 180_000 : 120_000
+const TEST_MS = process.platform === 'win32' ? 420_000 : 300_000
+
 async function bounded<T>(work: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -50,7 +53,7 @@ async function shutdown(child: ChildProcess, exited: Promise<number | null>, hom
   }
 }
 
-it('a fresh home does not evaluate repository plugins or other repository code until explicit workspace trust', async () => {
+async function verifyWorkspaceTrust() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-clone-trust-')))
   const home = join(root, 'home'),
     workspace = join(root, 'repository'),
@@ -189,4 +192,10 @@ it('a fresh home does not evaluate repository plugins or other repository code u
     await shutdown(child, exited, home)
     rmSync(root, { recursive: true, force: true })
   }
-}, 300_000)
+}
+
+it(
+  'a fresh home does not evaluate repository plugins or other repository code until explicit workspace trust',
+  verifyWorkspaceTrust,
+  TEST_MS,
+)

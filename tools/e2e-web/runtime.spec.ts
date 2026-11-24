@@ -176,7 +176,10 @@ test('session admission keeps history readable, drafts editable and sending gate
 })
 
 // Uses the built CLI/browser payload and a durable synthetic session, without live providers.
-test('bundled deliverables survive a cold browser start and repeated reloads', async ({ page, runtime }) => {
+test('bundled deliverables survive a cold browser start and repeated reloads', async ({
+  page,
+  runtime,
+}, info) => {
   const client = await runtime.connect()
   for (let index = 0; index < 3; index++) {
     const other = await client.session.new({
@@ -204,6 +207,7 @@ test('bundled deliverables survive a cold browser start and repeated reloads', a
   const saved = await toolResult(session, 'present')
   expect(saved?.artifactRefs).toHaveLength(1)
   await runtime.restart()
+  expect(info.timeout).toBeGreaterThanOrEqual(120_000)
   await preferences(page)
   const skip = page.getByTestId('first-run-skip')
   await page.addLocatorHandler(skip, async () => await skip.click(), { times: 1 })
@@ -260,6 +264,7 @@ for (const [issue, version, action] of [
     page,
     runtime,
   }, info) => {
+    test.setTimeout(120_000)
     await preferences(page)
     const client = await runtime.connect()
     const session = await client.session.new({

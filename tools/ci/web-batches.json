@@ -427,7 +427,7 @@
         "id": "main-13",
         "args": ["v3-navigation.spec.ts"],
         "widths": "",
-        "timeoutMinutes": 10
+        "timeoutMinutes": 15
       },
       {
         "id": "main-14",

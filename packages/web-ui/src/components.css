@@ -1618,8 +1618,17 @@
     transition-duration: 0s !important;
   }
 
+  .ant-tabs-dropdown .ant-tabs-dropdown-menu-item {
+    display: flex;
+    align-items: center;
+    min-height: var(--s32);
+  }
+
   /* Phone navigation shares the available strip; long labels wrap inside full touch targets. */
   @media (max-width: 767px) {
+    .ant-tabs-dropdown .ant-tabs-dropdown-menu-item {
+      min-height: var(--control-height-touch);
+    }
     .agnes-ui-tabs:is(.ant-tabs-top, .ant-tabs-bottom) > .ant-tabs-nav .ant-tabs-nav-list {
       flex: 1 1 auto;
       width: 100%;
