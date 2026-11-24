@@ -59,7 +59,18 @@ export type SubagentDeps = {
 }
 
 const DEFAULT_CHILD_TOOL_FILTER: ChildAgentToolFilter = {
-  deny: ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update'],
+  deny: [
+    'schedule_create',
+    'schedule_delete',
+    'schedule_list',
+    'schedule_update',
+    'present',
+    'ui_guide',
+    'ui_render',
+    'ui_update',
+    'ui_close',
+    'ask_user_question',
+  ],
 }
 
 const implicitRuntimes = new WeakMap<SubagentDeps, SubagentRuntime>()
@@ -591,7 +602,10 @@ export const subagentListTool = defineTool({
       children.length === 0
         ? 'no child agents'
         : children
-            .map((child) => `${child.id} ${child.status}${child.continuable ? ' continuable' : ''}`)
+            .map(
+              (child) =>
+                `${child.id} ${child.status}${child.continuable ? ' continuable' : ''}${child.label ? ` — ${child.label}` : ''}`,
+            )
             .join('\n')
     const available = roles.map(
       (role) =>
@@ -609,6 +623,7 @@ export const subagentListTool = defineTool({
           providerId: child.providerId,
           status: child.status,
           continuable: child.continuable,
+          ...(child.label === undefined ? {} : { label: child.label }),
           ...(child.text === undefined ? {} : { text: child.text }),
         })),
       },

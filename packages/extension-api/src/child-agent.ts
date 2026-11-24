@@ -175,6 +175,7 @@ export type ChildAgentListing = Readonly<{
   lastHeartbeatAt?: number
   leaseUntil?: number
   continuable: boolean
+  label?: string
   text?: string
   role?: ChildRole
 }>

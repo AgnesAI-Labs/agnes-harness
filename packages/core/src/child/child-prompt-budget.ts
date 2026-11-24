@@ -5,7 +5,7 @@ import type { SessionImpl } from '../step/session.js'
 import { clipText } from './failure.js'
 
 export const RESULT_DELIVERY_GUIDANCE =
-  'Your final answer is delivered automatically to the parent. The parent does not see your intermediate tool outputs. Include findings, evidence, and verified file paths in your final answer. Name risks and unfinished work.'
+  'Your final answer is delivered automatically to the parent. The parent does not see your intermediate tool outputs. Include findings, evidence, and verified file paths in your final answer. Name risks and unfinished work. Work efficiently within a tight step budget: batch related shell checks into one script instead of many small commands, stop retrying blocked or captcha-gated sources, and return a concise answer as soon as key facts are verified.'
 
 const toolGuidance =
   'Use only tools offered to this worker. Discover deferred tools with tool_search and tool_describe when offered. Discovery grants no execution permission.'

@@ -725,6 +725,7 @@ export class KernelChildren implements ChildrenFactory {
           { type: 'text', text: body },
         ],
         actor: await childFirstInputActor(parent, child),
+        ...(parent.preset.budget.maxSteps === null ? { maxSteps: 25 } : {}),
       })
       checkParent()
     }
@@ -1120,6 +1121,7 @@ export class KernelChildren implements ChildrenFactory {
           providerId: 'in-process',
           status,
           continuable: resident !== undefined,
+          ...(row.inputText.trim() ? { label: row.inputText.trim().split('\n', 1)[0]!.slice(0, 80) } : {}),
           ...(text ? { text } : {}),
         }
       }),
