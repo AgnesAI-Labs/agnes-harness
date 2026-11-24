@@ -50,15 +50,6 @@ import { bindChildFactory } from './sessions.js'
 import { humanChildState, snapshotFromLedger, snapshotFromLive, snapshotFromRecord } from './status.js'
 import { ChildAdmissionGuard } from './tree-admission.js'
 
-/**
- * The tree cap a deployment gets for free when its preset never names `subagent.tree_budget_credits`.
- * Every shipped preset left this unset, which made fork/spawn refuse unconditionally with E_BUDGET
- * regardless of `max_depth`/`max_fan_out` already inviting subagents — a missing knob, not a
- * deliberate "no subagents" decision. A deployment that wants a real ceiling still sets the field;
- * this only stands in for "nobody configured one".
- */
-const DEFAULT_TREE_BUDGET_CREDITS = 20
-
 type CreateOpts = Parameters<ChildrenFactory['create']>[0] & {
   input?: string
   parentEffectId?: string
@@ -209,7 +200,7 @@ export class KernelChildren implements ChildrenFactory {
       opts.model === undefined ? undefined : requireChildModel(parent.d.provider, parent.preset, opts.model)
 
     const rootTaskId = rootTaskIdOf(parent)
-    const treeCap = capToMicrocredits(parent.preset.treeBudgetCredits ?? DEFAULT_TREE_BUDGET_CREDITS)
+    const treeCap = capToMicrocredits(parent.preset.treeBudgetCredits ?? parent.turnBudgetCap() ?? 20)
     await store.ensureRootScope(rootTaskId, treeCap)
     const childCap = opts.budget === undefined ? null : capToMicrocredits(opts.budget)
     const attemptId = `attempt:${this.kernel.ids.ulid()}`

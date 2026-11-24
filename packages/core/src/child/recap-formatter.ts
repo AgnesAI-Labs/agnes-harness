@@ -63,6 +63,7 @@ function blocker(task: SubtaskFactRecord) {
 
 export function renderTruthBase(snapshot: RecapFactSnapshot): string {
   const { counts, subtasks } = snapshot
+  const settled = counts.completed + subtasks.filter((x) => x.status === 'idle').length
   const banner = snapshot.hasIncompleteWork
     ? `部分完成 / 等待审批 ${counts.waitingApproval} 项`
     : counts.total
@@ -75,11 +76,13 @@ export function renderTruthBase(snapshot: RecapFactSnapshot): string {
     counts.failed ? `Failed ${counts.failed}` : '',
     counts.cancelled ? `Cancelled ${counts.cancelled}` : '',
   ].filter(Boolean)
-  const pending = subtasks.filter((x) => x.status !== 'completed' || x.approvalPending)
+  const pending = subtasks.filter(
+    (x) => (x.status !== 'completed' && x.status !== 'idle') || x.approvalPending,
+  )
   return [
     '## 运行时账本事实 · Runtime ledger facts',
     '',
-    `**${banner}（已完成 ${counts.completed}/${counts.total}）**`,
+    `**${banner}（已完成 ${settled}/${counts.total}）**`,
     ...(nonZero.length ? [nonZero.join(' · ')] : []),
     '',
     '| taskId | role | status | executionState | summary (recorded child output) |',
@@ -107,8 +110,9 @@ const priority: readonly ChildAgentStatus[] = [
 ]
 
 export function renderDeterministicNarrative(snapshot: RecapFactSnapshot): string {
-  const { counts } = snapshot
+  const { counts, subtasks } = snapshot
   if (!counts.total) return 'No child tasks are recorded.'
+  const settled = counts.completed + subtasks.filter((x) => x.status === 'idle').length
   const actions = [
     ...priority.flatMap((status) =>
       snapshot.subtasks
@@ -122,7 +126,7 @@ export function renderDeterministicNarrative(snapshot: RecapFactSnapshot): strin
       .map((t) => `- [${literal(t.taskId)}] completed. ${literal(t.nextStep ?? '')}`),
   ]
   return [
-    `${counts.completed} of ${counts.total} tasks completed.`,
+    `${settled} of ${counts.total} tasks completed.`,
     ...(actions.length ? ['', 'Next actions', ...actions] : []),
   ].join('\n')
 }

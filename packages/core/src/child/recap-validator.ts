@@ -9,7 +9,7 @@ type Violation = { code: string; detail: string }
 type Validation = { valid: boolean; violations: readonly Violation[] }
 
 const universalCompletion = [
-  /(?:全部|全都|均|都|所有(?:的)?(?:子?任务|工作|事项|步骤)?)(?:已经|现已|全部|成功|顺利|执行|处理|已|均|都|被|了|\s)*(?:完成|成功|结束|搞定)/gu,
+  /(?:全部|全都|均|都|所有(?:的)?(?:子?任务|工作|事项|步骤)?)(?:已经|现已|全部|成功|顺利|执行|处理|已|均|都|被|了|\s)*(?:完成|成功|搞定)/gu,
   /\b(?:all|both|each|every|everything|(?:the\s+)?(?:(?:entire|whole)\s+)?batch)(?:\s+(?:\d+|of|the|our|subtasks?|tasks?|work|items?|children|child|jobs?|steps?|assignments?))*\s+(?:(?:is|are|has|have|been|was|were|now|fully|successfully)\s+)*(?:completed?|done|succeeded|finished|successful)\b/giu,
   /\b(?:completed|finished)\s+(?:everything|all\s+(?:sub)?tasks)\b|\b(?:nothing|no (?:work|tasks?))\s+(?:remains?|left|outstanding)\b/giu,
 ]
@@ -80,7 +80,8 @@ function statusChecks(line: string, refs: Mention[], errors: Violation[], seen: 
       }
       for (const { task } of owners) {
         const denied = negated(before)
-        if ((task.status === status) === denied)
+        const matches = task.status === status || (task.status === 'idle' && status === 'completed')
+        if (matches === denied)
           errors.push({ code: 'STATUS_MISMATCH', detail: `${task.taskId}: ${match[0]}` })
         else if (!denied) seen.add(task.taskId)
       }
@@ -97,8 +98,16 @@ const namedFile = /^(?:README|Makefile|Dockerfile|LICENSE|NOTICE)$/u
 // Take a whole quoted path or link target before looking for ordinary unquoted file tokens.
 const pathTokens =
   /!?\[[^\]\n]*\]\(\s*(?:<([^>\n]+)>|([^\s)]+))(?:\s+"[^"]*")?\s*\)|^\s*\[[^\]\n]+\]:\s*<?([^\s>]+)>?|[\x60"]([^\x60"\n]+)[\x60"]|\b(?:README|Makefile|Dockerfile|LICENSE|NOTICE)\b(?![./])|(?<![\w./\\-])(?:(?:[A-Za-z]:)?[/\\]|[\p{L}\p{N}_.@~+-]+[/\\])[\p{L}\p{N}_.@~%+\\/-]+|(?<![\w.-])[\p{L}\p{N}_@+-]*\.[\p{L}][\p{L}\p{N}_.+-]*/gu
-function isPath(value: string) {
-  return /[/\\]|\.[\p{L}]/u.test(value)
+const webUrl = /^(?:https?|mailto):/iu
+const webDomainOrTicker =
+  /^(?:[\p{L}\p{N}-]+\.)+(?:com|org|net|io|cn|gov|edu|co|ai|news|tv|uk|jp|hk|sg|de|fr|[A-Z])$/u
+const fileExt = /\.(?:[a-zA-Z][a-zA-Z0-9]{1,7}|[chmrs])$/u
+const rootedPath = /^(?:[A-Za-z]:[/\\]|\/|\.\.?\/)/u
+function looksLikeArtifactPath(token: string) {
+  if (!token || /^\d+(?:\/\d+)+$/.test(token)) return false
+  if (/\s/.test(token)) return (rootedPath.test(token) || /[/\\]/.test(token)) && fileExt.test(token)
+  if (rootedPath.test(token)) return true
+  return fileExt.test(token)
 }
 function artifactChecks(line: string, refs: Mention[], snapshot: RecapFactSnapshot, errors: Violation[]) {
   for (const match of line.matchAll(pathTokens)) {
@@ -106,7 +115,8 @@ function artifactChecks(line: string, refs: Mention[], snapshot: RecapFactSnapsh
     const token = link ?? match[4] ?? match[0].replace(/[.!?]+$/, '')
     const before = line.slice(0, match.index)
     const claimed = declaredFile.test(before)
-    if (!link && !isPath(token) && !namedFile.test(token) && !claimed) continue
+    if (!claimed && (webUrl.test(token) || (!link && webDomainOrTicker.test(token)))) continue
+    if (!link && !looksLikeArtifactPath(token) && !namedFile.test(token) && !claimed) continue
     if (!link && !claimed && /^\d+\/\d+$/.test(token)) continue
     const start = match.index
     const end = start + match[0].length
@@ -150,7 +160,10 @@ export function validateRecapOutput(text: string, snapshot: RecapFactSnapshot): 
   }
   if (!includesTruth)
     for (const task of snapshot.subtasks) {
-      if ((task.status !== 'completed' || 'providerId' in task) && !seen.has(task.taskId))
+      if (
+        ((task.status !== 'completed' && task.status !== 'idle') || 'providerId' in task) &&
+        !seen.has(task.taskId)
+      )
         violations.push({ code: 'MISSING_INCOMPLETE_ITEM', detail: task.taskId })
     }
   return { valid: violations.length === 0, violations }

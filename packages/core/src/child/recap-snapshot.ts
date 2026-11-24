@@ -50,13 +50,19 @@ function countStatuses(statuses: ChildAgentStatus[]): RecapFactSnapshot['counts'
   return counts
 }
 
+const isIncompleteStatus = (status: ChildAgentStatus) => status !== 'completed' && status !== 'idle'
+
 /** Notices only need the roster. Do not replay every sibling ledger on every completion. */
 export async function childBatchCounts(parent: SessionImpl) {
   const { records, external } = await children(parent)
-  return countStatuses([
-    ...records.map((r) => projectChildStatus(r).status),
-    ...external.map((x) => x.status),
-  ])
+  const statuses = [...records.map((r) => projectChildStatus(r).status), ...external.map((x) => x.status)]
+  const counts = countStatuses(statuses)
+  const idle = statuses.filter((status) => status === 'idle').length
+  return {
+    ...counts,
+    idle,
+    hasIncompleteWork: statuses.some(isIncompleteStatus),
+  }
 }
 
 function textBlocks(data: unknown) {
@@ -236,7 +242,7 @@ export async function buildRecapFactSnapshot(
     parentKey: parent.key,
     generatedAt,
     counts,
-    hasIncompleteWork: counts.completed < counts.total,
+    hasIncompleteWork: subtasks.some((x) => isIncompleteStatus(x.status)),
     subtasks,
     allowedArtifactPaths,
   }

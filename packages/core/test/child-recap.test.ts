@@ -283,6 +283,7 @@ describe('child recap', () => {
       )
     }
     expect(validateRecapOutput(`${safe}\nNot all tasks completed. 尚未全部完成。`, snapshot).valid).toBe(true)
+    expect(validateRecapOutput(`${safe}\n两个子任务已全部结束（未全部完成）。`, snapshot).valid).toBe(true)
     expect(validateRecapOutput('first completed', snapshot).violations.map((v) => v.code)).toContain(
       'MISSING_INCOMPLETE_ITEM',
     )
@@ -372,5 +373,26 @@ describe('child recap', () => {
       narrative: good,
     })
     expect(guardParentRecapReply(good, snapshot)).toEqual({ replyText: good, recapExitViolations: [] })
+  })
+
+  it('treats all-idle continuable children as settled and allows web URLs in natural summaries', async () => {
+    const b = await batch()
+    const first = await b.task('web-a', 'idle')
+    await b.task('web-b', 'idle')
+    const snapshot = await b.snapshot()
+    expect(snapshot.hasIncompleteWork).toBe(false)
+    const { system } = await childCompletionInput(b.parent, first, 'completed', { continuable: true })
+    expect(system.summary).toMatch(
+      /\[Batch State: completed=2\/2, waiting_approval=0, running=0, paused=0, disconnected=0, failed=0\]$/,
+    )
+    expect(system.summary).not.toContain('DO NOT report overall batch completion')
+    const summary =
+      '两个子智能体已全部完成检索。web-a 已完成查询 [Yahoo Finance](https://finance.yahoo.com/quote/NVDA) 与 example.com（NVDA.O），并引用错误 `no search provider/key is configured on this host` 与 盘前/盘中/盘后 状态。'
+    expect(guardParentRecapReply(summary, snapshot)).toEqual({
+      replyText: summary,
+      recapExitViolations: [],
+    })
+    expect(renderTruthBase(snapshot)).toContain('**全部完成（已完成 2/2）**')
+    expect(renderTruthBase(snapshot)).toContain('### Pending approvals and blockers\nNone.')
   })
 })

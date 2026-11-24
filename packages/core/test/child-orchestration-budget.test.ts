@@ -13,6 +13,7 @@ import {
   compactChildHandoff,
   RESULT_DELIVERY_GUIDANCE,
 } from '../src/child/child-prompt-budget.js'
+import { recoverChildCompletions } from '../src/child/completion-notice.js'
 import {
   ChildNoticeCoalescer,
   completionBatch,
@@ -382,6 +383,7 @@ describe('background completion notices', () => {
     const deliver = (r: (typeof records)[number]) => deliverCoalescedChildCompletion(parent, r, 'completed')
     await Promise.all(records.map(deliver))
     for (const r of records) await deliver(r)
+    await recoverChildCompletions(parent)
     const inbox = parent.latest('inbox') as {
       items: { system: { data: { children: { childKey: string }[] } } }[]
     }

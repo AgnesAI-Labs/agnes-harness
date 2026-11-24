@@ -2,6 +2,8 @@ import { hasChildControl, requireChildControl } from '@agnes/core-child-control/
 import type { ChildTaskRecord } from '@agnes/core-child-control/child/types'
 import { isTerminalChildState } from '@agnes/core-child-control/child/types'
 import { sha256Hex } from '@agnes/core-common/request/hash'
+import { scanPages } from '@agnes/core-ledger/log/scan-pages'
+import type { Inbox } from '@agnes/core-ledger/reduce/shapes'
 import type { SystemInput } from '@agnes/protocol'
 import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
@@ -75,15 +77,15 @@ export type ChildCompletionOptions = {
 }
 
 async function batchFacts(parent: SessionImpl) {
-  const counts = await childBatchCounts(parent)
+  const { idle, hasIncompleteWork, ...counts } = await childBatchCounts(parent)
   const { completed, total, waitingApproval, running, paused, disconnected, failed } = counts
-  const hasIncompleteWork = completed < total
-  const line = `[Batch State: completed=${completed}/${total}, waiting_approval=${waitingApproval}, running=${running}, paused=${paused}, disconnected=${disconnected}, failed=${failed}]`
+  const settled = completed + idle
+  const line = `[Batch State: completed=${settled}/${total}, waiting_approval=${waitingApproval}, running=${running}, paused=${paused}, disconnected=${disconnected}, failed=${failed}]`
   const warning = 'DO NOT report overall batch completion; unresolved subtasks remain.'
   return {
     suffix: hasIncompleteWork ? `\n${line}\n${warning}` : `\n${line}`,
     data: {
-      batchState: { ...counts, hasIncompleteWork },
+      batchState: { ...counts, completed: settled, hasIncompleteWork },
       pendingApprovalsCount: waitingApproval,
       activeSiblingsCount: running,
       pausedCount: paused,
@@ -163,6 +165,27 @@ export async function childCompletionInput(
   }
 }
 
+/** True when `commandId` was already queued either standalone or inside a coalesced `child-batch-completed` item. */
+async function childCompletionDelivered(parent: SessionImpl, commandId: string): Promise<boolean> {
+  for await (const rows of scanPages((query) => parent.scan(query), {
+    type: 'inbox',
+    lane: parent.lane,
+    toSeq: parent.lastSeq,
+  })) {
+    for (const row of rows) {
+      if (row.origin !== 'system' || row.trust !== 'trusted') continue
+      for (const item of (row.data as Inbox).items) {
+        if (item.origin !== 'system' || item.system?.source !== CHILD_COMPLETION_SOURCE) continue
+        if (item.commandId === commandId) return true
+        if (item.system.type !== 'child-batch-completed') continue
+        const children = (item.system.data as { children?: { commandId?: string }[] } | null)?.children
+        if (children?.some((child) => child.commandId === commandId)) return true
+      }
+    }
+  }
+  return false
+}
+
 /**
  * Exactly one wakeup per uncollected result: the commandId dedupes against the parent's inbox history, so the live
  * path, a retried close and the recovery scan converge. A closed parent cannot take it; recovery
@@ -189,7 +212,9 @@ export async function deliverChildCompletion(
     },
     {
       dedupeByCommandId: true,
-      skipIf: () => childResultCollected(parent, record.childKey, commandId, resultSeq),
+      skipIf: async () =>
+        (await childResultCollected(parent, record.childKey, commandId, resultSeq)) ||
+        (await childCompletionDelivered(parent, commandId)),
     },
   )
 }
