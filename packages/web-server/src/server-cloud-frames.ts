@@ -4,6 +4,7 @@ import { servePdfPreview } from './pdf-preview-frame.js'
 import { createWebDocumentResponder } from './server-document.js'
 import { listen } from './server-http.js'
 import type { WebServerOptions } from './server-types.js'
+import { serveUiComponentFrame } from './ui-component-frame.js'
 
 /** Separate origin for build assets and capability-scoped B transport. No A owner handlers. */
 export async function createCloudFrameServer(
@@ -27,6 +28,7 @@ export async function createCloudFrameServer(
       }
       if (serveDeliverablePreview(request, response)) return
       if (servePdfPreview(request, response)) return
+      if (serveUiComponentFrame(request, response)) return
       if (!serve) {
         response.writeHead(503).end()
         return

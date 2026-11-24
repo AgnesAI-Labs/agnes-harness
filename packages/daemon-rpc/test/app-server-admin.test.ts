@@ -24,6 +24,36 @@ import { CommandQueue } from '../src/local/command-queue.js'
 import { createAppServerAdmin, registerAppServerAdmin } from '../src/local/methods/admin.js'
 import { createPlanCommands } from '../src/local/plan-commands.js'
 
+it('propagates admin connection closure to the cloud exchange', async () => {
+  const endpoint = new LocalEndpoint({ clock: Date.now, principalId: 'local' })
+  endpoint.conn.initialized = true
+  endpoint.conn.authKind = 'local'
+  endpoint.conn.credentialKind = 'local'
+  const authorizeCloud = vi.fn(async (_input: unknown, signal: AbortSignal) => {
+    await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }))
+    signal.throwIfAborted()
+  })
+  const service = { authorizeCloud } as unknown as ReturnType<typeof createAppServerAdmin>
+  registerAppServerAdmin(endpoint, service, localPackageAdminAuthority())
+  try {
+    const call = endpoint.handle({
+      jsonrpc: '2.0',
+      id: 1,
+      method: '_agnes/v1/admin.cloud.authorize',
+      params: { credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111' },
+    })
+    expect(authorizeCloud).toHaveBeenCalledWith(
+      { credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111' },
+      expect.any(AbortSignal),
+    )
+    await endpoint.close()
+    expect(authorizeCloud.mock.calls[0]?.[1].aborted).toBe(true)
+    expect(await call).toHaveProperty('error')
+  } finally {
+    await endpoint.close()
+  }
+})
+
 it('owns settings and plan writes behind local admin and registered-workspace authority', async () => {
   const fixtureRoot = await mkdtemp(join(tmpdir(), 'agh-app-admin-'))
   const home = join(fixtureRoot, 'home')

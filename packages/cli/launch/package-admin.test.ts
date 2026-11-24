@@ -2,11 +2,16 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { CLOUD_AUTHORIZATION_PATH } from '@agnes/protocol'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { LocalBackend } from './backend.js'
 
 const mocks = vi.hoisted(() => {
-  const request = vi.fn(async () => ({ schemaVersion: 1 }))
+  const request = vi.fn(
+    async (_method: string, _input: unknown, _options?: { signal?: AbortSignal; timeoutMs?: number }) => ({
+      schemaVersion: 1,
+    }),
+  )
   const catalogList = vi.fn(async () => ({ items: [], nextCursor: null }))
   const initialize = vi.fn(async (): Promise<{ features?: string[] }> => ({}))
   const close = vi.fn(async () => undefined)
@@ -132,6 +137,57 @@ beforeEach(() => {
   daemonDir = mkdtempSync(join(tmpdir(), 'agh-launch-admin-'))
 })
 afterEach(() => rmSync(daemonDir, { recursive: true, force: true }))
+
+it('closes the dedicated daemon connection when the browser abandons cloud authorization', async () => {
+  const server = createServer()
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('missing test listener address')
+  const origin = `http://127.0.0.1:${address.port}`
+  const backend = {
+    scope: { daemonDir, home: daemonDir, profile: 'local-dev', scopeID: 'scope-1' },
+    socketPath: join(daemonDir, 'daemon.sock'),
+    web: { url: 'ws://127.0.0.1:5000', origin, token: ['test', 'web', 'token'].join('-') },
+  } as LocalBackend
+  const admin = localPackageAdmin(backend, origin)
+  const controller = new AbortController()
+  const input = { credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111' }
+  mocks.request.mockImplementationOnce(async (_method, _input, options) => {
+    const signal = options?.signal
+    if (!signal) throw Error('missing exchange signal')
+    return new Promise((_resolve, reject) => {
+      if (signal.aborted) reject(signal.reason)
+      else signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+    })
+  })
+  server.on('request', (request, response) => void admin.handle(request, response))
+  try {
+    const request = fetch(origin + CLOUD_AUTHORIZATION_PATH, {
+      method: 'POST',
+      headers: { origin, 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+      signal: controller.signal,
+    }).catch((error: Error) => error.name)
+    await vi.waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/admin.cloud.authorize', input, {
+        timeoutMs: expect.any(Number),
+        signal: expect.any(AbortSignal),
+      }),
+    )
+    const signal = mocks.request.mock.lastCall?.[2]?.signal
+    expect(signal?.aborted).toBe(false)
+    controller.abort()
+    expect(await request).toBe('AbortError')
+    await vi.waitFor(() => expect(mocks.close).toHaveBeenCalled())
+    expect(signal?.aborted).toBe(true)
+  } finally {
+    controller.abort()
+    await admin.close()
+    const stopped = new Promise<void>((resolve) => server.close(() => resolve()))
+    server.closeAllConnections()
+    await stopped
+  }
+})
 
 it('advertises exactly the frozen hot-update features and forwards catalog reads to the daemon SDK', async () => {
   const backend = {

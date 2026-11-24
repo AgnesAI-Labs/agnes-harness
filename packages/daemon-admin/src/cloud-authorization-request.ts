@@ -2,9 +2,10 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { CLOUD_AUTHORIZATION_TIMEOUT_MS } from '@agnes/protocol'
 
 /** Retry only credential discovery/authorization, never a forwarded business request. */
-export function cloudAuthorizationRequests(fetcher: typeof fetch) {
+export function cloudAuthorizationRequests(fetcher: typeof fetch, cancellation?: AbortSignal) {
   const deadline = Date.now() + CLOUD_AUTHORIZATION_TIMEOUT_MS
-  const lifetime = AbortSignal.timeout(CLOUD_AUTHORIZATION_TIMEOUT_MS)
+  const timeout = AbortSignal.timeout(CLOUD_AUTHORIZATION_TIMEOUT_MS)
+  const lifetime = cancellation ? AbortSignal.any([cancellation, timeout]) : timeout
   let retried = false
   const request =
     (timeoutMs: number): typeof fetch =>
@@ -22,6 +23,7 @@ export function cloudAuthorizationRequests(fetcher: typeof fetch) {
         let response: Response | undefined
         try {
           response = await fetcher(input, { ...init, signal })
+          lifetime.throwIfAborted()
           if (![502, 503, 504].includes(response.status)) return response
         } catch (error) {
           if (!(error instanceof TypeError) && !(error instanceof Error && error.name === 'TimeoutError'))

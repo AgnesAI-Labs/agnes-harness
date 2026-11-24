@@ -7,7 +7,11 @@ import { serveDeliverablePreview } from './deliverable-preview-frame.js'
 import { HISTORY_SEARCH_PATH, handleHistorySearch } from './history-route.js'
 import { servePdfPreview } from './pdf-preview-frame.js'
 import type { PluginRebuiltEvent, WebServer, WebServerOptions } from './server-types.js'
-import { UI_COMPONENT_MODULE_BYTES, uiComponentFrame } from './ui-component-frame.js'
+import {
+  sendUiComponentFrame,
+  serveUiComponentFrame,
+  UI_COMPONENT_MODULE_BYTES,
+} from './ui-component-frame.js'
 import { fileUploadRoute } from './upload-route.js'
 import { webhookRoute } from './webhook-route.js'
 import { createWorkspacePickerRoute, handlePlanMode } from './workspace-routes.js'
@@ -214,6 +218,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       const requestUrl = new URL(request.url ?? '/', expectedOrigin)
       if (serveDeliverablePreview(request, response)) return
       if (servePdfPreview(request, response)) return
+      if (serveUiComponentFrame(request, response)) return
       if (requestUrl.pathname === FILE_UPLOAD_PATH) {
         await handleFileUpload(request, response)
         return
@@ -466,15 +471,7 @@ void poll();\n`,
             response.writeHead(404).end()
             return
           }
-          const frame = uiComponentFrame(bytes.toString('utf8'))
-          response.writeHead(200, {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'no-store',
-            'Content-Security-Policy': frame.csp,
-            'Referrer-Policy': 'no-referrer',
-            'X-Content-Type-Options': 'nosniff',
-          })
-          response.end(request.method === 'HEAD' ? undefined : frame.body)
+          sendUiComponentFrame(request, response, bytes.toString('utf8'))
           return
         }
         if (typeof resolved === 'string') await rememberPluginBuild(assetPath, resolved, bytes)

@@ -313,6 +313,46 @@ it('bounds transient cloud authorization retries across both stages and admits s
   }
 })
 
+it.each(['discovery', 'exchange'])(
+  'aborts the in-flight cloud %s without starting another hop',
+  async (stage) => {
+    const controller = new AbortController()
+    let markStarted!: (signal: AbortSignal) => void
+    const started = new Promise<AbortSignal>((resolve) => {
+      markStarted = resolve
+    })
+    const origin = 'https://8443-fixture.ap-shanghai.tencentags.com'
+    const store = {
+      read: async () => ({
+        version: 1 as const,
+        kind: 'api-key' as const,
+        provider: 'generic',
+        label: 'fixture',
+        value: 'agh_sk_synthetic',
+      }),
+    }
+    const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+      const discovery = String(url).endsWith('/connection')
+      if (stage === 'exchange' && discovery)
+        return Response.json({ code: 200, data: { sandbox_url: origin, traffic_token: 'fixture' } })
+      const signal = init?.signal
+      if (!signal) throw Error('missing abort signal')
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+        markStarted(signal)
+      })
+    })
+    const input = { credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111', origin }
+    const result = authorizeCloudConnection(input, store, fetcher, controller.signal)
+    const rejection = expect(result).rejects.toMatchObject({ data: { reason: 'CONFIG_AUTH_UNAVAILABLE' } })
+    const upstream = await started
+    controller.abort()
+    expect(upstream.aborted).toBe(true)
+    await rejection
+    expect(fetcher).toHaveBeenCalledTimes(stage === 'discovery' ? 1 : 2)
+  },
+)
+
 it.each(['full-access', 'workspace-write'])(
   'retains the credential administration confirmation boundary under %s',
   async (policy) => {

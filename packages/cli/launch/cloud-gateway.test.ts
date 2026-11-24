@@ -364,6 +364,7 @@ it.each([200, 502, 503])(
   async (infoStatus) => {
     const token = `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`
     const prefix = remoteFrontendSessionPath(token)
+    const policies = ["default-src 'none'; sandbox allow-scripts", "connect-src 'none'; object-src 'none'"]
     let status = 200
     let abortForbidden = false
     const received: {
@@ -391,6 +392,7 @@ it.each([200, 502, 503])(
         setTimeout(() => response.destroy(), 10)
         return
       }
+      response.setHeader('Content-Security-Policy', policies)
       response.writeHead(
         request.url === prefix + REMOTE_FRONTEND_INFO ? infoStatus : admitted ? status : 403,
         {
@@ -431,7 +433,8 @@ it.each([200, 502, 503])(
     server.listen(0, '127.0.0.1')
     await once(server, 'listening')
     const local = `http://127.0.0.1:${(server.address() as { port: number }).port}`
-    const register = (expiresAt = Date.now() + 60_000) =>
+    const initialExpiry = Date.now() + 60_000
+    const register = (expiresAt = initialExpiry) =>
       gateway.register('https://8443-fixture.ap-shanghai.tencentags.com', {
         token,
         expiresAt,
@@ -455,6 +458,14 @@ it.each([200, 502, 503])(
         auth: undefined,
         path: prefix + '/plugins/fixture/client.js',
       })
+      const forwarded = await new Promise<string[]>((resolve, reject) => {
+        const probe = requestHttp(local + prefix + '/plugins/fixture/client.js', (reply) => {
+          reply.resume()
+          resolve(reply.headersDistinct['content-security-policy'] ?? [])
+        })
+        probe.on('error', reject).end()
+      })
+      expect(forwarded).toEqual(policies)
       expect((await fetch(local + '/api/local-management')).status).toBe(404)
       expect(
         (await fetch(local + prefix + '/api/test', { headers: { origin: 'https://foreign.example' } }))
@@ -466,6 +477,7 @@ it.each([200, 502, 503])(
         ws.onerror = () => reject(Error('upgrade failed'))
       })
       expect(await message).toBe('ready')
+      expect(register()).toBe(true)
       // Opening the browser's display stream must preserve admission without dropping the session socket.
       const stream = await fetch(local + prefix + PLUGIN_STREAM_OPEN_PATH, {
         method: 'POST',

@@ -5,6 +5,7 @@ import { Context } from '@agnes/cordis'
 import { remoteFrontendSessionPath } from '@agnes/protocol'
 import type { UiCustomComponent } from '@agnes/protocol/gen/intelligent-ui'
 import type { ClientModuleRosterRow } from '@agnes/protocol/gen/package-admin'
+import { UI_COMPONENT_MODULE_BYTES } from '@agnes/protocol/intelligent-ui'
 import { ThemeService } from '@agnes/web-client'
 import { IntelligentCatalog } from '@agnes/web-ui'
 import { act } from 'react'
@@ -98,6 +99,8 @@ describe('reviewed custom host', () => {
     const frameOrigin = `http://${location.hostname}:49997`
     const token = `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`
     const prefix = remoteFrontendSessionPath(token)
+    const renderer = 'export const renderers = {}'
+    const fetchModule = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(renderer))
     const meta = document.createElement('meta')
     meta.id = 'agnes-config'
     meta.dataset.cloudOrigin = frameOrigin
@@ -136,7 +139,32 @@ describe('reviewed custom host', () => {
       )
       const frame = container.querySelector('iframe')!
       expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
-      expect(frame.getAttribute('src')).toBe(`${frameOrigin}${prefix}${row.entryUrl}?agnes_ui_frame=1`)
+      expect(frame.getAttribute('src')).toBe('/__agnes/ui-frame')
+      expect(fetchModule).toHaveBeenCalledWith(`${frameOrigin}${prefix}${row.entryUrl}`, {
+        signal: expect.any(AbortSignal),
+        credentials: 'omit',
+        redirect: 'error',
+        referrerPolicy: 'no-referrer',
+      })
+      const post = vi.fn()
+      Object.defineProperty(frame, 'contentWindow', { value: { postMessage: post } })
+      await act(async () => message(frame, { type: 'agnes-ui-action', id: 'confirm' }))
+      expect(onAction).not.toHaveBeenCalled()
+      await act(async () => message(frame, { type: 'agnes-ui-loaded' }))
+      await act(async () => message(frame, { type: 'agnes-ui-loaded' }))
+      expect(post.mock.calls).toEqual([
+        [
+          {
+            type: 'agnes-ui-init',
+            source: renderer,
+            kind: declaration.kind,
+            props: { amount: 12 },
+            theme: 'light',
+            locale: 'en',
+          },
+          '*',
+        ],
+      ])
       await act(async () => message(frame, { type: 'agnes-ui-action', id: 'undeclared' }))
       expect(onAction).not.toHaveBeenCalled()
       await act(async () => message(frame, { type: 'agnes-ui-ready' }))
@@ -154,6 +182,7 @@ describe('reviewed custom host', () => {
       expect(container.querySelector('iframe')).toBeNull()
       await act(async () => second.unmount())
     } finally {
+      fetchModule.mockRestore()
       settings.disableIframePageLoading = prevIframe
       forgetRemoteAccess(remote)
       localStorage.removeItem(`agnes.cloud.credential.v1:${remote}`)
@@ -161,6 +190,37 @@ describe('reviewed custom host', () => {
       container.remove()
     }
   })
+  it.each(['unavailable', 'oversized', 'unmounted'])(
+    'leaves the fallback when module loading is %s',
+    async (mode) => {
+      const container = document.body.appendChild(document.createElement('div'))
+      const root = createRoot(container)
+      const fetchModule = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, options) => {
+        if (mode === 'unmounted')
+          return new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true })
+          })
+        if (mode === 'unavailable') return new Response('unavailable', { status: 503 })
+        return new Response('é'.repeat(UI_COMPONENT_MODULE_BYTES / 2 + 1))
+      })
+      const source = {
+        theme: new ThemeService(new Context(), 'light'),
+        list: async () => [row],
+        subscribe: () => () => {},
+      }
+      try {
+        await act(async () => root.render(<CustomUiHost {...base} source={source} sessionId="s" />))
+        expect(fetchModule).toHaveBeenCalledOnce()
+        expect(container.textContent).toContain(declaration.fallback)
+        expect(container.querySelector('iframe')).toBeNull()
+      } finally {
+        await act(async () => root.unmount())
+        if (mode === 'unmounted') expect(fetchModule.mock.calls[0]?.[1]?.signal?.aborted).toBe(true)
+        fetchModule.mockRestore()
+        container.remove()
+      }
+    },
+  )
   it('isolates a synchronous renderer error and leaves the preset table working', async () => {
     const container = document.createElement('div')
     const root = createRoot(container)

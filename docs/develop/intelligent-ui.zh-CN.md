@@ -333,7 +333,7 @@ Fact-chain 与 trace 展示 surface id/revision 和归属、received 命令/acto
 
 模块导出 `renderers` 对象，键为声明的完整 kind。函数接收 `(mount, props, api)`，可返回清理函数或其 Promise。`@agnes/web-client` 导出 `IntelligentUiRenderer` 与 `IntelligentUiRendererApi` 类型。API 仅有 `emitAction(id)`、`readTheme()`（`light`/`dark`）和 `readLocale()`（`en`/`zh-CN`）。action id 必须同时在组件 `actionIds` 与 surface `actions` 中；宿主调用现有 surface 的确认、工具及审批路径。组件不能提交 input、row、工具名，也没有会话或服务访问接口。
 
-自定义模块沿用现有安装审阅、能力摘要、信任、不可变资源和会话 generation 名册。入口必须是自包含 ESM（不超过 262,144 字节），不允许运行时 import、slots、services 或外部样式。代码在独立 opaque-origin iframe 中运行，`sandbox="allow-scripts"` 与该文档的 CSP 禁止 fetch/网络资源、表单和嵌套 frame。宿主不将其 import 到自己的页面。渲染器只拥有自身 frame 的 mount；使用 `textContent` 展示文字，提供语义标签、键盘可操作控件、可见焦点，并在卸载时清理资源。manifest 的 keyboard 要求是作者与审阅者的责任，不等于自动无障碍认证。
+自定义模块沿用现有安装审阅、能力摘要、信任、不可变资源和会话 generation 名册。入口必须是自包含 ESM（不超过 262,144 字节），不允许运行时 import、slots、services 或外部样式。工作台通过当前后端连接读取锁定版本的模块文本，再将源码发送给 `/__agnes/ui-frame` 的独立 opaque-origin iframe。iframe 地址不含会话凭据。代码在 `sandbox="allow-scripts"` 下运行，独立的 CSP 禁止 fetch/网络资源、表单和嵌套 frame。渲染器只拥有自身 frame 的 mount；使用 `textContent` 展示文字，提供语义标签、键盘可操作控件、可见焦点，并在卸载时清理资源。manifest 的 keyboard 要求是作者与审阅者的责任，不等于自动无障碍认证。
 
 模型只输出数据组件：`id`、命名空间 `kind`、`dataKey`、`fallback`、`actionIds`（可选 `title`）；props 位于 `surface.data[dataKey]`。后台 `validIntelligentSurface(surface, declarations)` 从持久会话 generation 取得声明，在持久化前按本地同步 JSON Schema 校验 props，核对声明的原文 fallback，并拒绝未知或不唯一的 kind。不能替换为当前安装版本。限制：每模块最多 16 项声明；Schema 最多 16,384 字节、深度 16；props 不超过声明的上限（1–16,384 字节）；fallback 为 1–4,096 字符；继续遵守现有 surface 字节、深度与组件数量上限。Schema 不得加载远程引用或异步执行。
 

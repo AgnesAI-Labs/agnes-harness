@@ -1,8 +1,17 @@
+import { EventEmitter } from 'node:events'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { Readable } from 'node:stream'
+import { PassThrough, Readable } from 'node:stream'
 import { CLOUD_AUTHORIZATION_PATH } from '@agnes/protocol'
-import { expect, it } from 'vitest'
-import { cloudAuthorizationRelay } from './cloud-authorization.js'
+import { expect, it, vi } from 'vitest'
+import { cloudAuthorizationRelay, shareCloudAuthorization } from './cloud-authorization.js'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
 
 it('accepts only same-origin credential references and never reflects raw daemon failures or secret-bearing responses', async () => {
   const origin = 'http://127.0.0.1:4177'
@@ -43,11 +52,12 @@ it('accepts only same-origin credential references and never reflects raw daemon
     const request = Object.assign(Readable.from([JSON.stringify(body)]), {
       url,
       method: 'POST',
+      complete: true,
       headers: { host: new URL(origin).host, origin, 'content-type': 'application/json', ...headers },
     }) as IncomingMessage
     let status = 0
     let result = ''
-    const response = {
+    const response = Object.assign(new EventEmitter(), {
       writeHead(code: number) {
         status = code
         return this
@@ -55,7 +65,7 @@ it('accepts only same-origin credential references and never reflects raw daemon
       end(text: string) {
         result = text
       },
-    } as unknown as ServerResponse
+    }) as unknown as ServerResponse
     expect(await relay(request, response)).toBe(true)
     return { status, body: JSON.parse(result) }
   }
@@ -84,4 +94,97 @@ it('accepts only same-origin credential references and never reflects raw daemon
     expect(JSON.stringify(denied)).not.toContain('private-fixture-Key')
     expect(denied.body).toEqual({ error: 'CLOUD_AUTH_UNAVAILABLE' })
   }
+})
+
+it('cancels a disconnected authorization without registering its late grant', async () => {
+  const origin = 'http://localhost:49979'
+  const input = {
+    origin: 'https://8443-fixture.ap-shanghai.tencentags.com',
+    credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111',
+  }
+  const started = deferred<AbortSignal>()
+  const grant = {
+    token: `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`,
+    expiresAt: Date.now() + 60_000,
+    trafficToken: 'fixture-proof',
+  }
+  const exchanged = deferred<typeof grant>()
+  const register = vi.fn(() => true)
+  const invoke = vi.fn(async (_input, signal: AbortSignal) => {
+    started.resolve(signal)
+    return exchanged.promise
+  })
+  const relay = cloudAuthorizationRelay(origin, invoke, register)
+  const request = Object.assign(Readable.from([JSON.stringify(input)]), {
+    url: CLOUD_AUTHORIZATION_PATH,
+    method: 'POST',
+    headers: { host: new URL(origin).host, origin, 'content-type': 'application/json' },
+    complete: true,
+  }) as IncomingMessage
+  const response = Object.assign(new EventEmitter(), { writeHead: vi.fn(), end: vi.fn() })
+  const handling = relay(request, response as unknown as ServerResponse)
+  const signal = await started.promise
+  response.emit('close')
+  expect(signal.aborted).toBe(true)
+  exchanged.resolve(grant)
+  await expect(handling).resolves.toBe(true)
+  expect(register).not.toHaveBeenCalled()
+  expect(response.writeHead).not.toHaveBeenCalled()
+
+  const partial = Object.assign(new PassThrough(), {
+    url: request.url,
+    method: request.method,
+    headers: request.headers,
+    complete: false,
+  }) as unknown as IncomingMessage
+  const reading = relay(partial, response as unknown as ServerResponse)
+  partial.emit('aborted')
+  partial.destroy()
+  await expect(reading).resolves.toBe(true)
+  expect(invoke).toHaveBeenCalledOnce()
+  expect(response.writeHead).not.toHaveBeenCalled()
+})
+
+it('shares concurrent authorization and cancels an abandoned exchange before starting another', async () => {
+  const input = {
+    credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111',
+    origin: 'http://cloud.fixture:8443',
+  }
+  const grant = { token: 'fixture', expiresAt: Date.now() + 60_000 }
+  const exchange = deferred<typeof grant>()
+  const invoke = vi.fn(async (_input, signal: AbortSignal) => {
+    const abort = new Promise<never>((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+    })
+    return Promise.race([exchange.promise, abort])
+  })
+  const authorize = shareCloudAuthorization(invoke)
+  const first = new AbortController()
+  const second = new AbortController()
+  const firstResult = authorize(input, first.signal)
+  const secondResult = authorize(input, second.signal)
+  await Promise.resolve()
+  expect(invoke).toHaveBeenCalledOnce()
+  const shared = invoke.mock.calls[0]?.[1]
+  first.abort()
+  await expect(firstResult).rejects.toMatchObject({ name: 'AbortError' })
+  expect(shared?.aborted).toBe(false)
+  const retry = authorize(input, new AbortController().signal)
+  second.abort()
+  await expect(secondResult).rejects.toMatchObject({ name: 'AbortError' })
+  expect(shared?.aborted).toBe(false)
+  expect(invoke).toHaveBeenCalledOnce()
+  const abandoned = new AbortController()
+  const otherInput = { ...input, origin: 'http://other.fixture:8443' }
+  const abandonedResult = authorize(otherInput, abandoned.signal)
+  await Promise.resolve()
+  abandoned.abort()
+  await expect(abandonedResult).rejects.toMatchObject({ name: 'AbortError' })
+  expect(invoke.mock.calls[1]?.[1].aborted).toBe(true)
+  const replacement = authorize(otherInput, new AbortController().signal)
+  exchange.resolve(grant)
+  await expect(retry).resolves.toEqual(grant)
+  await expect(replacement).resolves.toEqual(grant)
+  expect(invoke).toHaveBeenCalledTimes(3)
+  expect(invoke.mock.calls[2]?.[1].aborted).toBe(false)
 })

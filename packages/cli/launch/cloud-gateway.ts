@@ -2,6 +2,7 @@ import {
   type ClientRequest,
   request as httpRequest,
   type IncomingMessage,
+  type OutgoingHttpHeaders,
   type ServerResponse,
 } from 'node:http'
 import { request as httpsRequest } from 'node:https'
@@ -93,6 +94,17 @@ export function createCloudGateway(ownerOrigin?: string) {
       throw Error('invalid sandbox target')
     for (const [path, grant] of grants) if (grant.expiresAt <= Date.now()) revoke(path)
     const prefix = remoteFrontendSessionPath(result.token)
+    const existing = grants.get(prefix)
+    if (
+      existing &&
+      !existing.rejected &&
+      existing.origin === target.origin &&
+      existing.trafficToken === result.trafficToken &&
+      existing.expiresAt === result.expiresAt
+    ) {
+      if (refresh) existing.refresh = refresh
+      return true
+    }
     if (grants.size >= 32 && !grants.has(prefix)) {
       const oldest = grants.keys().next().value
       if (oldest) revoke(oldest)
@@ -316,7 +328,7 @@ export function createCloudGateway(ownerOrigin?: string) {
               response.writeHead(502, { 'cache-control': 'no-store', ...ownerCors }).end()
               return
             }
-            const safe: Record<string, string> = {
+            const safe: OutgoingHttpHeaders = {
               'cache-control': 'no-store',
               'referrer-policy': 'no-referrer',
               'x-content-type-options': 'nosniff',
@@ -329,11 +341,13 @@ export function createCloudGateway(ownerOrigin?: string) {
               'content-disposition',
               'content-security-policy',
             ]) {
-              const value = incoming.headers[name]
+              const value =
+                name === 'content-security-policy' ? incoming.headersDistinct[name] : incoming.headers[name]
               if (typeof value === 'string' && value && !/[\r\n\0]/u.test(value)) safe[name] = value
               else if (Array.isArray(value)) {
                 const clean = value.filter((item) => item && !/[\r\n\0]/u.test(item))
-                if (clean.length > 0) safe[name] = clean.join(', ')
+                if (clean.length > 0)
+                  safe[name] = name === 'content-security-policy' ? clean : clean.join(', ')
               }
             }
             response.writeHead(status, safe)

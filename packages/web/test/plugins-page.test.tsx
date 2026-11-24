@@ -835,11 +835,17 @@ it.each(['commit', 'unmount', 'cancel-button'] as const)(
       fileCount: 2,
       environment: [{ name: 'node', evidence: 'probed', state: 'satisfied' }],
     }
+    let finishCancellation!: (value: SkillImportResult) => void
+    const cancellation = new Promise<SkillImportResult>((resolve) => {
+      finishCancellation = resolve
+    })
     const skillImport = vi
       .fn()
       .mockResolvedValueOnce({ state: 'running', proposalId: 'skill-check-fixture', phase: 'acquiring' })
       .mockResolvedValueOnce(prepared)
-      .mockResolvedValueOnce({ ...prepared, state: 'installed' })
+      .mockImplementationOnce(() =>
+        outcome === 'cancel-button' ? cancellation : Promise.resolve({ ...prepared, state: 'installed' }),
+      )
     const view = { api: { skillImport } } as unknown as PluginView
     const host = document.body.appendChild(document.createElement('div'))
     const root = createRoot(host)
@@ -879,12 +885,62 @@ it.each(['commit', 'unmount', 'cancel-button'] as const)(
       expect(button('skill.import.confirm')).toBeUndefined()
     } finally {
       flushSync(() => root.unmount())
+      finishCancellation({ state: 'cancelled' })
       host.remove()
       vi.useRealTimers()
       if (outcome !== 'commit') {
         expect(skillImport).toHaveBeenLastCalledWith({ action: 'cancel', proposalId: prepared.proposalId })
         expect(skillImport.mock.calls.filter(([arg]) => arg.action === 'cancel')).toHaveLength(1)
       }
+    }
+  },
+)
+
+it.each(['skill', 'mcp'] as const)(
+  'retries a failed %s import cancellation without refreshing',
+  async (kind) => {
+    const prepared = { kind, state: 'prepared', proposalId: 'cancel-retry-fixture', digest: 'a'.repeat(64) }
+    const skillImport = vi
+      .fn()
+      .mockResolvedValueOnce(prepared)
+      .mockRejectedValueOnce(new Error('network unavailable'))
+      .mockResolvedValueOnce({ ...prepared, state: 'cancelled' })
+    const refresh = vi.fn(() => new Promise<void>(() => {}))
+    const invalidated = vi.fn()
+    const onClose = vi.fn()
+    const view = { api: { skillImport }, canEffect: () => false, refresh } as unknown as PluginView
+    const host = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(host)
+    const button = (text: string) =>
+      [...host.querySelectorAll<HTMLButtonElement>('button')].find((entry) => entry.textContent === text)!
+    window.addEventListener('agnes:plugins-invalidated', invalidated)
+    try {
+      await act(async () =>
+        root.render(
+          createElement(SkillInstallDialog, {
+            view,
+            initialSource: 'git:https://github.com/owner/repository.git',
+            t: (key) => key,
+            onClose,
+          }),
+        ),
+      )
+      await act(async () => button('skill.import.cancel').click())
+      expect(host.textContent).toContain('skill.import.failed')
+      expect(onClose).not.toHaveBeenCalled()
+      expect(button('skill.import.cancel').disabled).toBe(false)
+      if (kind === 'skill') expect(button('skill.import.confirm').disabled).toBe(false)
+      await act(async () => button('skill.import.cancel').click())
+      expect(skillImport.mock.calls.slice(1)).toEqual([
+        [{ action: 'cancel', proposalId: prepared.proposalId }],
+        [{ action: 'cancel', proposalId: prepared.proposalId }],
+      ])
+      expect(onClose).toHaveBeenCalledOnce()
+      expect(refresh).not.toHaveBeenCalled()
+      expect(invalidated).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener('agnes:plugins-invalidated', invalidated)
+      await act(async () => root.unmount())
     }
   },
 )
@@ -958,6 +1014,8 @@ it('cancels a late check response when its installation window has already close
 it.each([false, true])(
   'reviews MCP connections and gates rollback on remove permission (remove=%s)',
   async (canRemove) => {
+    const refresh = vi.fn(async () => {})
+    const onClose = vi.fn()
     const prepared = {
       state: 'prepared',
       kind: 'mcp',
@@ -993,9 +1051,11 @@ it.each([false, true])(
         },
       })
       .mockResolvedValueOnce({ ...prepared, state: 'installed' })
+      .mockResolvedValueOnce({ ...prepared, state: 'cancelled', phase: 'rolled-back' })
     const view = {
       api: { skillImport },
       canEffect: (permission: string) => permission !== 'packages.remove' || canRemove,
+      refresh,
     } as unknown as PluginView
     const host = document.body.appendChild(document.createElement('div')),
       root = createRoot(host)
@@ -1006,7 +1066,7 @@ it.each([false, true])(
             view,
             initialSource: 'git:https://github.com/example/mcp.git',
             t: (key) => key,
-            onClose: vi.fn(),
+            onClose,
           }),
         ),
       )
@@ -1049,6 +1109,24 @@ it.each([false, true])(
       )
       if (!rollback) throw new Error('Missing rollback action')
       expect(rollback.disabled).toBe(!canRemove)
+      if (canRemove) {
+        await act(async () => rollback.click())
+        const confirmRollback = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
+          (button) => button.textContent === 'mcp.import.confirmRollback',
+        )
+        await act(async () => confirmRollback?.click())
+        expect(skillImport).toHaveBeenLastCalledWith({
+          action: 'rollback',
+          proposalId: prepared.proposalId,
+          expectedDigest: prepared.digest,
+        })
+      }
+      const close = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent === 'skill.import.close',
+      )
+      await act(async () => close?.click())
+      expect(refresh).toHaveBeenCalledOnce()
+      expect(onClose).toHaveBeenCalledOnce()
     } finally {
       flushSync(() => root.unmount())
       host.remove()

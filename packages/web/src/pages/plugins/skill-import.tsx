@@ -22,6 +22,7 @@ function useSkillInstall({
   const [result, setResult] = useState<SkillImportResult>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [closeError, setCloseError] = useState('')
   const [selectedSkills, setSelectedSkills] = useState<string[]>([])
   const [selectedServers, setSelectedServers] = useState<string[]>([])
   const initialChoices = useRef(false)
@@ -32,6 +33,8 @@ function useSkillInstall({
   const [rollbackRequested, setRollbackRequested] = useState(false)
   const api = view.api
   const current = useRef<SkillImportResult>()
+  const cancellingRef = useRef(new Map<string, Promise<void>>())
+  const cancelledRef = useRef(new Set<string>())
   const active = useRef(false)
   const accept = useCallback((next: SkillImportResult) => {
     if (next.kind === 'mcp' && next.state === 'prepared' && next.mcp) {
@@ -47,18 +50,36 @@ function useSkillInstall({
     setResult(next)
   }, [])
   const cancel = useCallback(
-    async (value = current.current) => {
-      if (value?.proposalId && ['prepared', 'running'].includes(value.state)) {
-        if (current.current === value) current.current = { ...value, state: 'cancelled' }
-        await api?.skillImport({ action: 'cancel', proposalId: value.proposalId })
-      }
+    (value = current.current): Promise<void> => {
+      const proposalId = value?.proposalId
+      if (
+        !api ||
+        !proposalId ||
+        !['prepared', 'running'].includes(value.state) ||
+        cancelledRef.current.has(proposalId)
+      )
+        return Promise.resolve()
+      const pending = cancellingRef.current.get(proposalId)
+      if (pending) return pending
+      const cancellation = api
+        .skillImport({ action: 'cancel', proposalId })
+        .then((next) => {
+          cancelledRef.current.add(proposalId)
+          if (current.current?.proposalId === proposalId) current.current = { ...current.current, ...next }
+        })
+        .finally(() => cancellingRef.current.delete(proposalId))
+      cancellingRef.current.set(proposalId, cancellation)
+      return cancellation
     },
     [api],
   )
   useEffect(() => {
-    if (!api) return
-    let mounted = true
     active.current = true
+    if (!api)
+      return () => {
+        active.current = false
+      }
+    let mounted = true
     setBusy(true)
     void api
       .skillImport({
@@ -69,8 +90,7 @@ function useSkillInstall({
       })
       .then((next) => {
         if (mounted) accept(next)
-        else if (next.proposalId)
-          void api.skillImport({ action: 'cancel', proposalId: next.proposalId }).catch(() => undefined)
+        else void cancel(next).catch(() => undefined)
       })
       .catch(() => {
         if (mounted) setError('skill.import.failed')
@@ -112,6 +132,7 @@ function useSkillInstall({
     if (action === 'rollback' && (!value?.proposalId || !value.digest)) return
     setBusy(true)
     setError('')
+    setCloseError('')
     try {
       if (action === 'check') {
         await cancel(value)
@@ -151,16 +172,27 @@ function useSkillInstall({
   const close = async () => {
     if (busy) return
     setBusy(true)
+    setCloseError('')
     try {
       await cancel()
-      if (current.current?.kind === 'mcp' && current.current.state !== 'prepared') {
+      if (!active.current) return
+      const value = current.current
+      if (
+        value?.kind === 'mcp' &&
+        (value.state === 'installed' ||
+          value.phase === 'rolled-back' ||
+          (['failed', 'interrupted'].includes(value.state) &&
+            ['registering', 'testing', 'rolling-back'].includes(value.phase ?? '')))
+      ) {
         window.dispatchEvent(new Event('agnes:plugins-invalidated'))
         await view.refresh()
       }
-      onClose()
+      if (active.current) onClose()
     } catch {
-      setError('skill.import.failed')
-      setBusy(false)
+      if (active.current) {
+        setCloseError('skill.import.failed')
+        setBusy(false)
+      }
     }
   }
   const phase = result?.phase
@@ -194,6 +226,7 @@ function useSkillInstall({
     result,
     busy,
     error,
+    closeError,
     checking,
     phase,
     run,
@@ -213,7 +246,7 @@ function useSkillInstall({
 export function SkillInstallDialog(props: Parameters<typeof useSkillInstall>[0]) {
   const { t } = props
   const flow = useSkillInstall(props)
-  const { result, busy, error, checking, phase, run, close } = flow
+  const { result, busy, error, closeError, checking, phase, run, close } = flow
   const reasonKey = `skill.import.reason.${result?.message}`
   const reason = t(reasonKey) === reasonKey ? t('skill.import.failed') : t(reasonKey)
   return (
@@ -253,7 +286,7 @@ export function SkillInstallDialog(props: Parameters<typeof useSkillInstall>[0])
         {(!result || checking) && !error && (
           <SettingsState tone="loading">{t(`skill.import.phase.${phase ?? 'acquiring'}`)}</SettingsState>
         )}
-        {error && <SettingsState tone="error">{t(error)}</SettingsState>}
+        {(error || closeError) && <SettingsState tone="error">{t(error || closeError)}</SettingsState>}
         {result && (
           <>
             {result.state !== 'selection_required' && (

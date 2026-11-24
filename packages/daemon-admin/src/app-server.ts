@@ -197,8 +197,10 @@ export function createAppServerAdmin(options: {
     observeTriggerSession: triggers.observeSession,
     triggers: triggers.handle,
     credentials: genericCredentials.call,
-    authorizeCloud: (input: import('@agnes/protocol/gen/app-server').AdminCloudAuthorize) =>
-      authorizeCloudConnection(input, credentials, options.fetchImpl),
+    authorizeCloud: (
+      input: import('@agnes/protocol/gen/app-server').AdminCloudAuthorize,
+      signal?: AbortSignal,
+    ) => authorizeCloudConnection(input, credentials, options.fetchImpl, signal),
     bundles: () => composition.bundles(),
     saveBundles: (input: AdminBundlesSave) => composition.saveBundles(input),
     composition: (preset?: string) => composition.dump(preset),

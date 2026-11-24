@@ -65,7 +65,10 @@ export function registerAppServerAdmin(
     const permissions = authority(ctx)?.permissions ?? []
     if (!permissions.includes('credentials.read') || !permissions.includes('credentials.write'))
       throw rpcError('CAPABILITY_DENIED')
-    return service.authorizeCloud(input as import('@agnes/protocol/gen/app-server').AdminCloudAuthorize)
+    return service.authorizeCloud(
+      input as import('@agnes/protocol/gen/app-server').AdminCloudAuthorize,
+      ctx.signal,
+    )
   })
   register('_agnes/v1/admin.bundles.get', false, () => service.bundles())
   register('_agnes/v1/admin.bundles.save', true, (input) => service.saveBundles(input as AdminBundlesSave))

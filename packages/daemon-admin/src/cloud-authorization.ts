@@ -17,13 +17,16 @@ export async function authorizeCloudConnection(
   input: AdminCloudAuthorize,
   store: Pick<CredentialStore, 'read'>,
   fetcher: typeof fetch = deploymentFetch,
+  signal?: AbortSignal,
 ): Promise<AdminCloudAuthorization> {
   try {
+    signal?.throwIfAborted()
     const requestedOrigin = input.origin === undefined ? undefined : remoteFrontendOrigin(input.origin)
     const credential = await store.read(input.credentialRef)
+    signal?.throwIfAborted()
     if (credential?.kind !== 'api-key' || credential.provider !== 'generic' || !credential.label)
       throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_CREDENTIAL_NOT_FOUND' })
-    const requests = cloudAuthorizationRequests(fetcher)
+    const requests = cloudAuthorizationRequests(fetcher, signal)
     const sandbox = await cloudSandboxConnection(requestedOrigin, credential.value, requests.connection)
     const origin = sandbox?.origin ?? requestedOrigin
     if (!origin) throw Error('missing cloud origin')
@@ -41,6 +44,7 @@ export async function authorizeCloudConnection(
       throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_CREDENTIAL_REJECTED' })
     if (!response.ok) throw new Error('unavailable')
     const value = (await response.json()) as { token?: unknown; expiresAt?: unknown }
+    signal?.throwIfAborted()
     if (
       typeof value.token !== 'string' ||
       typeof value.expiresAt !== 'number' ||

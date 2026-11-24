@@ -7,6 +7,9 @@ import { UiArtifactFileData, UiSurface, X_AGNES_UI_LIMITS } from '../gen/ts/inte
 import type { JsonValue } from '../gen/ts/session-v1.js'
 import { validateAgainst } from './validate.js'
 
+export const UI_COMPONENT_FRAME_PATH = '/__agnes/ui-frame'
+export const UI_COMPONENT_MODULE_BYTES = 262144
+
 export function boundedUiJson(
   value: unknown,
   bytes: number,

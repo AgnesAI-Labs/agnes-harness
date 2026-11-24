@@ -45,7 +45,7 @@ import { localPipeFactories } from '../src/boot/pipe-factory.js'
 import type { LocalBackend } from './backend.js'
 import { channelRelay } from './channel-relay.js'
 import { localClientExamples } from './client-examples.js'
-import { cloudAuthorizationRelay } from './cloud-authorization.js'
+import { cloudAuthorizationRelay, shareCloudAuthorization } from './cloud-authorization.js'
 import { createCloudGateway } from './cloud-gateway.js'
 import { contextAdmin } from './context-admin.js'
 import { doctorAdmin } from './doctor-admin.js'
@@ -143,17 +143,32 @@ export function localPackageAdmin(
     }))
   const examples = localClientExamples(backend, client, initialize)
   const cloudGateway = createCloudGateway(new URL(origin).origin)
-  const authorizeCloud = async (input: AdminCloudAuthorize) => {
+  const cloudLifetime = new AbortController()
+  const authorizeCloud = shareCloudAuthorization(async (input: AdminCloudAuthorize, signal) => {
     const deadline = Date.now() + CLOUD_AUTHORIZATION_TIMEOUT_MS + 5_000
-    await initialize()
-    const timeoutMs = deadline - Date.now()
-    if (timeoutMs <= 0) throw Error('cloud authorization unavailable')
-    return client.request('_agnes/v1/admin.cloud.authorize', input, { timeoutMs })
-  }
+    if (backend.link && !(await backend.link.ensure())) throw Error('cloud authorization unavailable')
+    signal.throwIfAborted()
+    // The RPC signal cancels the SDK wait. Closing this dedicated connection also cancels the
+    // daemon handler's lifecycle signal without interrupting unrelated admin calls.
+    const exchange = open()
+    const stop = () => void exchange.close().catch(() => undefined)
+    signal.addEventListener('abort', stop, { once: true })
+    try {
+      await exchange.initialize()
+      signal.throwIfAborted()
+      const timeoutMs = deadline - Date.now()
+      if (timeoutMs <= 0) throw Error('cloud authorization unavailable')
+      return await exchange.request('_agnes/v1/admin.cloud.authorize', input, { timeoutMs, signal })
+    } finally {
+      signal.removeEventListener('abort', stop)
+      await exchange.close().catch(() => undefined)
+    }
+  })
   const handleCloudAuthorization = cloudAuthorizationRelay(
     origin,
-    authorizeCloud,
-    (origin, result, binding) => cloudGateway.register(origin, result, () => authorizeCloud(binding)),
+    (input, signal) => authorizeCloud(input, AbortSignal.any([signal, cloudLifetime.signal])),
+    (origin, result, binding) =>
+      cloudGateway.register(origin, result, () => authorizeCloud(binding, cloudLifetime.signal)),
   )
   // createAdminSurface validates each schema before dispatching this fixed typed mapping.
   const invoke = async (action: AdminSurfaceAction, params: unknown): Promise<unknown> => {
@@ -706,6 +721,7 @@ export function localPackageAdmin(
       return true
     },
     async close(): Promise<void> {
+      cloudLifetime.abort()
       cloudGateway.close()
       surface.close()
       await client.close()

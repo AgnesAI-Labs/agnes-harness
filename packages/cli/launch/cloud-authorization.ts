@@ -2,16 +2,74 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { CLOUD_AUTHORIZATION_PATH, remoteFrontendOrigin, validateMethod } from '@agnes/protocol'
 import type { AdminCloudAuthorization, AdminCloudAuthorize } from '@agnes/protocol/gen/app-server'
 
+type Authorize = (input: AdminCloudAuthorize, signal: AbortSignal) => Promise<AdminCloudAuthorization>
+
+/** Reuse the exchange while any browser request or gateway renewal still needs it. */
+export function shareCloudAuthorization(invoke: Authorize) {
+  const pending = new Map<
+    string,
+    { controller: AbortController; result: Promise<AdminCloudAuthorization>; waiters: number }
+  >()
+  return (input: AdminCloudAuthorize, signal: AbortSignal): Promise<AdminCloudAuthorization> => {
+    if (signal.aborted) return Promise.reject(signal.reason)
+    const key = `${input.credentialRef}\0${input.origin ?? ''}`
+    let exchange = pending.get(key)
+    if (!exchange) {
+      const controller = new AbortController()
+      const result = Promise.resolve()
+        .then(() => {
+          controller.signal.throwIfAborted()
+          return invoke(input, controller.signal)
+        })
+        .finally(() => {
+          if (pending.get(key)?.controller === controller) pending.delete(key)
+        })
+      exchange = { controller, result, waiters: 0 }
+      pending.set(key, exchange)
+    }
+    const shared = exchange
+    shared.waiters++
+    return new Promise((resolve, reject) => {
+      const release = () => {
+        signal.removeEventListener('abort', abort)
+        shared.waiters--
+      }
+      const abort = () => {
+        release()
+        reject(signal.reason)
+        if (shared.waiters === 0 && pending.get(key) === shared) {
+          pending.delete(key)
+          shared.controller.abort()
+        }
+      }
+      signal.addEventListener('abort', abort, { once: true })
+      void shared.result.then(
+        (value) => {
+          if (signal.aborted) return
+          release()
+          resolve(value)
+        },
+        (error) => {
+          if (signal.aborted) return
+          release()
+          reject(error)
+        },
+      )
+    })
+  }
+}
+
 /** A-only fixed BFF. The daemon resolves the reference and exchanges the Key; it never returns it. */
 export function cloudAuthorizationRelay(
   origin: string,
-  invoke: (input: AdminCloudAuthorize) => Promise<AdminCloudAuthorization>,
+  invoke: Authorize,
   register?: (origin: string, result: AdminCloudAuthorization, input: AdminCloudAuthorize) => boolean,
 ) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     const url = new URL(request.url ?? '/', origin)
     if (url.pathname !== CLOUD_AUTHORIZATION_PATH) return false
     const reply = (status: number, value: unknown) => {
+      if (request.aborted || response.destroyed || response.writableEnded) return
       response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' })
       response.end(JSON.stringify(value))
     }
@@ -26,7 +84,21 @@ export function cloudAuthorizationRelay(
       reply(403, { error: 'CLOUD_ORIGIN_DENIED' })
       return true
     }
+    const controller = new AbortController()
+    const abort = () => controller.abort()
+    const requestClosed = () => {
+      if (request.aborted || !request.complete) abort()
+    }
+    const responseClosed = () => {
+      if (!response.writableFinished) abort()
+    }
+    request.once('aborted', abort)
+    request.once('close', requestClosed)
+    request.once('error', abort)
+    response.once('close', responseClosed)
+    response.once('error', abort)
     try {
+      if (request.aborted || response.destroyed || response.writableEnded) return true
       if (request.headers['content-type']?.split(';')[0] !== 'application/json') throw Error('input')
       const chunks: Buffer[] = []
       let bytes = 0
@@ -38,9 +110,11 @@ export function cloudAuthorizationRelay(
       }
       const input: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
       if (!validateMethod('_agnes/v1/admin.cloud.authorize', 'params', input).ok) throw Error('input')
-      const result = await invoke(input as AdminCloudAuthorize)
+      if (controller.signal.aborted) return true
+      const result = await invoke(input as AdminCloudAuthorize, controller.signal)
       if (!validateMethod('_agnes/v1/admin.cloud.authorize', 'result', result).ok) throw Error('response')
-      if (request.aborted || response.destroyed || response.writableEnded) return true
+      if (controller.signal.aborted || request.aborted || response.destroyed || response.writableEnded)
+        return true
       const requestedOrigin = (input as AdminCloudAuthorize).origin
       const target = result.origin ?? requestedOrigin
       if (requestedOrigin === undefined && !result.trafficToken) throw Error('sandbox credential required')
@@ -61,6 +135,7 @@ export function cloudAuthorizationRelay(
         ...(result.origin ? { origin: result.origin } : {}),
       })
     } catch (error) {
+      if (controller.signal.aborted) return true
       const reason = (error as { data?: { reason?: unknown } })?.data?.reason
       reply(400, {
         error:
@@ -71,6 +146,12 @@ export function cloudAuthorizationRelay(
             ? reason
             : 'CLOUD_AUTH_UNAVAILABLE',
       })
+    } finally {
+      request.off('aborted', abort)
+      request.off('close', requestClosed)
+      request.off('error', abort)
+      response.off('close', responseClosed)
+      response.off('error', abort)
     }
     return true
   }

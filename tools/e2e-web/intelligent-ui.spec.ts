@@ -160,18 +160,21 @@ for (const mode of ['ready', 'cloud-ready', 'blocked', 'error'])
     page,
   }) => {
     const blockedRequests: string[] = []
+    const modulePath = '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/reviewed/diff.mjs'
+    const moduleRequests: string[] = []
+    page.on('request', (request) => {
+      if (request.url().endsWith(modulePath)) moduleRequests.push(request.url())
+    })
     await page.context().route('https://csp-blocked.invalid/**', (route) => {
       blockedRequests.push(route.request().url())
       return route.fulfill({ status: 200, body: '' })
     })
     if (mode === 'cloud-ready') {
       await page.goto(`${cloudUrl}/`)
-      const unproxiedStatus = await page.evaluate(async () => {
-        const res = await fetch(
-          '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/reviewed/diff.mjs?agnes_ui_frame=1',
-        )
+      const unproxiedStatus = await page.evaluate(async (path) => {
+        const res = await fetch(path)
         return res.status
-      })
+      }, modulePath)
       expect(unproxiedStatus).toBe(404)
       await page.goto(`${url}/?host=cloud&locale=en`)
     } else {
@@ -191,18 +194,16 @@ for (const mode of ['ready', 'cloud-ready', 'blocked', 'error'])
       for (const action of await actions.all()) await expect(action).toBeEnabled()
       return
     }
-    if (mode === 'cloud-ready') {
-      await expect(card.getByTestId('ui-custom-frame-custom')).toHaveAttribute(
-        'src',
-        `${cloudUrl}${cloudPrefix}/plugins/generations/11111111-1111-1111-1111-111111111111/finance/reviewed/diff.mjs?agnes_ui_frame=1`,
-      )
-    }
+    await expect(card.getByTestId('ui-custom-frame-custom')).toHaveAttribute('src', '/__agnes/ui-frame')
     const frame = card.frameLocator('[data-testid="ui-custom-frame-custom"]')
     await expect(frame.getByText('Delta cents: 250')).toBeVisible()
+    await expect(frame.getByText('Delta cents: 250')).toHaveAttribute('data-nonce-visible', 'false')
+    expect(moduleRequests).toContain(`${mode === 'cloud-ready' ? cloudUrl + cloudPrefix : url}${modulePath}`)
     expect(blockedRequests).toEqual([])
     expect(
       await frame.locator('body').evaluate(() => ({
         fetch: typeof fetch,
+        path: location.pathname + location.search,
         parentReadable: (() => {
           try {
             return !!parent.document
@@ -211,7 +212,7 @@ for (const mode of ['ready', 'cloud-ready', 'blocked', 'error'])
           }
         })(),
       })),
-    ).toEqual({ fetch: 'undefined', parentReadable: false })
+    ).toEqual({ fetch: 'undefined', parentReadable: false, path: '/__agnes/ui-frame' })
     await frame.getByRole('button', { name: 'Review adjustments' }).focus()
     await frame.getByRole('button', { name: 'Review adjustments' }).press('Enter')
     await expect(card.getByTestId('ui-confirmation')).toBeVisible()

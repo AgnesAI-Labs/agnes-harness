@@ -7,6 +7,7 @@ import { expect, it } from 'vitest'
 import { DELIVERABLE_PREVIEW_PATH, deliverablePreviewFrame } from '../src/deliverable-preview-frame.js'
 import { PDF_PREVIEW_PATH, pdfPreviewFrame } from '../src/pdf-preview-frame.js'
 import { createWebServer, type WebServerOptions } from '../src/server.js'
+import { UI_COMPONENT_FRAME_PATH } from '../src/ui-component-frame.js'
 
 async function started(cloudGateway?: WebServerOptions['cloudGateway']) {
   const root = mkdtempSync(join(tmpdir(), 'agnes-web-guard-'))
@@ -51,6 +52,7 @@ it('serves the same isolated preview bootstraps from local and cloud page origin
     expect(adminPage.headers.get('content-security-policy')).not.toMatch(/connect-src [^;]*blob:/)
     const cloudOrigin = /data-cloud-origin="([^"]+)"/u.exec(html)?.[1]
     if (!cloudOrigin) throw Error('missing isolated origin')
+    const nonces = new Set()
     for (const origin of [web.url, cloudOrigin]) {
       for (const [path, frame] of [
         [DELIVERABLE_PREVIEW_PATH, deliverablePreviewFrame()],
@@ -65,6 +67,28 @@ it('serves the same isolated preview bootstraps from local and cloud page origin
           expect(response.headers.get('referrer-policy')).toBe('no-referrer')
           expect(response.headers.get('x-content-type-options')).toBe('nosniff')
           expect(await response.text()).toBe(method === 'HEAD' ? '' : frame.body)
+        }
+      }
+      for (const method of ['GET', 'HEAD']) {
+        const response = await fetch(origin + UI_COMPONENT_FRAME_PATH, { method })
+        expect(response.status).toBe(200)
+        expect(response.headers.get('cache-control')).toBe('no-store')
+        expect(response.headers.get('referrer-policy')).toBe('no-referrer')
+        expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+        const csp = response.headers.get('content-security-policy') ?? ''
+        const nonce = /script-src 'nonce-([^']+)'/u.exec(csp)?.[1]
+        expect(nonce).toBeTruthy()
+        expect(nonces.has(nonce)).toBe(false)
+        nonces.add(nonce)
+        expect(csp).toBe(
+          `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'; object-src 'none'; sandbox allow-scripts`,
+        )
+        const body = await response.text()
+        if (method === 'HEAD') expect(body).toBe('')
+        else {
+          expect(body).toContain('agnes-ui-loaded')
+          expect(body).toContain('event.source !== parent')
+          expect(body).not.toMatch(/\/plugins\/|\/_agnes\/remote-frontend\//u)
         }
       }
     }

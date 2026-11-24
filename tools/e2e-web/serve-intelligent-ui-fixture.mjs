@@ -6,7 +6,6 @@ import { createRequire, syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { uiComponentFrame } from '../../packages/web-server/src/ui-component-frame.ts'
 import { inCssLayer, readWebStyleSource, readWebUiStyleSource } from '../web-style-source.mjs'
 
 // Explicit offline renderer acceptance fixture; invoked only by the Web spec.
@@ -33,9 +32,11 @@ const assets = new Map([
   ['/antd.css', [require.resolve('antd/dist/antd.css', { paths: [resolve('packages/web-ui')] }), 'text/css']],
 ])
 const server = createServer(async (request, response) => {
+  if (serveUiComponentFrame(request, response)) return
   const path = new URL(request.url ?? '/', 'http://127.0.0.1').pathname
   if (path === '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/reviewed/diff.mjs') {
-    const frame = uiComponentFrame(`export const renderers = {
+    const source = `const nonceVisible = [...document.querySelectorAll('script,style')].some(node => node.nonce);
+    export const renderers = {
       'finance/reconcile/diff@1'(mount, props, api) {
         if (props.fail) throw new Error('synthetic renderer failure');
         const probe = new Image();
@@ -47,22 +48,22 @@ const server = createServer(async (request, response) => {
           nested.contentWindow?.fetch('https://csp-blocked.invalid/subframe').catch(() => {});
         } catch {}
         const summary = document.createElement('p');
+        summary.dataset.nonceVisible = String(nonceVisible);
         summary.textContent = 'Delta cents: ' + props.amount;
         const button = document.createElement('button');
         button.textContent = 'Review adjustments';
         button.onclick = () => api.emitAction('confirm');
         mount.append(summary, button);
       }
-    };`)
+    };`
     response
       .writeHead(200, {
-        'Content-Type': 'text/html',
+        'Content-Type': 'text/javascript',
         'Cache-Control': 'no-store',
-        'Content-Security-Policy': frame.csp,
         'Referrer-Policy': 'no-referrer',
         'X-Content-Type-Options': 'nosniff',
       })
-      .end(frame.body)
+      .end(source)
     return
   }
   if (path === '/') {
@@ -137,6 +138,7 @@ await build({
     contents: `
       export { REMOTE_FRONTEND_AUTH, remoteFrontendSessionPath } from './packages/protocol/src/index.ts'
       export { createPublishedFrontend } from './packages/web-server/src/published-frontend.ts'
+      export { serveUiComponentFrame } from './packages/web-server/src/ui-component-frame.ts'
       export { createCloudGateway } from './packages/cli/launch/cloud-gateway.ts'
     `,
   },
@@ -146,8 +148,13 @@ await build({
   target: 'node24',
   platform: 'node',
 })
-const { REMOTE_FRONTEND_AUTH, remoteFrontendSessionPath, createPublishedFrontend, createCloudGateway } =
-  await import(pathToFileURL(bridgeOut).href)
+const {
+  REMOTE_FRONTEND_AUTH,
+  remoteFrontendSessionPath,
+  createPublishedFrontend,
+  createCloudGateway,
+  serveUiComponentFrame,
+} = await import(pathToFileURL(bridgeOut).href)
 const publication = await createPublishedFrontend({
   publication: {
     enabled: true,
@@ -173,6 +180,7 @@ const sandboxOrigin = 'https://8443-fixture.ap-shanghai.tencentags.com'
 gateway.register(sandboxOrigin, { ...grant, trafficToken: 'fixture-traffic-token' })
 const cloudServer = createServer(async (request, response) => {
   if (await gateway.handleHttp(request, response)) return
+  if (serveUiComponentFrame(request, response)) return
   const path = new URL(request.url ?? '/', 'http://127.0.0.1').pathname
   if (path === '/') {
     response
