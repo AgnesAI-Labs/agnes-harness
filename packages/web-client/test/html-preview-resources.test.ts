@@ -123,6 +123,77 @@ it('retains full-document attributes and external deferred script semantics', as
   expect(element?.textContent).toBe('')
 })
 
+it('rewrites source ranges while preserving comments, raw text, quoted attributes and void tags', async () => {
+  const untouched = `<!-- <img src="missing.svg"> -->
+<script>const example = '<style>@import "missing.css";</style>';</script>
+<textarea><img src="missing.svg"></textarea>`
+  const css = String.raw`/* url(missing.svg) */ body { background: u\72l("space\ image.svg") }`
+  const content = await prepareHtmlPreview(
+    `${untouched}<style>${css}</style>
+<object data="space&#32;image.svg" id='drawing' class='art' width=42 height=30 aria-label='A &quot;drawing&quot;' style='width:42px; background:url(&quot;space image.svg&quot;)'>fallback</object>
+<img src="space&#32;image.svg" SRC="ignored.svg" alt='A > B'><br><p>After</p>`,
+    htmlRef,
+    async () => detail(['demo/page.html', 'demo/space image.svg']) as never,
+    async () => encoded(svg),
+  )
+  const url = `data:image/svg+xml;base64,${btoa(svg)}`
+  expect(content).toContain(untouched)
+  expect(content).toContain(`/* url(missing.svg) */ body { background: url("${url}") }`)
+  const parsed = new DOMParser().parseFromString(content, 'text/html')
+  const drawing = parsed.querySelector<HTMLImageElement>('img#drawing')
+  expect(drawing?.alt).toBe('A "drawing"')
+  expect(drawing?.className).toBe('art')
+  expect(drawing?.width).toBe(42)
+  expect(drawing?.height).toBe(30)
+  expect(drawing?.getAttribute('style')).toContain(`display:block;width:42px; background:url("${url}")`)
+  expect(content).toContain(`<img src="${url}" SRC="ignored.svg" alt='A > B'><br><p>After</p>`)
+  expect(content).not.toContain('fallback')
+})
+
+it.each(['@import "other.css";', String.raw`@\69mport "other.css";`])(
+  'refuses stylesheet imports in authored and delivered CSS: %s',
+  async (css) => {
+    for (const html of [`<style>${css}</style>`, '<link rel="stylesheet" href="theme.css">']) {
+      await expect(
+        prepareHtmlPreview(
+          html,
+          htmlRef,
+          async () => detail(['demo/page.html', 'demo/theme.css']) as never,
+          async () => encoded(css),
+        ),
+      ).rejects.toMatchObject({ code: 'HTML_PREVIEW_RESOURCE_UNAVAILABLE' })
+    }
+  },
+)
+
+it('rejects non-image objects, missing fallback dependencies and excessive expanded HTML', async () => {
+  const read = async () => encoded('body{}')
+  await expect(
+    prepareHtmlPreview(
+      '<object data="theme.css"></object>',
+      htmlRef,
+      async () => detail(['demo/page.html', 'demo/theme.css']) as never,
+      read,
+    ),
+  ).rejects.toMatchObject({ code: 'HTML_PREVIEW_RESOURCE_UNAVAILABLE' })
+  await expect(
+    prepareHtmlPreview(
+      '<object data="animation.svg"><img src="missing.svg"></object>',
+      htmlRef,
+      async () => detail() as never,
+      read,
+    ),
+  ).rejects.toMatchObject({ code: 'HTML_PREVIEW_RESOURCE_UNAVAILABLE' })
+  await expect(
+    prepareHtmlPreview(
+      '<img src="animation.svg">'.repeat(4),
+      htmlRef,
+      async () => detail() as never,
+      async () => encoded('a'.repeat(850_000)),
+    ),
+  ).rejects.toMatchObject({ code: 'HTML_PREVIEW_RESOURCE_UNAVAILABLE' })
+})
+
 it('rejects unrelated tool identities, duplicate paths, reclaimed dependencies and excessive snapshot totals', async () => {
   for (const record of [
     { ...detail(), call: { ...detail().call, name: 'shell' } },

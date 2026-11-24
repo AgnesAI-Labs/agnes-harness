@@ -2,6 +2,8 @@
 
 This independently installable browser plugin replaces the whole official deliverables experience through the public `deliverables` presentation role. It reads the same immutable snapshots through `DeliverablesStore`, renders turn-tail cards and its own Gallery workbench panel, and uses authorized resource loaders for Open and Download. It imports no Web host or official presentation code. It adds no CSS and needs no backend filesystem permissions.
 
+The workbench provides `@agnes/web-client` and `@agnes/web-ui` through its browser import map. The external release check installs the gallery tarball and verifies its declared client against the packaged workbench import map.
+
 From a clean throwaway `AGH_HOME`, with the default deliverables tool enabled:
 
 ```sh

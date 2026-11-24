@@ -89,12 +89,13 @@ describe('Web command launch contract', () => {
       expect(failure.message).toMatch(locale === 'zh-CN' ? /[\u4e00-\u9fff]/ : /[a-z]/)
     }
   })
-  it('starts a headless composition without requesting or creating a Web listener', async () => {
+  it('handles shutdown during headless startup without requesting or creating a Web listener', async () => {
     const signals = new EventEmitter()
     const createServer = vi.fn()
     const closeClient = vi.fn(async () => undefined)
     const ensureBackend = vi.fn(async (options: EnsureLocalBackendOptions) => {
       expect(options.exposeWeb).toBe(false)
+      signals.emit('SIGTERM')
       return {
         scope: { daemonDir } as LocalBackend['scope'],
         discovery: {} as LocalBackend['discovery'],
@@ -109,9 +110,7 @@ describe('Web command launch contract', () => {
       composition: { surfaces: [] },
       ensureBackend,
       createServer,
-      write() {
-        queueMicrotask(() => signals.emit('SIGTERM'))
-      },
+      write: () => undefined,
     })
     expect(createServer).not.toHaveBeenCalled()
     expect(closeClient).toHaveBeenCalled()

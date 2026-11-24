@@ -59,6 +59,65 @@ const pdfBytes = process.env.AGH_PDF_PREVIEW_FIXTURE
   ? readFileSync(process.env.AGH_PDF_PREVIEW_FIXTURE)
   : twoPages()
 
+test('prepares HTML resources without violating a strict workbench CSP', async ({ page }) => {
+  const html = `<style>body{color:red}</style><object data="art.svg" style="width:42px"></object>
+    <link rel="stylesheet" href="theme.css" media="screen"><p style="color:blue">Text</p>`
+  const contents = [html, sampleSvg, 'p{background:url(art.svg)}']
+  const refs = contents.map((source, index) => ({
+    sha256: String(index + 1).repeat(64),
+    size: Buffer.byteLength(source),
+    mime: ['text/html', 'image/svg+xml', 'text/css'][index],
+  }))
+  const bundle = await build({
+    stdin: {
+      resolveDir: repository,
+      contents: `
+import { prepareHtmlPreview } from './packages/web-ui/src/conversation/html-preview-resources.ts';
+const refs = ${JSON.stringify(refs)}, values = ${JSON.stringify(contents.map(encoded))};
+window.previewViolations = [];
+addEventListener('securitypolicyviolation', event => window.previewViolations.push(event.violatedDirective));
+window.preview = prepareHtmlPreview(${JSON.stringify(html)}, refs[0], async () => ({
+  call: {name:'present', toolUseId:'p', args:{files:['page.html','art.svg','theme.css'].map(path => ({path}))}},
+  result: {toolUseId:'p', structured:{deliverables:refs.map(ref => ({ref}))}}
+}), async ref => {
+  const base64 = values[refs.indexOf(ref)];
+  return {base64, bytes:Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer};
+});`,
+    },
+    bundle: true,
+    write: false,
+  })
+  const errors: string[] = []
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text())
+  })
+  const origin = 'http://preview-csp.test'
+  await page.route(`${origin}/app.js`, (route) =>
+    route.fulfill({ contentType: 'text/javascript', body: bundle.outputFiles[0]?.text ?? '' }),
+  )
+  await page.route(`${origin}/`, (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      headers: { 'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'" },
+      body: '<!doctype html><script src="/app.js"></script>',
+    }),
+  )
+  await page.goto(origin)
+  const result = await page.evaluate(async () => {
+    const html = await Reflect.get(window, 'preview')
+    // CSP events are dispatched asynchronously on the document.
+    await new Promise(requestAnimationFrame)
+    return { html, violations: Reflect.get(window, 'previewViolations') }
+  })
+  expect(result.violations, errors.join('\n')).toEqual([])
+  expect(errors).toEqual([])
+  expect(result.html).toContain('<style>body{color:red}</style>')
+  expect(result.html).toContain('style="color:blue"')
+  expect(result.html).toContain('<img')
+  expect(result.html).toContain('width:42px')
+  expect(result.html).toContain('<style media="screen">p{background:url("data:image/svg+xml;base64,')
+})
+
 for (const cloud of [false, true])
   for (const [locale, theme] of [
     ['zh-CN', 'dark'],

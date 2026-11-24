@@ -38,6 +38,15 @@
       "consumers": ["packages/web-ui"]
     },
     {
+      "name": "parse5",
+      "version": "8.1.1",
+      "license": "MIT",
+      "source": "https://github.com/inikulin/parse5",
+      "purpose": "Locate HTML preview resources and decode attributes in an in-memory syntax tree without browser DOM operations.",
+      "rationale": "Reuse an HTML-standard tokenizer and source offsets to preserve the original document and the workbench CSP.",
+      "consumers": ["packages/web-ui"]
+    },
+    {
       "name": "antd",
       "version": "6.6.5",
       "license": "MIT",

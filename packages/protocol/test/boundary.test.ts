@@ -62,6 +62,7 @@ describe('protocol src boundary', () => {
       [
         'AGNES_ERRORS',
         'CLOUD_AUTHORIZATION_PATH',
+        'CLOUD_AUTHORIZATION_TIMEOUT_MS',
         'REMOTE_FRONTEND_AUTH',
         'REMOTE_FRONTEND_INFO',
         'REMOTE_FRONTEND_KEY_VERSION',

@@ -97,7 +97,7 @@ export function documentHtmlTemplate(source: string): HTMLTemplateElement {
   return template
 }
 
-/** Shared element factory for detached preview rewriting and the allowlisted sanitizer. */
+/** Element factory for the allowlisted sanitizer. */
 export function documentHtmlElement(tagName: string): HTMLElement {
   return document.createElement(tagName)
 }

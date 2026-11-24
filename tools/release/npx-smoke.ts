@@ -124,7 +124,7 @@ try {
   const cachedVersionMs = performance.now() - versionStart
   // Doctor intentionally does not initialize homes. Use the installed CLI's read-only status
   // command to create the supported fresh layout without starting a daemon or adding accounts.
-  const before = JSON.parse(await run(['daemon', 'status', '--json'], [0, 1])) as { running?: boolean }
+  const before = JSON.parse(await run(['daemon', 'status'], [0, 1])) as { running?: boolean }
   if (before.running !== false) throw new Error('Unexpected daemon in the isolated home')
   await writeFile(
     join(aghHome, 'profiles', 'local-dev', 'profile.yaml'),
@@ -186,7 +186,7 @@ try {
       return true
     }
   })
-  const status = JSON.parse(await run(['daemon', 'status', '--json'], [0, 1])) as { running?: boolean }
+  const status = JSON.parse(await run(['daemon', 'status'], [0, 1])) as { running?: boolean }
   if (status.running !== false) throw new Error('Daemon is still running after stop')
   if (registry.requests.length !== installRegistryRequests)
     throw new Error('Runtime contacted the registry in offline mode')

@@ -129,20 +129,6 @@ export function handleLaunchHealth(request: IncomingMessage, response: ServerRes
   return true
 }
 
-function waitForSignal(signals: NodeJS.EventEmitter): Promise<NodeJS.Signals> {
-  return new Promise((resolve) => {
-    const onSignal = (signal: NodeJS.Signals): void => {
-      signals.removeListener('SIGINT', onSigint)
-      signals.removeListener('SIGTERM', onSigterm)
-      resolve(signal)
-    }
-    const onSigint = (): void => onSignal('SIGINT')
-    const onSigterm = (): void => onSignal('SIGTERM')
-    signals.once('SIGINT', onSigint)
-    signals.once('SIGTERM', onSigterm)
-  })
-}
-
 /**
  * Run the local Web command using the CLI-owned shared daemon bootstrap.
  *
@@ -204,6 +190,15 @@ export async function runWebCommand(
   let resourceAdmin: ReturnType<typeof localResourceAdmin> | undefined
   let oauthAdmin: ReturnType<typeof localOAuthAdmin> | undefined
   let mounts: Awaited<ReturnType<typeof fetchSurfaceMountProxy>> | undefined
+  const signals = io.signals ?? process
+  let stop!: () => void
+  const stopping = new Promise<void>((resolve) => {
+    stop = resolve
+  })
+  // A process-group signal can arrive again when the parent launcher forwards it.
+  // Keep both handlers installed from bootstrap through resource cleanup.
+  signals.on('SIGINT', stop)
+  signals.on('SIGTERM', stop)
   try {
     backend = await ensure({
       ...(io.env ? { env: io.env } : {}),
@@ -221,7 +216,7 @@ export async function runWebCommand(
       ;(io.write ?? ((text: string) => process.stdout.write(text)))(
         'Daemon ready; Web UI disabled by composition.\n',
       )
-      await waitForSignal(io.signals ?? process)
+      await stopping
       return
     }
     if (!backend.web)
@@ -318,7 +313,7 @@ export async function runWebCommand(
     ;(io.write ?? ((text: string) => process.stdout.write(text)))(
       `${web.url}/\n${firstRunText(env, 'home')}: ${backend.scope.home}\n${firstRunText(env, 'profile')}: ${backend.scope.profile}\n${firstRunText(env, 'doctor')}: ${firstRunText(env, report.status)} — agh doctor\n`,
     )
-    await waitForSignal(io.signals ?? process)
+    await stopping
   } catch (error) {
     const message = startupFailure(error, env)
     if (message) throw Object.assign(new Error(message), { code: (error as { code: string }).code })
@@ -333,5 +328,7 @@ export async function runWebCommand(
     await oauthAdmin?.close().catch(() => undefined)
     await mounts?.close().catch(() => undefined)
     await backend?.closeClient().catch(() => undefined)
+    signals.off('SIGINT', stop)
+    signals.off('SIGTERM', stop)
   }
 }

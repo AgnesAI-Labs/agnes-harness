@@ -1,3 +1,5 @@
+# Link the gallery's portable version declarations during workspace development.
+linkWorkspacePackages: true
 packages:
   - packages/*
   - packages/package-manager/bundled-plugins/document-reader
