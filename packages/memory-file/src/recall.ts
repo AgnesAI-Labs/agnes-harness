@@ -1,12 +1,13 @@
-import type { MemoryRecallHit, MemoryRecallQuery } from '@agnes/extension-api'
+import type { MemoryFile, MemoryRecallHit, MemoryRecallQuery, MemorySettings } from '@agnes/extension-api'
 import { fitHits } from '@agnes/lexical-search'
 import { chunkView } from './chunker.js'
-import { fault, omissionLine } from './content.js'
+import { formatLifecycleOmission } from './consistency.js'
+import { fault } from './content.js'
 import type { MetaStore } from './meta.js'
 import { managedParagraphRanges } from './paragraphs.js'
 import type { MemoryPipeline, RecallEnvironment } from './pipeline.js'
 import { readDocuments, SearchIndex } from './search-index.js'
-import { buildView } from './view.js'
+import { buildView, type MemoryView } from './view.js'
 
 function cap(value: number | undefined, fallback: number, maximum: number) {
   return value === undefined || !Number.isFinite(value)
@@ -51,7 +52,27 @@ function recall(
   }
 }
 
-export function registerRetrieval(pipeline: MemoryPipeline): void {
+export type RetrievalHandle = Readonly<{
+  rebuildIndex(
+    meta: MetaStore,
+    files: readonly MemoryFile[],
+    views: ReadonlyMap<string, MemoryView>,
+    settings: MemorySettings,
+  ): number
+  inspectIndexedChunks(
+    meta: MetaStore,
+  ): ReadonlyArray<{ path: string; lineStart: number; lineEnd: number; text: string }>
+}>
+
+const retrievalHandles = new WeakMap<MemoryPipeline, RetrievalHandle>()
+
+export function retrievalOf(pipeline: MemoryPipeline): RetrievalHandle | undefined {
+  return retrievalHandles.get(pipeline)
+}
+
+export function registerRetrieval(pipeline: MemoryPipeline): RetrievalHandle {
+  const existing = retrievalHandles.get(pipeline)
+  if (existing) return existing
   let closed = false
   const indexes = new Map<MetaStore, SearchIndex>()
   const indexFor = (meta: MetaStore) => {
@@ -74,9 +95,7 @@ export function registerRetrieval(pipeline: MemoryPipeline): void {
     const views = new Map(
       ctx.files.map((file) => [
         file.path,
-        buildView(file, pipeline.collectHideRanges(file, ctx), 'read', (group, count) =>
-          group === 'managed' ? omissionLine(count) : '',
-        ),
+        buildView(file, pipeline.collectHideRanges(file, ctx), 'read', formatLifecycleOmission),
       ]),
     )
     indexFor(ctx.meta).committed(readDocuments(ctx.files, views, ctx.meta.store.configuration()))
@@ -87,4 +106,17 @@ export function registerRetrieval(pipeline: MemoryPipeline): void {
     for (const index of indexes.values()) index.close()
     indexes.clear()
   })
+  const handle: RetrievalHandle = Object.freeze({
+    rebuildIndex(meta, files, views, settings) {
+      const docs = readDocuments(files, views, settings)
+      const index = indexFor(meta)
+      index.rebuildIndex(docs)
+      return index.inspectIndexedChunks().length
+    },
+    inspectIndexedChunks(meta) {
+      return indexFor(meta).inspectIndexedChunks()
+    },
+  })
+  retrievalHandles.set(pipeline, handle)
+  return handle
 }

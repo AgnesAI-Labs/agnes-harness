@@ -1,5 +1,6 @@
 import type { MemoryFile, MemoryParagraphValidity } from '@agnes/extension-api'
-import { file, hash, omissionLine } from './content.js'
+import { formatLifecycleOmission } from './consistency.js'
+import { file, hash } from './content.js'
 import type { MetaStore } from './meta.js'
 import type { MemoryPipeline, ViewContext } from './pipeline.js'
 import type { MemoryStore } from './store.js'
@@ -46,8 +47,6 @@ type LiveOverlayInputs = Readonly<{
   userValidityRev: string | null
   now: number
 }>
-
-const formatMerged = (group: string, count: number) => (group === 'managed' ? omissionLine(count) : '')
 
 function scanRemovals(store: MemoryStore, entries: readonly MemoryFile[]) {
   const deleted = new Set<string>()
@@ -101,7 +100,7 @@ function rebuildLayer(
     }
     const prior = prevViews.get(entry.path)
     const combined = [...(baseRanges.get(entry.path) ?? []), ...pipeline.collectHideRanges(entry, ctx)]
-    const rebuilt = buildView(entry, combined, 'read', formatMerged)
+    const rebuilt = buildView(entry, combined, 'read', formatLifecycleOmission)
     views.set(entry.path, rebuilt)
     agent.set(entry.path, rebuilt.content !== entry.content ? file(entry.path, rebuilt.content) : entry)
     if (rebuilt.content !== (prior?.content ?? entry.content)) changed = true

@@ -6,7 +6,11 @@ import { refViewFilter } from './ref-filter.js'
 import { topicLinksObserver, topicLinksViewFilter } from './topic-links.js'
 import { buildView, type MemoryView } from './view.js'
 
+const lifecyclePipelines = new WeakSet<MemoryPipeline>()
+
 export function registerLifecycle(pipeline: MemoryPipeline): void {
+  if (lifecyclePipelines.has(pipeline)) return
+  lifecyclePipelines.add(pipeline)
   pipeline.addViewFilter(expiryViewFilter)
   pipeline.addNextExpiry(expiryNextExpiry)
   pipeline.addViewFilter(topicLinksViewFilter)

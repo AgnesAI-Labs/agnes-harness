@@ -1021,7 +1021,7 @@ describe('the assembled host', () => {
 describe('hand-written text and the rules', () => {
   const NEW = 'Run pnpm lint and pnpm typecheck first.'
 
-  it("a person's in-place edit is never overwritten by a model or automatic save", async () => {
+  it("a person's in-place edit is never overwritten by a model, automatic or Host save", async () => {
     const ws = await workspace()
     const save = ws.service()
     await save.save(request(ws))
@@ -1035,11 +1035,13 @@ describe('hand-written text and the rules', () => {
         reason: 'conflict',
       })
     expect(await ws.file()).toBe(edited)
-    // The user's own save may replace the edited text.
+    // Under human-content protection, even a user-initiated Host save cannot overwrite an in-place
+    // human edit through the paragraph port; edits happen directly on the Memory page.
     expect(await save.save(request(ws, { initiator: 'user', ...entry({ content: NEW }) }))).toMatchObject({
-      outcome: 'saved',
+      outcome: 'refused',
+      reason: 'source-rules',
     })
-    expect(await ws.file()).toContain(NEW)
+    expect(await ws.file()).toBe(edited)
     expect(markedIds(await ws.file())).toHaveLength(1)
   })
 

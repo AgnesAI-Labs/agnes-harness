@@ -7,8 +7,11 @@ import type {
   MemorySource,
 } from '@agnes/extension-api'
 import { appendAudit } from './audit.js'
+import { registerLifecycle } from './consistency.js'
 import type { MetaStore } from './meta.js'
 import { managedParagraphRanges } from './paragraphs.js'
+import { registerMemoryProtection } from './preference-conflict.js'
+import { registerRetrieval } from './recall.js'
 import type { HideRange, MemoryView } from './view.js'
 
 export type MemoryClock = () => number
@@ -143,6 +146,8 @@ export function createPipeline(): MemoryPipeline {
   }
 }
 
+export { type RetrievalHandle, retrievalOf } from './recall.js'
+
 export function createDefaultPipeline(): MemoryPipeline {
   const pipeline = createPipeline()
   pipeline.addViewFilter((entry, ctx) =>
@@ -150,6 +155,9 @@ export function createDefaultPipeline(): MemoryPipeline {
       ? managedParagraphRanges(entry.content, ctx.validity).ranges
       : [],
   )
+  registerLifecycle(pipeline)
+  registerMemoryProtection(pipeline)
+  registerRetrieval(pipeline)
   pipeline.addObserver((intent, committed, ctx) => {
     appendAudit(ctx.meta, {
       at: new Date(ctx.now).toISOString(),

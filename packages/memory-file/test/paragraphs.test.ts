@@ -12,9 +12,8 @@ import type {
 } from '@agnes/extension-api'
 import { memoryParagraphConformance } from '@agnes/extension-api/testkit'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createDefaultPipeline, fileMemoryProvider, openMemory } from '../src/index.js'
+import { fileMemoryProvider } from '../src/index.js'
 import { parseParagraphs } from '../src/paragraphs.js'
-import { registerMemoryProtection } from '../src/preference-conflict.js'
 
 const A = 'ra000000001'
 const B = 'rb000000002'
@@ -58,18 +57,15 @@ function view(initial: Record<string, MemoryParagraphValidity> = {}) {
   }
 }
 
-async function fixture(options: { validity?: MemoryValidityView; home?: string; protection?: boolean } = {}) {
+async function fixture(options: { validity?: MemoryValidityView; home?: string } = {}) {
   const home = options.home ?? (await mkdtemp(join(tmpdir(), 'agh-memory-paragraphs-')))
   if (!options.home) homes.push(home)
-  const input = {
+  const session = fileMemoryProvider.open({
     home,
     workspaceRoot: home,
     sessionKey: 'one',
     ...(options.validity ? { validity: options.validity } : {}),
-  }
-  const pipeline = createDefaultPipeline()
-  if (options.protection) registerMemoryProtection(pipeline)
-  const session = options.protection ? openMemory({ ...input, pipeline }) : fileMemoryProvider.open(input)
+  })
   const files = (
     turn: number,
     approve: (proposal: MemoryProposal) => Promise<MemoryApprovalResult> = async () => ({
@@ -196,7 +192,9 @@ describe('file memory managed paragraphs', () => {
     const f = await fixture({ validity: view({ [B]: 'delivered' }).view })
     await f.session.configure({ mode: 'auto' })
     const stored = `Top\n${block(B, 'Saved lesson.')}Bottom\n`
-    await writeFile(f.index, stored)
+    const port = f.paragraphs()
+    await port.commit(await port.propose({ op: 'put', id: B, text: 'Saved lesson.' }))
+    await f.files(0).write(f.index, stored)
     const files = f.files(1)
     await files.replaceExact?.(f.index, 'Bottom', 'Bottom line')
     expect(await f.raw()).toBe(`Top\n${block(B, 'Saved lesson.')}Bottom line\n`)
@@ -279,10 +277,19 @@ describe('file memory managed paragraphs', () => {
   })
 
   it('editing visible paragraph A keeps hidden paragraph B byte for byte', async () => {
-    const f = await fixture({ validity: view({ [A]: 'valid', [B]: 'expired' }).view })
+    const tracked = view({ [A]: 'valid', [B]: 'valid' })
+    const f = await fixture({ validity: tracked.view })
     await f.session.configure({ mode: 'auto' })
     const hidden = block(B, 'Hidden: use the legacy build.\r\n  odd   spacing kept')
-    await writeFile(f.index, `Top\n${block(A, 'Use pnpm.')}\n${hidden}\nBottom\n`)
+    const port = f.paragraphs()
+    await port.commit(
+      await port.propose([
+        { op: 'put', id: A, text: 'Use pnpm.' },
+        { op: 'put', id: B, text: 'Hidden: use the legacy build.\r\n  odd   spacing kept' },
+      ]),
+    )
+    await f.files(0).write(f.index, `Top\n${block(A, 'Use pnpm.')}\n${hidden}\nBottom\n`)
+    tracked.set(B, 'expired')
     const files = f.files(1)
     await files.replaceExact?.(f.index, 'Use pnpm.', 'Use pnpm 10.')
     await files.replaceExact?.(f.index, 'Bottom', 'Bottom line')
@@ -314,7 +321,9 @@ describe('file memory managed paragraphs', () => {
     const f = await fixture({ validity: view({ [A]: 'valid', [B]: 'valid' }).view })
     await f.session.configure({ mode: 'auto' })
     const stored = `Note\n${block(A, 'Alpha')}`
-    await writeFile(f.index, stored)
+    const port = f.paragraphs()
+    await port.commit(await port.propose({ op: 'put', id: A, text: 'Alpha' }))
+    await f.files(0).write(f.index, stored)
     const files = f.files(1)
     for (const candidate of [
       `${stored}${block(B, 'Beta')}`,
@@ -338,7 +347,9 @@ describe('file memory managed paragraphs', () => {
     const f = await fixture({ validity: view({ [A]: 'valid' }).view })
     await f.session.configure({ mode: 'auto' })
     const stored = `${block(A, 'Alpha')}Human line\n`
-    await writeFile(f.index, stored)
+    const port = f.paragraphs()
+    await port.commit(await port.propose({ op: 'put', id: A, text: 'Alpha' }))
+    await f.session.editFile('MEMORY.md', stored, sha(await f.raw()))
     const files = f.files(1)
     // Moving the closing marker below a human line would make that line expire with the paragraph.
     await expect(
@@ -387,11 +398,14 @@ describe('file memory managed paragraphs', () => {
   })
 
   it('a byte order mark before the first marker is kept and does not damage the paragraph', async () => {
-    const tracked = view({ [B]: 'expired' })
+    const tracked = view({ [B]: 'valid' })
     const f = await fixture({ validity: tracked.view })
     await f.session.configure({ mode: 'auto' })
     const stored = `\uFEFF${block(B, 'expired body')}human\n`
-    await writeFile(f.index, stored)
+    const seedPort = f.paragraphs()
+    await seedPort.commit(await seedPort.propose({ op: 'put', id: B, text: 'expired body' }))
+    await f.session.editFile('MEMORY.md', stored, sha(await f.raw()))
+    tracked.set(B, 'expired')
     const files = f.files(1)
     expect(text(await files.read(f.index))).toBe(`\uFEFF${OMITTED(1)}\nhuman\n`)
     expect((await f.session.snapshot(1))?.content).not.toContain('expired body')
@@ -457,10 +471,15 @@ describe('file memory managed paragraphs', () => {
   })
 
   it('replaceExact goes through the exact-proposal approval and refuses a stale approval', async () => {
-    const f = await fixture({ validity: view({ [A]: 'expired' }).view })
-    await f.session.configure({ mode: 'ask' })
+    const tracked = view({ [A]: 'valid' })
+    const f = await fixture({ validity: tracked.view })
+    await f.session.configure({ mode: 'auto' })
     const stored = `Keep\n${block(A, 'Hidden')}`
-    await writeFile(f.index, stored)
+    const port = f.paragraphs()
+    await port.commit(await port.propose({ op: 'put', id: A, text: 'Hidden' }))
+    await f.files(0).write(f.index, stored)
+    tracked.set(A, 'expired')
+    await f.session.configure({ mode: 'ask' })
     const proposals: MemoryProposal[] = []
     await expect(
       f
@@ -684,7 +703,7 @@ describe('the truncation notice and delivered paragraphs', () => {
 
 describe('paragraph-level CAS (expectTextHash)', () => {
   it('accepts put when expectTextHash matches and rejects MEMORY_PARAGRAPH_EDITED when stale or missing', async () => {
-    const f = await fixture({ validity: view({ [A]: 'valid' }).view, protection: true })
+    const f = await fixture({ validity: view({ [A]: 'valid' }).view })
     await f.session.configure({ mode: 'auto' })
     const port = f.paragraphs()
     await port.commit(await port.propose({ op: 'put', id: A, text: 'Alpha' }))
@@ -700,7 +719,7 @@ describe('paragraph-level CAS (expectTextHash)', () => {
   })
 
   it('protects manual edits with either form of CAS and permits withdrawal and promotion on the Memory page', async () => {
-    const f = await fixture({ validity: view({ [A]: 'valid' }).view, protection: true })
+    const f = await fixture({ validity: view({ [A]: 'valid' }).view })
     await f.session.configure({ mode: 'auto' })
     const port = f.paragraphs()
     await port.commit(await port.propose({ op: 'put', id: A, text: 'Alpha' }))

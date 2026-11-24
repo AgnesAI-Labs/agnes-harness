@@ -100,8 +100,11 @@ describe('file memory recall', () => {
     })
     const path = join(f.root, 'MEMORY.md')
     const managed = '<!-- refinement:r0000000001 -->\nRetained observatory\n<!-- /refinement:r0000000001 -->'
-    const original = '# Notes\n\n' + hidden + '\n\nVisible lighthouse\nsecond line\n\n' + managed
-    writeFileSync(path, original)
+    await f.port(0).write(path, '# Notes\n\n' + hidden + '\n\nVisible lighthouse\nsecond line')
+    const para = f.session.paragraphs!({ sessionKey: 'test', turn: 0 }, new AbortController().signal)
+    await para.commit(await para.propose({ op: 'put', id: 'r0000000001', text: 'Retained observatory' }))
+    const original = readFileSync(path, 'utf8')
+    expect(original).toBe('# Notes\n\n' + hidden + '\n\nVisible lighthouse\nsecond line\n\n' + managed)
     for (const query of ['kestrel', 'syntheticwonder']) expect((await f.recall(1, query)).hits).toEqual([])
     const found = await f.recall(1, 'lighthouse')
     expect(found.hits).toMatchObject([

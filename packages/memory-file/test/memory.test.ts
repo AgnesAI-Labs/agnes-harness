@@ -190,7 +190,7 @@ describe('file memory contract', () => {
     const lock = new DatabaseSync(join(f.session.root, 'commit.sqlite'))
     try {
       lock.exec('BEGIN EXCLUSIVE')
-      const queued = f.files(5).write(f.index, 'Queued automatic candidate')
+      const queued = f.files(5).write(f.index, 'Human preference\n\nQueued automatic candidate')
       const config = (await f.session.inspect()).settings
       await writeFile(join(f.session.root, 'settings.json'), JSON.stringify({ ...config, mode: 'ask' }))
       lock.exec('COMMIT')
@@ -205,7 +205,7 @@ describe('file memory contract', () => {
           await f.session.configure({ mode: 'off' })
           return { status: 'approved' }
         })
-        .write(f.index, 'Approved too late'),
+        .write(f.index, 'Human preference\n\nApproved too late'),
     ).rejects.toMatchObject({ code: 'MEMORY_DISABLED' })
     expect((await f.session.readFile('MEMORY.md')).content).toBe('Human preference')
     await f.session.configure({ mode: 'ask' })
@@ -214,7 +214,9 @@ describe('file memory contract', () => {
       abort.abort(new Error('cancelled'))
       return { status: 'approved' }
     })
-    await expect(cancelled.write(f.index, 'Cancelled candidate')).rejects.toThrow('cancelled')
+    await expect(cancelled.write(f.index, 'Human preference\n\nCancelled candidate')).rejects.toThrow(
+      'cancelled',
+    )
     expect((await f.session.readFile('MEMORY.md')).content).toBe('Human preference')
   })
 
@@ -257,7 +259,7 @@ describe('file memory contract', () => {
     await writeFile(f.index, 'Pre-existing preference')
     expect((await f.session.snapshot(1))?.externalChanges).toBeUndefined()
     // Agent writes through the provider, human edits and other sessions' commits are acknowledged.
-    await f.files(1).write(f.index, 'Agent preference')
+    await f.files(1).write(f.index, 'Pre-existing preference\n\nAgent preference')
     expect((await f.session.snapshot(2))?.externalChanges).toBeUndefined()
     const current = await f.session.readFile('MEMORY.md')
     await f.session.editFile('MEMORY.md', 'Human preference', current.hash)
@@ -267,7 +269,7 @@ describe('file memory contract', () => {
       .files(fallback, { sessionKey: 'two', turn: 1 }, new AbortController().signal, async () => ({
         status: 'approved',
       }))
-      .write(f.index, 'Other session preference')
+      .write(f.index, 'Human preference\n\nOther session preference')
     expect((await f.session.snapshot(4))?.externalChanges).toBeUndefined()
     // A shell under full access writes the files directly.
     await writeFile(f.index, 'Shell preference')
@@ -730,7 +732,14 @@ describe('phase 0 view pipeline, same-turn R1-R6 overlay and audit log', () => {
     const topic = join(session.root, 'topic.md')
     const extra = join(session.root, 'extra.md')
     await writeFile(index, `${block('rc000000003', 'RECALL_ME')}tabs=2\n`)
-    await writeFile(topic, 'line1\nSECRET_HIDDEN\nvisible tail\n')
+    await session
+      .files(
+        fallback,
+        { sessionKey: 'r35', turn: 0, toolUseId: 'seed' },
+        new AbortController().signal,
+        async () => ({ status: 'approved' }),
+      )
+      .write(topic, 'line1\nSECRET_HIDDEN\nvisible tail\n')
 
     const s1 = await session.snapshot(1)
     const p1 = session.files(
@@ -833,7 +842,7 @@ describe('phase 0 view pipeline, same-turn R1-R6 overlay and audit log', () => {
         return { status: 'approved' }
       },
     )
-    await pAuto.write(topic, 'AGENT_BODY\n')
+    await pAuto.write(topic, 'SECRET_DO_NOT_LOG_BODY\n\nAGENT_BODY\n')
     const para = session.paragraphs?.(
       { sessionKey: 'aud', turn: 0, maintenance: 'run-7' },
       new AbortController().signal,

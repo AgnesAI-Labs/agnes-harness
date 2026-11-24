@@ -1,41 +1,34 @@
 import { join, relative, resolve } from 'node:path'
 import type {
-  MemoryApprovalResult,
-  MemoryEffectAdmission,
   MemoryFile,
   MemoryFilePort,
   MemoryInspection,
-  MemoryProposal,
+  MemoryParagraphValidity,
   MemorySession,
   MemorySettings,
   MemorySnapshot,
   MemorySource,
   MemoryValidityView,
 } from '@agnes/extension-api'
-import { appendAudit } from './audit.js'
-import { diff, fault, file, fitBytes, hash, omissionLine, validateContent } from './content.js'
+import { chunkView } from './chunker.js'
+import { formatLifecycleOmission, inspectConsistency } from './consistency.js'
+import { fault, file, fitBytes, hash, validateContent } from './content.js'
+import { createFilePort } from './file-port.js'
 import { MetaStore } from './meta.js'
 import { type ResolvedReadState, resolveReadOverlay, type TurnOverlayInput } from './overlay.js'
 import { paragraphPort } from './paragraph-port.js'
-import {
-  markerLines,
-  markerSet,
-  paragraphTexts,
-  parseParagraphs,
-  unfilteredIndexView,
-  validityOf,
-} from './paragraphs.js'
+import { markerLines, unfilteredIndexView, validityOf } from './paragraphs.js'
 import { canonical, inside, name, roots } from './paths.js'
 import {
-  type CommitIntent,
   createDefaultPipeline,
   type MemoryClock,
   type MemoryPipeline,
+  retrievalOf,
   type ViewContext,
 } from './pipeline.js'
 import { MemoryStore } from './store.js'
 import { renderUserLayer, userParagraphPort } from './user-layer.js'
-import { buildView, type HideRange, type MemoryView, rawOffsetToLine, replaceInMemoryView } from './view.js'
+import { buildView, type HideRange, type MemoryView, rawOffsetToLine } from './view.js'
 
 export type OpenMemoryInput = Readonly<{
   home: string
@@ -49,9 +42,21 @@ export type OpenMemoryInput = Readonly<{
 
 type TurnSnapshot = TurnOverlayInput & {
   snapshot: MemorySnapshot
+  noteViewContent: string
 }
 
-const formatMerged = (group: string, count: number) => (group === 'managed' ? omissionLine(count) : '')
+type SessionInternals = Readonly<{
+  store: MemoryStore
+  user: MemoryStore
+  meta: MetaStore
+  pipeline: MemoryPipeline
+  clock: MemoryClock
+  validity: (id: string) => MemoryParagraphValidity
+  capture: (turn: number) => TurnSnapshot
+  resolvedFor: (turn: TurnOverlayInput) => ResolvedReadState
+}>
+
+const sessions = new WeakMap<MemorySession, SessionInternals>()
 
 function holding<T extends { length: number }>(
   segments: readonly T[],
@@ -166,7 +171,7 @@ function captureTurnSnapshot(args: {
       continue
     }
     const ranges = pipeline.collectHideRanges(entry, ctx)
-    const view = buildView(entry, ranges, 'read', formatMerged)
+    const view = buildView(entry, ranges, 'read', formatLifecycleOmission)
     baseRanges.set(entry.path, ranges)
     readViews.set(entry.path, view)
     agent.set(entry.path, view.content !== entry.content ? file(entry.path, view.content) : entry)
@@ -183,7 +188,7 @@ function captureTurnSnapshot(args: {
   } else if (readViews.has('MEMORY.md')) {
     indexView = readViews.get('MEMORY.md')!
     const indexRanges = baseRanges.get('MEMORY.md') ?? []
-    noteView = buildView(index, indexRanges, 'note', formatMerged)
+    noteView = buildView(index, indexRanges, 'note', formatLifecycleOmission)
     if (noteView.content !== indexView.content) {
       const hasExtra = indexRanges.some(
         (range) => range.reason !== 'managed-omitted' && range.reason !== 'managed-delivered',
@@ -217,7 +222,7 @@ function captureTurnSnapshot(args: {
     for (const entry of userFiles) {
       const ranges = pipeline.collectHideRanges(entry, userCtx)
       userBaseRanges.set(entry.path, ranges)
-      userReadViews.set(entry.path, buildView(entry, ranges, 'read', formatMerged))
+      userReadViews.set(entry.path, buildView(entry, ranges, 'read', formatLifecycleOmission))
     }
   }
 
@@ -278,6 +283,7 @@ function captureTurnSnapshot(args: {
     userBaseRanges,
     userReadViews,
     userEnabled: config.userEnabled,
+    noteViewContent: indexValid ? noteView.content : '',
     snapshot: Object.freeze({
       revision,
       content,
@@ -314,7 +320,7 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
     turnSnapshot = { turn, value }
     return value
   }
-  const resolvedFor = (turn: TurnSnapshot): ResolvedReadState =>
+  const resolvedFor = (turn: TurnOverlayInput): ResolvedReadState =>
     resolveReadOverlay(turn, {
       store,
       user,
@@ -360,7 +366,7 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
     meta,
   })
 
-  return Object.freeze<MemorySession>({
+  const session: MemorySession = Object.freeze<MemorySession>({
     root: paths.root,
     async close() {
       await pipeline.close()
@@ -389,7 +395,6 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
         userMeta,
         pipeline,
         clock,
-        validity,
         capture,
         resolvedFor,
         target,
@@ -451,162 +456,111 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
       )
     },
   })
+  sessions.set(session, { store, user, meta, pipeline, clock, validity, capture, resolvedFor })
+  return session
 }
 
-function createFilePort(deps: {
-  fallback: MemoryFilePort
-  source: MemorySource
-  signal: AbortSignal
-  approve: (proposal: MemoryProposal) => Promise<MemoryApprovalResult>
-  workspaceRoot: string
-  paths: ReturnType<typeof roots>
-  store: MemoryStore
-  user: MemoryStore
-  meta: MetaStore
-  userMeta: MetaStore
-  pipeline: MemoryPipeline
-  clock: MemoryClock
-  validity: (id: string) => ReturnType<typeof validityOf> extends (id: string) => infer R ? R : never
-  capture: (turn: number) => TurnSnapshot
-  resolvedFor: (turn: TurnSnapshot) => ResolvedReadState
-  target: (path: string) => string | undefined
-  active: () => MemorySettings & { mode: 'ask' | 'auto' }
-  viewCtx: (now: number, config?: MemorySettings) => ViewContext
-}): MemoryFilePort {
-  const {
-    fallback,
-    source,
-    signal,
-    approve,
-    workspaceRoot,
-    paths,
-    store,
+export async function rebuildMemoryIndex(session: MemorySession): Promise<{ indexedEntries: number }> {
+  const internal = sessions.get(session)
+  const retrieval = internal ? retrievalOf(internal.pipeline) : undefined
+  if (!internal || !retrieval) throw fault('MEMORY_RECALL_UNAVAILABLE')
+  const { store, user, meta, pipeline, clock, validity } = internal
+  const config = store.configuration()
+  const files = store.files()
+  const userFiles = config.userEnabled ? user.files() : []
+  const ctx: ViewContext = {
+    layer: 'workspace',
+    files,
+    userFiles,
+    userEnabled: config.userEnabled,
+    now: clock(),
+    validity,
     meta,
-    userMeta,
-    pipeline,
-    clock,
-    capture,
-    resolvedFor,
-    target,
-    active,
-    viewCtx,
-  } = deps
-  const get = (path: string): { shown: MemoryFile; state: ResolvedReadState } => {
-    active()
-    signal.throwIfAborted()
-    const state = resolvedFor(capture(source.turn))
-    const entry = state.files.find((item) => item.path === path)
-    if (!entry) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
-    if (!state.emptied.has(path)) validateContent(entry, store.configuration(), path === 'MEMORY.md')
-    return { shown: state.agent.get(path) ?? entry, state }
   }
-  const submit = (leaf: string, before: MemoryFile, candidate: MemoryFile) =>
-    reviewAndCommit(
-      { store, meta, pipeline, clock, root: paths.root, source, signal, approve, active, viewCtx },
-      leaf,
-      before,
-      candidate,
-    )
+  const views = new Map(
+    files.map((entry) => [
+      entry.path,
+      buildView(entry, pipeline.collectHideRanges(entry, ctx), 'read', formatLifecycleOmission),
+    ]),
+  )
+  return { indexedEntries: retrieval.rebuildIndex(meta, files, views, config) }
+}
 
-  return Object.freeze<MemoryFilePort>({
-    async read(path, options) {
-      const leaf = target(path)
-      if (leaf === undefined) return fallback.read(path, options)
-      const { shown } = get(leaf)
-      const bytes = Buffer.from(shown.content)
-      const offset = options?.offset ?? 0
-      return bytes.subarray(offset, options?.limit === undefined ? undefined : offset + options.limit)
-    },
-    async revision(path) {
-      const leaf = target(path)
-      if (leaf === undefined) return fallback.revision?.(path)
-      const { state } = get(leaf)
-      return state.revision
-    },
-    async stat(path) {
-      const leaf = target(path)
-      if (leaf === undefined) return fallback.stat(path)
-      const { shown } = get(leaf)
-      return { size: shown.bytes, mtimeMs: 0, kind: 'file' }
-    },
-    async list(path) {
-      const absolute = canonical(resolve(workspaceRoot, path))
-      if (!inside(paths.protectedRoot, absolute)) return fallback.list(path)
-      active()
-      if (absolute !== paths.root) throw fault('MEMORY_SCOPE_DENIED')
-      return resolvedFor(capture(source.turn)).files.map((entry) => ({
-        name: entry.path,
-        kind: 'file' as const,
-      }))
-    },
-    async write(path, content) {
-      const leaf = target(path)
-      if (leaf === undefined) return fallback.write(path, content)
-      active()
-      signal.throwIfAborted()
-      const turn = capture(source.turn)
-      const state = resolvedFor(turn)
-      const before = turn.files.find((entry) => entry.path === leaf) ?? file(leaf, '')
-      // A whole file written from a view that leaves text out would silently drop that text.
-      if (turn.readViews.get(leaf)?.hidden || state.views.get(leaf)?.hidden) {
-        throw fault('MEMORY_HIDDEN_PARAGRAPHS')
-      }
-      const candidate = file(
-        leaf,
-        typeof content === 'string' ? content : Buffer.from(content).toString('utf8'),
-      )
-      if (
-        markerSet(candidate.content) !== markerSet(before.content) ||
-        (leaf === 'MEMORY.md' && parseParagraphs(candidate.content).anomalies.length)
-      )
-        throw fault('MEMORY_MARKER_CHANGED')
-      // A managed paragraph's text changes only by exact replacement or the paragraph port.
-      if (leaf === 'MEMORY.md' && paragraphTexts(candidate.content) !== paragraphTexts(before.content))
-        throw fault('MEMORY_PARAGRAPH_TEXT_CHANGED')
-      await submit(leaf, before, candidate)
-    },
-    async replaceExact(path, oldText, newText) {
-      const leaf = target(path)
-      if (leaf === undefined) {
-        if (fallback.replaceExact) return fallback.replaceExact(path, oldText, newText)
-        throw fault('MEMORY_SCOPE_DENIED')
-      }
-      active()
-      signal.throwIfAborted()
-      const before = store.read(leaf)
-      const ranges = pipeline.collectHideRanges(before, viewCtx(clock()))
-      const view = buildView(before, ranges, 'read', formatMerged)
-      const replaced = replaceInMemoryView(
-        before.content,
-        view,
-        markerLines(before.content),
-        oldText,
-        newText,
-        markerSet,
-      )
-      await submit(leaf, before, file(leaf, replaced))
-    },
-    ...(pipeline.recall
+export async function inspectMemoryConsistency(
+  session: MemorySession,
+  turn: number,
+): Promise<{
+  consistent: boolean
+  noteIds: readonly string[]
+  readIds: readonly string[]
+  indexIds: readonly string[]
+  rawFilteredIds: readonly string[]
+  mismatches: readonly string[]
+}> {
+  const internal = sessions.get(session)
+  if (!internal) throw fault('MEMORY_RECALL_UNAVAILABLE')
+  const { store, user, meta, pipeline, clock, validity, capture, resolvedFor } = internal
+  const snap = capture(turn)
+  const state = resolvedFor(snap)
+  const config = store.configuration()
+  const ctx: ViewContext = {
+    layer: 'workspace',
+    files: snap.files,
+    ...(config.userEnabled ? { userFiles: user.files() } : {}),
+    userEnabled: config.userEnabled,
+    now: clock(),
+    validity,
+    meta,
+  }
+  const retrieval = retrievalOf(pipeline)
+  const safeChunks = (entry: MemoryFile, view: MemoryView) => {
+    if (!entry.bytes) return []
+    try {
+      validateContent(entry, config, entry.path === 'MEMORY.md')
+      return chunkView(entry, view)
+    } catch {
+      return []
+    }
+  }
+  const res = await inspectConsistency({
+    pipeline,
+    context: ctx,
+    injectedIndex: snap.noteViewContent,
+    readViews: state.views,
+    ...(retrieval
       ? {
-          async recall(query) {
-            active()
-            signal.throwIfAborted()
-            const state = resolvedFor(capture(source.turn))
-            return pipeline.recall!(query, {
-              revision: state.revision,
-              workspaceViews: state.views,
-              workspaceFiles: state.files,
-              userViews: state.userViews,
-              userFiles: state.userFiles,
-              userEnabled: state.userEnabled,
-              meta,
-              userMeta,
-              now: clock(),
-            })
-          },
+          chunkView: safeChunks,
+          readIndexedChunks: () => retrieval.inspectIndexedChunks(meta),
         }
       : {}),
   })
+  const keyOf = (chunk: { path: string; lineStart: number; lineEnd: number; text: string }) =>
+    `${chunk.path}:${chunk.lineStart}-${chunk.lineEnd}:${hash(chunk.text)}`
+  const readIds = state.files.flatMap((entry) => {
+    const view = state.views.get(entry.path)
+    return view ? safeChunks(entry, view).map(keyOf) : []
+  })
+  const rawFilteredIds = snap.files.flatMap((entry) =>
+    safeChunks(
+      entry,
+      buildView(entry, pipeline.collectHideRanges(entry, ctx), 'read', formatLifecycleOmission),
+    ).map(keyOf),
+  )
+  const indexIds = retrieval ? retrieval.inspectIndexedChunks(meta).map(keyOf) : []
+  const noteIds = snap.noteViewContent
+    ? snap.noteViewContent
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => hash(line))
+    : []
+  return {
+    consistent: res.ok,
+    noteIds,
+    readIds,
+    indexIds,
+    rawFilteredIds,
+    mismatches: res.mismatches,
+  }
 }
 
 function passes(entry: MemoryFile, config: MemorySettings): boolean {
@@ -625,95 +579,4 @@ function viewRevision(view: MemoryValidityView | undefined): string | null {
   } catch {
     return 'unavailable'
   }
-}
-
-/** The shared agent write path: validate, pre-approval guards, review under ask, then CAS commit. */
-async function reviewAndCommit(
-  context: {
-    store: MemoryStore
-    meta: MetaStore
-    pipeline: MemoryPipeline
-    clock: MemoryClock
-    root: string
-    source: MemorySource
-    signal: AbortSignal
-    approve: (proposal: MemoryProposal) => Promise<MemoryApprovalResult>
-    active: () => MemorySettings & { mode: 'ask' | 'auto' }
-    viewCtx: (now: number, config?: MemorySettings) => ViewContext
-  },
-  leaf: string,
-  before: MemoryFile,
-  candidate: MemoryFile,
-): Promise<void> {
-  const { store, meta, pipeline, clock, source, signal, approve, active, viewCtx } = context
-  const config = active()
-  validateContent(candidate, config, leaf === 'MEMORY.md')
-  const actor = source.toolUseId
-    ? `agent:${source.sessionKey}:${source.toolUseId}`
-    : `agent:${source.sessionKey}`
-  const intent: CommitIntent = {
-    origin: 'agent',
-    actor,
-    path: leaf,
-    before,
-    candidate,
-    via: 'file',
-    layer: 'workspace',
-    source,
-  }
-  const guardNow = clock()
-  const verdict = pipeline.checkGuards(intent, viewCtx(guardNow, config))
-  if (verdict.kind === 'refuse') {
-    try {
-      appendAudit(meta, {
-        at: new Date(guardNow).toISOString(),
-        path: leaf,
-        action: 'refused',
-        code: verdict.code,
-        origin: intent.origin,
-        actor: intent.actor,
-        sessionKey: source.sessionKey,
-        beforeHash: before.hash,
-        afterHash: candidate.hash,
-      })
-    } catch {
-      // Best-effort refusal audit must not mask guard error.
-    }
-    throw Object.assign(
-      fault(verdict.code),
-      verdict.detail ? { message: `${verdict.code}: ${verdict.detail}` } : {},
-    )
-  }
-  const proposal: MemoryProposal = Object.freeze({
-    path: join(context.root, leaf),
-    baseHash: before.hash,
-    newHash: candidate.hash,
-    diff: diff(before.content, candidate.content),
-    source,
-  })
-  let admission: MemoryEffectAdmission | undefined
-  if (config.mode === 'ask') {
-    const result = await approve(proposal)
-    if (result.status === 'approved') admission = result.admission
-    if (result.status === 'rejected') throw fault('MEMORY_APPROVAL_REJECTED')
-    if (result.status !== 'approved')
-      throw Object.assign(fault('MEMORY_APPROVAL_UNANSWERED'), {
-        reason: result.reason,
-        message: `MEMORY_APPROVAL_UNANSWERED: ${result.reason}`,
-      })
-  }
-  signal.throwIfAborted()
-  // A policy change during approval cannot silently convert it into an auto write.
-  if (active().mode !== config.mode) throw fault('MEMORY_POLICY_CHANGED')
-  await store.commit(
-    candidate,
-    before.hash,
-    source,
-    config.mode,
-    signal,
-    admission,
-    (actualBefore, saved) => {
-      pipeline.runObservers({ ...intent, before: actualBefore }, saved, viewCtx(clock()))
-    },
-  )
 }

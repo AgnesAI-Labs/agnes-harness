@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { MemoryFilePort, MemoryProposal } from '@agnes/extension-api'
@@ -34,22 +34,44 @@ async function setup(
 ) {
   const home = await mkdtemp(join(tmpdir(), 'agh-edit-hidden-'))
   dirs.push(home)
+  let expired = false
   const session = fileMemoryProvider.open({
     home,
     workspaceRoot: home,
     sessionKey: 's',
     validity: {
-      revision: () => 'v1',
-      validity: (id) => (id === EXPIRED ? 'expired' : id === 'rvisible001' ? 'valid' : 'unknown'),
+      revision: () => (expired ? 'v2' : 'v1'),
+      validity: (id) =>
+        id === EXPIRED ? (expired ? 'expired' : 'valid') : id === 'rvisible001' ? 'valid' : 'unknown',
     },
   })
-  await session.configure?.({ mode: 'ask' })
+  await session.configure?.({ mode: 'auto' })
   const index = join(session.root, 'MEMORY.md')
-  await writeFile(index, stored)
+  const seedSignal = new AbortController().signal
+  const seedApprove = async () => ({ status: 'approved' as const })
+  const seedPort = (turn: number) =>
+    session.files(outside, { sessionKey: 's', turn, toolUseId: 'seed' }, seedSignal, seedApprove)
+  const paragraphs = session.paragraphs!({ sessionKey: 's', turn: 0 }, seedSignal)
+  if (stored === STORED) {
+    await seedPort(1).write(index, 'Keep tests small.\nUse pnpm.\n')
+    await paragraphs.commit(
+      await paragraphs.propose({ op: 'put', id: EXPIRED, text: 'HIDDEN-PARAGRAPH-BODY' }),
+    )
+    const withManaged = await readFile(index, 'utf8')
+    await seedPort(2).write(index, `${withManaged}\nBottom line.\n`)
+    expired = true
+  } else {
+    await paragraphs.commit(
+      await paragraphs.propose({ op: 'put', id: 'rvisible001', text: 'Prefer small PRs.' }),
+    )
+    await seedPort(2).write(index, stored)
+  }
+  expect(await readFile(index, 'utf8')).toBe(stored)
+  await session.configure?.({ mode: 'ask' })
   let asked = 0
   const port = session.files(
     outside,
-    { sessionKey: 's', turn: 1, toolUseId: 't' },
+    { sessionKey: 's', turn: 3, toolUseId: 't' },
     new AbortController().signal,
     async (proposal) => {
       asked += 1

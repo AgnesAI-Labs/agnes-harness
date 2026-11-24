@@ -130,7 +130,7 @@ it.each(['[deploy](deploy.md#steps "Steps")', '[[deploy.md#steps]]', '[deploy]: 
     const stale = '[Summary of deploy.md may be outdated; read deploy.md]'
     const removed = '[Summary of deploy.md removed: topic no longer exists]'
     await f.edit('deploy.md', 'Monday.')
-    await f.edit(index, `${old}\nOther preference.`)
+    await f.files(0).write(f.path(index), `${old}\nOther preference.`)
     expect(await f.note(1)).toContain(old)
     await f.edit('deploy.md', 'Tuesday.')
     expect(await f.note(2)).not.toContain(old)
@@ -215,7 +215,7 @@ it('maps visible text to its raw lines, preserves hidden bytes on replacement, a
   const hidden = '<!-- expires_at: 2026-12-31 -->\r\n过期的段落。\r\nSecond hidden line.\r\n'
   const raw = `Header.\r\n\r\n${hidden}\r\nVisible line.\r\nLast line.`
   const leaf = 'deploy.md'
-  await f.edit(leaf, raw)
+  await f.files(0).write(f.path(leaf), raw)
   const view = (await f.environment(1)).workspaceViews.get(leaf)!
   const offset = view.content.indexOf('Visible line.')
   expect(mapViewSpanToRawLines(raw, view, offset, view.content.length)).toEqual({ lineStart: 7, lineEnd: 8 })

@@ -16,6 +16,7 @@ export const normalize = (text: string): string => text.trim().replace(/\s+/g, '
 
 /** Parse managed bodies before splitting the gaps, so blank lines inside a paragraph keep its identity. */
 export function memoryBlocks(content: string): MemoryBlock[] {
+  const body = content.startsWith('\uFEFF') ? content.slice(1) : content
   const blocks: MemoryBlock[] = []
   function addPlain(gap: string) {
     for (const piece of gap.split(/\r?\n\s*\n/)) {
@@ -28,12 +29,12 @@ export function memoryBlocks(content: string): MemoryBlock[] {
     }
   }
   let cursor = 0
-  for (const { start, end, id, text } of parseParagraphs(content).paragraphs) {
-    addPlain(content.slice(cursor, start))
+  for (const { start, end, id, text } of parseParagraphs(body).paragraphs) {
+    addPlain(body.slice(cursor, start))
     blocks.push({ text, id, blockHash: `managed:${id}`, textHash: hash(text) })
     cursor = end
   }
-  addPlain(content.slice(cursor))
+  addPlain(body.slice(cursor))
   return blocks
 }
 

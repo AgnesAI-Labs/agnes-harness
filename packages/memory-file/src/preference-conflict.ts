@@ -63,7 +63,11 @@ export const preferenceConflictGuard: CommitGuard = (intent, ctx) => {
   return { kind: 'allow' }
 }
 
+const protectedPipelines = new WeakSet<MemoryPipeline>()
+
 export function registerMemoryProtection(pipeline: MemoryPipeline): void {
+  if (protectedPipelines.has(pipeline)) return
+  protectedPipelines.add(pipeline)
   pipeline.addGuard(humanGuard)
   pipeline.addGuard(preferenceConflictGuard)
   pipeline.addObserver(provenanceObserver)
