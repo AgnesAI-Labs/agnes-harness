@@ -25,6 +25,21 @@ test('prepares a stable external root and isolates data directories', async () =
   ).toEqual(first)
   expect((await prepareManagedChatRoot({ ...input, dataDir: join(base, 'other') })).root).not.toBe(first.root)
   expect(JSON.parse(await readFile(join(first.root, '.agh-managed-root.json'), 'utf8')).id).toBe(first.id)
+  const { chmod, lstat, writeFile } = await import('node:fs/promises')
+  const metadataPath = join(await realpath(input.dataDir), 'managed-chat-root.json')
+  const rootInfo = await lstat(first.root, { bigint: true })
+  const saved = JSON.parse(await readFile(metadataPath, 'utf8')) as { directoryIdentity: string }
+  await chmod(metadataPath, 0o600)
+  await writeFile(
+    metadataPath,
+    JSON.stringify({ ...saved, directoryIdentity: `${rootInfo.dev + 3n}:${rootInfo.ino}` }),
+    { mode: 0o600 },
+  )
+  expect(await prepareManagedChatRoot(input)).toEqual(first)
+  expect(JSON.parse(await readFile(metadataPath, 'utf8'))).toMatchObject({
+    directoryIdentity: `${rootInfo.dev}:${rootInfo.ino}`,
+    state: 'ready',
+  })
 })
 
 test('registered roots refuse replacement and never recreate missing directories', async () => {
@@ -34,9 +49,16 @@ test('registered roots refuse replacement and never recreate missing directories
   await mkdir(documents)
   const input = { dataDir: join(base, 'data'), privateRoots: [], documentsDirectory: async () => documents }
   const first = await prepareManagedChatRoot(input)
-  const { rename } = await import('node:fs/promises')
+  const { copyFile, rename, rm } = await import('node:fs/promises')
   await rename(first.root, `${first.root}-old`)
   await symlink(`${first.root}-old`, first.root)
+  await expect(prepareManagedChatRoot(input)).rejects.toThrow()
+  await rm(first.root)
+  await mkdir(first.root, { mode: 0o700 })
+  await copyFile(
+    join(`${first.root}-old`, '.agh-managed-root.json'),
+    join(first.root, '.agh-managed-root.json'),
+  )
   await expect(prepareManagedChatRoot(input)).rejects.toThrow()
 })
 

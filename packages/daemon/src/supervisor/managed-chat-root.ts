@@ -65,6 +65,11 @@ const contains = (parent: string, child: string) => {
   const suffix = relative(parent, child)
   return suffix === '' || (!suffix.startsWith('..') && !isAbsolute(suffix))
 }
+const sameRegisteredInode = (actual: string, expected: string) => {
+  const actualSep = actual.indexOf(':')
+  const expectedSep = expected.indexOf(':')
+  return actualSep > 0 && expectedSep > 0 && actual.slice(actualSep + 1) === expected.slice(expectedSep + 1)
+}
 async function identity(path: string): Promise<string> {
   const info = await lstat(path, { bigint: true })
   if (!info.isDirectory() || info.isSymbolicLink() || (await realpath(path)) !== path)
@@ -96,7 +101,7 @@ async function persist(path: string, record: RootRecord) {
     }
   }
 }
-async function verify(record: RootRecord, dataDir: string, privateRoots: readonly string[]) {
+async function verify(record: RootRecord, dataDir: string, privateRoots: readonly string[]): Promise<string> {
   if (
     record.version !== 1 ||
     !['prepared', 'ready'].includes(record.state) ||
@@ -109,14 +114,17 @@ async function verify(record: RootRecord, dataDir: string, privateRoots: readonl
   for (const root of privateRoots)
     if (contains(root, record.canonicalRoot) || contains(record.canonicalRoot, root))
       throw new ManagedChatRootError()
-  if ((await identity(record.canonicalRoot)) !== record.directoryIdentity) throw new ManagedChatRootError()
+  const before = await identity(record.canonicalRoot)
+  if (!sameRegisteredInode(before, record.directoryIdentity)) throw new ManagedChatRootError()
   const markerPath = join(record.canonicalRoot, '.agh-managed-root.json')
   const markerInfo = await lstat(markerPath)
   if (!markerInfo.isFile() || markerInfo.isSymbolicLink()) throw new ManagedChatRootError()
   const marker = JSON.parse(await readFile(markerPath, 'utf8'))
   if (marker.version !== 1 || marker.id !== record.id || marker.ownerNonce !== record.ownerNonce)
     throw new ManagedChatRootError()
-  if ((await identity(record.canonicalRoot)) !== record.directoryIdentity) throw new ManagedChatRootError()
+  const after = await identity(record.canonicalRoot)
+  if (after !== before) throw new ManagedChatRootError()
+  return after
 }
 
 /** Must run under the daemon's existing single-writer lock. Orphan candidates are never adopted. */
@@ -199,10 +207,10 @@ export async function prepareManagedChatRoot(input: {
       registeredRoot = { id: record.id, root: record.canonicalRoot }
       input.checkpoint?.('after-prepared')
     }
-    await verify(record, dataDir, privateRoots)
-    if (record.state === 'prepared') {
-      input.checkpoint?.('before-ready')
-      record = { ...record, state: 'ready' }
+    const currentIdentity = await verify(record, dataDir, privateRoots)
+    if (record.state === 'prepared' || record.directoryIdentity !== currentIdentity) {
+      if (record.state === 'prepared') input.checkpoint?.('before-ready')
+      record = { ...record, directoryIdentity: currentIdentity, state: 'ready' }
       await persist(metadata, record)
     }
     return { id: record.id, root: record.canonicalRoot }

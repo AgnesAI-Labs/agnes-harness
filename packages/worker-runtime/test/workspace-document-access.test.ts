@@ -256,6 +256,18 @@ it('rejects a running legacy scope after same-path replacement by another real d
   const authority = { readScope, stat: async () => {} }
   try {
     expect((await readWorkspace(root, 'note', authority)).text).toBe('original')
+    expect(
+      (
+        await readWorkspace(root, 'note', {
+          stat: authority.stat,
+          readScope: {
+            root,
+            legacyManagedRoot: root,
+            legacyDirectoryIdentity: `${identity.dev + 3n}:${identity.ino}`,
+          },
+        })
+      ).text,
+    ).toBe('original')
     await expect(
       readWorkspace(root, 'note', { stat: authority.stat, readScope: { root, legacyManagedRoot: root } }),
     ).rejects.toBeDefined()

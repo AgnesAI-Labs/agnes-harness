@@ -135,11 +135,14 @@ export async function openWorkspaceCatalog(input: {
       throw new Error('registered current chats root failed verification')
     if (path === legacyRoot) {
       const info = await lstat(path, { bigint: true })
+      const expected = authority.legacyDirectoryIdentity
       if (
         !info.isDirectory() ||
         info.isSymbolicLink() ||
         (await realpath(path)) !== legacyRoot ||
-        `${info.dev}:${info.ino}` !== authority.legacyDirectoryIdentity
+        !expected ||
+        !/^\d+:\d+$/.test(expected) ||
+        expected.slice(expected.indexOf(':') + 1) !== String(info.ino)
       )
         throw new Error('legacy chats root no longer matches its registered directory')
     }
