@@ -19,7 +19,7 @@ import {
   Tag,
   useUiText,
 } from '@agnes/web-ui'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PluginView } from './admin-view.js'
 import {
   CommunityCard,
@@ -32,6 +32,7 @@ import { matchesPluginFilters, type PluginSource, PluginSourceFilter, PluginTool
 import { SkillInstallDialog } from './skill-import.js'
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
+const BATCH_SIZE = 12
 
 function MarketCard({
   group,
@@ -159,9 +160,11 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
   const { snapshot, failed } = useCommunityDiscovery(view)
   const [selected, setSelected] = useState<CommunityRepository | null>(null)
   const detailTrigger = useRef<HTMLElement | null>(null)
-  const [display, setDisplay] = useState({ key: '', count: 12 })
+  const tail = useRef<HTMLDivElement>(null)
   const listKey = JSON.stringify([source, view.query, view.kind])
-  const count = display.key === listKey ? display.count : 12
+  const [display, setDisplay] = useState({ key: listKey, count: BATCH_SIZE })
+  const count = display.key === listKey ? display.count : BATCH_SIZE
+  if (display.key !== listKey) setDisplay({ key: listKey, count })
   const rows = view.state.catalog.filter(
     (item) =>
       !item.metadata?.exampleOf &&
@@ -193,6 +196,32 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
   }
   // The controller keeps one list; until it has switched to the catalog there is nothing to show.
   const ready = view.tab === 'discover'
+  const moreEntries = count < entries.length
+  const { loading, error, nextCursor } = view.state
+  const cursor = nextCursor && !loading && !error && view.can('packages.read') ? nextCursor : null
+  const hasMore = ready && (moreEntries || !!cursor)
+  useEffect(() => {
+    const target = tail.current
+    if (!hasMore || !target || typeof IntersectionObserver !== 'function') return
+    let active = true
+    // Rearm after each batch or cursor change so a short page can fill the pane.
+    const observer = new IntersectionObserver((entries) => {
+      if (!active || view.tab !== 'discover' || !entries.some((entry) => entry.isIntersecting)) return
+      if (!moreEntries) {
+        // The live controller can start a read before its new state reaches this effect.
+        const { loading, error, nextCursor } = view.state
+        if (!cursor || loading || error || nextCursor !== cursor) return
+      }
+      active = false
+      setDisplay({ key: listKey, count: count + BATCH_SIZE })
+      if (!moreEntries && cursor) void view.loadCatalog(cursor)
+    })
+    observer.observe(target)
+    return () => {
+      active = false
+      observer.disconnect()
+    }
+  }, [count, cursor, hasMore, listKey, moreEntries, view])
   return (
     <>
       <PluginToolbar
@@ -260,18 +289,7 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
           )}
         </div>
       )}
-      {ready && (count < entries.length || view.state.nextCursor) && (
-        <Button
-          className="plugin-more"
-          appearance="ghost"
-          onClick={() => {
-            setDisplay({ key: listKey, count: count + 12 })
-            if (count >= entries.length && view.state.nextCursor) void view.loadCatalog(view.state.nextCursor)
-          }}
-        >
-          {t('market.more')}
-        </Button>
-      )}
+      {hasMore && <div ref={tail} className="plugins-page-gallery-tail" aria-hidden="true" />}
       <CommunityDetails
         row={selected}
         view={view}
