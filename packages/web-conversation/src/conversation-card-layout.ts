@@ -15,7 +15,9 @@ export function conversationToolCardKind(
 }
 export function keepConversationCardVisible(node: UINode): boolean {
   if (node.kind !== 'tool') return false
-  if (conversationToolCardKind(node)) return true
+  const kind = conversationToolCardKind(node)
+  if (kind === 'child-agent') return Boolean(node.delegatedRole)
+  if (kind) return true
   return (
     node.slots?.some((fill) => {
       if (fill.slot !== 'tool.card.inline') return false
