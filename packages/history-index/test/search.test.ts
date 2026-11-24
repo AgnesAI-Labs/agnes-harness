@@ -179,6 +179,23 @@ describe('history index', () => {
       expect(result.items).toEqual([])
     }
   })
+  it('recalls events across terms with the same workspace, owner, omitSelf and beforeSeq filters as search', () => {
+    const { index, access } = openSeed()
+    const request = { access, title: '', workspace: '', sessionId: '', omitSelf: true, query: 'repair alpha' }
+    expect(index.query({ ...request, kind: 'search' }).items).toEqual([])
+    const hits = index.query({ ...request, kind: 'recall' }).items
+    expect(hits.map((item) => [item.sessionId, item.seq]).sort()).toEqual([
+      ['peer', 1],
+      ['readerless', 1],
+    ])
+    expect(index.query({ ...request, kind: 'recall', workspace: '/work' }).items).toEqual([])
+    expect(
+      index.query({ ...request, kind: 'recall', sessionId: 'self', omitSelf: false, beforeSeq: 2 }).items,
+    ).toEqual([])
+    const local = index.query({ ...request, kind: 'recall', access: { kind: 'local', principal: 'owner-b' } })
+    expect(local.items.map((item) => item.sessionId).sort()).toEqual(['other-owner', 'readerless'])
+  })
+
   it('creates the v4 schema: indexed tails, parent index and external-content FTS', () => {
     const { dir, index } = openSeed()
     index.close()
@@ -193,6 +210,12 @@ describe('history index', () => {
         { type: 'index', name: 'sessions_parent' },
         { type: 'index', name: 'sessions_workspace' },
         { type: 'table', name: 'docs' },
+        { type: 'table', name: 'docs_cjk' },
+        { type: 'table', name: 'docs_cjk_config' },
+        { type: 'table', name: 'docs_cjk_content' },
+        { type: 'table', name: 'docs_cjk_data' },
+        { type: 'table', name: 'docs_cjk_docsize' },
+        { type: 'table', name: 'docs_cjk_idx' },
         { type: 'table', name: 'docs_fts' },
         { type: 'table', name: 'docs_fts_config' },
         { type: 'table', name: 'docs_fts_data' },

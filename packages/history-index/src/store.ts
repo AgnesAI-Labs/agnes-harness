@@ -1,8 +1,10 @@
 import { chmodSync, existsSync, mkdirSync, realpathSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { backfillCjk, ensureCjk } from './cjk-backfill.js'
 import { HistoryIndexError } from './errors.js'
 import { sourceStamp } from './ledger.js'
+import { recallEvents } from './recall.js'
 import { syncLedger, TITLE_SEQ } from './sync.js'
 import {
   decodeCursor,
@@ -35,6 +37,7 @@ export type HistoryItem = {
 
 export type HistoryPage = {
   items: HistoryItem[]
+  partial?: boolean
   next?: string
   truncated: boolean
   generation: number
@@ -43,7 +46,7 @@ export type HistoryPage = {
 export type HistoryQuery = {
   workspaceMatch?: 'exact' | 'contains'
   access: HistoryAccess
-  kind: 'search' | 'list'
+  kind: 'search' | 'list' | 'recall'
   query: string
   title: string
   workspace: string
@@ -155,6 +158,7 @@ export function openHistoryIndex(indexPath: string): HistoryIndex {
     if (applicationId !== APPLICATION_ID && (applicationId !== 0 || tables.n > 0))
       throw new HistoryIndexError('INDEX')
     if (applicationId === APPLICATION_ID && version !== SCHEMA_VERSION) {
+      db.exec('DROP TABLE IF EXISTS docs_cjk')
       db.exec('DROP TABLE IF EXISTS docs_fts')
       db.exec('DROP TABLE IF EXISTS docs')
       db.exec('DROP TABLE IF EXISTS readers')
@@ -197,6 +201,7 @@ export function openHistoryIndex(indexPath: string): HistoryIndex {
       content_rowid = 'rowid',
       tokenize = 'unicode61'
     )`)
+    ensureCjk(db)
     return new HistoryIndex(db, indexPath)
   } catch (error) {
     db.close()
@@ -251,6 +256,7 @@ export class HistoryIndex {
    */
   sync(dataDir: string): { generation: number; synced: boolean } {
     this.live()
+    backfillCjk(this.db)
     const stamp = sourceStamp(dataDir)
     if (this.stamp() === stamp && this.generation() > 0)
       return { generation: this.generation(), synced: false }
@@ -271,6 +277,12 @@ export class HistoryIndex {
   query(request: HistoryQuery): HistoryPage {
     this.live()
     const limit = pageLimit(request.limit)
+    if (request.kind === 'recall') {
+      const visible = visibility(request.access)
+      const params: Array<string | number> = [...visible.params]
+      const where = visible.sql + this.eventFilters(request, params)
+      return recallEvents(this.db, request, where, params, limit, this.generation())
+    }
     const filters = cursorFilters(request)
     let offset = 0
     if (request.cursor) {
@@ -405,11 +417,7 @@ export class HistoryIndex {
       JOIN docs e ON e.rowid = docs_fts.rowid
       JOIN sessions s ON s.session_id = e.session_id
       WHERE docs_fts MATCH ? AND e.seq >= ? AND ${visible.sql}`
-    sql += this.filters(request, params)
-    if (request.beforeSeq !== undefined && request.access.kind === 'caller') {
-      sql += ' AND NOT (e.session_id = ? AND e.seq >= ?)'
-      params.push(request.access.self, request.beforeSeq)
-    }
+    sql += this.eventFilters(request, params)
     sql += ' ORDER BY bm25(docs_fts), length(e.text), e.ts, e.session_id, e.seq LIMIT ?'
     params.push(HISTORY_FETCH_CAP + 1)
     let rows: HitRow[]
@@ -471,6 +479,15 @@ export class HistoryIndex {
       ? encodeCursor({ ...cursorFilters(request), g: generation, o: offset + items.length, n: limit })
       : undefined
     return { items, ...(next ? { next } : {}), truncated: false, generation }
+  }
+
+  private eventFilters(request: HistoryQuery, params: Array<string | number>): string {
+    let sql = this.filters(request, params)
+    if (request.beforeSeq !== undefined && request.access.kind === 'caller') {
+      sql += ' AND NOT (e.session_id = ? AND e.seq >= ?)'
+      params.push(request.access.self, request.beforeSeq)
+    }
+    return sql
   }
 
   private filters(request: HistoryQuery, params: Array<string | number>): string {
@@ -637,6 +654,7 @@ function visibility(access: HistoryAccess): { sql: string; params: string[] } {
 }
 
 function cursorFilters(request: HistoryQuery): Omit<HistoryCursor, 'g' | 'o' | 'n'> {
+  if (request.kind === 'recall') throw new HistoryIndexError('INVALID_CURSOR')
   return {
     kind: request.kind,
     q: request.query,

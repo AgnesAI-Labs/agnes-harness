@@ -6,6 +6,7 @@ import {
   runSessionEventRead,
   runSessionEventSearch,
   runSessionEventTrace,
+  runSessionRecall,
   runSessionSearch,
   runSessionTrace,
 } from './runtime.js'
@@ -16,8 +17,7 @@ const READ_ONLY = {
   isConcurrencySafe: true,
   isOpenWorld: false,
   replay: 'safe' as const,
-  // Looking back at earlier sessions is occasional; the five tools wait behind tool_search as one
-  // listed group instead of costing about 490 schema tokens on every request.
+  // Earlier-session tools are discovered together on demand.
   deferLoading: true,
   discoveryGroup: 'Earlier sessions (search, read and trace past sessions)',
   requiresApproval: 'never' as const,
@@ -36,6 +36,20 @@ export const sessionSearchTool = defineTool({
   meta: READ_ONLY,
   async execute(args, ctx) {
     return runSessionSearch(args.query, ctx)
+  },
+})
+
+export const sessionRecallTool = defineTool({
+  name: 'session_recall',
+  description:
+    'Find relevant events in earlier sessions in this workspace using English or Chinese keywords. Use session_event_read with a returned sessionId and seq to read the surrounding evidence.',
+  parameters: Type.Object(
+    { query, limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 })) },
+    { additionalProperties: false },
+  ),
+  meta: READ_ONLY,
+  async execute(args, ctx) {
+    return runSessionRecall(args.query, args.limit, ctx)
   },
 })
 
@@ -92,6 +106,7 @@ export function createSessionQueryExtension(options: { dataDir?: string } = {}) 
       else bindSessionQuery(dataDir)
       const disposers = [
         plugin.tools.register(sessionSearchTool),
+        plugin.tools.register(sessionRecallTool),
         plugin.tools.register(sessionEventSearchTool),
         plugin.tools.register(sessionTraceTool),
         plugin.tools.register(sessionEventTraceTool),
