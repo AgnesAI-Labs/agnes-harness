@@ -7,6 +7,8 @@ export const REMOTE_FRONTEND_KEY_VERSION = 'agh-key-frontend/v1'
 export const REMOTE_FRONTEND_SESSION_PREFIX = '/_agnes/remote-access/'
 /** A-origin BFF: resolves a managed credential in A's daemon, returning only a temporary capability. */
 export const CLOUD_AUTHORIZATION_PATH = '/_agnes/cloud-connection/authorize'
+/** One backend authorization budget, including bounded transport retries. Outer callers add relay slack. */
+export const CLOUD_AUTHORIZATION_TIMEOUT_MS = 45_000
 
 export type FrontendPublication = {
   enabled: boolean

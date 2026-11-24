@@ -1,3 +1,4 @@
+import { CLOUD_AUTHORIZATION_TIMEOUT_MS } from '@agnes/protocol'
 import { discoverCloudOrigin, forgetRemoteAccess } from '../remote-authorization.js'
 import { readRemoteFrontendInfo } from '../remote-frontend.js'
 
@@ -19,7 +20,7 @@ export function watchCloudOrigin(
     const attempt = new AbortController()
     const abort = () => attempt.abort()
     request.signal.addEventListener('abort', abort, { once: true })
-    const timeout = setTimeout(abort, 25_000)
+    const timeout = setTimeout(abort, CLOUD_AUTHORIZATION_TIMEOUT_MS + 20_000)
     let failure = 'CLOUD_AUTH_UNAVAILABLE'
     try {
       const next = await discover(attempt.signal)

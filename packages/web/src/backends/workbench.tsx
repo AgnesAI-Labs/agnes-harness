@@ -1,4 +1,4 @@
-import { remoteFrontendOrigin } from '@agnes/protocol'
+import { CLOUD_AUTHORIZATION_TIMEOUT_MS, remoteFrontendOrigin } from '@agnes/protocol'
 import { CredentialsApi } from '@agnes/resource-control-web/credentials-api'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
 import {
@@ -358,7 +358,7 @@ export function CloudWorkbenchStage({ children }: { children?: ReactNode } = {})
       const deadline = setTimeout(() => {
         timedOut = true
         request.abort()
-      }, 30_000)
+      }, CLOUD_AUTHORIZATION_TIMEOUT_MS + 20_000)
       setDiscovering(true)
       setConfigurationError('')
       setCandidateError(preservedError ?? '')

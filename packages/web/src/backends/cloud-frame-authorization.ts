@@ -1,9 +1,10 @@
+import { CLOUD_AUTHORIZATION_TIMEOUT_MS } from '@agnes/protocol'
 import { authorizeRemoteFrontend, forgetRemoteAccess, remoteUsesGateway } from '../remote-authorization.js'
 import { cloudFrameAppearance } from './cloud-frame-appearance.js'
 import { cloudFrameOrigin } from './frame-context.js'
 import { BACKEND_FRAME_MESSAGE } from './frame-contract.js'
 
-const PARENT_AUTHORIZATION_TIMEOUT_MS = 25_000
+const PARENT_AUTHORIZATION_TIMEOUT_MS = CLOUD_AUTHORIZATION_TIMEOUT_MS + 10_000
 
 /** A alone resolves credentials. The cloud can request only its already configured connection. */
 export function installCloudFrameAuthorization(

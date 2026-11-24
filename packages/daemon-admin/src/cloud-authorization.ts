@@ -7,6 +7,7 @@ import {
 } from '@agnes/protocol'
 import type { AdminCloudAuthorization, AdminCloudAuthorize } from '@agnes/protocol/gen/app-server'
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
+import { cloudAuthorizationRequests } from './cloud-authorization-request.js'
 import { cloudSandboxConnection } from './cloud-sandbox-token.js'
 
 const AUTHORIZATION_CLOCK_SKEW_MS = 5 * 60 * 1000
@@ -22,11 +23,12 @@ export async function authorizeCloudConnection(
     const credential = await store.read(input.credentialRef)
     if (credential?.kind !== 'api-key' || credential.provider !== 'generic' || !credential.label)
       throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_CREDENTIAL_NOT_FOUND' })
-    const sandbox = await cloudSandboxConnection(requestedOrigin, credential.value, fetcher)
+    const requests = cloudAuthorizationRequests(fetcher)
+    const sandbox = await cloudSandboxConnection(requestedOrigin, credential.value, requests.connection)
     const origin = sandbox?.origin ?? requestedOrigin
     if (!origin) throw Error('missing cloud origin')
     const trafficToken = sandbox?.trafficToken
-    const response = await fetcher(`${origin}${REMOTE_FRONTEND_AUTH}`, {
+    const response = await requests.authorize(`${origin}${REMOTE_FRONTEND_AUTH}`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -34,7 +36,6 @@ export async function authorizeCloudConnection(
       },
       body: JSON.stringify({ key: credential.value }),
       redirect: 'error',
-      signal: AbortSignal.timeout(8000),
     })
     if (response.status === 401 || response.status === 403)
       throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_CREDENTIAL_REJECTED' })
