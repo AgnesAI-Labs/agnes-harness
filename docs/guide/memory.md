@@ -75,3 +75,16 @@ Memory stays in local files and the session ledger needed for tool execution. Fo
 The demo model performs no reasoning. `show remembered preferences` (or `显示记住的偏好`) displays the memory contribution actually received in that request. `call write {"path":"<memory-directory>/MEMORY.md","content":"Prefer concise summaries."}` uses the same normal tool and approval path as a configured reasoning model. Read an existing file before replacing it.
 
 For a replaceable enterprise implementation, see [Memory providers](../extend/memory.md).
+
+## Expiring ordinary memory
+
+In workspace `MEMORY.md` or a topic file, put `<!-- expires_at: ISO8601 -->` on its own line immediately before the paragraph it applies to. The paragraph ends at the next blank line or the end of the file.
+
+```markdown
+<!-- expires_at: 2027-02-01T09:00:00Z -->
+Use the staging queue during the migration.
+
+Use the production queue for scheduled jobs.
+```
+
+At 09:00 UTC on February 1, the agent's reads and recall stop showing the staging instruction. The next turn's memory note also omits it. The production instruction remains visible. An invalid date hides the annotated paragraph immediately. The memory editor keeps the original text so you can correct or extend the date.

@@ -276,10 +276,15 @@ describe('promoting a confirmed lesson to user memory', () => {
         reviewAfter: T0 + REVIEW_AFTER_MS,
       }),
     ])
-    expect((await h.manage({ action: 'withdraw', paragraphId: id, layer: 'user' })).paragraphs).toEqual([])
+    const actor = 'user-owner'
+    expect(
+      (await h.manage({ action: 'withdraw', paragraphId: id, layer: 'user', actor })).paragraphs,
+    ).toEqual([])
     expect(h.user()).toBe(HAND)
     expect(h.users().read().paragraphs).toEqual([expect.objectContaining({ id, state: 'removed' })])
-    expect(h.users().read().revocations).toEqual([expect.objectContaining({ action: 'memory-withdrawn' })])
+    expect(h.users().read().revocations).toEqual([
+      expect.objectContaining({ action: 'memory-withdrawn', actor }),
+    ])
     // Old confirmations do not bring it back, under any command, from any session.
     const again = await h.saves.save(request(h, { session: { ...request(h).session, key: 'session-2' } }))
     expect(again).toMatchObject({ outcome: 'refused', reason: 'user-revoked' })

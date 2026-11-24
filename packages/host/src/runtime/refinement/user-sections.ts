@@ -77,6 +77,7 @@ export async function manageUserSections(
       entryId: source.entryId,
       contentHash: source.contentHash,
       action: 'memory-withdrawn',
+      ...(request.actor ? { actor: request.actor } : {}),
       at: now,
     }
     if (

@@ -11,6 +11,8 @@ import { paragraphPortOf } from './reconcile.js'
 export type SavedParagraphRequest = Readonly<{
   action: 'list' | 'renew' | 'withdraw' | 'convert'
   paragraphId?: string
+  /** Authenticated principal supplied by the Host. */
+  actor?: string
   /** `user`: the task experience promoted to user memory instead of the workspace's (no `convert`). */
   layer?: 'user'
 }>
@@ -163,7 +165,8 @@ export function savedParagraphs(deps: {
     const content = withdraw
       ? withoutParagraph(stored.content, markers)
       : withoutMarkers(stored.content, markers)
-    await memory.editFile(INDEX, content, stored.hash)
+    const { actor } = request
+    await memory.editFile(INDEX, content, stored.hash, actor ? { actor } : undefined)
     const now = deps.clock()
     record(registry, (draft) => {
       const entry = draft.paragraphs.find((paragraph) => paragraph.id === id && paragraph.state === 'active')
@@ -182,6 +185,7 @@ export function savedParagraphs(deps: {
         entryId: source.entryId,
         contentHash: source.contentHash,
         action: 'memory-withdrawn',
+        ...(actor ? { actor } : {}),
         at: now,
       }
       if (
