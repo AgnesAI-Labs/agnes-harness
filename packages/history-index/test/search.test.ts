@@ -196,7 +196,7 @@ describe('history index', () => {
     expect(local.items.map((item) => item.sessionId).sort()).toEqual(['other-owner', 'readerless'])
   })
 
-  it('diversifies cross-session recall hits and matches regular English inflections while search stays literal', () => {
+  it('matches regular English inflections and ignores stopwords in recall while search stays literal', () => {
     const { index, access } = openSeed((dir) => {
       const ledger = new DatabaseSync(join(dir, 'sessions.db'))
       const ins = ledger.prepare(
@@ -211,31 +211,28 @@ describe('history index', () => {
           `${sid}:${seq}`,
           JSON.stringify({ content: [{ type: 'text', text }] }),
         )
-      put('peer', 2, 'orchard clinic clinic clinic')
-      put('peer', 3, 'orchard clinic clinic')
-      put('readerless', 2, 'orchard clinic')
-      put('readerless', 3, 'follow-up appointment confirmed')
+      put('readerless', 2, 'follow-up appointment confirmed')
+      put('peer', 2, 'schedule solar upgrade')
       ledger.close()
     })
     const base = { access, title: '', workspace: '', sessionId: '', omitSelf: true }
-    const singleSession = index.query({
-      ...base,
-      kind: 'recall',
-      sessionId: 'peer',
-      omitSelf: false,
-      query: 'orchard clinic',
-    }).items
-    expect(singleSession).toHaveLength(2)
-    const [firstPeerSeq, secondPeerSeq] = singleSession.map((item) => item.seq)
-    const diverse = index.query({ ...base, kind: 'recall', query: 'orchard clinic' }).items
-    expect(diverse.map((item) => [item.sessionId, item.seq])).toEqual([
-      ['peer', firstPeerSeq],
-      ['readerless', 2],
-      ['peer', secondPeerSeq],
-    ])
     expect(index.query({ ...base, kind: 'search', query: 'appointments' }).items).toEqual([])
-    const inflected = index.query({ ...base, kind: 'recall', query: 'appointments' }).items
-    expect(inflected.map((item) => [item.sessionId, item.seq])).toEqual([['readerless', 3]])
+    expect(
+      index
+        .query({ ...base, kind: 'recall', query: 'appointments' })
+        .items.map((item) => [item.sessionId, item.seq]),
+    ).toEqual([['readerless', 2]])
+    expect(
+      index
+        .query({ ...base, kind: 'recall', query: "What didn't I confirm about my appointments?" })
+        .items.map((item) => [item.sessionId, item.seq]),
+    ).toEqual([['readerless', 2]])
+    expect(index.query({ ...base, kind: 'search', query: 'upgrading' }).items).toEqual([])
+    expect(
+      index
+        .query({ ...base, kind: 'recall', query: 'upgrading' })
+        .items.map((item) => [item.sessionId, item.seq]),
+    ).toEqual([['peer', 2]])
   })
 
   it('creates the v4 schema: indexed tails, parent index and external-content FTS', () => {

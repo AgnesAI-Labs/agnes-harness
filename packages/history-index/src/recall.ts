@@ -87,22 +87,10 @@ export function recallEvents(
     }
     return rows
   }
-  const fused = fuse(
+  const ranked = fuse(
     [channel('docs_fts', expandEnglishInflections(query.en)), channel('docs_cjk', query.cjk)],
     (row) => row.id,
   )
-  const ranked = !request.sessionId
-    ? (() => {
-        const seen = new Map<string, number>()
-        return fused
-          .map((entry, order) => {
-            const count = seen.get(entry.item.sessionId) ?? 0
-            seen.set(entry.item.sessionId, count + 1)
-            return { ...entry, score: entry.score / (1 + count), order }
-          })
-          .sort((a, b) => b.score - a.score || a.order - b.order)
-      })()
-    : fused
   return {
     items: ranked.slice(0, limit).map(({ item: { id: _, ...item } }) => item),
     truncated: ranked.length > limit,
