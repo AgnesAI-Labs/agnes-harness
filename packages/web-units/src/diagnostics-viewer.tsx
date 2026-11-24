@@ -22,33 +22,90 @@ const TAB_IDS = ['overview', 'conversation', 'trace', 'logs', 'system', 'artifac
 const STYLE = `
 @layer tokens, base, ui, app;
 @layer tokens {
-  :root { color-scheme: light dark; --agnes-bg-primary: Canvas; --agnes-text-primary: CanvasText; --agnes-text-secondary: GrayText; --agnes-line-primary: GrayText; --agnes-accent-primary: Highlight; }
+  :root {
+    color-scheme: light dark;
+    --agnes-bg-primary: #f6f7f9;
+    --agnes-bg-surface: #ffffff;
+    --agnes-bg-subtle: #f1f5f9;
+    --agnes-text-primary: #0f172a;
+    --agnes-text-secondary: #475569;
+    --agnes-line-primary: #e2e8f0;
+    --agnes-accent-primary: #2563eb;
+    --agnes-accent-soft: #eff6ff;
+    --agnes-warn-bg: #fffbeb;
+    --agnes-warn-border: #fde68a;
+    --agnes-warn-text: #92400e;
+    --agnes-ok: #15803d;
+    --agnes-bad: #b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --agnes-bg-primary: #0b0f17;
+      --agnes-bg-surface: #111827;
+      --agnes-bg-subtle: #1f2937;
+      --agnes-text-primary: #f1f5f9;
+      --agnes-text-secondary: #94a3b8;
+      --agnes-line-primary: #273244;
+      --agnes-accent-primary: #60a5fa;
+      --agnes-accent-soft: #172554;
+      --agnes-warn-bg: #2a1f0b;
+      --agnes-warn-border: #78350f;
+      --agnes-warn-text: #fcd34d;
+      --agnes-ok: #4ade80;
+      --agnes-bad: #f87171;
+    }
+  }
 }
 @layer base {
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--agnes-bg-primary); color: var(--agnes-text-primary); font-size: 14px; line-height: 1.6; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; background: var(--agnes-bg-primary); color: var(--agnes-text-primary); font-size: 14px; line-height: 1.6; }
+  .ant-tabs-body-holder { display: none; }
 }
 @layer app {
-  header { padding: 16px 20px; border-bottom: 1px solid var(--agnes-line-primary); }
-  header h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; text-wrap: balance; overflow-wrap: anywhere; }
-  header p { margin: 2px 0; color: var(--agnes-text-secondary); font-size: 13px; max-width: 75ch; overflow-wrap: anywhere; }
-  #agh-tabs { display: flex; gap: 4px; padding: 8px 20px; border-bottom: 1px solid var(--agnes-line-primary); flex-wrap: wrap; }
-   #agh-tabs button { border: 1px solid var(--agnes-line-primary); background: transparent; color: var(--agnes-text-primary); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; min-height: 32px; touch-action: manipulation; }
-   #agh-tabs button[aria-selected="true"] { background: var(--agnes-accent-primary); color: HighlightText; border-color: var(--agnes-accent-primary); }
+  header { padding: 20px 24px 16px; background: var(--agnes-bg-surface); border-bottom: 1px solid var(--agnes-line-primary); }
+  header h1 { margin: 0 0 6px; font-size: 19px; font-weight: 600; letter-spacing: -0.01em; text-wrap: balance; overflow-wrap: anywhere; }
+  header p { margin: 2px 0; color: var(--agnes-text-secondary); font-size: 13px; max-width: 80ch; overflow-wrap: anywhere; }
+  #agh-session-title { color: var(--agnes-text-primary); font-weight: 500; font-size: 14px; }
+  #agh-tabs { position: sticky; top: 0; z-index: 10; display: flex; gap: 6px; padding: 10px 24px; background: var(--agnes-bg-surface); border-bottom: 1px solid var(--agnes-line-primary); flex-wrap: wrap; }
+  #agh-tabs button { border: 1px solid transparent; background: transparent; color: var(--agnes-text-secondary); padding: 6px 14px; border-radius: 999px; cursor: pointer; font-size: 13px; font-weight: 500; min-height: 32px; touch-action: manipulation; transition: background .15s, color .15s; }
+  #agh-tabs button:hover { background: var(--agnes-bg-subtle); color: var(--agnes-text-primary); }
+  #agh-tabs button[aria-selected="true"] { background: var(--agnes-accent-primary); color: #ffffff; border-color: var(--agnes-accent-primary); }
   #agh-tabs button:focus-visible { outline: 2px solid var(--agnes-accent-primary); outline-offset: 2px; }
-  main { padding: 16px 20px; }
-  main section { max-width: 960px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  main { padding: 20px 24px 40px; }
+  main section { max-width: 1040px; margin: 0 auto; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
   @media (max-width: 600px) {
-    header, main { padding: 16px max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left)); }
+    header, main { padding: 16px max(16px, env(safe-area-inset-right)) 24px max(16px, env(safe-area-inset-left)); }
     #agh-tabs { padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right)); }
     #agh-tabs button { min-height: 44px; }
   }
-  pre { white-space: pre-wrap; word-break: break-word; background: color-mix(in srgb, var(--agnes-text-secondary) 8%, transparent); padding: 8px; border-radius: 6px; font-size: 12px; }
-  .agh-node, .agh-span { padding: 4px 0; border-bottom: 1px solid var(--agnes-line-primary); }
-  .agh-node-kind { font-weight: 600; margin-right: 6px; }
-  .agh-artifact { display: flex; gap: 8px; flex-wrap: wrap; }
-  .agh-artifact div { display: flex; gap: 4px; }
-  .agh-artifact dt { font-weight: 600; }
+  pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-word; background: var(--agnes-bg-subtle); border: 1px solid var(--agnes-line-primary); padding: 12px 14px; border-radius: 8px; font-size: 12px; line-height: 1.5; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; max-height: 460px; overflow: auto; }
+  .agh-include { list-style: none; padding: 0; margin: 0 0 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+  .agh-include li { background: var(--agnes-bg-surface); border: 1px solid var(--agnes-line-primary); border-radius: 10px; padding: 12px 14px; font-size: 13px; font-weight: 500; }
+  .agh-warnings { list-style: none; padding: 0; margin: 0 0 16px; display: flex; flex-direction: column; gap: 8px; }
+  .agh-warnings li { background: var(--agnes-warn-bg); border: 1px solid var(--agnes-warn-border); color: var(--agnes-warn-text); border-radius: 10px; padding: 10px 14px; font-size: 13px; }
+  .agh-events-meta { background: var(--agnes-bg-surface); border: 1px solid var(--agnes-line-primary); border-radius: 10px; padding: 12px 14px; margin: 0; color: var(--agnes-text-secondary); font-size: 13px; }
+  .agh-node { background: var(--agnes-bg-surface); border: 1px solid var(--agnes-line-primary); border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; }
+  .agh-node[data-kind="user"] { border-left: 3px solid var(--agnes-accent-primary); }
+  .agh-node[data-kind="assistant"] { border-left: 3px solid var(--agnes-ok); }
+  .agh-node[data-kind="context"], .agh-node[data-kind="context-sections"], .agh-node[data-kind="cost"] { background: transparent; border-style: dashed; padding: 8px 14px; }
+  .agh-node-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .agh-node-kind { display: inline-block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; padding: 2px 8px; border-radius: 999px; background: var(--agnes-bg-subtle); color: var(--agnes-text-secondary); }
+  .agh-node[data-kind="user"] .agh-node-kind { background: var(--agnes-accent-soft); color: var(--agnes-accent-primary); }
+  .agh-node[data-kind="assistant"] .agh-node-kind { background: color-mix(in srgb, var(--agnes-ok) 14%, transparent); color: var(--agnes-ok); }
+  .agh-node-seq { font-size: 12px; color: var(--agnes-text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .agh-node-body { white-space: pre-wrap; word-break: break-word; font-size: 13.5px; color: var(--agnes-text-primary); }
+  .agh-raw { margin-top: 8px; }
+  .agh-raw summary { cursor: pointer; font-size: 12px; color: var(--agnes-text-secondary); user-select: none; }
+  .agh-turn-card { background: var(--agnes-bg-surface); border: 1px solid var(--agnes-line-primary); border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; }
+  .agh-turn-card h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+  .agh-span { padding: 6px 8px; border-bottom: 1px solid var(--agnes-line-primary); font-size: 13px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .agh-span:last-child { border-bottom: 0; }
+  .agh-span[data-status="failed"] { color: var(--agnes-bad); }
+  .agh-log-card { background: var(--agnes-bg-surface); border: 1px solid var(--agnes-line-primary); border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; }
+  .agh-log-card summary { cursor: pointer; font-size: 14px; font-weight: 600; }
+  .agh-artifact { display: flex; gap: 12px; flex-wrap: wrap; margin: 4px 0 0; }
+  .agh-artifact div { display: flex; gap: 4px; font-size: 13px; }
+  .agh-artifact dt { font-weight: 600; color: var(--agnes-text-secondary); }
   .agh-artifact dd { margin: 0; }
 }
 `
@@ -130,7 +187,7 @@ function Span({ span, depth, labels }: { span: UISpan; depth: number; labels: La
   if (span.error?.message) parts.push(fill(labels.error, { message: span.error.message }))
   return (
     <>
-      <div className="agh-span" style={{ paddingLeft: depth * 16 }}>
+      <div className="agh-span" data-status={span.status} style={{ paddingLeft: depth * 18 + 8 }}>
         {parts.join(' · ')}
       </div>
       {span.children.map((child) => (
@@ -203,24 +260,37 @@ function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: Diagnos
             </ul>
           )}
           {bundle.events && (
-            <p>{fill(labels.events, { count: bundle.events.count, seq: bundle.events.lastSeq })}</p>
+            <p className="agh-events-meta">
+              {fill(labels.events, { count: bundle.events.count, seq: bundle.events.lastSeq })}
+            </p>
           )}
         </section>
         <section id="tab-conversation" role="tabpanel" aria-labelledby="agh-tab-conversation" hidden>
           {bundle.trace?.nodes.length
-            ? bundle.trace.nodes.map((node) => (
-                <div key={node.id} className="agh-node">
-                  <span className="agh-node-kind">{node.kind}</span>
-                  <span>{nodeText(node, labels)}</span>
-                  <pre>{JSON.stringify(node, null, 2)}</pre>
-                </div>
-              ))
+            ? bundle.trace.nodes.map((node) => {
+                const body = nodeText(node, labels)
+                return (
+                  <div key={node.id} className="agh-node" data-kind={node.kind}>
+                    <div className="agh-node-head">
+                      <span className="agh-node-kind">{node.kind}</span>
+                      {'seq' in node && typeof node.seq === 'number' && (
+                        <span className="agh-node-seq">#{node.seq}</span>
+                      )}
+                    </div>
+                    {body && <div className="agh-node-body">{body}</div>}
+                    <details className="agh-raw">
+                      <summary>JSON</summary>
+                      <pre>{JSON.stringify(node, null, 2)}</pre>
+                    </details>
+                  </div>
+                )
+              })
             : empty}
         </section>
         <section id="tab-trace" role="tabpanel" aria-labelledby="agh-tab-trace" hidden>
           {turns.length
             ? turns.map((turn) => (
-                <div key={turn.id}>
+                <div key={turn.id} className="agh-turn-card">
                   <h3>{fill(labels.turn, { turn: turn.turn })}</h3>
                   {turn.trace && <Span span={turn.trace} depth={0} labels={labels} />}
                 </div>
@@ -240,14 +310,14 @@ function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: Diagnos
                     ? value.entries.map((entry) => `[${entry.ts}] ${entry.level} ${entry.text}`).join('\n')
                     : value.text + (value.truncated ? `\n${labels.truncated}` : '')
                 return (
-                  <div key={key}>
-                    <h3>
+                  <details key={key} className="agh-log-card" open>
+                    <summary>
                       {key === 'requestAudit' || key === 'runtime'
                         ? text(`diagnostics.viewer.log.${key}`)
                         : key}
-                    </h3>
+                    </summary>
                     <pre>{content}</pre>
-                  </div>
+                  </details>
                 )
               })
             : empty}
