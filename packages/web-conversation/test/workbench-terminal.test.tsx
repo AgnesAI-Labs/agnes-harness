@@ -525,3 +525,23 @@ it('gives terminal screens that mount together the same screen module', async ()
     [...host.querySelectorAll('[data-testid=terminal-fixture-raw]')].map((node) => node.textContent),
   ).toEqual(['one', 'two', 'three', 'four', 'five', 'six'])
 })
+
+it('hides completed one-shot agent shell commands from the tab list and badge count while keeping running ones', async () => {
+  const finishedShell = job({
+    id: 'curl-done',
+    kind: 'shell',
+    command: 'curl https://example.com',
+    status: 'completed',
+    code: 0,
+  })
+  const runningShell = job({
+    id: 'build-live',
+    kind: 'shell',
+    command: 'pnpm build',
+    status: 'running',
+  })
+  const { host } = mount([finishedShell, runningShell])
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(1))
+  expect(host.querySelector('#terminal-tab-build-live')).not.toBeNull()
+  expect(host.querySelector('#terminal-tab-curl-done')).toBeNull()
+})

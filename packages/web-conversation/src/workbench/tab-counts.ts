@@ -55,7 +55,15 @@ export function sessionCount(read: (session: Session) => Promise<number>): Sessi
   }
 }
 
+export function isVisibleTerminalJob(job: { owner: string; kind: string; status: string }): boolean {
+  if (job.owner === 'human') return true
+  if (job.status === 'running') return true
+  return job.kind === 'pty' || job.kind === 'shell-session'
+}
+
 export const changesCount = sessionCount(
   async (session) => (await session.workspaceChanges({ scope: 'session' })).files.length,
 )
-export const terminalCount = sessionCount(async (session) => (await session.jobsRead()).jobs.length)
+export const terminalCount = sessionCount(
+  async (session) => (await session.jobsRead()).jobs.filter(isVisibleTerminalJob).length,
+)

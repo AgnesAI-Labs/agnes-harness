@@ -5,7 +5,7 @@ import { appServerErrorMessage, Button, ConfirmDialog, IconButton, Menu, Setting
 import { useEffect, useRef, useState } from 'react'
 import { ChildAgentReport } from './child-report.js'
 import { panelContext } from './context.js'
-import { terminalCount } from './tab-counts.js'
+import { isVisibleTerminalJob, terminalCount } from './tab-counts.js'
 import {
   readTerminalShell,
   rememberTerminalNames,
@@ -165,8 +165,13 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
             ),
           ],
         }))
-        terminalCount.set(session.id, value.jobs.length)
+        terminalCount.set(session.id, value.jobs.filter(isVisibleTerminalJob).length)
         setError('')
+        const exitedOneShotShell = new Set(
+          value.jobs
+            .filter((row) => row.owner === 'agent' && row.kind === 'shell' && row.status !== 'running')
+            .map((row) => row.id),
+        )
         if (!restored.current) {
           restored.current = true
           const stored = attachments(session.id)
@@ -174,10 +179,9 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
             .filter(
               (job) =>
                 !removed.current.has(job.id) &&
-                (job.owner === 'agent' ||
-                  job.status === 'running' ||
-                  !wasClosed(session.id) ||
-                  stored?.includes(job.id)),
+                (job.owner === 'agent'
+                  ? isVisibleTerminalJob(job) || job.id === requestedJob.current
+                  : job.status === 'running' || !wasClosed(session.id) || stored?.includes(job.id)),
             )
             .map((job) => job.id)
           setIds(initial)
@@ -190,9 +194,14 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
           // the agent's jobs must not leave a shell running that nobody uses.
         } else {
           setIds((known) => [
-            ...known,
+            ...known.filter((id) => !exitedOneShotShell.has(id) || id === active),
             ...value.jobs
-              .filter((row) => !known.includes(row.id) && !removed.current.has(row.id))
+              .filter(
+                (row) =>
+                  !known.includes(row.id) &&
+                  !removed.current.has(row.id) &&
+                  (row.owner !== 'agent' || isVisibleTerminalJob(row) || row.id === requestedJob.current),
+              )
               .map((row) => row.id),
           ])
         }

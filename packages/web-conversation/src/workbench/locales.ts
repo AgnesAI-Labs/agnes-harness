@@ -256,7 +256,7 @@ export const workbenchLocaleCatalog: LocaleCatalog = {
     'workbench.terminal.childWaiting': '等待子智能体输出…',
     'workbench.terminal.childSilent': '子智能体没有输出消息。',
     'workbench.terminal.readonly': '智能体运行的命令 · 只读',
-    'workbench.terminal.agentGroup': '智能体运行中',
+    'workbench.terminal.agentGroup': '智能体任务',
     'workbench.terminal.remove': '从列表移除',
     'workbench.terminal.exitCode': '退出 {code}',
     'workbench.terminal.exited': '进程已退出（{code}）',
