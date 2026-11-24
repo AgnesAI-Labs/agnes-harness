@@ -1235,6 +1235,40 @@ it.each([
   },
 )
 
+it('formats child-batch-completed notices without leaking raw UUIDs or batch state instructions', async () => {
+  const node: UINode = {
+    kind: 'user',
+    id: 'batch-notice',
+    seq: 2,
+    commandId: 'child-batch:1',
+    content: [
+      {
+        type: 'text',
+        text: 'Background child p/01M86JE4DZ253VTFWEW2KF1W9G cancelled. [Batch State: completed=2/6] DO NOT report overall batch completion.',
+      },
+    ],
+    origin: 'system',
+    system: {
+      source: 'agnes/child',
+      type: 'child-batch-completed',
+      summary:
+        'Background child p/01M86JE4DZ253VTFWEW2KF1W9G cancelled. [Batch State: completed=2/6] DO NOT report overall batch completion.',
+      data: {
+        children: [
+          { childKey: 'p/01M86JE4DZ253VTFWEW2KF1W9G', status: 'cancelled' },
+          { childKey: 'p/01M86JPX0RFR168K7JKXSMBA0A', status: 'cancelled' },
+        ],
+      },
+    },
+  }
+  const store = createConversationProjectionStore({ sessionId: 's', nodes: [node] })
+  await act(async () => root.render(createElement(Harness, { store })))
+  expect(host.querySelector('.delegation-notice')).not.toBeNull()
+  expect(host.querySelector('[role=status]')?.textContent).toBe('后台任务已取消：KF1W9G / SMBA0A')
+  expect(host.querySelector('[role=status]')?.textContent).not.toContain('Batch State')
+  expect(host.querySelector('.system-input-trace')?.hasAttribute('open')).toBe(false)
+})
+
 it.each([
   ['an app delivered', { kind: 'bundled-app', appId: '@agnes/superagent/superagent' }],
   ['a person typed', undefined],

@@ -351,6 +351,7 @@ describe('background completion notices', () => {
     expect(wakes).toHaveLength(1)
     expect(wakes[0]).toMatchObject({
       type: 'child-batch-completed',
+      presentation: { kind: 'child-completed', status: 'completed' },
       data: {
         children: [1, 2, 3].map((i) => ({
           childKey: `p/${i}`,

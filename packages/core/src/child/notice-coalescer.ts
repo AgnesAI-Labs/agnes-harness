@@ -98,6 +98,29 @@ function childData(entry: Notice): Record<string, JsonValue> {
   return data
 }
 
+function batchPresentation(entries: Notice[]): NonNullable<SystemInput['presentation']> {
+  if (entries.length === 1 && entries[0]?.system.presentation) return entries[0].system.presentation
+  const items = entries.map((entry) => {
+    const pres = entry.system.presentation
+    const data = entry.system.data as { status?: string } | undefined
+    const status = pres?.kind === 'child-completed' ? pres.status : (data?.status ?? 'completed')
+    const label = pres?.kind === 'child-completed' ? pres.label : entry.childKey.slice(-6)
+    return { status, label }
+  })
+  const status = items.some((item) => item.status === 'failed')
+    ? 'failed'
+    : items.some((item) => item.status === 'budget_stopped')
+      ? 'budget_stopped'
+      : items.every((item) => item.status === 'cancelled')
+        ? 'cancelled'
+        : 'completed'
+  return {
+    kind: 'child-completed',
+    status,
+    label: clipText(items.map((item) => item.label).join(' / '), 120),
+  }
+}
+
 export function completionBatch(entries: Notice[]): SystemInput {
   const summaries = entries.map((entry) =>
     entry.omitClosingText ? `Child ${entry.childKey} reported to its parent.` : entry.system.summary,
@@ -107,6 +130,7 @@ export function completionBatch(entries: Notice[]): SystemInput {
     type: 'child-batch-completed',
     data: { children: entries.map(childData) },
     summary: clipText(summaries.join('\n'), 2048),
+    presentation: batchPresentation(entries),
   }
 }
 
