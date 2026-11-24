@@ -133,6 +133,30 @@ export function capabilityToolContext(manifest: ExtensionManifest, context: Tool
             },
           }
         : {}),
+      ...(caps.subagent === true && context.subagent?.pause
+        ? {
+            pause: (childKey: string, opts?: { reason?: 'user_pause' | 'parent_pause' | 'budget_pause' }) => {
+              if (caps.subagent !== true) refuse(id, 'subagent')
+              return context.subagent.pause!(childKey, opts)
+            },
+          }
+        : {}),
+      ...(caps.subagent === true && context.subagent?.close
+        ? {
+            close: (childKey: string) => {
+              if (caps.subagent !== true) refuse(id, 'subagent')
+              return context.subagent.close!(childKey)
+            },
+          }
+        : {}),
+      ...(caps.subagent === true && context.subagent?.recap
+        ? {
+            recap: () => {
+              if (caps.subagent !== true) refuse(id, 'subagent')
+              return context.subagent.recap!()
+            },
+          }
+        : {}),
     }),
   }
   return Object.freeze(projected)

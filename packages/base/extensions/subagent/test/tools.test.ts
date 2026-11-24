@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { CoreError, resetChildAgentAllowlists, setChildAgentAllowlist, trackExternalChild } from '@agnes/core'
 import { checkToolDef, type ToolContext, type ToolDef } from '@agnes/extension-api'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
@@ -184,6 +185,10 @@ describe('subagent tool definitions', () => {
       'subagent_recap',
       'list_subagent_models',
     ])
+    const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      agnes: { plugins: Array<{ capabilities: { tools: { names: string[] } } }> }
+    }
+    expect(names).toEqual(manifest.agnes.plugins[0]?.capabilities.tools.names)
     expect(dispose).toBeTypeOf('function')
     ;(dispose as () => void)()
     expect(disposed).toEqual([
