@@ -165,8 +165,8 @@ export function savedParagraphs(deps: {
     const content = withdraw
       ? withoutParagraph(stored.content, markers)
       : withoutMarkers(stored.content, markers)
-    const { actor } = request
-    await memory.editFile(INDEX, content, stored.hash, actor ? { actor } : undefined)
+    const actor = request.actor?.trim() || 'human'
+    await memory.editFile(INDEX, content, stored.hash, { actor })
     const now = deps.clock()
     record(registry, (draft) => {
       const entry = draft.paragraphs.find((paragraph) => paragraph.id === id && paragraph.state === 'active')
@@ -185,7 +185,7 @@ export function savedParagraphs(deps: {
         entryId: source.entryId,
         contentHash: source.contentHash,
         action: 'memory-withdrawn',
-        ...(actor ? { actor } : {}),
+        actor,
         at: now,
       }
       if (

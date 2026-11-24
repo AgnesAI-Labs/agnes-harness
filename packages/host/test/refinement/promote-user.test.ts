@@ -289,6 +289,25 @@ describe('promoting a confirmed lesson to user memory', () => {
     const again = await h.saves.save(request(h, { session: { ...request(h).session, key: 'session-2' } }))
     expect(again).toMatchObject({ outcome: 'refused', reason: 'user-revoked' })
     expect(h.user()).toBe(HAND)
+    const second = sectionId(
+      await h.saves.save(
+        request(h, {
+          entry: {
+            ...request(h).entry,
+            id: 'second',
+            contentHash: 'core-hash-2',
+            content: 'Use pnpm -r test before push.',
+          },
+        }),
+      ),
+    )
+    expect((await h.manage({ action: 'withdraw', paragraphId: second, layer: 'user' })).paragraphs).toEqual(
+      [],
+    )
+    expect(h.users().read().revocations).toEqual([
+      expect.objectContaining({ action: 'memory-withdrawn', actor }),
+      expect.objectContaining({ entryId: 'second', action: 'memory-withdrawn', actor: 'human' }),
+    ])
   })
 
   it('a section the user deleted by hand is not promoted again on old confirmations', async () => {

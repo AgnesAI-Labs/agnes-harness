@@ -226,6 +226,9 @@ describe('saved paragraphs on the memory page', () => {
     // A save whose result was never settled can be withdrawn too.
     expect((await ws.run('withdraw', C)).paragraphs.map((entry) => entry.id)).toEqual([A])
     expect((await ws.run('withdraw', A)).paragraphs).toEqual([])
+    expect(ws.registry().read().revocations).toEqual([
+      expect.objectContaining({ action: 'memory-withdrawn', actor: 'human' }),
+    ])
     expect(await ws.file()).toBe(HUMAN)
     await expect(ws.run('withdraw', A)).rejects.toMatchObject({ code: 'MEMORY_PARAGRAPH_NOT_FOUND' })
     await expect(ws.run('convert', 'rz000000001')).rejects.toMatchObject({

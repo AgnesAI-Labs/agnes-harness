@@ -82,6 +82,7 @@ describe('bilingual lexical retrieval', () => {
     doc.chunks.push({ text: 'green marbles', lineStart: 3, lineEnd: 3 })
     rebuildAll(db, [doc])
     expect(search(db, 'marbles')).toHaveLength(2)
+    expect(search(db, 'marbles', { limit: 1 })).toHaveLength(1)
     expect(search(db, 'marbles', { aggregate: true })).toHaveLength(1)
     upsertDoc(db, document('multi', 'new'))
     expect(search(db, 'marbles')).toEqual([])

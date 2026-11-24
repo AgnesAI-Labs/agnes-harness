@@ -103,15 +103,19 @@ export function listChunks(db: DatabaseSync): IndexedChunk[] {
 export function search(
   db: DatabaseSync,
   input: string,
-  options: { aliases?: AliasMap; aggregate?: boolean } = {},
+  options: { aliases?: AliasMap; aggregate?: boolean; limit?: number } = {},
 ) {
   const query = buildQuery(input, options.aliases)
+  const cap =
+    options.limit === undefined || !Number.isFinite(options.limit)
+      ? 200
+      : Math.max(1, Math.floor(options.limit))
   const channel = (table: 'fts_en' | 'fts_cjk', match: string): IndexedChunk[] =>
     match
       ? (db
           .prepare(`SELECT ${columns} FROM ${table} JOIN chunks c ON c.id=${table}.rowid
-      WHERE ${table} MATCH ? ORDER BY rank,c.doc,c.ord`)
-          .all(match) as IndexedChunk[])
+      WHERE ${table} MATCH ? ORDER BY rank,c.doc,c.ord LIMIT ?`)
+          .all(match, cap) as IndexedChunk[])
       : []
   const ranked = fuse([channel('fts_en', query.en), channel('fts_cjk', query.cjk)], (chunk) => chunk.id).map(
     ({ item, score }) => ({ ...item, score }),

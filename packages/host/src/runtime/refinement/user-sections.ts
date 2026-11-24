@@ -60,6 +60,7 @@ export async function manageUserSections(
   if (!listed.paragraphs.some((paragraph) => paragraph.id === id)) throw fault('MEMORY_PARAGRAPH_NOT_FOUND')
   await port.commit(await port.propose({ op: 'remove', id }, listed.hash))
   const now = clock()
+  const actor = request.actor?.trim() || 'human'
   // The file has changed; if the records cannot be written now, the next reconciliation records the
   // section as taken back from the file.
   writeFresh(registry, (draft) => {
@@ -77,7 +78,7 @@ export async function manageUserSections(
       entryId: source.entryId,
       contentHash: source.contentHash,
       action: 'memory-withdrawn',
-      ...(request.actor ? { actor: request.actor } : {}),
+      actor,
       at: now,
     }
     if (
