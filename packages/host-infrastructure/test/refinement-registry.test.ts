@@ -287,9 +287,7 @@ describe('RefinementRegistry', () => {
     ).toMatchObject({ action: 'skill-uninstalled' })
 
     // no match
-    expect(
-      registry.revoked({ sessionKey: 's1', kind: 'memory', entryId: 'e-fresh', contentHash: 'h-fresh' }),
-    ).toBeUndefined()
+    expect(registry.revoked(source({ entryId: 'e-fresh', contentHash: 'h-fresh' }))).toBeUndefined()
     // the same entry id in another session is another lineage
     expect(
       registry.revoked({ sessionKey: 's2', kind: 'memory', entryId: 'e-lineage', contentHash: 'h-new' }),
@@ -398,11 +396,8 @@ describe('RefinementRegistry', () => {
   })
 
   it('a registry opened by workspace id is the one opened by its root', () => {
-    const dir = tempDir()
-    const byRoot = new RefinementRegistry(dir, '/work/a', clockAt())
-    byRoot.update((draft) => {
-      draft.skills.push(skill())
-    }, byRoot.read().revision)
+    const { dir, registry: byRoot } = make()
+    byRoot.update((draft) => draft.skills.push(skill()), byRoot.read().revision)
     const byId = new RefinementRegistry(dir, { workspaceId: sha256('/work/a') }, clockAt())
     expect(byId.read()).toEqual(byRoot.read())
     for (const workspaceId of ['', '../x', 'A'.repeat(64), sha256('x').slice(1)])
@@ -420,10 +415,10 @@ describe('RefinementRegistry', () => {
       revision: 'rev-2',
       actor: 'local-owner',
     })
-    registry.update((draft) => {
-      draft.revocations.push(record)
-    }, registry.read().revision)
-    expect(new RefinementRegistry(dir, '/work/a', clockAt()).read().revocations).toEqual([record])
+    const legacy = revocation({ action: 'memory-withdrawn' })
+    registry.update((draft) => draft.revocations.push(legacy, record), registry.read().revision)
+    expect(legacy).not.toHaveProperty('actor')
+    expect(new RefinementRegistry(dir, '/work/a', clockAt()).read().revocations).toEqual([legacy, record])
     const revision = registry.read().revision
     for (const bad of [{ revision: '' }, { actor: 7 }, { revision: 'x'.repeat(5000) }])
       expect(() =>

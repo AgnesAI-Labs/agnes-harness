@@ -10,7 +10,7 @@ import {
   RefinementRegistry,
   type RegistryParagraph,
 } from '@agnes/host-infrastructure/refinement-registry'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { manageMemory } from '../../src/runtime/memory/admin.js'
 import { WORKSPACE_MEMORY_KEY } from '../../src/runtime/refinement/reconcile.js'
 import { registryView } from '../../src/runtime/refinement/registry-view.js'
@@ -171,14 +171,28 @@ describe('saved paragraphs on the memory page', () => {
     if (!saved) throw new Error('nothing saved')
     expect(saved).toMatchObject({ validity: 'valid', initiator: 'model' })
 
-    const { paragraphs } = await ws.run('withdraw', saved.id)
+    const editor = ws.open()
+    const editFile = vi.fn(editor.editFile)
+    const actor = 'workspace-owner'
+    const { hash } = await editor.readFile('MEMORY.md')
+    const { paragraphs } = await savedParagraphs({ registry: ws.registry, clock: ws.clock })(
+      { ...editor, editFile },
+      ws.root,
+      { action: 'withdraw', paragraphId: saved.id, actor },
+    )
+    expect(editFile).toHaveBeenCalledWith('MEMORY.md', HUMAN, hash, { actor })
     expect(paragraphs).toEqual([])
     // The paragraph is cut with its separator; the person's text stays byte for byte.
     expect(await ws.file()).toBe(HUMAN)
     const store = ws.registry().read()
     expect(store.paragraphs.find((entry) => entry.id === saved.id)?.state).toBe('removed')
     expect(store.revocations).toEqual([
-      expect.objectContaining({ sessionKey: 'session-build', entryId: 'build', action: 'memory-withdrawn' }),
+      expect.objectContaining({
+        sessionKey: 'session-build',
+        entryId: 'build',
+        action: 'memory-withdrawn',
+        actor,
+      }),
     ])
     // The same content is not saved again automatically or by the model, even under another entry id.
     for (const initiator of ['auto', 'model'] as const)
