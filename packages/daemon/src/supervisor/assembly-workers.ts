@@ -32,7 +32,7 @@ import { wireResourceSnapshotNotifications } from './resource-snapshot-notificat
 import { createInProcessRuntimeTargetProbe } from './runtime-target-probe.js'
 import { createSessionActivity, SESSION_ACTIVITY_EVENT_TYPES } from './session-activity.js'
 import { observeSessionRequests, SESSION_REQUEST_EVENT_TYPES } from './session-request-events.js'
-import { createAutomationEvents, deliverWorkerEvent } from './worker-events.js'
+import { createAutomationEvents, deliverWorkerEvent, hasChildFollowUpInbox } from './worker-events.js'
 import { WorkerPool } from './worker-pool.js'
 
 interface WorkerFeedbackOwner {
@@ -107,6 +107,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     : undefined
   const runtimeTargetProbe = runtimeStore ? createInProcessRuntimeTargetProbe() : undefined
   const automationEvents = createAutomationEvents(sessionOwnership, notices, o.profile.name)
+  const childFollowUps: { wake?: (sessionKey: string) => void } = {}
   const sessionActivity = createSessionActivity({
     ownership: sessionOwnership,
     notices,
@@ -136,6 +137,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
         automationEvents.observe(sessionKey, e)
         sessionActivity.observe(sessionKey, e)
         observeSessionRequests(pool, sessionKey, e)
+        if (hasChildFollowUpInbox(e)) childFollowUps.wake?.(sessionKey)
         o.telemetry?.observe(sessionKey, e, () => traceWorkspace(state, sessionKey))
       }),
     onPreview: (sessionKey, p) => registry.deliverPreview(sessionKey, p),
@@ -257,6 +259,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     runtimeDelivery,
     runtimeTargetProbe,
     automationEvents,
+    childFollowUps,
     sessionActivity,
     workerRequests,
     pool,

@@ -96,6 +96,12 @@ export function openClientServices(
     },
     async () => undefined,
   )
+  state.childFollowUps.wake = (sessionKey) => {
+    setImmediate(() => {
+      const entry = supervisorRegistry.get(sessionKey)
+      if (entry && !entry.inflight) continueTrigger(entry)
+    })
+  }
   profilePorts.channelInteractions.submit = async (kind, value, credential) => {
     const method = kind === 'surface' ? '_agnes/v1/ui.action' : '_agnes/v1/approval.decide'
     if (!validateMethod(method, 'params', value).ok) throw rpcError('INVALID_PARAMS')

@@ -20,7 +20,7 @@ import {
   scheduledTasks,
   scheduleTargetCheck,
 } from '../src/supervisor/schedule-sessions.js'
-import { createAutomationEvents } from '../src/supervisor/worker-events.js'
+import { createAutomationEvents, hasChildFollowUpInbox } from '../src/supervisor/worker-events.js'
 
 const check = scheduleTargetCheck({
   workspaces: async () => [
@@ -499,4 +499,43 @@ it('rejects an alias of the legacy root at the common catalog entry point', () =
       target: { kind: 'new-session', cwd: '/legacy/' },
     }),
   ).toThrow()
+})
+
+describe('hasChildFollowUpInbox', () => {
+  const base = { seq: 1, ts: '2026-11-24T00:00:00Z', id: 'e1', lane: 'main', v: 1 } as const
+  const childItem = {
+    target: 'next-turn',
+    kind: 'follow_up',
+    origin: 'system',
+    system: { source: 'agnes/child', type: 'child-completed' },
+  }
+  it('matches live trusted system inbox rows containing agnes/child follow-ups and ignores others', () => {
+    expect(
+      hasChildFollowUpInbox({
+        ...base,
+        type: 'inbox',
+        origin: 'system',
+        trust: 'trusted',
+        data: { items: [childItem] },
+      } as never),
+    ).toBe(true)
+    expect(
+      hasChildFollowUpInbox({
+        ...base,
+        type: 'inbox',
+        origin: 'system',
+        trust: 'trusted',
+        data: { items: [{ ...childItem, system: { source: 'other/ext' } }] },
+      } as never),
+    ).toBe(false)
+    expect(
+      hasChildFollowUpInbox({
+        ...base,
+        type: 'inbox',
+        origin: 'user',
+        trust: 'trusted',
+        data: { items: [childItem] },
+      } as never),
+    ).toBe(false)
+  })
 })
