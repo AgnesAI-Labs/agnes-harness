@@ -75,3 +75,11 @@ Linux 上 Host 在编译沙箱前安全准备工作区自有 `.agh` 目录，新
 Demo 模型不推理。`显示记住的偏好` 或 `show remembered preferences` 展示该请求实际收到的记忆贡献。`call write {"path":"<记忆目录>/MEMORY.md","content":"Prefer concise summaries."}` 走与推理模型相同的普通工具和审批路径。覆盖现有文件前先 read。
 
 可替换企业实现见[记忆 providers](../extend/memory.zh-CN.md)。
+
+## 人工内容保护
+
+你可以在记忆页修改或撤回自己写过、改过的段落。将受管段落转为普通记忆后，其正文也受保护。在 `ask` 和 `auto` 模式下，Agent 覆盖或删除人工段落会在审批前收到 `MEMORY_HUMAN_EDITED`。后台保存如果会覆盖人工改动，会收到 `MEMORY_PARAGRAPH_EDITED`。仍可在空行后另起一段追加笔记。文件提供方无法核实段落来源时，会按人工内容保护。
+
+对于 `- test_runner: jest`、`tab_width = 4`、`Preference: style = concise` 这样的结构化偏好，如果自动写入为同一个键引入不同的值，会返回 `MEMORY_PREFERENCE_CONFLICT`。检查范围包括当前文件中的人工偏好，以及用户层启用时其中手写的偏好。用户层的受管段落可以保存不同的值。需要变更人工偏好时，请在记忆页修改原文。
+
+使用 `memory_recall` 可按文本搜索记忆。每条命中会标明所属层、文件和原文行号范围。如果提供方无法搜索，可用 `read` 读取 `MEMORY.md`。

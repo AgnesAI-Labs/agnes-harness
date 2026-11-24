@@ -53,10 +53,17 @@ describe('tools-core manifest', () => {
       }
     },
   )
-  it('declares the five core tool names with no prefix', () => {
+  it('declares the core tool names with no prefix', () => {
     expect(manifest.id).toBe('agnes/tools-core')
     expect(manifest.capabilities.tools.prefix).toBe('')
-    expect(manifest.capabilities.tools.names).toEqual(['read', 'write', 'edit', 'shell', 'todo'])
+    expect(manifest.capabilities.tools.names).toEqual([
+      'read',
+      'write',
+      'edit',
+      'shell',
+      'todo',
+      'memory_recall',
+    ])
   })
 
   it('claims only the capabilities these tools use', () => {

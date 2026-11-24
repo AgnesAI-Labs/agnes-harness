@@ -17,6 +17,20 @@ const ATTEMPTS = 3
 /** The stored memory index as reconciliation reads it: its managed paragraphs and its raw text. */
 export type StoredIndex = Readonly<{ paragraphs: readonly Pick<MemoryParagraph, 'id'>[]; text: string }>
 
+/** A registry contentHash is normalized. Only the recorded file revision proves the exact saved bytes. */
+export function recordedTextHash(
+  registry: RegistrySnapshot,
+  fileHash: string,
+  id: string,
+  text: string | undefined,
+): string | undefined {
+  if (text === undefined) return undefined
+  const recorded = registry.paragraphs.some(
+    (entry) => entry.id === id && entry.state === 'active' && entry.fileHash === fileHash,
+  )
+  return recorded ? createHash('sha256').update(text).digest('hex') : undefined
+}
+
 const code = (error: unknown): string | undefined => (error as { code?: unknown } | null)?.code as string
 
 /**

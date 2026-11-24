@@ -75,3 +75,11 @@ Memory stays in local files and the session ledger needed for tool execution. Fo
 The demo model performs no reasoning. `show remembered preferences` (or `显示记住的偏好`) displays the memory contribution actually received in that request. `call write {"path":"<memory-directory>/MEMORY.md","content":"Prefer concise summaries."}` uses the same normal tool and approval path as a configured reasoning model. Read an existing file before replacing it.
 
 For a replaceable enterprise implementation, see [Memory providers](../extend/memory.md).
+
+## Human-authored memory protection
+
+Use the Memory page to change or withdraw a paragraph you wrote or edited. Promoting a managed paragraph there also protects its text. In both `ask` and `auto` mode, an agent overwrite or deletion of a protected block fails with `MEMORY_HUMAN_EDITED` before approval. A background save that would overwrite a manual edit fails with `MEMORY_PARAGRAPH_EDITED`. New notes can still be appended as separate paragraphs after a blank line. When the file provider cannot verify a block’s origin, it protects it as human-authored.
+
+For preferences such as `- test_runner: jest`, `tab_width = 4`, or `Preference: style = concise`, an automated write that introduces a different value for the same key returns `MEMORY_PREFERENCE_CONFLICT`. This check covers human-authored preferences in the file and handwritten preferences in enabled user memory. Managed user-memory sections can have different values. To change your preference, edit the original on the Memory page.
+
+Use `memory_recall` to search learned preferences by text. Each match names the memory layer, file, and original line range. If the provider cannot search, use `read` on `MEMORY.md`.

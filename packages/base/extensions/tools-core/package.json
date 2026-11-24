@@ -23,7 +23,8 @@
               "write",
               "edit",
               "shell",
-              "todo"
+              "todo",
+              "memory_recall"
             ]
           },
           "hooks": [

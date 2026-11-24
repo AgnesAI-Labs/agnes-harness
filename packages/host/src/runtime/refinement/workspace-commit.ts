@@ -14,7 +14,7 @@ import {
   type SaveRefusal,
   type SaveSource,
 } from '@agnes/host-infrastructure/refinement-registry'
-import { permissionEffectAdmission } from '@agnes/protocol'
+import { permissionEffectAdmission, sha256Hex } from '@agnes/protocol'
 import { paragraphPortOf, WORKSPACE_MEMORY_KEY } from './reconcile.js'
 
 /**
@@ -119,7 +119,7 @@ export type ParagraphCommit = {
    * workspace's memory mode governs.
    */
   mode?: 'ask' | 'auto'
-  paragraph: { id: string; text: string }
+  paragraph: { id: string; text: string; expectTextHash?: string }
   /** The receipt this commit settles; its outcome and target are filled in here. */
   receipt: SaveReceipt
   /** The switch must still be on at this revision when the file is written. */
@@ -159,7 +159,6 @@ export type CommitResult = { receipt: SaveReceipt } | { stale: true }
  */
 export async function commitParagraph(input: ParagraphCommit): Promise<CommitResult> {
   const { registry, port, paragraph, inFlight } = input
-  const change = { op: 'put' as const, id: paragraph.id, text: paragraph.text }
   const attempts = input.approved ? 1 : 2
   let expected = input.decided.revision
   let first = true
@@ -167,14 +166,26 @@ export async function commitParagraph(input: ParagraphCommit): Promise<CommitRes
     let proposal: MemoryProposal
     try {
       let base = input.approved?.baseHash
+      let expectTextHash = paragraph.expectTextHash
       if (input.untouched) {
         const listed = await port.list()
         const current = listed.paragraphs.find((entry) => entry.id === paragraph.id)
         if (!current || !input.untouched(current.text)) return { receipt: settle(input, 'conflict') }
         // Proposed against exactly the file just checked: an edit in between is a conflict.
         base = listed.hash
+        // The user layer has no provenance ledger. Its caller verifies the structurally managed
+        // section above; bind that exact text to the proposal. Workspace memory can use provenance.
+        if (input.mode === undefined) expectTextHash = sha256Hex(current.text)
       }
-      proposal = await port.propose(change, base)
+      proposal = await port.propose(
+        {
+          op: 'put',
+          id: paragraph.id,
+          text: paragraph.text,
+          ...(expectTextHash ? { expectTextHash } : {}),
+        },
+        base,
+      )
     } catch (error) {
       if (input.approved && code(error) === 'MEMORY_CONFLICT') return { stale: true }
       return { receipt: settle(input, refusalOf(error)) }
@@ -238,6 +249,12 @@ export async function commitParagraph(input: ParagraphCommit): Promise<CommitRes
 /** The receipt refused for `reason`, recorded in place of the intent if there is one (best effort). */
 function settle(input: ParagraphCommit, reason: SaveRefusal): SaveReceipt {
   const refused: SaveReceipt = { ...input.receipt, outcome: 'refused', reason }
+  if (reason === 'source-rules')
+    refused.steps = refused.steps.map((entry) => {
+      if (entry.step === 'rules') return { ...entry, verdict: 'fail' }
+      if (entry.step === 'capacity') return { ...entry, verdict: 'skip' }
+      return entry
+    })
   delete refused.target
   writeFresh(input.registry, (draft) => putReceipt(draft, refused))
   return refused

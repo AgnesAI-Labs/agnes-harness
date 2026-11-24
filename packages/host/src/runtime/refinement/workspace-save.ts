@@ -20,7 +20,7 @@ import {
   type SaveRefusal,
   type SaveSource,
 } from '@agnes/host-infrastructure/refinement-registry'
-import { paragraphPortOf, reconcileWorkspace } from './reconcile.js'
+import { paragraphPortOf, reconcileWorkspace, recordedTextHash } from './reconcile.js'
 import { paragraphText, sourceRuleProblem } from './save-rules.js'
 import { reconcileSkillDeletions, saveSkillChange, type WorkspaceSkills } from './skill-update.js'
 import { normalizedWorkflowHash, workflowTextProblem } from './workflow-runs.js'
@@ -29,6 +29,7 @@ import {
   commitParagraph,
   holdsContent,
   INTENT_SETTLE_MS,
+  type ParagraphCommit,
   pendingIntent,
   putReceipt,
   refusalOf,
@@ -44,7 +45,7 @@ export type PendingParagraph = Readonly<{
   workspaceRoot: string
   /** The receipt recorded for it, outcome `awaiting-approval`, naming the paragraph and the file hash. */
   receipt: SaveReceipt
-  paragraph: { id: string; text: string }
+  paragraph: ParagraphCommit['paragraph']
   /** The memory source the proposal was made for. */
   source: MemorySource
   settingsRevision: string
@@ -357,8 +358,11 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     verdicts['memory-mode'] = 'pass'
     const text = paragraphText(request.entry)
     let inFile: ReadonlyMap<string, string>
+    let fileHash: string
     try {
-      inFile = new Map((await port.list()).paragraphs.map((entry) => [entry.id, entry.text] as const))
+      const listed = await port.list()
+      fileHash = listed.hash
+      inFile = new Map(listed.paragraphs.map((entry) => [entry.id, entry.text]))
     } catch {
       return refused('unavailable', 'capacity')
     }
@@ -384,10 +388,10 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
       })
       return receipt
     }
-    const paragraph = { id: placed.id, text }
+    const expectTextHash = recordedTextHash(snapshot, fileHash, placed.id, inFile.get(placed.id))
+    const paragraph = { id: placed.id, text, ...(expectTextHash ? { expectTextHash } : {}) }
     const decided = { revision: snapshot.revision }
-    // Under ask the person sees the exact change; otherwise only the user's own save may replace text
-    // a person has edited in place.
+    // Under ask the person sees the exact change after the provider's protection checks pass.
     if (mode === 'ask') return ask({ request, base, registry, port, paragraph, source, decided, verdicts })
     // A rewrite of a saved paragraph never overwrites a person's edit, whoever asks for it.
     const untouched = request.initiator !== 'user' || replaces ? placed.untouched : undefined
@@ -419,7 +423,7 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     base: SaveReceipt
     registry: RefinementRegistry
     port: MemoryParagraphPort
-    paragraph: { id: string; text: string }
+    paragraph: ParagraphCommit['paragraph']
     source: MemorySource
     decided: { revision: string }
     verdicts: Partial<Record<Step, 'pass' | 'fail' | 'skip'>>
@@ -427,11 +431,12 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     const { request, base, registry, paragraph, verdicts } = input
     let proposal: MemoryProposal
     try {
-      proposal = await input.port.propose({ op: 'put', id: paragraph.id, text: paragraph.text })
+      proposal = await input.port.propose({ ...paragraph, op: 'put' })
     } catch (error) {
       const reason = refusalOf(error)
       return refuse(registry, base, reason, {
         ...verdicts,
+        ...(reason === 'source-rules' ? { rules: 'fail' } : {}),
         capacity: reason === 'memory-full' ? 'fail' : 'skip',
       })
     }
