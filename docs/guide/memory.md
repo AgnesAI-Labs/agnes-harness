@@ -88,3 +88,11 @@ Use the production queue for scheduled jobs.
 ```
 
 At 09:00 UTC on February 1, the agent's reads and recall stop showing the staging instruction. The next turn's memory note also omits it. The production instruction remains visible. An invalid date hides the annotated paragraph immediately. The memory editor keeps the original text so you can correct or extend the date.
+
+## Human-authored memory protection
+
+Use the Memory page to change or withdraw a paragraph you wrote or edited. Promoting a managed paragraph there also protects its text. In both `ask` and `auto` mode, an agent overwrite or deletion of a protected block fails with `MEMORY_HUMAN_EDITED` before approval. A background save that would overwrite a manual edit fails with `MEMORY_PARAGRAPH_EDITED`. New notes can still be appended as separate paragraphs after a blank line. When the file provider cannot verify a block’s origin, it protects it as human-authored.
+
+For preferences such as `- test_runner: jest`, `tab_width = 4`, or `Preference: style = concise`, an automated write that introduces a different value for the same key returns `MEMORY_PREFERENCE_CONFLICT`. This check covers human-authored preferences in the file and handwritten preferences in enabled user memory. Managed user-memory sections can have different values. To change your preference, edit the original on the Memory page.
+
+Use `memory_recall` to search learned preferences by text. Each match names the memory layer, file, and original line range. If the provider cannot search, use `read` on `MEMORY.md`.

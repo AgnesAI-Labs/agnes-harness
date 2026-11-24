@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -356,6 +357,14 @@ describe('the save-to-workspace decision order', () => {
     const once = await save.save(repeat)
     expect(await save.save(repeat)).toEqual(once)
     expect(markedIds(await ws.file())).toHaveLength(1)
+    ws.setWrap(
+      portWrap((port) => ({
+        async propose(change, base) {
+          expect(change).toMatchObject({ expectTextHash: createHash('sha256').update(TEXT).digest('hex') })
+          return port.propose(change, base)
+        },
+      })),
+    )
     const changed = await save.save(
       request(ws, entry({ content: 'Run pnpm lint and pnpm typecheck first.' })),
     )
@@ -518,6 +527,29 @@ describe('the save-to-workspace decision order', () => {
 })
 
 describe('crash safety', () => {
+  it.each(['MEMORY_PARAGRAPH_EDITED', 'MEMORY_PREFERENCE_CONFLICT'])(
+    'settles %s from propose or commit as a source-rules refusal on the first attempt',
+    async (code) => {
+      for (const stage of ['propose', 'commit'] as const) {
+        const ws = await workspace()
+        const refuse = vi.fn(async () => {
+          throw Object.assign(new Error(code), { code })
+        })
+        ws.setWrap(portWrap(() => ({ [stage]: refuse })))
+        const save = ws.service()
+        const req = request(ws)
+        const receipt = await save.save(req)
+        expect(receipt).toMatchObject({ outcome: 'refused', reason: 'source-rules' })
+        expect(verdicts(receipt)).toMatchObject({ rules: 'fail', capacity: 'skip' })
+        expect(receipt.target).toBeUndefined()
+        await save.resume(ws.root)
+        expect(await save.save(req)).toEqual(receipt)
+        expect(refuse).toHaveBeenCalledTimes(1)
+        expect(ws.registry().read().receipts).toEqual([receipt])
+        expect(await ws.file()).toBe('')
+      }
+    },
+  )
   /** Saves with a crash injected at one point; the error escapes as the process would die. */
   async function crashAt(
     point: 'before-commit' | 'after-commit' | 'before-record',

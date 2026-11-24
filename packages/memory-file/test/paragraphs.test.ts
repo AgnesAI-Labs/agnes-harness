@@ -12,8 +12,9 @@ import type {
 } from '@agnes/extension-api'
 import { memoryParagraphConformance } from '@agnes/extension-api/testkit'
 import { afterEach, describe, expect, it } from 'vitest'
-import { fileMemoryProvider } from '../src/index.js'
+import { createDefaultPipeline, fileMemoryProvider, openMemory } from '../src/index.js'
 import { parseParagraphs } from '../src/paragraphs.js'
+import { registerMemoryProtection } from '../src/preference-conflict.js'
 
 const A = 'ra000000001'
 const B = 'rb000000002'
@@ -57,15 +58,18 @@ function view(initial: Record<string, MemoryParagraphValidity> = {}) {
   }
 }
 
-async function fixture(options: { validity?: MemoryValidityView; home?: string } = {}) {
+async function fixture(options: { validity?: MemoryValidityView; home?: string; protection?: boolean } = {}) {
   const home = options.home ?? (await mkdtemp(join(tmpdir(), 'agh-memory-paragraphs-')))
   if (!options.home) homes.push(home)
-  const session = fileMemoryProvider.open({
+  const input = {
     home,
     workspaceRoot: home,
     sessionKey: 'one',
     ...(options.validity ? { validity: options.validity } : {}),
-  })
+  }
+  const pipeline = createDefaultPipeline()
+  if (options.protection) registerMemoryProtection(pipeline)
+  const session = options.protection ? openMemory({ ...input, pipeline }) : fileMemoryProvider.open(input)
   const files = (
     turn: number,
     approve: (proposal: MemoryProposal) => Promise<MemoryApprovalResult> = async () => ({
@@ -680,7 +684,7 @@ describe('the truncation notice and delivered paragraphs', () => {
 
 describe('paragraph-level CAS (expectTextHash)', () => {
   it('accepts put when expectTextHash matches and rejects MEMORY_PARAGRAPH_EDITED when stale or missing', async () => {
-    const f = await fixture({ validity: view({ [A]: 'valid' }).view })
+    const f = await fixture({ validity: view({ [A]: 'valid' }).view, protection: true })
     await f.session.configure({ mode: 'auto' })
     const port = f.paragraphs()
     await port.commit(await port.propose({ op: 'put', id: A, text: 'Alpha' }))
@@ -693,5 +697,32 @@ describe('paragraph-level CAS (expectTextHash)', () => {
       port.propose({ op: 'put', id: B, text: 'New', expectTextHash: sha('New') }),
     ).rejects.toMatchObject({ code: 'MEMORY_PARAGRAPH_EDITED' })
     expect(parseParagraphs(await f.raw()).paragraphs.find((p) => p.id === A)?.text).toBe('Beta')
+  })
+
+  it('protects manual edits with either form of CAS and permits withdrawal and promotion on the Memory page', async () => {
+    const f = await fixture({ validity: view({ [A]: 'valid' }).view, protection: true })
+    await f.session.configure({ mode: 'auto' })
+    const port = f.paragraphs()
+    await port.commit(await port.propose({ op: 'put', id: A, text: 'Alpha' }))
+    await port.commit(await port.propose({ op: 'put', id: A, text: 'Beta' }))
+    const manual = await f.session.editFile('MEMORY.md', block(A, 'BETA'), sha(await f.raw()))
+    for (const expectTextHash of [undefined, sha('Beta'), sha('BETA')]) {
+      const change = {
+        op: 'put' as const,
+        id: A,
+        text: 'Gamma',
+        ...(expectTextHash ? { expectTextHash } : {}),
+      }
+      await expect(port.propose(change)).rejects.toMatchObject({ code: 'MEMORY_PARAGRAPH_EDITED' })
+    }
+    expect(await f.raw()).toBe(manual.content)
+    await f.session.editFile('MEMORY.md', '', manual.hash)
+    expect(await f.raw()).toBe('')
+    await port.commit(await port.propose({ op: 'put', id: A, text: 'New lesson' }))
+    await f.session.editFile('MEMORY.md', 'New lesson', sha(await f.raw()))
+    await expect(f.files(1).write(f.index, 'Different lesson')).rejects.toMatchObject({
+      code: 'MEMORY_HUMAN_EDITED',
+    })
+    expect(await f.raw()).toBe('New lesson')
   })
 })

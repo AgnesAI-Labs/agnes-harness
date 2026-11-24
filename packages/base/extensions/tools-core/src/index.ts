@@ -4,18 +4,21 @@ import { type ShellJobs, standaloneShellJobs } from '../../jobs/src/registry.js'
 import { type LspSessions, standaloneLsp } from '../../lsp/src/registry.js'
 import { type FileChangeRecorder, fileChangeReceipt } from './file-change.js'
 import { createEditTool, editTool } from './tools/edit.js'
+import { memoryRecallTool } from './tools/memory-recall.js'
 import { readTool } from './tools/read.js'
 import { createShellTool, shellTool } from './tools/shell.js'
 import { todoTool } from './tools/todo.js'
 import { createWriteTool, writeTool } from './tools/write.js'
 
-// The tools this extension actually registers, in the order the manifest names them. The manifest
-// is what grants the authority and it already names all five; this list is what claims it. The
-// search tools (grep/find/ls) moved to the sibling `tools-search` extension — this package was at
-// its line-count ceiling, and they shared a walker nothing else here imports. Registering fewer
-// than the manifest allows is safe in the direction that matters — a name nobody registers is a
-// name nobody can call.
-export const TOOLS_CORE: readonly ToolDef[] = [readTool, writeTool, editTool, shellTool, todoTool]
+// Keep this list in manifest registration order for the public schema snapshots.
+export const TOOLS_CORE: readonly ToolDef[] = [
+  readTool,
+  writeTool,
+  editTool,
+  shellTool,
+  todoTool,
+  memoryRecallTool,
+]
 
 // The placeholder the shell tool puts at the head of its argv, re-exported so the deployment's
 // sandbox implementation can substitute an interpreter for it without importing a tool module.
@@ -41,6 +44,7 @@ export function createToolsCoreExtension(
         createEditTool(record, lsp, logicalChanges),
         createShellTool(jobs, observationMs),
         todoTool,
+        memoryRecallTool,
       ]
       const disposers = tools.map((t) => plugin.tools.register(t))
       disposers.push(
