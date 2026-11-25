@@ -12,6 +12,7 @@ export {
 } from './consistency.js'
 export { defaults as FILE_MEMORY_DEFAULTS } from './content.js'
 export { expiryNextExpiry, expiryViewFilter } from './expiry-annotation.js'
+export { isMemoryPreEffectRefusal } from './file-port.js'
 export { humanGuard } from './human-guard.js'
 export { MetaStore } from './meta.js'
 export { roots as fileMemoryRoots } from './paths.js'

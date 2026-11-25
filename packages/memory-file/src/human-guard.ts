@@ -17,7 +17,7 @@ export const humanGuard: CommitGuard = (intent, ctx) => {
       if (verifiedLegacyPut(block, intent, ctx)) continue
       return {
         kind: 'refuse',
-        code: intent.origin === 'agent' ? 'MEMORY_HUMAN_EDITED' : 'MEMORY_PARAGRAPH_EDITED',
+        code: intent.origin === 'agent' && !block.id ? 'MEMORY_HUMAN_EDITED' : 'MEMORY_PARAGRAPH_EDITED',
         detail: 'A human-authored paragraph would be changed or removed. Edit it on the Memory page.',
       }
     }

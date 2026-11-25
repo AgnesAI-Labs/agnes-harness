@@ -273,6 +273,7 @@ export type PackageModule = {
   sandboxProvider?: SandboxProvider
   /** Package-owned backend compiler; Host supplies and retains the only raw probe capability. */
   sandboxWorkspaceProbe?: SandboxWorkspaceProbeFactory
+  isMemoryPreEffectRefusal?: import('@agnes/core').SessionDeps['memoryPreEffectProof']
   sandboxImplementation?: (platform: string) => 'implemented' | 'unimplemented' | 'unknown'
   id: string
   /** Host-private Cordis exports declared by this package's unique static plugin manifest. */

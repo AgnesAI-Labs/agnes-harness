@@ -119,7 +119,12 @@ export type MemoryParagraphChange = Readonly<
 >
 
 /** The managed paragraphs of the stored file and the hash of the file they were read from. */
-export type MemoryParagraphList = Readonly<{ hash: string; paragraphs: readonly MemoryParagraph[] }>
+export type MemoryParagraphList = Readonly<{
+  hash: string
+  /** Optional since 5.24.0. Exact stored index text corresponding to this hash and paragraph list. */
+  content?: string
+  paragraphs: readonly MemoryParagraph[]
+}>
 
 /**
  * Optional since 5.2.0. Paragraph-level access to managed memory outside any turn. It always reads
@@ -146,6 +151,9 @@ export type MemoryParagraphPort = Readonly<{
 /** One implementation pinned to a session. Settings are live; revision snapshots are per turn. */
 export interface MemorySession {
   readonly root: string
+  /** Optional since 5.24.0. Synchronous fingerprint of workspace and user indexes and settings.
+   * Without it callers must read the provider again on each request. */
+  stateRevision?(): string
   /** Release resources opened lazily by this session; called after in-flight work drains. */
   close?(): void | Promise<void>
   snapshot(turn: number): Promise<MemorySnapshot | undefined>

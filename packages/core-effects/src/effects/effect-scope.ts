@@ -38,7 +38,10 @@ export class ToolEffectScope {
       if (!error || typeof error !== 'object' || !this.refused.has(error)) {
         const diagnostic = clean && !this.started ? refusedBeforeEffect?.(error) : undefined
         if (diagnostic) {
-          const refusal = Object.assign(new Error(diagnostic.message), { code: diagnostic.code })
+          const refusal = Object.assign(new Error(diagnostic.message), {
+            name: 'ToolPreEffectRefusal',
+            code: diagnostic.code,
+          })
           this.refused.set(refusal, { diagnostic, safe: true })
           throw refusal
         }

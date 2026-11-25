@@ -36,7 +36,9 @@ function fixture(override: Partial<ResolvedPackage> = {}) {
     enabled: true,
     ...override,
   }
-  const module: PackageModule = { id: pkg.id, extensionEntry: join(directory, 'index.js') }
+  const module: PackageModule = readNamedExports(pkg.id, join(directory, 'index.js'), {
+    isMemoryPreEffectRefusal: () => true,
+  })
   const modules = new Map<string, PackageModule>([[pkg.id, module]])
   const authority = pinHostCapabilities([pkg], new Map([[pkg.id, directory]]))
   authority.bind(modules)
@@ -47,6 +49,7 @@ function fixture(override: Partial<ResolvedPackage> = {}) {
 describe('verified ext: row privilege grants', () => {
   it('keeps the complete official distribution grant set in one declaration', () => {
     const h = fixture()
+    expect(h.authority.memoryPreEffectProof()).toBe(h.module.isMemoryPreEffectRefusal)
     expect(h.grants()).toEqual([
       { sessionTasks: true, childControl: true, searchProvider: true, hookRank: 3 },
       {
@@ -128,6 +131,7 @@ describe('verified ext: row privilege grants', () => {
     ...ids.map((id) => ({ id, trust: 'trusted' as const, source: 'file:./spoof' })),
   ] satisfies Partial<ResolvedPackage>[])('refuses a named or untrusted lookalike: %j', (override) => {
     const h = fixture(override)
+    expect(h.authority.memoryPreEffectProof()).toBeUndefined()
     expect(h.grants()).toEqual(ids.map(() => ({})))
     expect(h.authority.seam(h.pkg.id, 'artifacts', h.modules.get(h.pkg.id))).toEqual({})
   })
@@ -202,6 +206,7 @@ describe('verified ext: row privilege grants', () => {
     'refuses all grants for linked/workspace lookalikes: %j',
     (override) => {
       const h = fixture(override)
+      expect(h.authority.memoryPreEffectProof()).toBeUndefined()
       expect(h.grants()).toEqual(ids.map(() => ({})))
       expect(h.authority.seam(h.pkg.id, 'artifacts', h.module)).toEqual({})
       expect(h.authority.governance()).toEqual([])

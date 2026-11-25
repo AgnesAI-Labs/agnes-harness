@@ -14,8 +14,14 @@ export const defaults: MemorySettings = Object.freeze({
   userEnabled: false,
 })
 
-export function fault(code: string): Error & { code: string } {
-  return Object.assign(new Error(code), { code })
+export class MemoryFault extends Error {
+  constructor(readonly code: string) {
+    super(code)
+  }
+}
+
+export function fault(code: string): MemoryFault {
+  return new MemoryFault(code)
 }
 export const hash = (content: string): string => createHash('sha256').update(content).digest('hex')
 export function file(path: string, content: string): MemoryFile {

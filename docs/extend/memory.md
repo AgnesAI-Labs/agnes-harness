@@ -48,12 +48,18 @@ Extension API 5.5.0 adds the validity answer `delivered` and the optional `Memor
 - While the view `delivers`, a section put into user memory takes no room in what the agent is shown, so `propose` does not refuse it for the user memory budget; the index size and line caps still apply.
 - A provider that predates 5.5.0 treats `delivered` as `unknown` and leaves the paragraph out with its omission line; the Host still delivers it.
 
+## Saved paragraph visibility and freshness (5.24.0)
+
+Both paragraph ports can return `content` from the same full-index read as `hash` and `paragraphs`. The Host checks each body against its markers and applies surrounding references and expiry annotations. For older providers it can verify workspace paragraphs through `readFile('MEMORY.md')` with a matching hash. Delivery of user paragraphs requires the user index in the listing.
+
+Implement `MemorySession.stateRevision()` with a synchronous fingerprint that changes with the workspace index, user index and settings. When it is absent, the Host reads live entries on every request.
+
 ## Optional memory recall and human-edit guards (5.23.0)
 
 Extension API 5.23.0 adds optional read-only `MemoryFilePort.recall?(query)` (exposed by Core as `ToolContext.memory` only when the selected provider offers it), optional `options?: Readonly<{ actor?: string }>` on human `MemorySession.editFile`, and optional `expectTextHash?: string` on `MemoryParagraphChange` (`op: 'put'`).
 
 - **Same-turn read and write bindings**: Repeated `snapshot(turn)` calls in one turn still return the same revision. Agent reads (`read`/`list`/`stat`/`revision`) and `recall` immediately exclude content invalidated mid-turn (validity loss, elapsed expiry annotation, withdrawn reference target, deleted/emptied file), while new/modified content becomes visible on the next turn. Whole-file `write` keeps its compare-and-swap baseline pinned to the turn snapshot (`MEMORY_CONFLICT` on concurrent human edit). `replaceExact` reads the current stored file and current agent read view.
-- **Pre-commit protected refusals**: Before invoking approval, a memory port or paragraph port may refuse a write without side effects using `MEMORY_HUMAN_EDITED` (agent/host edit touching human-authored blocks), `MEMORY_PARAGRAPH_EDITED` (`expectTextHash` or recorded host text mismatch), or `MEMORY_PREFERENCE_CONFLICT` (structured key conflicting with human preference), in addition to `MEMORY_HIDDEN_PARAGRAPHS` on any memory file with hidden read content. Core records pre-effect rejection proof for these memory refusals so callers do not enter unknown-outcome reconciliation.
+- **Pre-commit protected refusals**: Before invoking approval, a memory port or paragraph port may refuse a write without side effects using `MEMORY_HUMAN_EDITED` (agent/host edit touching human-authored blocks), `MEMORY_PARAGRAPH_EDITED` (`expectTextHash` or recorded host text mismatch), or `MEMORY_PREFERENCE_CONFLICT` (structured key conflicting with human preference), in addition to `MEMORY_HIDDEN_PARAGRAPHS` on any memory file with hidden read content. Core accepts a protected diagnostic when the Host verifies the file provider’s pre-commit proof for the same session, turn and tool call.
 
 - Default agent permission off; ask reviews an exact file-level proposal before any mutation. Bind approval to `baseHash`, `newHash`, full diff and session/turn. Full access automatically allows and records the exact proposal; broad grants under other presets cannot approve it. Reject/cancel/conflict never inject a candidate.
 - Preserve a turn's index and topic revision across repeated model requests. Topic content is on demand in the model context. Human changes become visible next turn. Off takes effect on the next request even when that turn had an earlier snapshot.

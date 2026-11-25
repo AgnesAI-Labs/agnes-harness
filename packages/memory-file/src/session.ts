@@ -369,6 +369,23 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
 
   const session: MemorySession = Object.freeze<MemorySession>({
     root: paths.root,
+    stateRevision() {
+      const fingerprint = (read: () => string | undefined) => {
+        try {
+          return read()
+        } catch {
+          return null
+        }
+      }
+      const settings = fingerprint(() => store.settingsText())
+      return hash(
+        JSON.stringify([
+          settings ?? fingerprint(() => JSON.stringify(store.configuration())),
+          fingerprint(() => store.read('MEMORY.md').hash),
+          fingerprint(() => user.read('MEMORY.md').hash),
+        ]),
+      )
+    },
     async close() {
       await pipeline.close()
     },

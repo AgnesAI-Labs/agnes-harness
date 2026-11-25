@@ -15,6 +15,7 @@ import {
   buildView,
   createDefaultPipeline,
   fileMemoryProvider,
+  isMemoryPreEffectRefusal,
   MetaStore,
   mapViewSpanToRawLines,
   openMemory,
@@ -128,9 +129,16 @@ describe('file memory contract', () => {
     await f.session.configure({ mode: 'off' })
     expect(await f.session.snapshot(1)).toBeUndefined()
     await expect(f.files(1).read(f.index)).rejects.toMatchObject({ code: 'MEMORY_DISABLED' })
-    await expect(f.files(1).write(join(f.session.root, '.', 'MEMORY.md'), 'changed')).rejects.toMatchObject({
-      code: 'MEMORY_DISABLED',
-    })
+    const source = { sessionKey: 'one', turn: 1, toolUseId: 'write' }
+    const refusal = await f
+      .files(1)
+      .write(join(f.session.root, '.', 'MEMORY.md'), 'changed')
+      .catch((e) => e)
+    expect(refusal).toMatchObject({ code: 'MEMORY_DISABLED' })
+    expect(isMemoryPreEffectRefusal(refusal, source)).toBe(true)
+    for (const other of [{ toolUseId: 'other' }, { turn: 2 }, { sessionKey: 'two' }])
+      expect(isMemoryPreEffectRefusal(refusal, { ...source, ...other })).toBe(false)
+    expect(isMemoryPreEffectRefusal({ ...refusal }, source)).toBe(false)
     const alias = join(f.home, 'alias')
     await symlink(f.session.root, alias, 'junction')
     await expect(f.files(1).write(join(alias, 'MEMORY.md'), 'changed')).rejects.toMatchObject({
@@ -141,7 +149,22 @@ describe('file memory contract', () => {
 
   it('reviews the exact file proposal, never injects rejected candidates, and detects approval drift', async () => {
     const f = await fixture()
+    const source = { sessionKey: 'one', turn: 1, toolUseId: 'write' }
+    const priorRefusal = await f
+      .files(1)
+      .write(f.index, 'Candidate')
+      .catch((error) => error)
+    expect(isMemoryPreEffectRefusal(priorRefusal, source)).toBe(true)
     await f.session.configure({ mode: 'ask' })
+    const approvalFailure = await f
+      .files(1, async () => {
+        await writeFile(join(f.home, 'approval-side-effect'), 'written')
+        throw priorRefusal
+      })
+      .write(f.index, 'Candidate')
+      .catch((error) => error)
+    expect(approvalFailure).toMatchObject({ code: 'MEMORY_DISABLED' })
+    expect(isMemoryPreEffectRefusal(approvalFailure, source)).toBe(false)
     let proposal: MemoryProposal | undefined
     await expect(
       f
@@ -382,10 +405,14 @@ describe('file memory contract', () => {
       await rm(path, { force: true })
       await mkdir(path)
       const content = '[topic](topic.md)\n\nIndependent guidance'
-      const before = await f.session.readFile('MEMORY.md')
-      await expect(f.session.editFile('MEMORY.md', content, before.hash)).rejects.toMatchObject({
-        code: 'MEMORY_COMMITTED_METADATA_FAILED',
-      })
+      const failure = await f
+        .files(2)
+        .write(f.index, content)
+        .catch((error) => error)
+      expect(failure).toMatchObject({ code: 'MEMORY_COMMITTED_METADATA_FAILED' })
+      expect(isMemoryPreEffectRefusal(failure, { sessionKey: 'one', turn: 2, toolUseId: 'write' })).toBe(
+        false,
+      )
       const meta = new MetaStore(new MemoryStore(roots(f.home, f.home).protectedRoot, f.session.root))
       const committed = await f.session.readFile('MEMORY.md')
       expect(committed.content).toBe(content)

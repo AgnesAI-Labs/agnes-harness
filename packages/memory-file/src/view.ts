@@ -1,4 +1,5 @@
 import type { MemoryFile } from '@agnes/extension-api'
+import { fault } from './content.js'
 
 export type Segment = Readonly<{ view: number; raw?: number; length: number }>
 
@@ -282,21 +283,16 @@ export function replaceInMemoryView(
   markerSetFn: (text: string) => string,
 ): string {
   const first = oldText ? view.content.indexOf(oldText) : -1
-  if (first === -1)
-    throw Object.assign(new Error('MEMORY_REPLACE_NOT_FOUND'), { code: 'MEMORY_REPLACE_NOT_FOUND' })
-  if (view.content.indexOf(oldText, first + 1) !== -1)
-    throw Object.assign(new Error('MEMORY_REPLACE_AMBIGUOUS'), { code: 'MEMORY_REPLACE_AMBIGUOUS' })
+  if (first === -1) throw fault('MEMORY_REPLACE_NOT_FOUND')
+  if (view.content.indexOf(oldText, first + 1) !== -1) throw fault('MEMORY_REPLACE_AMBIGUOUS')
   const segment = view.segments.find(
     (entry) => first >= entry.view && first + oldText.length <= entry.view + entry.length,
   )
-  if (segment?.raw === undefined)
-    throw Object.assign(new Error('MEMORY_HIDDEN_PARAGRAPHS'), { code: 'MEMORY_HIDDEN_PARAGRAPHS' })
+  if (segment?.raw === undefined) throw fault('MEMORY_HIDDEN_PARAGRAPHS')
   const start = segment.raw + (first - segment.view)
   const end = start + oldText.length
-  if (markers.some((marker) => start < marker.end && end > marker.start))
-    throw Object.assign(new Error('MEMORY_MARKER_CHANGED'), { code: 'MEMORY_MARKER_CHANGED' })
+  if (markers.some((marker) => start < marker.end && end > marker.start)) throw fault('MEMORY_MARKER_CHANGED')
   const result = stored.slice(0, start) + newText + stored.slice(end)
-  if (markerSetFn(result) !== markerSetFn(stored))
-    throw Object.assign(new Error('MEMORY_MARKER_CHANGED'), { code: 'MEMORY_MARKER_CHANGED' })
+  if (markerSetFn(result) !== markerSetFn(stored)) throw fault('MEMORY_MARKER_CHANGED')
   return result
 }

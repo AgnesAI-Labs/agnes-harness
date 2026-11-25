@@ -296,7 +296,7 @@ export const defaultLoopPlugin = {
   },
 }
 
-export { fileMemoryRoots, memoryPlugin } from '@agnes/memory-file'
+export { fileMemoryRoots, isMemoryPreEffectRefusal, memoryPlugin } from '@agnes/memory-file'
 export { observabilityPlugin } from '@agnes/observability'
 export {
   type ContextConfig,

@@ -177,6 +177,7 @@ export type KernelOptions = {
     /** A child session (delegated, role or fork): it gets no task-experience notes of its own. */
     child?: boolean
   }) => import('@agnes/extension-api').MemorySession | undefined
+  memoryPreEffectProof?: SessionDeps['memoryPreEffectProof']
   /** Trusted Host classification for file paths with independently enforced domain gates. */
   commandPathScopeFor?: (input: {
     workspaceRoot: string
@@ -686,19 +687,16 @@ export class Kernel {
       if (capturedRole) so = { ...so, actor: capturedRole.actor, roleDelegation: capturedRole }
       const children = this.o.children ?? new KernelChildren(this, () => session)
       // Whether this session runs task experience, decided once as it opens (refinement/capture.ts).
+      const child = opensAsChild(log, tracker.state, so.roleDelegation)
       const refinement = await captureRefinement(this.o, {
         parent: so.parent ? this.sessions.get(so.parent.key) : undefined,
-        child: opensAsChild(log, tracker.state, so.roleDelegation),
+        child,
         reopened: !forked && Boolean(tracker.state.session),
         scan: (q) => log.scan(q),
       })
       const sessionTools = sessionToolView(so.toolFilter, refinement.hiddenTools)
       const workspaceRoot = workspaceIdentity?.canonicalRoot ?? so.cwd
-      memory = this.o.memoryFor?.({
-        key,
-        workspaceRoot,
-        child: opensAsChild(log, tracker.state, so.roleDelegation),
-      })
+      memory = this.o.memoryFor?.({ key, workspaceRoot, child })
       session = new SessionImpl({
         ...(this.o.commandPathScopeFor
           ? {
@@ -710,6 +708,7 @@ export class Kernel {
             }
           : {}),
         ...(memory ? { memory } : {}),
+        ...(this.o.memoryPreEffectProof ? { memoryPreEffectProof: this.o.memoryPreEffectProof } : {}),
         ...(so.roleDelegation ? { roleDelegation: so.roleDelegation } : {}),
         ...(this.commandRules(so) ? { outwardCommandRules: true as const } : {}),
         ...(so.delegation ? { delegation: so.delegation } : {}),

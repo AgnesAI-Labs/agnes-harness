@@ -271,6 +271,10 @@ export function readNamedExports(
       })
     out.sandboxProvider = provider as SandboxProvider
   }
+  if (typeof mod.isMemoryPreEffectRefusal === 'function')
+    out.isMemoryPreEffectRefusal = mod.isMemoryPreEffectRefusal as NonNullable<
+      PackageModule['isMemoryPreEffectRefusal']
+    >
   if (mod.sandboxImplementation !== undefined) {
     if (typeof mod.sandboxImplementation !== 'function')
       throw new HostError('E_EXT_LOAD', 'sandboxImplementation must be a function')

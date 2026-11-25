@@ -7,7 +7,7 @@ import {
   type RegistryParagraph,
   type RegistrySkill,
 } from '@agnes/host-infrastructure/refinement-registry'
-import { memoryFingerprint, paragraphVisibility } from './paragraph-visibility.js'
+import { paragraphVisibility } from './paragraph-visibility.js'
 import { registryView } from './registry-view.js'
 import { SECRET_LIKE } from './save-rules.js'
 import { workspaceSkillText } from './skill-drafts.js'
@@ -58,10 +58,10 @@ async function layerParagraphs(
   const settings = (await memory.inspect()).settings
   if (settings.mode === 'off' || (layer === 'user' && !settings.userEnabled)) return null
   const port = open.call(memory, { sessionKey, turn: 0 }, new AbortController().signal)
-  const { paragraphs } = await port.list()
-  const visible = await paragraphVisibility(memory, layer, registry, clock, futureExpiry)
+  const listed = await port.list()
+  const visible = await paragraphVisibility(memory, layer, listed, registry, clock, futureExpiry)
   const stored = new Map<string, { raw: string; text: string }>()
-  for (const p of paragraphs) {
+  for (const p of listed.paragraphs) {
     const text = visible(p.id, p.text)
     if (text !== undefined) stored.set(p.id, { raw: p.text, text })
   }
@@ -247,14 +247,12 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
     },
     revision(at) {
       const where = deps.session(at)
-      if (!where) return ''
+      if (!where || (where.memory && typeof where.memory.stateRevision !== 'function')) return ''
       const userRegistry = deps.userRegistry?.()
       return [
         registryView(registryOf(where.workspaceRoot), deps.clock).revision(),
         userRegistry ? registryView(userRegistry, deps.clock).revision() : '',
-        memoryFingerprint(where.memory, 'workspace', 'MEMORY.md'),
-        memoryFingerprint(where.memory, 'workspace', 'settings.json'),
-        userRegistry ? memoryFingerprint(where.memory, 'user', 'MEMORY.md') : '',
+        where.memory?.stateRevision?.() ?? '',
         expiryRevision(where.memory),
       ].join(':')
     },

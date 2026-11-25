@@ -27,6 +27,7 @@ import { createSessionHookPort, readTelemetryConsent } from '../sessions/session
 import { scopeWithGeneration } from './child-agents.js'
 import { hostCommandPathScope } from './command-path-scope.js'
 import type { AssemblyContext } from './context.js'
+import type { PackageSet } from './packages.js'
 import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
 import type { ProviderStage } from './provider-stage.js'
@@ -132,6 +133,7 @@ function sessionMemory(ctx: AssemblyContext, pluginTree: HostPluginTreeBase, ref
 export async function createKernel(
   ctx: AssemblyContext,
   input: Readonly<{
+    pkgs: PackageSet
     proc: ProcessServices
     presets: PresetCatalog
     providerStage: ProviderStage
@@ -188,6 +190,7 @@ export async function createKernel(
         .filter((entry) => entry.kind === kind)
         .map(({ id, version, sourcePackage }) => Object.freeze({ id, version, sourcePackage })),
     )
+  const memoryPreEffectProof = input.pkgs.grants.memoryPreEffectProof()
   const kernel = Kernel.create({
     ...(deps.childRoles ? { childRoles: deps.childRoles } : {}),
     ...input.refinement.kernelOptions,
@@ -245,6 +248,7 @@ export async function createKernel(
       ...adapters.fs,
       read: (path, opts) => adapters.fs.read(path, { ...opts, unit: 'bytes' }),
     },
+    ...(memoryPreEffectProof ? { memoryPreEffectProof } : {}),
     memoryFor: ({ key, workspaceRoot, child }) =>
       input.refinement.workspace.opened(workspaceRoot, memory(workspaceRoot, key, child === true)),
     commandPathScopeFor: hostCommandPathScope,

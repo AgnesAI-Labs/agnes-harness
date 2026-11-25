@@ -1,6 +1,11 @@
 import type { MemorySession } from '@agnes/extension-api'
 import type { RefinementRegistry, Revocation } from '@agnes/host-infrastructure/refinement-registry'
-import { describeParagraphs, type SavedParagraph, type SavedParagraphRequest } from './saved-paragraphs.js'
+import {
+  describeParagraphs,
+  type SavedParagraph,
+  type SavedParagraphRequest,
+  verifyRenewal,
+} from './saved-paragraphs.js'
 import { userPortOf } from './user-save.js'
 import { code, writeFresh } from './workspace-commit.js'
 
@@ -25,12 +30,13 @@ export async function manageUserSections(
   const port = userPortOf(memory, { sessionKey: 'human-editor', turn: 0 }, new AbortController().signal)
   const list = async (): Promise<SavedParagraph[]> => {
     if (!port) return []
-    return describeParagraphs((await port.list()).paragraphs, memory, 'user', registry, clock)
+    return describeParagraphs(await port.list(), memory, 'user', registry, clock)
   }
   if (request.action === 'list') return { paragraphs: await list() }
   const id = request.paragraphId
   if (typeof id !== 'string') throw fault('MEMORY_INVALID_REQUEST')
   if (request.action === 'renew') {
+    await verifyRenewal(port, memory, 'user', registry, clock, id)
     try {
       registry.renew({ paragraphId: id })
     } catch (error) {

@@ -22,7 +22,7 @@ import {
 } from '@agnes/host-infrastructure/refinement-registry'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { registryView } from '../../src/runtime/refinement/registry-view.js'
-import { savedParagraphs } from '../../src/runtime/refinement/saved-paragraphs.js'
+import { describeParagraphs, savedParagraphs } from '../../src/runtime/refinement/saved-paragraphs.js'
 import { createWorkspaceRefs } from '../../src/runtime/refinement/workspace-refs.js'
 
 const DAY = 86_400_000
@@ -60,6 +60,12 @@ const paragraph = (over: Partial<RegistryParagraph> = {}): RegistryParagraph => 
   ...over,
 })
 
+function indexText(texts: Record<string, string>) {
+  return Object.entries(texts)
+    .map(([id, text]) => `<!-- refinement:${id} -->\n${text}\n<!-- /refinement:${id} -->`)
+    .join('\n\n')
+}
+
 /** A memory session whose stored index holds `texts` by paragraph id; it records every write call. */
 function memory(texts: Record<string, string>, mode: 'off' | 'ask' | 'auto' = 'auto') {
   const writes: string[] = []
@@ -69,6 +75,7 @@ function memory(texts: Record<string, string>, mode: 'off' | 'ask' | 'auto' = 'a
   }
   const session = {
     root: '/memory',
+    stateRevision: () => JSON.stringify([texts, mode]),
     snapshot: async () => undefined,
     files: write('files'),
     inspect: async () => ({ root: '/memory', settings: { mode }, files: [], bytes: 0 }),
@@ -79,7 +86,8 @@ function memory(texts: Record<string, string>, mode: 'off' | 'ask' | 'auto' = 'a
     editFile: write('editFile'),
     paragraphs: () => ({
       list: async () => ({
-        hash: 'f1',
+        hash: normalizedContentHash(indexText(texts)),
+        content: indexText(texts),
         paragraphs: Object.entries(texts).map(([id, text]) => ({ id, text, validity: 'valid' as const })),
       }),
       propose: write('propose'),
@@ -353,7 +361,8 @@ function layered(
 ) {
   const port = (texts: Record<string, string>) => () => ({
     list: async () => ({
-      hash: 'f1',
+      hash: normalizedContentHash(indexText(texts)),
+      content: indexText(texts),
       paragraphs: Object.entries(texts).map(([id, text]) => ({ id, text, validity: 'delivered' as const })),
     }),
     propose: async () => {
@@ -365,6 +374,7 @@ function layered(
   })
   return {
     root: '/memory',
+    stateRevision: () => JSON.stringify([workspace, user, o]),
     snapshot: async () => undefined,
     inspect: async () => ({
       root: '/memory',
@@ -445,6 +455,69 @@ describe('entries saved earlier, for the experience snapshot', () => {
     expect(await off.refs.entries?.(AT)).toEqual([])
   })
 
+  it.each([
+    'read error',
+    'stale',
+    'expired',
+    'wrong body',
+    'duplicate opener',
+    'nested',
+    'verified',
+  ] as const)('requires a matching full index for legacy listings (%s)', async (scenario) => {
+    const id = paragraph().id
+    const base = layered({ [id]: TEXT }, { [id]: TEXT })
+    const raw = indexText({ [id]: scenario === 'wrong body' ? SOME : TEXT })
+    const content =
+      scenario === 'expired'
+        ? `<!-- expires_at: 2020-01-01 -->\n${raw}`
+        : scenario === 'nested'
+          ? indexText({ r0000000002: raw })
+          : scenario === 'duplicate opener'
+            ? `<!-- refinement:${id} -->\n${raw}`
+            : raw
+    const port = () => ({
+      list: async () => ({ hash: 'listed', paragraphs: [{ id, text: TEXT, validity: 'valid' as const }] }),
+      propose: async () => {
+        throw new Error('unexpected proposal')
+      },
+      commit: async () => {
+        throw new Error('unexpected commit')
+      },
+    })
+    const memory: MemorySession = {
+      ...base,
+      paragraphs: port,
+      userParagraphs: port,
+      readFile: async () => {
+        if (scenario === 'read error') throw new Error('index unavailable')
+        return {
+          path: 'MEMORY.md',
+          bytes: content.length,
+          lines: content.split('\n').length,
+          content,
+          hash: scenario === 'stale' ? 'another revision' : 'listed',
+        }
+      },
+    }
+    const t = both(memory, [paragraph()])
+    seed(t.registry, [paragraph()])
+    const verified = scenario === 'verified'
+    const listed = await port().list()
+    const describe = (layer: 'workspace' | 'user') =>
+      describeParagraphs(listed, memory, layer, t.registry, () => T0)
+    expect(await describe('user')).toEqual([])
+    if (scenario === 'read error') await expect(describe('workspace')).rejects.toThrow('index unavailable')
+    else
+      expect((await describe('workspace')).map((p) => p.text)).toEqual(
+        verified || scenario === 'expired' ? [TEXT] : [],
+      )
+    if (scenario === 'read error') await expect(t.refs.entries?.(AT)).rejects.toThrow('index unavailable')
+    else expect((await t.refs.entries?.(AT))?.map((e) => e.ref)).toEqual(verified ? [`ws.${id}`] : [])
+    expect((await t.refs.list(AT)).map((e) => e.ref)).toEqual(verified ? [`workspace-memory/${id}`] : [])
+    expect(await t.refs.renew(AT, `workspace-memory/${id}`, normalizedContentHash(TEXT))).toBe(verified)
+    expect(await t.refs.renew(AT, `user-memory/${id}`, normalizedContentHash(TEXT))).toBe(false)
+  })
+
   it('skips a saved paragraph that now looks like a secret', async () => {
     const t = both(layered({ r0000000001: 'Deploy key\napi_key = abcdefghijklmnop' }, {}))
     seed(t.registry, [paragraph()])
@@ -452,22 +525,25 @@ describe('entries saved earlier, for the experience snapshot', () => {
   })
 
   it('fingerprints only bounded regular files on a symlink-free path', () => {
-    const root = join(realpathSync(scratch()), 'memory', 'workspaces', 'w')
+    const session = fileProvider().open({ home: scratch(), workspaceRoot: ROOT, sessionKey: AT.key })
+    const root = session.root
     mkdirSync(root, { recursive: true })
-    const t = both({ ...layered({}, {}), root })
+    const t = both(session)
     const missing = t.refs.revision?.(AT)
     const file = join(root, 'MEMORY.md')
     writeFileSync(file, Buffer.alloc(1024 * 1024))
     expect(t.refs.revision?.(AT)).not.toBe(missing)
     writeFileSync(file, Buffer.alloc(1024 * 1024 + 1))
-    expect(t.refs.revision?.(AT)).toBe(missing)
+    expect(t.refs.revision?.(AT)).not.toBe(missing)
     // The user index sits under a directory link and the workspace index itself is a link.
     const external = realpathSync(scratch())
     writeFileSync(join(external, 'MEMORY.md'), TEXT)
     rmSync(file)
     symlinkSync(join(external, 'MEMORY.md'), file)
     symlinkSync(external, join(root, '..', '..', 'user'), 'dir')
-    expect(t.refs.revision?.(AT)).toBe(missing)
+    const linked = t.refs.revision?.(AT)
+    writeFileSync(join(external, 'MEMORY.md'), SOME)
+    expect(t.refs.revision?.(AT)).toBe(linked)
   })
 
   it('its revision moves when a paragraph is saved, withdrawn or passes its review date', () => {
@@ -544,7 +620,7 @@ describe('fixes after the branch review', () => {
     expect(userRegistry.read().paragraphs[0]?.reviewAfter).toBe(T0 + REVIEW_AFTER_MS)
   })
 
-  it.each(['expired annotation', 'memory off'])(
+  it.each(['expired annotation', 'memory off', 'memory off without stateRevision'])(
     'withdraws a cached delivery on the next request after %s',
     async (edit) => {
       const dataDir = scratch()
@@ -563,9 +639,11 @@ describe('fixes after the branch review', () => {
         registry.update((draft) => {
           draft.paragraphs.push(paragraph())
         }, registry.read().revision)
+        const { stateRevision: _revision, ...legacy } = memory
+        const withoutRevision = edit === 'memory off without stateRevision'
         const refs = createWorkspaceRefs({
           dataDir,
-          session: () => ({ workspaceRoot: ROOT, memory }),
+          session: () => ({ workspaceRoot: ROOT, memory: withoutRevision ? legacy : memory }),
           clock: () => T0,
         })
         const { session } = await openSession({
@@ -580,14 +658,15 @@ describe('fixes after the branch review', () => {
         await turn()
         expect(JSON.stringify(session.surface())).toContain(`[memory/ws.${id} v1] (saved)`)
         const before = refs.revision?.(AT)
-        if (edit === 'memory off') await memory.configure({ mode: 'off' })
+        if (edit.startsWith('memory off')) await memory.configure({ mode: 'off' })
         else
           await memory.editFile(
             'MEMORY.md',
             `<!-- expires_at: 2020-01-01 -->\n${body}`,
             (await memory.readFile('MEMORY.md')).hash,
           )
-        expect(refs.revision?.(AT)).not.toBe(before)
+        if (withoutRevision) expect([before, refs.revision?.(AT)]).toEqual(['', ''])
+        else expect(refs.revision?.(AT)).not.toBe(before)
         expect(await refs.entries?.(AT)).toEqual([])
         expect(await refs.list(AT)).toEqual([])
         expect(await refs.renew(AT, `workspace-memory/${id}`, normalizedContentHash(TEXT))).toBe(false)

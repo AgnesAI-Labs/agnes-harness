@@ -347,6 +347,9 @@ describe('promoting a confirmed lesson to user memory', () => {
     expect((await h.manage({ action: 'list' })).paragraphs).toMatchObject([
       { id, validity: 'valid', hidden: true },
     ])
+    await expect(h.manage({ action: 'renew', paragraphId: id })).rejects.toMatchObject({
+      code: 'MEMORY_PARAGRAPH_NOT_RENEWABLE',
+    })
   })
 
   it('a section the user deleted by hand is not promoted again on old confirmations', async () => {

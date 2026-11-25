@@ -559,6 +559,7 @@ describe('file memory paragraph port', () => {
     const port = f.paragraphs()
     expect(await port.list()).toEqual({
       hash: sha(original),
+      content: original,
       paragraphs: [{ id: B, text: 'Hidden beta', validity: 'expired' }],
     })
     const added = await port.commit(await port.propose({ op: 'put', id: A, text: 'Alpha' }))

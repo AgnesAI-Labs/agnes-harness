@@ -1,4 +1,9 @@
-import type { MemoryParagraph, MemoryParagraphValidity, MemorySession } from '@agnes/extension-api'
+import type {
+  MemoryParagraphList,
+  MemoryParagraphPort,
+  MemoryParagraphValidity,
+  MemorySession,
+} from '@agnes/extension-api'
 import type {
   RefinementRegistry,
   RegistryRecords,
@@ -59,28 +64,49 @@ function withoutMarkers(text: string, { open, close }: { open: Line; close: Line
 
 /** Both memory layers expose the stored text and its effective visibility to the editor. */
 export async function describeParagraphs(
-  paragraphs: readonly MemoryParagraph[],
+  listed: MemoryParagraphList,
   memory: MemorySession,
   layer: 'workspace' | 'user',
   registry: RefinementRegistry,
   clock: () => number,
 ): Promise<SavedParagraph[]> {
+  const { paragraphs } = listed
   if (!paragraphs.length) return []
-  const visible = await paragraphVisibility(memory, layer, registry, clock)
+  const paragraphText = await paragraphVisibility(memory, layer, listed, registry, clock)
   const records = registry.read().paragraphs
-  return paragraphs.map(({ id, text, validity }) => {
-    const record = records.find((entry) => entry.id === id && entry.state === 'active')
-    const status = validity === 'delivered' ? 'valid' : validity
-    return {
-      id,
-      text,
-      validity: status,
-      ...(status === 'valid' && visible(id, text) === undefined ? { hidden: true } : {}),
-      ...(record
-        ? { reviewAfter: record.reviewAfter, initiator: record.source.initiator, kind: record.source.kind }
-        : {}),
-    }
-  })
+  return paragraphs
+    .filter(({ id, text }) => paragraphText(id, text, 'stored') !== undefined)
+    .map(({ id, text, validity }) => {
+      const record = records.find((entry) => entry.id === id && entry.state === 'active')
+      const status = validity === 'delivered' ? 'valid' : validity
+      return {
+        id,
+        text,
+        validity: status,
+        ...(status === 'valid' && paragraphText(id, text) === undefined ? { hidden: true } : {}),
+        ...(record
+          ? { reviewAfter: record.reviewAfter, initiator: record.source.initiator, kind: record.source.kind }
+          : {}),
+      }
+    })
+}
+
+/** A person may renew an overdue record once its stored body and surrounding visibility are verified. */
+export async function verifyRenewal(
+  port: MemoryParagraphPort | undefined,
+  memory: MemorySession,
+  layer: 'workspace' | 'user',
+  registry: RefinementRegistry,
+  clock: () => number,
+  id: string,
+) {
+  const listed = await port?.list()
+  const paragraph = listed?.paragraphs.find((p) => p.id === id)
+  if (listed && paragraph) {
+    const visible = await paragraphVisibility(memory, layer, listed, registry, clock)
+    if (visible(id, paragraph.text) !== undefined) return
+  }
+  throw fault('MEMORY_PARAGRAPH_NOT_RENEWABLE')
 }
 
 /**
@@ -100,15 +126,13 @@ export function savedParagraphs(deps: {
   registry: (workspaceRoot: string) => RefinementRegistry
   clock: () => number
 }): SavedParagraphs {
+  const editorPort = (memory: MemorySession) =>
+    paragraphPortOf(memory, { sessionKey: 'human-editor', turn: 0 }, new AbortController().signal)
   const list = async (memory: MemorySession, registry: RefinementRegistry) => {
-    const port = paragraphPortOf(
-      memory,
-      { sessionKey: 'human-editor', turn: 0 },
-      new AbortController().signal,
-    )
+    const port = editorPort(memory)
     if (!port) return undefined
     const listed = await port.list()
-    const paragraphs = await describeParagraphs(listed.paragraphs, memory, 'workspace', registry, deps.clock)
+    const paragraphs = await describeParagraphs(listed, memory, 'workspace', registry, deps.clock)
     return { hash: listed.hash, paragraphs }
   }
 
@@ -130,6 +154,7 @@ export function savedParagraphs(deps: {
     const id = request.paragraphId
     if (typeof id !== 'string') throw fault('MEMORY_INVALID_REQUEST')
     if (request.action === 'renew') {
+      await verifyRenewal(editorPort(memory), memory, 'workspace', registry, deps.clock, id)
       try {
         registry.renew({ paragraphId: id })
       } catch (error) {

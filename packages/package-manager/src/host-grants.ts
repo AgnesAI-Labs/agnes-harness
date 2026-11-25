@@ -27,6 +27,8 @@ export type HostCapabilityGrant = Readonly<{
 
 export type HostGrantDeclaration = Readonly<{
   packageId: string
+  /** Only this release-pinned module can attest file-memory writes refused before publication. */
+  memoryPreEffectProof?: true
   extensions: Readonly<Record<string, HostCapabilityGrant>>
   package: HostCapabilityGrant
   seams: Readonly<Record<string, HostCapabilityGrant>>
@@ -36,6 +38,7 @@ export type HostGrantDeclaration = Readonly<{
 export const HOST_CAPABILITY_GRANTS: readonly HostGrantDeclaration[] = freezeData([
   {
     packageId: '@agnes/base',
+    memoryPreEffectProof: true,
     package: { sessionTasks: true, childControl: true },
     extensions: {
       'agnes/tools-web': { searchProvider: true },

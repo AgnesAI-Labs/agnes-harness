@@ -2,6 +2,11 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.24.0
+
+- `MemoryParagraphList.content?` gives callers the full stored index from the same read as the listed paragraphs and hash. The Host uses it to check visibility across marker boundaries in both memory layers.
+- `MemorySession.stateRevision?()` fingerprints the current workspace and user indexes and settings. The Host rereads saved entries on each request when this method is absent.
+
 ## 5.23.0
 
 - Optional `MemoryFilePort.recall?(query)` (`MemoryRecallQuery`, `MemoryRecallHit`, `MemoryRecallResult`) and optional `ToolContext.memory?: Readonly<{ recall(query): Promise<MemoryRecallResult> }>` (exposed by Core only when the selected memory provider's file port offers `recall`).

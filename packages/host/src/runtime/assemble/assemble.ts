@@ -136,8 +136,7 @@ async function startCore(ctx: AssemblyContext, f: Foundation, t: Tree) {
   const extensionLeases: ExtensionLeases = {}
   const discoveredResources = new WeakMap<SessionImpl, readonly ResourceEntry[]>()
   const kernelStage = await createKernel(ctx, {
-    proc,
-    presets,
+    ...f,
     providerStage,
     operations,
     runtimeTarget: t.runtimeTarget,

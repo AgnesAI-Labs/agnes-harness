@@ -7,6 +7,7 @@ import {
   isolatedEcosystem as BASE_ISOLATED_ECOSYSTEM,
   buildCompactionPlan,
   defaultLoopPlugin,
+  isMemoryPreEffectRefusal,
 } from '@agnes/base'
 import type {
   ApprovalAnswer,
@@ -330,6 +331,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
               subagent: { ...(BASE_PRESET.subagent ?? {}), tree_budget_credits: o.treeBudgetCredits },
             },
     },
+    isMemoryPreEffectRefusal,
     ecosystem: BASE_ECOSYSTEM,
     isolatedEcosystem: BASE_ISOLATED_ECOSYSTEM,
     buildCompactionPlan,

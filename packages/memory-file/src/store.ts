@@ -3,11 +3,13 @@ import {
   chmodSync,
   closeSync,
   existsSync,
+  fstatSync,
   fsyncSync,
   mkdirSync,
   openSync,
   readdirSync,
   readFileSync,
+  readSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -16,7 +18,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { MemoryEffectAdmission, MemoryFile, MemorySettings, MemorySource } from '@agnes/extension-api'
-import { renameWriteThroughSync } from '@agnes/system-node'
+import { openCanonicalFileSync, renameWriteThroughSync } from '@agnes/system-node'
 import { defaults, fault, file, settings, storedSettings, validateContent } from './content.js'
 import { isMemoryName, missing, name, safe } from './paths.js'
 
@@ -34,17 +36,33 @@ export class MemoryStore {
     safe(this.protectedRoot, this.root)
     mkdirSync(this.root, { recursive: true, mode: 0o700 })
   }
-  read(path: string): MemoryFile {
-    name(path)
+  private readText(path: string, limit: number, limitCode: string): string | undefined {
     const absolute = join(this.root, path)
     safe(this.protectedRoot, absolute)
+    let fd: number | undefined
     try {
-      if (statSync(absolute).size > MAX_FILE_BYTES) throw fault('MEMORY_CONSOLIDATION_REQUIRED')
-      return file(path, readFileSync(absolute, 'utf8'))
+      fd = openCanonicalFileSync(absolute)
+      const { size, nlink } = fstatSync(fd)
+      if (nlink !== 1) throw fault('MEMORY_SCOPE_DENIED')
+      if (size > limit) throw fault(limitCode)
+      const bytes = Buffer.alloc(size + 1)
+      let used = 0
+      while (used < bytes.length) {
+        const count = readSync(fd, bytes, used, bytes.length - used, null)
+        if (!count) break
+        used += count
+      }
+      if (used !== size) throw fault('MEMORY_CONFLICT')
+      return bytes.toString('utf8', 0, used)
     } catch (error) {
-      if (missing(error)) return file(path, '')
-      throw error
+      if (!missing(error)) throw error
+      return undefined
+    } finally {
+      if (fd !== undefined) closeSync(fd)
     }
+  }
+  read(path: string): MemoryFile {
+    return file(path, this.readText(name(path), MAX_FILE_BYTES, 'MEMORY_CONSOLIDATION_REQUIRED') ?? '')
   }
   fileSize(path: string): number | undefined {
     name(path)
@@ -72,14 +90,20 @@ export class MemoryStore {
     if (paths.length > MAX_FILES) throw fault('MEMORY_CONSOLIDATION_REQUIRED')
     return paths.map((path) => this.read(path))
   }
-  configuration(): MemorySettings {
-    const path = join(this.root, 'settings.json')
-    safe(this.protectedRoot, path)
+  settingsText(): string | undefined {
     try {
-      if (statSync(path).size > 4096) throw fault('MEMORY_INVALID_SETTINGS')
-      return storedSettings(JSON.parse(readFileSync(path, 'utf8')))
+      return this.readText('settings.json', 4096, 'MEMORY_INVALID_SETTINGS')
     } catch (error) {
-      if (missing(error)) return defaults
+      if ((error as { code?: string }).code === 'MEMORY_SCOPE_DENIED') throw error
+      throw fault('MEMORY_INVALID_SETTINGS')
+    }
+  }
+  configuration(): MemorySettings {
+    const raw = this.settingsText()
+    if (raw === undefined) return defaults
+    try {
+      return storedSettings(JSON.parse(raw))
+    } catch {
       throw fault('MEMORY_INVALID_SETTINGS')
     }
   }
@@ -226,9 +250,19 @@ export class MemoryStore {
     signal?: AbortSignal,
     admission?: MemoryEffectAdmission,
     prepare?: (before: MemoryFile, candidate: MemoryFile) => () => void,
+    onPreCommitRefusal?: (error: unknown) => never,
   ): Promise<MemoryFile> {
-    const commit = () => {
-      admission?.assertActive()
+    // Only provider validation can attest a refusal. Locking, admission, publication and metadata
+    // run outside this boundary, including failures in the final rename itself.
+    const checked = <T>(validate: () => T): T => {
+      try {
+        return validate()
+      } catch (error) {
+        if (onPreCommitRefusal) onPreCommitRefusal(error)
+        throw error
+      }
+    }
+    const validateCandidate = () => {
       const config = this.configuration()
       if (agentMode && config.mode === 'off') throw fault('MEMORY_DISABLED')
       if (agentMode && config.mode !== agentMode) throw fault('MEMORY_POLICY_CHANGED')
@@ -246,16 +280,24 @@ export class MemoryStore {
         for (const match of candidate.content.matchAll(
           /\]\(([^)\s]+\.md)(?:#[^)\s]*)?(?:\s+"[^"]*")?\)|\[\[([^\]#]+\.md)(?:#[^\]]*)?\]\]|^\[[^\]]+\]:\s*(\S+\.md)(?:#\S*)?/gm,
         )) {
-          const target = name(match[1] ?? match[2] ?? match[3]!)
+          const target = name(match[1] ?? match[2] ?? match[3] ?? '')
           if (target === candidate.path || !all.some((entry) => entry.path === target))
             throw fault('MEMORY_MISSING_TOPIC')
         }
       }
+      return { current, all }
+    }
+    const commit = () => {
+      admission?.assertActive()
+      const { current, all } = checked(validateCandidate)
       signal?.throwIfAborted()
       let onCommitted: (() => void) | undefined
       this.atomic(join(this.root, candidate.path), candidate.content, () => {
-        onCommitted = prepare?.(current, candidate)
-        if (this.read(candidate.path).hash !== baseHash) throw fault('MEMORY_CONFLICT')
+        onCommitted = checked(() => {
+          const observe = prepare?.(current, candidate)
+          if (this.read(candidate.path).hash !== baseHash) throw fault('MEMORY_CONFLICT')
+          return observe
+        })
         signal?.throwIfAborted()
         admission?.assertActive()
       })

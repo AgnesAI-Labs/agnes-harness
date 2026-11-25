@@ -1,10 +1,16 @@
 import { sha256Hex } from '@agnes/core-common/request/hash'
 import { isApprovalReason } from '@agnes/core-effects/effects/approval-answer'
+import { type MemoryInvocation, memoryRefusedBeforeEffect } from '@agnes/core-effects/effects/tool-context'
 import type { MemoryApprovalResult, MemoryProposal, MemorySession, ToolMeta } from '@agnes/extension-api'
 import { domainDecisionSource, requestDomainDecision } from '../../step/domain-decision.js'
 import { memoryWritesOff } from '../../step/opening-input.js'
 import type { SessionImpl } from '../../step/session.js'
 import { memoryAdmission } from './memory-admission.js'
+
+export type SessionMemoryDeps = {
+  memory?: MemorySession
+  memoryPreEffectProof?: (error: unknown, source: MemoryInvocation) => boolean
+}
 
 /** Expose only the file capabilities available to a read-only tool in a writes-off session. */
 function readOnlyMemorySession(memory: MemorySession): Pick<MemorySession, 'files'> {
@@ -34,12 +40,20 @@ export async function toolMemoryPort(
   if (await memoryWritesOff(session)) {
     if (!tool.meta.isReadOnly) return undefined
     return {
+      readOnly: true as const,
       session: readOnlyMemorySession(session.d.memory),
       approve: async () => ({ status: 'rejected' as const }),
     }
   }
+  const prove = session.d.memoryPreEffectProof
   return {
     session: session.d.memory,
+    ...(prove
+      ? {
+          refusedBeforeEffect: (error: unknown, source: MemoryInvocation) =>
+            prove(error, source) ? memoryRefusedBeforeEffect(error) : undefined,
+        }
+      : {}),
     approve: (proposal: MemoryProposal) => approveMemoryFile(session, proposal, tool, step, signal),
   }
 }

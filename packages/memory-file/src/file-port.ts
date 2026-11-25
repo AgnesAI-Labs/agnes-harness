@@ -10,7 +10,7 @@ import type {
 } from '@agnes/extension-api'
 import { checkProposalGuards, commitHooks, type VerifyCommitView } from './commit-hooks.js'
 import { formatLifecycleOmission } from './consistency.js'
-import { diff, fault, file, validateContent } from './content.js'
+import { diff, fault, file, MemoryFault, validateContent } from './content.js'
 import type { MetaStore } from './meta.js'
 import type { TurnReadState } from './overlay.js'
 import { markerLines, markerSet, paragraphTexts, parseParagraphs } from './paragraphs.js'
@@ -19,6 +19,32 @@ import type { CommitIntent, MemoryClock, MemoryPipeline, ViewContext } from './p
 import { liveDocuments } from './recall.js'
 import type { MemoryStore } from './store.js'
 import { buildView, replaceInMemoryView, retainedEditRanges } from './view.js'
+
+const preEffectRefusals = new WeakMap<object, MemorySource>()
+
+function markPreEffectRefusal(error: unknown, source: MemorySource): never {
+  if (!(error instanceof MemoryFault) || error.code === 'MEMORY_COMMITTED_METADATA_FAILED') throw error
+  // Issue a fresh error so a reused guard or cancellation error cannot carry another call's proof.
+  const refusal = Object.freeze(Object.assign(fault(error.code), { message: error.message }))
+  preEffectRefusals.set(refusal, { ...source })
+  throw refusal
+}
+
+export function isMemoryPreEffectRefusal(
+  error: unknown,
+  source: Pick<MemorySource, 'sessionKey' | 'turn' | 'toolUseId'>,
+): boolean {
+  const bound = typeof error === 'object' && error !== null ? preEffectRefusals.get(error) : undefined
+  return (
+    !!bound &&
+    typeof source.toolUseId === 'string' &&
+    bound.sessionKey === source.sessionKey &&
+    bound.turn === source.turn &&
+    bound.toolUseId === source.toolUseId
+  )
+}
+
+type FileChange = { before: MemoryFile; candidate: MemoryFile; verifyView: VerifyCommitView }
 
 export type FilePortDeps<TTurn extends TurnReadState = TurnReadState> = Readonly<{
   fallback: MemoryFilePort
@@ -45,7 +71,6 @@ export type FilePortDeps<TTurn extends TurnReadState = TurnReadState> = Readonly
 export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<TTurn>): MemoryFilePort {
   const {
     fallback,
-    source,
     signal,
     approve,
     workspaceRoot,
@@ -62,6 +87,7 @@ export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<T
     viewCtx,
     userValidity,
   } = deps
+  const source = Object.freeze({ ...deps.source })
   const get = (path: string): { shown: MemoryFile; state: TurnReadState } => {
     active()
     signal.throwIfAborted()
@@ -73,13 +99,11 @@ export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<T
     validateContent(entry, store.configuration(), path === 'MEMORY.md')
     return { shown: state.agent.get(path) ?? entry, state }
   }
-  const submit = (leaf: string, before: MemoryFile, candidate: MemoryFile, verifyView: VerifyCommitView) =>
+  const submit = (leaf: string, prepare: () => FileChange) =>
     reviewAndCommit(
       { store, pipeline, clock, root: paths.root, source, signal, approve, active, viewCtx },
       leaf,
-      before,
-      candidate,
-      verifyView,
+      prepare,
     )
 
   return Object.freeze<MemoryFilePort>({
@@ -116,36 +140,40 @@ export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<T
     async write(path, content) {
       const leaf = target(path)
       if (leaf === undefined) return fallback.write(path, content)
-      active()
-      signal.throwIfAborted()
-      const turn = capture(source.turn)
-      const state = resolvedFor(turn)
-      const before = turn.files.find((entry) => entry.path === leaf) ?? file(leaf, '')
-      // A whole file written from a view that leaves text out would silently drop that text.
-      if (turn.readViews.get(leaf)?.hidden || state.readViews.get(leaf)?.hidden) {
-        throw fault('MEMORY_HIDDEN_PARAGRAPHS')
-      }
-      const candidate = file(
-        leaf,
-        typeof content === 'string' ? content : Buffer.from(content).toString('utf8'),
-      )
-      if (
-        markerSet(candidate.content) !== markerSet(before.content) ||
-        (leaf === 'MEMORY.md' && parseParagraphs(candidate.content).anomalies.length)
-      )
-        throw fault('MEMORY_MARKER_CHANGED')
-      // A managed paragraph's text changes only by exact replacement or the paragraph port.
-      if (leaf === 'MEMORY.md' && paragraphTexts(candidate.content) !== paragraphTexts(before.content))
-        throw fault('MEMORY_PARAGRAPH_TEXT_CHANGED')
-      await submit(leaf, before, candidate, (current, ctx) => {
-        const view = buildView(
-          current,
-          pipeline.collectHideRanges(current, ctx),
-          'read',
-          formatLifecycleOmission,
-        )
-        if (view.hidden || resolvedFor(turn).readViews.get(leaf)?.hidden)
+      return submit(leaf, () => {
+        const turn = capture(source.turn)
+        const state = resolvedFor(turn)
+        const before = turn.files.find((entry) => entry.path === leaf) ?? file(leaf, '')
+        // A whole file written from a view that leaves text out would silently drop that text.
+        if (turn.readViews.get(leaf)?.hidden || state.readViews.get(leaf)?.hidden) {
           throw fault('MEMORY_HIDDEN_PARAGRAPHS')
+        }
+        const candidate = file(
+          leaf,
+          typeof content === 'string' ? content : Buffer.from(content).toString('utf8'),
+        )
+        if (
+          markerSet(candidate.content) !== markerSet(before.content) ||
+          (leaf === 'MEMORY.md' && parseParagraphs(candidate.content).anomalies.length)
+        )
+          throw fault('MEMORY_MARKER_CHANGED')
+        // A managed paragraph's text changes only by exact replacement or the paragraph port.
+        if (leaf === 'MEMORY.md' && paragraphTexts(candidate.content) !== paragraphTexts(before.content))
+          throw fault('MEMORY_PARAGRAPH_TEXT_CHANGED')
+        return {
+          before,
+          candidate,
+          verifyView(current, ctx) {
+            const view = buildView(
+              current,
+              pipeline.collectHideRanges(current, ctx),
+              'read',
+              formatLifecycleOmission,
+            )
+            if (view.hidden || resolvedFor(turn).readViews.get(leaf)?.hidden)
+              throw fault('MEMORY_HIDDEN_PARAGRAPHS')
+          },
+        }
       })
     },
     async replaceExact(path, oldText, newText) {
@@ -154,41 +182,45 @@ export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<T
         if (fallback.replaceExact) return fallback.replaceExact(path, oldText, newText)
         throw fault('MEMORY_SCOPE_DENIED')
       }
-      active()
-      signal.throwIfAborted()
-      const turn = capture(source.turn)
-      const state = resolvedFor(turn)
-      const before = store.read(leaf)
-      const prior = state.files.find((entry) => entry.path === leaf)
-      if (leaf === 'MEMORY.md' && state.invalidIndexLimits && prior)
-        validateContent(prior, state.invalidIndexLimits, true)
-      if (!prior?.bytes && before.bytes) throw fault('MEMORY_REPLACE_NOT_FOUND')
-      const replace = (current: MemoryFile, ctx: ViewContext, readState: TurnReadState) => {
-        const omitted = new Set(readState.readViews.get(leaf)?.omitted)
-        const ranges = pipeline.collectHideRanges(current, {
-          ...ctx,
-          validity: (id) => (omitted.has(id) ? 'expired' : ctx.validity(id)),
-        })
-        for (const { start, end, reason } of retainedEditRanges(
-          prior?.content ?? '',
-          current.content,
-          readState.baseRanges.get(leaf) ?? [],
-        )) {
-          ranges.push({ start, end, reason, appliesTo: 'read' })
+      return submit(leaf, () => {
+        const turn = capture(source.turn)
+        const state = resolvedFor(turn)
+        const before = store.read(leaf)
+        const prior = state.files.find((entry) => entry.path === leaf)
+        if (leaf === 'MEMORY.md' && state.invalidIndexLimits && prior)
+          validateContent(prior, state.invalidIndexLimits, true)
+        if (!prior?.bytes && before.bytes) throw fault('MEMORY_REPLACE_NOT_FOUND')
+        const replace = (current: MemoryFile, ctx: ViewContext, readState: TurnReadState) => {
+          const omitted = new Set(readState.readViews.get(leaf)?.omitted)
+          const ranges = pipeline.collectHideRanges(current, {
+            ...ctx,
+            validity: (id) => (omitted.has(id) ? 'expired' : ctx.validity(id)),
+          })
+          for (const { start, end, reason } of retainedEditRanges(
+            prior?.content ?? '',
+            current.content,
+            readState.baseRanges.get(leaf) ?? [],
+          )) {
+            ranges.push({ start, end, reason, appliesTo: 'read' })
+          }
+          const view = buildView(current, ranges, 'read', formatLifecycleOmission)
+          return replaceInMemoryView(
+            current.content,
+            view,
+            markerLines(current.content),
+            oldText,
+            newText,
+            markerSet,
+          )
         }
-        const view = buildView(current, ranges, 'read', formatLifecycleOmission)
-        return replaceInMemoryView(
-          current.content,
-          view,
-          markerLines(current.content),
-          oldText,
-          newText,
-          markerSet,
-        )
-      }
-      const candidate = file(leaf, replace(before, viewCtx(clock()), state))
-      await submit(leaf, before, candidate, (current, ctx) => {
-        if (replace(current, ctx, resolvedFor(turn)) !== candidate.content) throw fault('MEMORY_CONFLICT')
+        const candidate = file(leaf, replace(before, viewCtx(clock()), state))
+        return {
+          before,
+          candidate,
+          verifyView(current, ctx) {
+            if (replace(current, ctx, resolvedFor(turn)) !== candidate.content) throw fault('MEMORY_CONFLICT')
+          },
+        }
       })
     },
     ...(pipeline.recall
@@ -248,40 +280,56 @@ async function reviewAndCommit(
     viewCtx: (now: number, config?: MemorySettings) => ViewContext
   },
   leaf: string,
-  before: MemoryFile,
-  candidate: MemoryFile,
-  verifyView: VerifyCommitView,
+  prepare: () => FileChange,
 ): Promise<void> {
   const { store, pipeline, clock, source, signal, approve, active, viewCtx } = context
-  const config = active()
-  validateContent(candidate, config, leaf === 'MEMORY.md')
-  // Check stale base hash before guards so concurrent external writes return MEMORY_CONFLICT.
-  if (store.read(leaf).hash !== before.hash) throw fault('MEMORY_CONFLICT')
-  const actor = source.toolUseId
-    ? `agent:${source.sessionKey}:${source.toolUseId}`
-    : `agent:${source.sessionKey}`
-  const intent: CommitIntent = {
-    origin: 'agent',
-    actor,
-    path: leaf,
-    before,
-    candidate,
-    via: 'file',
-    layer: 'workspace',
-    source,
+  const prepareProposal = async () => {
+    const config = active()
+    signal.throwIfAborted()
+    const { before, candidate, verifyView } = prepare()
+    validateContent(candidate, config, leaf === 'MEMORY.md')
+    // Check stale base hash before guards so concurrent external writes return MEMORY_CONFLICT.
+    if (store.read(leaf).hash !== before.hash) throw fault('MEMORY_CONFLICT')
+    const actor = source.toolUseId
+      ? `agent:${source.sessionKey}:${source.toolUseId}`
+      : `agent:${source.sessionKey}`
+    const intent: CommitIntent = {
+      origin: 'agent',
+      actor,
+      path: leaf,
+      before,
+      candidate,
+      via: 'file',
+      layer: 'workspace',
+      source,
+    }
+    const guardNow = clock()
+    await checkProposalGuards(pipeline, intent, viewCtx(guardNow, config), signal)
+    const proposal: MemoryProposal = Object.freeze({
+      path: join(context.root, leaf),
+      baseHash: before.hash,
+      newHash: candidate.hash,
+      diff: diff(before.content, candidate.content),
+      source,
+    })
+    return { config, intent, proposal, verifyView }
   }
-  const guardNow = clock()
-  await checkProposalGuards(pipeline, intent, viewCtx(guardNow, config), signal)
-  const proposal: MemoryProposal = Object.freeze({
-    path: join(context.root, leaf),
-    baseHash: before.hash,
-    newHash: candidate.hash,
-    diff: diff(before.content, candidate.content),
-    source,
-  })
+  const refuse = (error: unknown): never => {
+    if (signal.aborted) throw error
+    return markPreEffectRefusal(error, source)
+  }
+  const { config, intent, proposal, verifyView } = await prepareProposal().catch(refuse)
+  const { before, candidate } = intent
   let admission: MemoryEffectAdmission | undefined
   if (config.mode === 'ask') {
-    const result = await approve(proposal)
+    let result: MemoryApprovalResult
+    try {
+      result = await approve(proposal)
+    } catch (error) {
+      // Approval is external to file validation and may have performed other work.
+      if (typeof error === 'object' && error !== null) preEffectRefusals.delete(error)
+      throw error
+    }
     if (result.status === 'approved') admission = result.admission
     if (result.status === 'rejected') throw fault('MEMORY_APPROVAL_REJECTED')
     if (result.status !== 'approved')
@@ -289,13 +337,7 @@ async function reviewAndCommit(
         reason: result.reason,
         message: `MEMORY_APPROVAL_UNANSWERED: ${result.reason}`,
       })
-    signal.throwIfAborted()
-    if (active().mode !== config.mode) throw fault('MEMORY_POLICY_CHANGED')
-    if (store.read(leaf).hash !== before.hash) throw fault('MEMORY_CONFLICT')
   }
-  signal.throwIfAborted()
-  // A policy change during approval cannot silently convert it into an auto write.
-  if (active().mode !== config.mode) throw fault('MEMORY_POLICY_CHANGED')
   await store.commit(
     candidate,
     before.hash,
@@ -304,5 +346,6 @@ async function reviewAndCommit(
     signal,
     admission,
     commitHooks(pipeline, intent, viewCtx, clock, verifyView),
+    refuse,
   )
 }

@@ -142,6 +142,7 @@ describe('saved paragraphs on the memory page', () => {
     expect(paragraphs[0]).toMatchObject({ id: A, text: LESSON_A, validity: 'valid', hidden: true })
     expect(paragraphs[1]).toMatchObject({ id: B, text: partial, validity: 'valid' })
     expect(paragraphs[1]).not.toHaveProperty('hidden')
+    await expect(ws.run('renew', A)).rejects.toMatchObject({ code: 'MEMORY_PARAGRAPH_NOT_RENEWABLE' })
   })
 
   it('renewing gives a paragraph a new 30-day review period and touches no file', async () => {

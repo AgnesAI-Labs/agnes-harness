@@ -12,6 +12,11 @@ export const PARAGRAPH_EDITED = 'MEMORY_PARAGRAPH_EDITED'
 export const PREFERENCE_CONFLICT = 'MEMORY_PREFERENCE_CONFLICT'
 const COMMITTED_METADATA_FAILED = 'MEMORY_COMMITTED_METADATA_FAILED'
 
+/** Preserve the error object for Core to verify. The name alone grants no authority. */
+export function propagateWriteRefusal(error: unknown): void {
+  if (error instanceof Error && error.name === 'ToolPreEffectRefusal') throw error
+}
+
 /** The refusals after which a change must go through as single exact replacements. */
 export const isHiddenParagraphs = (error: unknown): boolean => {
   const code = (error as { code?: unknown } | null)?.code
@@ -84,6 +89,7 @@ export async function replaceOneByOne(
     try {
       await replaceExact.call(ctx.fs, path, edit.oldText, edit.newText)
     } catch (e) {
+      propagateWriteRefusal(e)
       const code = failureCode(e, 'FS_EDIT_REPLACE_FAILED')
       if (code === COMMITTED_METADATA_FAILED) applied.push(index)
       else if (ctx.signal.aborted) throw e
@@ -143,7 +149,7 @@ export function exactFailure(ctx: ToolContext, outcome: ExactOutcome, total: num
                   : `edits ${nth(rest)} were not attempted`,
               ]),
           'This memory file has managed paragraphs, so its edits are applied one replacement at a time and an earlier one is not undone; read the file again and resend only the edits that are not applied.',
-          ...(PROTECTED_TEXT[code] ? [PROTECTED_TEXT[code]] : []),
+          ...(Object.hasOwn(PROTECTED_TEXT, code) ? [PROTECTED_TEXT[code]] : []),
         ]
   const message = parts.join(index === null ? '. ' : '; ')
   return editFailure(ctx, code, 'write_failed', index, applied.length > 0, message, { applied, notApplied })

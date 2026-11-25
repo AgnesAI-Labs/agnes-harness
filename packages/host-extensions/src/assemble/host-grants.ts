@@ -107,6 +107,7 @@ function pinCapabilities(
     string,
     {
       module: PackageModule
+      memoryPreEffectProof: PackageModule['isMemoryPreEffectRefusal']
       embedded: PackageModule['embeddedExtensions']
       ecosystem: PackageModule['ecosystem']
       isolated: PackageModule['isolatedEcosystem']
@@ -164,6 +165,7 @@ function pinCapabilities(
           id,
           {
             module,
+            memoryPreEffectProof: module.isMemoryPreEffectRefusal,
             embedded: module.embeddedExtensions,
             ecosystem: module.ecosystem,
             isolated: module.isolatedEcosystem,
@@ -174,6 +176,14 @@ function pinCapabilities(
           },
         ]),
       )
+    },
+    memoryPreEffectProof() {
+      const owner = pins.find((pin) => pin.declaration.memoryPreEffectProof)?.identity.id
+      if (!owner) return undefined
+      const proof = bound.get(owner)
+      return proof?.memoryPreEffectProof && verified(owner, proof.module)
+        ? proof.memoryPreEffectProof
+        : undefined
     },
     integrity(owner: string) {
       return bound.get(owner)?.image ? undefined : pins.find((p) => p.identity.id === owner)?.digest

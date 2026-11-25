@@ -93,6 +93,7 @@ export type {
   ChildrenFactory,
   ChildStatus,
   FsOps,
+  MemoryInvocation,
   ToolContextDeps,
 } from '@agnes/core-effects/effects/tool-context'
 export { buildToolContext } from '@agnes/core-effects/effects/tool-context'

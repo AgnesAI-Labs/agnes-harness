@@ -122,10 +122,11 @@ import { roleAuthority, rolePermissionContext } from '../child/role-authority.js
 import { type ChildRolePort, type RoleDelegation, roleToolSnapshot } from '../child/roles.js'
 import { unbindChildFactory } from '../child/sessions.js'
 import { runDeferred } from '../execution/turn/deferred.js'
+import type { SessionMemoryDeps } from '../execution/turn/memory-approval.js'
 import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
 import { turnWaitEvent } from '../execution/turn-wait.js'
 // A type-only import, erased at compile time, so it is not a runtime cycle back to the kernel.
-import type { CoreDiagName } from '../kernel.js'
+import type { CoreDiagName, SessionOptions } from '../kernel.js'
 import { Listeners } from '../listeners.js'
 import { LoopChildren } from '../loop/children.js'
 import { SessionControls } from '../loop/controls.js'
@@ -427,11 +428,10 @@ export type TurnEndReason =
   | 'interrupted'
 export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: RunError }
 
-export type SessionDeps = Pick<import('../kernel.js').SessionOptions, 'outwardCommandRules'> & {
+export interface SessionDeps extends Pick<SessionOptions, 'outwardCommandRules'>, SessionMemoryDeps {
   roleDelegation?: RoleDelegation
   childRoles?: ChildRolePort
   commandPathScope?: import('../command-table/floor.js').CommandPathScope
-  memory?: import('@agnes/extension-api').MemorySession
   systemPrompt?: PinnedSystemPrompt
   bindLoopChildren?: (
     parent: import('@agnes/extension-api').ChildAgentParentScope,

@@ -11,6 +11,7 @@ import { normalizeWorkspacePath } from '../paths.js'
 import {
   isHiddenParagraphs,
   memoryProtectedRefusal,
+  propagateWriteRefusal,
   refusalCode,
   WRITE_HIDDEN_TEXT,
 } from './hidden-paragraphs.js'
@@ -111,6 +112,7 @@ export function createWriteTool(record?: FileChangeRecorder, lsp?: LspSessions) 
           // A file the fence lets the model read but not replace fails here, not at the read above.
           // Left to propagate, a refusal that wrote nothing would reach the model as a call whose
           // outcome is unknown, and nothing in it would say the policy said no.
+          propagateWriteRefusal(e)
           if (isHiddenParagraphs(e)) return toolFailure(ctx, refusalCode(e), WRITE_HIDDEN_TEXT)
           const protectedRefusal = memoryProtectedRefusal(e)
           if (protectedRefusal) return toolFailure(ctx, protectedRefusal.code, protectedRefusal.text)

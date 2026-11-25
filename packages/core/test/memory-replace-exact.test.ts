@@ -1,4 +1,4 @@
-import type { MemoryFilePort, MemorySession, ToolDef } from '@agnes/extension-api'
+import type { MemoryFilePort, MemorySession, MemorySource, ToolDef } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
@@ -105,6 +105,7 @@ async function runTool(memory: MemorySession | undefined, approved: boolean) {
 }
 
 async function runWriteOrRecall(options: {
+  proof?: 'matching' | 'wrong call'
   writeErrorCode?: string
   withRecall?: boolean
   query?: string
@@ -112,14 +113,17 @@ async function runWriteOrRecall(options: {
   isReadOnly?: boolean
 }) {
   const seen: { hasMemory?: boolean; hasReplace?: boolean; recallResult?: unknown } = {}
+  const errors = new WeakMap<object, MemorySource>()
   const memory: MemorySession = {
     root: '/w/memory',
     snapshot: async () => undefined,
-    files: (fallback): MemoryFilePort => ({
+    files: (fallback, source): MemoryFilePort => ({
       ...fallback,
       write: async () => {
         if (options.writeErrorCode) {
-          throw Object.assign(new Error(options.writeErrorCode), { code: options.writeErrorCode })
+          const error = { code: options.writeErrorCode }
+          errors.set(error, options.proof === 'wrong call' ? { ...source, toolUseId: 'other' } : source)
+          throw error
         }
       },
       replaceExact: async () => {
@@ -172,6 +176,19 @@ async function runWriteOrRecall(options: {
   )
   const opened = await openSession({
     memory,
+    ...(options.proof
+      ? {
+          memoryPreEffectProof(error: unknown, source: MemorySource) {
+            const bound = error && typeof error === 'object' ? errors.get(error) : undefined
+            return (
+              !!bound &&
+              bound.toolUseId === source.toolUseId &&
+              bound.sessionKey === source.sessionKey &&
+              bound.turn === source.turn
+            )
+          },
+        }
+      : {}),
     registry,
     seams: fakeSeams(),
     provider: fakeProvider([toolTurn('memory_editor', {}), textTurn('ok')]),
@@ -223,7 +240,7 @@ describe('ToolContext.fs.replaceExact', () => {
   it.each(['MEMORY_HUMAN_EDITED', 'MEMORY_PARAGRAPH_EDITED', 'MEMORY_PREFERENCE_CONFLICT'])(
     'treats %s as a pre-effect refusal without parking the session',
     async (code) => {
-      const { result, runState } = await runWriteOrRecall({ writeErrorCode: code })
+      const { result, runState } = await runWriteOrRecall({ writeErrorCode: code, proof: 'matching' })
       expect(result).toMatchObject({
         isError: true,
         code: 'TOOL_REJECTED_BEFORE_EFFECT',
@@ -232,6 +249,16 @@ describe('ToolContext.fs.replaceExact', () => {
       expect(runState).not.toBe('parked')
     },
   )
+
+  it.each([
+    ['MEMORY_HUMAN_EDITED', undefined],
+    ['MEMORY_HUMAN_EDITED', 'wrong call'],
+    ['toString', undefined],
+    ['toString', 'matching'],
+  ] as const)('keeps %s uncertain with proof %s', async (code, proof) => {
+    const { result } = await runWriteOrRecall({ writeErrorCode: code, ...(proof ? { proof } : {}) })
+    expect(result).toMatchObject({ isError: true, code: 'TOOL_OUTCOME_UNKNOWN' })
+  })
 
   it('allows recall in a writes-off session while protecting the provider from writes', async () => {
     const options = { writesOff: true, withRecall: true, query: 'pnpm' }

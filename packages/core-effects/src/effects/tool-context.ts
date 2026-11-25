@@ -27,6 +27,8 @@ import { assertNotDenied } from './fs-guard.js'
 import type { RejectedBeforeEffectError } from './tool-dispatch.js'
 import type { SeamRuntime } from './wrap.js'
 
+export type MemoryInvocation = Readonly<{ sessionKey: string; turn: number; toolUseId: string }>
+
 const MEMORY_PRE_EFFECT_REFUSALS: Readonly<Record<string, string>> = {
   MEMORY_DISABLED: 'Memory writes are disabled',
   MEMORY_HIDDEN_PARAGRAPHS: 'Memory file hides managed paragraphs from whole-file writes',
@@ -36,9 +38,9 @@ const MEMORY_PRE_EFFECT_REFUSALS: Readonly<Record<string, string>> = {
   MEMORY_PREFERENCE_CONFLICT: 'Structured preference conflicts with human-authored value',
 }
 
-function memoryRefusedBeforeEffect(error: unknown): RejectedBeforeEffectError | undefined {
+export function memoryRefusedBeforeEffect(error: unknown): RejectedBeforeEffectError | undefined {
   const code = (error as { code?: unknown } | null)?.code
-  if (typeof code !== 'string') return undefined
+  if (typeof code !== 'string' || !Object.hasOwn(MEMORY_PRE_EFFECT_REFUSALS, code)) return undefined
   const message = MEMORY_PRE_EFFECT_REFUSALS[code]
   return message ? { code, message } : undefined
 }
@@ -159,6 +161,8 @@ export type ToolContextDeps = {
   /** Private preference files have their own approval/CAS owner, outside workspace rewind. */
   memory?: {
     session: Pick<import('@agnes/extension-api').MemorySession, 'files'>
+    readOnly?: true
+    refusedBeforeEffect?: (error: unknown, source: MemoryInvocation) => RejectedBeforeEffectError | undefined
     approve(
       proposal: import('@agnes/extension-api').MemoryProposal,
     ): Promise<import('@agnes/extension-api').MemoryApprovalResult>
@@ -243,34 +247,33 @@ export function buildToolContext(
     list: (path) => d.fsOps.list(path),
     stat: (path) => d.fsOps.stat(path),
   }
-  const files: MemoryFilePort = d.memory
-    ? d.memory.session.files(
-        workspaceFiles,
-        { sessionKey: d.sessionKey, turn: d.turn, toolUseId: call.toolUseId },
-        call.signal,
-        async (proposal) => {
-          // The service must ask before mutation. Bind its proposal to this admitted operation.
-          if (
-            proposal.source.sessionKey !== d.sessionKey ||
-            proposal.source.turn !== d.turn ||
-            proposal.source.toolUseId !== call.toolUseId
-          )
-            throw new CoreError('E_RELATION', 'memory proposal source mismatch')
-          const result = await d.memory!.approve(proposal)
-          if (result.status !== 'approved')
-            effects.reject({
-              code: result.status === 'rejected' ? 'MEMORY_APPROVAL_REJECTED' : 'MEMORY_APPROVAL_UNANSWERED',
-              message:
-                result.status === 'rejected'
-                  ? 'Memory file approval was rejected'
-                  : `Memory file approval unanswered: ${result.reason}`,
-              path: proposal.path,
-            })
-          // Once admitted, even a CAS conflict or failed metadata receipt stays uncertain.
-          effects.beginEffect()
-          return result
-        },
-      )
+  let approvalRequested = false
+  const memorySource = Object.freeze({ sessionKey: d.sessionKey, turn: d.turn, toolUseId: call.toolUseId })
+  const memory = d.memory
+  const files: MemoryFilePort = memory
+    ? memory.session.files(workspaceFiles, memorySource, call.signal, async (proposal) => {
+        // The service must ask before mutation. Bind its proposal to this admitted operation.
+        if (
+          proposal.source.sessionKey !== d.sessionKey ||
+          proposal.source.turn !== d.turn ||
+          proposal.source.toolUseId !== call.toolUseId
+        )
+          throw new CoreError('E_RELATION', 'memory proposal source mismatch')
+        // A later or concurrent approval cannot attest that the first candidate was never written.
+        if (approvalRequested) effects.beginEffect()
+        approvalRequested = true
+        const result = await memory.approve(proposal)
+        if (result.status !== 'approved')
+          effects.reject({
+            code: result.status === 'rejected' ? 'MEMORY_APPROVAL_REJECTED' : 'MEMORY_APPROVAL_UNANSWERED',
+            message:
+              result.status === 'rejected'
+                ? 'Memory file approval was rejected'
+                : `Memory file approval unanswered: ${result.reason}`,
+            path: proposal.path,
+          })
+        return result
+      })
     : workspaceFiles
   const sessionFiles = d.runtime.sessionFiles()
   const context: ToolContext = {
@@ -592,14 +595,24 @@ export function buildToolContext(
     },
     log: d.log,
   }
-  const refuseMemory = d.memory ? memoryRefusedBeforeEffect : undefined
+  const proof = memory?.refusedBeforeEffect
+  const refuseMemory = proof ? (error: unknown) => proof(error, memorySource) : undefined
+  const write = (run: () => Promise<void>) =>
+    effects.write(
+      () =>
+        memory?.readOnly
+          ? effects.reject({ code: 'MEMORY_DISABLED', message: 'Memory writes are disabled' })
+          : run(),
+      refuseMemory,
+    )
+  const replaceExact = files.replaceExact?.bind(files)
   return effects.bind({
     ...(call.sideCall ? { sideCall: effects.guard(call.sideCall, ['invoke']) } : {}),
     ...effects.guard(context, ['exec', 'requestCompaction']),
     ...(files.recall ? { memory: Object.freeze({ recall: (query) => files.recall!(query) }) } : {}),
     fs: {
       read: (path, options) => files.read(path, options),
-      write: (path, content) => effects.write(() => files.write(path, content), refuseMemory),
+      write: (path, content) => write(() => files.write(path, content)),
       ...(d.fsOps.create
         ? {
             create: (path: string, data: Uint8Array) =>
@@ -623,10 +636,10 @@ export function buildToolContext(
       list: (path) => files.list(path),
       stat: (path) => files.stat(path),
       ...(files.revision ? { revision: (path: string) => files.revision!(path) } : {}),
-      ...(files.replaceExact
+      ...(replaceExact
         ? {
             replaceExact: (path: string, oldText: string, newText: string) =>
-              effects.write(() => files.replaceExact!(path, oldText, newText), refuseMemory),
+              write(() => replaceExact(path, oldText, newText)),
           }
         : {}),
       checkpointOf: (path) => checkpoints.get(path),

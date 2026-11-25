@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -7,6 +7,7 @@ import { defaultLoopPlugin, memoryPlugin, sandboxImplementation, sandboxWorkspac
 import { loadPreset } from '@agnes/code'
 import type { ApprovalRequest } from '@agnes/core'
 import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
+import { normalizedContentHash, RefinementRegistry } from '@agnes/host-infrastructure/refinement-registry'
 import { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
 import { createSandboxSeam } from '@agnes/host-infrastructure/sandbox-seam'
 import { observabilityPlugin } from '@agnes/observability'
@@ -550,6 +551,76 @@ it('i01: turning full access off in a workspace session prevents a fresh automat
     const decision = (await session.decisions.list()).find((row) => row.request.spec.purpose === 'memory')
     expect.soft(decision?.result).not.toEqual(expect.objectContaining({ code: 'full-access' }))
     expect((await inspection.readFile('MEMORY.md')).content).toBe('')
+  } finally {
+    await host.close()
+  }
+})
+
+it('records the official provider’s pre-commit refusals for ordinary write and edit tools', async () => {
+  const home = await realpath(await mkdtemp(join(tmpdir(), 'agh-protected-memory-')))
+  homes.push(home)
+  const target = hostMemoryRoot(home)
+  const id = 'r0000000001'
+  const setting = '- language: English'
+  const section = 'Human-edited section'
+  const body = `${setting}\n\n<!-- refinement:${id} -->\n${section}\n<!-- /refinement:${id} -->`
+  let memory: import('@agnes/extension-api').MemorySession | undefined
+  const { host } = await createTestHost({
+    dataDir: home,
+    disableSessionTitle: true,
+    allowed: ['standard'],
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    packages: { '@agnes/base': { plugins } },
+    approval: async (request) => {
+      if (request.scope.startsWith('memory:')) await memory?.configure({ mode: 'off' })
+      return {
+        verdict: 'allowed-once',
+        answeredBy: { id: 'human', org: 'local', role: 'user', deptPath: [], attrs: {} },
+      }
+    },
+    script: [
+      () => call('read', { path: target }),
+      () => call('write', { path: target, content: body.replace(setting, 'Different rule') }),
+      () => call('write', { path: target, content: `${body}\n\n- language: French` }),
+      () => call('edit', { path: target, edits: [{ oldText: section, newText: 'Another section' }] }),
+      () => call('write', { path: target, content: `${body}\n\nAllowed addition` }),
+      () => done,
+    ],
+  })
+  try {
+    memory = host.memory(home, 'human')
+    if (!memory) throw new Error('Memory unavailable')
+    await memory.configure({ mode: 'ask' })
+    const stored = await memory.editFile('MEMORY.md', body, (await memory.readFile('MEMORY.md')).hash)
+    const registry = new RefinementRegistry(home, home, Date.now)
+    const contentHash = normalizedContentHash(section)
+    registry.update((draft) => {
+      draft.paragraphs.push({
+        id,
+        contentHash,
+        fileHash: stored.hash,
+        state: 'active',
+        reviewAfter: Date.now() + 86_400_000,
+        source: { sessionKey: 'origin', kind: 'memory', entryId: 'section', contentHash, initiator: 'user' },
+      })
+    }, registry.read().revision)
+    const session = await host.createSession({ cwd: home, preset: 'standard' })
+    await session.enqueue('next-turn', {
+      actor: session.d.actor,
+      content: [{ type: 'text', text: 'Review the saved preferences.' }],
+    })
+    await session.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
+    const results = await session.scan({ type: 'tool/result', limit: 10 })
+    expect(results.slice(1).map((row) => row.data)).toMatchObject(
+      ['MEMORY_HUMAN_EDITED', 'MEMORY_PREFERENCE_CONFLICT', 'MEMORY_PARAGRAPH_EDITED', 'MEMORY_DISABLED'].map(
+        (code) => ({
+          code: 'TOOL_REJECTED_BEFORE_EFFECT',
+          isError: true,
+          structured: { effect: 'none', code },
+        }),
+      ),
+    )
+    expect((await memory.readFile('MEMORY.md')).hash).toBe(stored.hash)
   } finally {
     await host.close()
   }

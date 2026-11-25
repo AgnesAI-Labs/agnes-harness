@@ -77,7 +77,11 @@ export function paragraphPort(
       const paragraphs = parseParagraphs(stored.content).paragraphs.map(({ id, text }) =>
         Object.freeze({ id, text, validity: answer(id) }),
       )
-      return Object.freeze({ hash: stored.hash, paragraphs: Object.freeze(paragraphs) })
+      return Object.freeze({
+        hash: stored.hash,
+        content: stored.content,
+        paragraphs: Object.freeze(paragraphs),
+      })
     },
     async propose(changes, baseHash) {
       signal.throwIfAborted()
