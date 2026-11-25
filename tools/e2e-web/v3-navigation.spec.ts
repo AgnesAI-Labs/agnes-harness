@@ -320,6 +320,44 @@ it('v3 home entries preserve local routes across cloud and session switches', as
 
   await expect(cloud.getByRole('button', { name: 'Report local route' })).toBeVisible()
   await expect.poll(() => query('session')).toBe('cloud-a')
+  // The shared popup outlet also serves the local sidebar while Cloud owns the conversation.
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    if (width === 390) await page.locator('.backend-cloud-menu').click()
+    await expect(tabs).toBeVisible()
+    for (const [language, label] of [
+      ['en', 'New cloud conversation'],
+      ['zh-CN', '新建云端会话'],
+    ] as const) {
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate(
+          ({ language, theme }) => {
+            document.documentElement.lang = language
+            document.documentElement.dataset.theme = theme
+          },
+          { language, theme },
+        )
+        const create = tabs.getByRole('button', { name: label, exact: true })
+        const hint = page.getByRole('tooltip', { name: label, exact: true })
+        await create.hover()
+        await expect(hint).toBeVisible()
+        await page.mouse.move(0, 0)
+        await expect(hint).toBeHidden()
+        await create.focus()
+        await page.keyboard.press('Tab')
+        await page.keyboard.press('Shift+Tab')
+        await expect(create).toBeFocused()
+        await expect(hint).toBeVisible()
+        await create.blur()
+        await expect(hint).toBeHidden()
+      }
+    }
+  }
+  await page.evaluate(() => {
+    document.documentElement.lang = 'en'
+    document.documentElement.dataset.theme = 'light'
+  })
+  await page.setViewportSize({ width: 1280, height: 900 })
   await cloud.getByRole('button', { name: 'Report local route' }).click()
   await expect(page.locator('body')).toHaveAttribute('data-cloud-route-attempt', 'received')
   expect(query('remote')).toBe(remote)
