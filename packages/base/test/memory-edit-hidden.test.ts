@@ -31,6 +31,7 @@ const outside: MemoryFilePort = {
 async function setup(
   stored = STORED,
   decide: (n: number, proposal: MemoryProposal) => 'approved' | 'rejected' = () => 'approved',
+  humanBottom = false,
 ) {
   const home = await mkdtemp(join(tmpdir(), 'agh-edit-hidden-'))
   dirs.push(home)
@@ -57,8 +58,10 @@ async function setup(
     await paragraphs.commit(
       await paragraphs.propose({ op: 'put', id: EXPIRED, text: 'HIDDEN-PARAGRAPH-BODY' }),
     )
-    const withManaged = await readFile(index, 'utf8')
-    await seedPort(2).write(index, `${withManaged}\nBottom line.\n`)
+    const withManaged = await session.readFile('MEMORY.md')
+    const content = `${withManaged.content}\nBottom line.\n`
+    if (humanBottom) await session.editFile('MEMORY.md', content, withManaged.hash)
+    else await seedPort(2).write(index, content)
     expired = true
   } else {
     await paragraphs.commit(
@@ -106,26 +109,34 @@ describe('edit through the memory provider with a hidden paragraph', () => {
     )
   })
 
-  it('reports exactly which edits were applied when a later approval is declined', async () => {
-    const { ctx, index, asked } = await setup(STORED, (n) => (n === 2 ? 'rejected' : 'approved'))
-    const result = await editTool.execute(
-      {
-        path: index,
-        edits: [
-          { oldText: 'Use pnpm.', newText: 'Use pnpm 10.' },
-          { oldText: 'Bottom line.', newText: 'Bottom line, updated.' },
-        ],
-      },
-      ctx,
-    )
-    expect(asked()).toBe(2)
-    expect(result.isError).toBe(true)
-    expect(result.structured).toMatchObject({ index: 1, written: true, applied: [0], notApplied: [1] })
-    const text = JSON.stringify(result)
-    expect(text).toContain('MEMORY_APPROVAL_REJECTED')
-    expect(text).not.toContain('HIDDEN-PARAGRAPH-BODY')
-    expect(await readFile(index, 'utf8')).toBe(STORED.replace('Use pnpm.', 'Use pnpm 10.'))
-  })
+  it.each(['MEMORY_APPROVAL_REJECTED', 'MEMORY_HUMAN_EDITED'])(
+    'reports exactly which edits were applied when a later replacement fails with %s',
+    async (code) => {
+      const { ctx, index, asked } = await setup(
+        STORED,
+        (n) => (n === 2 ? 'rejected' : 'approved'),
+        code === 'MEMORY_HUMAN_EDITED',
+      )
+      const result = await editTool.execute(
+        {
+          path: index,
+          edits: [
+            { oldText: 'Use pnpm.', newText: 'Use pnpm 10.' },
+            { oldText: 'Bottom line.', newText: 'Bottom line, updated.' },
+          ],
+        },
+        ctx,
+      )
+      expect(asked()).toBe(code === 'MEMORY_APPROVAL_REJECTED' ? 2 : 1)
+      expect(result.isError).toBe(true)
+      expect(result.structured).toMatchObject({ index: 1, written: true, applied: [0], notApplied: [1] })
+      const text = JSON.stringify(result)
+      expect(text).toContain(code)
+      expect(text).not.toContain('Nothing was written')
+      expect(text).not.toContain('HIDDEN-PARAGRAPH-BODY')
+      expect(await readFile(index, 'utf8')).toBe(STORED.replace('Use pnpm.', 'Use pnpm 10.'))
+    },
+  )
 
   it('edits the text of a visible managed paragraph, which a whole-file rewrite may not, with nothing hidden', async () => {
     const { ctx, index } = await setup(`${block('rvisible001', 'Prefer small PRs.')}Use pnpm.\n`)

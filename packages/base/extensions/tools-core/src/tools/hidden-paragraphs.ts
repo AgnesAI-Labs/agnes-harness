@@ -24,18 +24,18 @@ export const refusalCode = (error: unknown): string =>
 
 const PROTECTED_TEXT: Readonly<Record<string, string>> = {
   [HUMAN_EDITED]:
-    'write refused: this block was edited by a human and is protected. Nothing was written; inform the user of your suggestion and ask them to update it on the Memory page, or append new text outside human-edited blocks.',
+    'This block was edited by a human and is protected. Ask the user to update it on the Memory page, or append new text outside human-edited blocks.',
   [PARAGRAPH_EDITED]:
-    'write refused: the managed paragraph text was edited since last recorded. Nothing was written; read the file and leave human changes intact.',
+    'The managed paragraph text was edited since last recorded. Read the file and leave human changes intact.',
   [PREFERENCE_CONFLICT]:
-    'write refused: this preference key conflicts with a human-authored preference. Nothing was written; inform the user of the conflict and ask them to update it on the Memory page.',
+    'This preference key conflicts with a human-authored preference. Ask the user to update it on the Memory page.',
 }
 
 export function memoryProtectedRefusal(error: unknown): { code: string; text: string } | undefined {
   const code = (error as { code?: unknown } | null)?.code
-  if (typeof code !== 'string') return undefined
+  if (typeof code !== 'string' || !Object.hasOwn(PROTECTED_TEXT, code)) return undefined
   const text = PROTECTED_TEXT[code]
-  return text ? { code, text } : undefined
+  return { code, text: `Nothing was written. ${text}` }
 }
 
 export const WRITE_HIDDEN_TEXT =
