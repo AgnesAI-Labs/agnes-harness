@@ -154,11 +154,13 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
       },
       async write(p: string, data: Uint8Array | string): Promise<void> {
         const fail = writeErrors.get(abs(p))
-        if (fail)
+        if (fail) {
+          const name = fail.code === 'E_FS_DENIED' && !fail.unattested ? 'ToolPreEffectRefusal' : 'Error'
           throw Object.assign(new Error(fail.message ?? 'write failed'), {
             code: fail.code,
-            name: fail.code === 'E_FS_DENIED' && !fail.unattested ? 'ToolPreEffectRefusal' : 'Error',
+            name,
           })
+        }
         mem.files.set(abs(p), typeof data === 'string' ? enc.encode(data) : data)
       },
       async list(p: string) {
