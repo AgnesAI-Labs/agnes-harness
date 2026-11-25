@@ -13,16 +13,56 @@ import type {
   SubtaskFactRecord,
 } from '@agnes/extension-api'
 import type { DecisionSnapshot } from '@agnes/protocol'
+import { promptLanguage } from '../request/note-language.js'
 import type { SessionImpl } from '../step/session.js'
 import { childEnd, childFailureSuffix, clipText } from './failure.js'
-import { previewOutput, renderTruthBase, stateFacts } from './recap-formatter.js'
+import {
+  type ArtifactVerificationSummary,
+  type ExtendedRecapFactSnapshot,
+  type ExtendedSubtaskFactRecord,
+  normalizeRecapLocale,
+  previewOutput,
+  type RecapLocale,
+  renderTruthBase,
+  stateFacts,
+} from './recap-formatter.js'
 import { ROLE_DELEGATION } from './roles.js'
 import { ownedChildTree } from './sessions.js'
 
-type SnapshotOptions = { stat?: (absolutePath: string) => Promise<{ kind: string }> }
+export type SnapshotOptions = {
+  stat?: (absolutePath: string) => Promise<{ kind: string }>
+  childKey?: string
+  locale?: RecapLocale
+}
 type Pending = NonNullable<SubtaskFactRecord['approvalPending']>
 
-async function children(parent: SessionImpl, descendants = false) {
+type ExternalEntry = {
+  ownerKey: string
+  listing: ChildAgentListing
+  taskId: string
+}
+
+function localSubtreeKeys(records: readonly ChildTaskRecord[], rootChildKey: string): Set<string> {
+  const byParent = new Map<string, ChildTaskRecord[]>()
+  for (const record of records) {
+    const list = byParent.get(record.parentKey) ?? []
+    list.push(record)
+    byParent.set(record.parentKey, list)
+  }
+  const included = new Set<string>([rootChildKey])
+  const queue = [rootChildKey]
+  while (queue.length > 0) {
+    const current = queue.shift() as string
+    for (const child of byParent.get(current) ?? []) {
+      if (included.has(child.childKey)) continue
+      included.add(child.childKey)
+      queue.push(child.childKey)
+    }
+  }
+  return included
+}
+
+async function children(parent: SessionImpl, descendants = false, targetChildKey?: string) {
   const storage = requireChildControl(parent.d.log.storage)
   const records: ChildTaskRecord[] = []
   if (descendants) {
@@ -30,11 +70,47 @@ async function children(parent: SessionImpl, descendants = false) {
   } else {
     records.push(...(await storage.listByParent(parent.key)).map((row) => ({ ...row })))
   }
-  const local = new Set(records.map((r) => r.childKey))
-  const external = externalChildren(parent.key)
-    .map((x) => x.listing)
-    .filter((x) => !local.has(x.id))
-  return { records, external }
+  const owners = descendants ? [...new Set([parent.key, ...records.map((r) => r.childKey)])] : [parent.key]
+  const rawExternal: Array<{ ownerKey: string; listing: ChildAgentListing }> = []
+  for (const ownerKey of owners) {
+    for (const entry of externalChildren(ownerKey)) {
+      rawExternal.push({ ownerKey, listing: entry.listing })
+    }
+  }
+  const localIds = new Set(records.map((r) => r.childKey))
+  const idCounts = new Map<string, number>()
+  const providerIdCounts = new Map<string, number>()
+  for (const { listing } of rawExternal) {
+    idCounts.set(listing.id, (idCounts.get(listing.id) ?? 0) + 1)
+    const qualified = `${listing.providerId}:${listing.id}`
+    providerIdCounts.set(qualified, (providerIdCounts.get(qualified) ?? 0) + 1)
+  }
+  const external: ExternalEntry[] = rawExternal.map(({ ownerKey, listing }) => {
+    const collides = (idCounts.get(listing.id) ?? 0) > 1 || localIds.has(listing.id)
+    if (!collides) return { ownerKey, listing, taskId: listing.id }
+    const byProvider = `${listing.providerId}:${listing.id}`
+    const providerCollides = (providerIdCounts.get(byProvider) ?? 0) > 1 || localIds.has(byProvider)
+    return {
+      ownerKey,
+      listing,
+      taskId: providerCollides ? `${ownerKey}::${byProvider}` : byProvider,
+    }
+  })
+
+  if (!targetChildKey) return { records, external }
+
+  if (localIds.has(targetChildKey)) {
+    const subtree = localSubtreeKeys(records, targetChildKey)
+    return {
+      records: records.filter((r) => subtree.has(r.childKey)),
+      external: external.filter((x) => subtree.has(x.ownerKey)),
+    }
+  }
+  const exactExternal = external.filter((x) => x.taskId === targetChildKey)
+  if (exactExternal.length > 0) return { records: [], external: exactExternal }
+  const byListingId = external.filter((x) => x.listing.id === targetChildKey)
+  if (byListingId.length === 1) return { records: [], external: byListingId }
+  return { records: [], external: [] }
 }
 
 function countStatuses(statuses: ChildAgentStatus[]): RecapFactSnapshot['counts'] {
@@ -60,7 +136,10 @@ const isIncompleteStatus = (status: ChildAgentStatus) => status !== 'completed' 
 /** Notices only need the roster. Do not replay every sibling ledger on every completion. */
 export async function childBatchCounts(parent: SessionImpl) {
   const { records, external } = await children(parent)
-  const statuses = [...records.map((r) => projectChildStatus(r).status), ...external.map((x) => x.status)]
+  const statuses = [
+    ...records.map((r) => projectChildStatus(r).status),
+    ...external.map((x) => x.listing.status),
+  ]
   const counts = countStatuses(statuses)
   const idle = statuses.filter((status) => status === 'idle').length
   return {
@@ -130,12 +209,73 @@ function trackWrites(
   }
 }
 
-async function verifiedFiles(paths: Map<string, SubtaskArtifactRef>, stat: SnapshotOptions['stat']) {
-  const artifacts = []
-  for (const [abs, ref] of paths) {
-    if ((await stat?.(abs).catch(() => undefined))?.kind === 'file') artifacts.push(ref)
+function errorCodeOf(error: unknown): string | undefined {
+  if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') {
+    return error.code
   }
-  return artifacts
+  if (error instanceof Error) {
+    const match = /\b(E[A-Z0-9_]+)\b/.exec(error.message)
+    if (match?.[1]) return match[1]
+  }
+  return undefined
+}
+
+function isMissingError(error: unknown): boolean {
+  const code = errorCodeOf(error)
+  return code === 'ENOENT' || code === 'ENOTDIR'
+}
+
+async function verifyArtifacts(
+  paths: Map<string, SubtaskArtifactRef>,
+  stat: SnapshotOptions['stat'],
+): Promise<{ artifacts: SubtaskArtifactRef[]; verification: ArtifactVerificationSummary }> {
+  const recordedCount = paths.size
+  if (recordedCount === 0) {
+    return {
+      artifacts: [],
+      verification: { recordedCount: 0, verifiedCount: 0, missingCount: 0, unverifiableCount: 0 },
+    }
+  }
+  if (!stat) {
+    return {
+      artifacts: [],
+      verification: {
+        recordedCount,
+        verifiedCount: 0,
+        missingCount: 0,
+        unverifiableCount: recordedCount,
+        errorCodes: ['STAT_UNAVAILABLE'],
+      },
+    }
+  }
+  const artifacts: SubtaskArtifactRef[] = []
+  let missingCount = 0
+  let unverifiableCount = 0
+  const codes = new Set<string>()
+  for (const [abs, ref] of paths) {
+    try {
+      const entry = await stat(abs)
+      if (entry?.kind === 'file') artifacts.push(ref)
+      else missingCount++
+    } catch (error) {
+      if (isMissingError(error)) {
+        missingCount++
+      } else {
+        unverifiableCount++
+        codes.add(errorCodeOf(error) ?? 'STAT_FAILED')
+      }
+    }
+  }
+  return {
+    artifacts,
+    verification: {
+      recordedCount,
+      verifiedCount: artifacts.length,
+      missingCount,
+      unverifiableCount,
+      ...(codes.size > 0 ? { errorCodes: [...codes].sort() } : {}),
+    },
+  }
 }
 
 const factTypes = [
@@ -152,7 +292,7 @@ async function localTask(
   parent: SessionImpl,
   record: ChildTaskRecord,
   options: SnapshotOptions,
-): Promise<SubtaskFactRecord> {
+): Promise<ExtendedSubtaskFactRecord> {
   const { childKey: taskId, cwd } = record
   const storage = parent.d.log.storage
   const fromSeq = record.boundarySeq + 1
@@ -205,41 +345,62 @@ async function localTask(
   const invocation = parent.d.workspaceInvocation
   const stat =
     options.stat ?? (invocation && (async (path: string) => invocation.run((view) => view.fs().stat(path))))
+  const { artifacts, verification } = await verifyArtifacts(paths, stat)
   return {
     taskId,
+    ownerKey: record.parentKey,
     label: clipText(record.inputText.trim().split('\n')[0] || taskId, 120),
     ...(role ? { role } : {}),
     status,
     executionState,
     summaryText,
     requestCount,
-    artifacts: await verifiedFiles(paths, stat),
+    artifacts,
+    artifactVerification: verification,
     ...stateFacts(status, `[${producer}] Failed${childFailureSuffix(end)}`, approval),
     updatedAt: tail ? Date.parse(tail.ts) : record.attemptStartedAt,
   }
 }
 
-function externalTask(child: ChildAgentListing, now: number): SubtaskFactRecord & { providerId: string } {
-  const { id, status, providerId } = child
+function externalTask(
+  entry: ExternalEntry,
+  now: number,
+): ExtendedSubtaskFactRecord & { providerId: string; ownerKey: string } {
+  const { listing: child, ownerKey, taskId } = entry
+  const { status, providerId } = child
   return {
-    taskId: id,
-    label: child.role?.title.en ?? id,
+    taskId,
+    ownerKey,
+    label: child.role?.title.en ?? child.id,
     providerId,
     ...(child.role ? { role: child.role.ref } : {}),
     status,
     executionState: child.executionState ?? (status === 'starting' ? 'creating' : status),
-    summaryText: previewOutput(child.text ?? '', id),
+    summaryText: previewOutput(child.text ?? '', taskId),
     artifacts: [],
+    artifactVerification: { recordedCount: 0, verifiedCount: 0, missingCount: 0, unverifiableCount: 0 },
     ...stateFacts(status, `[${providerId}/unknown] Failed`),
     updatedAt: child.lastHeartbeatAt ?? now,
   }
 }
 
+export async function sessionRecapLocale(parent: SessionImpl): Promise<RecapLocale> {
+  const rows = await parent.scan({ type: 'user/message', lane: parent.lane, order: 'desc', limit: 5 })
+  for (const row of rows) {
+    if (row.origin === 'system') continue
+    const data = row.data as { kind?: string; content?: { type: string; text?: string }[] }
+    if (data.kind === 'runtime_context') continue
+    const detected = promptLanguage(textBlocks(data))
+    if (detected) return normalizeRecapLocale(detected)
+  }
+  return 'en'
+}
+
 export async function buildRecapFactSnapshot(
   parent: SessionImpl,
   options: SnapshotOptions = {},
-): Promise<RecapFactSnapshot> {
-  const { records, external } = await children(parent, true)
+): Promise<ExtendedRecapFactSnapshot> {
+  const { records, external } = await children(parent, true, options.childKey)
   const generatedAt = parent.d.clock()
   const subtasks = await Promise.all(records.map((r) => localTask(parent, r, options)))
   subtasks.push(...external.map((x) => externalTask(x, generatedAt)))
@@ -253,14 +414,17 @@ export async function buildRecapFactSnapshot(
     hasIncompleteWork: subtasks.some((x) => isIncompleteStatus(x.status)),
     subtasks,
     allowedArtifactPaths,
+    ...(options.locale ? { locale: normalizeRecapLocale(options.locale) } : {}),
+    ...(options.childKey ? { targetChildKey: options.childKey } : {}),
   }
 }
 
-export async function buildChildRecap(parent: SessionImpl) {
-  const snapshot = await buildRecapFactSnapshot(parent)
+export async function buildChildRecap(parent: SessionImpl, options: SnapshotOptions = {}) {
+  const locale = options.locale ?? (await sessionRecapLocale(parent))
+  const snapshot = await buildRecapFactSnapshot(parent, { ...options, locale })
   return {
     snapshot,
-    markdown: renderTruthBase(snapshot),
+    markdown: renderTruthBase(snapshot, locale),
     allowedArtifactPaths: snapshot.allowedArtifactPaths,
     hasIncompleteWork: snapshot.hasIncompleteWork,
   }

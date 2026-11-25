@@ -7,7 +7,11 @@ import { childCompletionInput, deliverChildStateNotice } from '../src/child/comp
 import { renderTruthBase } from '../src/child/recap-formatter.js'
 import { generateHybridRecap } from '../src/child/recap-narrative.js'
 import { buildRecapFactSnapshot } from '../src/child/recap-snapshot.js'
-import { guardParentRecapReply, validateRecapOutput } from '../src/child/recap-validator.js'
+import {
+  guardParentRecapReply,
+  guardSessionRecapExit,
+  validateRecapOutput,
+} from '../src/child/recap-validator.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { actor, openSession } from './helpers/open-session.js'
 
@@ -237,7 +241,8 @@ describe('child recap', () => {
     expect(validateRecapOutput('draft failed. Expected report.md was not generated.', snapshot).valid).toBe(
       true,
     )
-    expect(renderTruthBase(snapshot)).toContain('无已落盘产物（failed/未生成）')
+    expect(renderTruthBase(snapshot)).toContain('No write records (failed/not generated)')
+    expect(renderTruthBase(snapshot, 'zh-CN')).toContain('没有写入记录（任务失败，未生成）')
   })
 
   it('retains only open decisions and reserves space for the complete batch warning', async () => {
@@ -257,12 +262,13 @@ describe('child recap', () => {
     })
     const truth = renderTruthBase(snapshot)
     for (const expected of [
-      '部分完成 / 等待审批',
+      'Partially completed / Waiting approval 1',
       'requestId=pending',
       'toolName=write',
       'subagent_collect(first)',
     ])
       expect(truth).toContain(expected)
+    expect(renderTruthBase(snapshot, 'zh-CN')).toContain('部分完成 / 等待审批 1 项')
     const { system } = await childCompletionInput(b.parent, completed, 'completed')
     expect(system.summary.length).toBeLessThanOrEqual(2048)
     expect(system.summary).toMatch(
@@ -398,8 +404,289 @@ describe('child recap', () => {
       replyText: summary,
       recapExitViolations: [],
     })
-    expect(renderTruthBase(snapshot)).toContain('**全部完成（已完成 2/2）**')
+    expect(renderTruthBase(snapshot)).toContain('**All completed (2/2 completed)**')
     expect(renderTruthBase(snapshot)).toContain('### Pending approvals and blockers\nNone.')
+    expect(renderTruthBase(snapshot, 'zh-CN')).toContain('**全部完成（已完成 2/2）**')
+    expect(renderTruthBase(snapshot, 'zh-CN')).toContain('### 待审批与阻塞项\n无。')
+  })
+
+  it('allows ordinary replies that quote child IDs in logs/translations while catching direct false status claims (#08)', async () => {
+    const b = await batch()
+    await b.task('root/alpha', 'paused')
+    const triggerSeq = await b.append(
+      b.parent.key,
+      'user/message',
+      { content: [{ type: 'text', text: 'What does this log line mean?' }] },
+      { origin: 'user' },
+    )
+    const allowedReplies = [
+      'In the log for `root/alpha`, the line "All steps completed." means the build finished successfully.',
+      '日志里提到 `root/alpha` 时，后面的 "All steps completed." 意思是所有步骤已完成。',
+      'I checked root/alpha earlier. All steps completed.',
+      'For root/alpha, the quoted status "completed" translates to 已完成.',
+      "In root/alpha's output, the HTTP parser failed to decode the response.",
+    ]
+    for (const reply of allowedReplies) {
+      const guarded = await guardSessionRecapExit(b.parent, reply, triggerSeq, 'ordinary')
+      expect(guarded.event).toBeUndefined()
+      expect(guarded.text).toBe(reply)
+    }
+    for (const badReply of [
+      'root/alpha is completed.',
+      '`root/alpha` completed.',
+      'root/alpha 已完成。',
+      'root/alpha: done',
+    ]) {
+      const guarded = await guardSessionRecapExit(b.parent, badReply, triggerSeq, 'ordinary')
+      expect(guarded.event).toBeDefined()
+      expect(guarded.text).toContain('Runtime ledger facts')
+    }
+  })
+
+  it('rejects inflated or mismatched completion counts across zero, complete and partial batches (#09)', async () => {
+    // Zero tasks
+    const empty = await batch()
+    const emptySnap = await empty.snapshot()
+    for (const bad of [
+      'All tasks completed.',
+      '全部完成',
+      '1 of 1 tasks completed.',
+      '0 of 2 tasks completed.',
+    ]) {
+      expect(validateRecapOutput(bad, emptySnap).violations.map((v) => v.code)).toContain(
+        'FALSE_COMPLETION_CLAIM',
+      )
+    }
+    expect(validateRecapOutput('No child tasks are recorded.', emptySnap).valid).toBe(true)
+    expect(validateRecapOutput('0 of 0 tasks completed.', emptySnap).valid).toBe(true)
+
+    // All completed (1/1)
+    const done = await batch()
+    await done.task('only', 'completed')
+    const doneSnap = await done.snapshot()
+    for (const bad of ['20 of 20 tasks completed.', '已完成 2/2 项子任务。', '1 of 5 tasks completed.']) {
+      expect(validateRecapOutput(bad, doneSnap).violations.map((v) => v.code)).toContain(
+        'FALSE_COMPLETION_CLAIM',
+      )
+    }
+    expect(validateRecapOutput('1 of 1 tasks completed.', doneSnap).valid).toBe(true)
+    expect(validateRecapOutput('All tasks completed.', doneSnap).valid).toBe(true)
+
+    // Partial completion (1/2)
+    const partial = await batch()
+    await partial.task('one', 'completed')
+    await partial.task('two', 'paused')
+    const partialSnap = await partial.snapshot()
+    for (const bad of [
+      'two paused. 2 of 2 tasks completed.',
+      'two paused. 1 of 3 tasks completed.',
+      'two paused. 已完成 3/3',
+    ]) {
+      expect(validateRecapOutput(bad, partialSnap).violations.map((v) => v.code)).toContain(
+        'FALSE_COMPLETION_CLAIM',
+      )
+    }
+    expect(validateRecapOutput('1 of 2 tasks completed. one completed. two paused.', partialSnap).valid).toBe(
+      true,
+    )
+    expect(validateRecapOutput('one completed 3/3 tests. two paused.', partialSnap).valid).toBe(true)
+  })
+
+  it('includes external grandchildren under verified local owners and disambiguates ID collisions (#13)', async () => {
+    const b = await batch()
+    await b.task('child-a', 'idle')
+    const removeRootExt = trackExternalChild(b.parent.key, {
+      listing: { id: 'shared-ext', providerId: 'acp', status: 'completed', continuable: false },
+    })
+    const removeGrandchild = trackExternalChild('child-a', {
+      listing: { id: 'shared-ext', providerId: 'acp', status: 'running', continuable: false },
+    })
+    const removeUnrelated = trackExternalChild('unrelated-session', {
+      listing: { id: 'foreign-ext', providerId: 'acp', status: 'running', continuable: false },
+    })
+    try {
+      const snapshot = await b.snapshot()
+      expect(snapshot.hasIncompleteWork).toBe(true)
+      expect(snapshot.counts).toMatchObject({ total: 3, completed: 1, running: 1 })
+      expect(snapshot.subtasks.map((t) => t.taskId)).not.toContain('foreign-ext')
+      expect(snapshot.subtasks.filter((t) => t.status === 'running')).toHaveLength(1)
+      expect(new Set(snapshot.subtasks.map((t) => t.taskId)).size).toBe(3)
+      const truth = renderTruthBase(snapshot)
+      expect(truth).toContain('Partially completed')
+      expect(truth).not.toContain('All completed')
+      expect(truth).not.toContain('foreign-ext')
+    } finally {
+      removeRootExt()
+      removeGrandchild()
+      removeUnrelated()
+    }
+  })
+
+  it('distinguishes verified, ENOENT missing, unverifiable stat failure and no-write artifacts (#21)', async () => {
+    const b = await batch()
+    await b.task('ok-task', 'completed')
+    await b.write('ok-task', 'ok.txt')
+    await b.task('missing-task', 'completed')
+    await b.write('missing-task', 'gone.txt')
+    await b.task('eio-task', 'completed')
+    await b.write('eio-task', 'ready.txt')
+    await b.task('eacces-task', 'completed')
+    await b.write('eacces-task', 'secret.txt')
+    await b.task('empty-task', 'completed')
+
+    const snapshot = await buildRecapFactSnapshot(b.parent, {
+      stat: async (abs) => {
+        if (abs === '/w/ok.txt') return { kind: 'file' }
+        if (abs === '/w/gone.txt') throw Object.assign(new Error('not found'), { code: 'ENOENT' })
+        if (abs === '/w/ready.txt') throw Object.assign(new Error('io error'), { code: 'EIO' })
+        if (abs === '/w/secret.txt') throw Object.assign(new Error('denied'), { code: 'EACCES' })
+        throw new Error('ENOENT')
+      },
+    })
+    expect(snapshot.allowedArtifactPaths).toEqual(['ok.txt'])
+    expect(validateRecapOutput('eio-task wrote ready.txt', snapshot).violations.map((v) => v.code)).toContain(
+      'FABRICATED_ARTIFACT',
+    )
+    const enTruth = renderTruthBase(snapshot, 'en')
+    expect(enTruth).toContain('[ok-task] (—) -> ok.txt')
+    expect(enTruth).toContain('[missing-task] (—) Recorded artifacts currently missing')
+    expect(enTruth).toContain('[eio-task] (—) Artifacts could not be verified')
+    expect(enTruth).toContain('EIO')
+    expect(enTruth).toContain('[eacces-task] (—) Artifacts could not be verified')
+    expect(enTruth).toContain('EACCES')
+    expect(enTruth).toContain('[empty-task] (—) No write records')
+
+    const zhTruth = renderTruthBase(snapshot, 'zh-CN')
+    expect(zhTruth).toContain('[missing-task] (—) 产物当前不存在')
+    expect(zhTruth).toContain('[eio-task] (—) 无法复核产物')
+    expect(zhTruth).toContain('[empty-task] (—) 没有写入记录')
+
+    // Missing workspaceInvocation (stat unavailable) also reports unverifiable rather than not generated
+    const saved = b.parent.d.workspaceInvocation
+    ;(b.parent.d as { workspaceInvocation?: unknown }).workspaceInvocation = undefined
+    try {
+      const noStatSnap = await buildRecapFactSnapshot(b.parent)
+      expect(noStatSnap.allowedArtifactPaths).toEqual([])
+      expect(renderTruthBase(noStatSnap, 'zh-CN')).toContain('[eio-task] (—) 无法复核产物')
+      expect(renderTruthBase(noStatSnap, 'en')).toContain('STAT_UNAVAILABLE')
+    } finally {
+      ;(b.parent.d as { workspaceInvocation?: unknown }).workspaceInvocation = saved
+    }
+  })
+
+  it('excludes bare and parenthesized reference URLs while still rejecting claimed URLs and local paths (#22)', async () => {
+    const b = await batch()
+    await b.task('doc-child', 'completed')
+    const snapshot = await b.snapshot()
+    for (const valid of [
+      'doc-child completed. See https://example.org/guide/setup.md for details.',
+      'doc-child completed (reference: https://example.org/guide/setup.md).',
+      'doc-child completed. Reference [setup guide](https://example.org/guide/setup.md).',
+      'doc-child completed. Contact mailto:ops@example.org for access.',
+    ]) {
+      expect(validateRecapOutput(valid, snapshot)).toEqual({ valid: true, violations: [] })
+    }
+    for (const invalid of [
+      'doc-child completed. Created https://example.org/guide/setup.md',
+      'doc-child completed. See guide/setup.md',
+      'doc-child completed. See /tmp/setup.md',
+      'doc-child completed. See [setup](guide/setup.md)',
+    ]) {
+      expect(validateRecapOutput(invalid, snapshot).violations.map((v) => v.code)).toContain(
+        'FABRICATED_ARTIFACT',
+      )
+    }
+  })
+
+  it('scopes single-task recap snapshot, formatter and exit guard without requiring sibling tasks (#23)', async () => {
+    const b = await batch()
+    await b.task('root/alpha', 'completed')
+    await b.task('root/beta', 'waiting_approval')
+
+    const full = await b.snapshot()
+    expect(validateRecapOutput('root/alpha completed.', full).violations).toContainEqual({
+      code: 'MISSING_INCOMPLETE_ITEM',
+      detail: 'root/beta',
+    })
+
+    const scoped = await buildRecapFactSnapshot(b.parent, { childKey: 'root/alpha' })
+    expect(scoped.subtasks.map((t) => t.taskId)).toEqual(['root/alpha'])
+    expect(scoped.hasIncompleteWork).toBe(false)
+    expect(validateRecapOutput('root/alpha completed.', scoped)).toEqual({ valid: true, violations: [] })
+    expect(renderTruthBase(scoped)).toContain('Scope: root/alpha')
+    expect(renderTruthBase(scoped)).not.toContain('root/beta')
+
+    // Single-child Web prompt scopes exit validation to root/alpha
+    const triggerSeq = await b.append(
+      b.parent.key,
+      'user/message',
+      {
+        content: [
+          {
+            type: 'text',
+            text: 'Use subagent_recap to summarize the verified results and current status of subagent root/alpha.',
+          },
+        ],
+      },
+      { origin: 'user' },
+    )
+    const ok = await guardSessionRecapExit(b.parent, 'root/alpha completed.', triggerSeq)
+    expect(ok.event).toBeUndefined()
+    expect(ok.text).toBe('root/alpha completed.')
+
+    // False claim on scoped child still gets caught and replaced with scoped recap only
+    const bad = await guardSessionRecapExit(b.parent, 'root/alpha failed.', triggerSeq)
+    expect(bad.event).toBeDefined()
+    expect(bad.text).toContain('root/alpha')
+    expect(bad.text).not.toContain('root/beta')
+
+    // Chinese prompt carrying explicit childKey also scopes exit validation to root/alpha
+    const zhTriggerSeq = await b.append(
+      b.parent.key,
+      'user/message',
+      {
+        content: [
+          {
+            type: 'text',
+            text: '请调用 subagent_recap（childKey: "root/alpha"），回顾子代理 root/alpha 的当前状态和已核实的结果。',
+          },
+        ],
+      },
+      { origin: 'user' },
+    )
+    const zhOk = await guardSessionRecapExit(b.parent, 'root/alpha 已完成。', zhTriggerSeq)
+    expect(zhOk.event).toBeUndefined()
+    expect(zhOk.text).toBe('root/alpha 已完成。')
+  })
+
+  it('renders clean localized Chinese and English deterministic recaps without mixed headings (#34)', async () => {
+    const b = await batch()
+    await b.task('worker-run', 'running')
+    await b.task('worker-pause', 'paused')
+    const snapshot = await b.snapshot()
+
+    const enFallback = guardParentRecapReply('All done.', snapshot, 'en')
+    expect(enFallback.replyText).toContain('## Executive summary')
+    expect(enFallback.replyText).toContain('## Runtime ledger facts')
+    expect(enFallback.replyText).toContain('### Verified artifacts')
+    expect(enFallback.replyText).toContain('### Pending approvals and blockers')
+    expect(enFallback.replyText).not.toMatch(/[\p{Script=Han}]/u)
+
+    const zhFallback = guardParentRecapReply('全部完成。', snapshot, 'zh-CN')
+    expect(zhFallback.replyText).toContain('## 执行摘要')
+    expect(zhFallback.replyText).toContain('## 运行时账本事实')
+    expect(zhFallback.replyText).toContain('### 已验证产物')
+    expect(zhFallback.replyText).toContain('### 待审批与阻塞项')
+    expect(zhFallback.replyText).toContain('运行中 1')
+    expect(zhFallback.replyText).toContain('已暂停 1')
+    // Structural enums preserved in table / diagnostics
+    expect(zhFallback.replyText).toContain('| running | running |')
+    expect(zhFallback.replyText).toContain('resumable: true')
+    // No mixed English headings or status counters
+    expect(zhFallback.replyText).not.toContain('Running 1')
+    expect(zhFallback.replyText).not.toContain('Verified artifacts')
+    expect(zhFallback.replyText).not.toContain('Pending approvals and blockers')
+    expect(validateRecapOutput(zhFallback.replyText, snapshot)).toEqual({ valid: true, violations: [] })
   })
 })
 

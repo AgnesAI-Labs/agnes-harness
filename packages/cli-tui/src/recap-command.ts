@@ -1,4 +1,4 @@
-import type { UINode, UITimeline } from '@agnes/protocol'
+import type { UIHistoryCursor, UINode, UIOpeningResult, UITimeline } from '@agnes/protocol'
 import type { TuiApp } from './app.js'
 import { backgroundSessions } from './bg-command.js'
 import { listSessionChoices, type SlashResult } from './commands.js'
@@ -6,9 +6,10 @@ import { padLine } from './component.js'
 import { tt } from './locale-extended.js'
 import { oneLine } from './session-commands.js'
 import { displayWidth } from './terminal.js'
-import { latestPlan } from './views/special-card.js'
+import { latestPlan, type PlanStep } from './views/special-card.js'
 
 const MAX_REQUEST = 200
+const MAX_HISTORY_PAGES = 10
 
 /** The last thing the user asked: one inert line, cut at 200 characters. System-injected inputs are not requests. */
 export function lastRequest(nodes: readonly UINode[]): string | undefined {
@@ -22,7 +23,58 @@ export function lastRequest(nodes: readonly UINode[]): string | undefined {
   return undefined
 }
 
-const attempt = <T>(work: () => Promise<T>): Promise<T | undefined> => work().catch(() => undefined)
+const attempt = <T>(work: () => Promise<T>): Promise<T | undefined> =>
+  Promise.resolve()
+    .then(work)
+    .catch(() => undefined)
+
+function formatTurnsValue(opening: UIOpeningResult, locale: string): string {
+  const { timeline, history } = opening
+  const windowTurns = timeline.turns.length
+  const authoritativeTotal = (history as { totalTurns?: unknown } | undefined)?.totalTurns
+  if (
+    typeof authoritativeTotal === 'number' &&
+    Number.isInteger(authoritativeTotal) &&
+    authoritativeTotal >= 0
+  ) {
+    return String(authoritativeTotal)
+  }
+  if (!history?.hasEarlier) return String(windowTurns)
+  const highestTurn = Math.max(
+    timeline.opState?.turn ?? 0,
+    ...timeline.turns.map((turn) => (typeof turn.turn === 'number' ? turn.turn : 0)),
+  )
+  if (locale === 'zh-CN') {
+    return highestTurn > windowTurns
+      ? `${highestTurn}（最近 ${windowTurns} 轮 / 部分历史）`
+      : `最近 ${windowTurns} 轮 / 部分历史`
+  }
+  return highestTurn > windowTurns
+    ? `${highestTurn} (recent ${windowTurns} turns / partial history)`
+    : `recent ${windowTurns} turns / partial history`
+}
+
+async function resolveEarlierFacts(
+  session: TuiApp['session'],
+  opening: UIOpeningResult,
+  initialRequest: string | undefined,
+  initialPlan: PlanStep[] | undefined,
+): Promise<{ request: string | undefined; plan: PlanStep[] | undefined }> {
+  let request = initialRequest
+  let plan = initialPlan
+  if ((request && plan) || !opening.history?.hasEarlier) return { request, plan }
+  if (typeof session.projectUIHistory !== 'function') return { request, plan }
+  let cursor: UIHistoryCursor | undefined = opening.history.cursor
+  for (let pageIndex = 0; pageIndex < MAX_HISTORY_PAGES && cursor && (!request || !plan); pageIndex++) {
+    const page = await attempt(() => session.projectUIHistory(cursor as UIHistoryCursor))
+    if (!page) break
+    if (!request) request = lastRequest(page.nodes)
+    if (!plan) plan = latestPlan({ ...opening.timeline, nodes: page.nodes })?.steps
+    if (!page.hasEarlier) break
+    cursor = page.cursor
+  }
+  return { request, plan }
+}
 
 /**
  * `/recap`: where the session stands, from data the TUI already reads for /status, /diff, /bg and
@@ -48,11 +100,15 @@ export async function recapSlash(app: TuiApp): Promise<SlashResult> {
   const rows: Array<[Parameters<typeof tt>[0], string]> = []
   const title = choices?.find((c) => c.sessionId === s.id)?.title
   rows.push(['recap.session', oneLine(title ? `${title} (${s.id})` : s.id)])
-  if (timeline) {
-    rows.push(['recap.turns', String(timeline.turns.length)])
-    const request = lastRequest(timeline.nodes)
+  if (opening && timeline) {
+    rows.push(['recap.turns', formatTurnsValue(opening, locale)])
+    const { request, plan: steps } = await resolveEarlierFacts(
+      s,
+      opening,
+      lastRequest(timeline.nodes),
+      latestPlan(timeline)?.steps,
+    )
     if (request) rows.push(['recap.request', request])
-    const steps = latestPlan(timeline)?.steps
     if (steps?.length) {
       const doing = steps.find((step) => step.status === 'doing')
       const done = steps.filter((step) => step.status === 'done').length
