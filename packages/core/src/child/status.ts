@@ -522,11 +522,10 @@ export async function childCloseOutcome(parent: SessionImpl, record: ChildTaskRe
     fromSeq: record.boundarySeq + 1,
     ...(checkpoint ? { toSeq: checkpoint.pausedAtSeq } : {}),
     order: 'desc' as const,
-    limit: 1,
   }
   const [[start], [end]] = await Promise.all([
-    parent.d.log.storage.scan(record.childKey, { ...query, type: 'turn/start' }),
-    parent.d.log.storage.scan(record.childKey, { ...query, type: 'turn/end' }),
+    parent.d.log.storage.scan(record.childKey, { ...query, type: 'turn/start', limit: 1 }),
+    parent.d.log.storage.scan(record.childKey, { ...query, type: 'turn/end', limit: 1 }),
   ])
   const hasOpenTurn = (start?.seq ?? 0) > (end?.seq ?? 0)
   const currentEndReason = !hasOpenTurn ? (end?.data as { reason?: string } | undefined)?.reason : undefined

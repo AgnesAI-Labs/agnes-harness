@@ -58,7 +58,7 @@ export function createCommandController(
         reject: (error: unknown) => void
       }
     | undefined
-  let armChildPoller: (() => void) | undefined
+  let armChildPoller: ((session?: Session) => void) | undefined
 
   function handleComposerCancel(): void {
     requestStop(false)
@@ -289,12 +289,16 @@ export function createCommandController(
       sessionStorage.setItem(key, 'pending')
     }
     if (render) context.render()
-    if (hasPollableChildren(session)) armChildPoller?.()
+    if (hasPollableChildren(session, { allowPending: true })) armChildPoller?.(session)
     await showCommandFeedback(context, session)
   }
 
-  function hasPollableChildren(session: Session | undefined = context.current): boolean {
-    if (!context.connected || !session || context.sessionPending) return false
+  function hasPollableChildren(
+    session: Session | undefined = context.current,
+    options?: { allowPending?: boolean },
+  ): boolean {
+    if (!context.connected || !session) return false
+    if (!options?.allowPending && context.sessionPending) return false
     if (context.sessionControls?.sessionId !== session.id) return false
     return (
       context.sessionControls.value.children?.some((child) => POLLABLE_CHILD_STATUSES.has(child.status)) ??
@@ -312,9 +316,9 @@ export function createCommandController(
     let polling = false
     let catchUp = false
     let timer: ReturnType<typeof setTimeout> | undefined
-    const schedule = (delay: number) => {
+    const schedule = (delay: number, session: Session | undefined = context.current) => {
       if (stopped || timer !== undefined || polling || !options.isVisible()) return
-      if (!hasPollableChildren()) return
+      if (!hasPollableChildren(session, { allowPending: true })) return
       timer = setTimeout(() => {
         timer = undefined
         void tick()
@@ -323,7 +327,11 @@ export function createCommandController(
     const tick = async (): Promise<void> => {
       if (stopped || !options.isVisible()) return
       const session = context.current
-      if (!session || !hasPollableChildren(session)) return
+      if (!session || !hasPollableChildren(session, { allowPending: true })) return
+      if (context.sessionPending) {
+        schedule(intervalMs, session)
+        return
+      }
       if (polling) {
         catchUp = true
         return
@@ -337,7 +345,7 @@ export function createCommandController(
         if (!stopped && options.isVisible() && context.current === session) context.showError(error)
       } finally {
         polling = false
-        if (!stopped && options.isVisible() && hasPollableChildren()) {
+        if (!stopped && options.isVisible() && hasPollableChildren(context.current, { allowPending: true })) {
           if (catchUp) {
             catchUp = false
             void tick()
@@ -353,7 +361,7 @@ export function createCommandController(
       }
       if (hasPollableChildren()) void tick()
     }
-    armChildPoller = () => schedule(intervalMs)
+    armChildPoller = (session) => schedule(intervalMs, session ?? context.current)
     const stopVisible = options.onVisible(wake)
     const stopFocus = options.onFocus(wake)
     schedule(intervalMs)
