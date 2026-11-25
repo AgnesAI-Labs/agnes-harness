@@ -5,8 +5,14 @@ import { buildToolContext } from '@agnes/core-effects/effects/tool-context'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord, Provider, SystemInput } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import { childCompletionId, deliverChildCompletion } from '../src/child/completion-notice.js'
+import {
+  childCompletionId,
+  deliverChildCompletion,
+  recoverChildCompletions,
+} from '../src/child/completion-notice.js'
 import { retireIdleChildren } from '../src/child/idle-retirement.js'
+import { deliverCoalescedChildCompletion } from '../src/child/notice-coalescer.js'
+import { childReceiptNarrative } from '../src/child/receipts.js'
 import { Kernel } from '../src/kernel.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { hangingProvider, slowCommits, until } from './helpers/child-traces.js'
@@ -764,6 +770,235 @@ describe('child completion notice', () => {
       const resumed = await next.session('parent', sessionOpts)
       expect(notices(resumed)).toMatchObject([{ data: { childKey, status: 'cancelled' } }])
       await next.close()
+    }
+  })
+
+  it.each(['undelivered', 'delivered', 'collected'] as const)(
+    'recovers a committed background idle turn on reopen without duplicating (%s)',
+    async (mode) => {
+      const storage = new MemoryStorage()
+      const first = kernel(storage)
+      const parent = await first.session('parent', sessionOpts)
+      const child = await parent.d.children.createWithKind!('spawn', {
+        parent: parent.key,
+        cwd: '/w',
+        input: 'resident work',
+        parentEffectId: 'idle-recovery',
+        resident: true,
+      })
+      const enqueue = parent.enqueue.bind(parent)
+      if (mode === 'undelivered') {
+        vi.spyOn(parent, 'enqueue').mockImplementation(async (...args) => {
+          if (args[1].system?.source === 'agnes/child') return undefined as never
+          return enqueue(...args)
+        })
+      }
+      await child.run('resident work')
+      const before = await parent.d.children.inspect?.(child.key)
+      expect((await requireChildControl(storage).lookupByKey(child.key))?.state).toBe('idle')
+      expect(notices(parent)).toHaveLength(mode === 'undelivered' ? 0 : 1)
+      if (mode === 'collected') await collectContext(parent).collect(child.key)
+      await first.close()
+
+      for (let reopen = 0; reopen < 2; reopen += 1) {
+        const next = kernel(storage)
+        try {
+          const resumed = await next.session('parent', { ...sessionOpts, writerRunId: `next-${reopen}` })
+          const inbox = resumed.latest('inbox') as
+            | { items: Array<{ commandId?: string; system?: SystemInput }> }
+            | undefined
+          const childItems = (inbox?.items ?? []).filter((item) => item.system?.source === 'agnes/child')
+          if (mode === 'collected') {
+            expect(childItems).toEqual([])
+          } else {
+            expect(childItems).toHaveLength(1)
+            expect(childItems[0]).toMatchObject({
+              commandId: before?.completionId,
+              system: {
+                type: 'child-completed',
+                data: {
+                  childKey: child.key,
+                  status: 'completed',
+                  continuable: true,
+                  result: 'child says hi',
+                },
+                presentation: { kind: 'child-completed', status: 'completed', label: 'resident work' },
+              },
+            })
+          }
+        } finally {
+          await next.close()
+        }
+      }
+    },
+  )
+
+  it('rebuilds batch content, summary and presentation after partially collecting a failed item', async () => {
+    let turns = 0
+    const provider: Provider = {
+      models: () => [catalogue()],
+      async *infer(req) {
+        if (turns++ === 0) {
+          yield { type: 'error', reason: 'error', code: 'AUTH', message: 'bad key', retryable: false }
+        } else {
+          for (const event of textTurn('child B succeeded'))
+            yield event.type === 'sent' ? sentFor(req, event) : event
+        }
+      },
+    }
+    const storage = new MemoryStorage()
+    const k = kernel(storage, provider)
+    try {
+      const parent = await k.session('parent', sessionOpts)
+      const childA = await parent.d.children.createWithKind!('spawn', {
+        parent: parent.key,
+        cwd: '/w',
+        input: 'task A',
+        parentEffectId: 'batch-a',
+        resident: true,
+      })
+      const childB = await parent.d.children.createWithKind!('spawn', {
+        parent: parent.key,
+        cwd: '/w',
+        input: 'task B',
+        parentEffectId: 'batch-b',
+        resident: true,
+      })
+      // Suppress live per-child delivery so we coalesce A (failed) and B (completed) into one batch item.
+      const origEnqueue = parent.enqueue.bind(parent)
+      const spy = vi.spyOn(parent, 'enqueue').mockImplementation(async (...args) => {
+        if (args[1].system?.source === 'agnes/child') return undefined as never
+        return origEnqueue(...args)
+      })
+      await childA.run('task A').catch(() => undefined)
+      await childB.run('task B')
+      spy.mockRestore()
+
+      const store = requireChildControl(storage)
+      const recA = (await store.lookupByKey(childA.key))!
+      const recB = (await store.lookupByKey(childB.key))!
+      await Promise.all([
+        deliverCoalescedChildCompletion(parent, recA, 'failed'),
+        deliverCoalescedChildCompletion(parent, recB, 'completed', { continuable: true }),
+      ])
+
+      const readBatch = () => {
+        const inbox = parent.latest('inbox') as
+          | {
+              items: Array<{
+                commandId?: string
+                content: Array<{ type: string; text?: string }>
+                system?: SystemInput
+              }>
+            }
+          | undefined
+        return (inbox?.items ?? []).filter((item) => item.system?.type === 'child-batch-completed')
+      }
+
+      const [before] = readBatch()
+      expect(before?.system?.presentation).toMatchObject({
+        kind: 'child-completed',
+        status: 'failed',
+        label: 'task A / task B',
+      })
+      expect(before?.system?.summary).toContain('task A')
+      expect(before?.system?.summary).toContain('task B')
+      const originalBatchCommandId = before?.commandId
+      const bBefore = (
+        before?.system?.data as
+          | { children?: Array<{ childKey: string; commandId: string; resultSeq: number }> }
+          | undefined
+      )?.children?.find((entry) => entry.childKey === childB.key)
+
+      // Collect only the failed child A; remaining batch must reflect only B's completed outcome.
+      await collectContext(parent).collect(childA.key)
+      const [after] = readBatch()
+      expect(after?.commandId).toBe(originalBatchCommandId)
+      expect(after?.system?.presentation).toEqual({
+        kind: 'child-completed',
+        status: 'completed',
+        label: 'task B',
+      })
+      const remaining =
+        (
+          after?.system?.data as
+            | { children?: Array<{ childKey: string; commandId: string; resultSeq: number }> }
+            | undefined
+        )?.children ?? []
+      expect(remaining).toHaveLength(1)
+      expect(remaining[0]).toMatchObject({
+        childKey: childB.key,
+        commandId: bBefore?.commandId,
+        resultSeq: bBefore?.resultSeq,
+      })
+      expect(after?.system?.summary).toContain('child B succeeded')
+      expect(after?.system?.summary).not.toContain('task A')
+      expect(after?.system?.summary).not.toContain('AUTH')
+      expect(after?.content[0]?.text).toBe(after?.system?.summary)
+
+      // Recovery must not re-deliver A or duplicate B after partial collection.
+      await recoverChildCompletions(parent)
+      expect(readBatch()).toHaveLength(1)
+      expect(notices(parent)).toEqual([])
+
+      // Collecting B empties the batch item completely.
+      await collectContext(parent).collect(childB.key)
+      expect(readBatch()).toEqual([])
+    } finally {
+      await k.close()
+    }
+  })
+
+  it('tracks uncollected ready children per turn identity and waiting_approval revision', async () => {
+    const storage = new MemoryStorage()
+    const k = kernel(storage)
+    try {
+      const parent = await k.session('parent', sessionOpts)
+      const child = await parent.d.children.createWithKind!('spawn', {
+        parent: parent.key,
+        cwd: '/w',
+        input: 'resident turns',
+        parentEffectId: 'receipt-turns',
+        resident: true,
+      })
+
+      // Turn 1 ready -> listed -> collected -> unlisted.
+      await child.run('resident turns')
+      expect(await childReceiptNarrative(parent)).toContain(`- ${child.key} [idle] resident turns`)
+      await collectContext(parent).collect(child.key)
+      expect(await childReceiptNarrative(parent)).not.toContain('Uncollected ready children')
+
+      // Turn 2 ready -> must reappear despite Turn 1 ACK; untrusted ACK must not suppress it.
+      await child.run('follow up')
+      const turn2Snap = await parent.d.children.inspect?.(child.key)
+      await parent.append([
+        parent.ev(
+          'x/core/child-result-collected',
+          {
+            childKey: child.key,
+            commandId: turn2Snap?.completionId,
+            resultSeq: turn2Snap?.completionSeq,
+          },
+          { origin: 'ext:fixture', trust: 'untrusted', ignorable: true },
+        ),
+      ])
+      expect(await childReceiptNarrative(parent)).toContain(`- ${child.key} [idle] resident turns`)
+
+      // Collect Turn 2 -> unlisted again.
+      await collectContext(parent).collect(child.key)
+      expect(await childReceiptNarrative(parent)).not.toContain('Uncollected ready children')
+
+      // Later waiting_approval revision must still be listed despite earlier turn ACKs.
+      const store = requireChildControl(storage)
+      const idleRow = (await store.lookupByKey(child.key))!
+      expect(await store.casState(child.key, idleRow.stateRevision, 'running', { maxFanOut: 4 })).toBe(true)
+      const runningRow = (await store.lookupByKey(child.key))!
+      expect(await store.casState(child.key, runningRow.stateRevision, 'waiting_approval')).toBe(true)
+      expect(await childReceiptNarrative(parent)).toContain(
+        `- ${child.key} [waiting_approval] resident turns`,
+      )
+    } finally {
+      await k.close()
     }
   })
 })

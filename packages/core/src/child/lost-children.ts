@@ -3,7 +3,7 @@ import type { ChildTaskRecord } from '@agnes/core-child-control/child/types'
 import type { ChildHandle } from '@agnes/core-effects/effects/tool-context'
 import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
-import { deliverChildCompletion } from './completion-notice.js'
+import { deliverChildCompletion, recoverChildCompletions } from './completion-notice.js'
 import { protectChildLeases } from './heartbeat.js'
 import { recoverRoleChildren } from './resume-role.js'
 import { type ChildRolePort, recordedChildRole } from './roles.js'
@@ -38,8 +38,18 @@ export async function recoverChildren(
     resume: (childKey: string) => Promise<ChildHandle>
   },
 ): Promise<void> {
-  await recoverRoleChildren(parent, roles, here.handle, here.resume)
   const store = parent.d.log.storage
+  const liveBefore = hasChildControl(store)
+    ? new Set(
+        (await store.listByParent(parent.key).catch(() => []))
+          .map((row) => row.childKey)
+          .filter((key) => here.handle(key) || here.opening(key)),
+      )
+    : new Set<string>()
+  await recoverRoleChildren(parent, roles, here.handle, here.resume)
+  await recoverChildCompletions(parent, (key) => liveBefore.has(key)).catch(
+    bestEffort(parent.d.logger, 'child-completion-recovery'),
+  )
   const lostKeys = new Set(
     hasChildControl(store) && store.listLostChildren
       ? (await store.listLostChildren(parent.key).catch(() => [])).map((row) => row.childKey)

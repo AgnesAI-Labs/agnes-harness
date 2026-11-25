@@ -346,6 +346,59 @@ describe('reconnect_catchup', () => {
     expect(await take(reader, 1)).toMatchObject([{ seq: 11 }])
     await reader.return?.()
   })
+  it('drops stale and duplicate heartbeats across snapshot-to-live handoff and resets baseline on writer handover', async () => {
+    const snapshotGate = deferred<ChildAgentEvent[]>()
+    const bus = new ChildEventBus({
+      snapshot: () => snapshotGate.promise,
+      scan: async () => [],
+    })
+    const reader = bus.subscribe()[Symbol.asyncIterator]()
+    const received = take(reader, 5)
+    // Live heartbeats arrive while the initial snapshot is still suspended.
+    bus.notify({ type: 'heartbeat', ts: 5_000, leaseUntil: 20_000, eventId: 'hb:1' })
+    bus.notify({ type: 'heartbeat', ts: 10_000, leaseUntil: 25_000, eventId: 'hb:2' })
+    // Snapshot returns the newer hb:2; buffered hb:1 and hb:2 must not regress or repeat.
+    snapshotGate.resolve([{ type: 'heartbeat', ts: 10_000, leaseUntil: 25_000, eventId: 'hb:2' }])
+    await Promise.resolve()
+    bus.notify({ type: 'heartbeat', ts: 15_000, leaseUntil: 30_000, eventId: 'hb:3' })
+    // Writer handover on a scoped heartbeat id resets the seq baseline and fences the retired writer.
+    bus.notify({ type: 'heartbeat', ts: 20_000, leaseUntil: 35_000, eventId: 'hb:c1:w1:5' })
+    bus.notify({ type: 'heartbeat', ts: 25_000, leaseUntil: 40_000, eventId: 'hb:c1:w2:1' })
+    bus.notify({ type: 'heartbeat', ts: 22_000, leaseUntil: 37_000, eventId: 'hb:c1:w1:6' })
+    bus.notify({ type: 'heartbeat', ts: 30_000, leaseUntil: 45_000, eventId: 'hb:c1:w2:2' })
+    expect(await received).toEqual([
+      { type: 'heartbeat', ts: 10_000, leaseUntil: 25_000, eventId: 'hb:2' },
+      { type: 'heartbeat', ts: 15_000, leaseUntil: 30_000, eventId: 'hb:3' },
+      { type: 'heartbeat', ts: 20_000, leaseUntil: 35_000, eventId: 'hb:c1:w1:5' },
+      { type: 'heartbeat', ts: 25_000, leaseUntil: 40_000, eventId: 'hb:c1:w2:1' },
+      { type: 'heartbeat', ts: 30_000, leaseUntil: 45_000, eventId: 'hb:c1:w2:2' },
+    ])
+    await reader.return?.()
+
+    // Also verify the real ChildEventStream reconnect handoff with suspended latestHeartbeat.
+    const { stream, clock, emitter, move } = await setup()
+    await move('running')
+    const latestGate = deferred<ChildAgentEvent | undefined>()
+    const origLatest = stream.latestHeartbeat.bind(stream)
+    vi.spyOn(stream, 'latestHeartbeat').mockImplementationOnce(() => latestGate.promise)
+    const liveReader = stream.subscribe(key, { afterSeq: 2 })[Symbol.asyncIterator]()
+    const liveFrames = take(liveReader, 3)
+    clock.advance(5_000)
+    await emitter.beat(key, owner)
+    clock.advance(5_000)
+    await emitter.beat(key, owner)
+    latestGate.resolve(await origLatest(key))
+    clock.advance(5_000)
+    await emitter.beat(key, owner)
+    clock.advance(5_000)
+    await emitter.attachWriter(key, 'writer-2')
+    const streamFrames = await liveFrames
+    expect(streamFrames.map((f) => (f.type === 'heartbeat' ? f.ts : -1))).toEqual([10_100, 15_100, 20_100])
+    expect(streamFrames.map((f) => (f.type === 'heartbeat' ? f.leaseUntil : -1))).toEqual([
+      25_100, 30_100, 35_100,
+    ])
+    await liveReader.return?.()
+  })
 })
 
 describe('duplicate_delivery', () => {

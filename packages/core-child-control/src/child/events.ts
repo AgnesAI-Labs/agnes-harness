@@ -25,13 +25,84 @@ export function providerFrame(event: ChildAgentEvent): ChildAgentEvent {
   return kind === 'status' && status ? { type: 'status', status, seq, ts, eventId } : event
 }
 
+type ParsedHeartbeat = { child: string; writer: string; seq: number }
+type HeartbeatState = {
+  writer: string
+  seq: number
+  ts: number
+  leaseUntil: number
+  retired: Set<string>
+}
+
+function parseHeartbeatId(eventId: string): ParsedHeartbeat | undefined {
+  if (!eventId.startsWith('hb:')) return undefined
+  const parts = eventId.split(':')
+  const rawSeq = parts.at(-1)
+  if (!rawSeq || !/^\d+$/.test(rawSeq)) return undefined
+  const seq = Number(rawSeq)
+  if (!Number.isSafeInteger(seq)) return undefined
+  if (parts.length === 2) return { child: '', writer: '', seq }
+  if (parts.length === 3) return { child: '', writer: parts[1] ?? '', seq }
+  if (parts.length === 4) return { child: parts[1] ?? '', writer: parts[2] ?? '', seq }
+  return undefined
+}
+
+/** Monotonic per-(childKey, writer) heartbeat gate; resets baseline on writer handover without regressing. */
+class HeartbeatGate {
+  private readonly states = new Map<string, HeartbeatState>()
+  private lastOpaqueId: string | undefined
+
+  accept(event: Extract<ChildAgentEvent, { type: 'heartbeat' }>): boolean {
+    if (!event.eventId) return true
+    const parsed = parseHeartbeatId(event.eventId)
+    if (!parsed) {
+      if (this.lastOpaqueId === event.eventId) return false
+      this.lastOpaqueId = event.eventId
+      return true
+    }
+    const state = this.states.get(parsed.child)
+    if (!state) {
+      this.states.set(parsed.child, {
+        writer: parsed.writer,
+        seq: parsed.seq,
+        ts: event.ts,
+        leaseUntil: event.leaseUntil,
+        retired: new Set(),
+      })
+      return true
+    }
+    if (parsed.writer === state.writer) {
+      if (parsed.seq <= state.seq) return false
+      state.seq = parsed.seq
+      state.ts = event.ts
+      state.leaseUntil = event.leaseUntil
+      return true
+    }
+    if (
+      state.retired.has(parsed.writer) ||
+      event.ts < state.ts ||
+      (event.ts === state.ts && event.leaseUntil < state.leaseUntil) ||
+      (event.ts === state.ts && event.leaseUntil === state.leaseUntil && parsed.seq <= state.seq)
+    ) {
+      state.retired.add(parsed.writer)
+      return false
+    }
+    state.retired.add(state.writer)
+    state.writer = parsed.writer
+    state.seq = parsed.seq
+    state.ts = event.ts
+    state.leaseUntil = event.leaseUntil
+    return true
+  }
+}
+
 /** One ordered child stream. A durable source supplies its own journal and assigned cursors. */
 export class ChildEventBus {
   private readonly listeners = new Set<Listener>()
   private readonly closers = new Set<() => void>()
   private readonly history: ChildAgentEvent[] = []
   private readonly ids = new Set<string>()
-  private lastLiveHeartbeat: string | undefined
+  private readonly liveHeartbeats = new HeartbeatGate()
   private highWater = 0
   private terminal = false
   private closed = false
@@ -65,10 +136,7 @@ export class ChildEventBus {
 
   /** Fan out an already committed frame, or a cursorless live notification. */
   notify(event: ChildAgentEvent) {
-    if (event.type === 'heartbeat' && event.eventId) {
-      if (event.eventId === this.lastLiveHeartbeat) return
-      this.lastLiveHeartbeat = event.eventId
-    }
+    if (event.type === 'heartbeat' && !this.liveHeartbeats.accept(event)) return
     for (const listener of [...this.listeners]) {
       try {
         void Promise.resolve(listener(event)).catch((error) => this.report('listener_error', error))
@@ -144,17 +212,14 @@ export class ChildEventBus {
       this.options.scan ?? (async (after) => this.history.filter((e) => (sequence(e) ?? 0) > after))
     try {
       let batch = await (this.options.snapshot ?? scan)(cursor)
-      let lastHeartbeat: string | undefined
+      const heartbeats = new HeartbeatGate()
       // A fresh reader can start at the retention floor. An explicit cursor promises continuity.
       const first = batch.find((event) => sequence(event) !== undefined)
       if (afterSeq === undefined && first) cursor = (sequence(first) ?? 1) - 1
       while (!signal.aborted) {
         for (const event of batch) {
           if (signal.aborted) return
-          if (event.type === 'heartbeat' && event.eventId) {
-            if (lastHeartbeat === event.eventId) continue
-            lastHeartbeat = event.eventId
-          }
+          if (event.type === 'heartbeat' && !heartbeats.accept(event)) continue
           const seq = sequence(event)
           if (seq !== undefined && seq <= cursor) continue
           if (seq !== undefined && seq > cursor + 1) {

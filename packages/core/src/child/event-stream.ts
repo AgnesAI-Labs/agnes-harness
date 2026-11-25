@@ -35,12 +35,15 @@ export function supportsChildEvents(store: object): store is ChildEventStore {
 
 type Options = { clock?: () => number; onDiagnostic?: (issue: string, detail: unknown) => unknown }
 type Transition = Pick<ChildTaskRecord, 'childKey' | 'state' | 'stateRevision'>
+function heartbeatEventId(lease: ChildLeaseRecord): string {
+  return `hb:${encodeURIComponent(lease.childKey)}:${encodeURIComponent(lease.ownerRunId)}:${lease.heartbeatSeq}`
+}
 function heartbeatFrame(lease: ChildLeaseRecord): ChildAgentEvent {
   return {
     type: 'heartbeat',
     ts: lease.lastHeartbeatAt,
     leaseUntil: lease.leaseUntil,
-    eventId: `hb:${lease.heartbeatSeq}`,
+    eventId: heartbeatEventId(lease),
   }
 }
 export type OwnerStatus = AppendChildEventInput & {
@@ -120,7 +123,7 @@ export class ChildEventStream {
     const channel = this.port.channels.get(lease.childKey)
     if (!channel) return
     const latest = await this.latestHeartbeat(lease.childKey)
-    if (latest?.type === 'heartbeat' && latest.eventId === `hb:${lease.heartbeatSeq}`) channel.notify(latest)
+    if (latest?.type === 'heartbeat' && latest.eventId === heartbeatEventId(lease)) channel.notify(latest)
   }
 
   /** Publish the revision won by the CAS, even if another writer has since advanced the task. */

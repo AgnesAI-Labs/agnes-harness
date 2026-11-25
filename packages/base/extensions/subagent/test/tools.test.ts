@@ -570,6 +570,107 @@ describe('subagent_spawn', () => {
     await first
   })
 
+  it('reconciles finished children via read-only list without calling collect during a new spawn', async () => {
+    let next = 0
+    let aStatus: 'running' | 'idle' = 'running'
+    let pendingNoticeA = false
+    const d = deps({ maxFanOut: 1, isolation: 'shared' })
+    const c = context({
+      spawn: async () => ({ childKey: `child-${++next}` }),
+      collect: async (childKey) => {
+        if (childKey === 'child-1' && aStatus === 'idle') pendingNoticeA = false
+        return { childKey, status: 'idle', text: 'findings from A' }
+      },
+    })
+    let listCalls = 0
+    c.ctx.subagent.list = async () => {
+      listCalls += 1
+      return [
+        {
+          id: 'child-1',
+          providerId: 'in-process',
+          status: aStatus,
+          executionState: aStatus,
+          continuable: true,
+        },
+      ]
+    }
+
+    expect((await subagentSpawnTool(d).execute({ task: 'A' }, c.ctx)).isError).toBeUndefined()
+    // While A is still running, B is refused without touching collect.
+    expect((await subagentSpawnTool(d).execute({ task: 'blocked' }, c.ctx)).isError).toBe(true)
+    expect(c.calls.collect).toEqual([])
+    expect(listCalls).toBe(1)
+
+    // Once A transitions to idle with an unconsumed notice, spawning B frees A's slot via list() and keeps A's notice intact.
+    aStatus = 'idle'
+    pendingNoticeA = true
+    const second = await subagentSpawnTool(d).execute({ task: 'B' }, c.ctx)
+    expect(second.isError).toBeUndefined()
+    expect(second.details).toMatchObject({ childKey: 'child-2' })
+    expect(c.calls.collect).toEqual([])
+    expect(pendingNoticeA).toBe(true)
+    expect(listCalls).toBe(2)
+
+    // Explicit subagent_collect still owns acknowledgement, withdraws the pending notice, and reads A's findings.
+    const collected = await subagentCollectTool(d).execute({ childKey: 'child-1' }, c.ctx)
+    expect(c.calls.collect).toEqual([['child-1', { wait: true }]])
+    expect(pendingNoticeA).toBe(false)
+    expect(collected.content).toEqual([{ type: 'text', text: 'findings from A' }])
+  })
+
+  it('counts a wait:true spawn as one active slot after handle promotion and releases once on exit or error', async () => {
+    let next = 0
+    let resolveA!: (value: { childKey: string; status: 'idle'; text: string }) => void
+    const waitA = new Promise<{ childKey: string; status: 'idle'; text: string }>((resolve) => {
+      resolveA = resolve
+    })
+    let rejectFail!: (error: Error) => void
+    const waitFail = new Promise<never>((_resolve, reject) => {
+      rejectFail = reject
+    })
+    const d = deps({ maxFanOut: 2, isolation: 'shared' })
+    const c = context({
+      spawn: async () => ({ childKey: `child-${++next}` }),
+      collect: async (childKey) => {
+        if (childKey === 'child-1') return waitA
+        if (childKey === 'child-3') return waitFail
+        return { childKey, status: 'completed', text: 'ok' }
+      },
+    })
+    const spawn = subagentSpawnTool(d)
+
+    // Limit 2: while A waits on collect, B succeeds and C is limited at active=2.
+    const runA = spawn.execute({ task: 'A', wait: true }, c.ctx)
+    await Promise.resolve()
+    const runB = await spawn.execute({ task: 'B' }, c.ctx)
+    expect(runB.isError).toBeUndefined()
+    expect(runB.details).toMatchObject({ childKey: 'child-2' })
+
+    const runC = await spawn.execute({ task: 'C' }, c.ctx)
+    expect(runC.isError).toBe(true)
+    expect(runC.structured).toEqual({
+      code: 'E_CHILD_LIMIT',
+      limit: 2,
+      active: 2,
+      activeChildKeys: ['child-1', 'child-2'],
+    })
+
+    // Finishing A frees exactly one slot, allowing child-3 to start; if child-3 fails in collect, its slot frees once.
+    resolveA({ childKey: 'child-1', status: 'idle', text: 'done A' })
+    expect((await runA).content).toEqual([{ type: 'text', text: 'Delegated task idle.\ndone A' }])
+
+    const failing = spawn.execute({ task: 'D', wait: true }, c.ctx)
+    await Promise.resolve()
+    expect((await spawn.execute({ task: 'full-again' }, c.ctx)).isError).toBe(true)
+    rejectFail(new Error('collect boom'))
+    await expect(failing).rejects.toThrow('collect boom')
+
+    // After child-3 failed, only child-2 remains active so child-4 succeeds and pending never went negative.
+    expect((await spawn.execute({ task: 'E' }, c.ctx)).details).toMatchObject({ childKey: 'child-4' })
+    expect(d.runtime?.sessions.get(c.ctx.session.key)?.pending).toBe(0)
+  })
+
   it.each([
     { name: 'backend failure', error: new Error('child backend unavailable'), born: false, refused: false },
     {

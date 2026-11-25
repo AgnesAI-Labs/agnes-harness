@@ -6,14 +6,13 @@ import type { Inbox } from '@agnes/core-ledger/reduce/shapes'
 import type { JsonValue, SystemInput } from '@agnes/protocol'
 import type { SessionImpl } from '../step/session.js'
 import { compactChildHandoff } from './child-prompt-budget.js'
-import { childResultCollected } from './collected-result.js'
+import { type BatchChildEntry, buildCompletionBatch, childResultCollected } from './collected-result.js'
 import {
   CHILD_COMPLETION_SOURCE,
   type ChildCompletionOptions,
   childCompletionInput,
   isBackgroundChild,
 } from './completion-notice.js'
-import { clipText } from './failure.js'
 import { childLifecycle } from './lifecycle.js'
 
 export const POLL_WAIT_LADDER_MS = [5_000, 10_000, 30_000, 60_000, 300_000] as const
@@ -76,13 +75,16 @@ export class ChildNoticeCoalescer {
   }
 }
 
-function childData(entry: Notice): Record<string, JsonValue> {
-  const data = {
+function childData(entry: Notice): BatchChildEntry {
+  const pres = entry.system.presentation
+  const data: BatchChildEntry = {
     ...(entry.system.data as Record<string, JsonValue>),
     childKey: entry.childKey,
     commandId: entry.commandId,
     resultSeq: entry.resultSeq,
-  } as Record<string, JsonValue>
+    summary: entry.omitClosingText ? `Child ${entry.childKey} reported to its parent.` : entry.system.summary,
+    ...(pres?.kind === 'child-completed' ? { status: pres.status, label: pres.label } : {}),
+  }
   const result = data.result
   delete data.result
   if (entry.omitClosingText) {
@@ -98,39 +100,19 @@ function childData(entry: Notice): Record<string, JsonValue> {
   return data
 }
 
-function batchPresentation(entries: Notice[]): NonNullable<SystemInput['presentation']> {
-  if (entries.length === 1 && entries[0]?.system.presentation) return entries[0].system.presentation
-  const items = entries.map((entry) => {
-    const pres = entry.system.presentation
-    const data = entry.system.data as { status?: string } | undefined
-    const status = pres?.kind === 'child-completed' ? pres.status : (data?.status ?? 'completed')
-    const label = pres?.kind === 'child-completed' ? pres.label : entry.childKey.slice(-6)
-    return { status, label }
-  })
-  const status = items.some((item) => item.status === 'failed')
-    ? 'failed'
-    : items.some((item) => item.status === 'budget_stopped')
-      ? 'budget_stopped'
-      : items.every((item) => item.status === 'cancelled')
-        ? 'cancelled'
-        : 'completed'
-  return {
-    kind: 'child-completed',
-    status,
-    label: clipText(items.map((item) => item.label).join(' / '), 120),
-  }
-}
-
 export function completionBatch(entries: Notice[]): SystemInput {
-  const summaries = entries.map((entry) =>
-    entry.omitClosingText ? `Child ${entry.childKey} reported to its parent.` : entry.system.summary,
-  )
+  const children = entries.map(childData)
+  const rebuilt = buildCompletionBatch(children)
+  const presentation =
+    entries.length === 1 && entries[0]?.system.presentation
+      ? entries[0].system.presentation
+      : rebuilt.presentation
   return {
     source: CHILD_COMPLETION_SOURCE,
     type: 'child-batch-completed',
-    data: { children: entries.map(childData) },
-    summary: clipText(summaries.join('\n'), 2048),
-    presentation: batchPresentation(entries),
+    data: { children },
+    summary: rebuilt.summary,
+    presentation,
   }
 }
 

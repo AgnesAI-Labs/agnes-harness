@@ -260,15 +260,42 @@ export async function deliverChildStateNotice(
   )
 }
 
+async function recoverIdleChildCompletion(parent: SessionImpl, record: ChildTaskRecord): Promise<void> {
+  if (parent.closingOrClosed || !isBackgroundChild(parent, record)) return
+  const fromSeq = (record.boundarySeq + 1) as typeof record.boundarySeq
+  const [end] = await parent.d.log.storage.scan(record.childKey, {
+    type: 'turn/end',
+    fromSeq,
+    order: 'desc',
+    limit: 1,
+  })
+  const endReason = (end?.data as { reason?: string } | undefined)?.reason
+  if (!end || end.seq <= 0 || endReason !== 'completed') return
+  const resultSeq = await childResultSequence(parent, record)
+  if (resultSeq !== end.seq) return
+  await deliverChildCompletion(parent, record, 'completed', { continuable: true })
+}
+
 /** Delivers the notices a crash or a closed parent left undelivered. */
-export async function recoverChildCompletions(parent: SessionImpl): Promise<void> {
+export async function recoverChildCompletions(
+  parent: SessionImpl,
+  skip?: (childKey: string) => boolean,
+): Promise<void> {
   const storage = parent.d.log.storage
   if (!hasChildControl(storage)) return
   const rows = await storage.listByParent(parent.key).catch(() => [])
   for (const row of rows) {
-    if (row.creationPhase !== 'committed' || !isTerminalChildState(row.state)) continue
-    await deliverChildCompletion(parent, row, row.state as ChildOutcome).catch(
-      bestEffort(parent.d.logger, 'child-completion-recovery'),
-    )
+    if (row.creationPhase !== 'committed' || skip?.(row.childKey)) continue
+    if (isTerminalChildState(row.state)) {
+      await deliverChildCompletion(parent, row, row.state as ChildOutcome).catch(
+        bestEffort(parent.d.logger, 'child-completion-recovery'),
+      )
+      continue
+    }
+    if (row.state === 'idle') {
+      await recoverIdleChildCompletion(parent, row).catch(
+        bestEffort(parent.d.logger, 'child-completion-recovery'),
+      )
+    }
   }
 }

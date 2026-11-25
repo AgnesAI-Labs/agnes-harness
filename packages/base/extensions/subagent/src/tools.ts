@@ -106,6 +106,31 @@ function prune(runtime: SubagentRuntime, sessionKey: string, state: SessionState
   if (state.pending === 0 && state.children.size === 0) runtime.sessions.delete(sessionKey)
 }
 
+const ACTIVE_STATES = new Set(
+  'creating ready running waiting_approval recovery_pending cancelling'.split(' '),
+)
+const ACTIVE_STATUSES = new Set(['starting', 'running', 'waiting_approval'])
+
+async function reconcileActiveChildren(state: SessionState, ctx: ToolContext): Promise<void> {
+  if (state.children.size === 0 || !ctx.subagent.list) return
+  const listed = await ctx.subagent.list().catch(() => undefined)
+  if (!listed) return
+  const byId = new Map(listed.map((child) => [child.id, child]))
+  for (const [key, rec] of state.children) {
+    if (!rec.running) continue
+    const item = byId.get(key)
+    const isActive = item
+      ? item.executionState !== undefined
+        ? ACTIVE_STATES.has(item.executionState)
+        : ACTIVE_STATUSES.has(item.status)
+      : false
+    if (!isActive) {
+      rec.running = false
+      state.children.delete(key)
+    }
+  }
+}
+
 function active(state: SessionState): number {
   let count = state.pending
   for (const child of state.children.values()) if (child.running) count += 1
@@ -304,19 +329,7 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
       const runtime = runtimeOf(deps)
       const sessionKey = ctx.session.key
       const state = stateOf(runtime, sessionKey)
-      for (const [key, rec] of state.children) {
-        if (!rec.running) continue
-        try {
-          const snap = await ctx.subagent.collect(key, { wait: false })
-          if (snap.status !== 'running') {
-            rec.running = false
-            state.children.delete(key)
-          }
-        } catch {
-          rec.running = false
-          state.children.delete(key)
-        }
-      }
+      await reconcileActiveChildren(state, ctx)
       if (active(state) >= deps.limits.maxFanOut) {
         const activeCount = active(state)
         const activeChildKeys = [...state.children.entries()]
@@ -338,11 +351,18 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
         }
       }
 
-      // Reserve capacity before preparing the workspace; start only after isolation is resolved.
+      // Reserve one slot before workspace preparation, then promote pending -> running synchronously.
       state.pending += 1
+      let reservation: 'pending' | 'running' | 'released' = 'pending'
       let worktree: string | undefined
       let childKey: string | undefined
       let sharedNonGit = false
+      const release = (kind: 'pending' | 'running') => {
+        if (reservation !== kind) return
+        if (kind === 'pending') state.pending -= 1
+        else if (childKey) state.children.delete(childKey)
+        reservation = 'released'
+      }
       try {
         const requested = args.isolation ?? (args.role ? 'shared' : deps.limits.isolation)
         if (requested === 'worktree' && !deps.worktrees.bind)
@@ -380,11 +400,13 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
           return fail('subagent backend returned an invalid or duplicate child key')
         }
         state.children.set(spawned.childKey, { running: true, ...(worktree ? { worktree } : {}) })
+        state.pending -= 1
+        reservation = 'running'
 
         const collected = args.wait ? await ctx.subagent.collect(spawned.childKey, { wait: true }) : undefined
         if (collected && collected.childKey !== spawned.childKey)
           throw new Error('subagent backend returned a mismatched child key')
-        if (collected && collected.status !== 'running') state.children.delete(spawned.childKey)
+        if (collected && collected.status !== 'running') release('running')
         const details: Record<string, JsonValue> = {
           childKey: spawned.childKey,
           ...(spawned.role
@@ -418,6 +440,7 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
           ...(collected?.status === 'failed' ? { isError: true } : {}),
         }
       } catch (error) {
+        release('running')
         if (childKey) await ctx.subagent.cancel(childKey)
         await rollbackWorktree(deps, ctx, worktree)
         // Core's admission limit refuses creation; failures after a child handle remain uncertain.
@@ -444,7 +467,7 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
         if (args.role && error instanceof Error) return fail(error.message)
         throw error
       } finally {
-        state.pending -= 1
+        release('pending')
         prune(runtime, sessionKey, state)
       }
     },

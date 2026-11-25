@@ -1,11 +1,93 @@
 import type { ChildTaskRecord } from '@agnes/core-child-control/child/types'
 import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { Inbox } from '@agnes/core-ledger/reduce/shapes'
+import type { JsonValue, SystemInput } from '@agnes/protocol'
 import { inboxEvent } from '../step/inbox.js'
 import type { SessionImpl } from '../step/session.js'
 import { childCompletionId } from './completion-notice.js'
+import { childFailureSuffix, clipText } from './failure.js'
 
 const COLLECTED = 'x/core/child-result-collected'
+
+export type BatchChildEntry = Record<string, JsonValue> & {
+  childKey?: string
+  commandId?: string
+  resultSeq?: number
+  status?: string
+  label?: string
+  summary?: string
+  continuable?: boolean
+  omitClosingText?: boolean
+  error?: { code?: string; message?: string }
+  handoff?: JsonValue
+}
+
+function batchChildSummary(child: BatchChildEntry): string {
+  if (typeof child.summary === 'string' && child.summary) return child.summary
+  const key = typeof child.childKey === 'string' && child.childKey ? child.childKey : 'child'
+  if (child.omitClosingText === true) return `Child ${key} reported to its parent.`
+  const status = typeof child.status === 'string' && child.status ? child.status : 'completed'
+  const label = typeof child.label === 'string' && child.label ? ` (${child.label})` : ''
+  const error =
+    status === 'failed' &&
+    child.error &&
+    typeof child.error === 'object' &&
+    !Array.isArray(child.error) &&
+    typeof child.error.code === 'string' &&
+    typeof child.error.message === 'string'
+      ? childFailureSuffix({ error: { code: child.error.code, message: child.error.message } })
+      : ''
+  const lead =
+    child.continuable === true
+      ? `Background child ${key}${label} finished its turn and is idle; it still accepts messages.`
+      : `Background child ${key}${label} ${status.replace('_', ' ')}${error}.`
+  const handoff =
+    typeof child.handoff === 'string'
+      ? child.handoff
+      : child.handoff &&
+          typeof child.handoff === 'object' &&
+          !Array.isArray(child.handoff) &&
+          typeof child.handoff.findings === 'string'
+        ? child.handoff.findings
+        : ''
+  return handoff ? `${lead} Result:\n${handoff}` : lead
+}
+
+export function buildCompletionBatch(children: readonly BatchChildEntry[]): {
+  summary: string
+  presentation: NonNullable<SystemInput['presentation']>
+} {
+  const items = children.map((child) => ({
+    status: typeof child.status === 'string' && child.status ? child.status : 'completed',
+    label:
+      typeof child.label === 'string' && child.label
+        ? child.label
+        : typeof child.childKey === 'string'
+          ? child.childKey.slice(-6)
+          : '',
+  }))
+  const status = items.some((item) => item.status === 'failed')
+    ? 'failed'
+    : items.some((item) => item.status === 'budget_stopped')
+      ? 'budget_stopped'
+      : items.length > 0 && items.every((item) => item.status === 'cancelled')
+        ? 'cancelled'
+        : 'completed'
+  return {
+    summary: clipText(children.map(batchChildSummary).join('\n'), 2048),
+    presentation: {
+      kind: 'child-completed',
+      status,
+      label: clipText(
+        items
+          .map((item) => item.label)
+          .filter(Boolean)
+          .join(' / '),
+        120,
+      ),
+    },
+  }
+}
 
 /** A result identity belongs to one resident turn or one terminal child outcome. */
 export async function childResultCollected(
@@ -57,18 +139,22 @@ function pruneChildFromInbox(
       continue
     }
     if (item.system.type === 'child-batch-completed') {
-      const data = item.system.data as { children?: Array<{ childKey?: string; commandId?: string }> } | null
+      const data = item.system.data as { children?: BatchChildEntry[] } | null
       const children = data?.children
       if (Array.isArray(children)) {
         const remaining = children.filter((child) => !matches(child))
         if (remaining.length !== children.length) {
           changed = true
           if (remaining.length > 0) {
+            const rebuilt = buildCompletionBatch(remaining)
             next.push({
               ...item,
+              content: [{ type: 'text', text: rebuilt.summary }],
               system: {
                 ...item.system,
-                data: { ...(data as Record<string, never>), children: remaining },
+                data: { ...(data as Record<string, JsonValue>), children: remaining },
+                summary: rebuilt.summary,
+                presentation: rebuilt.presentation,
               },
             })
           }
