@@ -8,6 +8,7 @@ import { redactSecrets } from '@agnes/extension-api'
 import { createCredentialStore, initializeHome } from '@agnes/host'
 import type { EventEnvelope, PackageOperationReceipt } from '@agnes/protocol'
 import { createClient, memoryJournal, unixTransport } from '@agnes/sdk'
+import { windowsTestHostEnv } from '../../../../tools/test-fixtures/windows-host-env.mjs'
 import { ensureJudgmentPayload } from '../../../package-manager/tools/ensure-judgment-payload.mjs'
 
 export const PROFILE = 'local-dev'
@@ -51,6 +52,8 @@ export async function judgmentDaemon(
 ) {
   await ensureJudgmentPayload()
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-judgment-e2e-')))
+  const home = join(root, 'home')
+  const workspace = join(root, 'workspace')
   let daemon: ChildProcess | undefined
   let exited: Promise<number | null> | undefined
   let sdk: Sdk | undefined
@@ -100,12 +103,13 @@ export async function judgmentDaemon(
   }
   const close = () => (closing ??= shutdown())
   try {
-    initializeHome(root, PROFILE)
+    initializeHome(home, PROFILE)
+    mkdirSync(workspace)
     if (options.tools) {
-      mkdirSync(join(root, 'source'))
-      writeFileSync(join(root, 'source', 'example.ts'), 'export const semanticSample = true\n')
+      mkdirSync(join(workspace, 'source'))
+      writeFileSync(join(workspace, 'source', 'example.ts'), 'export const semanticSample = true\n')
     }
-    await createCredentialStore({ root }).putApiKey('secret://jev/key', 'TEST-KEY-0123456789')
+    await createCredentialStore({ root: home }).putApiKey('secret://jev/key', 'TEST-KEY-0123456789')
     const model = (over: Record<string, unknown>) => ({
       name: over.id,
       reasoning: false,
@@ -137,7 +141,10 @@ export async function judgmentDaemon(
       { type: 'done', reason: 'toolUse' },
     ]
     if (options.scriptedTool)
-      writeFileSync(join(root, 'synthetic-rule.txt'), 'Synthetic record: pending review. No private data.\n')
+      writeFileSync(
+        join(workspace, 'synthetic-rule.txt'),
+        'Synthetic record: pending review. No private data.\n',
+      )
     const replies = options.tools
       ? [
           toolReply('find_relevant', { query: 'semantic sample', path: 'source' }),
@@ -156,12 +163,12 @@ export async function judgmentDaemon(
           ]
         : [reply(PROMISE_REPLY), reply(DONE_REPLY)]
     writeFileSync(
-      join(root, 'profiles', PROFILE, 'profile.yaml'),
+      join(home, 'profiles', PROFILE, 'profile.yaml'),
       JSON.stringify({
         name: PROFILE,
         computerUse: { enabled: false },
         limits: { 'worker.startup_ms': 120_000 },
-        adapters: { secrets: { kind: 'file', path: join(root, 'secrets') } },
+        adapters: { secrets: { kind: 'file', path: join(home, 'secrets') } },
         provider: {
           package: '@agnes/ai',
           catalog: { include: [] },
@@ -206,8 +213,14 @@ export async function judgmentDaemon(
         },
       }),
     )
-    daemon = spawn(process.execPath, ['--import', 'tsx', sourceDaemon, root, root], {
-      env: { PATH: process.env.PATH, TMPDIR: tmpdir(), AGH_HOME: root, NO_PROXY: '127.0.0.1,localhost' },
+    daemon = spawn(process.execPath, ['--import', 'tsx', sourceDaemon, home, workspace], {
+      env: {
+        ...windowsTestHostEnv(join(root, 'windows-user')),
+        PATH: process.env.PATH,
+        TMPDIR: tmpdir(),
+        AGH_HOME: home,
+        NO_PROXY: '127.0.0.1,localhost',
+      },
       stdio: ['ignore', 'ignore', 'pipe'],
     })
     exited = new Promise((resolve) => daemon!.once('exit', resolve))
@@ -228,7 +241,7 @@ export async function judgmentDaemon(
       }),
       'daemon boot',
     )
-    const owner = JSON.parse(readFileSync(join(root, 'daemon', 'owner.json'), 'utf8'))
+    const owner = JSON.parse(readFileSync(join(home, 'daemon', 'owner.json'), 'utf8'))
     const pipe = owner.socketPath.startsWith('\\\\.\\pipe\\')
     socketDirectory = pipe ? undefined : dirname(owner.socketPath)
     sdk = createClient({
@@ -294,13 +307,12 @@ export async function judgmentDaemon(
       sdk: client,
       operation,
       fake,
-      root,
       close,
       respond(next: FakeSystemOneBehaviour = {}, yes = 0.1) {
         behaviour = next
         probability = yes
       },
-      session: (name: string) => client.session.new({ cwd: root, sessionKey: `judgment-${name}` }),
+      session: (name: string) => client.session.new({ cwd: workspace, sessionKey: `judgment-${name}` }),
       async configure(value: Parameters<Sdk['packages']['config']['save']>[0]['value']) {
         const common = { profile: PROFILE, clientId: await client.clientId() }
         if (!installed) {

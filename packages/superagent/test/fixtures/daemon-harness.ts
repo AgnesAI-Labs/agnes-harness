@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createClient, memoryJournal } from '@agnes/sdk'
+import { windowsTestHostEnv } from '../../../../tools/test-fixtures/windows-host-env.mjs'
 import { killTree, trackRoot } from './process-tree.js'
 
 const repository = fileURLToPath(new URL('../../../../', import.meta.url))
@@ -59,6 +60,7 @@ export function hostFloor(home?: string): Record<string, string> {
     SystemRoot: process.env.SystemRoot,
     ComSpec: process.env.ComSpec,
     PATHEXT: process.env.PATHEXT,
+    ProgramFiles: process.env.ProgramFiles,
     TEMP: tmpdir(),
     TMP: tmpdir(),
     USERPROFILE: home ?? process.env.USERPROFILE,
@@ -254,24 +256,29 @@ export async function startScriptedModel(respond?: Respond) {
 }
 
 /**
- * Lays out a fresh home with the host's own initializer, which the daemon requires before a profile is
- * written. It runs in the daemon package, the one place that resolves `@agnes/host` for tests, in a child
+ * Lays out a fresh home and writes the loopback key using the Host's private credential store.
+ * It runs in the daemon package, the one place that resolves `@agnes/host` for tests, in a child
  * process that ends on its own, or is killed after `STEP_MS`, or by `onSpawn`'s owner.
  */
-function initializeHome(aghHome: string, tsx: string, onSpawn: (child: ChildProcess) => void): Promise<void> {
+function initializeHome(
+  aghHome: string,
+  tsx: string,
+  env: NodeJS.ProcessEnv,
+  onSpawn: (child: ChildProcess) => void,
+): Promise<void> {
+  const root = JSON.stringify(aghHome)
+  const script = [
+    "import { createCredentialStore, initializeHome } from '@agnes/host'",
+    `initializeHome(${root}, ${JSON.stringify(PROFILE)})`,
+    `await createCredentialStore({ root: ${root} }).putApiKey('secret://fixture/model', 'synthetic-loop-fixture')`,
+  ].join('\n')
   return new Promise((resolve, reject) => {
     const child = execFile(
       process.execPath,
-      [
-        '--import',
-        tsx,
-        '--input-type=module',
-        '-e',
-        `import { initializeHome } from '@agnes/host'; initializeHome(${JSON.stringify(aghHome)}, ${JSON.stringify(PROFILE)})`,
-      ],
+      ['--import', tsx, '--input-type=module', '-e', script],
       {
         cwd: join(repository, 'packages', 'daemon'),
-        env: { ...hostFloor(), PATH: process.env.PATH ?? '', TMPDIR: tmpdir() },
+        env,
         timeout: STEP_MS,
         killSignal: 'SIGKILL',
       },
@@ -284,8 +291,6 @@ function initializeHome(aghHome: string, tsx: string, onSpawn: (child: ChildProc
 
 function writeProfile(aghHome: string, baseUrl: string): void {
   const secrets = join(aghHome, 'secrets')
-  mkdirSync(join(secrets, 'fixture'), { recursive: true, mode: 0o700 })
-  writeFileSync(join(secrets, 'fixture', 'model'), 'synthetic-loop-fixture', { mode: 0o600 })
   const model = {
     id: 'loop-script',
     name: 'Scripted loop fixture',
@@ -368,6 +373,8 @@ export async function startDaemon(opts: {
   /** More variables of the daemon's environment, such as a GitHub token the operator's shell exports. */
   env?: Record<string, string>
 }) {
+  const workspace = `${opts.aghHome}-workspace`
+  const windowsEnv = windowsTestHostEnv(opts.home)
   const model = await startScriptedModel(opts.respond)
   const clientId = randomUUID()
   let child: ChildProcess | undefined
@@ -380,20 +387,21 @@ export async function startDaemon(opts: {
   let failStartup: (error: Error) => void = () => {}
   const workspaces = new Set<string>()
   const tsx = pathToFileURL(createRequire(join(repository, 'package.json')).resolve('tsx')).href
+  const env = {
+    ...windowsEnv,
+    ...opts.env,
+    PATH: opts.path,
+    HOME: opts.home,
+    TMPDIR: tmpdir(),
+    AGH_HOME: opts.aghHome,
+  }
 
   const launch = async () => {
     if (stopped) throw new Error('stopped before the daemon was spawned')
     stderr = ''
-    const spawned = spawn(process.execPath, ['--import', tsx, sourceDaemon, opts.aghHome, opts.aghHome], {
+    const spawned = spawn(process.execPath, ['--import', tsx, sourceDaemon, opts.aghHome, workspace], {
       cwd: repository,
-      env: {
-        ...hostFloor(opts.home),
-        ...opts.env,
-        PATH: opts.path,
-        HOME: opts.home,
-        TMPDIR: tmpdir(),
-        AGH_HOME: opts.aghHome,
-      },
+      env,
       stdio: ['ignore', 'ignore', 'pipe'],
     })
     child = spawned
@@ -539,11 +547,17 @@ export async function startDaemon(opts: {
   })
   failure.catch(() => {})
   const startup = (async () => {
-    await initializeHome(opts.aghHome, tsx, (spawned) => {
-      initializer = spawned
-      trackRoot(spawned)
-      if (stopped) void killTree(spawned, 'SIGKILL', 5_000)
-    })
+    mkdirSync(workspace, { recursive: true })
+    await initializeHome(
+      opts.aghHome,
+      tsx,
+      { ...windowsEnv, PATH: process.env.PATH, TMPDIR: tmpdir() },
+      (spawned) => {
+        initializer = spawned
+        trackRoot(spawned)
+        if (stopped) void killTree(spawned, 'SIGKILL', 5_000)
+      },
+    )
     if (stopped) throw new Error('daemon stopped during startup')
     writeProfile(opts.aghHome, model.baseUrl)
     await launch()

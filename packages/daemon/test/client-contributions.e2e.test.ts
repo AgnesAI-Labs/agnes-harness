@@ -9,6 +9,7 @@ import type { PackageOperationReceipt } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { expect, it } from 'vitest'
+import { windowsTestHostEnv } from '../../../tools/test-fixtures/windows-host-env.mjs'
 import { stopDaemon } from '../src/supervisor/control.js'
 import { childDaemonTransport } from './child-daemon-transport.js'
 
@@ -44,7 +45,12 @@ it('enables single and multiple client contributions and retains their roster af
         workspace,
       ],
       {
-        env: { PATH: process.env.PATH, TMPDIR: tmpdir(), AGH_HOME: home },
+        env: {
+          ...windowsTestHostEnv(join(root, 'windows-user')),
+          PATH: process.env.PATH,
+          TMPDIR: tmpdir(),
+          AGH_HOME: home,
+        },
         stdio: ['ignore', 'ignore', 'pipe'],
       },
     )
