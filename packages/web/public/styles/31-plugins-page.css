@@ -302,6 +302,12 @@
     margin: 0;
     overflow-wrap: anywhere;
   }
+  .community-market-facts .community-market-verdict {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--s8);
+  }
   .community-market-compatibility {
     margin-block-start: var(--s24);
     color: var(--agnes-text-secondary);

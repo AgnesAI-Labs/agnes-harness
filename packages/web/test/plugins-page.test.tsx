@@ -1151,10 +1151,20 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
         {
           version: '1.0.0',
           source: { type: 'git', ref: `git:https://github.com/author/repo-${id}.git#${'a'.repeat(40)}` },
+          ...(id === 0
+            ? {
+                provides: ['tool', 'mcp'],
+                publishTimestamp: 1_700_000_000,
+                compatibility: { kind: 'declared-compatible', range: '>=1.2.0' },
+              }
+            : { compatibility: { kind: 'undeclared' } }),
         },
         {
           version: '2.0.0',
           source: { type: 'git', ref: `git:https://github.com/author/repo-${id}.git#${'b'.repeat(40)}` },
+          provides: ['loop'],
+          publishTimestamp: 1_710_000_000,
+          compatibility: { kind: 'incompatible', range: '^9.0.0' },
         },
       ],
     })),
@@ -1162,12 +1172,14 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
   const fetcher = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('No external fetch expected'))
   const catalog = vi.fn(async () => ({ items: [], nextCursor: null, community }))
   const inspect = vi.fn()
+  let installAllowed = true
   const loadCatalog = vi.fn(async (): Promise<void> => {
     view.state.loading = true
   })
   const view = {
     state: {
       community,
+      communityVersion: 3,
       catalog: [
         {
           id: '@example/official',
@@ -1192,8 +1204,9 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
     kind: '',
     t: (key: string) => key,
     purposeText: (key: string) => key,
+    render: () => renderMarket(),
     can: () => true,
-    canEffect: () => true,
+    canEffect: () => installAllowed,
     inspecting: () => false,
     inspectFailure: () => undefined,
     primaryAction: () => ({ disabled: false, run: () => undefined }),
@@ -1255,12 +1268,22 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
     expect(host.textContent).not.toContain('Stars')
     expect(details()?.textContent).toContain('<script>not markup</script>')
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('community.reviewRequired')
+    expect(details()?.textContent).toContain('community.compatibility.declared-compatible')
+    expect(details()?.textContent).toContain('kind.tool · kind.mcp')
+    expect(details()?.querySelector('time')?.dateTime).toBe('2023-11-14T22:13:20.000Z')
+    const firstPin = 'a'.repeat(40)
+    expect(
+      details()?.querySelector(`a[href="https://github.com/author/repo-0/commit/${firstPin}"]`)?.textContent,
+    ).toBe(firstPin)
     await act(async () =>
       document.querySelector<HTMLButtonElement>('[aria-label="community.close"]')?.click(),
     )
     await vi.waitFor(() => expect(details()).toBeNull())
     await vi.waitFor(() => expect(document.activeElement).toBe(views[0]))
     await act(async () => views[1]?.click())
+    expect(details()?.textContent).toContain('community.compatibility.undeclared')
+    expect(details()?.textContent).toContain('community.notRecorded')
+    expect(details()?.querySelector('time')).toBeNull()
     const picker = details()!.querySelector('[data-testid="community-version-picker"]')!
     await act(async () => {
       picker.querySelector('input')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
@@ -1269,15 +1292,52 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
       (entry) => entry.textContent === '2.0.0',
     )!
     await act(async () => option.click())
-    const check = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
-      (button) => button.textContent === 'community.check',
-    )
+    expect(details()?.textContent).toContain('community.compatibility.incompatible')
+    expect(details()?.textContent).toContain('^9.0.0')
+    expect(details()?.textContent).toContain('kind.loop')
+    expect(details()?.textContent).not.toContain('community.typeUnknown')
+    expect(details()?.querySelector('time')?.dateTime).toBe('2024-03-09T16:00:00.000Z')
+    const secondPin = 'b'.repeat(40)
+    expect(details()?.querySelector(`a[href$="/commit/${secondPin}"]`)?.textContent).toBe(secondPin)
+    expect(
+      document.querySelector('[role="dialog"] a[href="https://github.com/author/repo-1/releases"]'),
+    ).not.toBeNull()
+
+    installAllowed = false
+    flushSync(renderMarket)
+    const checkAction = () =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+        (button) => button.textContent === 'community.check',
+      )
+    expect(checkAction()?.disabled).toBe(true)
+    await act(async () => checkAction()?.click())
+    expect(inspect).not.toHaveBeenCalled()
+    installAllowed = true
+    view.state.community = {
+      ...community,
+      items: community.items.map((row) => ({
+        ...row,
+        ...(row.versions
+          ? { versions: row.versions.map(({ version, source }) => ({ version, source })) }
+          : {}),
+      })),
+    }
+    view.state.communityVersion = 2
+    flushSync(renderMarket)
+    expect(details()?.textContent).toContain('community.unverified')
+    expect(details()?.textContent).not.toContain('^9.0.0')
+    expect(details()?.querySelector('time')).toBeNull()
+    expect(details()?.querySelector(`a[href$="/commit/${secondPin}"]`)?.textContent).toBe(secondPin)
+    const check = checkAction()
     await act(async () => check?.click())
     expect(inspect).toHaveBeenCalledWith(
       { type: 'git', ref: `git:https://github.com/author/repo-1.git#${'b'.repeat(40)}` },
       'install',
       check,
     )
+    view.state.community = community
+    view.state.communityVersion = 3
+    flushSync(renderMarket)
     await act(async () => notifyTail!(true))
     expect(communityCards()).toHaveLength(24)
     await act(async () => notifyTail!(false))
@@ -1312,8 +1372,34 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
 
     view.kind = 'tool'
     flushSync(renderMarket)
+    expect(communityCards()).toHaveLength(1)
+    expect(communityCards()[0]?.textContent).toContain('author/repo-0')
+    view.kind = 'mcp'
+    flushSync(renderMarket)
+    expect(communityCards()).toHaveLength(1)
+    expect(communityCards()[0]?.textContent).toContain('author/repo-0')
+    view.kind = 'loop'
+    flushSync(renderMarket)
     expect(communityCards()).toHaveLength(0)
-    view.kind = ''
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="plugin-filter"]')?.click())
+    const capability = () => document.querySelector<HTMLInputElement>('input[aria-label="kind.filter"]')
+    await vi.waitFor(() => expect(capability()).not.toBeNull())
+    const selectCapability = async (label: string) => {
+      await act(async () => capability()?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+      const option = [...document.querySelectorAll<HTMLElement>('.ant-select-item-option')].find(
+        (entry) => entry.textContent === label,
+      )
+      expect(option).toBeDefined()
+      await act(async () => option?.click())
+    }
+    await selectCapability('community.typeUnknown')
+    expect(communityCards()).toHaveLength(12)
+    expect(communityCards()[0]?.textContent).toContain('author/repo-1')
+    view.query = 'repo-0'
+    flushSync(renderMarket)
+    expect(communityCards()).toHaveLength(0)
+    view.query = ''
+    await selectCapability('kind.all')
     flushSync(renderMarket)
     expect(communityCards()).toHaveLength(12)
     await act(async () => notifyTail!(true))

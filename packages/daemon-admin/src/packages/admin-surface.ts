@@ -16,12 +16,15 @@ import {
   PACKAGE_ADMIN_PERMISSIONS,
   type PackageAdminContext,
   type PackageAdminPermission,
+  type PackageCatalogListParams,
+  type PackageCatalogPage,
   type RpcError,
   RuntimeAdminSnapshot,
   rpcError,
   validateAgainst,
   validatePackageAdminCall,
   validatePackageAdminData,
+  validatePackageCatalogSnapshotVersion,
 } from '@agnes/protocol'
 import {
   DiagnosticsExportParams,
@@ -126,6 +129,17 @@ export type AdminSurfaceOptions = {
 
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+function validCatalogProjection(params: PackageCatalogListParams, page: PackageCatalogPage): boolean {
+  if (page.community !== undefined && params.includeCommunity !== true) return false
+  if (page.communityIndex === undefined) return true
+  if (params.communityVersion === 2) return validatePackageCatalogSnapshotVersion(page, 2)
+  // The launcher may have negotiated v2 after the browser sent its request with a stale v3 context.
+  return (
+    params.communityVersion === 3 &&
+    (validatePackageCatalogSnapshotVersion(page, 3) || validatePackageCatalogSnapshotVersion(page, 2))
+  )
+}
 
 const packageIdPattern =
   /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?)$/
@@ -895,7 +909,14 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
         })
         const context: PackageAdminContext = {
           ...configuredContext,
-          features: [...new Set([...(configuredContext.features ?? []), ...backendFeatures])],
+          features: [
+            ...new Set([
+              ...(configuredContext.features ?? []).filter(
+                (feature) => !feature.startsWith('packages.community-discovery.'),
+              ),
+              ...backendFeatures,
+            ]),
+          ],
           permissions: readOnly
             ? configuredPermissions.filter(
                 (permission) => permission === 'packages.read' || permission === 'credentials.read',
@@ -957,7 +978,11 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
           return true
         }
         const result = await options.invoke(name, body)
-        if (!validatePackageAdminCall(method, 'result', result).ok) {
+        if (
+          !validatePackageAdminCall(method, 'result', result).ok ||
+          (method === '_agnes/v1/packages.catalog.list' &&
+            !validCatalogProjection(body as PackageCatalogListParams, result as PackageCatalogPage))
+        ) {
           error(response, 502, 'E_ADMIN_RESPONSE', '', responseCause(`result/${name}`))
           return true
         }

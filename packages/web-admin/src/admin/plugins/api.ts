@@ -30,14 +30,16 @@ import {
   validateAgainst,
   validatePackageAdminCall,
   validatePackageAdminData,
+  validatePackageCatalogSnapshotVersion,
 } from '@agnes/protocol'
 import { appServerErrorMessage } from '@agnes/web-ui'
 import type { AdminContext, AdminError, AdminSurfaceLinksResult } from './types.js'
 
 export const ADMIN_API_ROOT = '/admin/plugins/api'
 
-export type AdminCatalogPage = Omit<PackageCatalogPage, 'community'> & {
+export type AdminCatalogPage = Pick<PackageCatalogPage, 'items' | 'nextCursor'> & {
   community?: PackageCatalogPage['communityIndex']
+  communityVersion?: 2 | 3 | undefined
 }
 
 type FetchLike = typeof fetch
@@ -539,23 +541,32 @@ export class PluginAdminApi {
   }
 
   async catalog(query?: string, cursor?: string): Promise<AdminCatalogPage> {
-    const v2 = this.#context.features?.includes('packages.community-discovery.v2')
+    const features = this.#context.features
+    const version = features?.includes('packages.community-discovery.v3')
+      ? 3
+      : features?.includes('packages.community-discovery.v2')
+        ? 2
+        : undefined
+    const legacy = version === undefined && features?.includes('packages.community-discovery.v1')
     const result = await this.#post<PackageCatalogPage>('catalog/list', {
       profile: this.#context.profile,
       ...(query ? { query } : {}),
       ...(cursor ? { cursor } : {}),
       limit: 50,
-      ...(v2
-        ? { communityVersion: 2 }
-        : this.#context.features?.includes('packages.community-discovery.v1')
-          ? { includeCommunity: true }
-          : {}),
+      ...(version !== undefined ? { communityVersion: version } : legacy ? { includeCommunity: true } : {}),
     })
     const { community, communityIndex, ...page } = result
-    return {
-      ...page,
-      ...(v2 ? (communityIndex ? { community: communityIndex } : {}) : community ? { community } : {}),
+    if (version !== undefined && communityIndex) {
+      // An old overview does not prevent the BFF from downgrading against its live daemon.
+      if (version === 3 && !communityIndex.items.some((item) => item.versions?.length))
+        return { ...page, community: communityIndex }
+      if (version === 3 && validatePackageCatalogSnapshotVersion(result, 3))
+        return { ...page, community: communityIndex, communityVersion: 3 }
+      if (validatePackageCatalogSnapshotVersion(result, 2))
+        return { ...page, community: communityIndex, communityVersion: 2 }
+      throw invalidSelection()
     }
+    return legacy && community ? { ...page, community } : page
   }
 
   async catalogGet(id: string, version?: string): Promise<PackageCatalogDescriptor> {

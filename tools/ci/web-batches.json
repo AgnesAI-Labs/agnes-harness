@@ -142,7 +142,7 @@
       },
       {
         "id": "main-22",
-        "args": ["feedback.spec.ts", "plugin-purpose.spec.ts"],
+        "args": ["feedback.spec.ts", "plugin-purpose.spec.ts", "community-market-metadata.spec.ts"],
         "widths": "",
         "timeoutMinutes": 10
       },
@@ -373,7 +373,12 @@
       },
       {
         "id": "main-6",
-        "args": ["plugin-purpose.spec.ts", "prompt-trace.spec.ts", "session-activity.spec.ts"],
+        "args": [
+          "plugin-purpose.spec.ts",
+          "prompt-trace.spec.ts",
+          "session-activity.spec.ts",
+          "community-market-metadata.spec.ts"
+        ],
         "widths": "",
         "timeoutMinutes": 10
       },

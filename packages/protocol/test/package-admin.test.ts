@@ -1,16 +1,21 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
+import { PackageSource } from '../gen/ts/package-admin.js'
 import {
   canAccessPackageAdmin,
   METHODS,
   PACKAGE_ADMIN_METHODS,
   PACKAGE_ADMIN_PERMISSIONS,
   type PackageAdminMethodName,
+  type PackageCatalogPage,
   projectClientModuleRows,
+  validateAgainst,
   validateMethod,
   validatePackageAdminCall,
   validatePackageAdminData,
+  validatePackageCatalogSnapshotVersion,
 } from '../src/index.js'
 import { runFixtureFiles } from '../tools/conformance-core.js'
 
@@ -327,7 +332,7 @@ describe('PM4 management contracts', () => {
   })
 })
 
-it('keeps the large index response budget scoped to catalogs and rejects unnegotiated versions', () => {
+it('keeps the large index response budget scoped to catalogs and accepts only supported opt-ins', () => {
   const snapshot = {
     state: 'ready',
     lastSuccessAt: null,
@@ -353,10 +358,72 @@ it('keeps the large index response budget scoped to catalogs and rejects unnegot
       communityVersion: 2,
     }).ok,
   ).toBe(true)
-  expect(
-    validatePackageAdminCall('_agnes/v1/packages.catalog.list', 'params', {
-      profile: 'local-dev',
-      communityVersion: 3,
-    }).ok,
-  ).toBe(false)
+  for (const invalid of [
+    { profile: 'local-dev', communityVersion: 4 },
+    { profile: 'local-dev', communityVersion: 3, includeCommunity: false },
+  ]) {
+    expect(validatePackageAdminCall('_agnes/v1/packages.catalog.list', 'params', invalid).ok).toBe(false)
+    expect(validateMethod('_agnes/v1/packages.catalog.list', 'params', invalid).ok).toBe(false)
+  }
+  const v3 = { profile: 'local-dev', communityVersion: 3 }
+  expect(validatePackageAdminCall('_agnes/v1/packages.catalog.list', 'params', v3).ok).toBe(true)
+  expect(validateMethod('_agnes/v1/packages.catalog.list', 'params', v3).ok).toBe(true)
+})
+
+it('keeps indexed version projections closed and requires compatibility only on v3', () => {
+  // The version validator as generated before v3, independent of the new union.
+  const oldV2Version = Type.Object(
+    { version: Type.String({ minLength: 1, maxLength: 128 }), source: PackageSource },
+    { additionalProperties: false },
+  )
+  const v2 = {
+    version: '1.0.0',
+    source: { type: 'git' as const, ref: `git:https://github.com/acme/p.git#${'a'.repeat(40)}` },
+  }
+  const v3 = {
+    ...v2,
+    provides: ['tool', 'skills'] as const,
+    publishTimestamp: 1,
+    compatibility: { kind: 'declared-compatible' as const, range: '^1.0.0' },
+  }
+  const page = (versions: unknown[]) => ({
+    items: [],
+    nextCursor: null,
+    communityIndex: {
+      state: 'ready',
+      lastSuccessAt: null,
+      nextAttemptAt: null,
+      error: null,
+      totalReported: 1,
+      items: [{ id: 'plugin', fullName: 'acme/p', description: '', versions }],
+    },
+  })
+  expect(validateAgainst(oldV2Version, v2).ok).toBe(true)
+  expect(validateAgainst(oldV2Version, v3).ok).toBe(false)
+  for (const [expected, version] of [
+    [2, v2],
+    [3, v3],
+  ] as const) {
+    const wire = page([version])
+    expect(validateMethod('_agnes/v1/packages.catalog.list', 'result', wire).ok).toBe(true)
+    expect(validatePackageCatalogSnapshotVersion(wire as PackageCatalogPage, expected)).toBe(true)
+    expect(validatePackageCatalogSnapshotVersion(wire as PackageCatalogPage, expected === 2 ? 3 : 2)).toBe(
+      false,
+    )
+  }
+  const mixed = page([v2, v3]) as PackageCatalogPage
+  expect(validatePackageCatalogSnapshotVersion(mixed, 2)).toBe(false)
+  expect(validatePackageCatalogSnapshotVersion(mixed, 3)).toBe(false)
+  for (const invalid of [
+    { ...v2, provides: ['tool'] },
+    { ...v3, provides: ['tool', 'tool'] },
+    { ...v3, publishTimestamp: 253402300800 },
+    { ...v3, compatibility: { kind: 'incompatible' } },
+    { ...v3, compatibility: { kind: 'unknown', range: false } },
+    { ...v3, compatibility: { kind: 'undeclared', range: '*' } },
+    { ...v3, compatibility: { kind: 'supported' } },
+    { ...v3, aghEngine: { kind: 'range', range: '*' } },
+  ]) {
+    expect(validatePackageAdminData('PackageCatalogPage', page([invalid])).ok).toBe(false)
+  }
 })
