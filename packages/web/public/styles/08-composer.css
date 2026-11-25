@@ -407,29 +407,43 @@
   }
   .composer-child-head {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
-    gap: var(--s4) var(--s8);
+    gap: var(--s8);
     min-width: 0;
     padding: var(--s4) var(--s8) var(--s4) var(--s12);
   }
-  /* The name is a button that opens the child's terminal tab, with clear hover affordance. */
+  /* Left-aligned clickable title; overrides Button's inline-flex centering so the leading words never clip. */
+  .composer-child-name.agnes-ui-button,
   .composer-child-name {
-    flex: 0 1 20rem;
+    flex: 1 1 0;
     min-width: 0;
+    max-width: 100%;
+    height: auto;
+    min-height: 0;
+    justify-content: flex-start;
     overflow: hidden;
-    padding: 0;
+    padding: var(--s2) 0;
     border: 0;
     background: none;
     color: var(--agnes-text-primary);
     font: inherit;
     font-weight: var(--font-weight-medium);
     text-align: start;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     cursor: pointer;
   }
+  .composer-child-name > span,
+  .composer-child-title {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: start;
+  }
   .composer-child-name:is(:hover, :focus-visible) {
+    background: none;
     color: var(--agnes-accent-primary);
     text-decoration: underline;
   }
@@ -472,23 +486,18 @@
     background: var(--agnes-status-danger-bg);
   }
   .composer-child-metrics {
-    flex: 1 1 10rem;
-    min-width: 0;
+    flex: none;
     margin: 0;
-    overflow: hidden;
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
-    text-align: end;
-    text-overflow: ellipsis;
     white-space: nowrap;
   }
   .composer-child-actions {
     display: inline-flex;
     align-items: center;
-    gap: var(--s4);
+    gap: var(--s2);
     flex: none;
-    margin-inline-start: auto;
   }
   .composer-child-stop.agh-btn,
   .composer-child-steer.agh-btn {

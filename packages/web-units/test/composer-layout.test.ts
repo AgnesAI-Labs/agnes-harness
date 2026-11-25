@@ -742,15 +742,17 @@ it.each(['running', 'idle', 'interrupted', 'completed', 'failed', 'cancelled'] a
     )
     expect(host.querySelector('[data-testid="child-stop"]') !== null).toBe(status === 'running')
     const steerToggle = host.querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')
-    expect(steerToggle !== null).toBe(status === 'running')
-    if (status === 'running') {
-      expect(host.querySelector('[data-testid="child-continue-message"]')).toBeNull()
+    expect(steerToggle !== null).toBe(active)
+    expect(host.querySelector('[data-testid="child-continue-message"]')).toBeNull()
+    if (active) {
       act(() => {
         steerToggle?.click()
       })
-      expect(host.querySelector('[data-testid="child-continue"]')?.textContent).toBe('发送指引')
+      expect(host.querySelector('[data-testid="child-continue"]')?.textContent).toBe(
+        status === 'running' ? '发送' : '继续',
+      )
     } else {
-      expect(host.querySelector('[data-testid="child-continue"]') !== null).toBe(active)
+      expect(host.querySelector('[data-testid="child-continue"]')).toBeNull()
     }
     const metrics = host.querySelector('[data-testid="child-control-metrics"]')?.textContent
     expect(metrics).toContain('15')
@@ -788,7 +790,7 @@ it.each(['running', 'idle', 'interrupted', 'completed', 'failed', 'cancelled'] a
   },
 )
 
-it('pins active children above folded cancelled history and renders task labels', () => {
+it('pins live children above folded idle and cancelled history and strips markdown from labels', () => {
   const { host } = mount(
     {
       onChildControl: async () => {},
@@ -808,8 +810,8 @@ it('pins active children above folded cancelled history and renders task labels'
           parentId: 'parent',
           providerId: 'in-process',
           label: '旧任务【北京】',
-          status: 'cancelled',
-          controls: { stop: false, continue: false },
+          status: 'idle',
+          controls: { stop: false, continue: true },
           totalTokens: 100,
           durationMs: 2000,
         },
@@ -817,7 +819,7 @@ it('pins active children above folded cancelled history and renders task labels'
           id: 'parent/new1',
           parentId: 'parent',
           providerId: 'in-process',
-          label: '调研【北京】的长期宜居情况',
+          label: '调研【北京】宜居情况。**重要：测试**',
           status: 'running',
           controls: { stop: true, continue: true },
           totalTokens: 200,
@@ -827,15 +829,15 @@ it('pins active children above folded cancelled history and renders task labels'
     },
   )
   expect(host.querySelector('[data-testid="child-control-tree"] .agh-disclosure-meta')?.textContent).toBe(
-    '1 个运行中 · 1 个已结束',
+    '1 个运行中 · 1 个其他',
   )
   const topList = host.querySelector('.composer-children-list')
   expect(topList?.querySelectorAll('[data-testid="child-control-row"]')).toHaveLength(1)
-  expect(topList?.querySelector('.composer-child-name')?.textContent).toBe('调研【北京】的长期宜居情况')
+  expect(topList?.querySelector('.composer-child-name')?.textContent).toBe('调研【北京】宜居情况。重要：测试')
   const history = host.querySelector('[data-testid="child-control-history"]')
   expect(history).not.toBeNull()
   expect(history?.hasAttribute('open')).toBe(false)
-  expect(history?.textContent).toContain('已结束 / 已取消（1）')
+  expect(history?.textContent).toContain('空闲 / 已结束（1）')
 })
 
 it('asks the terminal panel for the child job when its name is clicked', () => {

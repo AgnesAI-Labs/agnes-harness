@@ -27,14 +27,17 @@ const CHILD_MARK: Record<ChildStatus, { dot: StatusDotTone; tag?: 'ok' | 'warn' 
   interrupted: { dot: 'warning', tag: 'warn' },
 }
 const WORKING = new Set<ChildStatus>(['starting', 'running'])
-const TERMINAL = new Set<ChildStatus>(['completed', 'failed', 'cancelled'])
+const LIVE = new Set<ChildStatus>(['starting', 'running', 'waiting_approval', 'paused', 'disconnected'])
 
 /**
- * A child prefers its human-readable task label when present; otherwise falls back to its
- * provider/subagent label with the trailing id segment so two children stay distinguishable.
+ * A child prefers its human-readable task label when present (stripped of raw markdown markers);
+ * otherwise falls back to its provider/subagent label with the trailing id segment.
  */
 function childName(child: SessionControlledChild, t: ComposerDependencies['translate']): string {
-  const label = child.label?.trim()
+  const label = child.label
+    ?.replace(/[*_`#]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
   if (label) return label
   const name = child.providerId === 'in-process' ? t('composer.child.name') : child.providerId
   return `${name} · ${child.id.slice(-6)}`
@@ -50,8 +53,8 @@ function openChildJob(target: EventTarget, childId: string): void {
 
 /**
  * The children a session started, above the composer: one row per workflow or subagent session,
- * nested under its parent. Active children stay pinned on top; finished/cancelled history folds
- * underneath when active work is present so cancelled retries never crowd out live tasks.
+ * nested under its parent. Live children stay pinned on top; idle/finished/cancelled history folds
+ * underneath when live work is running so prior batches never crowd out active tasks.
  */
 export function ChildControlTree({
   nodes,
@@ -66,14 +69,14 @@ export function ChildControlTree({
 }) {
   const ids = new Set(nodes.map((child) => child.id))
   const working = nodes.filter((child) => WORKING.has(child.status)).length
-  const finished = nodes.filter((child) => TERMINAL.has(child.status)).length
+  const settled = nodes.filter((child) => !LIVE.has(child.status)).length
   const roots = nodes.filter((child) => !ids.has(child.parentId))
-  const activeRoots = roots.filter((child) => !TERMINAL.has(child.status))
-  const terminalRoots = roots.filter((child) => TERMINAL.has(child.status))
-  const foldHistory = activeRoots.length > 0 && terminalRoots.length > 0
+  const liveRoots = roots.filter((child) => LIVE.has(child.status))
+  const settledRoots = roots.filter((child) => !LIVE.has(child.status))
+  const foldHistory = liveRoots.length > 0 && settledRoots.length > 0
   const meta =
-    working && finished
-      ? t('composer.child.summaryMixed', { working, done: finished })
+    working && settled
+      ? t('composer.child.summaryMixed', { working, done: settled })
       : working
         ? t('composer.child.workingCount', { count: working })
         : undefined
@@ -106,16 +109,16 @@ export function ChildControlTree({
       meta={meta}
     >
       <ul className="composer-children-list">
-        {(foldHistory ? activeRoots : [...activeRoots, ...terminalRoots]).map((child) => renderChild(child))}
+        {(foldHistory ? liveRoots : [...liveRoots, ...settledRoots]).map((child) => renderChild(child))}
       </ul>
       {foldHistory ? (
         <Disclosure
           variant="plain"
           className="composer-children-history"
           data-testid="child-control-history"
-          summary={t('composer.child.finishedGroup', { count: terminalRoots.length })}
+          summary={t('composer.child.finishedGroup', { count: settledRoots.length })}
         >
-          <ul className="composer-children-list">{terminalRoots.map((child) => renderChild(child))}</ul>
+          <ul className="composer-children-list">{settledRoots.map((child) => renderChild(child))}</ul>
         </Disclosure>
       ) : null}
     </Disclosure>
@@ -139,7 +142,7 @@ export function ChildControlRow({
   const [error, setError] = useState('')
   const mark = CHILD_MARK[child.status]
   const working = WORKING.has(child.status)
-  const showReply = child.controls.continue && (!working || replyOpen)
+  const showReply = child.controls.continue && replyOpen
   const submit = (action: 'stop' | 'continue') => {
     if (pending) return
     setPending(true)
@@ -173,11 +176,11 @@ export function ChildControlRow({
           title={child.label ? `${child.label} (${child.id})` : child.id}
           onClick={(event) => openChildJob(event.currentTarget, child.id)}
         >
-          {childName(child, t)}
+          <span className="composer-child-title">{childName(child, t)}</span>
         </Button>
         {child.label ? <span className="composer-child-id">{child.id.slice(-6)}</span> : null}
         <span role="status" className="composer-child-state" data-tone={mark.tag}>
-          {t('composer.child.' + child.status)}
+          {t(`composer.child.${child.status}`)}
         </span>
         <p className="composer-child-metrics" data-testid="child-control-metrics">
           {t('composer.child.metrics', {
@@ -188,7 +191,7 @@ export function ChildControlRow({
           })}
         </p>
         <div className="composer-child-actions">
-          {child.controls.continue && working ? (
+          {child.controls.continue ? (
             <Button
               htmlType="button"
               size="small"
@@ -199,7 +202,7 @@ export function ChildControlRow({
               disabled={disabled || pending}
               onClick={() => setReplyOpen((open) => !open)}
             >
-              {t('composer.child.steer')}
+              {t(working ? 'composer.child.steer' : 'composer.child.continue')}
             </Button>
           ) : null}
           {child.controls.stop ? (
