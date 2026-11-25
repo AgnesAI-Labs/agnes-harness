@@ -78,10 +78,12 @@ export async function humanChildState(
 ) {
   const projected = projectChildControls(record)
   const capabilities = child?.d.loopFactory.controls
+  const label = record.inputText.trim().split('\n', 1)[0]?.slice(0, 80)
   return {
     id: record.childKey,
     parentId: parent.key,
     providerId: 'in-process',
+    ...(label ? { label } : {}),
     ...projected,
     controls: {
       ...projected.controls,

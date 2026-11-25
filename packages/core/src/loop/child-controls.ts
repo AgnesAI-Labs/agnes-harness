@@ -36,6 +36,7 @@ export async function controlledChildTree(s: SessionImpl): Promise<SessionContro
       id: child.id,
       parentId: s.key,
       providerId: child.providerId,
+      ...(child.label ? { label: child.label } : {}),
       status: child.status,
       controls: {
         stop:

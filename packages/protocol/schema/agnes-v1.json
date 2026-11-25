@@ -705,6 +705,9 @@
         "providerId": {
           "type": "string"
         },
+        "label": {
+          "type": "string"
+        },
         "status": {
           "enum": [
             "starting",
