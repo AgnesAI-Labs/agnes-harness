@@ -1,5 +1,10 @@
 import { namesWorkspace, type RefinementSettingsView, type WorkspaceSaveRequest } from '@agnes/core'
-import type { MemoryParagraphPort, MemorySession, MemorySource } from '@agnes/extension-api'
+import type {
+  MemoryParagraphList,
+  MemoryParagraphPort,
+  MemorySession,
+  MemorySource,
+} from '@agnes/extension-api'
 import {
   PROMOTION_CONFIRMATIONS,
   type RefinementRegistry,
@@ -210,18 +215,19 @@ export function createUserSave(deps: UserSaveDeps): UserSave {
     }
     verdicts['memory-mode'] = 'pass'
     // 6. Capacity, known once the change is proposed.
-    let inFile: ReadonlyMap<string, string>
+    let listed: MemoryParagraphList
     try {
-      inFile = new Map((await port.list()).paragraphs.map((entry) => [entry.id, entry.text] as const))
+      listed = await port.list()
     } catch {
       return refuse(registry, read, 'unavailable', { ...verdicts, capacity: 'fail' })
     }
     if (request.entry.replaces?.layer === 'workspace')
       return refuse(registry, read, 'conflict', { ...verdicts, capacity: 'fail' })
     const replaces = request.entry.replaces?.paragraphId
-    const placed = placement(snapshot, base.source, text, deps.clock(), inFile, replaces)
+    const placed = placement(snapshot, base.source, text, deps.clock(), listed, 'user', replaces)
     if (placed === 'busy' || placed === 'gone')
       return refuse(registry, read, 'conflict', { ...verdicts, capacity: 'fail' })
+    if (placed === 'human-edited') return refuse(registry, read, placed, { ...verdicts, rules: 'fail' })
     if ('existing' in placed) {
       const receipt: SaveReceipt = {
         ...read,
@@ -240,12 +246,11 @@ export function createUserSave(deps: UserSaveDeps): UserSave {
       registry,
       memory,
       port,
-      paragraph: { id: placed.id, text },
+      ...placed,
       receipt: { ...read, steps: steps({ ...verdicts, capacity: 'pass' }) },
       switchCurrent: () => switchAt(request.settingsRevision),
       clock: deps.clock,
       decided: { revision: snapshot.revision },
-      ...(placed.untouched ? { untouched: placed.untouched } : {}),
       inFlight,
     })
     if ('stale' in result) return refuse(registry, read, 'conflict', { ...verdicts, capacity: 'fail' })

@@ -336,6 +336,7 @@ describe('the save-to-workspace decision order', () => {
       id,
       source: receipt.source,
       contentHash: normalizedContentHash(TEXT),
+      exactHash: createHash('sha256').update(TEXT).digest('hex'),
       reviewAfter: T0 + REVIEW_AFTER_MS,
       state: 'active',
       fileHash: hash,
@@ -372,7 +373,13 @@ describe('the save-to-workspace decision order', () => {
     const ids = markedIds(await ws.file())
     expect(ids).toEqual([(first.target as { paragraphId: string }).paragraphId])
     expect(await ws.file()).toContain('Run pnpm lint and pnpm typecheck first.')
-    expect(ws.registry().read().paragraphs).toHaveLength(1)
+    expect(ws.registry().read().paragraphs).toMatchObject([
+      {
+        exactHash: createHash('sha256')
+          .update(`${TITLE}\nRun pnpm lint and pnpm typecheck first.`)
+          .digest('hex'),
+      },
+    ])
   })
 
   it('a third-party provider without paragraphs refuses with unsupported-provider', async () => {
@@ -552,6 +559,27 @@ describe('crash safety', () => {
     }
   })
 
+  it.each(['propose', 'commit'] as const)(
+    'keeps an unrecognized %s error distinct from a known refusal',
+    async (stage) => {
+      const ws = await workspace()
+      ws.setWrap(
+        portWrap(() => ({
+          [stage]: async () => {
+            throw Object.assign(new Error('provider error'), { code: 'toString' })
+          },
+        })),
+      )
+      const receipt = await ws.service().save(request(ws))
+      if (stage === 'propose') expect(receipt).toMatchObject({ outcome: 'refused', reason: 'unavailable' })
+      else {
+        expect(receipt.outcome).toBe('unknown')
+        expect(receipt.reason).toBeUndefined()
+      }
+      expect(ws.registry().read().receipts).toEqual([receipt])
+    },
+  )
+
   it('settles MEMORY_COMMITTED_METADATA_FAILED as saved because the file already committed', async () => {
     const ws = await workspace()
     ws.setWrap(
@@ -628,6 +656,7 @@ describe('crash safety', () => {
         expect.objectContaining({
           state: 'active',
           contentHash: normalizedContentHash(TEXT),
+          exactHash: createHash('sha256').update(TEXT).digest('hex'),
           reviewAfter: T0 + REVIEW_AFTER_MS,
         }),
       ])
@@ -691,7 +720,7 @@ describe('crash safety', () => {
   it("a person's edit of a paragraph whose save was cut off is never overwritten", async () => {
     for (const point of ['after-commit', 'before-record'] as const) {
       const { ws } = await crashAt(point)
-      const edited = (await ws.file()).replace(BODY, 'A person rewrote this rule by hand.')
+      const edited = (await ws.file()).replace('pnpm', 'PNPM')
       await ws.writeStored(edited)
       const next = await ws
         .service()
@@ -866,6 +895,54 @@ describe('saves under ask', () => {
     expect(await save.commitApproved(approved(third))).toEqual({ stale: true })
     expect(await ws.file()).toBe(`${afterFirst}Human line.\n`)
   })
+
+  it.each(['before approval', 'under the commit lock'])(
+    'refuses a replacement that expires %s',
+    async (when) => {
+      const queue = approvals()
+      const ws = await workspace({ approvals: queue.port })
+      const save = ws.service()
+      const id = paragraphOf(await save.save(request(ws)))
+      const before = await ws.file()
+      const { paragraphs } = ws.registry().read()
+      const deadline = T0 + REVIEW_AFTER_MS
+      ws.now.value = deadline - 1
+      await ws.open().configure({ mode: 'ask' })
+      const waiting = await save.save(
+        request(
+          ws,
+          entry({
+            content: 'Run pnpm typecheck too.',
+            replaces: { layer: 'workspace', paragraphId: id },
+          }),
+        ),
+      )
+      expect(waiting.outcome).toBe('awaiting-approval')
+      const asked = queue.pending[0]
+      if (!asked) throw new Error('missing approval')
+      if (when === 'before approval') ws.now.value = deadline
+      else
+        ws.setWrap(
+          portWrap((port) => ({
+            commit(proposal, admission) {
+              if (!admission) throw new Error('missing admission')
+              return port.commit(proposal, {
+                async verify() {
+                  await admission.verify()
+                  ws.now.value = deadline
+                },
+                assertActive: admission.assertActive,
+              })
+            },
+          })),
+        )
+      expect(await save.commitApproved({ ...asked.pending, approved: asked.proposal })).toMatchObject({
+        receipt: { outcome: 'refused', reason: 'conflict' },
+      })
+      expect(await ws.file()).toBe(before)
+      expect(ws.registry().read().paragraphs).toEqual(paragraphs)
+    },
+  )
 
   it('an approval answered after the content was revoked, or for a receipt no longer awaiting, writes nothing', async () => {
     const queue = approvals()
@@ -1042,7 +1119,7 @@ describe('hand-written text and the rules', () => {
     const ws = await workspace()
     const save = ws.service()
     await save.save(request(ws))
-    const edited = (await ws.file()).replace(BODY, 'Run pnpm lint AND pnpm test before commit.')
+    const edited = (await ws.file()).replace('pnpm', 'PNPM')
     await ws.writeStored(edited)
     expect(await save.save(request(ws))).toMatchObject({ outcome: 'refused', reason: 'human-edited' })
     for (const initiator of ['model', 'auto'] as const)
@@ -1255,6 +1332,10 @@ describe('hand-written text and the rules', () => {
       })
     }, store.read().revision)
 
+    writeFileSync(join(memRoot, 'MEMORY.md'), legacyContent.replace('pnpm', 'PNPM'))
+    expect(await ws.service().save(request(ws))).toMatchObject({ outcome: 'refused', reason: 'human-edited' })
+    expect(await ws.file()).toBe(legacyContent.replace('pnpm', 'PNPM'))
+    writeFileSync(join(memRoot, 'MEMORY.md'), legacyContent)
     const updated = await ws.service().save(
       request(ws, {
         session: { key: 'session-2', lane: 'main', workspaceRoot: ws.root, lastSeq: 40, child: false },
@@ -1266,6 +1347,9 @@ describe('hand-written text and the rules', () => {
       }),
     )
     expect(updated).toMatchObject({ outcome: 'saved', target: { paragraphId: legacyId } })
+    expect(store.read().paragraphs).toMatchObject([
+      { exactHash: createHash('sha256').update(`${TITLE}\n${NEW}`).digest('hex') },
+    ])
     expect(await ws.file()).toContain(NEW)
     expect(existsSync(join(memRoot, 'meta', 'provenance.json'))).toBe(true)
 
@@ -1368,6 +1452,17 @@ describe('rewrites after the PR review', () => {
       ),
     ).toMatchObject({ outcome: 'refused', reason: 'conflict' })
     expect(await ws.file()).toBe(before)
+  })
+
+  it('a new save of identical text renews an overdue lineage paragraph in place', async () => {
+    const ws = await workspace()
+    const save = ws.service()
+    const id = paragraphOf(await save.save(request(ws)))
+    ws.now.value = T0 + REVIEW_AFTER_MS
+    expect(ws.registry().validity(id, ws.clock())).toBe('expired')
+    expect(await save.save(request(ws))).toMatchObject({ outcome: 'saved', target: { paragraphId: id } })
+    expect(ws.registry().validity(id, ws.clock())).toBe('valid')
+    expect(markedIds(await ws.file())).toEqual([id])
   })
 
   it('a paragraph past its review date is not rewritten', async () => {

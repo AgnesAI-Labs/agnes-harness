@@ -57,7 +57,9 @@ export const failedRules = (reason: SaveRefusal) =>
   reason === 'source-rules' || reason === 'human-edited' || reason === 'preference-conflict'
 
 /** The refusal a memory error stands for when it came before any write; `unavailable` for the rest. */
-export const refusalOf = (error: unknown): SaveRefusal => NOT_WRITTEN[code(error) ?? ''] ?? 'unavailable'
+const knownRefusal = (failure: string | undefined): SaveRefusal | undefined =>
+  failure !== undefined && Object.hasOwn(NOT_WRITTEN, failure) ? NOT_WRITTEN[failure] : undefined
+export const refusalOf = (error: unknown): SaveRefusal => knownRefusal(code(error)) ?? 'unavailable'
 
 /** Puts `receipt` in place of the receipt with its id, or at the end. */
 export function putReceipt(draft: RegistryRecords, receipt: SaveReceipt): void {
@@ -83,17 +85,6 @@ export function writeFresh(registry: RefinementRegistry, mutate: (draft: Registr
   return false
 }
 
-/**
- * Whether a paragraph's text still holds a saved entry's content: some trailing run of its lines (the
- * paragraph is title, line break, content) has `contentHash` under `normalizedContentHash`.
- */
-export function holdsContent(text: string, contentHash: string): boolean {
-  const lines = text.split('\n')
-  for (let start = 0; start < lines.length; start++)
-    if (normalizedContentHash(lines.slice(start).join('\n')) === contentHash) return true
-  return false
-}
-
 /** Records a paragraph whose file commit holds it: active, due for review `REVIEW_AFTER_MS` after `savedAt`. */
 function putParagraph(
   draft: RegistryRecords,
@@ -103,6 +94,7 @@ function putParagraph(
     id: paragraph.id,
     source: paragraph.source,
     contentHash: normalizedContentHash(paragraph.text),
+    exactHash: sha256Hex(paragraph.text),
     reviewAfter: paragraph.savedAt + REVIEW_AFTER_MS,
     state: 'active' as const,
     fileHash: paragraph.fileHash,
@@ -135,12 +127,10 @@ export type ParagraphCommit = {
   decided: { revision: string }
   /** What the write that records the save must also do (a user's override clearing a revocation). */
   onSaved?: (draft: RegistryRecords) => void
-  /**
-   * The paragraph is being replaced in place without anyone reviewing the change: its current text in
-   * the file must pass this check (still the text a save wrote, or already the text being saved), or a
-   * person has edited it and nothing is written (`conflict`). Checked again before every attempt.
-   */
-  untouched?: (currentText: string) => boolean
+  /** The whole-file proof used for a legacy paragraph. */
+  baseHash?: string
+  /** An explicit replacement can only land before its target expires at the decided revision. */
+  targetReviewAfter?: number
   /** An approved proposal: the file must still give exactly this proposal, or nothing is written. */
   approved?: { baseHash: string; newHash: string }
   /** Paragraph ids whose commit is in flight in this process; resume leaves them alone. */
@@ -168,33 +158,21 @@ export async function commitParagraph(input: ParagraphCommit): Promise<CommitRes
   for (let attempt = 1; ; attempt++) {
     let proposal: MemoryProposal
     try {
-      let base = input.approved?.baseHash
-      let expectTextHash = paragraph.expectTextHash
-      if (input.untouched) {
+      let base = input.approved?.baseHash ?? input.baseHash
+      if (paragraph.expectTextHash !== undefined && base === undefined) {
+        // Bind each attempt to the verified file, including for providers predating expectTextHash.
         const listed = await port.list()
         const current = listed.paragraphs.find((entry) => entry.id === paragraph.id)
         if (!current) return { receipt: settle(input, 'conflict') }
-        // A retry got here because the preceding proposal lost its compare-and-swap.
-        if (!input.untouched(current.text))
+        if (sha256Hex(current.text) !== paragraph.expectTextHash)
           return { receipt: settle(input, attempt === 1 ? 'human-edited' : 'conflict') }
-        // Proposed against exactly the file just checked: an edit in between is a conflict.
         base = listed.hash
-        // The user layer has no provenance ledger. Its caller verifies the structurally managed
-        // section above; bind that exact text to the proposal. Workspace memory can use provenance.
-        if (input.mode === undefined) expectTextHash = sha256Hex(current.text)
       }
-      proposal = await port.propose(
-        {
-          op: 'put',
-          id: paragraph.id,
-          text: paragraph.text,
-          ...(expectTextHash ? { expectTextHash } : {}),
-        },
-        base,
-      )
+      proposal = await port.propose({ ...paragraph, op: 'put' }, base)
     } catch (error) {
       if (input.approved && code(error) === 'MEMORY_CONFLICT') return { stale: true }
-      return { receipt: settle(input, refusalOf(error)) }
+      const reason = refusalOf(error)
+      return { receipt: settle(input, attempt > 1 && reason === 'human-edited' ? 'conflict' : reason) }
     }
     if (input.approved && proposal.newHash !== input.approved.newHash) return { stale: true }
     const intent: SaveReceipt = {
@@ -205,7 +183,10 @@ export async function commitParagraph(input: ParagraphCommit): Promise<CommitRes
     delete intent.reason
     let revision: string
     try {
-      revision = registry.update((draft) => putReceipt(draft, intent), expected).revision
+      revision = registry.update((draft) => {
+        putReceipt(draft, intent)
+        draft.intentTextHashes = { ...draft.intentTextHashes, [intent.receiptId]: sha256Hex(paragraph.text) }
+      }, expected).revision
     } catch (error) {
       // The first write proves the decision still stands; a later one only moves the intent.
       if (first) throw error
@@ -224,8 +205,8 @@ export async function commitParagraph(input: ParagraphCommit): Promise<CommitRes
           expected = revision
           continue
         } else {
-          if (failure !== undefined && failure in NOT_WRITTEN)
-            return { receipt: settle(input, NOT_WRITTEN[failure] as SaveRefusal) }
+          const reason = knownRefusal(failure)
+          if (reason !== undefined) return { receipt: settle(input, reason) }
           // Whether the file was written is not known: the intent stays for resume to check.
           return { receipt: intent }
         }
@@ -275,6 +256,8 @@ function settle(input: ParagraphCommit, reason: SaveRefusal): SaveReceipt {
  */
 function admissionFor(input: ParagraphCommit, revision: string): MemoryEffectAdmission {
   return permissionEffectAdmission({
+    ...(input.targetReviewAfter === undefined ? {} : { expiresAt: input.targetReviewAfter }),
+    clock: input.clock,
     assertBound() {
       if (!input.switchCurrent()) throw fault('REFINEMENT_SWITCH_CHANGED')
       if (input.registry.read().revision !== revision) throw fault('REFINEMENT_REGISTRY_CHANGED')
@@ -342,7 +325,7 @@ export async function resumeSaves(
       const fresh =
         found !== undefined &&
         !draft.paragraphs.some((paragraph) => paragraph.id === id && paragraph.state === 'active') &&
-        holdsContent(found.text, current.source.contentHash)
+        draft.intentTextHashes?.[current.receiptId] === sha256Hex(found.text)
       if (found && (exact || fresh)) {
         putParagraph(draft, {
           id,

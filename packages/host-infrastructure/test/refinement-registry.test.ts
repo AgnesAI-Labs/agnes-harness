@@ -159,6 +159,8 @@ describe('RefinementRegistry', () => {
       '{}',
       good.replace('"version":1', '"version":2'),
       good.replace('"state":"active"', '"state":"forever"'),
+      good.replace('"state":"active"', `"state":"active","exactHash":"${'A'.repeat(64)}"`),
+      good.replace('"state":"active"', `"state":"active","exactHash":"${'a'.repeat(63)}"`),
       good.replace('"reviewAfter":', '"reviewAfter":"soon","x":'),
       good.replace('"revision":"1', '"revision":1'),
       good.replace('"skills":[]', '"skills":{}'),

@@ -11,6 +11,7 @@ import {
   type SaveReceipt,
 } from '@agnes/host-infrastructure/refinement-registry'
 import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
+import { sha256Hex } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRefinementHost } from '../../src/runtime/assemble/refinement.js'
 import { WORKSPACE_MEMORY_KEY } from '../../src/runtime/refinement/reconcile.js'
@@ -152,6 +153,7 @@ describe('promoting a confirmed lesson to user memory', () => {
         state: 'active',
         reviewAfter: T0 + REVIEW_AFTER_MS,
         contentHash: normalizedContentHash(TEXT),
+        exactHash: sha256Hex(TEXT),
       }),
     ])
     // Nothing went to the workspace, and its registry holds nothing.
@@ -378,14 +380,49 @@ describe('promoting a confirmed lesson to user memory', () => {
     expect(h.user()).toBe(HAND)
   })
 
-  it('a person editing a promoted section is never overwritten by a later promotion', async () => {
+  it.each([false, true])(
+    'a case-only edit survives the next promotion (legacy registry: %s)',
+    async (legacy) => {
+      const h = await home()
+      const content = 'Use pnpm when running checks.'
+      const id = sectionId(await h.saves.save(withContent(h, content)))
+      const registry = h.users()
+      if (legacy)
+        registry.update((draft) => {
+          for (const paragraph of draft.paragraphs) delete paragraph.exactHash
+        }, registry.read().revision)
+      const edited = `${HAND}\n${marked(id, `${TITLE}\n${content.replace('pnpm', 'PNPM')}`)}`
+      writeFileSync(h.userFile, edited)
+      const next = await h.saves.save(withContent(h, 'Answer in very short sentences.'))
+      expect(next).toMatchObject({ outcome: 'refused', reason: 'human-edited' })
+      expect(h.user()).toBe(edited)
+    },
+  )
+
+  it('upgrades a legacy user paragraph while the recorded file matches, then verifies the paragraph independently', async () => {
     const h = await home()
     const id = sectionId(await h.saves.save(request(h)))
-    const edited = `${HAND}\n${marked(id, `${TITLE}\nAnswer briefly, as I wrote it.`)}`
-    writeFileSync(h.userFile, edited)
-    const next = await h.saves.save(withContent(h, 'Answer in very short sentences.'))
-    expect(next).toMatchObject({ outcome: 'refused', reason: 'human-edited' })
-    expect(h.user()).toBe(edited)
+    const registry = h.users()
+    registry.update((draft) => {
+      for (const paragraph of draft.paragraphs) delete paragraph.exactHash
+    }, registry.read().revision)
+    const before = h.user()
+    writeFileSync(h.userFile, `Unrelated note.\n${before}`)
+    const updated = 'Keep answers short enough to read on a phone.'
+    expect(await h.saves.save(withContent(h, updated))).toMatchObject({
+      outcome: 'refused',
+      reason: 'human-edited',
+    })
+    expect(h.user()).toBe(`Unrelated note.\n${before}`)
+    writeFileSync(h.userFile, before)
+    expect(await h.saves.save(withContent(h, updated))).toMatchObject({
+      outcome: 'saved',
+      target: { paragraphId: id },
+    })
+    expect(registry.read().paragraphs).toMatchObject([{ exactHash: sha256Hex(`${TITLE}\n${updated}`) }])
+    writeFileSync(h.userFile, `Unrelated note.\n${h.user()}`)
+    expect(await h.saves.save(request(h))).toMatchObject({ outcome: 'saved', target: { paragraphId: id } })
+    expect(h.user()).toBe(`Unrelated note.\n${before}`)
   })
 
   it('the receipt says when the current workspace does not read user memory', async () => {

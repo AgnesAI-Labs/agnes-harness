@@ -54,6 +54,8 @@ export type RegistryParagraph = {
   id: string
   source: SaveSource
   contentHash: string
+  /** SHA-256 of the exact saved text. Older records can only attest the whole file. */
+  exactHash?: string
   reviewAfter: number
   state: 'active' | 'converted' | 'removed'
   fileHash: string
@@ -93,6 +95,8 @@ export type RegistryRecords = {
   skills: RegistrySkill[]
   revocations: Revocation[]
   receipts: SaveReceipt[]
+  /** SHA-256 of the proposed text by pending receipt id, for recovery after a file change. */
+  intentTextHashes?: Record<string, string>
 }
 export type RegistrySnapshot = RegistryRecords & { revision: string }
 
@@ -128,6 +132,8 @@ export function revocationMatches(
 const failure = (code: string, extra: object = {}) => Object.assign(new Error(code), { code, ...extra })
 
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex')
+const isDigest = (value: unknown): value is string =>
+  typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)
 
 // The checks below rebuild every record from its known fields, so nothing else (an entry's text, say)
 // can ride along into the file, and a file with a wrong shape anywhere is not believed at all.
@@ -165,6 +171,8 @@ const cleanParagraph = (value: unknown): RegistryParagraph | undefined => {
   const reviewAfter = time(raw.reviewAfter)
   const state = oneOf(raw.state, ['active', 'converted', 'removed'] as const)
   const fileHash = text(raw.fileHash)
+  const exactHash = raw.exactHash
+  if (exactHash !== undefined && !isDigest(exactHash)) return undefined
   if (!every(id, source, contentHash, reviewAfter, state, fileHash)) return undefined
   return {
     id: id as string,
@@ -173,6 +181,7 @@ const cleanParagraph = (value: unknown): RegistryParagraph | undefined => {
     reviewAfter: reviewAfter as number,
     state: state as RegistryParagraph['state'],
     fileHash: fileHash as string,
+    ...(exactHash === undefined ? {} : { exactHash }),
   }
 }
 
@@ -271,7 +280,22 @@ const cleanRecords = (value: Raw): RegistryRecords | undefined => {
   const revocations = list(value.revocations, cleanRevocation)
   const receipts = list(value.receipts, cleanReceipt)
   if (!paragraphs || !skills || !revocations || !receipts) return undefined
-  return { paragraphs, skills, revocations, receipts: trimReceipts(receipts) }
+  const records: RegistryRecords = { paragraphs, skills, revocations, receipts: trimReceipts(receipts) }
+  if (value.intentTextHashes !== undefined) {
+    const hashes = obj(value.intentTextHashes)
+    if (!hashes) return undefined
+    const pending = new Set(
+      receipts.filter((r) => r.outcome === 'unknown' && r.reason === undefined).map((r) => r.receiptId),
+    )
+    for (const [id, digest] of Object.entries(hashes)) {
+      if (!isDigest(digest)) return undefined
+      if (pending.has(id)) {
+        records.intentTextHashes ??= Object.create(null) as Record<string, string>
+        records.intentTextHashes[id] = digest
+      }
+    }
+  }
+  return records
 }
 
 const UUID = /^[0-9a-f-]{36}$/
@@ -455,12 +479,8 @@ export class RefinementRegistry {
       if (unreadable) throw failure('REGISTRY_UNREADABLE')
       if (expectedRevision !== undefined && snapshot.revision !== expectedRevision)
         throw failure('REGISTRY_REVISION_CONFLICT')
-      const draft: RegistryRecords = structuredClone({
-        paragraphs: snapshot.paragraphs,
-        skills: snapshot.skills,
-        revocations: snapshot.revocations,
-        receipts: snapshot.receipts,
-      })
+      const { revision: _revision, ...records } = snapshot
+      const draft: RegistryRecords = structuredClone(records)
       mutate(draft)
       const clean = cleanRecords(draft)
       if (!clean) throw failure('REGISTRY_INVALID')
