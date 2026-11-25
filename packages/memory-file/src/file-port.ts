@@ -8,18 +8,18 @@ import type {
   MemorySettings,
   MemorySource,
 } from '@agnes/extension-api'
-import { appendAudit } from './audit.js'
+import { checkProposalGuards, commitHooks } from './commit-hooks.js'
 import { formatLifecycleOmission } from './consistency.js'
 import { diff, fault, file, validateContent } from './content.js'
 import type { MetaStore } from './meta.js'
-import type { ResolvedReadState, TurnOverlayInput } from './overlay.js'
+import type { TurnReadState } from './overlay.js'
 import { markerLines, markerSet, paragraphTexts, parseParagraphs } from './paragraphs.js'
 import { canonical, inside, type roots } from './paths.js'
 import type { CommitIntent, MemoryClock, MemoryPipeline, ViewContext } from './pipeline.js'
 import type { MemoryStore } from './store.js'
 import { buildView, replaceInMemoryView } from './view.js'
 
-export type FilePortDeps<TTurn extends TurnOverlayInput = TurnOverlayInput> = Readonly<{
+export type FilePortDeps<TTurn extends TurnReadState = TurnReadState> = Readonly<{
   fallback: MemoryFilePort
   source: MemorySource
   signal: AbortSignal
@@ -33,14 +33,14 @@ export type FilePortDeps<TTurn extends TurnOverlayInput = TurnOverlayInput> = Re
   pipeline: MemoryPipeline
   clock: MemoryClock
   capture: (turn: number) => TTurn
-  resolvedFor: (turn: TTurn) => ResolvedReadState
+  resolvedFor: (turn: TTurn) => TurnReadState
   target: (path: string) => string | undefined
   active: () => MemorySettings & { mode: 'ask' | 'auto' }
   viewCtx: (now: number, config?: MemorySettings) => ViewContext
 }>
 
 /** Build the agent-facing `MemoryFilePort` bound to a single turn, source, and pipeline. */
-export function createFilePort<TTurn extends TurnOverlayInput>(deps: FilePortDeps<TTurn>): MemoryFilePort {
+export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<TTurn>): MemoryFilePort {
   const {
     fallback,
     source,
@@ -59,18 +59,20 @@ export function createFilePort<TTurn extends TurnOverlayInput>(deps: FilePortDep
     active,
     viewCtx,
   } = deps
-  const get = (path: string): { shown: MemoryFile; state: ResolvedReadState } => {
+  const get = (path: string): { shown: MemoryFile; state: TurnReadState } => {
     active()
     signal.throwIfAborted()
     const state = resolvedFor(capture(source.turn))
     const entry = state.files.find((item) => item.path === path)
     if (!entry) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
-    if (!state.emptied.has(path)) validateContent(entry, store.configuration(), path === 'MEMORY.md')
+    if (path === 'MEMORY.md' && state.invalidIndexLimits)
+      validateContent(entry, state.invalidIndexLimits, true)
+    validateContent(entry, store.configuration(), path === 'MEMORY.md')
     return { shown: state.agent.get(path) ?? entry, state }
   }
   const submit = (leaf: string, before: MemoryFile, candidate: MemoryFile) =>
     reviewAndCommit(
-      { store, meta, pipeline, clock, root: paths.root, source, signal, approve, active, viewCtx },
+      { store, pipeline, clock, root: paths.root, source, signal, approve, active, viewCtx },
       leaf,
       before,
       candidate,
@@ -116,7 +118,7 @@ export function createFilePort<TTurn extends TurnOverlayInput>(deps: FilePortDep
       const state = resolvedFor(turn)
       const before = turn.files.find((entry) => entry.path === leaf) ?? file(leaf, '')
       // A whole file written from a view that leaves text out would silently drop that text.
-      if (turn.readViews.get(leaf)?.hidden || state.views.get(leaf)?.hidden) {
+      if (turn.readViews.get(leaf)?.hidden || state.readViews.get(leaf)?.hidden) {
         throw fault('MEMORY_HIDDEN_PARAGRAPHS')
       }
       const candidate = file(
@@ -162,9 +164,9 @@ export function createFilePort<TTurn extends TurnOverlayInput>(deps: FilePortDep
             const state = resolvedFor(capture(source.turn))
             return pipeline.recall!(query, {
               revision: state.revision,
-              workspaceViews: state.views,
+              workspaceViews: state.readViews,
               workspaceFiles: state.files,
-              userViews: state.userViews,
+              userViews: state.userReadViews,
               userFiles: state.userFiles,
               userEnabled: state.userEnabled,
               meta,
@@ -177,41 +179,10 @@ export function createFilePort<TTurn extends TurnOverlayInput>(deps: FilePortDep
   })
 }
 
-function guardOrThrow(
-  meta: MetaStore,
-  pipeline: MemoryPipeline,
-  intent: CommitIntent,
-  now: number,
-  ctx: ViewContext,
-): void {
-  const verdict = pipeline.checkGuards(intent, ctx)
-  if (verdict.kind !== 'refuse') return
-  try {
-    appendAudit(meta, {
-      at: new Date(now).toISOString(),
-      path: intent.path,
-      action: 'refused',
-      code: verdict.code,
-      origin: intent.origin,
-      actor: intent.actor,
-      ...(intent.source?.sessionKey ? { sessionKey: intent.source.sessionKey } : {}),
-      beforeHash: intent.before.hash,
-      afterHash: intent.candidate.hash,
-    })
-  } catch {
-    // Best-effort refusal audit must not mask guard error.
-  }
-  throw Object.assign(
-    fault(verdict.code),
-    verdict.detail ? { message: `${verdict.code}: ${verdict.detail}` } : {},
-  )
-}
-
 /** The shared agent write path: validate, pre-approval guards, review under ask, then CAS commit. */
 async function reviewAndCommit(
   context: {
     store: MemoryStore
-    meta: MetaStore
     pipeline: MemoryPipeline
     clock: MemoryClock
     root: string
@@ -225,7 +196,7 @@ async function reviewAndCommit(
   before: MemoryFile,
   candidate: MemoryFile,
 ): Promise<void> {
-  const { store, meta, pipeline, clock, source, signal, approve, active, viewCtx } = context
+  const { store, pipeline, clock, source, signal, approve, active, viewCtx } = context
   const config = active()
   validateContent(candidate, config, leaf === 'MEMORY.md')
   // Check stale base hash before guards so concurrent external writes return MEMORY_CONFLICT.
@@ -244,7 +215,7 @@ async function reviewAndCommit(
     source,
   }
   const guardNow = clock()
-  guardOrThrow(meta, pipeline, intent, guardNow, viewCtx(guardNow, config))
+  await checkProposalGuards(pipeline, intent, viewCtx(guardNow, config), signal)
   const proposal: MemoryProposal = Object.freeze({
     path: join(context.root, leaf),
     baseHash: before.hash,
@@ -265,8 +236,6 @@ async function reviewAndCommit(
     signal.throwIfAborted()
     if (active().mode !== config.mode) throw fault('MEMORY_POLICY_CHANGED')
     if (store.read(leaf).hash !== before.hash) throw fault('MEMORY_CONFLICT')
-    const recheckNow = clock()
-    guardOrThrow(meta, pipeline, intent, recheckNow, viewCtx(recheckNow, store.configuration()))
   }
   signal.throwIfAborted()
   // A policy change during approval cannot silently convert it into an auto write.
@@ -278,8 +247,6 @@ async function reviewAndCommit(
     config.mode,
     signal,
     admission,
-    (actualBefore, saved) => {
-      pipeline.runObservers({ ...intent, before: actualBefore }, saved, viewCtx(clock()))
-    },
+    commitHooks(pipeline, intent, () => viewCtx(clock())),
   )
 }

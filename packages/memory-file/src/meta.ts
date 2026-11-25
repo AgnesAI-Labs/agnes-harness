@@ -4,7 +4,7 @@ import { fault } from './content.js'
 import { missing, safe } from './paths.js'
 import type { MemoryStore } from './store.js'
 
-const META_MAX_BYTES = 256 * 1024
+export const META_MAX_BYTES = 256 * 1024
 const META_JSON_NAME = /^[a-z0-9][a-z0-9._-]{0,63}\.json$/
 const META_FILE_NAME = /^[a-z0-9][a-z0-9._-]{0,63}\.(?:json|jsonl|sqlite)$/
 

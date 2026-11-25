@@ -156,23 +156,6 @@ export function validityOf(view: MemoryValidityView | undefined): (id: string) =
   }
 }
 
-/**
- * An index that already fails its size or content check is not filtered: the agent cannot read it
- * and the snapshot omits it whole. Any marker still counts as hidden text, so a whole-file write
- * cannot drop it.
- */
-export function unfilteredIndexView(text: string): ParagraphView {
-  const markers = markerLines(text)
-  return {
-    content: text,
-    managed: markers.length > 0,
-    omittedIds: [],
-    hidden: markers.length > 0,
-    markers,
-    segments: [{ view: 0, raw: 0, length: text.length }],
-  }
-}
-
 /** The whole stored text, for files whose markers are not managed (topic files). */
 export function plainView(text: string): ParagraphView {
   return {

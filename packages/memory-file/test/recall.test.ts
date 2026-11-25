@@ -6,7 +6,14 @@ import type { MemoryFilePort, MemoryRecallQuery, MemoryValidityView } from '@agn
 import { afterEach, describe, expect, it } from 'vitest'
 import { chunkView } from '../src/chunker.js'
 import { file } from '../src/content.js'
-import { buildView, createDefaultPipeline, fileMemoryRoots, MetaStore, openMemory } from '../src/index.js'
+import {
+  buildView,
+  createDefaultPipeline,
+  fileMemoryRoots,
+  inspectMemoryConsistency,
+  MetaStore,
+  openMemory,
+} from '../src/index.js'
 import { registerRetrieval } from '../src/recall.js'
 import { readDocuments, SearchIndex } from '../src/search-index.js'
 import { MemoryStore } from '../src/store.js'
@@ -133,6 +140,8 @@ describe('file memory recall', () => {
     const f = fixture()
     await f.session.configure({ mode: 'auto', userEnabled: true })
     mkdirSync(f.userRoot, { recursive: true })
+    writeFileSync(join(f.userRoot, 'Meeting notes.md'), 'Unindexed astronomy')
+    writeFileSync(join(f.userRoot, 'archive.md'), 'x'.repeat(1024 * 1024 + 1))
     writeFileSync(
       join(f.userRoot, 'MEMORY.md'),
       '用户天文台\n\n<!-- refinement:r0000000001 -->\nUnverifiedplanet\n<!-- /refinement:r0000000001 -->',
@@ -152,12 +161,21 @@ describe('file memory recall', () => {
     expect((await f.recall(1, 'astronomy', { limit: 100 })).hits).toHaveLength(32)
     await f.session.configure({ userEnabled: false })
     expect((await f.recall(1, '天文台', { includeUser: true })).hits).toEqual([])
+    await f.session.configure({ userEnabled: true })
+    const userTopic = join(f.userRoot, 'topic.md')
+    writeFileSync(userTopic, 'Lunar habitat 1')
+    const first = await f.recall(2, 'habitat', { includeUser: true })
+    writeFileSync(userTopic, 'Lunar habitat 2')
+    const second = await f.recall(3, 'habitat', { includeUser: true })
+    expect(second.hits[0]?.text).toBe('Lunar habitat 2')
+    expect(second.revision).not.toBe(first.revision)
   })
 
   it('transactionally repairs a version mismatch in place and releases the WAL on close', async () => {
     const f = fixture()
     await f.session.configure({ mode: 'auto' })
     const path = f.meta.pathOf('index.sqlite')
+    expect(await inspectMemoryConsistency(f.session, 0)).toMatchObject({ consistent: true, indexIds: [] })
     expect(existsSync(path)).toBe(false)
     await f.port(1).write(join(f.root, 'topic.md'), 'green mountain')
     const identity = statSync(path)
@@ -189,6 +207,20 @@ describe('file memory recall', () => {
     await f.session.configure({ mode: 'auto' })
     writeFileSync(join(f.root, 'topic.md'), 'password=abcdefgh example')
     expect((await f.recall(2, 'example')).hits).toEqual([])
+    const index = join(f.root, 'MEMORY.md')
+    writeFileSync(index, '<!-- expires_at: 2000-01-01 -->\nRetired guidance\n\nVisible guidance')
+    mkdirSync(f.userRoot, { recursive: true })
+    writeFileSync(join(f.userRoot, 'MEMORY.md'), 'Lunar\nobservation\nnotes')
+    await f.session.configure({ indexMaxLines: 2, userEnabled: true })
+    expect((await f.session.snapshot(3))?.content).toContain('[User memory omitted:')
+    await expect(f.port(3).read(index)).rejects.toMatchObject({ code: 'MEMORY_CONSOLIDATION_REQUIRED' })
+    await f.session.configure({ indexMaxLines: 4 })
+    rmSync(join(f.root, 'topic.md'))
+    expect((await f.recall(3, 'lunar', { includeUser: true })).hits).toEqual([])
+    expect((await f.recall(3, 'retired')).hits).toEqual([])
+    await expect(f.port(3).read(index)).rejects.toMatchObject({ code: 'MEMORY_CONSOLIDATION_REQUIRED' })
+    expect(Buffer.from(await f.port(4).read(index)).toString()).toContain('Visible guidance')
+    expect((await f.recall(4, 'lunar', { includeUser: true })).hits).toHaveLength(1)
     const fresh = fixture()
     await fresh.session.configure({ mode: 'auto' })
     fresh.meta.ensureDir()

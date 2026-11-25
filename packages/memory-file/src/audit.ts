@@ -29,14 +29,15 @@ export type AuditEntry = Readonly<{
   afterHash: string
 }>
 
-function parseLines(path: string): AuditEntry[] {
-  if (!existsSync(path)) return []
-  let raw: string
+function readLog(path: string): string {
   try {
-    raw = readFileSync(path, 'utf8')
+    return readFileSync(path, 'utf8')
   } catch {
-    return []
+    return ''
   }
+}
+
+function parseLines(raw: string): AuditEntry[] {
   const entries: AuditEntry[] = []
   for (const line of raw.split('\n')) {
     const trimmed = line.trim()
@@ -53,12 +54,6 @@ function parseLines(path: string): AuditEntry[] {
   return entries
 }
 
-function lastSeqOf(current: string, rotated: string): number {
-  const fromCurrent = parseLines(current).at(-1)?.seq
-  if (fromCurrent !== undefined) return fromCurrent
-  return parseLines(rotated).at(-1)?.seq ?? 0
-}
-
 /**
  * Append a commit or pre-approval refusal audit entry to `<root>/meta/audit.jsonl`.
  * Never writes file body content. Rotates to a single `audit.1.jsonl` when exceeding 1 MiB.
@@ -67,7 +62,8 @@ export function appendAudit(meta: MetaStore, entry: Omit<AuditEntry, 'seq'>): Au
   meta.ensureDir()
   const current = meta.pathOf(AUDIT_FILE)
   const rotated = meta.pathOf(AUDIT_ARCHIVE)
-  const seq = lastSeqOf(current, rotated) + 1
+  const raw = readLog(current)
+  const seq = (parseLines(raw).at(-1)?.seq ?? parseLines(readLog(rotated)).at(-1)?.seq ?? 0) + 1
   const record: AuditEntry = Object.freeze({
     seq,
     at: entry.at,
@@ -82,16 +78,19 @@ export function appendAudit(meta: MetaStore, entry: Omit<AuditEntry, 'seq'>): Au
     afterHash: entry.afterHash,
   })
   const line = `${JSON.stringify(record)}\n`
-  const lineBytes = Buffer.byteLength(line)
+  // Keep a torn final record on its own line so the next durable entry remains readable.
+  let separator = raw && !raw.endsWith('\n') ? '\n' : ''
+  const lineBytes = Buffer.byteLength(line) + separator.length
   if (existsSync(current)) {
     const size = statSync(current).size
     if (size + lineBytes > MAX_AUDIT_BYTES) {
       renameWriteThroughSync(current, rotated)
+      separator = ''
     }
   }
   const fd = openSync(current, 'a', 0o600)
   try {
-    writeFileSync(fd, line)
+    writeFileSync(fd, separator + line)
     fsyncSync(fd)
   } finally {
     closeSync(fd)
@@ -101,5 +100,5 @@ export function appendAudit(meta: MetaStore, entry: Omit<AuditEntry, 'seq'>): Au
 }
 
 export function readAuditEntries(meta: MetaStore): AuditEntry[] {
-  return [...parseLines(meta.pathOf(AUDIT_ARCHIVE)), ...parseLines(meta.pathOf(AUDIT_FILE))]
+  return [...parseLines(readLog(meta.pathOf(AUDIT_ARCHIVE))), ...parseLines(readLog(meta.pathOf(AUDIT_FILE)))]
 }

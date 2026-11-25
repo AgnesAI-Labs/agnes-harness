@@ -1,4 +1,4 @@
-import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { appendFile, link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, parse } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -672,9 +672,16 @@ describe('phase 0 view pipeline, same-turn R1-R6 overlay and audit log', () => {
     expect(Buffer.from(await p1.read(emptyFile)).toString('utf8')).toBe('')
     expect((await p1.stat(emptyFile)).size).toBe(0)
 
+    await writeFile(topicDel, 'restored topic')
+    await writeFile(emptyFile, 'restored content')
+    validity.set('ra000000001', 'valid')
+    expect((await p1.list(session.root)).map((e) => e.name)).not.toContain('topic-del.md')
+    expect(Buffer.from(await p1.read(emptyFile)).toString('utf8')).toBe('')
+    expect(Buffer.from(await p1.read(index)).toString('utf8')).not.toContain('RULE_VALID')
+
     const s2 = await session.snapshot(2)
     expect(s2?.content).toContain('RULE_RENEWED')
-    expect(s2?.content).not.toContain('RULE_VALID')
+    expect(s2?.content).toContain('RULE_VALID')
     expect(s2?.revision).not.toBe(s1a?.revision)
   })
 
@@ -859,11 +866,15 @@ describe('phase 0 view pipeline, same-turn R1-R6 overlay and audit log', () => {
         return { status: 'approved' }
       },
     )
-    await expect(pAsk.write(topic, 'CLOBBER_HUMAN\n')).rejects.toMatchObject({ code: 'MEMORY_HUMAN_EDITED' })
-    expect(approveCalls).toBe(0)
-
     const p = roots(home, home)
     const meta = new MetaStore(new MemoryStore(p.protectedRoot, p.root))
+    let refused: Promise<unknown> | undefined
+    await meta.store.locked(() => {
+      refused = pAsk.write(topic, 'CLOBBER_HUMAN\n').catch((error: unknown) => error)
+      expect(readAuditEntries(meta).map((entry) => entry.action)).toEqual(['commit', 'commit', 'commit'])
+    })
+    expect(await refused).toMatchObject({ code: 'MEMORY_HUMAN_EDITED' })
+    expect(approveCalls).toBe(0)
     const entries = readAuditEntries(meta)
     expect(entries.map((e) => [e.action, e.origin, e.actor, e.code ?? null])).toEqual([
       ['commit', 'human', 'alice', null],
@@ -884,6 +895,9 @@ describe('phase 0 view pipeline, same-turn R1-R6 overlay and audit log', () => {
     })
     expect(JSON.parse((await readFile(meta.pathOf('audit.jsonl'), 'utf8')).trim()).seq).toBe(100)
     expect(await readFile(meta.pathOf('audit.1.jsonl'), 'utf8')).toContain('"seq":99')
+    await appendFile(meta.pathOf('audit.jsonl'), '{"seq":101')
+    await session.editFile('topic.md', 'After interruption', (await session.readFile('topic.md')).hash)
+    expect(readAuditEntries(meta).map((entry) => entry.seq)).toEqual([99, 100, 101])
 
     await session.close?.()
     expect(closed).toBe(true)

@@ -18,12 +18,15 @@ import { setTimeout as delay } from 'node:timers/promises'
 import type { MemoryEffectAdmission, MemoryFile, MemorySettings, MemorySource } from '@agnes/extension-api'
 import { renameWriteThroughSync } from '@agnes/system-node'
 import { defaults, fault, file, settings, storedSettings, validateContent } from './content.js'
-import { missing, name, safe } from './paths.js'
+import { isMemoryName, missing, name, safe } from './paths.js'
+
+const MAX_FILE_BYTES = 1024 * 1024
 
 export class MemoryStore {
   constructor(
     readonly protectedRoot: string,
     readonly root: string,
+    private readonly layer: 'workspace' | 'user' = 'workspace',
   ) {}
 
   ensure(): void {
@@ -35,7 +38,7 @@ export class MemoryStore {
     const absolute = join(this.root, path)
     safe(this.protectedRoot, absolute)
     try {
-      if (statSync(absolute).size > 1024 * 1024) throw fault('MEMORY_CONSOLIDATION_REQUIRED')
+      if (statSync(absolute).size > MAX_FILE_BYTES) throw fault('MEMORY_CONSOLIDATION_REQUIRED')
       return file(path, readFileSync(absolute, 'utf8'))
     } catch (error) {
       if (missing(error)) return file(path, '')
@@ -53,11 +56,17 @@ export class MemoryStore {
       throw error
     }
   }
-  files(): MemoryFile[] {
+  files(purpose: 'view' | 'commit' = 'view'): MemoryFile[] {
     safe(this.protectedRoot, this.root)
     if (!existsSync(this.root)) return []
-    const paths = readdirSync(this.root)
-      .filter((path) => path.endsWith('.md'))
+    const userView = this.layer === 'user' && purpose === 'view'
+    const paths = readdirSync(this.root, { withFileTypes: true })
+      .filter((entry) =>
+        userView && entry.name !== 'MEMORY.md'
+          ? entry.isFile() && isMemoryName(entry.name) && (this.fileSize(entry.name) ?? 0) <= MAX_FILE_BYTES
+          : entry.name.endsWith('.md'),
+      )
+      .map((entry) => entry.name)
       .sort()
     if (paths.length > 128) throw fault('MEMORY_CONSOLIDATION_REQUIRED')
     return paths.map((path) => this.read(path))
@@ -215,7 +224,7 @@ export class MemoryStore {
     agentMode: false | 'ask' | 'auto',
     signal?: AbortSignal,
     admission?: MemoryEffectAdmission,
-    onCommitted?: (before: MemoryFile, committed: MemoryFile) => void,
+    prepare?: (before: MemoryFile, candidate: MemoryFile) => () => void,
   ): Promise<MemoryFile> {
     const commit = () => {
       admission?.assertActive()
@@ -225,7 +234,7 @@ export class MemoryStore {
       validateContent(candidate, config, candidate.path === 'MEMORY.md')
       const current = this.read(candidate.path)
       if (current.hash !== baseHash) throw fault('MEMORY_CONFLICT')
-      const all = this.files()
+      const all = this.files('commit')
       const bytes =
         all.filter((entry) => entry.path !== candidate.path).reduce((n, entry) => n + entry.bytes, 0) +
         candidate.bytes
@@ -240,8 +249,11 @@ export class MemoryStore {
         }
       }
       signal?.throwIfAborted()
+      let onCommitted: (() => void) | undefined
       this.atomic(join(this.root, candidate.path), candidate.content, () => {
+        onCommitted = prepare?.(current, candidate)
         if (this.read(candidate.path).hash !== baseHash) throw fault('MEMORY_CONFLICT')
+        signal?.throwIfAborted()
         admission?.assertActive()
       })
       // The file has committed if metadata fails: do not report an unwritten file.
@@ -251,7 +263,7 @@ export class MemoryStore {
           ...(this.acknowledged() ?? hashes(all)),
           [candidate.path]: candidate.hash,
         })
-        onCommitted?.(current, candidate)
+        onCommitted?.()
       } catch {
         throw fault('MEMORY_COMMITTED_METADATA_FAILED')
       }

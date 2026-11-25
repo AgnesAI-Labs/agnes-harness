@@ -1,10 +1,11 @@
 import { humanGuard } from './human-guard.js'
-import type { CommitGuard, MemoryPipeline } from './pipeline.js'
+import type { CommitGuard, CommitIntent, MemoryPipeline, ViewContext } from './pipeline.js'
 import {
   attributedBlocks,
   type MemoryBlock,
   memoryBlocks,
   normalize,
+  prepareProvenance,
   provenanceObserver,
 } from './provenance.js'
 
@@ -64,6 +65,14 @@ export const preferenceConflictGuard: CommitGuard = (intent, ctx) => {
 }
 
 const protectedPipelines = new WeakSet<MemoryPipeline>()
+
+export function prepareMemoryProtection(
+  pipeline: MemoryPipeline,
+  intent: CommitIntent,
+  ctx: ViewContext,
+): void {
+  if (protectedPipelines.has(pipeline) && ctx.layer === 'workspace') prepareProvenance(intent, ctx)
+}
 
 export function registerMemoryProtection(pipeline: MemoryPipeline): void {
   if (protectedPipelines.has(pipeline)) return

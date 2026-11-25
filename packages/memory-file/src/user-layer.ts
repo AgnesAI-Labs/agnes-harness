@@ -9,7 +9,7 @@ import type {
   MemorySource,
   MemoryValidityView,
 } from '@agnes/extension-api'
-import { appendAudit } from './audit.js'
+import { checkProposalGuards, commitHooks } from './commit-hooks.js'
 import { defaults, diff, fault, file, validateContent } from './content.js'
 import type { MetaStore } from './meta.js'
 import {
@@ -190,32 +190,7 @@ export function userParagraphPort(
         source,
         changes: list,
       }
-      if (hooks) {
-        const now = hooks.clock()
-        const verdict = hooks.pipeline.checkGuards(intent, makeContext(now))
-        if (verdict.kind === 'refuse') {
-          try {
-            appendAudit(hooks.userMeta, {
-              at: new Date(now).toISOString(),
-              path: INDEX,
-              action: 'refused',
-              code: verdict.code,
-              origin: intent.origin,
-              actor: intent.actor,
-              sessionKey: source.sessionKey,
-              ...(source.maintenance ? { maintenance: source.maintenance } : {}),
-              beforeHash: before.hash,
-              afterHash: candidate.hash,
-            })
-          } catch {
-            // Best-effort refusal audit must not mask guard error.
-          }
-          throw Object.assign(
-            fault(verdict.code),
-            verdict.detail ? { message: `${verdict.code}: ${verdict.detail}` } : {},
-          )
-        }
-      }
+      if (hooks) await checkProposalGuards(hooks.pipeline, intent, makeContext(hooks.clock()), signal)
       const proposal: MemoryProposal = Object.freeze({
         path: join(user.root, INDEX),
         baseHash: before.hash,
@@ -237,15 +212,7 @@ export function userParagraphPort(
         false,
         signal,
         admission,
-        hooks
-          ? (actualBefore, saved) => {
-              hooks.pipeline.runObservers(
-                { ...entry.intent, before: actualBefore },
-                saved,
-                makeContext(hooks.clock()),
-              )
-            }
-          : undefined,
+        hooks ? commitHooks(hooks.pipeline, entry.intent, () => makeContext(hooks.clock())) : undefined,
       )
       return { hash: committed.hash }
     },

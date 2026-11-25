@@ -1,4 +1,4 @@
-import type { MemoryFile, MemoryParagraphValidity } from '@agnes/extension-api'
+import type { MemoryFile, MemoryParagraphValidity, MemorySettings } from '@agnes/extension-api'
 import { formatLifecycleOmission } from './consistency.js'
 import { file, hash } from './content.js'
 import type { MetaStore } from './meta.js'
@@ -6,32 +6,19 @@ import type { MemoryPipeline, ViewContext } from './pipeline.js'
 import type { MemoryStore } from './store.js'
 import { buildView, type HideRange, type MemoryView } from './view.js'
 
-export type TurnOverlayInput = Readonly<{
+export type TurnReadState = Readonly<{
   files: readonly MemoryFile[]
   baseRanges: ReadonlyMap<string, readonly HideRange[]>
   readViews: ReadonlyMap<string, MemoryView>
   agent: ReadonlyMap<string, MemoryFile>
-  indexValid: boolean
-  snapshotRevision: string
+  invalidIndexLimits?: MemorySettings
+  revision: string
   validityRev: string | null
   userValidityRev: string | null
   nextExpiry: number | undefined
   userFiles: readonly MemoryFile[]
   userBaseRanges: ReadonlyMap<string, readonly HideRange[]>
   userReadViews: ReadonlyMap<string, MemoryView>
-  userEnabled: boolean
-}>
-
-export type ResolvedReadState = Readonly<{
-  active: boolean
-  revision: string
-  files: readonly MemoryFile[]
-  views: ReadonlyMap<string, MemoryView>
-  agent: ReadonlyMap<string, MemoryFile>
-  deleted: ReadonlySet<string>
-  emptied: ReadonlySet<string>
-  userFiles: readonly MemoryFile[]
-  userViews: ReadonlyMap<string, MemoryView>
   userEnabled: boolean
 }>
 
@@ -48,160 +35,123 @@ type LiveOverlayInputs = Readonly<{
   now: number
 }>
 
-function scanRemovals(store: MemoryStore, entries: readonly MemoryFile[]) {
-  const deleted = new Set<string>()
-  const emptied = new Set<string>()
+// Remove only bytes that disappeared. Modified nonempty bodies stay pinned until the next turn.
+function survivingFiles(store: MemoryStore, entries: readonly MemoryFile[]): readonly MemoryFile[] {
+  const files: MemoryFile[] = []
+  let changed = false
   for (const entry of entries) {
     const size = store.fileSize(entry.path)
-    if (size === undefined) deleted.add(entry.path)
-    else if (size === 0 && entry.bytes > 0) emptied.add(entry.path)
+    if (size === undefined) changed = true
+    else if (size === 0 && entry.bytes > 0) {
+      files.push(file(entry.path, ''))
+      changed = true
+    } else files.push(entry)
   }
-  return { deleted, emptied }
-}
-
-function emptyViewFor(path: string): MemoryView {
-  return {
-    path,
-    content: '',
-    segments: [{ view: 0, raw: 0, length: 0 }],
-    hidden: false,
-    omitted: [],
-  }
+  return changed ? files : entries
 }
 
 function rebuildLayer(
-  entries: readonly MemoryFile[],
   baseRanges: ReadonlyMap<string, readonly HideRange[]>,
   prevViews: ReadonlyMap<string, MemoryView>,
-  removals: { deleted: Set<string>; emptied: Set<string> },
   ctx: ViewContext,
   pipeline: MemoryPipeline,
   skipPath?: string,
 ) {
-  const files: MemoryFile[] = []
+  const ranges = new Map<string, readonly HideRange[]>()
   const views = new Map<string, MemoryView>()
   const agent = new Map<string, MemoryFile>()
-  let changed = removals.deleted.size > 0 || removals.emptied.size > 0
-  for (const entry of entries) {
-    if (removals.deleted.has(entry.path)) continue
-    if (removals.emptied.has(entry.path)) {
-      const empty = file(entry.path, '')
-      files.push(empty)
-      agent.set(entry.path, empty)
-      views.set(entry.path, emptyViewFor(entry.path))
-      continue
-    }
-    files.push(entry)
-    if (entry.path === skipPath) {
-      const kept = prevViews.get(entry.path)
-      if (kept) views.set(entry.path, kept)
+  let changed = false
+  for (const entry of ctx.files) {
+    const prior = prevViews.get(entry.path)
+    // Files excluded from the captured view stay unreadable until the next turn.
+    if (!prior) continue
+    if (entry.path === skipPath && entry.bytes) {
+      views.set(entry.path, prior)
       agent.set(entry.path, entry)
       continue
     }
-    const prior = prevViews.get(entry.path)
-    const combined = [...(baseRanges.get(entry.path) ?? []), ...pipeline.collectHideRanges(entry, ctx)]
+    // Retain observed read restrictions, once each. Read notices for topic links reflect the
+    // surviving targets, so a removed topic replaces its previous stale-link warning.
+    const current = pipeline.collectHideRanges(entry, ctx)
+    const retained = entry.bytes
+      ? (baseRanges.get(entry.path) ?? []).filter((r) => r.appliesTo !== 'note')
+      : []
+    const combined = [...new Map([...retained, ...current].map((r) => [JSON.stringify(r), r])).values()]
+    ranges.set(entry.path, combined)
     const rebuilt = buildView(entry, combined, 'read', formatLifecycleOmission)
     views.set(entry.path, rebuilt)
     agent.set(entry.path, rebuilt.content !== entry.content ? file(entry.path, rebuilt.content) : entry)
-    if (rebuilt.content !== (prior?.content ?? entry.content)) changed = true
+    if (rebuilt.content !== prior?.content) changed = true
   }
-  return { files, views, agent, changed }
+  return { ranges, views, agent, changed }
 }
 
-/**
- * R2 / R5 same-turn monotonic removal overlay. Does NOT mutate `turnSnapshot` and does NOT read
- * modified non-empty disk bodies so same-turn writes still detect CAS conflicts against the snapshot.
- */
-export function resolveReadOverlay(turn: TurnOverlayInput, live: LiveOverlayInputs): ResolvedReadState {
-  const wsRemovals = scanRemovals(live.store, turn.files)
-  const userRemovals = turn.userEnabled
-    ? scanRemovals(live.user, turn.userFiles)
-    : { deleted: new Set<string>(), emptied: new Set<string>() }
-  const validityChanged = live.validityRev !== turn.validityRev
-  const userValidityChanged = live.userValidityRev !== turn.userValidityRev
+/** Advance the agent read view independently of the original snapshot and whole-file CAS baseline. */
+export function resolveReadOverlay(turn: TurnReadState, live: LiveOverlayInputs): TurnReadState {
+  const files = survivingFiles(live.store, turn.files)
+  const userFiles = turn.userEnabled ? survivingFiles(live.user, turn.userFiles) : turn.userFiles
   const expiryCrossed = turn.nextExpiry !== undefined && live.now >= turn.nextExpiry
-  const filesRemoved =
-    wsRemovals.deleted.size > 0 ||
-    wsRemovals.emptied.size > 0 ||
-    userRemovals.deleted.size > 0 ||
-    userRemovals.emptied.size > 0
-
-  if (!validityChanged && !userValidityChanged && !expiryCrossed && !filesRemoved) {
-    return {
-      active: false,
-      revision: turn.snapshotRevision,
-      files: turn.files,
-      views: turn.readViews,
-      agent: turn.agent,
-      deleted: wsRemovals.deleted,
-      emptied: wsRemovals.emptied,
-      userFiles: turn.userFiles,
-      userViews: turn.userReadViews,
-      userEnabled: turn.userEnabled,
-    }
-  }
+  const filesRemoved = files !== turn.files || userFiles !== turn.userFiles
+  if (
+    !filesRemoved &&
+    !expiryCrossed &&
+    live.validityRev === turn.validityRev &&
+    live.userValidityRev === turn.userValidityRev
+  )
+    return turn
 
   const wsCtx: ViewContext = {
     layer: 'workspace',
-    files: turn.files,
-    userFiles: turn.userFiles,
+    files,
+    userFiles,
     userEnabled: turn.userEnabled,
     now: live.now,
     validity: live.validity,
     meta: live.meta,
   }
   const ws = rebuildLayer(
-    turn.files,
     turn.baseRanges,
     turn.readViews,
-    wsRemovals,
     wsCtx,
     live.pipeline,
-    turn.indexValid ? undefined : 'MEMORY.md',
+    turn.invalidIndexLimits ? 'MEMORY.md' : undefined,
   )
-  const userCtx: ViewContext = {
-    layer: 'user',
-    files: turn.userFiles,
-    userFiles: turn.userFiles,
-    userEnabled: turn.userEnabled,
-    now: live.now,
-    validity: live.userValidity,
-    meta: live.userMeta,
-  }
-  const usr = turn.userEnabled
-    ? rebuildLayer(
-        turn.userFiles,
-        turn.userBaseRanges,
-        turn.userReadViews,
-        userRemovals,
-        userCtx,
-        live.pipeline,
-      )
-    : { files: turn.userFiles, views: turn.userReadViews, changed: false }
-
-  const active = ws.changed || usr.changed
-  const revision = active
-    ? hash(
-        JSON.stringify([
-          turn.snapshotRevision,
-          [...wsRemovals.deleted].sort(),
-          [...wsRemovals.emptied].sort(),
-          [...ws.views.entries()].map(([p, v]) => [p, hash(v.content)]),
-          [...usr.views.entries()].map(([p, v]) => [p, hash(v.content)]),
-        ]),
-      )
-    : turn.snapshotRevision
+  const usr = rebuildLayer(
+    turn.userBaseRanges,
+    turn.userReadViews,
+    {
+      ...wsCtx,
+      layer: 'user',
+      files: userFiles,
+      validity: live.userValidity,
+      meta: live.userMeta,
+    },
+    live.pipeline,
+  )
+  const revision =
+    filesRemoved || ws.changed || usr.changed
+      ? hash(
+          JSON.stringify([
+            turn.revision,
+            ...[ws.views, usr.views].map((views) =>
+              [...views].map(([path, view]) => [path, hash(view.content)]),
+            ),
+          ]),
+        )
+      : turn.revision
 
   return {
-    active,
-    revision,
-    files: ws.files,
-    views: ws.views,
+    ...turn,
+    files,
+    baseRanges: ws.ranges,
+    readViews: ws.views,
     agent: ws.agent,
-    deleted: wsRemovals.deleted,
-    emptied: wsRemovals.emptied,
-    userFiles: usr.files,
-    userViews: usr.views,
-    userEnabled: turn.userEnabled,
+    userFiles,
+    userBaseRanges: usr.ranges,
+    userReadViews: usr.views,
+    validityRev: live.validityRev,
+    userValidityRev: live.userValidityRev,
+    nextExpiry: expiryCrossed ? live.pipeline.nextExpiry(files, wsCtx) : turn.nextExpiry,
+    revision,
   }
 }

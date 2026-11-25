@@ -135,14 +135,15 @@ export class SearchIndex {
   }
 
   inspectIndexedChunks() {
-    return available(() =>
-      listChunks(this.open()).map(({ doc: path, lineStart, lineEnd, text }) => ({
+    return available(() => {
+      if (!statSync(this.meta.pathOf('index.sqlite'), { throwIfNoEntry: false })?.size) return []
+      return listChunks(this.open()).map(({ doc: path, lineStart, lineEnd, text }) => ({
         path,
         lineStart,
         lineEnd,
         text,
-      })),
-    )
+      }))
+    })
   }
 
   queryIndex(query: string) {

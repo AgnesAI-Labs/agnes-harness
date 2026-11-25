@@ -199,7 +199,7 @@ export function buildView(
     path: entry.path,
     content,
     segments,
-    hidden: active.some((range) => !range.silent),
+    hidden: readNotices.length > 0 || active.some((range) => kind === 'read' || !range.silent),
     omitted,
   }
 }

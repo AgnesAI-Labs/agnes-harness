@@ -8,7 +8,7 @@ import type {
   MemorySource,
   MemoryValidityView,
 } from '@agnes/extension-api'
-import { appendAudit } from './audit.js'
+import { checkProposalGuards, commitHooks } from './commit-hooks.js'
 import { diff, fault, file, validateContent } from './content.js'
 import type { MetaStore } from './meta.js'
 import { applyParagraphChanges, parseParagraphs, validityOf } from './paragraphs.js'
@@ -27,31 +27,6 @@ export type ParagraphPortHooks = Readonly<{
 
 function actorOf(source: MemorySource): string {
   return source.maintenance ? `host:${source.maintenance}` : `host:${source.sessionKey}`
-}
-
-function recordRefused(
-  meta: MetaStore,
-  now: number,
-  intent: CommitIntent,
-  code: string,
-  source: MemorySource,
-) {
-  try {
-    appendAudit(meta, {
-      at: new Date(now).toISOString(),
-      path: INDEX,
-      action: 'refused',
-      code,
-      origin: intent.origin,
-      actor: intent.actor,
-      sessionKey: source.sessionKey,
-      ...(source.maintenance ? { maintenance: source.maintenance } : {}),
-      beforeHash: intent.before.hash,
-      afterHash: intent.candidate.hash,
-    })
-  } catch {
-    // Best-effort refusal audit must not mask the guard refusal error.
-  }
 }
 
 /**
@@ -125,17 +100,7 @@ export function paragraphPort(
         source,
         changes: list,
       }
-      if (hooks) {
-        const now = hooks.clock()
-        const verdict = hooks.pipeline.checkGuards(intent, makeContext(config, now))
-        if (verdict.kind === 'refuse') {
-          recordRefused(hooks.meta, now, intent, verdict.code, source)
-          throw Object.assign(
-            fault(verdict.code),
-            verdict.detail ? { message: `${verdict.code}: ${verdict.detail}` } : {},
-          )
-        }
-      }
+      if (hooks) await checkProposalGuards(hooks.pipeline, intent, makeContext(config, hooks.clock()), signal)
       const proposal: MemoryProposal = Object.freeze({
         path: join(root, INDEX),
         baseHash: before.hash,
@@ -159,14 +124,7 @@ export function paragraphPort(
         signal,
         admission,
         hooks
-          ? (actualBefore, saved) => {
-              const currentConfig = store.configuration()
-              hooks.pipeline.runObservers(
-                { ...entry.intent, before: actualBefore },
-                saved,
-                makeContext(currentConfig, hooks.clock()),
-              )
-            }
+          ? commitHooks(hooks.pipeline, entry.intent, () => makeContext(store.configuration(), hooks.clock()))
           : undefined,
       )
       return { hash: committed.hash }

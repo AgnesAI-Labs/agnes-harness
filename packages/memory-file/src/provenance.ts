@@ -1,6 +1,6 @@
 import type { MemoryFile } from '@agnes/extension-api'
-import { hash } from './content.js'
-import type { MetaStore } from './meta.js'
+import { fault, hash } from './content.js'
+import { META_MAX_BYTES, type MetaStore } from './meta.js'
 import { PARAGRAPH_ID, parseParagraphs } from './paragraphs.js'
 import type { CommitIntent, CommitObserver, ViewContext } from './pipeline.js'
 
@@ -110,10 +110,13 @@ export function attributedBlocks(
   })
 }
 
-export const provenanceObserver: CommitObserver = (intent, committed, ctx) => {
-  if (ctx.layer === 'user') return
+function nextProvenance(intent: CommitIntent, candidateFile: MemoryFile, ctx: ViewContext): Provenance {
   const data = readProvenance(ctx.meta)
-  const candidate = memoryBlocks(committed.content)
+  const present = new Set(ctx.files.map((file) => file.path))
+  for (const path of Object.keys(data.files)) {
+    if (!present.has(path)) delete data.files[path]
+  }
+  const candidate = memoryBlocks(candidateFile.content)
   const prior = matchRecords(
     attributedBlocks(intent.before, ctx, data.files[intent.path]?.blocks ?? []),
     candidate,
@@ -123,6 +126,21 @@ export const provenanceObserver: CommitObserver = (intent, committed, ctx) => {
     return { ...identity, origin: retained?.origin ?? intent.origin, at: retained?.at ?? ctx.now }
   })
   data.files[intent.path] = { blocks }
+  return data
+}
+
+const prepared = new WeakMap<CommitIntent, Provenance>()
+
+export function prepareProvenance(intent: CommitIntent, ctx: ViewContext): void {
+  const data = nextProvenance(intent, intent.candidate, ctx)
+  if (Buffer.byteLength(JSON.stringify(data)) > META_MAX_BYTES) throw fault('MEMORY_CONSOLIDATION_REQUIRED')
+  prepared.set(intent, data)
+}
+
+export const provenanceObserver: CommitObserver = (intent, committed, ctx) => {
+  if (ctx.layer === 'user') return
+  const data = prepared.get(intent) ?? nextProvenance(intent, committed, ctx)
+  prepared.delete(intent)
   try {
     ctx.meta.writeJson(FILENAME, data)
   } catch (error) {

@@ -139,10 +139,14 @@ it.each(['[deploy](deploy.md#steps "Steps")', '[[deploy.md#steps]]', '[deploy]: 
     expect(await f.note(3)).not.toContain(old)
     expect(await f.note(3)).toContain(stale)
     expect(await f.read(3)).toBe(`${old}\n${stale}\nUpdated preference.`)
+    await expect(f.files(3).write(f.path(index), await f.read(3))).rejects.toMatchObject({
+      code: 'MEMORY_HIDDEN_PARAGRAPHS',
+    })
     await f.files(3).replaceExact!(f.path(index), old, fresh)
     expect(await f.note(4)).toContain(fresh)
     expect(await f.read(4)).not.toContain(stale)
     await f.edit('deploy.md', '')
+    expect(await f.read(4)).toBe(`${fresh}\n${removed}\nUpdated preference.`)
     expect(await f.note(5)).toContain(removed)
     expect(await f.note(5)).not.toContain(fresh)
     await rm(f.path('deploy.md'))
@@ -225,6 +229,18 @@ it('maps visible text to its raw lines, preserves hidden bytes on replacement, a
   })
   await f.files(1).replaceExact!(f.path(leaf), 'Visible line.', 'Edited line.')
   expect((await f.session.readFile(leaf)).content).toBe(raw.replace('Visible line.', 'Edited line.'))
+
+  const silent = 'silent.md'
+  await f.files(1).write(f.path(silent), 'Draft line.\nVisible line.')
+  f.pipeline.addViewFilter((entry) =>
+    entry.path === silent ? [{ start: 0, end: 12, appliesTo: 'read', reason: 'draft' }] : [],
+  )
+  const visible = Buffer.from(await f.files(2).read(f.path(silent))).toString()
+  expect(visible).toBe('Visible line.')
+  await expect(f.files(2).write(f.path(silent), visible)).rejects.toMatchObject({
+    code: 'MEMORY_HIDDEN_PARAGRAPHS',
+  })
+  expect((await f.session.readFile(silent)).content).toBe('Draft line.\nVisible line.')
 })
 
 it('checks turn-boundary views against raw filters and detects stale index chunks until rebuilt', async () => {

@@ -141,7 +141,9 @@ What you take back wins over automatic and model saves:
 
 ### Paragraphs a person edited
 
-A save never replaces a paragraph a person edited in place: an automatic or model save of a new version of the entry is refused as `conflict` and the person's text stays. Only your own save or an approved request replaces it. An edit that changes only spacing or letter case counts as untouched, so the next version may replace it. If a save that updated a paragraph in place was cut off by a crash and the file changed before it was settled, later automatic and model versions of that entry are refused `conflict` too, until you save the entry yourself or withdraw the paragraph.
+When you edit a saved workspace paragraph in place, later saves preserve your text, including changes to spacing or letter case. This also applies to a save you request or approve. Use the Memory page to change or withdraw the paragraph. In user memory, a promotion can replace a saved section whose only changes are spacing or letter case.
+
+If a save that updated a paragraph in place was cut off by a crash and the file changed before it was settled, later automatic and model versions of that entry are refused `conflict` too, until you save the entry yourself or withdraw the paragraph.
 
 ### Save lines in the conversation
 

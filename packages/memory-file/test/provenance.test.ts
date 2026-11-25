@@ -136,6 +136,10 @@ it('compares new structured preferences against same-file human values and enabl
     code: 'MEMORY_PREFERENCE_CONFLICT',
   })
   await expect(put('pReFeReNcE: tab_WIDTH = 2')).rejects.toMatchObject({ code: 'MEMORY_PREFERENCE_CONFLICT' })
+  const pending = await put('output_format = markdown')
+  await writeFile(join(user, 'MEMORY.md'), 'output_format = plain')
+  await expect(f.paragraphs.commit(pending)).rejects.toMatchObject({ code: 'MEMORY_PREFERENCE_CONFLICT' })
+  expect(await readFile(f.index, 'utf8')).not.toContain('output_format')
   await expect(put('- test_runner: JEST\nstyle = verbose\nI prefer two spaces.')).resolves.toBeDefined()
   await f.human('tab_width = 2')
 })
@@ -154,16 +158,27 @@ it('uses user-layer markers for origin and requires an explicit CAS for an exist
   await expect(readFile(join(user, 'meta', 'provenance.json'))).rejects.toMatchObject({ code: 'ENOENT' })
 })
 
-it('drops stale ownership if a committed file exceeds the provenance store budget', async () => {
+it('refuses an oversized provenance update before publication and preserves existing ownership', async () => {
   const f = await setup()
   await f.agent('First note')
   const topic = 'large.md'
   const text = 'a\n\n'.repeat(3000)
   await expect(f.session.editFile(topic, text, hash(''))).rejects.toMatchObject({
-    code: 'MEMORY_COMMITTED_METADATA_FAILED',
+    code: 'MEMORY_CONSOLIDATION_REQUIRED',
   })
-  expect((await f.session.readFile(topic)).content).toBe(text)
-  await expect(f.agent('')).rejects.toMatchObject({ code: 'MEMORY_HUMAN_EDITED' })
+  expect((await f.session.readFile(topic)).content).toBe('')
+  await expect(f.agent(text, join(f.session.root, topic))).rejects.toMatchObject({
+    code: 'MEMORY_CONSOLIDATION_REQUIRED',
+  })
+  await f.agent('Revised agent note')
+
+  // The replacement topic fits by itself once the owner removes the old file.
+  const notes = 'a\n\n'.repeat(1500)
+  const original = join(f.session.root, 'original.md')
+  await f.agent(notes, original)
+  await rm(original)
+  await f.agent(notes, join(f.session.root, 'replacement.md'))
+  expect(Object.keys(JSON.parse(await readFile(f.provenance, 'utf8')).files)).not.toContain('original.md')
 })
 
 it('retains the origins of equal copies and protects the last human copy when one disappears', async () => {

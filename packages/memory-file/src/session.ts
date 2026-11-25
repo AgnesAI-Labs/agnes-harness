@@ -11,13 +11,14 @@ import type {
   MemoryValidityView,
 } from '@agnes/extension-api'
 import { chunkView } from './chunker.js'
+import { commitHooks } from './commit-hooks.js'
 import { formatLifecycleOmission, inspectConsistency } from './consistency.js'
 import { fault, file, fitBytes, hash, validateContent } from './content.js'
 import { createFilePort } from './file-port.js'
 import { MetaStore } from './meta.js'
-import { type ResolvedReadState, resolveReadOverlay, type TurnOverlayInput } from './overlay.js'
+import { resolveReadOverlay, type TurnReadState } from './overlay.js'
 import { paragraphPort } from './paragraph-port.js'
-import { markerLines, unfilteredIndexView, validityOf } from './paragraphs.js'
+import { markerLines, validityOf } from './paragraphs.js'
 import { canonical, inside, name, roots } from './paths.js'
 import {
   createDefaultPipeline,
@@ -40,8 +41,9 @@ export type OpenMemoryInput = Readonly<{
   pipeline?: MemoryPipeline
 }>
 
-type TurnSnapshot = TurnOverlayInput & {
+type TurnSnapshot = TurnReadState & {
   snapshot: MemorySnapshot
+  readState?: TurnReadState
   noteViewContent: string
 }
 
@@ -53,7 +55,7 @@ type SessionInternals = Readonly<{
   clock: MemoryClock
   validity: (id: string) => MemoryParagraphValidity
   capture: (turn: number) => TurnSnapshot
-  resolvedFor: (turn: TurnOverlayInput) => ResolvedReadState
+  resolvedFor: (turn: TurnSnapshot) => TurnReadState
 }>
 
 const sessions = new WeakMap<MemorySession, SessionInternals>()
@@ -92,17 +94,6 @@ function readLineFor(
   const to = raw === undefined ? undefined : holding(readView.segments, (segment) => segment.raw, raw)
   const read = to?.raw === undefined || raw === undefined ? offset : to.view + (raw - to.raw)
   return rawOffsetToLine(readView.content, read)
-}
-
-function buildUnfilteredView(content: string): MemoryView {
-  const legacy = unfilteredIndexView(content)
-  return {
-    path: 'MEMORY.md',
-    content: legacy.content,
-    segments: legacy.segments,
-    hidden: legacy.hidden,
-    omitted: legacy.omittedIds,
-  }
 }
 
 function emptyView(path: string): MemoryView {
@@ -164,9 +155,9 @@ function captureTurnSnapshot(args: {
 
   for (const entry of files) {
     if (entry.path === 'MEMORY.md' && !indexValid) {
-      const unfiltered = buildUnfilteredView(entry.content)
+      const omitted = { ...emptyView(entry.path), hidden: markerLines(entry.content).length > 0 }
       baseRanges.set(entry.path, [])
-      readViews.set(entry.path, unfiltered)
+      readViews.set(entry.path, omitted)
       agent.set(entry.path, entry)
       continue
     }
@@ -183,7 +174,7 @@ function captureTurnSnapshot(args: {
   let indexView: MemoryView
   let noteView: MemoryView
   if (!indexValid) {
-    indexView = readViews.get('MEMORY.md') ?? buildUnfilteredView(index.content)
+    indexView = readViews.get('MEMORY.md') ?? emptyView(index.path)
     noteView = indexView
   } else if (readViews.has('MEMORY.md')) {
     indexView = readViews.get('MEMORY.md')!
@@ -220,6 +211,7 @@ function captureTurnSnapshot(args: {
       meta: userMeta,
     }
     for (const entry of userFiles) {
+      if (entry.path === 'MEMORY.md' && !userValid) continue
       const ranges = pipeline.collectHideRanges(entry, userCtx)
       userBaseRanges.set(entry.path, ranges)
       userReadViews.set(entry.path, buildView(entry, ranges, 'read', formatLifecycleOmission))
@@ -230,11 +222,15 @@ function captureTurnSnapshot(args: {
   const validityRev = indexManaged || touchedValidity ? viewRevision(validityView) : null
   const userValidityRev = userView.managed || touchedUserValidity ? viewRevision(userValidityView) : null
 
+  const userTopics = userFiles
+    .filter((entry) => entry.path !== 'MEMORY.md')
+    .map(({ path, hash }) => [path, hash])
   // Without extra filter outputs, revision input stays byte-for-byte identical to the baseline formula.
   const revision = hash(
     JSON.stringify([
       files.map(({ path, hash }) => [path, hash]),
       userIndex.hash,
+      ...(userTopics.length ? [{ userTopics }] : []),
       ...(indexManaged ? [indexView.omitted, validityRev] : []),
       ...(userView.managed ? [{ user: [userView.omittedIds, userValidityRev] }] : []),
       ...(nonManagedDiffs.length ? [nonManagedDiffs] : []),
@@ -274,8 +270,8 @@ function captureTurnSnapshot(args: {
     baseRanges,
     readViews,
     agent,
-    indexValid,
-    snapshotRevision: revision,
+    ...(indexValid ? {} : { invalidIndexLimits: config }),
+    revision,
     validityRev,
     userValidityRev,
     nextExpiry: pipeline.nextExpiry(files, ctx),
@@ -295,7 +291,7 @@ function captureTurnSnapshot(args: {
 export function openMemory(input: OpenMemoryInput): MemorySession {
   const paths = roots(input.home, input.workspaceRoot)
   const store = new MemoryStore(paths.protectedRoot, paths.root)
-  const user = new MemoryStore(paths.protectedRoot, paths.userRoot)
+  const user = new MemoryStore(paths.protectedRoot, paths.userRoot, 'user')
   const meta = new MetaStore(store)
   const userMeta = new MetaStore(user)
   const clock = input.clock ?? Date.now
@@ -320,8 +316,9 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
     turnSnapshot = { turn, value }
     return value
   }
-  const resolvedFor = (turn: TurnOverlayInput): ResolvedReadState =>
-    resolveReadOverlay(turn, {
+  const resolvedFor = (turn: TurnSnapshot): TurnReadState => {
+    const prior = turn.readState ?? turn
+    const current = resolveReadOverlay(prior, {
       store,
       user,
       meta,
@@ -333,6 +330,9 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
       userValidityRev: turn.userValidityRev === null ? null : viewRevision(input.userValidity),
       now: clock(),
     })
+    if (current !== prior) turn.readState = current
+    return current
+  }
   const target = (path: string): string | undefined => {
     const absolute = resolve(input.workspaceRoot, path)
     const real = canonical(absolute)
@@ -378,7 +378,7 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
       const externalChanges = await store.externalChanges(value.files)
       if (!externalChanges.length) return value.snapshot
       const snapshot = Object.freeze({ ...value.snapshot, externalChanges: Object.freeze(externalChanges) })
-      turnSnapshot = { turn, value: { ...value, snapshot } }
+      value.snapshot = snapshot
       return snapshot
     },
     files(fallback, source, signal, approve): MemoryFilePort {
@@ -437,22 +437,11 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
         false,
         undefined,
         undefined,
-        (before, saved) => {
-          pipeline.runObservers(
-            {
-              origin: 'human',
-              actor,
-              path: leaf,
-              before,
-              candidate: saved,
-              via: 'edit',
-              layer: 'workspace',
-              source: editSource,
-            },
-            saved,
-            viewCtx(clock()),
-          )
-        },
+        commitHooks(
+          pipeline,
+          { origin: 'human', actor, path: leaf, via: 'edit', layer: 'workspace', source: editSource },
+          () => viewCtx(clock()),
+        ),
       )
     },
   })
@@ -526,7 +515,7 @@ export async function inspectMemoryConsistency(
     pipeline,
     context: ctx,
     injectedIndex: snap.noteViewContent,
-    readViews: state.views,
+    readViews: state.readViews,
     ...(retrieval
       ? {
           chunkView: safeChunks,
@@ -537,7 +526,7 @@ export async function inspectMemoryConsistency(
   const keyOf = (chunk: { path: string; lineStart: number; lineEnd: number; text: string }) =>
     `${chunk.path}:${chunk.lineStart}-${chunk.lineEnd}:${hash(chunk.text)}`
   const readIds = state.files.flatMap((entry) => {
-    const view = state.views.get(entry.path)
+    const view = state.readViews.get(entry.path)
     return view ? safeChunks(entry, view).map(keyOf) : []
   })
   const rawFilteredIds = snap.files.flatMap((entry) =>

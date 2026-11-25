@@ -50,7 +50,9 @@ export function safe(root: string, path: string): void {
     }
   }
 }
+export const isMemoryName = (value: string): boolean => /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\.md$/.test(value)
+
 export function name(value: string): string {
-  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\.md$/.test(value)) throw fault('MEMORY_SCOPE_DENIED')
+  if (!isMemoryName(value)) throw fault('MEMORY_SCOPE_DENIED')
   return value
 }
