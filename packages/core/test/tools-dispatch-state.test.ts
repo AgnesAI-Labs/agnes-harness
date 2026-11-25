@@ -204,6 +204,7 @@ describe('durable tool dispatch state', () => {
     'prior-write',
     'prior-protected-write',
     'published-denial',
+    'published-marker-refusal',
     'published-before-delegating',
     'forged',
     'cloned',
@@ -214,7 +215,7 @@ describe('durable tool dispatch state', () => {
     'accepts only the bound memory port refusal before any write: %s',
     async (mode) => {
       const committed = new Map<string, string>()
-      const published = mode === 'published-denial' || mode === 'published-before-delegating'
+      const published = mode.startsWith('published-')
       const protectedError = Object.assign(new Error('protected'), { code: 'MEMORY_HUMAN_EDITED' })
       let received: unknown
       const memory: MemorySession = {
@@ -227,6 +228,8 @@ describe('durable tool dispatch state', () => {
             if (published) {
               committed.set(path, String(content))
               if (mode === 'published-before-delegating') return fallback.write('/outside', content)
+              if (mode === 'published-marker-refusal')
+                throw Object.assign(new Error('provider refused marker'), { code: 'MEMORY_MARKER_CHANGED' })
               throw Object.assign(new Error('publication failed'), { code: 'E_FS_DENIED' })
             }
             if (mode === 'prior-protected-write') throw protectedError

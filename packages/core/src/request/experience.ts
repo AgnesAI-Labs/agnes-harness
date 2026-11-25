@@ -19,6 +19,7 @@ import {
   headerDeliveries,
   heldLine,
   SAFE_REF,
+  SAVED_PENDING_LINE,
   surfaceRefs,
 } from './experience-control.js'
 import {
@@ -301,11 +302,15 @@ export function visibleExperience(surface: readonly SurfaceNode[]): {
   legacy: boolean
   /** A visible snapshot or update carries an entry saved in an earlier session. */
   saved: boolean
+  /** Whether this snapshot still owes a listing, and which snapshot recorded the outage. */
+  savedPending: boolean
+  savedPendingSeq: Seq
 } {
   let snapshot = false
   let voided = false
   let legacy = false
   let saved = false
+  let savedPendingSeq: Seq = 0
   let lastSeq: Seq = 0
   for (const node of surface) {
     if (node.kind !== 'user' || node.event.type !== 'user/message') continue
@@ -322,6 +327,7 @@ export function visibleExperience(surface: readonly SurfaceNode[]): {
       if (head.includes(EXPERIENCE_OFF_NOTICE) && snapshot) {
         snapshot = false
         voided = true
+        savedPendingSeq = 0
       }
       continue
     }
@@ -329,12 +335,13 @@ export function visibleExperience(surface: readonly SurfaceNode[]): {
     if (SNAPSHOT_FORMAT_LINES.includes(first ?? '')) {
       snapshot = true
       legacy = first !== SNAPSHOT_FORMAT_LINE
+      savedPendingSeq = head.split('\n').includes(SAVED_PENDING_LINE) ? node.seq : 0
     }
     const manifest = headerDeliveries(head)
     saved ||=
       manifest?.some(({ ref }) => isSavedKey(ref)) ?? messageText(data.content).includes(`]${SAVED_MARK} `)
   }
-  return { snapshot, voided, lastSeq, legacy, saved }
+  return { snapshot, voided, lastSeq, legacy, saved, savedPending: savedPendingSeq !== 0, savedPendingSeq }
 }
 
 /** The text of the most recent user and assistant messages, for ranking; notes are skipped. */
@@ -366,6 +373,8 @@ function currentRequestText(surface: readonly SurfaceNode[]): string {
 
 /** Sessions whose last snapshot went without saved entries because the host could not list them. */
 const savedOwed = new WeakSet<SessionImpl>()
+/** A recovered empty listing needs no replacement snapshot. Remember which marker was resolved. */
+const savedResolvedSeq = new WeakMap<SessionImpl, Seq>()
 /** Sessions that already looked for saved entries for a format 1 snapshot. */
 const legacyLooked = new WeakSet<SessionImpl>()
 
@@ -490,7 +499,7 @@ export type ExperienceStamp = Readonly<{
   tombstones: unknown
 }> & {
   savedView?: { digest?: string; required: boolean }
-  delivery?: { legacyLooked: boolean; savedOwed: boolean }
+  delivery?: { legacyLooked: boolean; savedOwed: boolean; resolvedPendingSeq?: Seq }
 }
 
 /** Consume a cold or legacy listing only once the request carrying its notes is durable. */
@@ -499,6 +508,8 @@ export function markExperienceCommitted(s: SessionImpl, stamp?: Pick<ExperienceS
   if (stamp.delivery.legacyLooked) legacyLooked.add(s)
   if (stamp.delivery.savedOwed) savedOwed.add(s)
   else savedOwed.delete(s)
+  if (stamp.delivery.resolvedPendingSeq !== undefined)
+    savedResolvedSeq.set(s, stamp.delivery.resolvedPendingSeq)
 }
 
 /** The state task-experience notes derived now would be derived from. */
@@ -589,17 +600,18 @@ export async function deriveExperienceNotes(
   // A format 1 snapshot never carried saved entries: they are looked for once. A snapshot sent while the
   // host could not list them owes them until a listing succeeds.
   const legacy = seen.snapshot && seen.legacy && !seen.saved && !legacyLooked.has(s)
-  const owedBefore = seen.snapshot && savedOwed.has(s)
-  const cold = !seen.snapshot || legacy || savedOwed.has(s)
+  const owedBefore =
+    seen.snapshot &&
+    (savedOwed.has(s) || (seen.savedPending && savedResolvedSeq.get(s) !== seen.savedPendingSeq))
+  const cold = !seen.snapshot || legacy || owedBefore
+  const needsListing = givenSaved.length > 0 || withdrawnSaved.length > 0 || owedBefore
   const verifyListing = stamp && !cacheableRevision(stamp.saved) && s.d.refinement?.workspaceRefs?.entries
   const saved =
-    cold || givenSaved.length || withdrawnSaved.length || verifyListing
-      ? await savedFor(s, cold)
-      : { entries: [], failed: false }
-  if (verifyListing) {
+    cold || needsListing || verifyListing ? await savedFor(s, cold) : { entries: [], failed: false }
+  if (stamp && (verifyListing || (saved.failed && needsListing))) {
     stamp.savedView = {
       ...(saved.failed ? {} : { digest: savedDigest(saved.entries) }),
-      required: givenSaved.length > 0 || withdrawnSaved.length > 0 || owedBefore || saved.entries.length > 0,
+      required: needsListing || saved.entries.length > 0,
     }
   }
   const replacements = new Set<string>()
@@ -613,7 +625,7 @@ export async function deriveExperienceNotes(
       replacements.add(ref)
     } else present.add(ref)
   }
-  // A host that cannot answer withdraws nothing: what it said before still stands.
+  // A failed listing cannot establish a withdrawal. Dispatch rechecks an active or owed listing.
   if (saved.failed) for (const ref of givenSaved) present.add(ref)
   const control = controlLines(refs.delivered, expired, present, handedOffRefs(s.state))
   const notice = renderControl(control, EXPERIENCE_BUDGETS.control)
@@ -633,7 +645,11 @@ export async function deriveExperienceNotes(
   const withHeld = (text: string) => (named ? `${text}\n${named}` : text)
   // A format 1 snapshot never carried saved entries: with some in force, a new snapshot gives them once.
   if (cold) {
-    const delivery = { legacyLooked: legacy, savedOwed: saved.failed }
+    const delivery = {
+      legacyLooked: legacy,
+      savedOwed: saved.failed,
+      ...(!saved.failed && seen.savedPending && { resolvedPendingSeq: seen.savedPendingSeq }),
+    }
     if (stamp) stamp.delivery = delivery
     else markExperienceCommitted(s, { delivery })
   }
@@ -658,7 +674,7 @@ export async function deriveExperienceNotes(
     if (out.control) notes.push(controlNote(out.control))
     notes.push({
       prefix: EXPERIENCE_PREFIX,
-      text: withHeld(out.body),
+      text: withHeld(out.body) + (saved.failed ? `\n${SAVED_PENDING_LINE}` : ''),
       ...(out.data ? { data: out.data } : {}),
       // A recovered listing or a snapshot following a void replaces the earlier snapshot.
       dedup:

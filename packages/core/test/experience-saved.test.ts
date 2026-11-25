@@ -14,7 +14,7 @@ import {
   experienceStamp,
   stampChanged,
 } from '../src/request/experience.js'
-import { CONTROL_FORMAT_LINE } from '../src/request/experience-control.js'
+import { CONTROL_FORMAT_LINE, SAVED_PENDING_LINE } from '../src/request/experience-control.js'
 import { loopRequestStale } from '../src/request/experience-dispatch.js'
 import { REFINEMENT_GUIDANCE } from '../src/request/experience-guidance.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
@@ -269,6 +269,44 @@ describe('entries saved in earlier sessions reach the model through the snapshot
     expect(JSON.stringify(provider.requests[1]?.messages)).toContain('[memory/ws.r0000000001 v1] withdrawn')
   })
 
+  it.each(['stepper', 'loop'])('holds a failed versioned listing on the %s until retry', async (path) => {
+    const outage = { fail: false }
+    const p = port([saved(1)], outage)
+    const provider = fakeProvider([textTurn('ok')])
+    const { session } = await openSession({
+      provider,
+      refinementEnabled: () => true,
+      refinement: { settings: () => ({}) as never, planner: () => undefined, workspaceRefs: p.refs },
+    })
+    const signal = new AbortController().signal
+    const enqueue = () => session.enqueue('next-turn', { content: [{ type: 'text', text: 'next' }], actor })
+    try {
+      await enqueue()
+      expect((await session.run({ until: 'turn-end', signal })).reason).toBe('completed')
+      expect(JSON.stringify(provider.requests[0]?.messages)).toContain('[memory/ws.r0000000001 v1] (saved)')
+      p.set([])
+      outage.fail = true
+      await enqueue()
+      expect(await session.acceptInput()).toBe(true)
+      const ctx = await createLoopContext(session)
+      const dispatch = () =>
+        path === 'stepper'
+          ? session.runInference()
+          : ctx.prepareRequest({}).then((request) => ctx.model.complete(request, signal))
+      await expect(dispatch()).rejects.toMatchObject({
+        code: 'E_REQUEST_FROZEN',
+        message: expect.stringContaining('unavailable'),
+      })
+      expect(provider.requests).toHaveLength(1)
+      outage.fail = false
+      await dispatch()
+      expect(provider.requests).toHaveLength(2)
+      expect(JSON.stringify(provider.requests[1]?.messages)).toContain('[memory/ws.r0000000001 v1] withdrawn')
+    } finally {
+      await session.close()
+    }
+  })
+
   it('rechecks the switch at writer admission before committing a loop invocation', async () => {
     let on = true
     const { session, log } = await open(port([saved(1)]).refs, { refinementEnabled: () => on })
@@ -486,18 +524,20 @@ describe('entries saved in earlier sessions reach the model through the snapshot
     expect(cold).not.toContain('old text')
   })
 
-  it.each([false, true])(
-    'delivers the recovered cold listing exactly once (stale commit: %s)',
-    async (stale) => {
+  it.each(['same session', 'stale commit', 'reopen', 'reopen empty'])(
+    'delivers the recovered cold listing exactly once (%s)',
+    async (mode) => {
       const outage = { fail: true }
-      const p = port([saved(1)], outage)
+      const p = port(mode === 'reopen empty' ? [] : [saved(1)], outage)
       const provider = fakeProvider([textTurn('ok')])
-      const { session, log } = await openSession({
+      const deps = {
         provider,
         refinementEnabled: () => true,
         refinement: { settings: () => ({}) as never, planner: () => undefined, workspaceRefs: p.refs },
-      })
+      }
+      let opened = await openSession(deps)
       const turn = async () => {
+        const { session } = opened
         await session.enqueue('next-turn', { content: [{ type: 'text', text: 'next' }], actor })
         expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
           'completed',
@@ -506,8 +546,15 @@ describe('entries saved in earlier sessions reach the model through the snapshot
       try {
         await turn()
         expect(JSON.stringify(provider.requests[0]?.messages)).not.toContain('(saved)')
+        const rowsBefore = await opened.log.scan({ type: 'user/message', toSeq: opened.session.lastSeq })
+        expect(JSON.stringify(rowsBefore)).toContain(SAVED_PENDING_LINE)
+        if (mode.startsWith('reopen')) {
+          await opened.session.close()
+          opened = await openSession({ ...deps, storage: opened.storage })
+        }
+        const { session, log } = opened
         outage.fail = false
-        if (stale) {
+        if (mode === 'stale commit') {
           const append = log.append.bind(log)
           vi.spyOn(log, 'append').mockImplementation((rows, options) =>
             append(rows, {
@@ -525,17 +572,21 @@ describe('entries saved in earlier sessions reach the model through the snapshot
             }),
           )
         }
+        const beforeRecovery = p.calls()
         await turn()
-        const body = `(saved) Saved 1: ${stale ? 'revised before dispatch' : 'lesson number 1'}`
-        expect(JSON.stringify(provider.requests[1]?.messages)).toContain(body)
+        const afterRecovery = p.calls()
+        expect(afterRecovery).toBeGreaterThan(beforeRecovery)
+        const body = `(saved) Saved 1: ${mode === 'stale commit' ? 'revised before dispatch' : 'lesson number 1'}`
+        const deliveries = mode === 'reopen empty' ? 0 : 1
+        expect(JSON.stringify(provider.requests[1]?.messages).split(body)).toHaveLength(1 + deliveries)
         await turn()
+        expect(p.calls()).toBe(afterRecovery)
         // Later requests still see the already-delivered note in history, exactly once.
-        expect(JSON.stringify(provider.requests[2]?.messages).split(body)).toHaveLength(2)
+        expect(JSON.stringify(provider.requests[2]?.messages).split(body)).toHaveLength(1 + deliveries)
         const rows = await log.scan({ type: 'user/message', toSeq: session.lastSeq })
-        expect(rows.filter((row) => JSON.stringify(row.data).includes('(saved)'))).toHaveLength(1)
-        expect(JSON.stringify(rows)).toContain(body)
+        expect(rows.filter((row) => JSON.stringify(row.data).includes('(saved)'))).toHaveLength(deliveries)
       } finally {
-        await session.close()
+        await opened.session.close()
       }
     },
   )

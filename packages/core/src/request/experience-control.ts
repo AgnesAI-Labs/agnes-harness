@@ -13,6 +13,7 @@ import { EXPERIENCE_PREFIX } from './experience-guidance.js'
  */
 
 export const CONTROL_FORMAT_LINE = 'Task experience control, format 1.'
+export const SAVED_PENDING_LINE = 'Saved experience pending: host listing unavailable.'
 /** Sent instead of a list of withdrawals that does not fit the control budget. */
 export const EXPERIENCE_RESET_NOTICE =
   'No task-experience note before this one applies any longer; only experience given after this notice is valid.'

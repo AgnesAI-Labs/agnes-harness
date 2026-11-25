@@ -38,6 +38,18 @@ const MEMORY_PRE_EFFECT_REFUSALS: Readonly<Record<string, string>> = {
     'Nothing was written. Ask the user to update human-edited text on the Memory page, or append a separate paragraph.',
   MEMORY_PARAGRAPH_EDITED: 'Managed paragraph text was edited by a human',
   MEMORY_PREFERENCE_CONFLICT: 'Structured preference conflicts with human-authored value',
+  MEMORY_MARKER_CHANGED: 'The edit would change a managed paragraph marker',
+  MEMORY_REPLACE_NOT_FOUND: 'The replacement passage was not found',
+  MEMORY_REPLACE_AMBIGUOUS: 'The replacement passage matched more than once',
+  MEMORY_CONFLICT: 'Memory changed before the write',
+  MEMORY_POLICY_CHANGED: 'Memory policy changed before the write',
+  MEMORY_CONSOLIDATION_REQUIRED: 'The write exceeds the memory limits',
+  MEMORY_SECRET_LIKE_CONTENT: 'The proposed content may contain a secret',
+  MEMORY_MISSING_TOPIC: 'A referenced memory topic is missing',
+  MEMORY_SCOPE_DENIED: 'The path is outside the writable memory scope',
+  MEMORY_INVALID_SETTINGS: 'Memory settings are invalid',
+  MEMORY_INVALID_METADATA: 'Memory metadata is invalid',
+  MEMORY_BUSY: 'Memory is busy',
 }
 
 export function memoryRefusedBeforeEffect(error: unknown): RejectedBeforeEffectError | undefined {

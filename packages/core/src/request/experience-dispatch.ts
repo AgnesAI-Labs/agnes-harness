@@ -11,7 +11,13 @@ export class ExperienceChangedSinceDerive extends CoreError {
 }
 
 export async function loopRequestStale(s: SessionImpl, stamp?: ExperienceStamp): Promise<boolean> {
-  return !!stamp && (stampChanged(stamp, s) || (await savedViewChange(s, stamp)) !== undefined)
+  if (!stamp) return false
+  if (stampChanged(stamp, s)) return true
+  const change = await savedViewChange(s, stamp)
+  // Both derivation and dispatch failed to verify active or owed entries. Retry on a fresh request.
+  if (change === 'unavailable' && stamp.savedView?.digest === undefined)
+    throw new CoreError('E_REQUEST_FROZEN', 'Saved task experience is unavailable; retry the request')
+  return change !== undefined
 }
 
 /** Revalidate external listings inside the append queue, then check synchronous state at commit. */
@@ -19,13 +25,7 @@ export function experienceCommitCheck(s: SessionImpl, stamp?: ExperienceStamp) {
   return {
     ...(stamp?.savedView && {
       beforeCommit: async () => {
-        if (stampChanged(stamp, s)) throw new ExperienceChangedSinceDerive()
-        const change = await savedViewChange(s, stamp)
-        // Both derivation and dispatch tried to verify active or owed entries. A fresh turn
-        // can retry the unavailable host without spinning the stepper on the same failed reads.
-        if (change === 'unavailable' && stamp.savedView?.digest === undefined)
-          throw new CoreError('E_REQUEST_FROZEN', 'Saved task experience is unavailable; retry the request')
-        if (change) throw new ExperienceChangedSinceDerive()
+        if (await loopRequestStale(s, stamp)) throw new ExperienceChangedSinceDerive()
       },
     }),
     commitCheck: () => {

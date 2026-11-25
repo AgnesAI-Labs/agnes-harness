@@ -142,7 +142,7 @@ describe('edit through the memory provider with a hidden paragraph', () => {
     )
   })
 
-  it.each(['MEMORY_APPROVAL_REJECTED', 'MEMORY_HUMAN_EDITED'])(
+  it.each(['MEMORY_APPROVAL_REJECTED', 'MEMORY_HUMAN_EDITED', 'MEMORY_MARKER_CHANGED'])(
     'reports exactly which edits were applied when a later replacement fails with %s',
     async (code) => {
       const { run, index, asked } = await setup(
@@ -154,7 +154,13 @@ describe('edit through the memory provider with a hidden paragraph', () => {
         path: index,
         edits: [
           { oldText: 'Use pnpm.', newText: 'Use pnpm 10.' },
-          { oldText: 'Bottom line.', newText: 'Bottom line, updated.' },
+          {
+            oldText: 'Bottom line.',
+            newText:
+              code === 'MEMORY_MARKER_CHANGED'
+                ? block('rvisible001', 'Bottom line.')
+                : 'Bottom line, updated.',
+          },
         ],
       })
       expect(asked()).toBe(code === 'MEMORY_APPROVAL_REJECTED' ? 2 : 1)
