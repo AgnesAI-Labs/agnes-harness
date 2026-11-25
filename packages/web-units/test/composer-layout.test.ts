@@ -741,7 +741,17 @@ it.each(['running', 'idle', 'interrupted', 'completed', 'failed', 'cancelled'] a
       },
     )
     expect(host.querySelector('[data-testid="child-stop"]') !== null).toBe(status === 'running')
-    expect(host.querySelector('[data-testid="child-continue"]') !== null).toBe(active)
+    const steerToggle = host.querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')
+    expect(steerToggle !== null).toBe(status === 'running')
+    if (status === 'running') {
+      expect(host.querySelector('[data-testid="child-continue-message"]')).toBeNull()
+      act(() => {
+        steerToggle?.click()
+      })
+      expect(host.querySelector('[data-testid="child-continue"]')?.textContent).toBe('发送指引')
+    } else {
+      expect(host.querySelector('[data-testid="child-continue"]') !== null).toBe(active)
+    }
     const metrics = host.querySelector('[data-testid="child-control-metrics"]')?.textContent
     expect(metrics).toContain('15')
     expect(metrics).toContain('1.2')
@@ -777,6 +787,56 @@ it.each(['running', 'idle', 'interrupted', 'completed', 'failed', 'cancelled'] a
     }
   },
 )
+
+it('pins active children above folded cancelled history and renders task labels', () => {
+  const { host } = mount(
+    {
+      onChildControl: async () => {},
+      dependencies: {
+        ...dependencies,
+        translate: (key, vars) =>
+          (webUnitsLocaleCatalog['zh-CN'][key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) =>
+            String(vars?.[name] ?? name),
+          ),
+      },
+    },
+    {
+      ...idle,
+      children: [
+        {
+          id: 'parent/old1',
+          parentId: 'parent',
+          providerId: 'in-process',
+          label: '旧任务【北京】',
+          status: 'cancelled',
+          controls: { stop: false, continue: false },
+          totalTokens: 100,
+          durationMs: 2000,
+        },
+        {
+          id: 'parent/new1',
+          parentId: 'parent',
+          providerId: 'in-process',
+          label: '调研【北京】的长期宜居情况',
+          status: 'running',
+          controls: { stop: true, continue: true },
+          totalTokens: 200,
+          durationMs: 3000,
+        },
+      ],
+    },
+  )
+  expect(host.querySelector('[data-testid="child-control-tree"] .agh-disclosure-meta')?.textContent).toBe(
+    '1 个运行中 · 1 个已结束',
+  )
+  const topList = host.querySelector('.composer-children-list')
+  expect(topList?.querySelectorAll('[data-testid="child-control-row"]')).toHaveLength(1)
+  expect(topList?.querySelector('.composer-child-name')?.textContent).toBe('调研【北京】的长期宜居情况')
+  const history = host.querySelector('[data-testid="child-control-history"]')
+  expect(history).not.toBeNull()
+  expect(history?.hasAttribute('open')).toBe(false)
+  expect(history?.textContent).toContain('已结束 / 已取消（1）')
+})
 
 it('asks the terminal panel for the child job when its name is clicked', () => {
   const view: ComposerView = {

@@ -27,12 +27,15 @@ const CHILD_MARK: Record<ChildStatus, { dot: StatusDotTone; tag?: 'ok' | 'warn' 
   interrupted: { dot: 'warning', tag: 'warn' },
 }
 const WORKING = new Set<ChildStatus>(['starting', 'running'])
+const TERMINAL = new Set<ChildStatus>(['completed', 'failed', 'cancelled'])
 
 /**
- * A child is named the way its terminal tab names it: the built-in provider has no name a person
- * can use, so it reads as a subagent, and the end of the id keeps two of them apart.
+ * A child prefers its human-readable task label when present; otherwise falls back to its
+ * provider/subagent label with the trailing id segment so two children stay distinguishable.
  */
 function childName(child: SessionControlledChild, t: ComposerDependencies['translate']): string {
+  const label = child.label?.trim()
+  if (label) return label
   const name = child.providerId === 'in-process' ? t('composer.child.name') : child.providerId
   return `${name} · ${child.id.slice(-6)}`
 }
@@ -47,8 +50,8 @@ function openChildJob(target: EventTarget, childId: string): void {
 
 /**
  * The children a session started, above the composer: one row per workflow or subagent session,
- * nested under its parent. Header, state and follow-up share the tray with the queue and pause
- * strips, so the block reads as the composer card's top edge rather than a separate card.
+ * nested under its parent. Active children stay pinned on top; finished/cancelled history folds
+ * underneath when active work is present so cancelled retries never crowd out live tasks.
  */
 export function ChildControlTree({
   nodes,
@@ -63,6 +66,17 @@ export function ChildControlTree({
 }) {
   const ids = new Set(nodes.map((child) => child.id))
   const working = nodes.filter((child) => WORKING.has(child.status)).length
+  const finished = nodes.filter((child) => TERMINAL.has(child.status)).length
+  const roots = nodes.filter((child) => !ids.has(child.parentId))
+  const activeRoots = roots.filter((child) => !TERMINAL.has(child.status))
+  const terminalRoots = roots.filter((child) => TERMINAL.has(child.status))
+  const foldHistory = activeRoots.length > 0 && terminalRoots.length > 0
+  const meta =
+    working && finished
+      ? t('composer.child.summaryMixed', { working, done: finished })
+      : working
+        ? t('composer.child.workingCount', { count: working })
+        : undefined
   const renderChild = (child: SessionControlledChild, seen = new Set<string>()): ReactNode => {
     if (seen.has(child.id)) return null
     const next = new Set([...seen, child.id])
@@ -89,11 +103,21 @@ export function ChildControlTree({
       data-testid="child-control-tree"
       icon={<Icon name="route" size={16} />}
       summary={t('composer.child.title')}
-      meta={working ? t('composer.child.workingCount', { count: working }) : undefined}
+      meta={meta}
     >
       <ul className="composer-children-list">
-        {nodes.filter((child) => !ids.has(child.parentId)).map((child) => renderChild(child))}
+        {(foldHistory ? activeRoots : [...activeRoots, ...terminalRoots]).map((child) => renderChild(child))}
       </ul>
+      {foldHistory ? (
+        <Disclosure
+          variant="plain"
+          className="composer-children-history"
+          data-testid="child-control-history"
+          summary={t('composer.child.finishedGroup', { count: terminalRoots.length })}
+        >
+          <ul className="composer-children-list">{terminalRoots.map((child) => renderChild(child))}</ul>
+        </Disclosure>
+      ) : null}
     </Disclosure>
   )
 }
@@ -110,16 +134,22 @@ export function ChildControlRow({
   t: ComposerDependencies['translate']
 }) {
   const [text, setText] = useState('')
+  const [replyOpen, setReplyOpen] = useState(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const mark = CHILD_MARK[child.status]
+  const working = WORKING.has(child.status)
+  const showReply = child.controls.continue && (!working || replyOpen)
   const submit = (action: 'stop' | 'continue') => {
     if (pending) return
     setPending(true)
     setError('')
     void control(child.id, action, action === 'continue' ? text : undefined)
       .then(() => {
-        if (action === 'continue') setText('')
+        if (action === 'continue') {
+          setText('')
+          setReplyOpen(false)
+        }
       })
       .catch((error: unknown) =>
         setError(
@@ -133,18 +163,19 @@ export function ChildControlRow({
   return (
     <>
       <div className="composer-child-head">
-        <StatusDot tone={mark.dot} running={WORKING.has(child.status)} />
+        <StatusDot tone={mark.dot} running={working} />
         <Button
           htmlType="button"
           size="small"
           appearance="ghost"
           className="composer-child-name"
           data-testid="child-open"
-          title={child.id}
+          title={child.label ? `${child.label} (${child.id})` : child.id}
           onClick={(event) => openChildJob(event.currentTarget, child.id)}
         >
           {childName(child, t)}
         </Button>
+        {child.label ? <span className="composer-child-id">{child.id.slice(-6)}</span> : null}
         <span role="status" className="composer-child-state" data-tone={mark.tag}>
           {t('composer.child.' + child.status)}
         </span>
@@ -156,22 +187,38 @@ export function ChildControlRow({
               child.durationMs === null ? t('composer.child.unknown') : (child.durationMs / 1000).toFixed(1),
           })}
         </p>
-        {child.controls.stop ? (
-          <Button
-            htmlType="button"
-            size="small"
-            appearance="ghost"
-            className="composer-child-stop"
-            data-testid="child-stop"
-            disabled={disabled || pending}
-            title={t('composer.child.stop')}
-            onClick={() => submit('stop')}
-          >
-            {t('composer.child.stop')}
-          </Button>
-        ) : null}
+        <div className="composer-child-actions">
+          {child.controls.continue && working ? (
+            <Button
+              htmlType="button"
+              size="small"
+              appearance="ghost"
+              className="composer-child-steer"
+              data-testid="child-steer-toggle"
+              aria-expanded={replyOpen}
+              disabled={disabled || pending}
+              onClick={() => setReplyOpen((open) => !open)}
+            >
+              {t('composer.child.steer')}
+            </Button>
+          ) : null}
+          {child.controls.stop ? (
+            <Button
+              htmlType="button"
+              size="small"
+              appearance="ghost"
+              className="composer-child-stop"
+              data-testid="child-stop"
+              disabled={disabled || pending}
+              title={t('composer.child.stop')}
+              onClick={() => submit('stop')}
+            >
+              {t('composer.child.stop')}
+            </Button>
+          ) : null}
+        </div>
       </div>
-      {child.controls.continue ? (
+      {showReply ? (
         <div className="composer-child-reply">
           <SettingsInput
             data-testid="child-continue-message"
@@ -192,10 +239,14 @@ export function ChildControlRow({
             appearance="primary"
             data-testid="child-continue"
             disabled={disabled || pending || !text.trim()}
-            title={text.trim() ? t('composer.child.continue') : t('composer.child.messageRequired')}
+            title={
+              text.trim()
+                ? t(working ? 'composer.child.send' : 'composer.child.continue')
+                : t('composer.child.messageRequired')
+            }
             onClick={() => submit('continue')}
           >
-            {t('composer.child.continue')}
+            {t(working ? 'composer.child.send' : 'composer.child.continue')}
           </Button>
         </div>
       ) : null}

@@ -364,6 +364,19 @@
   }
   .composer-children > .agh-disclosure-body {
     padding: 0 var(--s4) var(--s4);
+    max-height: 22rem;
+    overflow-y: auto;
+  }
+  .composer-children-history {
+    margin-top: var(--s4);
+  }
+  .composer-children-history > .agh-disclosure-summary {
+    padding: var(--s2) var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .composer-children-history > .agh-disclosure-body {
+    padding-top: var(--s4);
   }
   .composer-children .agh-disclosure-meta {
     text-align: end;
@@ -400,9 +413,9 @@
     min-width: 0;
     padding: var(--s4) var(--s8) var(--s4) var(--s12);
   }
-  /* The name is a button that opens the child's terminal tab, so it carries no control chrome. */
+  /* The name is a button that opens the child's terminal tab, with clear hover affordance. */
   .composer-child-name {
-    flex: 0 1 auto;
+    flex: 0 1 20rem;
     min-width: 0;
     overflow: hidden;
     padding: 0;
@@ -417,7 +430,14 @@
     cursor: pointer;
   }
   .composer-child-name:is(:hover, :focus-visible) {
+    color: var(--agnes-accent-primary);
     text-decoration: underline;
+  }
+  .composer-child-id {
+    flex: none;
+    color: var(--agnes-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
   }
   /* The child's state in words; the tag colour only backs the word. */
   .composer-child-state {
@@ -463,10 +483,16 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .composer-child-stop.agh-btn {
+  .composer-child-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s4);
     flex: none;
-    /* Keeps the action at the row's end when the numbers wrap to their own line. */
     margin-inline-start: auto;
+  }
+  .composer-child-stop.agh-btn,
+  .composer-child-steer.agh-btn {
+    flex: none;
   }
   .composer-child-reply {
     display: flex;
