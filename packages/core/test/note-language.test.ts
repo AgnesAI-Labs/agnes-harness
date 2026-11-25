@@ -88,6 +88,32 @@ describe('Core notes keep the model in the language of the task', () => {
       // Said once, at the end, and the note itself stays English.
       expect(text?.split(NOTE_LANGUAGE)).toHaveLength(2)
     }
+
+    const withReady = await childReceiptNarrative({
+      key: 'parent',
+      lane: 'main',
+      lastSeq: 10,
+      scan: async () => [],
+      d: {
+        log: {
+          storage: {
+            createDelegatedChild() {},
+            lookupByKey() {},
+            reserve() {},
+            listByParent: async () => [
+              {
+                childKey: 'parent/c1',
+                creationPhase: 'committed',
+                state: 'idle',
+                inputText: '调研【南京】宜居情况',
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as SessionImpl)
+    expect(withReady).toContain('Uncollected ready children')
+    expect(withReady).toContain('parent/c1 [idle] 调研【南京】宜居情况')
   })
 
   it.each([

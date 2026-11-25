@@ -21,7 +21,7 @@ import type { Kernel } from '../kernel.js'
 import { childFirstInputActor } from '../step/opening-input.js'
 import type { SessionImpl } from '../step/session.js'
 import { bindChildPrompt } from './child-prompt-budget.js'
-import { recordChildResultCollected } from './collected-result.js'
+import { recordChildResultCollected, withCancelledChildAck } from './collected-result.js'
 import { type ChildCompletionOptions, isBackgroundChild } from './completion-notice.js'
 import { cancelOpenAttempt, generationDepthOf, reportFailedCreation, rootTaskIdOf } from './creation.js'
 import { type ChildEnd, childEnd, thrownChildEnd } from './failure.js'
@@ -513,13 +513,6 @@ export class KernelChildren implements ChildrenFactory {
     return record.parentKey === caller || record.runtimeOwnerSessionKey === caller
   }
 
-  private cancelTree(store: ReturnType<typeof requireChildControl>, childKey: string): Promise<void> {
-    return cancelChildSubtree(store, childKey, {
-      handle: (k) => this.handles.get(k),
-      session: (k) => this.session(k),
-    })
-  }
-
   async resume(childKey: string): Promise<ChildHandle> {
     const parent = this.parent()
     const record = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
@@ -570,10 +563,14 @@ export class KernelChildren implements ChildrenFactory {
     const record = await store.lookupByKey(childKey)
     if (!record || !this.owns(record, parent.key))
       throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
-    await this.cancelTree(store, childKey)
-    // A cancelled turn may reject its run promise; joining it still completes cancellation.
-    await Promise.allSettled([this.residentTasks.get(childKey), this.runningTasks.get(childKey)])
-    await this.cleanups.get(childKey)
+    await withCancelledChildAck(parent, childKey, async () => {
+      await cancelChildSubtree(store, childKey, {
+        handle: (k) => this.handles.get(k),
+        session: (k) => this.session(k),
+      })
+      await Promise.allSettled([this.residentTasks.get(childKey), this.runningTasks.get(childKey)])
+      await this.cleanups.get(childKey)
+    })
     this.finishChild(childKey, { status: 'cancelled', text: '' })
   }
 

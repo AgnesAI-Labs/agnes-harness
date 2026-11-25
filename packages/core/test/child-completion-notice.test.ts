@@ -598,14 +598,31 @@ describe('child completion notice', () => {
           (await parent.d.log.storage.scan(child.key, { type: 'turn/start', limit: 1 })).length === 1,
       ),
     ).toBe(true)
-    // Cancelling and then collecting give the same answer.
+    // Cancelling and then collecting give the same answer, and parent-initiated cancel leaves no stale inbox notice.
     expect(await collectContext(parent).cancel(child.key)).toMatchObject({ status: 'cancelled' })
     await running
+    expect(notices(parent)).toEqual([])
     const cancelled = await collectContext(parent).collect(child.key)
     expect(cancelled).toMatchObject({ status: 'cancelled' })
     expect(cancelled).not.toHaveProperty('error')
     expect(cancelled).not.toHaveProperty('stopReason')
     await k.close()
+
+    // Cancelling a resident child that already finished a turn withdraws its unconsumed queued notice.
+    const staleKernel = kernel()
+    const staleParent = await staleKernel.session('parent', sessionOpts)
+    const finishedChild = await staleParent.d.children.createWithKind!('spawn', {
+      parent: staleParent.key,
+      cwd: '/w',
+      input: 'old work',
+      parentEffectId: 'stale-cancel',
+      resident: true,
+    })
+    await finishedChild.run('old work')
+    expect(notices(staleParent)).toHaveLength(1)
+    expect(await collectContext(staleParent).cancel(finishedChild.key)).toMatchObject({ status: 'cancelled' })
+    expect(notices(staleParent)).toEqual([])
+    await staleKernel.close()
 
     const capped = kernel(new MemoryStorage(), undefined, 0)
     const owner = await capped.session('parent', sessionOpts)
