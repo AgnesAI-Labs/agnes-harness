@@ -33,6 +33,7 @@ import {
   normalizeRpcError,
   type RpcError,
   validatePackageAdminCall,
+  validatePackageCatalogSnapshotVersion,
 } from '@agnes/protocol'
 import type { AdminCloudAuthorize } from '@agnes/protocol/gen/app-server'
 import type {
@@ -236,13 +237,25 @@ export function localPackageAdmin(
         )
 
       case 'catalog/list': {
-        const { includeCommunity, ...legacy } = params as PackageCatalogListParams
+        const { communityVersion, includeCommunity, ...query } = params as PackageCatalogListParams
         const features = (await client.initialize()).features ?? []
-        return client.packages.catalog.list(
-          features.includes('packages.community-discovery.v1') && includeCommunity !== undefined
-            ? { ...legacy, includeCommunity }
-            : legacy,
-        )
+        const version =
+          communityVersion === 3 && features.includes('packages.community-discovery.v3')
+            ? 3
+            : communityVersion !== undefined && features.includes('packages.community-discovery.v2')
+              ? 2
+              : undefined
+        const result = await client.packages.catalog.list({
+          ...query,
+          ...(version !== undefined
+            ? { communityVersion: version }
+            : includeCommunity !== undefined && features.includes('packages.community-discovery.v1')
+              ? { includeCommunity }
+              : {}),
+        })
+        if (version !== undefined && !validatePackageCatalogSnapshotVersion(result, version))
+          throw new Error('The backend returned an invalid community catalog projection.')
+        return result
       }
       case 'catalog/get':
         return client.packages.catalog.get(params as PackageCatalogGetParams)

@@ -2043,19 +2043,10 @@
                     "type": "array",
                     "minItems": 1,
                     "items": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "properties": {
-                        "version": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 128
-                        },
-                        "source": {
-                          "$ref": "#/$defs/PackageSource"
-                        }
-                      },
-                      "required": ["version", "source"]
+                      "oneOf": [
+                        { "$ref": "#/$defs/PackageCommunityVersionV2" },
+                        { "$ref": "#/$defs/PackageCommunityVersionV3" }
+                      ]
                     }
                   }
                 },
@@ -2067,6 +2058,100 @@
         }
       },
       "required": ["items", "nextCursor"]
+    },
+    "PackageCommunityVersionV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source": {
+          "$ref": "#/$defs/PackageSource"
+        }
+      },
+      "required": ["version", "source"]
+    },
+    "PackageCommunityVersionV3": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source": {
+          "$ref": "#/$defs/PackageSource"
+        },
+        "provides": {
+          "$ref": "#/$defs/PackageCommunityProvides"
+        },
+        "publishTimestamp": {
+          "$ref": "#/$defs/PackageCommunityPublishTimestamp"
+        },
+        "compatibility": {
+          "$ref": "#/$defs/PackageCommunityCompatibility"
+        }
+      },
+      "required": ["version", "source", "compatibility"]
+    },
+    "PackageCommunityProvides": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "extension-manifest.json#/$defs/PluginProvide"
+      }
+    },
+    "PackageCommunityPublishTimestamp": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 253402300799,
+      "description": "The Git committer time recorded by the index, in Unix seconds."
+    },
+    "PackageCommunityCompatibility": {
+      "description": "The author's declared AGH range compared with the serving daemon's release, not an installation check.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "declared-compatible" },
+            "range": { "type": "string", "minLength": 1, "maxLength": 500 }
+          },
+          "required": ["kind", "range"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "incompatible" },
+            "range": { "type": "string", "minLength": 1, "maxLength": 500 }
+          },
+          "required": ["kind", "range"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "undeclared" }
+          },
+          "required": ["kind"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "unknown" },
+            "range": { "type": "string", "minLength": 1, "maxLength": 500 }
+          },
+          "required": ["kind"]
+        }
+      ]
     },
     "PluginGenerationStatus": {
       "type": "object",
@@ -2271,11 +2356,15 @@
           "maximum": 100
         },
         "communityVersion": {
-          "const": 2,
-          "description": "Opt in to the index-based v2 snapshot; omitted for legacy clients."
+          "enum": [2, 3],
+          "description": "Opt in to the negotiated indexed snapshot version. Version 3 adds per-version metadata."
         }
       },
-      "required": ["profile"]
+      "required": ["profile"],
+      "not": {
+        "type": "object",
+        "required": ["includeCommunity", "communityVersion"]
+      }
     },
     "PackageCatalogGetParams": {
       "type": "object",

@@ -58,6 +58,7 @@
     "fact-chain.spec.ts",
     "plugin-config.spec.ts",
     "plugin-purpose.spec.ts",
+    "community-market-metadata.spec.ts",
     "v3-navigation.spec.ts",
     "v3-actions.spec.ts",
     "../../packages/web-ui/test/button-contrast.spec.ts",

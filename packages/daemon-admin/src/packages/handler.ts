@@ -5,6 +5,7 @@ import { packageOfRow } from '@agnes/daemon-foundation/composite-desired'
 import type { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { CompositeTargetStore } from '@agnes/daemon-foundation/storage/composite-target-store'
 import { safeAuthoringDiagnostics } from '@agnes/error-sanitization'
+import { parseSemver, type Semver } from '@agnes/extension-api'
 import type {
   AuthoringTestRunner,
   CatalogRead,
@@ -41,6 +42,8 @@ import {
   type PackageAdminError,
   type PackageAdminMethodName,
   type PackageCatalogDescriptor,
+  type PackageCatalogListParams,
+  type PackageCatalogPage,
   type PackageInstalledDescriptor,
   type PackageListResult,
   type PackageOperation,
@@ -69,6 +72,7 @@ import {
   createClientModuleRegistry,
   defaultClientModuleSnapshotDirectory,
 } from './client-modules.js'
+import { type CommunitySnapshot, projectCommunitySnapshot } from './community-catalog.js'
 import {
   assertDependentBaselines,
   dependentUpdatesApplied,
@@ -451,7 +455,9 @@ function projectCatalogDescriptor(value: unknown): PackageCatalogDescriptor {
 class Service implements PackageAdminService {
   get features(): readonly string[] {
     return [
-      ...(this.options.community ? ['packages.community-discovery.v2'] : []),
+      ...(this.options.community
+        ? ['packages.community-discovery.v2', 'packages.community-discovery.v3']
+        : []),
       ...(this.options.skillImport ? ['packages.skill-import.v1'] : []),
     ]
   }
@@ -463,6 +469,7 @@ class Service implements PackageAdminService {
   private readonly listeners = new Set<(operation: PackageOperation) => void>()
   private readonly clientModules: ClientModuleRegistry
   private readonly boot: Promise<void>
+  private readonly daemonVersion: Semver | null
   private recoveryError: PackageAdminError | undefined
 
   constructor(
@@ -475,7 +482,8 @@ class Service implements PackageAdminService {
       profileDirectory: PackageProfileDirectory
       operations: PackageOperationStore
       catalog?: Catalog
-      community?: (profile: string) => import('./community-discovery.js').CommunitySnapshot | undefined
+      community?: (profile: string) => CommunitySnapshot | undefined
+      agnesVersion?: string
       activation?: PackageActivationAdapter
       runtimePins?: RuntimePinsAdapter
       clientModules?: ClientModuleRegistry
@@ -496,6 +504,9 @@ class Service implements PackageAdminService {
       clock: () => string
     },
   ) {
+    const version = options.agnesVersion
+    this.daemonVersion =
+      version && version === version.trim() && version !== '0.0.0' ? parseSemver(version) : null
     this.applications = createApplications(options)
     this.configuration = new PluginConfiguration({
       manager: options.manager,
@@ -679,9 +690,7 @@ class Service implements PackageAdminService {
           return await this.authoring(method, data, granted)
         }
         if (method === '_agnes/v1/packages.catalog.list')
-          return await this.catalogList(
-            data as { profile: string; query?: string; cursor?: string; limit?: number },
-          )
+          return await this.catalogList(data as PackageCatalogListParams)
         if (method === '_agnes/v1/packages.catalog.get')
           return await this.catalogGet(data as { profile: string; id: string; version?: string })
         if (method === '_agnes/v1/plugins.publicationStatus') {
@@ -1031,14 +1040,7 @@ class Service implements PackageAdminService {
     return { rolledBack: true, desiredDigest: previous.digest }
   }
 
-  private async catalogList(params: {
-    profile: string
-    query?: string
-    cursor?: string
-    limit?: number
-    includeCommunity?: boolean
-    communityVersion?: 2
-  }) {
+  private async catalogList(params: PackageCatalogListParams): Promise<PackageCatalogPage> {
     await this.options.profileDirectory(params.profile)
     const read = this.options.catalog ? await this.options.catalog.read({ offline: true }) : { entries: [] }
     const visible = queryCatalog(read.entries.map(projectCatalogDescriptor), params.query)
@@ -1047,11 +1049,14 @@ class Service implements PackageAdminService {
     const limit = params.limit ?? 50
     const items = visible.slice(Math.max(0, start), Math.max(0, start) + limit)
     const last = items.at(-1)
-    const community = params.communityVersion === 2 ? this.options.community?.(params.profile) : undefined
+    const version = params.communityVersion
+    const community = version === undefined ? undefined : this.options.community?.(params.profile)
     return {
       items,
       nextCursor: last && start + items.length < visible.length ? `${last.id}@${last.version}` : null,
-      ...(community ? { communityIndex: community } : {}),
+      ...(community && version !== undefined
+        ? { communityIndex: projectCommunitySnapshot(community, version, this.daemonVersion) }
+        : {}),
     }
   }
 
@@ -2125,7 +2130,8 @@ export function createPackageAdminService(options: {
   profileDirectory: PackageProfileDirectory
   operations: PackageOperationStore
   catalog?: Catalog
-  community?: (profile: string) => import('./community-discovery.js').CommunitySnapshot | undefined
+  community?: (profile: string) => CommunitySnapshot | undefined
+  agnesVersion?: string
   activation?: PackageActivationAdapter
   runtimePins?: RuntimePinsAdapter
   clientModules?: ClientModuleRegistry

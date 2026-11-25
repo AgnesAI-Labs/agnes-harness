@@ -57,6 +57,7 @@ export type AdminPageState = {
   surfaceLinks: readonly AdminSurfaceLink[]
   catalog: readonly PackageCatalogDescriptor[]
   community?: PackageCatalogPage['communityIndex']
+  communityVersion?: 2 | 3 | undefined
   communityReadFailed?: boolean
   nextCursor: string | null
   selectedId?: string | undefined

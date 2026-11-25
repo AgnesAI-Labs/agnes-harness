@@ -567,13 +567,20 @@ export class PluginAdminPage {
       const { context, inventory } = await PluginAdminApi.overview()
       if (!current()) return false
       resolvedContext = context
+      // Context also controls read-only UI when the inventory cannot be read.
       if (JSON.stringify(this.#state.context) !== JSON.stringify(context) || !this.#api) {
         this.#api = new PluginAdminApi(context)
         this.#generation++
+        this.#catalogReads.invalidate()
+        this.#state = {
+          ...this.#state,
+          context,
+          community: undefined,
+          communityVersion: undefined,
+          communityReadFailed: false,
+        }
+        this.render()
       }
-      // Context remains useful even when inventory cannot be read: its recovery flag must still
-      // disable effects, while read-only catalog calls may remain available.
-      this.#state = { ...this.#state, context }
       if (!inventory)
         throw new AdminApiError({
           code: 'E_ADMIN_READ_ONLY',

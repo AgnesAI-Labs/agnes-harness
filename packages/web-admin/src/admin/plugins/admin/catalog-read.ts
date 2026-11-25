@@ -8,7 +8,7 @@ export type CatalogPublish = (update: (state: AdminPageState) => AdminPageState)
 export class CatalogReads {
   #generation = 0
   #communityGeneration = 0
-  #communityPending: Promise<void> | undefined
+  #communityPending: { generation: number; read: Promise<void> } | undefined
 
   invalidate(): void {
     this.#generation++
@@ -32,7 +32,11 @@ export class CatalogReads {
           ...state,
           catalog: cursor ? [...state.catalog, ...page.items] : page.items,
           ...(communityGeneration === this.#communityGeneration
-            ? { community: page.community, communityReadFailed: false }
+            ? {
+                community: page.community,
+                communityVersion: page.communityVersion,
+                communityReadFailed: false,
+              }
             : {}),
           nextCursor: page.nextCursor,
           loading: false,
@@ -45,7 +49,7 @@ export class CatalogReads {
   }
 
   community(api: PluginAdminApi, current: () => boolean, publish: CatalogPublish): Promise<void> {
-    if (this.#communityPending) return this.#communityPending
+    if (this.#communityPending?.generation === this.#generation) return this.#communityPending.read
     const generation = this.#generation
     const communityGeneration = ++this.#communityGeneration
     const valid = () =>
@@ -53,14 +57,20 @@ export class CatalogReads {
     const pending = (async () => {
       try {
         const page = await api.catalog()
-        if (valid()) publish((state) => ({ ...state, community: page.community, communityReadFailed: false }))
+        if (valid())
+          publish((state) => ({
+            ...state,
+            community: page.community,
+            communityVersion: page.communityVersion,
+            communityReadFailed: false,
+          }))
       } catch {
         if (valid()) publish((state) => ({ ...state, communityReadFailed: true }))
       } finally {
-        this.#communityPending = undefined
+        if (this.#communityPending?.generation === generation) this.#communityPending = undefined
       }
     })()
-    this.#communityPending = pending
+    this.#communityPending = { generation, read: pending }
     return pending
   }
 }

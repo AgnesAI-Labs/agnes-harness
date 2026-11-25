@@ -1,3 +1,4 @@
+import type { PackageCatalogPage, PackageSource } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import { type AdminApiError, PluginAdminApi } from '../src/admin/plugins/api.js'
 import { PluginConfigApi } from '../src/admin/plugins/config-api.js'
@@ -613,9 +614,14 @@ it('reads an agent start receipt through the same fixed launch facade', async ()
   expect(body).toEqual({ request: { action: 'read', operationId: 'original-operation' } })
 })
 
-it.each([undefined, 'packages.community-discovery.v1', 'packages.community-discovery.v2'])(
-  'negotiates the index response only with %s',
-  async (feature) => {
+it.each([
+  { features: [], version: undefined },
+  { features: ['packages.community-discovery.v1'], version: undefined },
+  { features: ['packages.community-discovery.v1', 'packages.community-discovery.v2'], version: 2 },
+  { features: ['packages.community-discovery.v2', 'packages.community-discovery.v3'], version: 3 },
+])(
+  'chooses the highest advertised community discovery version for $features',
+  async ({ features, version }) => {
     const snapshot = {
       state: 'ready',
       lastSuccessAt: null,
@@ -626,17 +632,123 @@ it.each([undefined, 'packages.community-discovery.v1', 'packages.community-disco
     }
     const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
       const body = JSON.parse(String(init?.body))
-      if (feature === 'packages.community-discovery.v2') {
-        expect(body).toMatchObject({ communityVersion: 2 })
+      if (version) {
+        expect(body).toMatchObject({ communityVersion: version })
         expect(body).not.toHaveProperty('includeCommunity')
         return Response.json({ items: [], nextCursor: null, communityIndex: snapshot })
       }
       expect(body).not.toHaveProperty('communityVersion')
-      expect(body.includeCommunity).toBe(feature ? true : undefined)
-      return Response.json({ items: [], nextCursor: null, ...(feature ? { community: snapshot } : {}) })
+      expect(body.includeCommunity).toBe(features.length ? true : undefined)
+      return Response.json({
+        items: [],
+        nextCursor: null,
+        ...(features.length ? { community: snapshot } : {}),
+      })
     })
-    const api = new PluginAdminApi({ ...context, features: feature ? [feature] : [] }, fetcher)
+    const api = new PluginAdminApi({ ...context, features }, fetcher)
     const page = await api.catalog()
-    expect(page.community).toEqual(feature ? snapshot : undefined)
+    expect(page.community).toEqual(features.length ? snapshot : undefined)
+    expect(page.communityVersion).toBe(version === 3 ? undefined : version)
   },
 )
+
+it('accepts an actual v2 downgrade, follows refreshed context, and refuses v3 data for a v2 request', async () => {
+  const source: PackageSource = {
+    type: 'git',
+    ref: `git:https://github.com/acme/fixture.git#${'a'.repeat(40)}`,
+  }
+  const release = { version: '1.2.3', source }
+  const row = { id: 'acme/fixture', fullName: 'acme/fixture', description: 'Fixture' }
+  const base = {
+    state: 'ready',
+    lastSuccessAt: null,
+    nextAttemptAt: null,
+    error: null,
+    totalReported: 1,
+    items: [{ ...row, versions: [release] }],
+  } satisfies NonNullable<PackageCatalogPage['communityIndex']>
+  const latest: NonNullable<PackageCatalogPage['communityIndex']> = {
+    ...base,
+    items: [
+      {
+        ...row,
+        versions: [
+          {
+            ...release,
+            provides: ['tool', 'mcp'],
+            publishTimestamp: 1_700_000_000,
+            compatibility: { kind: 'declared-compatible', range: '>=1.2.0' },
+          },
+        ],
+      },
+    ],
+  }
+  let daemon: 2 | 3 | undefined = 3
+  let request: unknown
+  let ignoreOptIn = false
+  let empty = false
+  const fetcher: typeof fetch = async (url, init) => {
+    if (String(url).endsWith('/context'))
+      return Response.json({
+        ...context,
+        features:
+          daemon === 3
+            ? ['packages.community-discovery.v2', 'packages.community-discovery.v3']
+            : daemon === 2
+              ? ['packages.community-discovery.v2']
+              : [],
+      })
+    request = JSON.parse(String(init?.body))
+    const asksV3 =
+      request &&
+      typeof request === 'object' &&
+      'communityVersion' in request &&
+      request.communityVersion === 3
+    const projection = daemon === 3 && (ignoreOptIn || asksV3) ? latest : daemon ? base : undefined
+    return Response.json({
+      items: [],
+      nextCursor: 'next',
+      ...(projection
+        ? { communityIndex: empty ? { ...projection, totalReported: 0, items: [] } : projection }
+        : {}),
+    })
+  }
+  const web = async () => new PluginAdminApi(await PluginAdminApi.context(fetcher), fetcher)
+  const v3 = await web()
+  await expect(v3.catalog('tools', 'cursor')).resolves.toEqual({
+    items: [],
+    nextCursor: 'next',
+    community: latest,
+    communityVersion: 3,
+  })
+  expect(request).toEqual({
+    profile: 'local-dev',
+    query: 'tools',
+    cursor: 'cursor',
+    limit: 50,
+    communityVersion: 3,
+  })
+
+  daemon = 2
+  await expect(v3.catalog()).resolves.toMatchObject({ community: base, communityVersion: 2 })
+  expect(request).toHaveProperty('communityVersion', 3)
+  empty = true
+  await expect(v3.catalog()).resolves.toEqual({
+    items: [],
+    nextCursor: 'next',
+    community: { ...base, totalReported: 0, items: [] },
+  })
+  empty = false
+  const v2 = await web()
+  await expect(v2.catalog()).resolves.toMatchObject({ community: base, communityVersion: 2 })
+  expect(request).toHaveProperty('communityVersion', 2)
+
+  daemon = undefined
+  await expect(v3.catalog()).resolves.toEqual({ items: [], nextCursor: 'next' })
+  daemon = 3
+  await expect(v2.catalog()).resolves.toMatchObject({ community: base, communityVersion: 2 })
+  const upgraded = await web()
+  await expect(upgraded.catalog()).resolves.toMatchObject({ community: latest, communityVersion: 3 })
+  ignoreOptIn = true
+  await expect(v2.catalog()).rejects.toMatchObject({ details: { code: 'ADMIN_RESPONSE_INVALID' } })
+})
