@@ -173,7 +173,10 @@ export async function commitParagraph(input: ParagraphCommit): Promise<CommitRes
       if (input.untouched) {
         const listed = await port.list()
         const current = listed.paragraphs.find((entry) => entry.id === paragraph.id)
-        if (!current || !input.untouched(current.text)) return { receipt: settle(input, 'conflict') }
+        if (!current) return { receipt: settle(input, 'conflict') }
+        // A retry got here because the preceding proposal lost its compare-and-swap.
+        if (!input.untouched(current.text))
+          return { receipt: settle(input, attempt === 1 ? 'human-edited' : 'conflict') }
         // Proposed against exactly the file just checked: an edit in between is a conflict.
         base = listed.hash
         // The user layer has no provenance ledger. Its caller verifies the structurally managed

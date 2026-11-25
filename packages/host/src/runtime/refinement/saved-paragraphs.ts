@@ -1,10 +1,11 @@
-import type { MemoryParagraphValidity, MemorySession } from '@agnes/extension-api'
+import type { MemoryParagraph, MemoryParagraphValidity, MemorySession } from '@agnes/extension-api'
 import type {
   RefinementRegistry,
   RegistryRecords,
   Revocation,
   SaveSource,
 } from '@agnes/host-infrastructure/refinement-registry'
+import { paragraphMarkers, paragraphVisibility } from './paragraph-visibility.js'
 import { paragraphPortOf } from './reconcile.js'
 
 /** What a person asks of the saved paragraphs on the memory page. */
@@ -22,6 +23,7 @@ export type SavedParagraph = {
   id: string
   text: string
   validity: MemoryParagraphValidity
+  hidden?: true
   reviewAfter?: number
   initiator?: SaveSource['initiator']
   kind?: SaveSource['kind']
@@ -35,38 +37,11 @@ export type SavedParagraphs = (
 ) => Promise<{ paragraphs: SavedParagraph[] }>
 
 const INDEX = 'MEMORY.md'
-const BOM = '﻿'
 const ATTEMPTS = 3
 const fault = (code: string) => Object.assign(new Error(code), { code })
 const code = (error: unknown): unknown => (error as { code?: unknown } | null)?.code
 
 type Line = { start: number; end: number }
-
-/**
- * The one opening and one closing marker line of paragraph `id` in the stored index, exactly as the
- * memory guide documents them (`<!-- refinement:<id> -->` ... `<!-- /refinement:<id> -->`), or undefined
- * when they are not there once each, in that order.
- */
-function markersOf(text: string, id: string): { open: Line; close: Line } | undefined {
-  const opens: Line[] = []
-  const closes: Line[] = []
-  let start = 0
-  while (start < text.length) {
-    const newline = text.indexOf('\n', start)
-    const end = newline === -1 ? text.length : newline + 1
-    const raw = text.slice(start, newline === -1 ? text.length : newline).replace(/\r$/, '')
-    const skip = raw.startsWith(BOM) ? BOM.length : 0
-    const line = raw.slice(skip)
-    if (line === `<!-- refinement:${id} -->`) opens.push({ start: start + skip, end })
-    else if (line === `<!-- /refinement:${id} -->`) closes.push({ start: start + skip, end })
-    start = end
-  }
-  const [open] = opens
-  const [close] = closes
-  return opens.length === 1 && closes.length === 1 && open && close && close.start >= open.end
-    ? { open, close }
-    : undefined
-}
 
 /** The index without the paragraph, cut the way the paragraph port removes one (with its separator). */
 function withoutParagraph(text: string, { open, close }: { open: Line; close: Line }): string {
@@ -82,12 +57,37 @@ function withoutMarkers(text: string, { open, close }: { open: Line; close: Line
   return text.slice(0, open.start) + text.slice(open.end, close.start) + text.slice(close.end)
 }
 
+/** Both memory layers expose the stored text and its effective visibility to the editor. */
+export async function describeParagraphs(
+  paragraphs: readonly MemoryParagraph[],
+  memory: MemorySession,
+  layer: 'workspace' | 'user',
+  registry: RefinementRegistry,
+  clock: () => number,
+): Promise<SavedParagraph[]> {
+  if (!paragraphs.length) return []
+  const visible = await paragraphVisibility(memory, layer, registry, clock)
+  const records = registry.read().paragraphs
+  return paragraphs.map(({ id, text, validity }) => {
+    const record = records.find((entry) => entry.id === id && entry.state === 'active')
+    const status = validity === 'delivered' ? 'valid' : validity
+    return {
+      id,
+      text,
+      validity: status,
+      ...(status === 'valid' && visible(id, text) === undefined ? { hidden: true } : {}),
+      ...(record
+        ? { reviewAfter: record.reviewAfter, initiator: record.source.initiator, kind: record.source.kind }
+        : {}),
+    }
+  })
+}
+
 /**
  * A person's management of saved paragraphs, beside the memory editor and like it independent of the
  * agent's memory mode and of the refinement switch:
- * - `list`: every managed paragraph in the index with whether the agent sees it (`valid`), it is past its
- *   review date (`expired`), or nothing vouches for it (`unknown`: a save whose result is not known, or
- *   a paragraph the records no longer hold), with the review date and who saved it when recorded;
+ * - `list`: every managed paragraph with its registry validity and effective visibility, plus the review
+ *   date and who saved it when recorded;
  * - `renew`: a new review period for a recorded paragraph, records only;
  * - `withdraw`: the paragraph is cut from the index (a compare-and-swap edit, as the editor saves), then
  *   recorded as removed with a `memory-withdrawn` revocation, so the same content is not saved back
@@ -108,19 +108,7 @@ export function savedParagraphs(deps: {
     )
     if (!port) return undefined
     const listed = await port.list()
-    const records = registry.read().paragraphs
-    const paragraphs = listed.paragraphs.map(({ id, text, validity }): SavedParagraph => {
-      const record = records.find((entry) => entry.id === id && entry.state === 'active')
-      return {
-        id,
-        text,
-        // In force either way: delivered through the experience snapshot rather than the memory note.
-        validity: validity === 'delivered' ? 'valid' : validity,
-        ...(record
-          ? { reviewAfter: record.reviewAfter, initiator: record.source.initiator, kind: record.source.kind }
-          : {}),
-      }
-    })
+    const paragraphs = await describeParagraphs(listed.paragraphs, memory, 'workspace', registry, deps.clock)
     return { hash: listed.hash, paragraphs }
   }
 
@@ -159,7 +147,7 @@ export function savedParagraphs(deps: {
     const stored = await memory.readFile(INDEX)
     // The list and the raw file must be the same version; otherwise someone wrote in between.
     if (stored.hash !== before.hash) throw fault('MEMORY_CONFLICT')
-    const markers = markersOf(stored.content, id)
+    const markers = paragraphMarkers(stored.content).get(id)
     if (!markers) throw fault('MEMORY_PARAGRAPH_NOT_FOUND')
     const withdraw = request.action === 'withdraw'
     const content = withdraw

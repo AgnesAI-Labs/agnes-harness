@@ -83,12 +83,14 @@ const voidsAll = (body: string) =>
  */
 export function surfaceRefs(surface: readonly SurfaceNode[]): {
   delivered: Map<string, number>
+  deliveredSavedText: Map<string, string>
   withdrawn: Set<string>
   held: Set<string>
   heldMore: boolean
   off: boolean
 } {
   const delivered = new Map<string, number>()
+  const deliveredSavedText = new Map<string, string>()
   const withdrawn = new Set<string>()
   const held = new Set<string>()
   let heldMore = false
@@ -107,6 +109,7 @@ export function surfaceRefs(surface: readonly SurfaceNode[]): {
         : [...body.matchAll(ENDED)].map(([, kind, id]) => `${kind}/${id}`)
       for (const ref of gone) {
         delivered.delete(ref)
+        deliveredSavedText.delete(ref)
         withdrawn.add(ref)
       }
       off = body.includes(EXPERIENCE_OFF_NOTICE)
@@ -117,13 +120,32 @@ export function surfaceRefs(surface: readonly SurfaceNode[]): {
     const listed = named?.slice(HELD_LINE.length).replace(HELD_MORE, '')
     for (const [, kind, id] of listed?.matchAll(HELD) ?? []) held.add(`${kind}/${id}`)
     heldMore = named !== undefined && HELD_MORE.test(named)
-    for (const [, kind, id, version] of block(data.content, 1).matchAll(DELIVERED)) {
-      delivered.set(`${kind}/${id}`, Number(version))
-      withdrawn.delete(`${kind}/${id}`)
-      held.delete(`${kind}/${id}`)
+    const entries = block(data.content, 1)
+    const rows = [...entries.matchAll(DELIVERED)]
+    for (const [i, row] of rows.entries()) {
+      const [header, kind, id, version] = row
+      const ref = `${kind}/${id}`
+      delivered.set(ref, Number(version))
+      withdrawn.delete(ref)
+      held.delete(ref)
+      const start = row.index + header.length
+      const mark = ' (saved) '
+      if (entries.startsWith(mark, start)) {
+        const next = rows[i + 1]
+        const body = entries.slice(start + mark.length, next && next.index - 1)
+        deliveredSavedText.set(
+          ref,
+          next && next[1] !== kind
+            ? body.replace(
+                /\n(?:Prompt rules:|Memory:|Skills \(metadata only\):|Subagents \(metadata only\):)$/u,
+                '',
+              )
+            : body,
+        )
+      } else deliveredSavedText.delete(ref)
     }
   }
-  return { delivered, withdrawn, held, heldMore, off }
+  return { delivered, deliveredSavedText, withdrawn, held, heldMore, off }
 }
 
 /** The `kind/id` of every entry a visible note delivered and no later visible control note withdrew. */

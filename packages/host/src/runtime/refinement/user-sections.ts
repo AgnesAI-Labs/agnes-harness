@@ -1,6 +1,6 @@
 import type { MemorySession } from '@agnes/extension-api'
 import type { RefinementRegistry, Revocation } from '@agnes/host-infrastructure/refinement-registry'
-import type { SavedParagraph, SavedParagraphRequest } from './saved-paragraphs.js'
+import { describeParagraphs, type SavedParagraph, type SavedParagraphRequest } from './saved-paragraphs.js'
 import { userPortOf } from './user-save.js'
 import { code, writeFresh } from './workspace-commit.js'
 
@@ -25,19 +25,7 @@ export async function manageUserSections(
   const port = userPortOf(memory, { sessionKey: 'human-editor', turn: 0 }, new AbortController().signal)
   const list = async (): Promise<SavedParagraph[]> => {
     if (!port) return []
-    const records = registry.read().paragraphs
-    return (await port.list()).paragraphs.map(({ id, text, validity }) => {
-      const record = records.find((entry) => entry.id === id && entry.state === 'active')
-      return {
-        id,
-        text,
-        // In force either way: delivered through the experience snapshot rather than the memory note.
-        validity: validity === 'delivered' ? 'valid' : validity,
-        ...(record
-          ? { reviewAfter: record.reviewAfter, initiator: record.source.initiator, kind: record.source.kind }
-          : {}),
-      }
-    })
+    return describeParagraphs((await port.list()).paragraphs, memory, 'user', registry, clock)
   }
   if (request.action === 'list') return { paragraphs: await list() }
   const id = request.paragraphId
@@ -58,7 +46,12 @@ export async function manageUserSections(
   if (!port) throw fault('MEMORY_PARAGRAPHS_UNSUPPORTED')
   const listed = await port.list()
   if (!listed.paragraphs.some((paragraph) => paragraph.id === id)) throw fault('MEMORY_PARAGRAPH_NOT_FOUND')
-  await port.commit(await port.propose({ op: 'remove', id }, listed.hash))
+  const proposal = await port.propose({ op: 'remove', id }, listed.hash)
+  try {
+    await port.commit(proposal)
+  } catch (error) {
+    if (code(error) !== 'MEMORY_COMMITTED_METADATA_FAILED') throw error
+  }
   const now = clock()
   const actor = request.actor?.trim() || 'human'
   // The file has changed; if the records cannot be written now, the next reconciliation records the

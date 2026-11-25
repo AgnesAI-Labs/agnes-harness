@@ -3316,7 +3316,7 @@
       "additionalProperties": false
     },
     "SavedParagraph": {
-      "description": "One saved task experience paragraph: its text, whether the agent sees it (valid), it is past its review date (expired) or nothing vouches for it (unknown), and, when recorded, its review date (epoch milliseconds), who saved it and the kind of entry it came from.",
+      "description": "A saved task experience paragraph with its stored text, registry validity, and effective visibility. When recorded, it also includes its review date (epoch milliseconds), who saved it, and the kind of entry it came from.",
       "type": "object",
       "properties": {
         "id": {
@@ -3329,6 +3329,10 @@
         },
         "validity": {
           "enum": ["valid", "expired", "unknown"]
+        },
+        "hidden": {
+          "description": "True when the paragraph is within its review period in the registry, yet all of its content is hidden from the agent by an expiry annotation or a withdrawn reference.",
+          "const": true
         },
         "reviewAfter": {
           "type": "integer",

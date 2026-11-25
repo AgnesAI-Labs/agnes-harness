@@ -80,7 +80,8 @@ export function SavedParagraphsBlock(
     let key = `saved.${paragraph.validity}`
     if (paragraph.validity === 'valid') {
       if (user && !props.readsUser) key = 'saved.user.validUnread'
-      if (!user && props.memoryOff) key = 'saved.validOff'
+      else if (!user && props.memoryOff) key = 'saved.validOff'
+      else if (paragraph.hidden) key = user ? 'saved.user.hidden' : 'saved.hidden'
     }
     return [
       t(key, { date: when }),

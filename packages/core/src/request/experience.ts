@@ -363,7 +363,7 @@ async function savedFor(
 ): Promise<{ entries: readonly SavedEntry[]; failed: boolean }> {
   const revision = savedRevisionOf(s)
   const cached = savedCache.get(s)
-  // A snapshot always reads afresh: the revision does not follow a hand edit of the file.
+  // A new snapshot always reads afresh.
   if (!fresh && cached && revision && cached.revision === revision)
     return { entries: cached.entries, failed: false }
   const listed = await savedEntriesOf(s)
@@ -383,6 +383,7 @@ function savedAsEntries(
   s: SessionImpl,
   saved: readonly SavedEntry[],
   session: readonly EffectiveEntry[],
+  version: (e: SavedEntry) => number = () => 1,
 ): EffectiveEntry[] {
   const ids = new Set(session.map(({ entry }) => entry.id))
   const texts = new Set(session.map(({ entry }) => normalized(`${entry.title}\n${entry.content}`)))
@@ -401,7 +402,7 @@ function savedAsEntries(
       title: e.title,
       content: e.content,
       scope: 'local',
-      version: 1,
+      version: version(e),
       source: `${SAVED_SOURCE}${e.ref}`,
     } as HarnessEntry,
     seq: (i - kept.length) as Seq,
@@ -542,7 +543,17 @@ export async function deriveExperienceNotes(
     cold || givenSaved.length || withdrawnSaved.length
       ? await savedFor(s, cold)
       : { entries: [], failed: false }
-  for (const e of saved.entries) present.add(`${e.kind}/${e.ref}`)
+  const replacements = new Map<string, number>()
+  for (const e of saved.entries) {
+    const ref = `${e.kind}/${e.ref}`
+    const previous = refs.delivered.get(ref)
+    const text = refs.deliveredSavedText.get(ref)
+    if (previous !== undefined && text !== undefined && text !== `${e.title}: ${e.content}`) {
+      replacements.set(ref, previous + 1)
+    } else present.add(ref)
+  }
+  const version = (e: SavedEntry) =>
+    replacements.get(`${e.kind}/${e.ref}`) ?? refs.delivered.get(`${e.kind}/${e.ref}`) ?? 1
   // A host that cannot answer withdraws nothing: what it said before still stands.
   if (saved.failed) for (const ref of givenSaved) present.add(ref)
   const control = controlLines(refs.delivered, expired, present, handedOffRefs(s.state))
@@ -561,7 +572,7 @@ export async function deriveExperienceNotes(
     else savedOwed.delete(s)
   }
   if (!seen.snapshot || ((legacy || owedBefore) && !saved.failed && saved.entries.length > 0)) {
-    const all = [...entries, ...savedAsEntries(s, saved.entries, entries)]
+    const all = [...entries, ...savedAsEntries(s, saved.entries, entries, version)]
     const out = renderExperience(
       { entries: all, control },
       {
@@ -613,12 +624,15 @@ export async function deriveExperienceNotes(
   // A saved entry the model was told is withdrawn, and in force again (renewed by a person), is owed too.
   const back = savedAsEntries(
     s,
-    saved.entries.filter((e) => refs.withdrawn.has(`${e.kind}/${e.ref}`)),
+    saved.entries.filter(
+      (e) => refs.withdrawn.has(`${e.kind}/${e.ref}`) || replacements.has(`${e.kind}/${e.ref}`),
+    ),
     entries,
+    version,
   )
   const fresh =
     notice === EXPERIENCE_RESET_NOTICE
-      ? [...entries, ...savedAsEntries(s, saved.entries, entries)]
+      ? [...entries, ...savedAsEntries(s, saved.entries, entries, version)]
       : [...valid.filter(owed).map(({ entry, seq }) => ({ entry, seq })), ...back]
   if (fresh.length) {
     const { body, data } = renderExperienceUpdate(fresh, EXPERIENCE_BUDGETS)

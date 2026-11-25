@@ -696,7 +696,7 @@ describe('crash safety', () => {
       const next = await ws
         .service()
         .save(request(ws, entry({ content: 'Run pnpm lint and pnpm test first.' })))
-      expect(next, point).toMatchObject({ outcome: 'refused', reason: 'conflict' })
+      expect(next, point).toMatchObject({ outcome: 'refused', reason: 'human-edited' })
       expect(await ws.file(), point).toBe(edited)
       expect(ws.registry().read().paragraphs, point).toEqual([])
     }
@@ -1049,7 +1049,7 @@ describe('hand-written text and the rules', () => {
         await save.save(request(ws, { initiator, confirmations: 2, ...entry({ content: NEW }) })),
       ).toMatchObject({
         outcome: 'refused',
-        reason: 'conflict',
+        reason: 'human-edited',
       })
     expect(await ws.file()).toBe(edited)
     // Under human-content protection, even a user-initiated Host save cannot overwrite an in-place
@@ -1283,7 +1283,7 @@ describe('hand-written text and the rules', () => {
         }),
       }),
     )
-    expect(refused).toMatchObject({ outcome: 'refused', reason: 'conflict' })
+    expect(refused).toMatchObject({ outcome: 'refused', reason: 'human-edited' })
     expect(await ws.file()).toBe(edited)
     const directPort = ws.open().paragraphs?.({ sessionKey: 's', turn: 0 }, new AbortController().signal)
     await expect(
@@ -1340,7 +1340,7 @@ describe('rewriting a saved paragraph by id', () => {
     for (const initiator of ['model', 'auto', 'user'] as const)
       expect(await save.save(later(ws, pid, NEW, { initiator, confirmations: 2 }))).toMatchObject({
         outcome: 'refused',
-        reason: 'conflict',
+        reason: 'human-edited',
       })
     expect(await ws.file()).toBe(edited)
   })

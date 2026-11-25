@@ -1,5 +1,5 @@
 import type { RefinementWorkspaceRefs, SavedEntry, WorkspaceReference } from '@agnes/core'
-import type { MemoryParagraphValidity, MemorySession } from '@agnes/extension-api'
+import type { MemorySession } from '@agnes/extension-api'
 import {
   normalizedContentHash,
   REVIEW_AFTER_MS,
@@ -7,6 +7,7 @@ import {
   type RegistryParagraph,
   type RegistrySkill,
 } from '@agnes/host-infrastructure/refinement-registry'
+import { memoryFingerprint, paragraphVisibility } from './paragraph-visibility.js'
 import { registryView } from './registry-view.js'
 import { SECRET_LIKE } from './save-rules.js'
 import { workspaceSkillText } from './skill-drafts.js'
@@ -39,56 +40,6 @@ function inForce(registry: RefinementRegistry, now: number): RegistryParagraph[]
     .paragraphs.filter((p) => p.state === 'active' && now < p.reviewAfter && !registry.revoked(p.source))
 }
 
-const reference = /<!--\s*ref:(r[0-9a-z]{10})\s*-->|\bref:[ \t]+(r[0-9a-z]{10})\b/gu
-const annotation = /^<!--\s*expires_at:/u
-const iso = /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(Z|[+-]\d{2}:?\d{2})?)?$/u
-
-function annotationExpiry(line: string): number | undefined {
-  const marker = annotation.exec(line)
-  if (!marker || line.indexOf('-->') !== line.length - 3) return undefined
-  const parsed = iso.exec(line.slice(marker[0].length, -3).trim())
-  if (!parsed) return NaN
-  const [, date, time, zone] = parsed
-  const midnight = new Date(`${date}T00:00:00Z`)
-  if (!Number.isFinite(midnight.getTime()) || !midnight.toISOString().startsWith(`${date}T`)) return NaN
-  return time ? Date.parse(`${date}T${time}${zone ?? 'Z'}`) : midnight.getTime()
-}
-
-/** The paragraph port lists stored text, including blocks hidden from file reads and recall. */
-function visibleParagraphText(
-  text: string,
-  validity: (id: string) => MemoryParagraphValidity,
-  now: number,
-  futureExpiry?: (at: number) => void,
-): string | undefined {
-  if (!text.trim()) return undefined
-  if (!text.includes('ref:') && !text.includes('expires_at:')) return text
-  const visible: string[] = []
-  let changed = false
-  for (const block of text.split(/\n(?:[^\S\n]*\n)+/u)) {
-    const withdrawn = Array.from(block.matchAll(reference)).some((match) => {
-      const state = validity(match[1] ?? match[2] ?? '')
-      return state !== 'valid' && state !== 'delivered'
-    })
-    if (withdrawn) {
-      changed = true
-      continue
-    }
-    const lines = block.split('\n')
-    const expired = lines.findIndex((line) => {
-      const at = annotationExpiry(line.trim())
-      if (at === undefined) return false
-      if (!Number.isFinite(at) || at <= now) return true
-      futureExpiry?.(at)
-      return false
-    })
-    if (expired >= 0) changed = true
-    const kept = expired < 0 ? block : lines.slice(0, expired).join('\n')
-    if (kept.trim()) visible.push(kept)
-  }
-  return changed ? visible.join('\n\n') || undefined : text
-}
-
 /**
  * The managed paragraphs of one layer by id, for the snapshot: `null` when that layer is not read for
  * the agent (no memory, no paragraph access, memory off, user memory not enabled). A failed read throws:
@@ -98,14 +49,23 @@ async function layerParagraphs(
   memory: MemorySession | undefined,
   sessionKey: string,
   layer: 'workspace' | 'user',
-): Promise<ReadonlyMap<string, string> | null> {
+  registry: RefinementRegistry,
+  clock: () => number,
+  futureExpiry?: (at: number) => void,
+) {
   const open = layer === 'user' ? memory?.userParagraphs : memory?.paragraphs
   if (!memory || typeof open !== 'function') return null
   const settings = (await memory.inspect()).settings
   if (settings.mode === 'off' || (layer === 'user' && !settings.userEnabled)) return null
   const port = open.call(memory, { sessionKey, turn: 0 }, new AbortController().signal)
   const { paragraphs } = await port.list()
-  return new Map(paragraphs.map((p) => [p.id, p.text]))
+  const visible = await paragraphVisibility(memory, layer, registry, clock, futureExpiry)
+  const stored = new Map<string, { raw: string; text: string }>()
+  for (const p of paragraphs) {
+    const text = visible(p.id, p.text)
+    if (text !== undefined) stored.set(p.id, { raw: p.text, text })
+  }
+  return stored
 }
 
 /** A read failure lists nothing for confirmation, but propagates when building the delivery snapshot. */
@@ -121,18 +81,16 @@ async function storedParagraphs(...args: Parameters<typeof layerParagraphs>) {
 function savedEntries(
   prefix: 'ws.' | 'user.',
   live: readonly RegistryParagraph[],
-  stored: ReadonlyMap<string, string> | null,
-  visible: (text: string) => string | undefined = (text) => text,
+  stored: Awaited<ReturnType<typeof layerParagraphs>>,
 ): SavedEntry[] {
   if (!stored) return []
   const out: SavedEntry[] = []
   for (const p of live) {
     const kind = p.source.kind
     if (kind !== 'prompt' && kind !== 'memory') continue
-    const raw = stored.get(p.id)
-    if (raw === undefined || SECRET_LIKE.test(raw)) continue
-    const text = visible(raw)
-    if (text === undefined) continue
+    const paragraph = stored.get(p.id)
+    if (!paragraph || SECRET_LIKE.test(paragraph.raw)) continue
+    const { raw, text } = paragraph
     const version = normalizedContentHash(text)
     const { title, summary } = titled(text)
     const { sessionKey, entryId } = p.source
@@ -222,26 +180,25 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
     if (!range) return 0
     return deps.clock() >= range.next ? range.next : range.last
   }
-  const visibility = (registry: RefinementRegistry, futureExpiry?: (at: number) => void) => {
-    const { validity } = registryView(registry, deps.clock)
-    return (text: string) => visibleParagraphText(text, validity, deps.clock(), futureExpiry)
-  }
-  /** Sections saved to user memory in force, for a plan to confirm (`user-memory/<id>`). */
-  const userRefs = async (at: { key: string }, memory: MemorySession | undefined) => {
-    const registry = deps.userRegistry?.()
-    const live = registry ? inForce(registry, deps.clock()) : []
-    if (live.length === 0) return []
-    const stored = await storedParagraphs(memory, at.key, 'user')
-    if (!stored) return []
+  const paragraphRefs = async (
+    at: { key: string },
+    memory: MemorySession | undefined,
+    layer: 'workspace' | 'user',
+    registry: RefinementRegistry | undefined,
+  ) => {
+    if (!registry) return []
+    const live = inForce(registry, deps.clock())
+    if (!live.length) return []
+    const stored = await storedParagraphs(memory, at.key, layer, registry, deps.clock)
     const out: WorkspaceReference[] = []
     for (const p of live) {
-      const text = stored.get(p.id)
-      if (text === undefined) continue
+      const paragraph = stored?.get(p.id)
+      if (!paragraph) continue
       const { sessionKey, kind, entryId } = p.source
       out.push({
-        ref: `${USER_REF}${p.id}`,
-        ...titled(text),
-        version: normalizedContentHash(text),
+        ref: `${layer === 'user' ? USER_REF : MEMORY_REF}${p.id}`,
+        ...titled(paragraph.text),
+        version: normalizedContentHash(paragraph.text),
         source: { sessionKey, kind, entryId },
       })
       if (out.length >= MAX_LISTED) break
@@ -253,27 +210,9 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
       const where = deps.session(at)
       if (!where) return []
       const registry = registryOf(where.workspaceRoot)
-      const skills = listSkills(registry, where.workspaceRoot, deps.clock())
-      const user = await userRefs(at, where.memory)
-      const live = inForce(registry, deps.clock())
-      if (live.length === 0) return [...user, ...skills]
-      const stored = await storedParagraphs(where.memory, at.key, 'workspace')
-      if (!stored) return [...user, ...skills]
-      const visible = visibility(registry)
-      const out: WorkspaceReference[] = []
-      for (const p of live) {
-        const text = visible(stored.get(p.id) ?? '')
-        if (text === undefined) continue
-        const { sessionKey, kind, entryId } = p.source
-        out.push({
-          ref: `${MEMORY_REF}${p.id}`,
-          ...titled(text),
-          version: normalizedContentHash(text),
-          source: { sessionKey, kind, entryId },
-        })
-        if (out.length >= MAX_LISTED) break
-      }
-      return [...out, ...user, ...skills]
+      const workspace = await paragraphRefs(at, where.memory, 'workspace', registry)
+      const user = await paragraphRefs(at, where.memory, 'user', deps.userRegistry?.())
+      return [...workspace, ...user, ...listSkills(registry, where.workspaceRoot, deps.clock())]
     },
     async entries(at) {
       const where = deps.session(at)
@@ -282,17 +221,26 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
       const registry = registryOf(where.workspaceRoot)
       const live = inForce(registry, now)
       let next = Infinity
-      const visible = visibility(registry, (at) => {
+      const futureExpiry = (at: number) => {
         next = Math.min(next, at)
-      })
+      }
       const workspace = live.length
-        ? savedEntries('ws.', live, await layerParagraphs(where.memory, at.key, 'workspace'), visible)
+        ? savedEntries(
+            'ws.',
+            live,
+            await layerParagraphs(where.memory, at.key, 'workspace', registry, deps.clock, futureExpiry),
+          )
         : []
       const userRegistry = deps.userRegistry?.()
       const userLive = userRegistry ? inForce(userRegistry, now) : []
-      const user = userLive.length
-        ? savedEntries('user.', userLive, await layerParagraphs(where.memory, at.key, 'user'))
-        : []
+      const user =
+        userRegistry && userLive.length
+          ? savedEntries(
+              'user.',
+              userLive,
+              await layerParagraphs(where.memory, at.key, 'user', userRegistry, deps.clock, futureExpiry),
+            )
+          : []
 
       if (where.memory) expiries.set(where.memory, { last: expiryRevision(where.memory), next })
       return [...workspace, ...user]
@@ -304,6 +252,9 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
       return [
         registryView(registryOf(where.workspaceRoot), deps.clock).revision(),
         userRegistry ? registryView(userRegistry, deps.clock).revision() : '',
+        memoryFingerprint(where.memory, 'workspace', 'MEMORY.md'),
+        memoryFingerprint(where.memory, 'workspace', 'settings.json'),
+        userRegistry ? memoryFingerprint(where.memory, 'user', 'MEMORY.md') : '',
         expiryRevision(where.memory),
       ].join(':')
     },
@@ -325,9 +276,14 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
       )
       if (!found) return false
       // Recheck the exact visible version the planner confirmed.
-      const stored = await storedParagraphs(where.memory, at.key, user ? 'user' : 'workspace')
-      const raw = stored?.get(id)
-      const text = raw === undefined || user ? raw : visibility(registry)(raw)
+      const stored = await storedParagraphs(
+        where.memory,
+        at.key,
+        user ? 'user' : 'workspace',
+        registry,
+        deps.clock,
+      )
+      const text = stored?.get(id)?.text
       if (text === undefined || normalizedContentHash(text) !== version) return false
       try {
         registry.update((draft) => {

@@ -1,8 +1,17 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { memoryPlugin } from '@agnes/base'
+import { actor, fakeProvider, openSession, textTurn } from '@agnes/core/testkit'
 import type { MemoryFilePort, MemoryProvider, MemorySession } from '@agnes/extension-api'
 import {
   normalizedContentHash,
@@ -64,7 +73,9 @@ function memory(texts: Record<string, string>, mode: 'off' | 'ask' | 'auto' = 'a
     files: write('files'),
     inspect: async () => ({ root: '/memory', settings: { mode }, files: [], bytes: 0 }),
     configure: write('configure'),
-    readFile: write('readFile'),
+    readFile: async () => {
+      throw new Error('no raw index available')
+    },
     editFile: write('editFile'),
     paragraphs: () => ({
       list: async () => ({
@@ -440,6 +451,25 @@ describe('entries saved earlier, for the experience snapshot', () => {
     expect(await t.refs.entries?.(AT)).toEqual([])
   })
 
+  it('fingerprints only bounded regular files on a symlink-free path', () => {
+    const root = join(realpathSync(scratch()), 'memory', 'workspaces', 'w')
+    mkdirSync(root, { recursive: true })
+    const t = both({ ...layered({}, {}), root })
+    const missing = t.refs.revision?.(AT)
+    const file = join(root, 'MEMORY.md')
+    writeFileSync(file, Buffer.alloc(1024 * 1024))
+    expect(t.refs.revision?.(AT)).not.toBe(missing)
+    writeFileSync(file, Buffer.alloc(1024 * 1024 + 1))
+    expect(t.refs.revision?.(AT)).toBe(missing)
+    // The user index sits under a directory link and the workspace index itself is a link.
+    const external = realpathSync(scratch())
+    writeFileSync(join(external, 'MEMORY.md'), TEXT)
+    rmSync(file)
+    symlinkSync(join(external, 'MEMORY.md'), file)
+    symlinkSync(external, join(root, '..', '..', 'user'), 'dir')
+    expect(t.refs.revision?.(AT)).toBe(missing)
+  })
+
   it('its revision moves when a paragraph is saved, withdrawn or passes its review date', () => {
     const t = both(layered({}, {}))
     const first = t.refs.revision?.(AT)
@@ -449,6 +479,19 @@ describe('entries saved earlier, for the experience snapshot', () => {
     expect(t.refs.revision?.(AT)).toBe(saved)
   })
 })
+
+function fileProvider(): MemoryProvider {
+  let found: MemoryProvider | undefined
+  memoryPlugin.apply({
+    providers: {
+      register: (_kind: unknown, value: MemoryProvider) => {
+        found = value
+      },
+    },
+  } as never)
+  if (!found) throw new Error('memory provider not registered')
+  return found
+}
 
 describe('fixes after the branch review', () => {
   const failing = () =>
@@ -501,21 +544,130 @@ describe('fixes after the branch review', () => {
     expect(userRegistry.read().paragraphs[0]?.reviewAfter).toBe(T0 + REVIEW_AFTER_MS)
   })
 
+  it.each(['expired annotation', 'memory off'])(
+    'withdraws a cached delivery on the next request after %s',
+    async (edit) => {
+      const dataDir = scratch()
+      const registry = new RefinementRegistry(dataDir, ROOT, () => T0)
+      const memory = fileProvider().open({
+        home: scratch(),
+        workspaceRoot: ROOT,
+        sessionKey: AT.key,
+        validity: registryView(registry, () => T0),
+      })
+      try {
+        await memory.configure({ mode: 'auto' })
+        const id = paragraph().id
+        const body = `<!-- refinement:${id} -->\n${TEXT}\n<!-- /refinement:${id} -->`
+        await memory.editFile('MEMORY.md', body, (await memory.readFile('MEMORY.md')).hash)
+        registry.update((draft) => {
+          draft.paragraphs.push(paragraph())
+        }, registry.read().revision)
+        const refs = createWorkspaceRefs({
+          dataDir,
+          session: () => ({ workspaceRoot: ROOT, memory }),
+          clock: () => T0,
+        })
+        const { session } = await openSession({
+          provider: fakeProvider([textTurn('ok'), textTurn('ok')]),
+          refinementEnabled: () => true,
+          refinement: { settings: () => ({}) as never, planner: () => undefined, workspaceRefs: refs },
+        })
+        const turn = async () => {
+          await session.enqueue('next-turn', { content: [{ type: 'text', text: 'Continue' }], actor })
+          await session.run({ until: 'turn-end', signal: new AbortController().signal })
+        }
+        await turn()
+        expect(JSON.stringify(session.surface())).toContain(`[memory/ws.${id} v1] (saved)`)
+        const before = refs.revision?.(AT)
+        if (edit === 'memory off') await memory.configure({ mode: 'off' })
+        else
+          await memory.editFile(
+            'MEMORY.md',
+            `<!-- expires_at: 2020-01-01 -->\n${body}`,
+            (await memory.readFile('MEMORY.md')).hash,
+          )
+        expect(refs.revision?.(AT)).not.toBe(before)
+        expect(await refs.entries?.(AT)).toEqual([])
+        expect(await refs.list(AT)).toEqual([])
+        expect(await refs.renew(AT, `workspace-memory/${id}`, normalizedContentHash(TEXT))).toBe(false)
+        await turn()
+        expect(JSON.stringify(session.surface())).toContain(`[memory/ws.${id} v1] withdrawn:`)
+      } finally {
+        await memory.close?.()
+      }
+    },
+  )
+
+  it('applies user registry references, full-file expiry and user settings to the cached revision', async () => {
+    const home = scratch()
+    const dataDir = scratch()
+    const clock = vi.fn(() => T0)
+    const registry = RefinementRegistry.user(home, clock)
+    const workspaceRegistry = new RefinementRegistry(dataDir, ROOT, clock)
+    workspaceRegistry.update((draft) => {
+      draft.paragraphs.push(paragraph())
+    }, workspaceRegistry.read().revision)
+    // The same id is in force in the workspace, but the user layer has withdrawn it.
+    const source = paragraph({ state: 'removed' })
+    const dependent = paragraph({ id: 'r0000000009' })
+    registry.update((draft) => {
+      draft.paragraphs.push(source, dependent)
+    }, registry.read().revision)
+    const memory = fileProvider().open({
+      home,
+      workspaceRoot: ROOT,
+      sessionKey: AT.key,
+      userValidity: registryView(registry, clock),
+    })
+    const refs = createWorkspaceRefs({
+      dataDir,
+      session: () => ({ workspaceRoot: ROOT, memory }),
+      clock,
+      userRegistry: () => registry,
+    })
+    const path = join(home, 'memory', 'user')
+    mkdirSync(path, { recursive: true })
+    const body = `<!-- refinement:${dependent.id} -->\n${TEXT}\n<!-- /refinement:${dependent.id} -->`
+    const ref = `user-memory/${dependent.id}`
+    const version = normalizedContentHash(TEXT)
+    const hidden = async () => {
+      expect(await refs.entries?.(AT)).toEqual([])
+      expect(await refs.list(AT)).toEqual([])
+      expect(await refs.renew(AT, ref, version)).toBe(false)
+    }
+    try {
+      await memory.configure({ mode: 'auto', userEnabled: true })
+      writeFileSync(
+        join(path, 'MEMORY.md'),
+        `<!-- expires_at: ${new Date(T0 + DAY).toISOString()} -->\n<!-- expires_at: ${new Date(T0 + 1).toISOString()} -->\n${body}`,
+      )
+      expect(await refs.entries?.(AT)).toMatchObject([{ ref: `user.${dependent.id}`, version }])
+      const before = refs.revision?.(AT)
+      clock.mockReturnValue(T0 + 1)
+      expect(refs.revision?.(AT)).not.toBe(before)
+      await hidden()
+      const expired = refs.revision?.(AT)
+      writeFileSync(join(path, 'MEMORY.md'), `${body}\nref: ${source.id}\n`)
+      expect(refs.revision?.(AT)).not.toBe(expired)
+      await hidden()
+      writeFileSync(join(path, 'MEMORY.md'), body)
+      expect(await refs.entries?.(AT)).toMatchObject([{ version }])
+      const enabled = refs.revision?.(AT)
+      await memory.configure({ userEnabled: false })
+      expect(refs.revision?.(AT)).not.toBe(enabled)
+      await hidden()
+    } finally {
+      await memory.close?.()
+    }
+  })
+
   it('excludes paragraphs citing a withdrawn source across read, recall, and Host entries', async () => {
     const home = scratch()
     const dataDir = scratch()
     const now = T0
     const registry = new RefinementRegistry(dataDir, ROOT, () => now)
-    let found: MemoryProvider | undefined
-    memoryPlugin.apply({
-      providers: {
-        register: (_kind: unknown, value: MemoryProvider) => {
-          found = value
-        },
-      },
-    } as never)
-    if (!found) throw new Error('memory provider not registered')
-    const mem = found.open({
+    const mem = fileProvider().open({
       home,
       workspaceRoot: ROOT,
       sessionKey: 'reader',

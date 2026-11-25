@@ -101,16 +101,23 @@ function linesWithHash(text: string, wanted: ReadonlySet<string>): Set<string> {
   return found
 }
 
+function hasRefinementMarker(text: string, id: string): boolean {
+  return text
+    .split('\n')
+    .some(
+      (line) => /^\s*<!--\s*\/?\s*refinement\s*:/iu.test(line.replace(/^\uFEFF/u, '')) && line.includes(id),
+    )
+}
+
 /**
  * Brings the registry in line with what a person did to the memory file, against the registry snapshot
- * `read` (taken before `index` was read). For each active paragraph whose id no longer appears in the file
- * at all:
+ * `read` (taken before `index` was read). For each active paragraph whose marker lines are gone:
  * - its text still there as a run of lines (the markers were taken off): `converted`, ordinary memory
  *   from now on, out of the registry's care;
  * - otherwise (the paragraph was deleted): `removed`, with a `memory-deleted` revocation carrying the
  *   source entry's content hash, so the same content is not saved back automatically.
  *
- * A paragraph whose id is still in the file (listed, or under a damaged marker that waits for repair) is
+ * A paragraph still listed or named in a damaged marker that waits for repair is
  * left alone, and so is one whose save is still in flight (a receipt with outcome `unknown` names it).
  * The write is a compare-and-swap on `read.revision`: `REGISTRY_REVISION_CONFLICT` means the registry
  * moved and both reads must be made again. Returns the revocations added.
@@ -136,7 +143,7 @@ export function reconcileParagraphs(
     (entry) =>
       entry.state === 'active' &&
       !listed.has(entry.id) &&
-      !index.text.includes(entry.id) &&
+      !hasRefinementMarker(index.text, entry.id) &&
       !inFlight.has(entry.id),
   )
   if (!gone.length) return []

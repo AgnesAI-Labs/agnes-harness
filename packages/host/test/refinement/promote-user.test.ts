@@ -310,6 +310,45 @@ describe('promoting a confirmed lesson to user memory', () => {
     ])
   })
 
+  it('records a withdrawal when the file was committed before metadata failed', async () => {
+    const h = await home()
+    const id = sectionId(await h.saves.save(request(h)))
+    const session = h.open()
+    const managed: MemorySession = {
+      ...session,
+      userParagraphs(source, signal) {
+        const port = session.userParagraphs?.(source, signal)
+        if (!port) throw new Error('missing user paragraph port')
+        return {
+          ...port,
+          async commit(...args) {
+            await port.commit(...args)
+            throw Object.assign(new Error('metadata failed'), { code: 'MEMORY_COMMITTED_METADATA_FAILED' })
+          },
+        }
+      },
+    }
+    const after = await manageUserSections(
+      managed,
+      h.users(),
+      { action: 'withdraw', paragraphId: id },
+      () => T0,
+    )
+    expect(after.paragraphs).toEqual([])
+    expect(h.user()).toBe(HAND)
+    expect(h.users().read().paragraphs).toMatchObject([{ id, state: 'removed' }])
+    expect(h.users().read().revocations).toMatchObject([{ action: 'memory-withdrawn' }])
+  })
+
+  it('reports a user section hidden by an annotation outside its markers', async () => {
+    const h = await home()
+    const id = sectionId(await h.saves.save(request(h)))
+    writeFileSync(h.userFile, `${HAND}\n<!-- expires_at: 2020-01-01 -->\n${marked(id, TEXT)}`)
+    expect((await h.manage({ action: 'list' })).paragraphs).toMatchObject([
+      { id, validity: 'valid', hidden: true },
+    ])
+  })
+
   it('a section the user deleted by hand is not promoted again on old confirmations', async () => {
     const h = await home()
     await h.saves.save(request(h))
@@ -342,7 +381,7 @@ describe('promoting a confirmed lesson to user memory', () => {
     const edited = `${HAND}\n${marked(id, `${TITLE}\nAnswer briefly, as I wrote it.`)}`
     writeFileSync(h.userFile, edited)
     const next = await h.saves.save(withContent(h, 'Answer in very short sentences.'))
-    expect(next).toMatchObject({ outcome: 'refused', reason: 'conflict' })
+    expect(next).toMatchObject({ outcome: 'refused', reason: 'human-edited' })
     expect(h.user()).toBe(edited)
   })
 

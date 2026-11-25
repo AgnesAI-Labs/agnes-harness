@@ -90,35 +90,39 @@ function workspace() {
 }
 
 describe('reconciling saved paragraphs with the memory file', () => {
-  it('a paragraph the user deleted becomes a memory-deleted revocation', async () => {
-    const ws = workspace()
-    ws.seed(paragraph(A, LESSON), paragraph(B, 'Keep answers short.'))
-    await ws.write(`Human line.\n\n${marked(A, LESSON)}\n\n${marked(B, 'Keep answers short.')}\n`)
-    // The person deletes paragraph A, markers and all.
-    await ws.write(`Human line.\n\n${marked(B, 'Keep answers short.')}\n`)
-    const revocations = await reconcileWorkspace(ws.registry, ws.open(), clock)
-    expect(revocations).toEqual([
-      {
-        sessionKey: 'session-1',
-        kind: 'memory',
-        entryId: `entry-${A}`,
-        contentHash: source(`entry-${A}`).contentHash,
+  it.each([`<!-- ref:${A} -->`, `ref: ${A}`])(
+    'a deleted paragraph still cited by %s is revoked',
+    async (citation) => {
+      const ws = workspace()
+      const dependent = `Keep answers short.\n${citation}`
+      ws.seed(paragraph(A, LESSON), paragraph(B, dependent))
+      await ws.write(`Human line.\n\n${marked(A, LESSON)}\n\n${marked(B, dependent)}\n`)
+      // The person deletes paragraph A, markers and all.
+      await ws.write(`Human line.\n\n${marked(B, dependent)}\n`)
+      const revocations = await reconcileWorkspace(ws.registry, ws.open(), clock)
+      expect(revocations).toEqual([
+        {
+          sessionKey: 'session-1',
+          kind: 'memory',
+          entryId: `entry-${A}`,
+          contentHash: source(`entry-${A}`).contentHash,
+          action: 'memory-deleted',
+          at: T0,
+        },
+      ])
+      expect(ws.stateOf(A)).toBe('removed')
+      expect(ws.stateOf(B)).toBe('active')
+      // The same content may no longer be saved again automatically, under any entry id.
+      expect(
+        ws.registry.revoked({ ...source('another-id'), contentHash: source(`entry-${A}`).contentHash }),
+      ).toMatchObject({
         action: 'memory-deleted',
-        at: T0,
-      },
-    ])
-    expect(ws.stateOf(A)).toBe('removed')
-    expect(ws.stateOf(B)).toBe('active')
-    // The same content may no longer be saved again automatically, under any entry id.
-    expect(
-      ws.registry.revoked({ ...source('another-id'), contentHash: source(`entry-${A}`).contentHash }),
-    ).toMatchObject({
-      action: 'memory-deleted',
-    })
-    // A second pass finds nothing more to do.
-    expect(await reconcileWorkspace(ws.registry, ws.open(), clock)).toEqual([])
-    expect(ws.registry.read().revocations).toHaveLength(1)
-  })
+      })
+      // A second pass finds nothing more to do.
+      expect(await reconcileWorkspace(ws.registry, ws.open(), clock)).toEqual([])
+      expect(ws.registry.read().revocations).toHaveLength(1)
+    },
+  )
 
   it('markers removed by a person with the text kept mark the paragraph converted', async () => {
     const ws = workspace()
@@ -135,15 +139,18 @@ describe('reconciling saved paragraphs with the memory file', () => {
     expect(registryView(ws.registry, clock).validity(A)).toBe('unknown')
   })
 
-  it('damaged markers are left for repair and never read as a deletion', async () => {
-    const ws = workspace()
-    ws.seed(paragraph(A, LESSON))
-    await ws.write(`Human line.\n\n<!-- refinement:${A} -->\n${LESSON}\n`)
-    const before = ws.registry.read().revision
-    expect(await reconcileWorkspace(ws.registry, ws.open(), clock)).toEqual([])
-    expect(ws.stateOf(A)).toBe('active')
-    expect(ws.registry.read().revision).toBe(before)
-  })
+  it.each([`<!-- refinement:${A} -->`, `<!-- refinement:${A}`, `\uFEFF  <!-- / REFINEMENT : ${A}`])(
+    'leaves a damaged marker for repair (%s)',
+    async (marker) => {
+      const ws = workspace()
+      ws.seed(paragraph(A, LESSON))
+      await ws.write(`Human line.\n\n${marker}\n${LESSON}\n`)
+      const before = ws.registry.read().revision
+      expect(await reconcileWorkspace(ws.registry, ws.open(), clock)).toEqual([])
+      expect(ws.stateOf(A)).toBe('active')
+      expect(ws.registry.read().revision).toBe(before)
+    },
+  )
 
   it('a save still in flight is left alone', async () => {
     const ws = workspace()

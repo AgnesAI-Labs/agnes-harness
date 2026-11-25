@@ -211,6 +211,36 @@ describe('entries saved in earlier sessions reach the model through the snapshot
     expect(p.calls()).toBe(1)
   }, 5_000)
 
+  it('withdraws and replaces a partially expired saved entry once across a restart', async () => {
+    const remaining = saved(1, { content: 'Keep this.\nSecond line.' })
+    const previous = { ...remaining, content: `${remaining.content}\n\nOld block.` }
+    const prompt = saved(2, { kind: 'prompt' })
+    const p = port([previous, prompt])
+    const deps = {
+      provider: fakeProvider([textTurn('ok'), textTurn('ok')]),
+      refinementEnabled: () => true,
+      refinement: { settings: () => ({}) as never, planner: () => undefined, workspaceRefs: p.refs },
+    }
+    const { session, storage } = await openSession(deps)
+    const turn = async () => {
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'next' }], actor })
+      await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    }
+    await turn()
+    expect(await deriveExperienceNotes(session, session.surface())).toEqual([])
+    p.set([remaining, prompt])
+    const notes = await deriveExperienceNotes(session, session.surface())
+    expect(notes).toHaveLength(2)
+    expect(notes[0]?.text).toContain('[memory/ws.r0000000001 v1] withdrawn:')
+    expect(notes[1]?.data).toBe(
+      'Memory:\n- [memory/ws.r0000000001 v2] (saved) Saved 1: Keep this.\nSecond line.',
+    )
+    await turn()
+    expect(await deriveExperienceNotes(session, session.surface())).toEqual([])
+    const reopened = await openSession({ ...deps, storage })
+    expect(await deriveExperienceNotes(reopened.session, reopened.session.surface())).toEqual([])
+  })
+
   it('a withdrawn saved entry gets a control line, also after a host restart', async () => {
     const p = port([saved(1), saved(2)])
     const { session, storage } = await open(p.refs)
@@ -286,6 +316,18 @@ describe('entries saved in earlier sessions reach the model through the snapshot
     expect(p.calls()).toBe(1)
   })
 
+  it('withdraws a stale delivery even when its replacement cannot fit the update', async () => {
+    const p = port([saved(1)])
+    const { session } = await open(p.refs)
+    const snapshot = await deriveExperienceNotes(session, [ask('first')])
+    p.set([saved(1, { content: '这是一条很长的经验。'.repeat(500) })])
+    const surface = [...snapshot.map(delivered), ask('next')]
+    const notes = await deriveExperienceNotes(session, surface)
+    expect(notes).toHaveLength(1)
+    expect(notes[0]?.text).toContain('[memory/ws.r0000000001 v1] withdrawn:')
+    expect(await deriveExperienceNotes(session, [...surface, ...notes.map(delivered)])).toEqual([])
+  })
+
   it('a reset notice gives the saved entries still in force again', async () => {
     const all = Array.from({ length: 15 }, (_, i) => saved(i + 1))
     const p = port(all)
@@ -296,7 +338,7 @@ describe('entries saved in earlier sessions reach the model through the snapshot
       `${EXPERIENCE_PREFIX}Task experience update, format 1.`,
       all.map((e) => `- [memory/${e.ref} v1] (saved) ${e.title}: ${e.content}`).join('\n'),
     )
-    p.set([saved(15)])
+    p.set([saved(15, { content: 'Remaining block' })])
     const notes = await deriveExperienceNotes(session, [
       ask('x'),
       ...snapshot.map(delivered),
@@ -304,7 +346,7 @@ describe('entries saved in earlier sessions reach the model through the snapshot
       ask('y'),
     ])
     expect(textOf(notes)).toContain('No task-experience note before this one applies any longer')
-    expect(textOf(notes)).toContain('(saved) Saved 15')
+    expect(textOf(notes)).toContain('[memory/ws.r0000000015 v2] (saved) Saved 15: Remaining block')
   })
 
   it("another session's new save waits for the next cold boundary", async () => {

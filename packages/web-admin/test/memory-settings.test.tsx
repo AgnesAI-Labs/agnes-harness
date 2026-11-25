@@ -47,7 +47,14 @@ afterEach(() => {
   userSaved = []
 })
 
-type Saved = { id: string; text: string; validity: string; reviewAfter?: number; initiator?: string }
+type Saved = {
+  id: string
+  text: string
+  validity: string
+  reviewAfter?: number
+  initiator?: string
+  hidden?: true
+}
 let saved: Saved[] = []
 /** Task experience promoted to user memory. */
 let userSaved: Saved[] = []
@@ -145,7 +152,9 @@ it.each(visibilityCases)(
     server(undefined, userEnabled)
     const valid = { id: 'ra000000001', text: 'Valid', validity: 'valid', reviewAfter: Date.UTC(2027, 0, 1) }
     saved = [valid, { ...valid, id: 'rb000000001', text: 'Expired', validity: 'expired' }]
-    userSaved = [valid]
+    const hidden = { ...valid, hidden: true as const, id: 'rc000000001', text: 'Hidden' }
+    saved.push(hidden)
+    userSaved = [valid, hidden]
     document.documentElement.lang = locale
     const { host, unmount } = await render()
     const text = (id: string) => host.querySelector(`[data-testid="${id}"]`)?.textContent
@@ -167,6 +176,19 @@ it.each(visibilityCases)(
         expect(text('memory-user-saved-paragraph')).toContain(zh ? '其他工作区' : 'other workspaces')
         expect(text('memory-user-saved-paragraph')).not.toContain(visible)
       } else expect(text('memory-user-saved-paragraph')).toContain(visible)
+      for (const [id, visibleLayer] of [
+        ['memory-saved-paragraph', mode !== 'off'],
+        ['memory-user-saved-paragraph', mode !== 'off' && userEnabled],
+      ] as const) {
+        const row = [...host.querySelectorAll(`[data-testid="${id}"]`)].at(-1)?.textContent
+        const reason = zh ? '到期标注或引用的记忆已撤回' : 'expiry annotation or a withdrawn reference'
+        if (visibleLayer) {
+          expect(row).toContain(reason)
+          expect(row).toContain(
+            new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(valid.reviewAfter),
+          )
+        } else expect(row).not.toContain(reason)
+      }
       for (const id of ['memory-saved', 'memory-user-saved']) {
         expect(host.querySelector(`[data-testid="${id}"] p`)?.textContent).toContain(nextTurn)
       }
