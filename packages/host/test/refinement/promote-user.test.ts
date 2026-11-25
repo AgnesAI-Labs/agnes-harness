@@ -439,6 +439,10 @@ describe('promoting a confirmed lesson to user memory', () => {
       expect.objectContaining({ action: 'memory-withdrawn', actor }),
       expect.objectContaining({ entryId: 'second', action: 'memory-withdrawn', actor: 'human' }),
     ])
+    writeFileSync(h.userFile, `${HAND}\n${marked(id, TEXT)}`)
+    await expect(h.manage({ action: 'renew', paragraphId: id, layer: 'user' })).rejects.toMatchObject({
+      code: 'MEMORY_PARAGRAPH_NOT_RENEWABLE',
+    })
   })
 
   it('records a withdrawal when the file was committed before metadata failed', async () => {
@@ -770,15 +774,13 @@ describe('the user memory registry', () => {
     const h = await home()
     const id = sectionId(await h.saves.save(request(h)))
     const stored = h.user()
-    h.now.value = T0 + REVIEW_AFTER_MS - 1
+    h.now.value = T0 + REVIEW_AFTER_MS + 1
+    const reader = h.open('reader')
+    expect((await reader.snapshot(1))?.content).not.toContain(BODY)
     await h.manage({ action: 'renew', paragraphId: id, layer: 'user' })
     expect(h.users().read().paragraphs[0]?.reviewAfter).toBe(h.now.value + REVIEW_AFTER_MS)
     expect(h.user()).toBe(stored)
-    h.now.value += REVIEW_AFTER_MS
-    await expect(h.manage({ action: 'renew', paragraphId: id })).rejects.toMatchObject({
-      code: 'MEMORY_PARAGRAPH_NOT_RENEWABLE',
-    })
-    expect((await h.open('reader').snapshot(2))?.content).not.toContain(BODY)
+    expect((await reader.snapshot(2))?.content).toContain(BODY)
   })
 
   it('switching refinement off writes nothing to the registry', async () => {

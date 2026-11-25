@@ -116,17 +116,25 @@ describe('saved paragraphs on the memory page', () => {
         .paragraphs?.({ sessionKey: 'human-editor', turn: 0 }, new AbortController().signal)
         .list()
       if (!listed) throw new Error('missing paragraph port')
-      const optimistic = {
-        ...listed,
-        paragraphs: listed.paragraphs.map((p) => ({ ...p, validity: 'valid' as const })),
+      for (const [providerB, providerC, expectedB] of [
+        ['valid', 'valid', 'expired'],
+        ['unknown', 'expired', 'unknown'],
+      ] as const) {
+        const reported = {
+          ...listed,
+          paragraphs: listed.paragraphs.map((p) => ({
+            ...p,
+            validity: p.id === B ? providerB : p.id === C ? providerC : p.validity,
+          })),
+        }
+        expect(
+          await describeParagraphs(reported, memory, 'workspace', ws.registry(), ws.clock),
+        ).toMatchObject([
+          { id: A, validity: 'valid' },
+          { id: B, validity: expectedB },
+          { id: C, validity: 'unknown' },
+        ])
       }
-      expect(
-        await describeParagraphs(optimistic, memory, 'workspace', ws.registry(), ws.clock),
-      ).toMatchObject([
-        { id: A, validity: 'valid' },
-        { id: B, validity: 'expired' },
-        { id: C, validity: 'unknown' },
-      ])
     } finally {
       await memory.close?.()
     }
@@ -170,7 +178,7 @@ describe('saved paragraphs on the memory page', () => {
 
   it('renewing gives a paragraph a new 30-day review period and touches no file', async () => {
     const ws = await workspace()
-    ws.seed(paragraph(B, LESSON_B, T0 + DAY))
+    ws.seed(paragraph(B, LESSON_B, T0 - DAY))
     await ws.write(`${HUMAN}\n${marked(B, LESSON_B)}\n`)
     const before = await ws.file()
     const { paragraphs } = await ws.run('renew', B)

@@ -12,7 +12,7 @@ Files live under `$AGH_HOME/memory/workspaces/<sha256-of-canonical-workspace-pat
 
 Default storage limits are 16 KiB / 200 lines for the index, 32 KiB per topic and 256 KiB per workspace. The independent injection limits are counted in UTF-8 bytes: 8 KiB for workspace memory and 2 KiB for optional user memory by default (settings `tokenBudget` and `userTokenBudget`; the names are kept for compatibility). The fixed header lines are not counted, and each layer keeps its own limit, even when the other is shorter. A layer over its limit is cut at a whole line, and a closing line tells the agent how many paragraphs and about how many KB were left out and, for workspace memory, from which line of `MEMORY.md`, so it can read the rest; the stored file is never silently truncated. Settings stored with the earlier defaults (2,048 and 512) read as the new ones, so that exact pair cannot be chosen; any other pair is kept as set. Over-cap writes return `MEMORY_CONSOLIDATION_REQUIRED` and leave the file intact. Consolidate repeated or obsolete preferences, rather than appending indefinitely.
 
-A turn keeps any removal it has observed. If you restore an emptied or deleted file or raise the size limit for an omitted index, its newly readable content becomes available on the next turn.
+A turn keeps any removal it has observed. If you restore an emptied or deleted file, renew a hidden paragraph, or raise the size limit for an omitted index, its newly readable content becomes available on the next turn.
 
 For optional read-only user preferences, create `$AGH_HOME/memory/user/MEMORY.md` yourself and enable `userEnabled` via the [SDK](../reference/api.md) admin method. User memory uses the same index storage limits and its separate context budget. Agent tools cannot change it or read another workspace's memory. With [Task experience](refinement.md#save-to-user-memory) on, lessons that hold in every workspace can be added to it automatically, as saved sections with marker lines like the paragraphs below; your own text always comes first in what the agent is shown, and a lesson that does not fit is not written.
 
@@ -33,7 +33,7 @@ The id is `r` and ten lower-case letters or digits. The marker lines are how the
 
 Do not start a line of your own with `<!-- refinement:` or `<!-- /refinement:`. A marker line that is damaged, repeated or on its own hides the text after it from the agent (up to the next marker line, or to the end of the file) until you fix it in the editor; the Saved task experience section does not list it. The agent cannot add, remove or change marker-like lines, in `MEMORY.md` or in topic files.
 
-**Review date.** Each saved paragraph is in force for **30 days**. Once the review date passes, the agent stops seeing it. Its text stays in the file. The workspace's records of saved paragraphs (review dates, who saved them, what was taken back) live in the data directory, not in the memory file.
+**Review date.** Each saved paragraph is in force for **30 days**. From then on the agent no longer sees it, until a later review confirms it again or you renew it. Its text stays in the file. The workspace's records of saved paragraphs (review dates, who saved them, what was taken back) live in the data directory, not in the memory file.
 
 **What the agent sees.** The memory note and the agent's own reads of `MEMORY.md` leave out paragraphs past their review date and paragraphs nothing vouches for (for example damaged markers, or a save whose result is unknown). You see the whole file in the editor. Because the agent's view is filtered:
 
@@ -42,7 +42,7 @@ Do not start a line of your own with `<!-- refinement:` or `<!-- /refinement:`. 
 
 **On the memory page.** In **Memory files**, the **Saved task experience** section lists each saved paragraph with whether the agent sees it, its review date and who saved it. The page refreshes at the review date or an earlier expiry annotation, including an annotation above the opening marker. A saved summary of a changed or deleted topic stays hidden until the summary is updated. For each one:
 
-- **Renew** starts a new 30-day review period for a paragraph that is still in force and has visible text. The file is not changed.
+- **Renew** starts a new 30-day review period. The file is not changed.
 - **Withdraw** removes the paragraph from the file and records that you took it back: automatic and model saves of the same content are refused from then on. Only your own save brings it back.
 - **Make ordinary** takes the marker lines off and keeps the text as ordinary memory, with no review date.
 

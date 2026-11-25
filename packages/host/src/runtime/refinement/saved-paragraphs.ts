@@ -83,9 +83,14 @@ export async function describeParagraphs(
     const record = records.find((entry) => entry.id === id && entry.state === 'active')
     const providerStatus = validity === 'delivered' ? 'valid' : validity
     const hostStatus = hostValidity(id)
-    let status: MemoryParagraphValidity = 'unknown'
-    if (providerStatus === 'expired' || hostStatus === 'expired') status = 'expired'
-    else if (providerStatus === 'valid' && hostStatus === 'valid' && projection) status = 'valid'
+    const status: MemoryParagraphValidity =
+      providerStatus === 'unknown' || hostStatus === 'unknown'
+        ? 'unknown'
+        : providerStatus === 'expired' || hostStatus === 'expired'
+          ? 'expired'
+          : projection
+            ? 'valid'
+            : 'unknown'
     return {
       id,
       text,
@@ -99,7 +104,7 @@ export async function describeParagraphs(
   })
 }
 
-/** A person may renew an in-force record once its effective visibility is verified. */
+/** A person may renew an active (including overdue) record once its stored body and surrounding visibility are verified. */
 export async function verifyRenewal(
   port: MemoryParagraphPort | undefined,
   memory: MemorySession,
@@ -110,15 +115,16 @@ export async function verifyRenewal(
 ) {
   const listed = await port?.list()
   const paragraph = listed?.paragraphs.find((p) => p.id === id)
-  if (listed && paragraph && (paragraph.validity === 'valid' || paragraph.validity === 'delivered')) {
+  const hostStatus = registryView(registry, clock).validity(id)
+  if (
+    listed &&
+    paragraph &&
+    paragraph.validity !== 'unknown' &&
+    (hostStatus === 'valid' || hostStatus === 'expired')
+  ) {
     const visible = await paragraphVisibility(memory, layer, listed, registry, clock)
     const projection = visible(paragraph)
-    if (
-      projection?.visibleText &&
-      clock() < (projection.nextExpiry ?? Infinity) &&
-      registryView(registry, clock).validity(id) === 'valid'
-    )
-      return
+    if (projection?.visibleText && clock() < (projection.nextExpiry ?? Infinity)) return
   }
   throw fault('MEMORY_PARAGRAPH_NOT_RENEWABLE')
 }
