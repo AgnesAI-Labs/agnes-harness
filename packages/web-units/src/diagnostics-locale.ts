@@ -62,6 +62,7 @@ const en = {
   'diagnostics.viewer.warning': '{source}: {reason}',
   'diagnostics.viewer.warningDetail': '{source}: {reason} ({detail})',
   'diagnostics.viewer.toolSummary': '{name}: {summary}',
+  'diagnostics.viewer.rawData': 'Raw record',
   'diagnostics.trace.window':
     'Only the {n} most recently loaded nodes are included. Earlier history is not included.',
 } as const
@@ -125,6 +126,7 @@ const zh: Record<keyof typeof en, string> = {
   'diagnostics.viewer.warning': '{source}：{reason}',
   'diagnostics.viewer.warningDetail': '{source}：{reason}（{detail}）',
   'diagnostics.viewer.toolSummary': '{name}：{summary}',
+  'diagnostics.viewer.rawData': '原始记录',
   'diagnostics.trace.window': '仅含已加载的最近 {n} 个节点，更早的历史未包含',
 }
 
@@ -185,5 +187,6 @@ export function diagnosticsViewerLabels(locale: DiagnosticsLocale = diagnosticsL
     warning: text('diagnostics.viewer.warning'),
     warningDetail: text('diagnostics.viewer.warningDetail'),
     toolSummary: text('diagnostics.viewer.toolSummary'),
+    rawData: text('diagnostics.viewer.rawData'),
   }
 }

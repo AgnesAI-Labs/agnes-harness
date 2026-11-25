@@ -24,36 +24,19 @@ const STYLE = `
 @layer tokens {
   :root {
     color-scheme: light dark;
-    --agnes-bg-primary: #f6f7f9;
-    --agnes-bg-surface: #ffffff;
-    --agnes-bg-subtle: #f1f5f9;
-    --agnes-text-primary: #0f172a;
-    --agnes-text-secondary: #475569;
-    --agnes-line-primary: #e2e8f0;
-    --agnes-accent-primary: #2563eb;
-    --agnes-accent-soft: #eff6ff;
-    --agnes-warn-bg: #fffbeb;
-    --agnes-warn-border: #fde68a;
-    --agnes-warn-text: #92400e;
-    --agnes-ok: #15803d;
-    --agnes-bad: #b91c1c;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --agnes-bg-primary: #0b0f17;
-      --agnes-bg-surface: #111827;
-      --agnes-bg-subtle: #1f2937;
-      --agnes-text-primary: #f1f5f9;
-      --agnes-text-secondary: #94a3b8;
-      --agnes-line-primary: #273244;
-      --agnes-accent-primary: #60a5fa;
-      --agnes-accent-soft: #172554;
-      --agnes-warn-bg: #2a1f0b;
-      --agnes-warn-border: #78350f;
-      --agnes-warn-text: #fcd34d;
-      --agnes-ok: #4ade80;
-      --agnes-bad: #f87171;
-    }
+    --agnes-bg-primary: Canvas;
+    --agnes-bg-surface: color-mix(in srgb, Canvas 96%, CanvasText 4%);
+    --agnes-bg-subtle: color-mix(in srgb, Canvas 92%, CanvasText 8%);
+    --agnes-text-primary: CanvasText;
+    --agnes-text-secondary: GrayText;
+    --agnes-line-primary: color-mix(in srgb, GrayText 35%, transparent);
+    --agnes-accent-primary: Highlight;
+    --agnes-accent-soft: color-mix(in srgb, Highlight 14%, transparent);
+    --agnes-warn-bg: color-mix(in srgb, Mark 20%, Canvas);
+    --agnes-warn-border: color-mix(in srgb, Mark 55%, Canvas);
+    --agnes-warn-text: CanvasText;
+    --agnes-ok: Highlight;
+    --agnes-bad: LinkText;
   }
 }
 @layer base {
@@ -69,7 +52,7 @@ const STYLE = `
   #agh-tabs { position: sticky; top: 0; z-index: 10; display: flex; gap: 6px; padding: 10px 24px; background: var(--agnes-bg-surface); border-bottom: 1px solid var(--agnes-line-primary); flex-wrap: wrap; }
   #agh-tabs button { border: 1px solid transparent; background: transparent; color: var(--agnes-text-secondary); padding: 6px 14px; border-radius: 999px; cursor: pointer; font-size: 13px; font-weight: 500; min-height: 32px; touch-action: manipulation; transition: background .15s, color .15s; }
   #agh-tabs button:hover { background: var(--agnes-bg-subtle); color: var(--agnes-text-primary); }
-  #agh-tabs button[aria-selected="true"] { background: var(--agnes-accent-primary); color: #ffffff; border-color: var(--agnes-accent-primary); }
+  #agh-tabs button[aria-selected="true"] { background: var(--agnes-accent-primary); color: HighlightText; border-color: var(--agnes-accent-primary); }
   #agh-tabs button:focus-visible { outline: 2px solid var(--agnes-accent-primary); outline-offset: 2px; }
   main { padding: 20px 24px 40px; }
   main section { max-width: 1040px; margin: 0 auto; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
@@ -95,14 +78,14 @@ const STYLE = `
   .agh-node-seq { font-size: 12px; color: var(--agnes-text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .agh-node-body { white-space: pre-wrap; word-break: break-word; font-size: 13.5px; color: var(--agnes-text-primary); }
   .agh-raw { margin-top: 8px; }
-  .agh-raw summary { cursor: pointer; font-size: 12px; color: var(--agnes-text-secondary); user-select: none; }
+  .agh-raw-toggle { border: 1px solid var(--agnes-line-primary); background: transparent; color: var(--agnes-text-secondary); padding: 2px 8px; border-radius: 6px; cursor: pointer; font-size: 12px; }
   .agh-turn-card { background: var(--agnes-bg-surface); border: 1px solid var(--agnes-line-primary); border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; }
   .agh-turn-card h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
   .agh-span { padding: 6px 8px; border-bottom: 1px solid var(--agnes-line-primary); font-size: 13px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .agh-span:last-child { border-bottom: 0; }
   .agh-span[data-status="failed"] { color: var(--agnes-bad); }
   .agh-log-card { background: var(--agnes-bg-surface); border: 1px solid var(--agnes-line-primary); border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; }
-  .agh-log-card summary { cursor: pointer; font-size: 14px; font-weight: 600; }
+  .agh-log-card h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
   .agh-artifact { display: flex; gap: 12px; flex-wrap: wrap; margin: 4px 0 0; }
   .agh-artifact div { display: flex; gap: 4px; font-size: 13px; }
   .agh-artifact dt { font-weight: 600; color: var(--agnes-text-secondary); }
@@ -137,6 +120,15 @@ const RUNTIME_SCRIPT = `
       else return;
       event.preventDefault();
       select(tabs[next], true);
+    });
+  });
+  Array.prototype.slice.call(document.querySelectorAll('[data-agh-toggle]')).forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var panel = document.getElementById(btn.getAttribute('aria-controls') || '');
+      if (!panel) return;
+      var open = !panel.hidden;
+      panel.hidden = open;
+      btn.setAttribute('aria-expanded', open ? 'false' : 'true');
     });
   });
 })();
@@ -278,10 +270,20 @@ function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: Diagnos
                       )}
                     </div>
                     {body && <div className="agh-node-body">{body}</div>}
-                    <details className="agh-raw">
-                      <summary>JSON</summary>
-                      <pre>{JSON.stringify(node, null, 2)}</pre>
-                    </details>
+                    <div className="agh-raw">
+                      <Button
+                        htmlType="button"
+                        className="agh-raw-toggle"
+                        data-agh-toggle="raw"
+                        aria-expanded={false}
+                        aria-controls={`agh-raw-${node.id}`}
+                      >
+                        {labels.rawData}
+                      </Button>
+                      <pre id={`agh-raw-${node.id}`} hidden>
+                        {JSON.stringify(node, null, 2)}
+                      </pre>
+                    </div>
                   </div>
                 )
               })
@@ -310,14 +312,14 @@ function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: Diagnos
                     ? value.entries.map((entry) => `[${entry.ts}] ${entry.level} ${entry.text}`).join('\n')
                     : value.text + (value.truncated ? `\n${labels.truncated}` : '')
                 return (
-                  <details key={key} className="agh-log-card" open>
-                    <summary>
+                  <div key={key} className="agh-log-card">
+                    <h3>
                       {key === 'requestAudit' || key === 'runtime'
                         ? text(`diagnostics.viewer.log.${key}`)
                         : key}
-                    </summary>
+                    </h3>
                     <pre>{content}</pre>
-                  </details>
+                  </div>
                 )
               })
             : empty}
