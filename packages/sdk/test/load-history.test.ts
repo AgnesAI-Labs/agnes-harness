@@ -3,6 +3,18 @@ import { loadHistory } from '../src/load-history.js'
 
 afterEach(() => vi.useRealTimers())
 
+it.each(['preparationMs', 'idleMs', 'hardMs'])('rejects an overflowing %s before loading', async (key) => {
+  vi.useFakeTimers()
+  const subscribe = vi.fn(() => () => {})
+  const request = vi.fn(async () => ({}))
+  await expect(
+    loadHistory({ sessionId: 's', idleMs: 20, hardMs: 50, [key]: 2_147_483_648, subscribe, request }),
+  ).rejects.toThrow(RangeError)
+  expect(subscribe).not.toHaveBeenCalled()
+  expect(request).not.toHaveBeenCalled()
+  expect(vi.getTimerCount()).toBe(0)
+})
+
 it.each(['idle', 'hard', 'done', 'disconnect', 'preparation', 'prepared', 'preparation-hard'] as const)(
   'bounds a progressing history load at %s and disposes observers',
   async (mode) => {

@@ -73,7 +73,7 @@ import { JsonRpcError, ProtocolViolation, RequestTimeout, TransportClosed, Unsup
 import { type Disposer, Emitter } from './events.js'
 import { untilAborted } from './initialize-wait.js'
 import { type JournalStore, memoryJournal } from './journal.js'
-import { loadHistory } from './load-history.js'
+import { loadHistory, MAX_TIMER_DELAY_MS, validateLoadTimeouts } from './load-history.js'
 import { type PermissionRequest, unansweredPermission } from './permission.js'
 import { Reconnector } from './reattach.js'
 import { RpcConnection } from './rpc.js'
@@ -202,9 +202,10 @@ export class Client {
     if (
       !Number.isInteger(this.timeouts.initialize) ||
       this.timeouts.initialize < 0 ||
-      this.timeouts.initialize > 2_147_483_647
+      this.timeouts.initialize > MAX_TIMER_DELAY_MS
     )
       throw new TypeError('invalid initialize timeout')
+    validateLoadTimeouts(this.timeouts.loadIdle, this.timeouts.loadHard, this.timeouts.loadPreparation)
     this.locale = opts.locale ?? 'en'
     this.bufferLimit = opts.bufferLimit ?? 1000
     const factories = {

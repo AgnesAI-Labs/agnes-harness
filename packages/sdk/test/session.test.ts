@@ -144,6 +144,25 @@ it.each([true, false])('negotiates a preparation deadline (supported=%s)', async
   }
 })
 
+it.each([true, false])('rejects overflowing load timeouts (preparation supported=%s)', (supported) => {
+  const f = fakeEndpoint({
+    initialize: () => ({
+      protocolVersion: 1,
+      agentCapabilities: { _meta: { [META_KEY]: supported ? { sessionLoadPreparation: true } : {} } },
+    }),
+    'session/load': () => ({}),
+  })
+  for (const key of ['loadPreparation', 'loadIdle', 'loadHard'] as const) {
+    expect(() =>
+      createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        timeouts: { [key]: 2_147_483_648 },
+      }),
+    ).toThrow(RangeError)
+  }
+  expect(f.calls).toEqual([])
+})
+
 it('never falls back after admission refusal and cancels just the caller-owned open', async () => {
   let release!: () => void
   const f = fakeEndpoint({

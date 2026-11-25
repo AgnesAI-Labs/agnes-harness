@@ -2,6 +2,15 @@ import type { SessionLoadingParams } from '@agnes/protocol'
 import { validateMethod } from '@agnes/protocol'
 import { RequestTimeout } from './errors.js'
 
+export const MAX_TIMER_DELAY_MS = 2_147_483_647
+
+export function validateLoadTimeouts(idleMs: number, hardMs: number, preparationMs = idleMs): void {
+  if (
+    ![preparationMs, idleMs, hardMs].every((ms) => Number.isInteger(ms) && ms > 0 && ms <= MAX_TIMER_DELAY_MS)
+  )
+    throw new RangeError(`load timeouts must be integers from 1 to ${MAX_TIMER_DELAY_MS} ms`)
+}
+
 /** A long open is bounded by genuine forward progress and an independent hard deadline. */
 export async function loadHistory<T>(options: {
   sessionId: string
@@ -13,12 +22,7 @@ export async function loadHistory<T>(options: {
   signal?: AbortSignal
   onProgress?: (progress: SessionLoadingParams) => void
 }): Promise<T> {
-  if (
-    ![options.preparationMs ?? options.idleMs, options.idleMs, options.hardMs].every(
-      (ms) => Number.isSafeInteger(ms) && ms > 0,
-    )
-  )
-    throw new RangeError('load timeouts must be positive safe integers')
+  validateLoadTimeouts(options.idleMs, options.hardMs, options.preparationMs)
   const controller = new AbortController()
   const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal
   const deadline = (phase: 'preparation' | 'idle', ms: number) =>

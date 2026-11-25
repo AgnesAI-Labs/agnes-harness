@@ -52,6 +52,7 @@ export type CreateClientOptions = {
   auth?: AuthOption
   clientId?: string
   journal?: JournalStore
+  /** Milliseconds. History load timeouts accept integers from 1 to 2,147,483,647. */
   timeouts?: {
     request?: number
     initialize?: number
