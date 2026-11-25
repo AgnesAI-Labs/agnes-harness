@@ -452,6 +452,37 @@ function projectCatalogDescriptor(value: unknown): PackageCatalogDescriptor {
   return projected
 }
 
+type PackageAdminServiceOptions = {
+  manager: PackageManager
+  skillImport?: ReturnType<typeof import('./skill-import.js').createSkillImportService>
+  authoringTestRunner?: AuthoringTestRunner
+  resolveAgent?(profile: string, ref: string): Promise<import('@agnes/protocol').AgentPlan>
+  authoringHome?: string
+  profileDirectory: PackageProfileDirectory
+  operations: PackageOperationStore
+  catalog?: Catalog
+  community?: (profile: string) => CommunitySnapshot | undefined
+  agnesVersion?: string
+  activation?: PackageActivationAdapter
+  runtimePins?: RuntimePinsAdapter
+  clientModules?: ClientModuleRegistry
+  pluginTree?: CompositeTargetStore | (() => CompositeTargetStore | undefined)
+  revokeRuntimePackage?: (packageId: string) => Promise<void>
+  /** Production publisher: validates in an isolated probe before changing desired state. */
+  pluginTreePublisher?: (artifact: RuntimeTargetArtifact, liveConfig?: boolean) => Promise<void>
+  workerGeneration?: () => number | undefined
+  /** Private launcher BFF dispatch. The registry performs row/snapshot authority checks first. */
+  clientServiceCall?: (
+    input: ClientModuleServiceCallParams & Readonly<{ packageId: string; extension: string }>,
+  ) => Promise<ExtensionCallResult>
+  /** Explicitly authorized effect dispatch; row authority is rechecked immediately before it. */
+  clientEffectCall?: (
+    input: ClientModuleEffectCallParams & Readonly<{ packageId: string; extension: string }>,
+    authority: PackageAdminAuthority,
+  ) => Promise<ExtensionCallResult>
+  clock?: () => string
+}
+
 class Service implements PackageAdminService {
   get features(): readonly string[] {
     return [
@@ -472,38 +503,7 @@ class Service implements PackageAdminService {
   private readonly daemonVersion: Semver | null
   private recoveryError: PackageAdminError | undefined
 
-  constructor(
-    private readonly options: {
-      manager: PackageManager
-      skillImport?: ReturnType<typeof import('./skill-import.js').createSkillImportService>
-      authoringTestRunner?: AuthoringTestRunner
-      resolveAgent?(profile: string, ref: string): Promise<import('@agnes/protocol').AgentPlan>
-      authoringHome?: string
-      profileDirectory: PackageProfileDirectory
-      operations: PackageOperationStore
-      catalog?: Catalog
-      community?: (profile: string) => CommunitySnapshot | undefined
-      agnesVersion?: string
-      activation?: PackageActivationAdapter
-      runtimePins?: RuntimePinsAdapter
-      clientModules?: ClientModuleRegistry
-      pluginTree?: CompositeTargetStore | (() => CompositeTargetStore | undefined)
-      revokeRuntimePackage?: (packageId: string) => Promise<void>
-      /** Production publisher: validates in an isolated probe before changing desired state. */
-      pluginTreePublisher?: (artifact: RuntimeTargetArtifact, liveConfig?: boolean) => Promise<void>
-      workerGeneration?: () => number | undefined
-      /** Private launcher BFF dispatch. The registry performs row/snapshot authority checks first. */
-      clientServiceCall?: (
-        input: ClientModuleServiceCallParams & Readonly<{ packageId: string; extension: string }>,
-      ) => Promise<ExtensionCallResult>
-      /** Explicitly authorized effect dispatch; row authority is rechecked immediately before it. */
-      clientEffectCall?: (
-        input: ClientModuleEffectCallParams & Readonly<{ packageId: string; extension: string }>,
-        authority: PackageAdminAuthority,
-      ) => Promise<ExtensionCallResult>
-      clock: () => string
-    },
-  ) {
+  constructor(private readonly options: PackageAdminServiceOptions & { clock: () => string }) {
     const version = options.agnesVersion
     this.daemonVersion =
       version && version === version.trim() && version !== '0.0.0' ? parseSemver(version) : null
@@ -2121,33 +2121,7 @@ class Service implements PackageAdminService {
   }
 }
 
-export function createPackageAdminService(options: {
-  skillImport?: ReturnType<typeof import('./skill-import.js').createSkillImportService>
-  manager: PackageManager
-  authoringTestRunner?: AuthoringTestRunner
-  resolveAgent?(profile: string, ref: string): Promise<import('@agnes/protocol').AgentPlan>
-  authoringHome?: string
-  profileDirectory: PackageProfileDirectory
-  operations: PackageOperationStore
-  catalog?: Catalog
-  community?: (profile: string) => CommunitySnapshot | undefined
-  agnesVersion?: string
-  activation?: PackageActivationAdapter
-  runtimePins?: RuntimePinsAdapter
-  clientModules?: ClientModuleRegistry
-  pluginTree?: CompositeTargetStore | (() => CompositeTargetStore | undefined)
-  revokeRuntimePackage?: (packageId: string) => Promise<void>
-  pluginTreePublisher?: (artifact: RuntimeTargetArtifact, liveConfig?: boolean) => Promise<void>
-  workerGeneration?: () => number | undefined
-  clientServiceCall?: (
-    input: ClientModuleServiceCallParams & Readonly<{ packageId: string; extension: string }>,
-  ) => Promise<ExtensionCallResult>
-  clientEffectCall?: (
-    input: ClientModuleEffectCallParams & Readonly<{ packageId: string; extension: string }>,
-    authority: PackageAdminAuthority,
-  ) => Promise<ExtensionCallResult>
-  clock?: () => string
-}): PackageAdminService {
+export function createPackageAdminService(options: PackageAdminServiceOptions): PackageAdminService {
   return new Service({ ...options, clock: options.clock ?? (() => new Date().toISOString()) })
 }
 

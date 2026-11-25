@@ -24,7 +24,6 @@ import {
   validateAgainst,
   validatePackageAdminCall,
   validatePackageAdminData,
-  validatePackageCatalogSnapshotVersion,
 } from '@agnes/protocol'
 import {
   DiagnosticsExportParams,
@@ -37,6 +36,7 @@ import {
 } from '@agnes/protocol/gen/agnes-v1'
 
 import { backendCause, invalidResponse, responseCause } from './admin-failure.js'
+import { validCatalogProjection } from './catalog-query.js'
 import { configurationFailureStatus, configurationReadOnly } from './permissions.js'
 
 const PREFIX = '/admin/plugins/api/'
@@ -129,17 +129,6 @@ export type AdminSurfaceOptions = {
 
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
-
-function validCatalogProjection(params: PackageCatalogListParams, page: PackageCatalogPage): boolean {
-  if (page.community !== undefined && params.includeCommunity !== true) return false
-  if (page.communityIndex === undefined) return true
-  if (params.communityVersion === 2) return validatePackageCatalogSnapshotVersion(page, 2)
-  // The launcher may have negotiated v2 after the browser sent its request with a stale v3 context.
-  return (
-    params.communityVersion === 3 &&
-    (validatePackageCatalogSnapshotVersion(page, 3) || validatePackageCatalogSnapshotVersion(page, 2))
-  )
-}
 
 const packageIdPattern =
   /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?)$/

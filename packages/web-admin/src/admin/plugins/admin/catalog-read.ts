@@ -1,8 +1,18 @@
 import type { PluginAdminApi } from '../api.js'
-import type { AdminPageState } from '../types.js'
+import type { AdminContext, AdminPageState } from '../types.js'
 import { safeMessage } from './model.js'
 
 export type CatalogPublish = (update: (state: AdminPageState) => AdminPageState) => void
+
+export function resetCommunityCatalog(state: AdminPageState, context: AdminContext): AdminPageState {
+  return {
+    ...state,
+    context,
+    community: undefined,
+    communityVersion: undefined,
+    communityReadFailed: false,
+  }
+}
 
 /** Catalog and background discovery share one controller-owned publication fence. */
 export class CatalogReads {

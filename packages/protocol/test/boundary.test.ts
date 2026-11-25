@@ -229,6 +229,7 @@ describe('protocol src boundary', () => {
         'canAccessPackageAdmin',
         'canAccessResourceControl',
         'validatePackageAdminData',
+        'validatePackageCatalogSnapshotVersion',
         'validatePackageAdminCall',
         'validateResourceControlData',
         'validateResourceControlCall',

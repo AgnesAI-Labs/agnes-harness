@@ -1,4 +1,20 @@
-import type { PackageCatalogDescriptor } from '@agnes/protocol'
+import {
+  type PackageCatalogDescriptor,
+  type PackageCatalogListParams,
+  type PackageCatalogPage,
+  validatePackageCatalogSnapshotVersion,
+} from '@agnes/protocol'
+
+export function validCatalogProjection(params: PackageCatalogListParams, page: PackageCatalogPage): boolean {
+  if (page.community !== undefined && params.includeCommunity !== true) return false
+  if (page.communityIndex === undefined) return true
+  if (params.communityVersion === 2) return validatePackageCatalogSnapshotVersion(page, 2)
+  // The launcher may have negotiated v2 after the browser sent its request with a stale v3 context.
+  return (
+    params.communityVersion === 3 &&
+    (validatePackageCatalogSnapshotVersion(page, 3) || validatePackageCatalogSnapshotVersion(page, 2))
+  )
+}
 
 /** Stable ordering and literal metadata search shared by catalog reads. No acquisition ports. */
 export function sortCatalog(entries: readonly PackageCatalogDescriptor[]): PackageCatalogDescriptor[] {

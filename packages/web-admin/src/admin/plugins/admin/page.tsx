@@ -51,7 +51,7 @@ import {
   type InstallReviewState,
   type PluginRuntimeSource,
 } from '../types.js'
-import { type CatalogPublish, CatalogReads } from './catalog-read.js'
+import { type CatalogPublish, CatalogReads, resetCommunityCatalog } from './catalog-read.js'
 import { confirmEnable, confirmSimple, offeredActions, PreviewFacts, RollbackFacts } from './confirms.js'
 import { blockedDependents, startDependentReview } from './dependent-update.js'
 import { adminErrorKey, element, markSettingsPage, setDialog } from './dom.js'
@@ -572,14 +572,7 @@ export class PluginAdminPage {
         this.#api = new PluginAdminApi(context)
         this.#generation++
         this.#catalogReads.invalidate()
-        this.#state = {
-          ...this.#state,
-          context,
-          community: undefined,
-          communityVersion: undefined,
-          communityReadFailed: false,
-        }
-        this.render()
+        this.#publishCatalog((state) => resetCommunityCatalog(state, context))
       }
       if (!inventory)
         throw new AdminApiError({

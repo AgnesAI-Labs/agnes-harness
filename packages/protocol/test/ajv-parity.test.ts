@@ -7804,6 +7804,51 @@ PackageAdminSamples.ContributionBinding = {
   invalid: [{ lifetime: 'profile', availability: 'active' }],
   note: 'Current roster authority binding',
 }
+const communityRelease = {
+  version: '1.0.0',
+  source: { type: 'git', ref: `git:https://github.com/acme/reports.git#${'a'.repeat(40)}` },
+}
+Object.assign(PackageAdminSamples, {
+  PackageCommunityVersionV2: {
+    valid: communityRelease,
+    invalid: [
+      { ...communityRelease, version: '' },
+      { ...communityRelease, version: 'a'.repeat(129) },
+      { ...communityRelease, compatibility: { kind: 'undeclared' } },
+    ],
+    note: 'Legacy releases are closed to v3 metadata',
+  },
+  PackageCommunityVersionV3: {
+    valid: {
+      ...communityRelease,
+      provides: ['tool', 'skills'],
+      publishTimestamp: 1,
+      compatibility: { kind: 'undeclared' },
+    },
+    invalid: [communityRelease, { ...communityRelease, compatibility: { kind: 'incompatible' } }],
+    note: 'V3 releases require daemon compatibility',
+  },
+  PackageCommunityProvides: {
+    valid: ['tool', 'skills'],
+    invalid: [[], ['tool', 'tool'], ['unknown']],
+    note: 'Provided capabilities must be known and unique',
+  },
+  PackageCommunityPublishTimestamp: {
+    valid: 1,
+    invalid: [0, 1.5, 253402300800],
+    note: 'Git committer time is bounded integer Unix seconds',
+  },
+  PackageCommunityCompatibility: {
+    valid: { kind: 'declared-compatible', range: '^1.0.0' },
+    invalid: [
+      { kind: 'incompatible' },
+      { kind: 'declared-compatible', range: '' },
+      { kind: 'unknown', range: 'a'.repeat(501) },
+      { kind: 'undeclared', range: '*' },
+    ],
+    note: 'Compatibility branches enforce their range requirements',
+  },
+} satisfies Record<string, Sample>)
 AGNES_SAMPLES.AuthoringFile = PackageAdminSamples.AuthoringFile as Sample
 AGNES_SAMPLES.AuthoringOrigin = PackageAdminSamples.AuthoringOrigin as Sample
 AGNES_SAMPLES.AuthoringTests = PackageAdminSamples.AuthoringTests as Sample
@@ -9107,6 +9152,11 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     PackageOperationReceipt: PackageAdminGen.PackageOperationReceipt,
     PackageOperation: PackageAdminGen.PackageOperation,
     PackageCatalogPage: PackageAdminGen.PackageCatalogPage,
+    PackageCommunityCompatibility: PackageAdminGen.PackageCommunityCompatibility,
+    PackageCommunityProvides: PackageAdminGen.PackageCommunityProvides,
+    PackageCommunityPublishTimestamp: PackageAdminGen.PackageCommunityPublishTimestamp,
+    PackageCommunityVersionV2: PackageAdminGen.PackageCommunityVersionV2,
+    PackageCommunityVersionV3: PackageAdminGen.PackageCommunityVersionV3,
     PluginGenerationStatus: PackageAdminGen.PluginGenerationStatus,
     PackageListResult: PackageAdminGen.PackageListResult,
     PluginPublicationReport: PackageAdminGen.PluginPublicationReport,

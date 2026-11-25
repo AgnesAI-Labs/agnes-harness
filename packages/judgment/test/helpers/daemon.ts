@@ -1,8 +1,9 @@
-import { type ChildProcess, spawn } from 'node:child_process'
+import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { answersFor, type FakeSystemOneBehaviour, startFakeSystemOne } from '@agnes/ai/testkit'
 import { redactSecrets } from '@agnes/extension-api'
 import { createCredentialStore, initializeHome } from '@agnes/host'
@@ -21,6 +22,10 @@ export const DONE_REPLY = 'The synthetic inspection is complete.'
 const sourceDaemon = fileURLToPath(
   new URL('../../../daemon/test/fixtures/source-loop-daemon.ts', import.meta.url),
 )
+const stopSourceDaemon = fileURLToPath(
+  new URL('../../../daemon/test/fixtures/stop-source-daemon.ts', import.meta.url),
+)
+const exec = promisify(execFile)
 
 export async function bounded<T>(promise: Promise<T>, label: string, ms = 120_000): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -33,6 +38,31 @@ export async function bounded<T>(promise: Promise<T>, label: string, ms = 120_00
     ])
   } finally {
     clearTimeout(timer)
+  }
+}
+
+async function stopOwnedDaemon(daemon: ChildProcess, exited: Promise<number | null>, home: string) {
+  const windows = process.platform === 'win32' // guards-allow-platform: Windows fixtures need a cooperative daemon stop request.
+  if (windows) {
+    try {
+      await exec(process.execPath, ['--import', 'tsx', stopSourceDaemon, home], {
+        timeout: 45_000,
+        windowsHide: true,
+      })
+      await bounded(exited, 'owned daemon shutdown', 5_000)
+    } catch (error) {
+      daemon.kill('SIGKILL')
+      await bounded(exited, 'forced owned daemon shutdown', 5_000)
+      throw error
+    }
+    return
+  }
+  daemon.kill('SIGTERM')
+  const kill = setTimeout(() => daemon.kill('SIGKILL'), 20_000)
+  try {
+    await bounded(exited, 'owned daemon shutdown', 25_000)
+  } finally {
+    clearTimeout(kill)
   }
 }
 
@@ -79,15 +109,8 @@ export async function judgmentDaemon(
       await sdk?.close()
     } finally {
       try {
-        if (daemon && daemon.exitCode === null && daemon.signalCode === null) {
-          daemon.kill('SIGTERM')
-          const kill = setTimeout(() => daemon?.kill('SIGKILL'), 20_000)
-          try {
-            await bounded(exited!, 'owned daemon shutdown', 25_000)
-          } finally {
-            clearTimeout(kill)
-          }
-        }
+        if (daemon?.pid && exited && daemon.exitCode === null && daemon.signalCode === null)
+          await stopOwnedDaemon(daemon, exited, home)
       } finally {
         try {
           await fake.close()
@@ -95,8 +118,10 @@ export async function judgmentDaemon(
           const remaining = delayedUntil - Date.now()
           if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining + 25))
         } finally {
-          if (socketDirectory) rmSync(socketDirectory, { recursive: true, force: true })
-          rmSync(root, { recursive: true, force: true })
+          if (!daemon?.pid || daemon.exitCode !== null || daemon.signalCode !== null) {
+            if (socketDirectory) rmSync(socketDirectory, { recursive: true, force: true })
+            rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+          }
         }
       }
     }
