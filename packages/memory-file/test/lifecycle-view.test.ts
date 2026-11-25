@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { MemoryApprovalResult, MemoryFile, MemoryParagraphValidity } from '@agnes/extension-api'
@@ -84,7 +84,21 @@ async function fixture() {
     await recall(turn, '')
     return resolved
   }
-  return { state, statuses, validity, session, pipeline, files, path, read, edit, note, recall, environment }
+  return {
+    home,
+    state,
+    statuses,
+    validity,
+    session,
+    pipeline,
+    files,
+    path,
+    read,
+    edit,
+    note,
+    recall,
+    environment,
+  }
 }
 
 it('expires ordinary paragraphs at the boundary during a turn and fails closed on malformed dates', async () => {
@@ -157,6 +171,39 @@ it.each(['[deploy](deploy.md#steps "Steps")', '[[deploy.md#steps]]', '[deploy]: 
     expect(await f.read(6)).toContain(`${fresh}\n${removed}`)
   },
 )
+
+it.each(['workspace', 'user'] as const)('fingerprints effective topic links in %s memory', async (layer) => {
+  const f = await fixture()
+  try {
+    await f.edit('deploy.md', 'Deploy weekly.')
+    const summary = 'Deployment schedule. [[deploy.md]]'
+    await f.edit(index, summary)
+    const workspacePath = f.path('meta/links.json')
+    const saved = await readFile(workspacePath, 'utf8')
+    const path = layer === 'workspace' ? workspacePath : join(f.home, 'memory/user/meta/links.json')
+    if (layer === 'user') {
+      await mkdir(join(f.home, 'memory/user/meta'), { recursive: true })
+      await writeFile(join(f.home, 'memory/user/deploy.md'), 'Deploy weekly.')
+      await writeFile(join(f.home, 'memory/user/MEMORY.md'), summary)
+      await writeFile(path, saved)
+      await f.edit(index, '')
+      await f.session.configure({ userEnabled: true })
+    }
+    expect(await f.note(1)).toContain(summary)
+    const revision = () => f.session.stateRevision?.()
+    const original = revision()
+    await writeFile(path, JSON.stringify(JSON.parse(saved), null, 2))
+    expect(revision()).toBe(original)
+    await writeFile(path, saved.replace('deploy.md', 'other.md'))
+    const altered = revision()
+    expect(altered).not.toBe(original)
+    expect(await f.note(2)).not.toContain(summary)
+    await rm(path)
+    expect(revision()).not.toBe(altered)
+  } finally {
+    await f.session.close?.()
+  }
+})
 
 it.each(['missing', 'invalid JSON', 'invalid binding'])(
   'treats %s link metadata as unverified',

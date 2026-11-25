@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { memoryPlugin } from '@agnes/base'
 import type { WorkspaceSaveRequest } from '@agnes/core'
-import type { MemoryProvider, MemorySession } from '@agnes/extension-api'
+import type { MemoryParagraphPort, MemoryProvider, MemorySession, MemorySource } from '@agnes/extension-api'
 import {
   normalizedContentHash,
   REVIEW_AFTER_MS,
@@ -21,8 +21,10 @@ import { manageUserSections } from '../../src/runtime/refinement/user-sections.j
 import { createWorkspaceSave } from '../../src/runtime/refinement/workspace-save.js'
 import { reviewCredential, reviewModel } from './service-key.js'
 
+const sessions: MemorySession[] = []
 const dirs: string[] = []
-afterEach(() => {
+afterEach(async () => {
+  await Promise.all(sessions.splice(0).map((session) => session.close?.()))
   vi.restoreAllMocks()
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
@@ -63,7 +65,7 @@ async function home(o: { mode?: 'off' | 'ask' | 'auto'; userEnabled?: boolean } 
   const switchState = { enabled: true, mode: 'auto' as 'auto' | 'manual', revision: 'r1' }
   const users = () => RefinementRegistry.user(dir, clock)
   const local = () => new RefinementRegistry(dataDir, root, clock)
-  const open = (sessionKey = WORKSPACE_MEMORY_KEY) =>
+  const openSession = (sessionKey = WORKSPACE_MEMORY_KEY) =>
     provider().open({
       home: dir,
       workspaceRoot: root,
@@ -71,8 +73,13 @@ async function home(o: { mode?: 'off' | 'ask' | 'auto'; userEnabled?: boolean } 
       validity: registryView(local(), clock),
       userValidity: registryView(users(), clock),
     })
+  const open = (sessionKey = WORKSPACE_MEMORY_KEY) => {
+    const session = openSession(sessionKey)
+    sessions.push(session)
+    return session
+  }
   let wrap: Wrap = (session) => session
-  const memory = () => wrap(open())
+  const memory = () => wrap(openSession())
   const settings = () => ({ ...switchState })
   const saves = routedSaves(
     createWorkspaceSave({ registry: () => local(), settings, memory, clock }),
@@ -127,6 +134,19 @@ const request = (h: Home, over: Partial<WorkspaceSaveRequest> = {}): WorkspaceSa
 })
 const withContent = (h: Home, content: string, over: Partial<WorkspaceSaveRequest> = {}) =>
   request(h, { entry: { ...request(h).entry, content }, ...over })
+
+function wrapUserPort(
+  change: (port: MemoryParagraphPort, source: MemorySource) => Partial<MemoryParagraphPort>,
+): Wrap {
+  return (memory) => ({
+    ...memory,
+    userParagraphs(source, signal) {
+      const port = memory.userParagraphs?.(source, signal)
+      if (!port) throw new Error('missing user paragraph port')
+      return { ...port, ...change(port, source) }
+    },
+  })
+}
 
 const marked = (id: string, text: string) =>
   `<!-- refinement:${id} -->\n${text}\n<!-- /refinement:${id} -->\n`
@@ -264,6 +284,115 @@ describe('promoting a confirmed lesson to user memory', () => {
     expect(h.users().read().paragraphs).toEqual([])
     // Off, nothing is asked at all.
     expect(await h.saves.save(request(h))).toMatchObject({ outcome: 'refused', reason: 'refinement-off' })
+  })
+
+  it.each(['proposal', 'existing'] as const)(
+    'rechecks a workspace withdrawal after the %s is read',
+    async (stage) => {
+      const h = await home()
+      if (stage === 'existing') await h.saves.save(request(h))
+      const before = h.user()
+      const revoke = () => {
+        const local = h.local()
+        local.update((draft) => {
+          draft.revocations.push({
+            sessionKey: 'earlier',
+            kind: 'memory',
+            entryId: 'other',
+            contentHash: normalizedContentHash(BODY),
+            action: 'memory-withdrawn',
+            at: T0,
+          })
+        }, local.read().revision)
+      }
+      h.setWrap(
+        wrapUserPort((port, source) => ({
+          async propose(...args) {
+            const proposal = await port.propose(...args)
+            if (stage === 'proposal') revoke()
+            return proposal
+          },
+          async list() {
+            const listed = await port.list()
+            if (stage === 'existing' && source.maintenance) revoke()
+            return listed
+          },
+        })),
+      )
+      const receipt = await h.saves.save(request(h))
+      expect(receipt).toMatchObject({ outcome: 'refused', reason: 'user-revoked' })
+      expect(verdicts(receipt)).toEqual([
+        'switch:pass',
+        'revocation:fail',
+        'confirmations:skip',
+        'rules:skip',
+        'memory-mode:skip',
+        'capacity:skip',
+      ])
+      expect(h.user()).toBe(before)
+    },
+  )
+
+  it.each(['before promotion', 'after proposal'])(
+    'refuses when the workspace registry becomes unreadable %s',
+    async (when) => {
+      const h = await home()
+      const corrupt = () => {
+        const dir = join(h.dataDir, 'refinement/workspaces')
+        mkdirSync(dir, { recursive: true })
+        writeFileSync(join(dir, `${sha256Hex(h.root)}.json`), '{')
+      }
+      if (when === 'before promotion') corrupt()
+      else
+        h.setWrap(
+          wrapUserPort((port) => ({
+            async propose(...args) {
+              const proposal = await port.propose(...args)
+              corrupt()
+              return proposal
+            },
+          })),
+        )
+      expect(await h.saves.save(request(h))).toMatchObject({ outcome: 'refused', reason: 'conflict' })
+      expect(h.user()).toBe(HAND)
+      expect(h.users().read().paragraphs).toEqual([])
+    },
+  )
+
+  it('requires a fresh proposal when the matching user paragraph is hidden', async () => {
+    const h = await home()
+    await h.saves.save(request(h))
+    const before = h.user()
+    h.setWrap(
+      wrapUserPort((port) => ({
+        async list() {
+          const listed = await port.list()
+          return { ...listed, paragraphs: listed.paragraphs.map((p) => ({ ...p, visibleText: null })) }
+        },
+        async propose() {
+          throw Object.assign(new Error(), { code: 'MEMORY_USER_BUDGET' })
+        },
+      })),
+    )
+    expect(await h.saves.save(request(h))).toMatchObject({ outcome: 'refused', reason: 'user-memory-budget' })
+    expect(h.user()).toBe(before)
+  })
+
+  it('keeps unverified legacy user paragraphs available for withdrawal', async () => {
+    const h = await home()
+    const id = sectionId(await h.saves.save(request(h)))
+    const memory = wrapUserPort((port) => ({
+      async list() {
+        const { hash, paragraphs } = await port.list()
+        return { hash, paragraphs: paragraphs.map(({ id, text, validity }) => ({ id, text, validity })) }
+      },
+    }))(h.open())
+    const manage = (action: 'list' | 'withdraw' | 'renew') =>
+      manageUserSections(memory, h.users(), { action, paragraphId: id }, () => T0)
+    expect((await manage('list')).paragraphs).toMatchObject([{ id, validity: 'unknown' }])
+    await expect(manage('renew')).rejects.toMatchObject({ code: 'MEMORY_PARAGRAPH_NOT_RENEWABLE' })
+    expect((await manage('withdraw')).paragraphs).toEqual([])
+    expect(h.user()).toBe(HAND)
   })
 
   it('withdrawing a user-level promotion removes the section and its registry entry and blocks re-promotion', async () => {
@@ -641,12 +770,15 @@ describe('the user memory registry', () => {
     const h = await home()
     const id = sectionId(await h.saves.save(request(h)))
     const stored = h.user()
-    h.now.value = T0 + REVIEW_AFTER_MS + 1
-    expect((await h.open('reader').snapshot(1))?.content).not.toContain(BODY)
+    h.now.value = T0 + REVIEW_AFTER_MS - 1
     await h.manage({ action: 'renew', paragraphId: id, layer: 'user' })
     expect(h.users().read().paragraphs[0]?.reviewAfter).toBe(h.now.value + REVIEW_AFTER_MS)
     expect(h.user()).toBe(stored)
-    expect((await h.open('reader').snapshot(2))?.content).toContain(BODY)
+    h.now.value += REVIEW_AFTER_MS
+    await expect(h.manage({ action: 'renew', paragraphId: id })).rejects.toMatchObject({
+      code: 'MEMORY_PARAGRAPH_NOT_RENEWABLE',
+    })
+    expect((await h.open('reader').snapshot(2))?.content).not.toContain(BODY)
   })
 
   it('switching refinement off writes nothing to the registry', async () => {

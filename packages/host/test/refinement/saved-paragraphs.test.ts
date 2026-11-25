@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { manageMemory } from '../../src/runtime/memory/admin.js'
 import { WORKSPACE_MEMORY_KEY } from '../../src/runtime/refinement/reconcile.js'
 import { registryView } from '../../src/runtime/refinement/registry-view.js'
-import { savedParagraphs } from '../../src/runtime/refinement/saved-paragraphs.js'
+import { describeParagraphs, savedParagraphs } from '../../src/runtime/refinement/saved-paragraphs.js'
 import { createWorkspaceSave } from '../../src/runtime/refinement/workspace-save.js'
 
 const dirs: string[] = []
@@ -110,6 +110,26 @@ describe('saved paragraphs on the memory page', () => {
     const ws = await workspace()
     ws.seed(paragraph(A, LESSON_A, T0 + 10 * DAY), paragraph(B, LESSON_B, T0 - DAY))
     await ws.write(`${HUMAN}\n${marked(A, LESSON_A)}\n\n${marked(B, LESSON_B)}\n\n${marked(C, LESSON_C)}\n`)
+    const memory = ws.open()
+    try {
+      const listed = await memory
+        .paragraphs?.({ sessionKey: 'human-editor', turn: 0 }, new AbortController().signal)
+        .list()
+      if (!listed) throw new Error('missing paragraph port')
+      const optimistic = {
+        ...listed,
+        paragraphs: listed.paragraphs.map((p) => ({ ...p, validity: 'valid' as const })),
+      }
+      expect(
+        await describeParagraphs(optimistic, memory, 'workspace', ws.registry(), ws.clock),
+      ).toMatchObject([
+        { id: A, validity: 'valid' },
+        { id: B, validity: 'expired' },
+        { id: C, validity: 'unknown' },
+      ])
+    } finally {
+      await memory.close?.()
+    }
     const { paragraphs } = await ws.run('list')
     expect(paragraphs).toEqual([
       {
@@ -150,7 +170,7 @@ describe('saved paragraphs on the memory page', () => {
 
   it('renewing gives a paragraph a new 30-day review period and touches no file', async () => {
     const ws = await workspace()
-    ws.seed(paragraph(B, LESSON_B, T0 - DAY))
+    ws.seed(paragraph(B, LESSON_B, T0 + DAY))
     await ws.write(`${HUMAN}\n${marked(B, LESSON_B)}\n`)
     const before = await ws.file()
     const { paragraphs } = await ws.run('renew', B)

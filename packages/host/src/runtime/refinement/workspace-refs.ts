@@ -6,7 +6,9 @@ import {
   RefinementRegistry,
   type RegistryParagraph,
   type RegistrySkill,
+  revocationMatches,
 } from '@agnes/host-infrastructure/refinement-registry'
+import { sha256Hex } from '@agnes/protocol'
 import { paragraphVisibility } from './paragraph-visibility.js'
 import { registryView } from './registry-view.js'
 import { SECRET_LIKE } from './save-rules.js'
@@ -61,13 +63,18 @@ async function layerParagraphs(
   const listed = await port.list()
   const paragraphs = listed.paragraphs.filter((p) => p.validity === 'valid' || p.validity === 'delivered')
   const visible = await paragraphVisibility(memory, layer, { ...listed, paragraphs }, registry, clock)
-  const stored = new Map<string, { raw: string; text: string }>()
+  const stored = new Map<string, { raw: string; text: string; nextExpiry?: number }>()
   for (const p of paragraphs) {
     const projection = visible(p)
     if (projection?.nextExpiry !== undefined) futureExpiry?.(projection.nextExpiry)
-    if (projection?.visibleText) stored.set(p.id, { raw: p.text, text: projection.visibleText })
+    if (projection?.visibleText)
+      stored.set(p.id, {
+        raw: p.text,
+        text: projection.visibleText,
+        ...(projection.nextExpiry === undefined ? {} : { nextExpiry: projection.nextExpiry }),
+      })
   }
-  return stored
+  return { hash: listed.hash, paragraphs: stored }
 }
 
 /** A read failure lists nothing for confirmation, but propagates when building the delivery snapshot. */
@@ -90,10 +97,10 @@ function savedEntries(
   for (const p of live) {
     const kind = p.source.kind
     if (kind !== 'prompt' && kind !== 'memory') continue
-    const paragraph = stored.get(p.id)
+    const paragraph = stored.paragraphs.get(p.id)
     if (!paragraph || SECRET_LIKE.test(paragraph.raw)) continue
     const { raw, text } = paragraph
-    const version = normalizedContentHash(text)
+    const version = sha256Hex(text)
     const { title, summary } = titled(text)
     const { sessionKey, entryId } = p.source
     out.push({
@@ -103,7 +110,11 @@ function savedEntries(
       content: summary,
       version,
       savedAt: p.reviewAfter - REVIEW_AFTER_MS,
-      untouched: text === raw && version === p.contentHash,
+      untouched:
+        text === raw &&
+        (p.exactHash !== undefined
+          ? version === p.exactHash
+          : !!p.fileHash && stored.hash === p.fileHash && normalizedContentHash(raw) === p.contentHash),
       source: { sessionKey, kind, entryId },
     })
   }
@@ -161,7 +172,7 @@ function titled(text: string): { title: string; summary: string } {
 /**
  * The host side of confirming entries saved to the workspace. `list` gives a session's planner the
  * memory paragraphs refinement saved to its workspace that are in force and still in the memory file,
- * each at its content version: the hash of its stored text (`normalizedContentHash`), so an edit in
+ * each at its content version: the SHA-256 digest of its exact visible text, so an edit in
  * place is a new version. `renew` starts a new review period for one of them, through the registry
  * alone: the memory file is never written and no approval is asked. It renews nothing for a paragraph
  * that is removed, converted, revoked, past its review date, edited since it was listed, gone from the
@@ -194,13 +205,13 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
     const stored = await storedParagraphs(memory, at.key, layer, registry, deps.clock)
     const out: WorkspaceReference[] = []
     for (const p of live) {
-      const paragraph = stored?.get(p.id)
+      const paragraph = stored?.paragraphs.get(p.id)
       if (!paragraph) continue
       const { sessionKey, kind, entryId } = p.source
       out.push({
         ref: `${layer === 'user' ? USER_REF : MEMORY_REF}${p.id}`,
         ...titled(paragraph.text),
-        version: normalizedContentHash(paragraph.text),
+        version: sha256Hex(paragraph.text),
         source: { sessionKey, kind, entryId },
       })
       if (out.length >= MAX_LISTED) break
@@ -284,12 +295,22 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
         registry,
         deps.clock,
       )
-      const text = stored?.get(id)?.text
-      if (text === undefined || normalizedContentHash(text) !== version) return false
+      const entry = stored?.paragraphs.get(id)
+      if (!entry || sha256Hex(entry.text) !== version) return false
+      const expiresAt = entry.nextExpiry ?? Infinity
+      if (deps.clock() >= expiresAt) return false
       try {
         registry.update((draft) => {
-          const p = draft.paragraphs.find((q) => q.id === id) as RegistryParagraph
-          p.reviewAfter = deps.clock() + REVIEW_AFTER_MS
+          const p = draft.paragraphs.find((q) => q.id === id)
+          const now = deps.clock()
+          if (
+            p?.state !== 'active' ||
+            now >= p.reviewAfter ||
+            now >= expiresAt ||
+            draft.revocations.some((record) => revocationMatches(record, p.source))
+          )
+            throw new Error('not-renewable')
+          p.reviewAfter = now + REVIEW_AFTER_MS
         }, snap.revision)
         return true
       } catch {
@@ -338,8 +359,10 @@ function renewSkill(
   if (text === undefined || normalizedContentHash(text) !== version) return false
   try {
     registry.update((draft) => {
-      const skill = draft.skills.find((k) => k.name === name && k.state === 'active') as RegistrySkill
-      skill.reviewAfter = clock() + REVIEW_AFTER_MS
+      const skill = draft.skills.find((k) => k.name === name && k.state === 'active')
+      const now = clock()
+      if (!skill || now >= skill.reviewAfter) throw new Error('not-renewable')
+      skill.reviewAfter = now + REVIEW_AFTER_MS
     }, snap.revision)
     return true
   } catch {

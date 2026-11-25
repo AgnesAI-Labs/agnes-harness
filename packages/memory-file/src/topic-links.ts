@@ -33,6 +33,12 @@ function readBindings(meta: MetaStore): Map<string, Binding> {
   return bindings
 }
 
+export function topicLinksFingerprint(meta: MetaStore): readonly [string, string, string][] {
+  return [...readBindings(meta)]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([key, binding]) => [key, binding.topic, binding.topicHash])
+}
+
 function* summaries(content: string) {
   for (const line of content.matchAll(/[^\n]*\n|[^\n]+$/gu)) {
     const text = line[0].replace(/\r?\n$/u, '')

@@ -5,7 +5,6 @@ import type {
   MemoryParagraphPort,
   MemoryParagraphValidity,
   MemoryProposal,
-  MemorySettings,
   MemorySource,
   MemoryValidityView,
 } from '@agnes/extension-api'
@@ -161,7 +160,29 @@ export function userParagraphPort(
   )
     throw fault('MEMORY_INVALID_METADATA')
   const answer = validityOf(view)
-  const made = new WeakMap<MemoryProposal, { candidate: MemoryFile; intent: CommitIntent }>()
+  const made = new WeakMap<
+    MemoryProposal,
+    { candidate: MemoryFile; intent: CommitIntent; puts: ReadonlySet<string> }
+  >()
+  const userCapacityError = (error: unknown): never => {
+    if ((error as { code?: unknown })?.code === 'MEMORY_CONSOLIDATION_REQUIRED')
+      throw fault('MEMORY_USER_BUDGET')
+    throw error
+  }
+  const assertUserBudget = (candidate: MemoryFile, puts: ReadonlySet<string>) => {
+    try {
+      validateContent(candidate, user.configuration(), true)
+    } catch (error) {
+      userCapacityError(error)
+    }
+    // A Host that gives the sections in force to the model itself shows none of them in this layer,
+    // so a put takes no room in what the agent is shown.
+    if (puts.size && view?.delivers !== true) {
+      const budget = Math.min(workspace.configuration().userTokenBudget, defaults.userTokenBudget)
+      const used = bytesOf(layerOf(candidate.content, (id) => (puts.has(id) ? 'valid' : answer(id))))
+      if (used.handWritten + used.rsiInForce > budget) throw fault('MEMORY_USER_BUDGET')
+    }
+  }
   const actor = source.maintenance ? `host:${source.maintenance}` : `host:${source.sessionKey}`
   const makeContext = (now: number): ViewContext => {
     const files = user.files()
@@ -182,29 +203,14 @@ export function userParagraphPort(
     },
     async propose(changes, baseHash) {
       signal.throwIfAborted()
-      const config: MemorySettings = workspace.configuration()
-      const limits: MemorySettings = user.configuration()
       const before = user.read(INDEX)
       if (baseHash !== undefined && baseHash !== before.hash) throw fault('MEMORY_CONFLICT')
       const list: readonly MemoryParagraphChange[] = Array.isArray(changes)
         ? changes
         : [changes as MemoryParagraphChange]
       const candidate = file(INDEX, applyParagraphChanges(before.content, list))
-      try {
-        validateContent(candidate, limits, true)
-      } catch (error) {
-        if ((error as { code?: unknown }).code === 'MEMORY_CONSOLIDATION_REQUIRED')
-          throw fault('MEMORY_USER_BUDGET')
-        throw error
-      }
-      // A Host that gives the sections in force to the model itself shows none of them in this layer,
-      // so a put takes no room in what the agent is shown.
       const puts = new Set(list.flatMap((change) => (change.op === 'put' ? [change.id] : [])))
-      if (puts.size && view?.delivers !== true) {
-        const budget = Math.min(config.userTokenBudget, defaults.userTokenBudget)
-        const used = bytesOf(layerOf(candidate.content, (id) => (puts.has(id) ? 'valid' : answer(id))))
-        if (used.handWritten + used.rsiInForce > budget) throw fault('MEMORY_USER_BUDGET')
-      }
+      assertUserBudget(candidate, puts)
       const intent: CommitIntent = {
         origin: 'host',
         actor,
@@ -224,7 +230,7 @@ export function userParagraphPort(
         diff: diff(before.content, candidate.content),
         source,
       })
-      made.set(proposal, { candidate, intent })
+      made.set(proposal, { candidate, intent, puts })
       return proposal
     },
     async commit(proposal, admission) {
@@ -238,7 +244,10 @@ export function userParagraphPort(
         false,
         signal,
         admission,
-        commitHooks(hooks.pipeline, entry.intent, makeContext, hooks.clock),
+        commitHooks(hooks.pipeline, entry.intent, makeContext, hooks.clock, () =>
+          assertUserBudget(entry.candidate, entry.puts),
+        ),
+        userCapacityError,
       )
       return { hash: committed.hash }
     },

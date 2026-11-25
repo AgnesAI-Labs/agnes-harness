@@ -38,6 +38,7 @@ const NOT_WRITTEN: Readonly<Record<string, SaveRefusal>> = {
   REFINEMENT_REGISTRY_CHANGED: 'conflict',
   REFINEMENT_MEMORY_MODE_CHANGED: 'conflict',
   REFINEMENT_SAVE_STALE: 'conflict',
+  REFINEMENT_USER_REVOKED: 'user-revoked',
   MEMORY_CONFLICT: 'conflict',
   MEMORY_POLICY_CHANGED: 'conflict',
   MEMORY_PROPOSAL_UNKNOWN: 'conflict',
@@ -119,6 +120,8 @@ export type ParagraphCommit = {
   receipt: SaveReceipt
   /** The switch must still be on at this revision when the file is written. */
   switchCurrent(): boolean
+  /** Additional authority that must still permit publication, checked under the store lock. */
+  assertAllowed?: () => void
   clock(): number
   /**
    * The registry revision the decision was made against. A registry that moved since means the
@@ -238,7 +241,11 @@ export async function commitParagraph(input: ParagraphCommit): Promise<CommitRes
 /** The receipt refused for `reason`, recorded in place of the intent if there is one (best effort). */
 function settle(input: ParagraphCommit, reason: SaveRefusal): SaveReceipt {
   const refused: SaveReceipt = { ...input.receipt, outcome: 'refused', reason }
-  if (failedRules(reason))
+  if (reason === 'user-revoked')
+    refused.steps = refused.steps.map((entry) =>
+      entry.step === 'switch' ? entry : { ...entry, verdict: entry.step === 'revocation' ? 'fail' : 'skip' },
+    )
+  else if (failedRules(reason))
     refused.steps = refused.steps.map((entry) => {
       if (entry.step === 'rules') return { ...entry, verdict: 'fail' }
       if (entry.step === 'capacity') return { ...entry, verdict: 'skip' }
@@ -261,6 +268,7 @@ function admissionFor(input: ParagraphCommit, revision: string): MemoryEffectAdm
     assertBound() {
       if (!input.switchCurrent()) throw fault('REFINEMENT_SWITCH_CHANGED')
       if (input.registry.read().revision !== revision) throw fault('REFINEMENT_REGISTRY_CHANGED')
+      input.assertAllowed?.()
     },
     async verify() {
       if (input.mode === undefined) return

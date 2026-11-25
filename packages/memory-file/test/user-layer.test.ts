@@ -38,8 +38,10 @@ function view(initial: Record<string, MemoryParagraphValidity> = {}, delivers = 
   }
 }
 
+const sessions: MemorySession[] = []
 const homes: string[] = []
 afterEach(async () => {
+  await Promise.all(sessions.splice(0).map((session) => session.close?.()))
   await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true })))
 })
 
@@ -51,13 +53,16 @@ async function fixture(options: { userValidity?: MemoryValidityView; mode?: 'off
   const userDir = join(home, 'memory', 'user')
   await mkdir(userDir, { recursive: true })
   const userFile = join(userDir, 'MEMORY.md')
-  const open = (sessionKey = 'one'): MemorySession =>
-    fileMemoryProvider.open({
+  const open = (sessionKey = 'one'): MemorySession => {
+    const session = fileMemoryProvider.open({
       home,
       workspaceRoot: workspace,
       sessionKey,
       ...(options.userValidity ? { userValidity: options.userValidity } : {}),
     })
+    sessions.push(session)
+    return session
+  }
   const session = open()
   await session.configure({ mode: options.mode ?? 'auto', userEnabled: true })
   const port = (): MemoryParagraphPort => {
@@ -269,7 +274,17 @@ describe('user memory: the managed section write', () => {
     await writeFile(f.userFile, stored)
     // 300 + (2 + 100) + (2 + 100) = 504: fits in 512.
     const port = f.port()
-    await port.commit(await port.propose({ op: 'put', id: C, text: 'c'.repeat(100) }))
+    const proposal = await port.propose({ op: 'put', id: C, text: 'c'.repeat(100) })
+    await f.session.configure({ userTokenBudget: 128 })
+    await expect(port.commit(proposal)).rejects.toMatchObject({ code: 'MEMORY_USER_BUDGET' })
+    expect(await readFile(f.userFile, 'utf8')).toBe(stored)
+    await f.session.configure({ userTokenBudget: 512 })
+    const limits = join(f.home, 'memory/user/settings.json')
+    await writeFile(limits, JSON.stringify({ indexMaxBytes: 128 }))
+    await expect(port.commit(proposal)).rejects.toMatchObject({ code: 'MEMORY_USER_BUDGET' })
+    expect(await readFile(f.userFile, 'utf8')).toBe(stored)
+    await rm(limits)
+    await port.commit(proposal)
     const fits = await readFile(f.userFile, 'utf8')
     expect(fits).toContain('c'.repeat(100))
     // The Host records it: from now on it is in force.

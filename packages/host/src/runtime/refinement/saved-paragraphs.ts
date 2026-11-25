@@ -12,6 +12,7 @@ import type {
 } from '@agnes/host-infrastructure/refinement-registry'
 import { paragraphMarkers, paragraphVisibility } from './paragraph-visibility.js'
 import { paragraphPortOf } from './reconcile.js'
+import { registryView } from './registry-view.js'
 
 /** What a person asks of the saved paragraphs on the memory page. */
 export type SavedParagraphRequest = Readonly<{
@@ -75,28 +76,30 @@ export async function describeParagraphs(
   if (!paragraphs.length) return []
   const paragraphText = await paragraphVisibility(memory, layer, listed, registry, clock)
   const records = registry.read().paragraphs
-  return paragraphs.flatMap((paragraph) => {
+  const hostValidity = registryView(registry, clock).validity
+  return paragraphs.map((paragraph) => {
     const projection = paragraphText(paragraph)
-    if (!projection) return []
     const { id, text, validity } = paragraph
     const record = records.find((entry) => entry.id === id && entry.state === 'active')
-    const status = validity === 'delivered' ? 'valid' : validity
-    return [
-      {
-        id,
-        text,
-        validity: status,
-        ...(status === 'valid' && projection.visibleText === null ? { hidden: true as const } : {}),
-        ...(projection.nextExpiry !== undefined ? { nextExpiry: projection.nextExpiry } : {}),
-        ...(record
-          ? { reviewAfter: record.reviewAfter, initiator: record.source.initiator, kind: record.source.kind }
-          : {}),
-      },
-    ]
+    const providerStatus = validity === 'delivered' ? 'valid' : validity
+    const hostStatus = hostValidity(id)
+    let status: MemoryParagraphValidity = 'unknown'
+    if (providerStatus === 'expired' || hostStatus === 'expired') status = 'expired'
+    else if (providerStatus === 'valid' && hostStatus === 'valid' && projection) status = 'valid'
+    return {
+      id,
+      text,
+      validity: status,
+      ...(status === 'valid' && projection?.visibleText === null ? { hidden: true as const } : {}),
+      ...(projection?.nextExpiry !== undefined ? { nextExpiry: projection.nextExpiry } : {}),
+      ...(record
+        ? { reviewAfter: record.reviewAfter, initiator: record.source.initiator, kind: record.source.kind }
+        : {}),
+    }
   })
 }
 
-/** A person may renew an overdue record once its stored body and surrounding visibility are verified. */
+/** A person may renew an in-force record once its effective visibility is verified. */
 export async function verifyRenewal(
   port: MemoryParagraphPort | undefined,
   memory: MemorySession,
@@ -107,9 +110,15 @@ export async function verifyRenewal(
 ) {
   const listed = await port?.list()
   const paragraph = listed?.paragraphs.find((p) => p.id === id)
-  if (listed && paragraph) {
+  if (listed && paragraph && (paragraph.validity === 'valid' || paragraph.validity === 'delivered')) {
     const visible = await paragraphVisibility(memory, layer, listed, registry, clock)
-    if (visible(paragraph)?.visibleText) return
+    const projection = visible(paragraph)
+    if (
+      projection?.visibleText &&
+      clock() < (projection.nextExpiry ?? Infinity) &&
+      registryView(registry, clock).validity(id) === 'valid'
+    )
+      return
   }
   throw fault('MEMORY_PARAGRAPH_NOT_RENEWABLE')
 }

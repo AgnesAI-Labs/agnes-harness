@@ -20,6 +20,7 @@ import {
   type RegistryParagraph,
   type Revocation,
 } from '@agnes/host-infrastructure/refinement-registry'
+import { sha256Hex } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { registryView } from '../../src/runtime/refinement/registry-view.js'
 import { describeParagraphs, savedParagraphs } from '../../src/runtime/refinement/saved-paragraphs.js'
@@ -128,7 +129,7 @@ describe('entries saved to the workspace, for the planner', () => {
         title: 'Use pnpm here',
         summary: 'Install with pnpm, never npm.',
         // The version is the text the planner is shown, not the hash the registry stored at save time.
-        version: normalizedContentHash(TEXT),
+        version: sha256Hex(TEXT),
         source: { sessionKey: 'session-a', kind: 'memory', entryId: 'use-pnpm' },
       },
     ])
@@ -175,7 +176,7 @@ describe('entries saved to the workspace, for the planner', () => {
         source: { ...source.source, entryId: 'follow-up', contentHash: 'h2' },
       })
       const ws = setup({ paragraphs: [source, dependent], memory: memory({ [id]: text }).session })
-      const version = normalizedContentHash(text)
+      const version = sha256Hex(text)
       expect(await ws.refs.entries?.(AT)).toMatchObject([{ ref: `ws.${id}`, version }])
       expect(await ws.refs.list(AT)).toMatchObject([{ ref: `workspace-memory/${id}`, version }])
       expect(await ws.refs.renew(AT, `workspace-memory/${id}`, version)).toBe(true)
@@ -205,10 +206,10 @@ describe('entries saved to the workspace, for the planner', () => {
     const ws = setup({ paragraphs: [paragraph()], memory: memory(text).session })
     expect(await ws.refs.entries?.(AT)).toEqual([])
     expect(await ws.refs.list(AT)).toEqual([])
-    expect(await ws.refs.renew(AT, `workspace-memory/${id}`, normalizedContentHash(text[id]))).toBe(false)
+    expect(await ws.refs.renew(AT, `workspace-memory/${id}`, sha256Hex(text[id]))).toBe(false)
     const expired = new Date(T0 + 1).toISOString()
     text[id] = `<!-- expires_at: ${expired} -->\nStill visible`
-    expect(await ws.refs.entries?.(AT)).toMatchObject([{ version: normalizedContentHash(text[id]) }])
+    expect(await ws.refs.entries?.(AT)).toMatchObject([{ version: sha256Hex(text[id]) }])
     // A cached delivery cannot outlive the deadline, even when the registry stays unchanged.
     const revision = ws.refs.revision?.(AT)
     ws.clock.mockReturnValue(T0 + 1)
@@ -216,7 +217,7 @@ describe('entries saved to the workspace, for the planner', () => {
     expect(await ws.refs.entries?.(AT)).toEqual([])
     const kept = 'Keep this title\n\nKeep these details'
     text[id] = `Keep this title\n<!-- expires_at: ${expired} -->\nExpired details\n\nKeep these details`
-    const version = normalizedContentHash(kept)
+    const version = sha256Hex(kept)
     expect(await ws.refs.entries?.(AT)).toMatchObject([
       { title: 'Keep this title', content: 'Keep these details', version },
     ])
@@ -254,7 +255,7 @@ describe('entries saved to the workspace, for the planner', () => {
       expect(ws.refs.revision?.(AT)).not.toBe(empty)
       expect(await ws.refs.list(AT)).toEqual([])
       expect(await ws.refs.entries?.(AT)).toEqual([])
-      expect(await ws.refs.renew(AT, `workspace-memory/${id}`, normalizedContentHash(TEXT))).toBe(false)
+      expect(await ws.refs.renew(AT, `workspace-memory/${id}`, sha256Hex(TEXT))).toBe(false)
     },
   )
 
@@ -280,7 +281,7 @@ describe('renewing a confirmed entry', () => {
   it('a confirmation renews reviewAfter and writes no memory file', async () => {
     const t = setup({ paragraphs: [paragraph()] })
     t.clock.mockReturnValue(T0 + 5 * DAY)
-    expect(await t.refs.renew(AT, 'workspace-memory/r0000000001', normalizedContentHash(TEXT))).toBe(true)
+    expect(await t.refs.renew(AT, 'workspace-memory/r0000000001', sha256Hex(TEXT))).toBe(true)
     const [renewed] = t.registry.read().paragraphs
     expect(renewed).toEqual({ ...paragraph(), reviewAfter: T0 + 5 * DAY + REVIEW_AFTER_MS })
     // Only the registry changed: no memory write of any kind was asked for.
@@ -314,36 +315,71 @@ describe('renewing a confirmed entry', () => {
     })
     const before = readFileSync(registryFile(t.dataDir), 'utf8')
     for (const id of ['r0000000003', 'r0000000004', 'r0000000005'])
-      expect(await t.refs.renew(AT, `workspace-memory/${id}`, normalizedContentHash(SOME))).toBe(false)
+      expect(await t.refs.renew(AT, `workspace-memory/${id}`, sha256Hex(SOME))).toBe(false)
     // The content changed since the planner saw it.
     expect(await t.refs.renew(AT, 'workspace-memory/r0000000006', 'h0')).toBe(false)
     // Not a reference this host keeps.
     expect(await t.refs.renew(AT, 'workspace-skill/lint', 'h1')).toBe(false)
     expect(readFileSync(registryFile(t.dataDir), 'utf8')).toBe(before)
     // The one in force, at the version it was listed at, is renewed.
-    expect(await t.refs.renew(AT, 'workspace-memory/r0000000006', normalizedContentHash(SOME))).toBe(true)
+    expect(await t.refs.renew(AT, 'workspace-memory/r0000000006', sha256Hex(SOME))).toBe(true)
   })
 
-  it('a paragraph edited in place since it was listed is not renewed and lists as a new version', async () => {
-    const texts: Record<string, string> = { r0000000001: TEXT }
-    const t = setup({ paragraphs: [paragraph()], memory: memory(texts).session })
-    const [shown] = await t.refs.list(AT)
-    texts.r0000000001 = 'Use yarn here\nInstall with yarn, never npm.'
-    const before = readFileSync(registryFile(t.dataDir), 'utf8')
-    expect(await t.refs.renew(AT, 'workspace-memory/r0000000001', shown?.version as string)).toBe(false)
-    expect(readFileSync(registryFile(t.dataDir), 'utf8')).toBe(before)
-    const [edited] = await t.refs.list(AT)
-    expect(edited?.version).toBe(normalizedContentHash(texts.r0000000001 as string))
-    expect(edited?.version).not.toBe(shown?.version)
-  })
+  it.each([false, true])(
+    'preserves exact edits and rejects their stale confirmation (legacy: %s)',
+    async (legacy) => {
+      const id = 'r0000000001'
+      const texts = { [id]: TEXT }
+      const record = paragraph({
+        contentHash: normalizedContentHash(TEXT),
+        fileHash: sha256Hex(indexText(texts)),
+        ...(legacy ? {} : { exactHash: sha256Hex(TEXT) }),
+      })
+      const t = setup({ paragraphs: [record], memory: memory(texts).session })
+      const [shown] = await t.refs.list(AT)
+      if (!shown) throw new Error('missing reference')
+      expect(await t.refs.entries?.(AT)).toMatchObject([{ untouched: true, version: sha256Hex(TEXT) }])
+      for (const edited of [TEXT.toUpperCase(), TEXT.replace(' ', '  ')]) {
+        texts[id] = edited
+        expect(await t.refs.renew(AT, `workspace-memory/${id}`, shown.version)).toBe(false)
+        expect(t.registry.read().paragraphs).toEqual([record])
+        expect(await t.refs.list(AT)).toMatchObject([{ version: sha256Hex(edited) }])
+        expect(await t.refs.entries?.(AT)).toMatchObject([{ untouched: false, version: sha256Hex(edited) }])
+      }
+    },
+  )
 
-  it('a paragraph past its review date is not renewed by a confirmation made before', async () => {
-    const t = setup({ paragraphs: [paragraph()] })
-    const [shown] = await t.refs.list(AT)
-    t.clock.mockReturnValue(T0 + 10 * DAY)
-    expect(await t.refs.renew(AT, 'workspace-memory/r0000000001', shown?.version as string)).toBe(false)
-    expect(t.registry.read().paragraphs[0]?.reviewAfter).toBe(T0 + 10 * DAY)
-  })
+  it.each(['review date', 'annotation'])(
+    'refuses renewal when the %s expires during the provider read',
+    async (deadline) => {
+      const record = paragraph({ reviewAfter: deadline === 'review date' ? 20 : 100 })
+      const mem = memory({ [record.id]: TEXT }).session
+      const t = setup({ paragraphs: [record], memory: mem })
+      t.clock.mockReturnValue(19)
+      const port = mem.paragraphs?.({ sessionKey: AT.key, turn: 0 }, new AbortController().signal)
+      if (!port) throw new Error('missing paragraph port')
+      t.where.memory = {
+        ...mem,
+        paragraphs: () => ({
+          ...port,
+          async list() {
+            const listed = await port.list()
+            t.clock.mockReturnValue(22)
+            return {
+              ...listed,
+              paragraphs: listed.paragraphs.map((p) => ({
+                ...p,
+                visibleText: p.text,
+                ...(deadline === 'annotation' ? { nextExpiry: 20 } : {}),
+              })),
+            }
+          },
+        }),
+      }
+      expect(await t.refs.renew(AT, `workspace-memory/${record.id}`, sha256Hex(TEXT))).toBe(false)
+      expect(t.registry.read().paragraphs).toEqual([record])
+    },
+  )
 
   it('a registry write between the check and the renewal refuses it', async () => {
     const mem = memory({ r0000000001: TEXT })
@@ -446,7 +482,7 @@ describe('entries saved earlier, for the experience snapshot', () => {
   it('lists saved workspace paragraphs in full, with whether a person edited them since', async () => {
     const t = both(layered({ r0000000001: TEXT, r0000000002: SOME }, {}))
     seed(t.registry, [
-      paragraph({ contentHash: normalizedContentHash(TEXT) }),
+      paragraph({ contentHash: normalizedContentHash(TEXT), exactHash: sha256Hex(TEXT) }),
       paragraph({
         id: 'r0000000002',
         contentHash: 'stored-before-a-person-edited-it',
@@ -459,7 +495,7 @@ describe('entries saved earlier, for the experience snapshot', () => {
         kind: 'memory',
         title: 'Use pnpm here',
         content: 'Install with pnpm, never npm.',
-        version: normalizedContentHash(TEXT),
+        version: sha256Hex(TEXT),
         savedAt: T0 + 10 * DAY - REVIEW_AFTER_MS,
         untouched: true,
         source: { sessionKey: 'session-a', kind: 'memory', entryId: 'use-pnpm' },
@@ -469,7 +505,7 @@ describe('entries saved earlier, for the experience snapshot', () => {
         kind: 'prompt',
         title: 'Some title',
         content: 'Some text.',
-        version: normalizedContentHash(SOME),
+        version: sha256Hex(SOME),
         savedAt: T0 + 10 * DAY - REVIEW_AFTER_MS,
         untouched: false,
         source: { sessionKey: 's', kind: 'prompt', entryId: 'p2' },
@@ -499,7 +535,7 @@ describe('entries saved earlier, for the experience snapshot', () => {
       { ref: `ws.${id}`, content: visibleText, untouched: false },
       { ref: `user.${id}`, content: visibleText, untouched: false },
     ])
-    const version = normalizedContentHash(visibleText)
+    const version = sha256Hex(visibleText)
     expect(await t.refs.list(AT)).toMatchObject([{ version }, { version }])
     visibleText = null
     expect(await t.refs.entries?.(AT)).toEqual([])
@@ -574,17 +610,17 @@ describe('entries saved earlier, for the experience snapshot', () => {
     const listed = await port().list()
     const describe = (layer: 'workspace' | 'user') =>
       describeParagraphs(listed, memory, layer, t.registry, () => T0)
-    expect(await describe('user')).toEqual([])
+    expect(await describe('user')).toMatchObject([{ text: TEXT, validity: 'unknown' }])
     if (scenario === 'read error') await expect(describe('workspace')).rejects.toThrow('index unavailable')
     else
-      expect((await describe('workspace')).map((p) => p.text)).toEqual(
-        verified || scenario === 'expired' ? [TEXT] : [],
-      )
+      expect(await describe('workspace')).toMatchObject([
+        { text: TEXT, validity: verified || scenario === 'expired' ? 'valid' : 'unknown' },
+      ])
     if (scenario === 'read error') await expect(t.refs.entries?.(AT)).rejects.toThrow('index unavailable')
     else expect((await t.refs.entries?.(AT))?.map((e) => e.ref)).toEqual(verified ? [`ws.${id}`] : [])
     expect((await t.refs.list(AT)).map((e) => e.ref)).toEqual(verified ? [`workspace-memory/${id}`] : [])
-    expect(await t.refs.renew(AT, `workspace-memory/${id}`, normalizedContentHash(TEXT))).toBe(verified)
-    expect(await t.refs.renew(AT, `user-memory/${id}`, normalizedContentHash(TEXT))).toBe(false)
+    expect(await t.refs.renew(AT, `workspace-memory/${id}`, sha256Hex(TEXT))).toBe(verified)
+    expect(await t.refs.renew(AT, `user-memory/${id}`, sha256Hex(TEXT))).toBe(false)
   })
 
   it('skips a saved paragraph that now looks like a secret', async () => {
@@ -685,7 +721,7 @@ describe('fixes after the branch review', () => {
       userRegistry: () => userRegistry,
     })
     expect((await refs.list(AT)).map((r) => r.ref)).toContain('user-memory/r0000000009')
-    expect(await refs.renew(AT, 'user-memory/r0000000009', normalizedContentHash(SOME))).toBe(true)
+    expect(await refs.renew(AT, 'user-memory/r0000000009', sha256Hex(SOME))).toBe(true)
     expect(userRegistry.read().paragraphs[0]?.reviewAfter).toBe(T0 + REVIEW_AFTER_MS)
   })
 
@@ -740,7 +776,7 @@ describe('fixes after the branch review', () => {
         } else expect(refs.revision?.(AT)).not.toBe(before)
         expect(await refs.entries?.(AT)).toEqual([])
         expect(await refs.list(AT)).toEqual([])
-        expect(await refs.renew(AT, `workspace-memory/${id}`, normalizedContentHash(TEXT))).toBe(false)
+        expect(await refs.renew(AT, `workspace-memory/${id}`, sha256Hex(TEXT))).toBe(false)
         await turn()
         expect(JSON.stringify(session.surface())).toContain(`[memory/ws.${id} v1] withdrawn:`)
       } finally {
@@ -782,7 +818,7 @@ describe('fixes after the branch review', () => {
     mkdirSync(path, { recursive: true })
     const body = `<!-- refinement:${dependent.id} -->\n${TEXT}\n<!-- /refinement:${dependent.id} -->`
     const ref = `user-memory/${dependent.id}`
-    const version = normalizedContentHash(TEXT)
+    const version = sha256Hex(TEXT)
     const hidden = async () => {
       expect(await refs.entries?.(AT)).toEqual([])
       expect(await refs.list(AT)).toEqual([])

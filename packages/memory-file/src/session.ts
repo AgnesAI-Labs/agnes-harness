@@ -28,6 +28,7 @@ import {
   type ViewContext,
 } from './pipeline.js'
 import { MemoryStore } from './store.js'
+import { topicLinksFingerprint } from './topic-links.js'
 import { renderUserLayer, userParagraphPort } from './user-layer.js'
 import { buildView, type HideRange, type MemoryView, rawOffsetToLine } from './view.js'
 
@@ -377,6 +378,7 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
       return hash(
         JSON.stringify([
           settings ?? fingerprint(() => store.configuration()),
+          ...[meta, userMeta].map((layer) => fingerprint(() => topicLinksFingerprint(layer))),
           ...[store, user].map((layer) =>
             fingerprint(() => layer.files().map(({ path, hash }) => [path, hash])),
           ),

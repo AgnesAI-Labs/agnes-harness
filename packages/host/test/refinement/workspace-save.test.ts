@@ -26,8 +26,10 @@ import {
 } from '../../src/runtime/refinement/workspace-save.js'
 import { reviewCredential, reviewModel } from './service-key.js'
 
+const sessions: MemorySession[] = []
 const dirs: string[] = []
-afterEach(() => {
+afterEach(async () => {
+  await Promise.all(sessions.splice(0).map((session) => session.close?.()))
   vi.restoreAllMocks()
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
@@ -67,8 +69,13 @@ async function workspace(o: { mode?: 'off' | 'ask' | 'auto'; approvals?: Refinem
   const switchState = { enabled: true, mode: 'auto' as 'auto' | 'manual', revision: 'r1' }
   let registryOf = () => new RefinementRegistry(dataDir, root, clock)
   const registry = () => new RefinementRegistry(dataDir, root, clock)
-  const open = (sessionKey = WORKSPACE_MEMORY_KEY) =>
+  const openSession = (sessionKey = WORKSPACE_MEMORY_KEY) =>
     provider().open({ home, workspaceRoot: root, sessionKey, validity: registryView(registry(), clock) })
+  const open = (sessionKey = WORKSPACE_MEMORY_KEY) => {
+    const session = openSession(sessionKey)
+    sessions.push(session)
+    return session
+  }
   let wrap: Wrap = (session) => session
   const opened: MemorySession[] = []
   const service = (approvals = o.approvals) =>
@@ -76,7 +83,7 @@ async function workspace(o: { mode?: 'off' | 'ask' | 'auto'; approvals?: Refinem
       registry: () => registryOf(),
       settings: () => ({ ...switchState }),
       memory: () => {
-        const session = wrap(open())
+        const session = wrap(openSession())
         opened.push(session)
         return session
       },
@@ -380,6 +387,29 @@ describe('the save-to-workspace decision order', () => {
           .digest('hex'),
       },
     ])
+  })
+
+  it('requires a fresh proposal when the provider no longer vouches for the matching paragraph', async () => {
+    const ws = await workspace()
+    const save = ws.service()
+    await save.save(request(ws))
+    const before = await ws.file()
+    ws.setWrap(
+      portWrap((port) => ({
+        async list() {
+          const listed = await port.list()
+          return {
+            ...listed,
+            paragraphs: listed.paragraphs.map((p) => ({ ...p, validity: 'unknown' as const })),
+          }
+        },
+        async propose() {
+          throw Object.assign(new Error(), { code: 'MEMORY_CONSOLIDATION_REQUIRED' })
+        },
+      })),
+    )
+    expect(await save.save(request(ws))).toMatchObject({ outcome: 'refused', reason: 'memory-full' })
+    expect(await ws.file()).toBe(before)
   })
 
   it('a third-party provider without paragraphs refuses with unsupported-provider', async () => {

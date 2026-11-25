@@ -28,6 +28,7 @@ import {
   type SaveSource,
 } from '@agnes/host-infrastructure/refinement-registry'
 import { sha256Hex } from '@agnes/protocol'
+import { paragraphVisibility } from './paragraph-visibility.js'
 import { paragraphPortOf, reconcileWorkspace, recordedTextHash } from './reconcile.js'
 import { paragraphText, sourceRuleProblem } from './save-rules.js'
 import { reconcileSkillDeletions, saveSkillChange, type WorkspaceSkills } from './skill-update.js'
@@ -368,15 +369,26 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     verdicts['memory-mode'] = 'pass'
     const text = paragraphText(request.entry)
     let listed: MemoryParagraphList
+    let visible: Awaited<ReturnType<typeof paragraphVisibility>>
     try {
       listed = await port.list()
+      visible = await paragraphVisibility(memory, 'workspace', listed, registry, deps.clock)
     } catch {
       return refused('unavailable', 'capacity')
     }
     // A rewrite belongs to the layer its paragraph is in: one of a user-memory section is never appended here.
     if (request.entry.replaces?.layer === 'user') return refused('conflict', 'capacity')
     const replaces = request.entry.replaces?.paragraphId
-    const placed = placement(snapshot, base.source, text, deps.clock(), listed, 'workspace', replaces)
+    const placed = placement(
+      snapshot,
+      base.source,
+      text,
+      deps.clock(),
+      listed,
+      'workspace',
+      replaces,
+      visible,
+    )
     if (placed === 'busy' || placed === 'gone') return refused('conflict', 'capacity')
     if (placed === 'human-edited') return refused('human-edited', 'rules')
     if ('existing' in placed) {
@@ -673,6 +685,10 @@ export function placement(
   listed: MemoryParagraphList,
   layer: 'workspace' | 'user',
   replaces?: string,
+  visible: Awaited<ReturnType<typeof paragraphVisibility>> = (entry) => ({
+    visibleText: entry.visibleText === undefined ? entry.text.trim() || null : entry.visibleText,
+    nextExpiry: entry.nextExpiry,
+  }),
 ):
   | { existing: { id: string; fileHash: string } }
   | Pick<ParagraphCommit, 'paragraph' | 'baseHash' | 'targetReviewAfter'>
@@ -688,14 +704,22 @@ export function placement(
   )
     return 'busy'
   const active = snapshot.paragraphs.filter((paragraph) => paragraph.state === 'active')
-  const inFile = new Map(listed.paragraphs.map((entry) => [entry.id, entry.text]))
+  const inFile = new Map(listed.paragraphs.map((entry) => [entry.id, entry]))
   const hash = normalizedContentHash(text)
-  const existing = (p: RegistryParagraph) =>
-    p.contentHash === hash &&
-    inFile.get(p.id) === text &&
-    (p.exactHash !== undefined || p.fileHash === listed.hash)
+  const existing = (p: RegistryParagraph) => {
+    const entry = inFile.get(p.id)
+    if (!entry || entry.text !== text || (entry.validity !== 'valid' && entry.validity !== 'delivered'))
+      return false
+    const projection = visible(entry)
+    return (
+      !!projection?.visibleText &&
+      now < (projection.nextExpiry ?? Infinity) &&
+      p.contentHash === hash &&
+      (p.exactHash !== undefined ? p.exactHash === sha256Hex(text) : p.fileHash === listed.hash)
+    )
+  }
   const replace = (p: RegistryParagraph) => {
-    const current = inFile.get(p.id)
+    const current = inFile.get(p.id)?.text
     if (current === undefined) return 'gone'
     const expected = p.exactHash ?? recordedTextHash(snapshot, listed.hash, p.id, current)
     if (!expected) return 'human-edited'
@@ -732,7 +756,7 @@ export function placement(
   )
   if (left?.target?.kind === 'memory-paragraph') {
     const id = left.target.paragraphId
-    const current = inFile.get(id)
+    const current = inFile.get(id)?.text
     if (current === undefined) return 'gone'
     if (left.target.fileHash === listed.hash)
       return { paragraph: { id, text, expectTextHash: sha256Hex(current) }, baseHash: listed.hash }

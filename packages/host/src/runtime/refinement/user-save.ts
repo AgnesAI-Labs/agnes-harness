@@ -11,11 +11,13 @@ import {
   type SaveReceipt,
   type SaveRefusal,
 } from '@agnes/host-infrastructure/refinement-registry'
+import { paragraphVisibility } from './paragraph-visibility.js'
 import { reconcileParagraphs, WORKSPACE_MEMORY_KEY } from './reconcile.js'
 import { paragraphText, sourceRuleProblem } from './save-rules.js'
 import {
   code,
   commitParagraph,
+  fault,
   pendingIntent,
   putReceipt,
   refusalOf,
@@ -182,8 +184,20 @@ export function createUserSave(deps: UserSaveDeps): UserSave {
     if (repeated) return repeated
     // 2. Revocation: taken back from user memory, or from this workspace.
     const local = deps.workspaceRegistry(request.session.workspaceRoot)
-    if (registry.revoked(base.source) || local.revoked(base.source))
-      return refused('user-revoked', 'revocation')
+    const assertWorkspaceAllowed = () => {
+      if (typeof local.unreadable === 'function' && local.unreadable()) throw fault('REFINEMENT_SAVE_STALE')
+      if (local.revoked(base.source)) throw fault('REFINEMENT_USER_REVOKED')
+    }
+    const workspaceRefusal = () => {
+      try {
+        assertWorkspaceAllowed()
+      } catch (error) {
+        return refuse(registry, base, refusalOf(error), { switch: 'pass', revocation: 'fail' })
+      }
+    }
+    const blocked = workspaceRefusal()
+    if (blocked) return blocked
+    if (registry.revoked(base.source)) return refused('user-revoked', 'revocation')
     verdicts.revocation = 'pass'
     // 3. Confirmations: only the automatic promotion needs them; a request skips the count.
     if (request.initiator === 'auto') {
@@ -216,19 +230,23 @@ export function createUserSave(deps: UserSaveDeps): UserSave {
     verdicts['memory-mode'] = 'pass'
     // 6. Capacity, known once the change is proposed.
     let listed: MemoryParagraphList
+    let visible: Awaited<ReturnType<typeof paragraphVisibility>>
     try {
       listed = await port.list()
+      visible = await paragraphVisibility(memory, 'user', listed, registry, deps.clock)
     } catch {
       return refuse(registry, read, 'unavailable', { ...verdicts, capacity: 'fail' })
     }
     if (request.entry.replaces?.layer === 'workspace')
       return refuse(registry, read, 'conflict', { ...verdicts, capacity: 'fail' })
     const replaces = request.entry.replaces?.paragraphId
-    const placed = placement(snapshot, base.source, text, deps.clock(), listed, 'user', replaces)
+    const placed = placement(snapshot, base.source, text, deps.clock(), listed, 'user', replaces, visible)
     if (placed === 'busy' || placed === 'gone')
       return refuse(registry, read, 'conflict', { ...verdicts, capacity: 'fail' })
     if (placed === 'human-edited') return refuse(registry, read, placed, { ...verdicts, rules: 'fail' })
     if ('existing' in placed) {
+      const blocked = workspaceRefusal()
+      if (blocked) return blocked
       const receipt: SaveReceipt = {
         ...read,
         outcome: 'saved',
@@ -249,6 +267,7 @@ export function createUserSave(deps: UserSaveDeps): UserSave {
       ...placed,
       receipt: { ...read, steps: steps({ ...verdicts, capacity: 'pass' }) },
       switchCurrent: () => switchAt(request.settingsRevision),
+      assertAllowed: assertWorkspaceAllowed,
       clock: deps.clock,
       decided: { revision: snapshot.revision },
       inFlight,
