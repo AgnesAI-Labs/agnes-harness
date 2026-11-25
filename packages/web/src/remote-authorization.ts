@@ -7,6 +7,7 @@ import {
 import { requestCloudFrameAuthorization } from './backends/cloud-frame-transport.js'
 import {
   CLOUD_CREDENTIAL_STORAGE_PREFIX,
+  isCloudDeletionGeneration,
   readCloudCredentialGeneration,
   readCloudCredentialRef,
   subscribeCloudCredentialReplacement,
@@ -130,6 +131,7 @@ export async function discoverCloudOrigin(
 ): Promise<string> {
   const reset = clearEpoch
   const generation = readCloudCredentialGeneration(credentialRef)
+  if (isCloudDeletionGeneration(generation)) throw new Error('CLOUD_CREDENTIAL_NOT_FOUND')
   const value = await requestCloudAuthorization({ credentialRef }, signal, fetcher)
   if (!value.origin || !value.proxied) throw new Error('CLOUD_INVALID_AUTHORIZATION')
   const origin = remoteFrontendOrigin(value.origin)

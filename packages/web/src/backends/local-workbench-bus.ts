@@ -3,6 +3,7 @@ import { cloudCredentialUsage } from '@agnes/resource-control-web/credentials-ap
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
 import {
   CLOUD_CREDENTIAL_STORAGE_PREFIX,
+  isCloudDeletionGeneration,
   readCloudCredentialRef,
   subscribeCloudCredentialReplacement,
 } from './cloud-key.js'
@@ -524,10 +525,15 @@ export function installWorkbenchStorageSync(options: {
   followingShared: () => boolean
   handledGen: { current: Map<string, string> }
   onReplaced(ref: string, generation: string): void
+  onDeleted(ref: string): void
   onOriginChange(next: string | undefined, sameRef: boolean): void
   onBindingChange(remote: string, bound: boolean): void
 }): () => void {
   const offBroadcast = subscribeCloudCredentialReplacement((ref, gen) => {
+    if (isCloudDeletionGeneration(gen)) {
+      options.onDeleted(ref)
+      return
+    }
     if (options.handledGen.current.get(ref) === gen) return
     const remote = options.cloud()
     if (remote && readCloudCredentialRef(remote) === ref) options.onReplaced(ref, gen)

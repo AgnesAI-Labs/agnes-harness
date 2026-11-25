@@ -67,7 +67,14 @@ export class NoticeSink {
   emit(kind: 'packages_changed', o: { detail: PackagesChangedDetail }): void
   emit(kind: 'tree_changed', o: { detail: TreeChangedDetail }): void
   emit(
-    kind: Exclude<NoticeKind, 'packages_changed' | 'tree_changed' | 'decisions_changed'>,
+    kind: 'credential_deleted',
+    o: { detail: Extract<DaemonNotice, { kind: 'credential_deleted' }>['detail'] },
+  ): void
+  emit(
+    kind: Exclude<
+      NoticeKind,
+      'packages_changed' | 'tree_changed' | 'decisions_changed' | 'credential_deleted'
+    >,
     o: { sessionId?: string; detail: unknown },
   ): void
   emit(kind: NoticeKind, o: { sessionId?: string; detail: unknown }): void {
@@ -95,7 +102,18 @@ export class NoticeSink {
       typeof (o.detail as { profile?: unknown }).profile === 'string'
         ? (o.detail as { profile: string }).profile
         : undefined
-    for (const { ep, conn } of this.o.endpoints())
+    for (const { ep, conn } of this.o.endpoints()) {
+      if (kind === 'credential_deleted') {
+        if (
+          conn.initialized &&
+          conn.authKind === 'local' &&
+          conn.credentialKind === 'local' &&
+          conn.localListener !== undefined &&
+          conn.bundledApp !== true
+        )
+          this.deliver(ep, n)
+        continue
+      }
       if (
         kind === 'shutting_down' ||
         (automation?.owner &&
@@ -121,6 +139,7 @@ export class NoticeSink {
             : o.sessionId !== undefined && conn.attached.has(o.sessionId))
       )
         this.deliver(ep, n)
+    }
     // Nested rather than spread: `params` is a DaemonNotice and carries its own `kind` (e.g.
     // 'resumed'), which would silently clobber the audit record's own 'daemon.notice' discriminator
     // if spread in - the two `kind` fields name different things (audit-record type vs. notice type).

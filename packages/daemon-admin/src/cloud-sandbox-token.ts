@@ -1,30 +1,12 @@
 import { remoteFrontendOrigin, rpcError } from '@agnes/protocol'
-
-async function connectionBody(response: Response): Promise<unknown> {
-  const reader = response.body?.getReader()
-  if (!reader) throw Error('missing connection response')
-  const chunks: Uint8Array[] = []
-  let bytes = 0
-  try {
-    while (true) {
-      const next = await reader.read()
-      if (next.done) break
-      bytes += next.value.byteLength
-      if (bytes > 16_384) throw Error('connection response too large')
-      chunks.push(next.value)
-    }
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
-  } finally {
-    await reader.cancel().catch(() => undefined)
-    reader.releaseLock()
-  }
-}
+import { discardCloudBody, readCloudAuthorizationBody } from './cloud-authorization-request.js'
 
 /** Platform credentials stay on A's trusted daemon/launcher leg, for this exact sandbox. */
 export async function cloudSandboxConnection(
   origin: string | undefined,
   key: string,
   fetcher: typeof fetch,
+  signal: AbortSignal,
 ): Promise<{ origin: string; trafficToken: string } | undefined> {
   const target = origin ? new URL(origin) : undefined
   // Ordinary IP/domain connections keep their existing direct transport.
@@ -49,7 +31,7 @@ export async function cloudSandboxConnection(
     cache: 'no-store',
   })
   if (!response.ok) {
-    await response.body?.cancel().catch(() => undefined)
+    discardCloudBody(response)
     const reason =
       response.status === 401 || response.status === 403
         ? 'CONFIG_CREDENTIAL_REJECTED'
@@ -62,7 +44,7 @@ export async function cloudSandboxConnection(
               : 'CONFIG_AUTH_UNAVAILABLE'
     throw rpcError('SEMANTIC_REJECTED', { reason })
   }
-  const body = (await connectionBody(response)) as {
+  const body = (await readCloudAuthorizationBody(response, signal)) as {
     code?: unknown
     data?: { sandbox_url?: unknown; traffic_token?: unknown }
   } | null

@@ -1,6 +1,7 @@
-import { remoteFrontendOrigin } from '@agnes/protocol'
+import { type DaemonNotice, remoteFrontendOrigin } from '@agnes/protocol'
 import { CREDENTIALS_CHANGED } from '@agnes/resource-control-web/credentials-api'
-import { bumpCloudCredentialGeneration } from './cloud-key.js'
+import type { Client } from '@agnes/sdk/browser'
+import { bumpCloudCredentialGeneration, deleteCloudCredential } from './cloud-key.js'
 import { backendFrame } from './frame-context.js'
 import { BACKEND_FRAME_MESSAGE } from './frame-contract.js'
 import { dispatchWorkbenchCloudAction, localCloudSettings } from './local-workbench-bus.js'
@@ -11,8 +12,10 @@ export type CloudConnectionAction =
   | { action: 'disconnect' }
   | { action: 'reconnect' }
   | { action: 'refresh-credentials' }
+  | { action: 'reconcile-credentials' }
   | { action: 'manage-credentials' }
   | { action: 'credential-replaced'; credentialRef: string; generation?: string }
+  | { action: 'credential-deleted'; credentialRef: string }
 
 export const credentialReference = (value: unknown): value is string =>
   typeof value === 'string' && /^secret:\/\/generic\/[a-f0-9-]{36}$/u.test(value)
@@ -60,17 +63,34 @@ export const cloudSettingsState = {
   subscribe: (listener: () => void) => localCloudSettings.subscribe(listener),
 }
 
-export function installCloudSettingsProjection(): () => void {
+export function installCloudSettingsProjection(client?: Pick<Client, 'on'>): () => void {
   if (backendFrame()) return () => {}
   const replaced = (event: Event) => {
     const detail = (event as CustomEvent<{ mode?: unknown; id?: unknown }>).detail
-    if (detail?.mode !== 'replace' || !credentialReference(detail.id)) return
+    if (!credentialReference(detail?.id)) return
+    if (detail.mode === 'delete') {
+      deleteCloudCredential(detail.id)
+      return
+    }
+    if (detail.mode !== 'replace') return
     const generation = bumpCloudCredentialGeneration(detail.id)
     if (detail.id !== localCloudSettings.read().credentialRef) return
     requestCloudConnection({ action: 'credential-replaced', credentialRef: detail.id, generation })
   }
+  const offNotice = client?.on('notice', (payload) => {
+    const notice = payload as DaemonNotice | undefined
+    if (notice?.kind !== 'credential_deleted' || !credentialReference(notice.detail?.id)) return
+    window.dispatchEvent(
+      new CustomEvent(CREDENTIALS_CHANGED, { detail: { mode: 'delete', id: notice.detail.id } }),
+    )
+  })
+  const offConnection = client?.on('connectionStateChanged', (state) => {
+    if (state === 'connected') requestCloudConnection({ action: 'reconcile-credentials' })
+  })
   window.addEventListener(CREDENTIALS_CHANGED, replaced)
   return () => {
+    offNotice?.()
+    offConnection?.()
     window.removeEventListener(CREDENTIALS_CHANGED, replaced)
     localCloudSettings.reset()
   }

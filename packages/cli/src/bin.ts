@@ -3,6 +3,7 @@
 import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
+import type { Writable } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { COMMANDS } from './args.js'
 import type { bootDefault as BootDefault } from './boot/default.js'
@@ -706,6 +707,28 @@ export function agnesVersion(): string {
 /** Replaced with the package version by build:sea; absent in the source/test runtime. */
 declare const AGNES_VERSION: string | undefined
 
+function waitForPendingOutput(stream: Writable): Promise<void> | undefined {
+  if (!stream.writableLength || stream.destroyed || stream.closed) return
+  return new Promise((resolve) => {
+    const done = () => {
+      clearInterval(poll)
+      stream.off('close', done)
+      stream.off('error', done)
+      stream.off('drain', check)
+      resolve()
+    }
+    const check = () => {
+      if (!stream.writableLength || stream.destroyed || stream.closed) done()
+    }
+    // Below the high-water mark Node need not emit drain, even for a pending pipe write.
+    const poll = setInterval(check, 10)
+    stream.once('close', done)
+    stream.once('error', done)
+    stream.on('drain', check)
+    check()
+  })
+}
+
 export async function runExecutable(): Promise<void> {
   // A reader that exits early (`agh ... | head`) closes the pipe; the next write fails with EPIPE
   // as an unhandled 'error' event. That is a normal end of a one-shot command, not a crash: drop
@@ -727,11 +750,9 @@ export async function runExecutable(): Promise<void> {
   // main has completed all owned cleanup. Flush redirected output before ending the executable;
   // unrelated library timers must not keep a successful one-shot command alive.
   exitTimingMark('stdio-flush-enter')
-  await Promise.all(
-    [process.stdout, process.stderr].map(
-      (stream) => new Promise<void>((resolve) => stream.write('', () => resolve())),
-    ),
-  )
+  await Promise.all([waitForPendingOutput(process.stdout), waitForPendingOutput(process.stderr)])
+  exitTimingMark('stdio-flush-leave')
+  await waitForPendingOutput(process.stderr)
   process.exit(code)
 }
 

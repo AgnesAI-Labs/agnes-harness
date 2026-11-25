@@ -41,10 +41,18 @@ async function runImageSmoke(binary: string, workspace: string, env: NodeJS.Proc
   let stderr = ''
   let stage = 'response'
   let expired: string | undefined
+  let exit: { code: number | null; signal: NodeJS.Signals | null } | undefined
+  let exitAtDeadline: typeof exit
+  child.once('exit', (code, signal) => {
+    exit = { code, signal }
+  })
   const deadline = (ms: number) =>
     setTimeout(() => {
       expired = stage
+      exitAtDeadline = exit
       child.kill('SIGKILL')
+      child.stdout.destroy()
+      child.stderr.destroy()
     }, ms)
   let timer = deadline(60_000)
   child.stdout.setEncoding('utf8').on('data', (text: string) => {
@@ -66,8 +74,9 @@ async function runImageSmoke(binary: string, workspace: string, env: NodeJS.Proc
     status = exitStatus
     signal = exitSignal
     if (expired) throw new Error(`SEA image smoke timed out during ${expired}`)
+    expect(exit).toEqual({ code: status, signal })
     if (status !== 0) throw new Error(`SEA image smoke exited with status ${status} and signal ${signal}`)
-    return stdout
+    expect(stdout).toBe(IMAGE_SMOKE_OUTPUT)
   } catch (error) {
     let stages: unknown[] = []
     try {
@@ -86,8 +95,9 @@ async function runImageSmoke(binary: string, workspace: string, env: NodeJS.Proc
       'SEA image smoke stages',
       JSON.stringify({
         expired,
-        status,
-        signal,
+        exit: exit ?? null,
+        exitAtDeadline: exitAtDeadline ?? null,
+        close: status === undefined ? null : { code: status, signal },
         expectedStdout: stdout === IMAGE_SMOKE_OUTPUT,
         timing: stderr.split(/\r?\n/).filter((line) => /^agh-timing [a-z][a-z0-9-]* \d+(\.\d+)?$/.test(line)),
         stages,
@@ -332,7 +342,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
           { encoding: 'utf8', env },
         ),
       ).toBe('sea faux ok\n')
-      expect(await runImageSmoke(binary, workspace, env, tracePath)).toBe(IMAGE_SMOKE_OUTPUT)
+      await runImageSmoke(binary, workspace, env, tracePath)
       const output = execFileSync(loaderHarness, [join(packageDirectory, 'index.ts')], {
         encoding: 'utf8',
         env,

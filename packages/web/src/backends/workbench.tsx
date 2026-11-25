@@ -16,10 +16,13 @@ import { installCloudFrameAuthorization } from './cloud-frame-authorization.js'
 import {
   bindCloudCredential,
   bumpCloudCredentialGeneration,
+  CLOUD_DISCOVERY_KEY,
+  deleteCloudCredential,
   forgetCloudCredential,
   readCloudCredentialGeneration,
   readCloudCredentialRef,
   recordCloudCredentialGeneration,
+  storedCloudCredentialRefs,
 } from './cloud-key.js'
 import { watchCloudBackendRecovery } from './cloud-recovery.js'
 import { CLOUD_SETTINGS_SECTION, type CloudConnectionAction } from './cloud-settings-bridge.js'
@@ -47,7 +50,6 @@ import {
 } from './local-workbench-bus.js'
 import { workbenchCatalog } from './workbench-locale.js'
 import {
-  CLOUD_DISCOVERY_KEY,
   CLOUD_ORIGIN_KEY,
   cloudConnectionState,
   cloudFrameSource,
@@ -84,6 +86,7 @@ export function CloudWorkbenchStage({ children }: { children?: ReactNode } = {})
   })
   const [sidebarOpen, setSidebarOpen] = useState(isNarrowSidebarOpen)
   const credentialRequest = useRef<AbortController | undefined>(undefined)
+  const pendingCredentialReconciliation = useRef(false)
   const connectionRevision = useRef(0)
   const [connectionEpoch, setConnectionEpoch] = useState(0)
   const connectionIntent = useRef<string | undefined>(undefined)
@@ -145,7 +148,16 @@ export function CloudWorkbenchStage({ children }: { children?: ReactNode } = {})
     [],
   )
 
-  const loadCredentials = useCallback(() => {
+  const loadCredentials = useCallback((reconcile = false) => {
+    const refs =
+      reconcile || pendingCredentialReconciliation.current ? storedCloudCredentialRefs() : undefined
+    if (refs) {
+      const activeRef = localCloudSettings.read().credentialRef
+      if (activeRef) refs.add(activeRef)
+      if (connectionIntent.current) refs.add(connectionIntent.current)
+      if (reconcile && refs.size === 0) return
+      pendingCredentialReconciliation.current = true
+    }
     credentialRequest.current?.abort()
     const request = new AbortController()
     credentialRequest.current = request
@@ -156,6 +168,12 @@ export function CloudWorkbenchStage({ children }: { children?: ReactNode } = {})
         if (request.signal.aborted) return
         setCredentialOptions(items.map(({ id, label }) => ({ id, label })))
         setCredentialError(false)
+        if (!refs) return
+        const available = new Set(items.map((item) => item.id))
+        const missing = [...refs].filter((ref) => !available.has(ref))
+        // Deletion listeners can synchronously start another refresh.
+        pendingCredentialReconciliation.current = false
+        for (const ref of missing) deleteCloudCredential(ref)
       })
       .catch(() => {
         if (request.signal.aborted && credentialRequest.current !== request) return
@@ -492,34 +510,45 @@ export function CloudWorkbenchStage({ children }: { children?: ReactNode } = {})
     [clearCloudFrame, restartCloudFrame, retireCloudFrame, select, setAddress, t],
   )
 
-  const disconnect = useCallback(() => {
-    const previous = latest.current.cloud
-    cancelPendingConnect()
-    abortFrameAuth.current?.()
-    if (previous) forgetRemoteAccess(previous)
-    else forgetAllRemoteAccess()
-    if (previous && ownsShared(followingShared.current, previous)) {
-      const previousRef = readCloudCredentialRef(previous)
-      forgetCloudCredential(previous)
-      safeThemeStorage().removeItem(CLOUD_ORIGIN_KEY)
-      if (!previousRef || safeThemeStorage().getItem(CLOUD_DISCOVERY_KEY) === previousRef)
-        safeThemeStorage().removeItem(CLOUD_DISCOVERY_KEY)
-    }
-    followingShared.current = true
-    setConfigurationError('')
-    setCandidateError('')
-    setCloud(undefined)
-    latest.current.cloud = undefined
-    clearCloudFrame()
-    cloudSelection.current = { session: undefined, awaiting: false }
-    setCloudFrame({ revision: 0, search: undefined, retired: false })
-    select('local')
-  }, [cancelPendingConnect, clearCloudFrame, select])
+  const disconnect = useCallback(
+    (keepPending = false, deletedRef?: string) => {
+      const previous = latest.current.cloud
+      if (!keepPending) cancelPendingConnect()
+      abortFrameAuth.current?.()
+      if (previous) forgetRemoteAccess(previous)
+      else forgetAllRemoteAccess()
+      if (previous && ownsShared(followingShared.current, previous)) {
+        const previousRef = deletedRef ?? readCloudCredentialRef(previous)
+        forgetCloudCredential(previous)
+        safeThemeStorage().removeItem(CLOUD_ORIGIN_KEY)
+        if (!previousRef || safeThemeStorage().getItem(CLOUD_DISCOVERY_KEY) === previousRef)
+          safeThemeStorage().removeItem(CLOUD_DISCOVERY_KEY)
+      }
+      followingShared.current = true
+      setConfigurationError('')
+      setCandidateError('')
+      setCloud(undefined)
+      latest.current.cloud = undefined
+      clearCloudFrame()
+      cloudSelection.current = { session: undefined, awaiting: false }
+      setCloudFrame({ revision: 0, search: undefined, retired: false })
+      select('local')
+    },
+    [cancelPendingConnect, clearCloudFrame, select],
+  )
 
   const handleCloudAction = useCallback(
     (action: CloudConnectionAction) => {
       if (action.action === 'connect') void connect(action.origin, false, action.credentialRef)
-      else if (action.action === 'credential-replaced') {
+      else if (action.action === 'credential-deleted') {
+        if (localCloudSettings.read().credentialRef === action.credentialRef)
+          disconnect(
+            connectionIntent.current !== undefined && connectionIntent.current !== action.credentialRef,
+            action.credentialRef,
+          )
+        else if (connectionIntent.current === action.credentialRef) cancelPendingConnect()
+        loadCredentials()
+      } else if (action.action === 'credential-replaced') {
         const remote = latest.current.cloud
         const ref = action.credentialRef
         const gen = action.generation
@@ -542,6 +571,7 @@ export function CloudWorkbenchStage({ children }: { children?: ReactNode } = {})
         }
       } else if (action.action === 'disconnect') disconnect()
       else if (action.action === 'refresh-credentials') loadCredentials()
+      else if (action.action === 'reconcile-credentials') loadCredentials(true)
       else if (action.action === 'manage-credentials')
         send('local', { kind: 'settings', section: 'credentials' })
       else if (latest.current.cloud) {
@@ -557,7 +587,7 @@ export function CloudWorkbenchStage({ children }: { children?: ReactNode } = {})
         }
       }
     },
-    [connect, disconnect, loadCredentials, restartCloudFrame, retireCloudFrame, send],
+    [cancelPendingConnect, connect, disconnect, loadCredentials, restartCloudFrame, retireCloudFrame, send],
   )
 
   useLayoutEffect(
@@ -657,6 +687,7 @@ export function CloudWorkbenchStage({ children }: { children?: ReactNode } = {})
         handledGen: lastHandledGen,
         onReplaced: (credentialRef, generation) =>
           handleCloudAction({ action: 'credential-replaced', credentialRef, generation }),
+        onDeleted: (credentialRef) => handleCloudAction({ action: 'credential-deleted', credentialRef }),
         onOriginChange: (next, sameRef) => {
           const session = sameRef ? cloudSelection.current.session : next ? '' : undefined
           cancelPendingConnect()

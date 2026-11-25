@@ -1,3 +1,4 @@
+import type { Client } from '@agnes/sdk/browser'
 import { type LocaleService, settingsSections } from '@agnes/web-client'
 import {
   Button,
@@ -119,9 +120,12 @@ function CloudConnectionSection() {
 }
 
 /** Browser connection settings belong to A, independent of the selected backend's configuration. */
-export function installCloudConnectionSettings(locale: LocaleService): () => void {
+export function installCloudConnectionSettings(
+  locale: LocaleService,
+  client: Pick<Client, 'on'>,
+): () => void {
   if (backendFrame()) return () => {}
-  const projectionOff = installCloudSettingsProjection()
+  const projectionOff = installCloudSettingsProjection(client)
   const localeOff = locale.register('@agnes/cloud-connection', {
     en: { 'settings-shell.page.cloud-connection': 'Cloud connection' },
     'zh-CN': { 'settings-shell.page.cloud-connection': '云端连接' },

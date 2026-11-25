@@ -41,8 +41,8 @@ const RESULT = 'The login page is fixed in PR #7.'
 const ACKNOWLEDGEMENT = 'Fixing the login page now.'
 /** A step that waits for a GitHub poll: the Source polls a minute apart. */
 const POLL_MS = 150_000
-const RESTART_READY_MS = 120_000
 const RECOVERY_MS = 10_000
+const RESTART_PROBE_MS = 5_000
 
 const textOf = (content: unknown): string =>
   typeof content === 'string'
@@ -54,6 +54,7 @@ const textOf = (content: unknown): string =>
       : ''
 
 const windows = process.platform === 'win32'
+const RESTART_READY_MS = windows ? 180_000 : 120_000
 /** The worker's commands as Windows PowerShell runs them in a session there: the same steps as the `sh` ones. */
 const powershellWork = (followUp: boolean): string =>
   followUp
@@ -423,24 +424,38 @@ it('restart while busy: takes the waiting comment once within ten seconds of res
     const watch = (async () => {
       let last = ''
       while (watching) {
-        const state = await run!.calls.service('superagent.state').catch(() => undefined)
-        if (state && back === undefined) back = Date.now()
+        // A slow service call must not defer a projection probe or stretch a single readiness sample
+        // to the full SDK request timeout. Neither probe opens the session ahead of recovery.
+        const [service, projection] = await Promise.allSettled([
+          run!.calls.service('superagent.state', {}, RESTART_PROBE_MS).then((state) => {
+            back ??= Date.now()
+            return state
+          }),
+          daemon.client
+            .call<UITimeline>(
+              '_agnes/v1/session.projectUI',
+              { sessionId: workerId },
+              { timeoutMs: RESTART_PROBE_MS },
+            )
+            .then((ui) => {
+              sessionsBack ??= Date.now()
+              return ui.pendingInputs?.length ?? 0
+            }),
+        ])
+        const state = service.status === 'fulfilled' ? service.value : undefined
         const health = state?.health as Record<string, { state: string; detail: string }> | undefined
         const stored = ticketOf(database, ticket.id) as
           | { assignments: { state: string; startedAt?: string }[] }
           | undefined
-        // Observe the worker without opening it ahead of Superagent's own recovery.
-        const pending = await daemon.client
-          .call<UITimeline>('_agnes/v1/session.projectUI', { sessionId: workerId })
-          .then((ui) => ui.pendingInputs?.length ?? 0)
-          .catch(() => -1)
-        if (pending >= 0 && sessionsBack === undefined) sessionsBack = Date.now()
         const line = JSON.stringify({
           runtime: health?.runtime?.state,
+          runtimeDetail: health?.runtime?.detail,
           launch: health?.launch?.detail,
           delivery: health?.delivery?.detail,
           assignments: stored?.assignments.map((item) => `${item.state}${item.startedAt ? ' started' : ''}`),
-          pending,
+          pending: projection.status === 'fulfilled' ? projection.value : undefined,
+          serviceError: service.status === 'rejected' ? String(service.reason) : undefined,
+          projectionError: projection.status === 'rejected' ? String(projection.reason) : undefined,
         })
         if (line !== last) timeline.push(`+${Date.now() - restarted} ms ${line}`)
         last = line
@@ -466,6 +481,7 @@ it('restart while busy: takes the waiting comment once within ten seconds of res
             `the worker's session could be projected again ${(sessionsBack ?? Number.NaN) - restarted} ms after it; ` +
             `the comment reached the worker's model ${(takenComment()?.at ?? Number.NaN) - restarted} ms after the restart`,
           ...timeline,
+          ...(back === undefined || sessionsBack === undefined ? [daemon.stderr().slice(-2000)] : []),
         ].join('\n'),
       )
     }
@@ -490,4 +506,4 @@ it('restart while busy: takes the waiting comment once within ten seconds of res
     await run?.stop()
     rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
-}, 480_000)
+}, 540_000)

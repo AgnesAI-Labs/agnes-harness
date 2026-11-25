@@ -17,7 +17,7 @@ import {
   WorkspaceIndex,
 } from '@agnes/daemon-foundation/storage/workspaces'
 import { resolveDocumentsDirectory, resolveWorkspaceDirectory } from '@agnes/host'
-import { ManagedChatRootError, prepareManagedChatRoot } from './managed-chat-root.js'
+import { ManagedChatRootError, prepareManagedChatRoot, privateManagedDirectory } from './managed-chat-root.js'
 
 /** Configured daemon/worker private boundaries; never infer the installation from process HOME. */
 export function managedChatPrivateRoots(input: {
@@ -90,14 +90,9 @@ export async function openWorkspaceCatalog(input: {
     const binding = bindings.get(key)
     return binding ? [binding] : []
   })
-  const requestedLegacy = join(input.dataDir, 'chats')
   // Do not create a missing historical directory, even when a binding still points to it.
-  let legacyRoot = requestedLegacy
-  try {
-    legacyRoot = await realpath(requestedLegacy)
-  } catch {
-    /* Stale historical rows remain unavailable. */
-  }
+  const dataDir = await realpath(input.dataDir).catch(() => input.dataDir)
+  const legacyRoot = join(dataDir, 'chats')
   const hasHistory =
     snapshot.some((binding) => binding.canonicalRoot === legacyRoot) ||
     input.legacySchedules?.some((schedule) => schedule.targetRoot === legacyRoot)
@@ -105,9 +100,11 @@ export async function openWorkspaceCatalog(input: {
   const authority = new ManagedChatAuthority(tables?.table('managed_chat_authority'), bindings, legacyRoot)
   let legacyDirectoryIdentity: string | null = null
   try {
-    const info = await lstat(legacyRoot, { bigint: true })
-    if (info.isDirectory() && !info.isSymbolicLink() && (await realpath(legacyRoot)) === legacyRoot)
-      legacyDirectoryIdentity = `${info.dev}:${info.ino}`
+    const dataDirInfo = await lstat(dataDir, { bigint: true })
+    const legacyInfo = await privateManagedDirectory(legacyRoot)
+    // A reboot can renumber the volume. A mount over just the historical child cannot inherit it.
+    if (dataDirInfo.isDirectory() && legacyInfo.dev === dataDirInfo.dev)
+      legacyDirectoryIdentity = `${legacyInfo.dev}:${legacyInfo.ino}`
   } catch {
     /* Missing history remains unavailable. */
   }
@@ -116,15 +113,16 @@ export async function openWorkspaceCatalog(input: {
     schedules: input.legacySchedules ?? [],
     legacyDirectoryIdentity,
   })
+  let currentDirectoryIdentity: string | undefined
   try {
-    roots.current = (
-      await prepareManagedChatRoot({
-        dataDir: input.dataDir,
-        privateRoots: protectedRoots,
-        documentsDirectory:
-          input.documentsDirectory ?? (() => resolveDocumentsDirectory(AbortSignal.timeout(6000))),
-      })
-    ).root
+    const current = await prepareManagedChatRoot({
+      dataDir: input.dataDir,
+      privateRoots: protectedRoots,
+      documentsDirectory:
+        input.documentsDirectory ?? (() => resolveDocumentsDirectory(AbortSignal.timeout(6000))),
+    })
+    roots.current = current.root
+    currentDirectoryIdentity = current.directoryIdentity
   } catch (error) {
     roots.currentError = { code: (error as { code?: string }).code ?? 'MANAGED_CHAT_ROOT_UNAVAILABLE' }
     if (error instanceof ManagedChatRootError && error.registeredRoot)
@@ -133,20 +131,20 @@ export async function openWorkspaceCatalog(input: {
   const resolve = async (path: string) => {
     if (roots.currentError && path === roots.current)
       throw new Error('registered current chats root failed verification')
-    if (path === legacyRoot) {
-      const info = await lstat(path, { bigint: true })
-      const expected = authority.legacyDirectoryIdentity
+    const directory = await resolveWorkspaceDirectory(path)
+    const root = path === legacyRoot || path === roots.current ? path : directory.path
+    if (root === legacyRoot || root === roots.current) {
+      const expected = root === legacyRoot ? authority.legacyDirectoryIdentity : currentDirectoryIdentity
+      const info = await lstat(root, { bigint: true })
       if (
         !info.isDirectory() ||
+        directory.path !== root ||
         info.isSymbolicLink() ||
-        (await realpath(path)) !== legacyRoot ||
-        !expected ||
-        !/^\d+:\d+$/.test(expected) ||
-        expected.slice(expected.indexOf(':') + 1) !== String(info.ino)
+        (await realpath(root)) !== root ||
+        expected !== `${info.dev}:${info.ino}`
       )
-        throw new Error('legacy chats root no longer matches its registered directory')
+        throw new Error('managed chats root no longer matches its registered directory')
     }
-    const directory = await resolveWorkspaceDirectory(path)
     if (roots.currentError && directory.path === roots.current)
       throw new Error('registered current chats root failed verification')
     return directory

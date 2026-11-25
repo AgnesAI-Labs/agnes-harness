@@ -44,7 +44,7 @@ The LLMSG entrypoint requires nonempty `AGH_CLOUD_API_BASE_URL` and `LLMSG_TRACK
 
 Use an HTTPS model gateway base in deployments. The base accepts HTTP(S) and can include an API path, such as `/v1`. Keep embedded credentials, queries and fragments out of the base. The plugin normalizes the trailing slash, appends `models` for GET and `chat/completions` for OpenAI-compatible POST/SSE, and uses the deployment Key as a bearer credential for both.
 
-**Before exposing B to clients, configure HTTPS/WSS** using B's [publication TLS settings](#publication-and-authorization-api) or an HTTPS ingress that supports WebSocket upgrades. When using an ingress, keep B's backend listener private. Keep the endpoint closed to remote clients during setup and verify HTTPS and WSS from your deployment network before opening it. Limit plain HTTP/WS client connections to isolated tests on a trusted network with test Keys.
+**Before exposing B to clients, configure HTTPS/WSS** using B's [publication TLS settings](#publication-and-authorization-api) or an HTTPS ingress that supports WebSocket upgrades. When using an ingress, keep B's backend listener private. Keep the endpoint closed to remote clients during setup and verify HTTPS and WSS from your deployment network before opening it. Direct authorization sends stored Keys only to HTTPS origins or to the loopback hosts `127.0.0.1`, `localhost`, and `[::1]` for local tests.
 
 Place the operator-supplied plugin archive in the current directory as `agh-cloud-plugin.tgz` or use its actual path. Use the matching installed `agh` CLI in either shell. From a built source checkout, replace `agh` with `mise exec -- node agnes.mjs`. Review the source and capabilities before confirming installation, trust and activation. Run both commands under the same home, profile and service environment.
 
@@ -71,6 +71,8 @@ A's daemon sends `POST /llmsg/api/agh/connection` with body `{}` and the managed
 The workbench address retains the local page or settings section and the workspace selected for a local draft or named by a Skills link. Reload restores that destination. Browser Back and Forward revisit the local destination or cloud conversation in the address. Reloading a new cloud conversation returns to its draft view. Returning to Local restores the page you left, including after reloading while Cloud is selected. Reconnecting to the same cloud deployment restores its selected conversation.
 
 Disconnecting clears the active connection while preserving the stored credential. Local sessions remain available during cloud interruption. Browser private-network, mixed-content and certificate rules apply. Use a compatible secure endpoint for HTTPS pages.
+
+Deleting a selected credential on A from the Web UI, CLI, or SDK disconnects the affected Cloud workbench tabs and revokes their relay access.
 
 ## Publication and authorization API
 

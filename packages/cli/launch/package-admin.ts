@@ -5,6 +5,7 @@ import type {
   ChildEnginesSaveParams,
   ClientModuleEffectCallParams,
   ClientModuleServiceCallParams,
+  DaemonNotice,
   PackageCatalogGetParams,
   PackageCatalogListParams,
   PackageDisableParams,
@@ -148,6 +149,8 @@ export function localPackageAdmin(
   const authorizeCloud = shareCloudAuthorization(async (input: AdminCloudAuthorize, signal) => {
     const deadline = Date.now() + CLOUD_AUTHORIZATION_TIMEOUT_MS + 5_000
     if (backend.link && !(await backend.link.ensure())) throw Error('cloud authorization unavailable')
+    // Listen for revocations before a dedicated connection can issue a grant.
+    await client.initialize()
     signal.throwIfAborted()
     // The RPC signal cancels the SDK wait. Closing this dedicated connection also cancels the
     // daemon handler's lifecycle signal without interrupting unrelated admin calls.
@@ -169,8 +172,25 @@ export function localPackageAdmin(
     origin,
     (input, signal) => authorizeCloud(input, AbortSignal.any([signal, cloudLifetime.signal])),
     (origin, result, binding) =>
-      cloudGateway.register(origin, result, () => authorizeCloud(binding, cloudLifetime.signal)),
+      cloudGateway.register(
+        origin,
+        result,
+        (signal) => authorizeCloud(binding, AbortSignal.any([signal, cloudLifetime.signal])),
+        binding.credentialRef,
+      ),
   )
+  const stopCloudNotices = client.on('notice', (payload) => {
+    const notice = payload as DaemonNotice | undefined
+    if (notice?.kind !== 'credential_deleted' || typeof notice.detail?.id !== 'string') return
+    handleCloudAuthorization.revokeCredential(notice.detail.id)
+    cloudGateway.revokeCredential(notice.detail.id)
+  })
+  const stopCloudConnection = client.on('connectionStateChanged', (state) => {
+    if (state !== 'reconnecting' && state !== 'closed') return
+    // A notice may have been lost. No existing grant or exchange survives that gap.
+    handleCloudAuthorization.revokeAll()
+    cloudGateway.revokeAll()
+  })
   // createAdminSurface validates each schema before dispatching this fixed typed mapping.
   const invoke = async (action: AdminSurfaceAction, params: unknown): Promise<unknown> => {
     await initialize()
@@ -734,6 +754,8 @@ export function localPackageAdmin(
       return true
     },
     async close(): Promise<void> {
+      stopCloudConnection()
+      stopCloudNotices()
       cloudLifetime.abort()
       cloudGateway.close()
       surface.close()

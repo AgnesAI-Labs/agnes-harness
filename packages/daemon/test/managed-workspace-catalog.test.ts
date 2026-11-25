@@ -2,15 +2,30 @@ import { mkdir, mkdtemp, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { MemorySessionWorkspaces } from '@agnes/daemon-foundation/storage/lister'
-import { expect, test } from 'vitest'
+import { createPrivateDirectorySync } from '@agnes/system-node'
+import { expect, test, vi } from 'vitest'
 import { openWorkspaceCatalog } from '../src/supervisor/workspace-catalog.js'
+
+const deviceDrift = vi.hoisted(() => new Set<string>())
+vi.mock('node:fs/promises', async (original) => {
+  const fs = await original<typeof import('node:fs/promises')>()
+  return {
+    ...fs,
+    lstat: async (...args: Parameters<typeof fs.lstat>) => {
+      const info = await fs.lstat(...args)
+      if (typeof args[0] === 'string' && deviceDrift.has(args[0]) && typeof info.dev === 'bigint')
+        info.dev += 3n
+      return info
+    },
+  }
+})
 
 test('schedule-only legacy remains listed when Documents fails and no old directory is recreated', async () => {
   const base = await mkdtemp(join(tmpdir(), 'managed-catalog-'))
   const dataDir = join(await realpath(base), 'data')
   await mkdir(dataDir)
   const legacy = join(dataDir, 'chats')
-  await mkdir(legacy)
+  createPrivateDirectorySync(legacy)
   const catalog = await openWorkspaceCatalog({
     dataDir,
     ownerHome: await realpath(base),
@@ -28,17 +43,17 @@ test('schedule-only legacy remains listed when Documents fails and no old direct
   await expect(catalog.authorizeAndBind('ordinary', legacy)).rejects.toThrow()
 })
 
-test('a replacement legacy directory cannot inherit historical file authority', async () => {
+test('refreshes the legacy identity only when the parent volume renumbers with it at startup', async () => {
   const { sqliteTables } = await import('../../daemon-foundation/test/sqlite-tables.js')
   const { WorkspaceBindingIndex, WorkspaceIndex, workspaceIdFor } = await import(
     '@agnes/daemon-foundation/storage/workspaces'
   )
-  const { rename } = await import('node:fs/promises')
+  const { lstat, rename } = await import('node:fs/promises')
   const base = await mkdtemp(join(tmpdir(), 'managed-catalog-'))
   const dataDir = join(await realpath(base), 'data')
   await mkdir(dataDir)
   const legacy = join(dataDir, 'chats')
-  await mkdir(legacy)
+  createPrivateDirectorySync(legacy)
   const tables = sqliteTables()
   new WorkspaceIndex(tables.table('workspace_registry')).put(
     { path: legacy, name: 'chats' },
@@ -63,26 +78,38 @@ test('a replacement legacy directory cannot inherit historical file authority', 
   }
   const catalog = await openWorkspaceCatalog(input)
   expect((await catalog.restoreBinding('old')).legacyChatReadGrant?.root).toBe(legacy)
-  const { lstat } = await import('node:fs/promises')
   const legacyInfo = await lstat(legacy, { bigint: true })
+  const currentIdentity = `${legacyInfo.dev}:${legacyInfo.ino}`
+  const rebootIdentity = `${legacyInfo.dev + 3n}:${legacyInfo.ino}`
   const authorityTable = tables.table('managed_chat_authority')
-  const row = authorityTable.get<{ payload: string }>(
-    'SELECT payload FROM managed_chat_authority WHERE id = 1',
-  )
-  if (!row) throw Error('missing managed_chat_authority row')
-  authorityTable.exec('UPDATE managed_chat_authority SET payload = ? WHERE id = 1', [
-    JSON.stringify({
-      ...(JSON.parse(row.payload) as Record<string, unknown>),
-      legacyDirectoryIdentity: `${legacyInfo.dev + 3n}:${legacyInfo.ino}`,
-    }),
-  ])
-  const afterDevDrift = await openWorkspaceCatalog(input)
-  expect((await afterDevDrift.restoreBinding('old')).legacyChatReadGrant?.root).toBe(legacy)
-  expect((await afterDevDrift.list()).items).toMatchObject([
-    { path: legacy, kind: 'chats', managedRole: 'legacy', available: true },
-  ])
+  const recorded = () =>
+    JSON.parse(
+      authorityTable.get<{ payload: string }>('SELECT payload FROM managed_chat_authority WHERE id = 1')
+        ?.payload ?? '{}',
+    )
+  expect(recorded()).toMatchObject({ legacyDirectoryIdentity: currentIdentity })
+  deviceDrift.add(legacy)
+  try {
+    // A foreign filesystem replaces only the child, including on a fresh daemon boot.
+    const mounted = await openWorkspaceCatalog(input)
+    await expect(mounted.restoreBinding('old')).rejects.toThrow()
+    expect((await mounted.list()).items).toMatchObject([
+      { path: legacy, kind: 'chats', managedRole: 'legacy', available: false },
+    ])
+    expect(recorded()).toMatchObject({ legacyDirectoryIdentity: currentIdentity })
+    // A reboot renumbers the data directory and its historical child together.
+    deviceDrift.add(dataDir)
+    const restarted = await openWorkspaceCatalog(input)
+    expect((await restarted.restoreBinding('old')).legacyChatReadGrant?.directoryIdentity).toBe(
+      rebootIdentity,
+    )
+    expect(recorded()).toMatchObject({ legacyDirectoryIdentity: rebootIdentity })
+    await expect(catalog.restoreBinding('old')).rejects.toThrow()
+  } finally {
+    deviceDrift.clear()
+  }
   await rename(legacy, `${legacy}-saved`)
-  await mkdir(legacy)
+  createPrivateDirectorySync(legacy)
   await expect(catalog.restoreBinding('old')).rejects.toThrow()
   const reopened = await openWorkspaceCatalog(input)
   await expect(reopened.restoreBinding('old')).rejects.toThrow()

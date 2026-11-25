@@ -332,3 +332,65 @@ test('credentials create inline, replace in place, rename and protect referenced
   expect(leakedResponses.some(Boolean)).toBe(false)
   expect(leakedConsole.some(Boolean)).toBe(false)
 })
+
+test('a credential deleted through the daemon SDK disconnects the Cloud workbench in both tabs', async ({
+  page,
+  context,
+  runtime,
+}) => {
+  const client = await runtime.connect()
+  const { id } = await client.credentials.create({ label: 'Cloud fixture', value: 'synthetic-cloud-key' })
+  const other = await client.credentials.create({ label: 'Unrelated fixture', value: 'synthetic-other-key' })
+  const remote = 'http://127.0.0.1:1'
+  const binding = `agnes.cloud.credential.v1:${remote}`
+  await preferences(page)
+  await page.goto(runtime.url)
+  const cloudOrigin = await page.locator('#agnes-config').getAttribute('data-cloud-origin')
+  expect(cloudOrigin).toBeTruthy()
+  await context.route(
+    (url) => url.origin === cloudOrigin && url.searchParams.get('remote') === remote,
+    (route) =>
+      route.fulfill({
+        contentType: 'text/html',
+        body: `<!doctype html><p>Cloud fixture</p><script>
+        parent.postMessage({
+          type: 'agh.backend.frame/v1',
+          kind: 'state',
+          snapshot: { ready: true, connected: true, rows: [], activity: [], more: false }
+        }, ${JSON.stringify(runtime.url)})
+      </script>`,
+      }),
+  )
+  await page.evaluate(
+    ({ id, remote, binding }) => {
+      localStorage.setItem('agnes.cloud.origin.v1', remote)
+      localStorage.setItem(binding, id)
+    },
+    { id, remote, binding },
+  )
+  const second = await context.newPage()
+  const workbench = new URL(runtime.url)
+  workbench.searchParams.set('remote', remote)
+  try {
+    for (const tab of [page, second]) {
+      const credentials = tab.waitForResponse(
+        (response) => new URL(response.url()).pathname === '/admin/api/credentials' && response.ok(),
+      )
+      await tab.goto(workbench.href)
+      await credentials
+      await expect(
+        tab.getByTestId('backend-frame-cloud').contentFrame().getByText('Cloud fixture'),
+      ).toBeVisible()
+    }
+    await client.credentials.delete({ id: other.id })
+    await expect(page.getByTestId('backend-frame-cloud')).toHaveCount(1)
+    await expect(second.getByTestId('backend-frame-cloud')).toHaveCount(1)
+    await client.credentials.delete({ id })
+    for (const tab of [page, second]) {
+      await expect(tab.getByTestId('backend-frame-cloud')).toHaveCount(0)
+      expect(await tab.evaluate((key) => localStorage.getItem(key), binding)).toBeNull()
+    }
+  } finally {
+    await second.close()
+  }
+})

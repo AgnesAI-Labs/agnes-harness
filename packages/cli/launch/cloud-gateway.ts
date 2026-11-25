@@ -4,6 +4,7 @@ import {
   type IncomingMessage,
   type OutgoingHttpHeaders,
   type ServerResponse,
+  STATUS_CODES,
 } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { Duplex } from 'node:stream'
@@ -59,9 +60,11 @@ export function createCloudGateway(ownerOrigin?: string) {
     trafficToken: string
     expiresAt: number
     epoch: number
-    refresh?: () => Promise<AdminCloudAuthorization>
+    credentialRef?: string
+    lifetime: AbortController
+    refresh?: (signal: AbortSignal) => Promise<AdminCloudAuthorization>
     refreshing?: Promise<void>
-    checking?: Promise<void>
+    checking?: { result: Promise<void>; refusals: Set<() => void> }
     rejected: boolean
     retryAt: number
     failures: number
@@ -72,15 +75,24 @@ export function createCloudGateway(ownerOrigin?: string) {
   const grants = new Map<string, Grant>()
   const requests = new Set<ClientRequest>()
   let closed = false
-  const revoke = (prefix: string, except?: () => void) => {
+  const revoke = (prefix: string, except?: ReadonlySet<() => void>) => {
     const grant = grants.get(prefix)
     grants.delete(prefix)
     if (grant) grant.epoch += 1
+    grant?.lifetime.abort()
     grant?.cancelTimer?.()
-    for (const abort of [...(grant?.exchanges ?? [])]) if (abort !== except) abort()
+    for (const abort of [...(grant?.exchanges ?? [])]) if (!except?.has(abort)) abort()
     for (const socket of [...(grant?.sockets ?? [])]) socket.destroy()
   }
-  const register = (origin: string, result: AdminCloudAuthorization, refresh?: Grant['refresh']) => {
+  const revokeAll = () => {
+    for (const prefix of grants.keys()) revoke(prefix)
+  }
+  const register = (
+    origin: string,
+    result: AdminCloudAuthorization,
+    refresh?: Grant['refresh'],
+    credentialRef?: string,
+  ) => {
     if (closed) throw Error('cloud gateway closed')
     if (!validateMethod('_agnes/v1/admin.cloud.authorize', 'result', result).ok)
       throw Error('invalid authorization')
@@ -99,6 +111,7 @@ export function createCloudGateway(ownerOrigin?: string) {
       existing &&
       !existing.rejected &&
       existing.origin === target.origin &&
+      existing.credentialRef === credentialRef &&
       existing.trafficToken === result.trafficToken &&
       existing.expiresAt === result.expiresAt
     ) {
@@ -115,6 +128,8 @@ export function createCloudGateway(ownerOrigin?: string) {
       trafficToken: result.trafficToken,
       expiresAt: result.expiresAt,
       epoch: 0,
+      lifetime: new AbortController(),
+      ...(credentialRef !== undefined ? { credentialRef } : {}),
       ...(refresh ? { refresh } : {}),
       rejected: false,
       retryAt: 0,
@@ -148,12 +163,12 @@ export function createCloudGateway(ownerOrigin?: string) {
       return null
     return { grant, prefix, url: new URL(`${url.pathname}${url.search}`, grant.origin) }
   }
-  const rejectGrant = (prefix: string, grant: Grant, except?: () => void) => {
+  const rejectGrant = (prefix: string, grant: Grant, except: ReadonlySet<() => void>) => {
     if (!grant.refresh) return revoke(prefix, except)
     grant.epoch += 1
     grant.rejected = true
     grant.trafficToken = ''
-    for (const abort of [...grant.exchanges]) if (abort !== except) abort()
+    for (const abort of [...grant.exchanges]) if (!except.has(abort)) abort()
     for (const socket of [...grant.sockets]) socket.destroy()
   }
   const renew = async (prefix: string, grant: Grant) => {
@@ -161,7 +176,7 @@ export function createCloudGateway(ownerOrigin?: string) {
     if (!grant.refresh || grant.retryAt > Date.now()) throw Error('cloud authorization unavailable')
     grant.refreshing = (async () => {
       try {
-        const next = await grant.refresh?.()
+        const next = await grant.refresh?.(grant.lifetime.signal)
         if (closed || grants.get(prefix) !== grant || grant.expiresAt <= Date.now()) throw Error('revoked')
         if (!next?.trafficToken || !validateMethod('_agnes/v1/admin.cloud.authorize', 'result', next).ok)
           throw Error('invalid authorization')
@@ -185,10 +200,15 @@ export function createCloudGateway(ownerOrigin?: string) {
     request.once('close', () => requests.delete(request))
     return request
   }
-  const checkForbidden = (prefix: string, grant: Grant, except?: () => void): Promise<void> => {
-    if (grant.checking) return grant.checking
+  const checkRejection = (prefix: string, grant: Grant, epoch: number, refusal: () => void) => {
+    if (grants.get(prefix) !== grant || grant.epoch !== epoch || grant.rejected) return
+    if (grant.checking) {
+      grant.checking.refusals.add(refusal)
+      return grant.checking.result
+    }
+    const refusals = new Set([refusal])
     const trafficToken = grant.trafficToken
-    grant.checking = new Promise<number | undefined>((resolve) => {
+    const result = new Promise<number | undefined>((resolve) => {
       // A stream/operation can be refused while the deployment credential remains valid.
       // Verify the fixed owner-info endpoint rather than trusting an error body or proxy header.
       const probe = own(
@@ -196,7 +216,7 @@ export function createCloudGateway(ownerOrigin?: string) {
           new URL(prefix + REMOTE_FRONTEND_INFO, grant.origin),
           {
             headers: { origin: grant.origin, 'e2b-traffic-access-token': trafficToken },
-            signal: AbortSignal.timeout(3000),
+            signal: AbortSignal.any([grant.lifetime.signal, AbortSignal.timeout(3000)]),
           },
           (response) => {
             response.resume()
@@ -211,15 +231,17 @@ export function createCloudGateway(ownerOrigin?: string) {
       .then((status) => {
         if (
           grants.get(prefix) === grant &&
+          grant.epoch === epoch &&
           grant.trafficToken === trafficToken &&
           (status === 401 || status === 403)
         )
-          rejectGrant(prefix, grant, except)
+          rejectGrant(prefix, grant, refusals)
       })
       .finally(() => {
         delete grant.checking
       })
-    return grant.checking
+    grant.checking = { result, refusals }
+    return result
   }
   const headers = (request: IncomingMessage, origin: string, trafficToken: string, upgrade = false) => {
     const result: Record<string, string> = { origin, 'e2b-traffic-access-token': trafficToken }
@@ -281,7 +303,7 @@ export function createCloudGateway(ownerOrigin?: string) {
       }
       if (closed || request.aborted || response.destroyed) return true
       if (grants.get(route.prefix) !== route.grant || route.grant.expiresAt <= Date.now()) {
-        revoke(route.prefix)
+        if (grants.get(route.prefix) === route.grant) revoke(route.prefix)
         request.resume()
         response.writeHead(401, { 'cache-control': 'no-store', ...ownerCors }).end()
         return true
@@ -297,6 +319,7 @@ export function createCloudGateway(ownerOrigin?: string) {
           .end()
         return true
       }
+      const observedEpoch = route.grant.epoch
       let upstream: ClientRequest | undefined
       const abort = () => {
         cancelExpiry()
@@ -317,8 +340,8 @@ export function createCloudGateway(ownerOrigin?: string) {
             incoming.on('error', () => response.destroy())
             incoming.once('aborted', () => response.destroy())
             const status = incoming.statusCode ?? 502
-            if (status === 401) rejectGrant(route.prefix, route.grant, abort)
-            else if (status === 403) await checkForbidden(route.prefix, route.grant, abort)
+            if (status === 401 || status === 403)
+              await checkRejection(route.prefix, route.grant, observedEpoch, abort)
             if (response.destroyed) {
               incoming.resume()
               return
@@ -389,7 +412,7 @@ export function createCloudGateway(ownerOrigin?: string) {
       }
       if (closed || socket.destroyed) return true
       if (grants.get(route.prefix) !== route.grant || route.grant.expiresAt <= Date.now()) {
-        revoke(route.prefix)
+        if (grants.get(route.prefix) === route.grant) revoke(route.prefix)
         socket.destroy()
         return true
       }
@@ -453,13 +476,20 @@ export function createCloudGateway(ownerOrigin?: string) {
         socket.pipe(peer).pipe(socket)
       })
       upstream.on('response', async (incoming) => {
-        cancelExpiry()
-        route.grant.exchanges.delete(abortUpgrade)
         incoming.on('error', () => socket.destroy())
         incoming.once('aborted', () => socket.destroy())
+        const status = incoming.statusCode
+        if (status === 401 || status === 403) {
+          await checkRejection(route.prefix, route.grant, observedEpoch, abortUpgrade)
+          if (!socket.destroyed) {
+            socket.write(
+              `HTTP/1.1 ${status} ${STATUS_CODES[status]}\r\nConnection: close\r\nCache-Control: no-store\r\nContent-Type: text/plain\r\n\r\n`,
+            )
+            incoming.pipe(socket)
+            return
+          }
+        }
         incoming.resume()
-        if (incoming.statusCode === 401) rejectGrant(route.prefix, route.grant, abortUpgrade)
-        else if (incoming.statusCode === 403) await checkForbidden(route.prefix, route.grant, abortUpgrade)
         socket.destroy()
       })
       upstream.on('error', () => abortUpgrade())
@@ -471,9 +501,13 @@ export function createCloudGateway(ownerOrigin?: string) {
       upstream.end()
       return true
     },
+    revokeCredential(credentialRef: string) {
+      for (const [prefix, grant] of grants) if (grant.credentialRef === credentialRef) revoke(prefix)
+    },
+    revokeAll,
     close() {
       closed = true
-      for (const prefix of grants.keys()) revoke(prefix)
+      revokeAll()
       for (const request of requests) request.destroy()
       requests.clear()
     },

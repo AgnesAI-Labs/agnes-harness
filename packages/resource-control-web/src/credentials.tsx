@@ -64,9 +64,10 @@ function References({ item }: { item: AdminCredentialMetadata }) {
 }
 const defaultApi = new CredentialsApi()
 
-function referenceKey(item: AdminCredentialMetadata) {
+function referenceKey(item: AdminCredentialMetadata, cloudRef: string | undefined) {
   return item.references
     .map(({ kind, profile, configId }) => JSON.stringify([kind, profile, configId]))
+    .concat(item.id === cloudRef ? ['browser-cloud'] : [])
     .sort()
     .join('\n')
 }
@@ -94,7 +95,10 @@ export function CredentialsPage({
   const [deleting, setDeleting] = useState(false)
   const currentRemoval = removalTarget && items?.find((item) => item.id === removalTarget.id)
   const removing = currentRemoval ?? removalTarget
-  const referenceSet = currentRemoval && referenceKey(currentRemoval)
+  const cloudRef = useSyncExternalStore(cloudCredentialUsage.subscribe, cloudCredentialUsage.read)
+  const cloudInUse = !!removing && cloudRef === removing.id
+  const used = !!removing && (removing.references.length > 0 || cloudInUse)
+  const referenceSet = currentRemoval && referenceKey(currentRemoval, cloudRef)
   const confirmed = !listError && referenceSet !== undefined && referenceSet === confirmedReferences
   const removalError =
     deleteError ?? (removing && !currentRemoval && items && !deleting ? 'missing' : undefined)
@@ -148,20 +152,26 @@ export function CredentialsPage({
   }, [refreshList])
   async function remove() {
     if (!currentRemoval || blocked || deleting || listLoading) return
-    const { id, references } = currentRemoval
+    const { id } = currentRemoval
+    if (cloudCredentialUsage.read() === id && !confirmed) return
     const finish = beginCredentialMutation(id)
     if (!finish) return
     setRemovalTarget(currentRemoval)
     setDeleting(true)
     setDeleteError(undefined)
-    const force = references.length > 0 && confirmed
+    const force = used && confirmed
     try {
       if (force) {
         // Recheck the exact list the user acknowledged before sending a destructive request.
         const latest = await refreshList()
         if (!lifetime.current) return
         const target = latest?.items.find((item) => item.id === id)
-        if (!latest || latest.signal.aborted || !target || referenceKey(target) !== confirmedReferences) {
+        if (
+          !latest ||
+          latest.signal.aborted ||
+          !target ||
+          referenceKey(target, cloudCredentialUsage.read()) !== confirmedReferences
+        ) {
           setConfirmedReferences(undefined)
           return
         }
@@ -181,7 +191,7 @@ export function CredentialsPage({
         setItems((current) => current?.filter((item) => item.id !== id))
         setRemovalTarget(undefined)
       }
-      window.dispatchEvent(new Event(CREDENTIALS_CHANGED))
+      window.dispatchEvent(new CustomEvent(CREDENTIALS_CHANGED, { detail: { mode: 'delete', id } }))
     } catch (cause) {
       if (!lifetime.current) return
       const reason = credentialFailure(cause)
@@ -367,10 +377,17 @@ export function CredentialsPage({
                 data-testid="credential-delete-confirm"
                 appearance="primary"
                 danger
-                disabled={!currentRemoval || deleting || listLoading || !!blocked || pending.has(removing.id)}
+                disabled={
+                  !currentRemoval ||
+                  deleting ||
+                  listLoading ||
+                  !!blocked ||
+                  pending.has(removing.id) ||
+                  (cloudInUse && !confirmed)
+                }
                 onClick={() => void remove()}
               >
-                {t(removing.references.length && confirmed ? 'force' : 'delete')}
+                {t(used && confirmed ? 'force' : 'delete')}
               </Button>
             </>
           }
@@ -387,7 +404,7 @@ export function CredentialsPage({
               {t(`error.${removalError}`)}
             </Banner>
           )}
-          {removing.references.length > 0 && (
+          {used && (
             <SettingsCheckbox
               data-testid="credential-force-confirm"
               label={t('forceConfirm')}

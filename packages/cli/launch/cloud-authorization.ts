@@ -65,7 +65,8 @@ export function cloudAuthorizationRelay(
   invoke: Authorize,
   register?: (origin: string, result: AdminCloudAuthorization, input: AdminCloudAuthorize) => boolean,
 ) {
-  return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
+  const pending = new Map<AbortController, { ref: string; revoke(reason: string): void }>()
+  const handle = async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     const url = new URL(request.url ?? '/', origin)
     if (url.pathname !== CLOUD_AUTHORIZATION_PATH) return false
     const reply = (status: number, value: unknown) => {
@@ -111,7 +112,15 @@ export function cloudAuthorizationRelay(
       const input: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
       if (!validateMethod('_agnes/v1/admin.cloud.authorize', 'params', input).ok) throw Error('input')
       if (controller.signal.aborted) return true
-      const result = await invoke(input as AdminCloudAuthorize, controller.signal)
+      const bindingInput = input as AdminCloudAuthorize
+      pending.set(controller, {
+        ref: bindingInput.credentialRef,
+        revoke(reason) {
+          abort()
+          reply(400, { error: reason })
+        },
+      })
+      const result = await invoke(bindingInput, controller.signal)
       if (!validateMethod('_agnes/v1/admin.cloud.authorize', 'result', result).ok) throw Error('response')
       if (controller.signal.aborted || request.aborted || response.destroyed || response.writableEnded)
         return true
@@ -147,6 +156,7 @@ export function cloudAuthorizationRelay(
             : 'CLOUD_AUTH_UNAVAILABLE',
       })
     } finally {
+      pending.delete(controller)
       request.off('aborted', abort)
       request.off('close', requestClosed)
       request.off('error', abort)
@@ -155,4 +165,13 @@ export function cloudAuthorizationRelay(
     }
     return true
   }
+  return Object.assign(handle, {
+    revokeCredential(credentialRef: string) {
+      for (const exchange of pending.values())
+        if (exchange.ref === credentialRef) exchange.revoke('CONFIG_CREDENTIAL_NOT_FOUND')
+    },
+    revokeAll() {
+      for (const exchange of pending.values()) exchange.revoke('CLOUD_AUTH_UNAVAILABLE')
+    },
+  })
 }

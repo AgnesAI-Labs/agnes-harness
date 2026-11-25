@@ -27,7 +27,7 @@ it('resolves managed cloud credentials privately, refuses rejected/missing crede
   const scratch = await mkdtemp(join(tmpdir(), 'agh-cloud-credential-'))
   const store = createCredentialStore({ root: join(scratch, 'home') })
   const id = 'secret://generic/11111111-1111-1111-1111-111111111111'
-  const input = { origin: 'http://cloud.fixture:8443', credentialRef: id }
+  const input = { origin: 'https://cloud.fixture:8443', credentialRef: id }
   vi.stubEnv('AGH_LLMSG_API_BASE_URL', 'https://broker.fixture')
   const key = 'agh_sk_synthetic-cloud-key'
   const token = `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`
@@ -38,13 +38,27 @@ it('resolves managed cloud credentials privately, refuses rejected/missing crede
     })
     await store.putGeneric(id, key, { label: 'Cloud fixture', createdAt: new Date().toISOString() })
     const result = await authorizeCloudConnection(input, store, async (url, init) => {
-      expect(String(url)).toBe('http://cloud.fixture:8443/_agnes/remote-frontend/auth')
+      expect(String(url)).toBe('https://cloud.fixture:8443/_agnes/remote-frontend/auth')
       expect(JSON.parse(String(init?.body))).toEqual({ key })
       expect(init?.redirect).toBe('error')
       return Response.json({ token, expiresAt, key: 'must-not-be-projected' })
     })
     expect(result).toEqual({ token, expiresAt })
     expect(JSON.stringify(result)).not.toContain(key)
+    for (const host of ['127.0.0.1', 'localhost', '[::1]']) {
+      const origin = `http://${host}:8443`
+      await expect(
+        authorizeCloudConnection({ ...input, origin }, store, async (url) => {
+          expect(String(url)).toBe(`${origin}/_agnes/remote-frontend/auth`)
+          return Response.json({ token, expiresAt })
+        }),
+      ).resolves.toEqual({ token, expiresAt })
+    }
+    const cleartext = vi.fn<typeof fetch>()
+    await expect(
+      authorizeCloudConnection({ ...input, origin: 'http://cloud.fixture:8443' }, store, cleartext),
+    ).rejects.toMatchObject({ data: { reason: 'CLOUD_CONNECTION_INVALID' } })
+    expect(cleartext).not.toHaveBeenCalled()
     const sandbox = { ...input, origin: 'https://8443-fixture.ap-shanghai.tencentags.com' }
     const addresses: string[] = []
     const platform = await authorizeCloudConnection(sandbox, store, async (url, init) => {
@@ -217,6 +231,57 @@ it('resolves managed cloud credentials privately, refuses rejected/missing crede
   }
 })
 
+it.each(['declared', 'chunked', 'malformed', 'refused', 'unavailable', 'cancelled'] as const)(
+  'bounds the cloud authorization response (%s)',
+  async (kind) => {
+    const credentialRef = 'secret://generic/11111111-1111-1111-1111-111111111111'
+    const store = {
+      read: async () => ({
+        version: 1 as const,
+        kind: 'api-key' as const,
+        provider: 'generic',
+        value: 'fixture',
+        label: 'fixture',
+      }),
+    }
+    const cancellation = new AbortController()
+    const cancel = vi.fn()
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        start(controller) {
+          if (kind === 'chunked') {
+            controller.enqueue(new Uint8Array(8192))
+            controller.enqueue(new Uint8Array(8193))
+          }
+        },
+        pull() {
+          if (kind === 'cancelled') cancellation.abort()
+        },
+        cancel,
+      },
+      kind === 'cancelled' ? { highWaterMark: 0 } : undefined,
+    )
+    const response =
+      kind === 'malformed'
+        ? new Response('{')
+        : new Response(stream, {
+            status: kind === 'refused' ? 401 : kind === 'unavailable' ? 500 : 200,
+            ...(kind === 'declared' ? { headers: { 'content-length': '16385' } } : {}),
+          })
+    await expect(
+      authorizeCloudConnection(
+        { credentialRef, origin: 'https://cloud.fixture' },
+        store,
+        async () => response,
+        cancellation.signal,
+      ),
+    ).rejects.toMatchObject({
+      data: { reason: kind === 'refused' ? 'CONFIG_CREDENTIAL_REJECTED' : 'CONFIG_AUTH_UNAVAILABLE' },
+    })
+    if (kind !== 'malformed') expect(cancel).toHaveBeenCalledOnce()
+  },
+)
+
 it('bounds transient cloud authorization retries across both stages and admits slow successful responses', async () => {
   vi.useFakeTimers()
   const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
@@ -361,11 +426,13 @@ it.each(['full-access', 'workspace-write'])(
     const home = join(scratch, 'home')
     const actor = { id: 'owner', org: 'local', role: 'owner', deptPath: [], attrs: {} }
     try {
+      const onDeleted = vi.fn()
       const admin = createCredentialAdmin({
         home,
         dataDir: join(home, 'data'),
         configurations: async () => [],
         writableStore: async () => true,
+        onDeleted,
       })
       const created = (await admin.call(
         'create',
@@ -379,6 +446,7 @@ it.each(['full-access', 'workspace-write'])(
       })
       if (policy === 'full-access') {
         await expect(change).resolves.toEqual({})
+        expect(onDeleted).toHaveBeenCalledExactlyOnceWith(created.id)
         expect(await admin.call('list', {}, actor.id)).toEqual({ items: [] })
         const audit = (await readFile(join(home, 'data/audit/credentials.jsonl'), 'utf8'))
           .trim()
@@ -395,6 +463,7 @@ it.each(['full-access', 'workspace-write'])(
           data: { reason: 'CONFIG_CREDENTIAL_CONFIRMATION_REQUIRED' },
         })
         expect(await admin.call('list', {}, actor.id)).toMatchObject({ items: [{ id: created.id }] })
+        expect(onDeleted).not.toHaveBeenCalled()
       }
     } finally {
       await rm(scratch, { recursive: true, force: true })

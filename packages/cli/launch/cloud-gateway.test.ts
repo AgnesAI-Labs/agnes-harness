@@ -228,13 +228,14 @@ it('admits streams across the real cloud/publication/proxy chain without trustin
     })
     const local = await listen(server)
     const target = 'https://8443-fixture.ap-shanghai.tencentags.com'
+    const credentialRef = 'secret://generic/11111111-1111-1111-1111-111111111111'
     expect((await fetch(local + prefix + REMOTE_FRONTEND_INFO)).status).toBe(401)
     const unauthOwnerProbe = await fetch(local + prefix + REMOTE_FRONTEND_INFO, {
       headers: { origin: ownerOrigin, 'sec-fetch-site': 'same-site' },
     })
     expect(unauthOwnerProbe.status).toBe(401)
     expect(unauthOwnerProbe.headers.get('access-control-allow-origin')).toBe(ownerOrigin)
-    gateway.register(target, { ...grant, trafficToken: 'synthetic-platform-proof' })
+    gateway.register(target, { ...grant, trafficToken: 'synthetic-platform-proof' }, undefined, credentialRef)
     const ownerInfo = await fetch(local + prefix + REMOTE_FRONTEND_INFO, {
       headers: { origin: ownerOrigin, 'sec-fetch-site': 'same-site' },
     })
@@ -334,7 +335,15 @@ it('admits streams across the real cloud/publication/proxy chain without trustin
     expect((await fetch(local + prefix + '/api/write', { method: 'POST', body: 'write-once' })).status).toBe(
       401,
     )
-    await closed
+    expect(main.readyState).toBe(WebSocket.OPEN)
+    expect(writes).toBe(1)
+    gateway.revokeCredential('secret://generic/22222222-2222-2222-2222-222222222222')
+    expect((await fetch(local + prefix + REMOTE_FRONTEND_INFO)).status).toBe(200)
+    const streamClosed = new Promise<void>((resolve) =>
+      stream.addEventListener('close', () => resolve(), { once: true }),
+    )
+    gateway.revokeCredential(credentialRef)
+    await Promise.all([closed, streamClosed])
     expect(
       (await fetch(local + prefix + '/api/write', { method: 'POST', body: 'second-user-request' })).status,
     ).toBe(401)
@@ -367,6 +376,8 @@ it.each([200, 502, 503])(
     const policies = ["default-src 'none'; sandbox allow-scripts", "connect-src 'none'; object-src 'none'"]
     let status = 200
     let abortForbidden = false
+    let deniedStatus = 403
+    let finishParallel: (() => void) | undefined
     const received: {
       token: string
       cookie: string | undefined
@@ -381,6 +392,10 @@ it.each([200, 502, 503])(
         path: request.url,
       })
       request.resume()
+      if (request.url === prefix + '/api/parallel') {
+        finishParallel = () => response.writeHead(200).end('parallel result')
+        return
+      }
       const admitted =
         request.url !== prefix + PLUGIN_STREAM_OPEN_PATH || request.headers['x-agnes-stream-open'] === '1'
       if (abortForbidden && request.url === prefix + REMOTE_FRONTEND_INFO) {
@@ -394,7 +409,7 @@ it.each([200, 502, 503])(
       }
       response.setHeader('Content-Security-Policy', policies)
       response.writeHead(
-        request.url === prefix + REMOTE_FRONTEND_INFO ? infoStatus : admitted ? status : 403,
+        request.url === prefix + REMOTE_FRONTEND_INFO ? infoStatus : admitted ? status : deniedStatus,
         {
           'content-type': 'text/plain',
           'set-cookie': 'should-not-be-forwarded=x',
@@ -405,7 +420,7 @@ it.each([200, 502, 503])(
     })
     upstream.on('upgrade', (request, socket) => {
       if (request.url === prefix + PLUGIN_STREAM_PATH) {
-        socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
+        socket.end(`HTTP/1.1 ${deniedStatus} Refused\r\nConnection: close\r\n\r\nstream denied`)
         return
       }
       expect(request.headers['e2b-traffic-access-token']).toBe('business-fixture')
@@ -487,6 +502,42 @@ it.each([200, 502, 503])(
       expect(stream.status).toBe(200)
       expect(await stream.text()).toBe('sandbox-response')
       expect(ws.readyState).toBe(WebSocket.OPEN)
+      deniedStatus = 401
+      const parallel = fetch(local + prefix + '/api/parallel', { signal: AbortSignal.timeout(3_000) })
+      void parallel.catch(() => {})
+      await vi.waitFor(() => expect(finishParallel).toBeDefined())
+      const refused401 = await fetch(local + prefix + PLUGIN_STREAM_OPEN_PATH, { method: 'POST' })
+      expect(refused401.status).toBe(401)
+      expect(await refused401.text()).toBe('sandbox-response')
+      const upgradeRefusal = await new Promise<{ status: number | undefined; body: string }>(
+        (resolve, reject) => {
+          const req = requestHttp(
+            local + prefix + PLUGIN_STREAM_PATH,
+            {
+              headers: {
+                connection: 'Upgrade',
+                upgrade: 'websocket',
+                'sec-websocket-version': '13',
+                'sec-websocket-key': randomBytes(16).toString('base64'),
+              },
+            },
+            (res) => {
+              let body = ''
+              res.setEncoding('utf8').on('data', (text) => {
+                body += text
+              })
+              res.on('end', () => resolve({ status: res.statusCode, body }))
+              res.on('error', reject)
+            },
+          )
+          req.on('error', reject).end()
+        },
+      )
+      expect(upgradeRefusal).toEqual({ status: 401, body: 'stream denied' })
+      finishParallel?.()
+      expect(await (await parallel).text()).toBe('parallel result')
+      expect(ws.readyState).toBe(WebSocket.OPEN)
+      deniedStatus = 403
       const refusedStream = await fetch(local + prefix + PLUGIN_STREAM_OPEN_PATH, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -501,17 +552,6 @@ it.each([200, 502, 503])(
       )
       expect((await fetch(local + prefix + '/api/test')).status).toBe(200)
       expect(ws.readyState).toBe(WebSocket.OPEN)
-      abortForbidden = true
-      await expect(
-        fetch(local + prefix + PLUGIN_STREAM_OPEN_PATH, {
-          method: 'POST',
-          body: '{}',
-          signal: AbortSignal.timeout(1000),
-        }).then((response) => response.text()),
-      ).rejects.toMatchObject({ name: 'TypeError' })
-      expect((await fetch(local + prefix + '/api/test')).status).toBe(200)
-      expect(ws.readyState).toBe(WebSocket.OPEN)
-      abortForbidden = false
       ws.close()
       await new Promise<void>((resolve) => {
         if (ws.readyState === WebSocket.CLOSED) resolve()
@@ -519,14 +559,18 @@ it.each([200, 502, 503])(
       })
       const beforeWrite = received.length
       status = 401
+      infoStatus = 401
       expect(
         (await fetch(local + prefix + '/api/write', { method: 'POST', body: 'write-once' })).status,
       ).toBe(401)
-      expect(received).toHaveLength(beforeWrite + 1)
+      expect(received.slice(beforeWrite).map((entry) => entry.path)).toEqual([
+        prefix + '/api/write',
+        prefix + REMOTE_FRONTEND_INFO,
+      ])
       expect(
         (await fetch(local + prefix + '/api/write', { method: 'POST', body: 'new-request' })).status,
       ).toBe(401)
-      expect(received).toHaveLength(beforeWrite + 1)
+      expect(received).toHaveLength(beforeWrite + 2)
       register()
       expect(
         (await fetch(local + prefix + '/api/test', { headers: { 'sec-fetch-site': 'cross-site' } })).status,
@@ -540,6 +584,18 @@ it.each([200, 502, 503])(
       expect((await fetch(local + prefix + '/api/test')).status).toBe(401)
       status = 200
       expect((await fetch(local + prefix + '/api/test')).status).toBe(401)
+      register()
+      infoStatus = 200
+      abortForbidden = true
+      await expect(
+        fetch(local + prefix + PLUGIN_STREAM_OPEN_PATH, {
+          method: 'POST',
+          body: '{}',
+          signal: AbortSignal.timeout(1000),
+        }).then((response) => response.text()),
+      ).rejects.toMatchObject({ name: 'TypeError' })
+      expect((await fetch(local + prefix + '/api/test')).status).toBe(200)
+      abortForbidden = false
       register(Date.now() - 1)
       expect((await fetch(local + prefix + '/api/test')).status).toBe(401)
       expect(() =>
@@ -706,7 +762,7 @@ it('terminates in-flight HTTP streams and pending WebSocket upgrades on rejectio
   const delayedUpgrades: Array<{ key: string; socket: Duplex; release: () => void }> = []
   let status = 200
   const upstream = createServer((req, res) => {
-    if (req.url?.endsWith('/deny')) {
+    if (req.url?.endsWith('/deny') || req.url?.endsWith(REMOTE_FRONTEND_INFO)) {
       res.writeHead(status).end('denied')
       return
     }

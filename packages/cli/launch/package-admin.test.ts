@@ -1,14 +1,29 @@
+import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
-import { createServer } from 'node:http'
+import { createServer, request as requestHttp } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CLOUD_AUTHORIZATION_PATH, type PackageCatalogPage, type PackageSource } from '@agnes/protocol'
+import {
+  CLOUD_AUTHORIZATION_PATH,
+  type PackageCatalogPage,
+  type PackageSource,
+  REMOTE_FRONTEND_INFO,
+  REMOTE_FRONTEND_WS,
+  remoteFrontendSessionPath,
+} from '@agnes/protocol'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { createCredentialAdmin } from '../../daemon-admin/src/credentials.js'
 import type { LocalBackend } from './backend.js'
 
 const mocks = vi.hoisted(() => {
+  const listeners = new Map<string, Set<(payload: unknown) => void>>()
+  const upstream = { origin: '' }
   const request = vi.fn(
-    async (_method: string, _input: unknown, _options?: { signal?: AbortSignal; timeoutMs?: number }) => ({
+    async (
+      _method: string,
+      _input: unknown,
+      _options?: { signal?: AbortSignal; timeoutMs?: number },
+    ): Promise<unknown> => ({
       schemaVersion: 1,
     }),
   )
@@ -65,6 +80,8 @@ const mocks = vi.hoisted(() => {
     saveDefaults: vi.fn(async (input: unknown) => input),
   }
   return {
+    listeners,
+    upstream,
     sessionSelection,
     request,
     catalogList,
@@ -87,6 +104,14 @@ const mocks = vi.hoisted(() => {
   }
 })
 
+vi.mock('node:https', async (original) => ({
+  ...(await original<typeof import('node:https')>()),
+  request: (...args: Parameters<typeof requestHttp>) => {
+    const url = args[0] as URL
+    return requestHttp(new URL(url.pathname, mocks.upstream.origin), args[1], args[2])
+  },
+}))
+
 vi.mock('@agnes/sdk', () => ({
   unixTransport: vi.fn(),
   memoryJournal: vi.fn(() => ({})),
@@ -95,6 +120,12 @@ vi.mock('@agnes/sdk', () => ({
     call: mocks.request,
     initialize: mocks.initialize,
     close: mocks.close,
+    on(event: string, listener: (payload: unknown) => void) {
+      const receivers = mocks.listeners.get(event) ?? new Set()
+      receivers.add(listener)
+      mocks.listeners.set(event, receivers)
+      return () => receivers.delete(listener)
+    },
     packages: {
       catalog: { list: mocks.catalogList, get: vi.fn() },
       list: vi.fn(),
@@ -134,7 +165,112 @@ import { localPackageAdmin } from './package-admin.js'
 let daemonDir: string
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.listeners.clear()
   daemonDir = mkdtempSync(join(tmpdir(), 'agh-launch-admin-'))
+})
+
+it('revokes a live Cloud socket and aborts a pending authorization on a daemon credential deletion', async () => {
+  const upstream = createServer((_request, response) => response.end('authorized'))
+  const server = createServer()
+  const listen = async (server: ReturnType<typeof createServer>) => {
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('missing fixture address')
+    return `http://127.0.0.1:${address.port}`
+  }
+  mocks.upstream.origin = await listen(upstream)
+  upstream.on('upgrade', (request, socket) => {
+    const accept = createHash('sha1')
+      .update(`${request.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+      .digest('base64')
+    socket.write(
+      `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
+    )
+    socket.once('end', () => socket.destroy())
+  })
+  const origin = await listen(server)
+  const backend = {
+    scope: { daemonDir, home: daemonDir, profile: 'local-dev', scopeID: 'scope-1' },
+    socketPath: join(daemonDir, 'daemon.sock'),
+    web: { origin },
+  } as LocalBackend
+  const admin = localPackageAdmin(backend, origin)
+  const home = join(daemonDir, 'home')
+  const credentials = createCredentialAdmin({
+    home,
+    dataDir: join(home, 'data'),
+    configurations: async () => [],
+    writableStore: async () => true,
+    onDeleted(id) {
+      for (const listener of mocks.listeners.get('notice') ?? [])
+        listener({ kind: 'credential_deleted', detail: { id } })
+    },
+  })
+  const addCredential = async (label: string) =>
+    ((await credentials.call('create', { label, value: 'synthetic-credential' }, 'local')) as { id: string })
+      .id
+  const credentialRef = await addCredential('Cloud fixture')
+  const unrelated = await addCredential('Unrelated fixture')
+  const token = `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`
+  const target = 'https://8443-fixture.ap-shanghai.tencentags.com'
+  const expiresAt = Date.now() + 60_000
+  const path = remoteFrontendSessionPath(token)
+  const grant = { origin: target, token, expiresAt, trafficToken: 'synthetic-proof' }
+  const input = { credentialRef, origin: target }
+  const authorize = () =>
+    fetch(origin + CLOUD_AUTHORIZATION_PATH, {
+      method: 'POST',
+      headers: { origin, 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  server.on('request', (request, response) => {
+    void admin.handle(request, response).then((handled) => {
+      if (!handled) return admin.cloudGateway.handleHttp(request, response)
+    })
+  })
+  server.on(
+    'upgrade',
+    (request, socket, head) => void admin.cloudGateway.handleUpgrade(request, socket, head),
+  )
+  try {
+    mocks.request.mockResolvedValueOnce(grant)
+    const response = await authorize()
+    expect(await response.json()).toMatchObject({ token, proxied: true })
+    const socket = new WebSocket(origin.replace('http:', 'ws:') + path + REMOTE_FRONTEND_WS)
+    await new Promise<void>((resolve, reject) => {
+      socket.addEventListener('open', () => resolve(), { once: true })
+      socket.addEventListener('error', reject, { once: true })
+    })
+    const closed = new Promise<void>((resolve) =>
+      socket.addEventListener('close', () => resolve(), { once: true }),
+    )
+    mocks.request.mockImplementationOnce(
+      async (_method, _input, options) =>
+        new Promise((_resolve, reject) =>
+          options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true }),
+        ),
+    )
+    const pending = authorize()
+    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(2))
+    await credentials.call('delete', { id: unrelated }, 'local')
+    expect(socket.readyState).toBe(WebSocket.OPEN)
+    expect(mocks.request.mock.lastCall?.[2]?.signal?.aborted).toBe(false)
+    await credentials.call('delete', { id: credentialRef }, 'local')
+    await closed
+    expect(await (await pending).json()).toEqual({ error: 'CONFIG_CREDENTIAL_NOT_FOUND' })
+    expect((await fetch(origin + path + REMOTE_FRONTEND_INFO)).status).toBe(401)
+  } finally {
+    await admin.close()
+    await Promise.all(
+      [server, upstream].map(
+        (server) =>
+          new Promise<void>((resolve) => {
+            server.close(() => resolve())
+            server.closeAllConnections()
+          }),
+      ),
+    )
+  }
 })
 afterEach(() => rmSync(daemonDir, { recursive: true, force: true }))
 

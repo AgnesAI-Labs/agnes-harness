@@ -31,6 +31,8 @@ import {
   bindCloudCredential,
   bumpCloudCredentialGeneration,
   CLOUD_CREDENTIAL_GENERATION_PREFIX,
+  CLOUD_CREDENTIAL_STORAGE_PREFIX,
+  CLOUD_DISCOVERY_KEY,
   forgetCloudCredential,
   readCloudCredentialGeneration,
   readCloudCredentialRef,
@@ -200,7 +202,6 @@ it('relays only confirmed replacement of the selected local cloud credential and
     window.dispatchEvent(new Event(CREDENTIALS_CHANGED))
     changed(ref, 'create')
     changed(ref, 'rename')
-    changed(ref, 'delete')
     changed('secret://generic/22222222-2222-2222-2222-222222222222')
     expect(actions).toEqual([])
     changed(ref)
@@ -1132,6 +1133,111 @@ it('does not let a late credential replacement cancel a different pending cloud 
     await fixture.close()
   }
 })
+
+it.each(['storage event', 'reconnect followed by a refresh'])(
+  'retires a deleted Cloud binding on %s and cancels discovery only for its own credential',
+  async (recovery) => {
+    const fixture = await diagnosticWorkbench('cloud')
+    const currentRef = `secret://generic/${crypto.randomUUID()}`
+    const pendingRef = `secret://generic/${crypto.randomUUID()}`
+    const otherRef = `secret://generic/${crypto.randomUUID()}`
+    const credentials = [currentRef, pendingRef, otherRef].map((id) => ({
+      id,
+      label: 'Fixture key',
+      kind: 'api-key',
+      createdAt: '2026-11-20T00:00:00Z',
+      references: [],
+    }))
+    bindCloudCredential(fixture.remote, currentRef, credentials)
+    localStorage.setItem(CLOUD_DISCOVERY_KEY, currentRef)
+    let finish!: (response: Response) => void
+    let pendingSignal: AbortSignal | null | undefined
+    const reply = new Promise<Response>((resolve) => {
+      finish = resolve
+    })
+    const discovery = 'https://8443-new.ap-shanghai.tencentags.com'
+    const fetcher = vi.spyOn(window, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input).endsWith('/admin/api/credentials')) return Response.json({ items: credentials })
+      pendingSignal = init?.signal
+      return reply
+    })
+    const listeners = new Map<string, (payload: unknown) => void>()
+    const off = installCloudSettingsProjection({
+      on(event, listener) {
+        listeners.set(event, listener)
+        return () => {
+          listeners.delete(event)
+        }
+      },
+    })
+    const deleted = (id: string) => listeners.get('notice')?.({ kind: 'credential_deleted', detail: { id } })
+    try {
+      await fixture.message('cloud', { kind: 'state', ready: true, connected: true, rows: [] })
+      await act(async () => requestCloudConnection({ action: 'connect', credentialRef: pendingRef }))
+      expect(pendingSignal?.aborted).toBe(false)
+      await act(async () => deleted(otherRef))
+      expect(pendingSignal?.aborted).toBe(false)
+      expect(readCloudCredentialRef(fixture.remote)).toBe(currentRef)
+      await act(async () => deleted(pendingRef))
+      expect(pendingSignal?.aborted).toBe(true)
+      await act(async () =>
+        finish(
+          Response.json({
+            token: `${(Date.now() + 60_000).toString(36)}.${'a'.repeat(22)}.${'b'.repeat(43)}`,
+            expiresAt: Date.now() + 60_000,
+            origin: discovery,
+            proxied: true,
+          }),
+        ),
+      )
+      expect(readCloudCredentialRef(discovery)).toBeUndefined()
+      expect(fixture.frame('cloud').dataset.backendOrigin).toBe(fixture.remote)
+      if (recovery === 'storage event') {
+        const key = CLOUD_CREDENTIAL_GENERATION_PREFIX + currentRef
+        const generation = `deleted:${crypto.randomUUID()}`
+        await act(async () => {
+          localStorage.setItem(key, generation)
+          window.dispatchEvent(new StorageEvent('storage', { key, newValue: generation }))
+        })
+      } else {
+        let completeList!: (response: Response) => void
+        let reconcileSignal: AbortSignal | null | undefined
+        const staleList = Response.json({ items: credentials })
+        credentials.length = 0
+        fetcher.mockImplementationOnce((_input, init) => {
+          reconcileSignal = init?.signal
+          return new Promise((resolve) => {
+            completeList = resolve
+          })
+        })
+        await act(async () => listeners.get('connectionStateChanged')?.('connected'))
+        expect(reconcileSignal?.aborted).toBe(false)
+        await act(async () => requestCloudConnection({ action: 'refresh-credentials' }))
+        expect(reconcileSignal?.aborted).toBe(true)
+        await act(async () => completeList(staleList))
+        expect(localStorage.getItem(CLOUD_CREDENTIAL_STORAGE_PREFIX + fixture.remote)).toBeNull()
+      }
+      expect(readCloudCredentialRef(fixture.remote)).toBeUndefined()
+      expect(localStorage.getItem(CLOUD_DISCOVERY_KEY)).toBeNull()
+      expect(document.querySelector('[data-testid="backend-frame-cloud"]')).toBeNull()
+      if (recovery !== 'storage event') {
+        // Disconnected tabs can still have a managed discovery selection and older saved origins.
+        const dormantRef = `secret://generic/${crypto.randomUUID()}`
+        const savedRef = `secret://generic/${crypto.randomUUID()}`
+        localStorage.setItem(CLOUD_DISCOVERY_KEY, dormantRef)
+        bindCloudCredential(discovery, savedRef, [{ id: savedRef }])
+        await act(async () => listeners.get('connectionStateChanged')?.('connected'))
+        expect(localStorage.getItem(CLOUD_DISCOVERY_KEY)).toBeNull()
+        expect(localStorage.getItem(CLOUD_CREDENTIAL_STORAGE_PREFIX + discovery)).toBeNull()
+        expect(document.querySelector('[data-testid="backend-frame-cloud"]')).toBeNull()
+      }
+    } finally {
+      off()
+      fetcher.mockRestore()
+      await fixture.close()
+    }
+  },
+)
 
 it('renews the current cloud credential after a different connection attempt has failed', async () => {
   const fixture = await diagnosticWorkbench('cloud')

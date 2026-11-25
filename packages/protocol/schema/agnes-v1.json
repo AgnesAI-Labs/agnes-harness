@@ -3102,6 +3102,24 @@
     "DaemonNotice": {
       "oneOf": [
         {
+          "description": "Generic credential deleted from the local store. Only local owner connections receive its reference.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "detail", "at"],
+          "properties": {
+            "kind": { "const": "credential_deleted" },
+            "detail": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id"],
+              "properties": {
+                "id": { "type": "string", "pattern": "^secret://generic/[a-f0-9-]{36}$" }
+              }
+            },
+            "at": { "type": "string" }
+          }
+        },
+        {
           "description": "Profile approval invalidation only. Re-read profile.decisions.list through its authorized ingress; no decision content or identifier is carried.",
           "type": "object",
           "additionalProperties": false,

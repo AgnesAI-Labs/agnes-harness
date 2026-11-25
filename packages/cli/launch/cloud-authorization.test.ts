@@ -96,54 +96,65 @@ it('accepts only same-origin credential references and never reflects raw daemon
   }
 })
 
-it('cancels a disconnected authorization without registering its late grant', async () => {
-  const origin = 'http://localhost:49979'
-  const input = {
-    origin: 'https://8443-fixture.ap-shanghai.tencentags.com',
-    credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111',
-  }
-  const started = deferred<AbortSignal>()
-  const grant = {
-    token: `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`,
-    expiresAt: Date.now() + 60_000,
-    trafficToken: 'fixture-proof',
-  }
-  const exchanged = deferred<typeof grant>()
-  const register = vi.fn(() => true)
-  const invoke = vi.fn(async (_input, signal: AbortSignal) => {
-    started.resolve(signal)
-    return exchanged.promise
-  })
-  const relay = cloudAuthorizationRelay(origin, invoke, register)
-  const request = Object.assign(Readable.from([JSON.stringify(input)]), {
-    url: CLOUD_AUTHORIZATION_PATH,
-    method: 'POST',
-    headers: { host: new URL(origin).host, origin, 'content-type': 'application/json' },
-    complete: true,
-  }) as IncomingMessage
-  const response = Object.assign(new EventEmitter(), { writeHead: vi.fn(), end: vi.fn() })
-  const handling = relay(request, response as unknown as ServerResponse)
-  const signal = await started.promise
-  response.emit('close')
-  expect(signal.aborted).toBe(true)
-  exchanged.resolve(grant)
-  await expect(handling).resolves.toBe(true)
-  expect(register).not.toHaveBeenCalled()
-  expect(response.writeHead).not.toHaveBeenCalled()
+it.each(['disconnect', 'deletion'])(
+  'cancels authorization after %s without registering its late grant',
+  async (cause) => {
+    const origin = 'http://localhost:49979'
+    const input = {
+      origin: 'https://8443-fixture.ap-shanghai.tencentags.com',
+      credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111',
+    }
+    const started = deferred<AbortSignal>()
+    const grant = {
+      token: `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`,
+      expiresAt: Date.now() + 60_000,
+      trafficToken: 'fixture-proof',
+    }
+    const exchanged = deferred<typeof grant>()
+    const register = vi.fn(() => true)
+    const invoke = vi.fn(async (_input, signal: AbortSignal) => {
+      started.resolve(signal)
+      return exchanged.promise
+    })
+    const relay = cloudAuthorizationRelay(origin, invoke, register)
+    const request = Object.assign(Readable.from([JSON.stringify(input)]), {
+      url: CLOUD_AUTHORIZATION_PATH,
+      method: 'POST',
+      headers: { host: new URL(origin).host, origin, 'content-type': 'application/json' },
+      complete: true,
+    }) as IncomingMessage
+    const response = Object.assign(new EventEmitter(), { writeHead: vi.fn(), end: vi.fn() })
+    const handling = relay(request, response as unknown as ServerResponse)
+    const signal = await started.promise
+    relay.revokeCredential('secret://generic/22222222-2222-2222-2222-222222222222')
+    expect(signal.aborted).toBe(false)
+    if (cause === 'deletion') relay.revokeCredential(input.credentialRef)
+    else response.emit('close')
+    expect(signal.aborted).toBe(true)
+    exchanged.resolve(grant)
+    await expect(handling).resolves.toBe(true)
+    expect(register).not.toHaveBeenCalled()
+    if (cause === 'deletion') {
+      expect(response.writeHead).toHaveBeenCalledOnce()
+      expect(response.writeHead).toHaveBeenCalledWith(400, expect.anything())
+      expect(response.end).toHaveBeenCalledWith(JSON.stringify({ error: 'CONFIG_CREDENTIAL_NOT_FOUND' }))
+    } else expect(response.writeHead).not.toHaveBeenCalled()
+    response.writeHead.mockClear()
 
-  const partial = Object.assign(new PassThrough(), {
-    url: request.url,
-    method: request.method,
-    headers: request.headers,
-    complete: false,
-  }) as unknown as IncomingMessage
-  const reading = relay(partial, response as unknown as ServerResponse)
-  partial.emit('aborted')
-  partial.destroy()
-  await expect(reading).resolves.toBe(true)
-  expect(invoke).toHaveBeenCalledOnce()
-  expect(response.writeHead).not.toHaveBeenCalled()
-})
+    const partial = Object.assign(new PassThrough(), {
+      url: request.url,
+      method: request.method,
+      headers: request.headers,
+      complete: false,
+    }) as unknown as IncomingMessage
+    const reading = relay(partial, response as unknown as ServerResponse)
+    partial.emit('aborted')
+    partial.destroy()
+    await expect(reading).resolves.toBe(true)
+    expect(invoke).toHaveBeenCalledOnce()
+    expect(response.writeHead).not.toHaveBeenCalled()
+  },
+)
 
 it('shares concurrent authorization and cancels an abandoned exchange before starting another', async () => {
   const input = {

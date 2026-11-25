@@ -7,7 +7,11 @@ import {
 } from '@agnes/protocol'
 import type { AdminCloudAuthorization, AdminCloudAuthorize } from '@agnes/protocol/gen/app-server'
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
-import { cloudAuthorizationRequests } from './cloud-authorization-request.js'
+import {
+  cloudAuthorizationRequests,
+  discardCloudBody,
+  readCloudAuthorizationBody,
+} from './cloud-authorization-request.js'
 import { cloudSandboxConnection } from './cloud-sandbox-token.js'
 
 const AUTHORIZATION_CLOCK_SKEW_MS = 5 * 60 * 1000
@@ -22,12 +26,22 @@ export async function authorizeCloudConnection(
   try {
     signal?.throwIfAborted()
     const requestedOrigin = input.origin === undefined ? undefined : remoteFrontendOrigin(input.origin)
+    if (requestedOrigin) {
+      const target = new URL(requestedOrigin)
+      if (target.protocol !== 'https:' && !['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname))
+        throw rpcError('SEMANTIC_REJECTED', { reason: 'CLOUD_CONNECTION_INVALID' })
+    }
     const credential = await store.read(input.credentialRef)
     signal?.throwIfAborted()
     if (credential?.kind !== 'api-key' || credential.provider !== 'generic' || !credential.label)
       throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_CREDENTIAL_NOT_FOUND' })
     const requests = cloudAuthorizationRequests(fetcher, signal)
-    const sandbox = await cloudSandboxConnection(requestedOrigin, credential.value, requests.connection)
+    const sandbox = await cloudSandboxConnection(
+      requestedOrigin,
+      credential.value,
+      requests.connection,
+      requests.signal,
+    )
     const origin = sandbox?.origin ?? requestedOrigin
     if (!origin) throw Error('missing cloud origin')
     const trafficToken = sandbox?.trafficToken
@@ -40,13 +54,19 @@ export async function authorizeCloudConnection(
       body: JSON.stringify({ key: credential.value }),
       redirect: 'error',
     })
-    if (response.status === 401 || response.status === 403)
-      throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_CREDENTIAL_REJECTED' })
-    if (!response.ok) throw new Error('unavailable')
-    const value = (await response.json()) as { token?: unknown; expiresAt?: unknown }
+    if (!response.ok) {
+      discardCloudBody(response)
+      if (response.status === 401 || response.status === 403)
+        throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_CREDENTIAL_REJECTED' })
+      throw new Error('unavailable')
+    }
+    const value = (await readCloudAuthorizationBody(response, requests.signal)) as {
+      token?: unknown
+      expiresAt?: unknown
+    } | null
     signal?.throwIfAborted()
     if (
-      typeof value.token !== 'string' ||
+      typeof value?.token !== 'string' ||
       typeof value.expiresAt !== 'number' ||
       !Number.isFinite(value.expiresAt) ||
       value.expiresAt <= Date.now() ||

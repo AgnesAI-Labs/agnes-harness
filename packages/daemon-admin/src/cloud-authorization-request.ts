@@ -1,6 +1,42 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { CLOUD_AUTHORIZATION_TIMEOUT_MS } from '@agnes/protocol'
 
+const MAX_AUTHORIZATION_BYTES = 16_384
+
+export function discardCloudBody(response: Response): void {
+  void response.body?.cancel().catch(() => undefined)
+}
+
+export async function readCloudAuthorizationBody(response: Response, signal?: AbortSignal): Promise<unknown> {
+  const length = response.headers.get('content-length')
+  if (length !== null && Number(length) > MAX_AUTHORIZATION_BYTES) {
+    discardCloudBody(response)
+    throw new Error('authorization response too large')
+  }
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error('missing authorization response')
+  const cancel = () => void reader.cancel().catch(() => undefined)
+  signal?.addEventListener('abort', cancel, { once: true })
+  const chunks: Uint8Array[] = []
+  let bytes = 0
+  try {
+    while (true) {
+      signal?.throwIfAborted()
+      const next = await reader.read()
+      signal?.throwIfAborted()
+      if (next.done) break
+      bytes += next.value.byteLength
+      if (bytes > MAX_AUTHORIZATION_BYTES) throw new Error('authorization response too large')
+      chunks.push(next.value)
+    }
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  } finally {
+    signal?.removeEventListener('abort', cancel)
+    cancel()
+    reader.releaseLock()
+  }
+}
+
 /** Retry only credential discovery/authorization, never a forwarded business request. */
 export function cloudAuthorizationRequests(fetcher: typeof fetch, cancellation?: AbortSignal) {
   const deadline = Date.now() + CLOUD_AUTHORIZATION_TIMEOUT_MS
@@ -23,6 +59,7 @@ export function cloudAuthorizationRequests(fetcher: typeof fetch, cancellation?:
         let response: Response | undefined
         try {
           response = await fetcher(input, { ...init, signal })
+          if (lifetime.aborted) discardCloudBody(response)
           lifetime.throwIfAborted()
           if (![502, 503, 504].includes(response.status)) return response
         } catch (error) {
@@ -36,12 +73,12 @@ export function cloudAuthorizationRequests(fetcher: typeof fetch, cancellation?:
           if (response) return response
           throw new DOMException('Authorization timed out', 'TimeoutError')
         }
-        await response?.body?.cancel().catch(() => undefined)
+        if (response) discardCloudBody(response)
         retried = true
         await delay(1000, undefined, {
           signal: init?.signal ? AbortSignal.any([lifetime, init.signal]) : lifetime,
         })
       }
     }
-  return { connection: request(25_000), authorize: request(15_000) }
+  return { connection: request(25_000), authorize: request(15_000), signal: lifetime }
 }

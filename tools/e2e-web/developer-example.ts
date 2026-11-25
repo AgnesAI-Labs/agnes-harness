@@ -8,6 +8,8 @@ import { homePage } from './ui.js'
 /** Installs an agent through the reviewed local-source flow and waits for its worker generation. */
 export async function installAgentSource(page: Page, client: NodeClient, directory: string, ref: string) {
   const id = ref.split('#')[0]
+  // Establish the resident worker generation before the UI captures its activation baseline.
+  await client.call('_agnes/v1/channels.catalog', {}, { timeoutMs: 120_000 })
   await homePage(page, 'plugins')
   await page.getByTestId('plugin-install-source').click()
   const source = page.getByRole('dialog', { name: 'Check a plugin source', exact: true })
@@ -51,7 +53,13 @@ export async function installAgentSource(page: Page, client: NodeClient, directo
   ])
   expect(response.ok(), 'the approved enable request was accepted').toBe(true)
   const receipt = (await response.json()) as Awaited<ReturnType<NodeClient['packages']['enable']>>
-  await complete(client, receipt, 120_000)
+  await complete(client, receipt, 120_000).catch(async (cause: unknown) => {
+    const actual = await client.packages
+      .list({ profile: 'local-dev' })
+      .then(({ packages }) => packages.find((row) => row.id === id)?.actual)
+      .catch(() => undefined)
+    throw new Error(`Enable failed for ${id} (runtime: ${actual ?? 'unavailable'})`, { cause })
+  })
   await expect(page.getByTestId('install-review')).toBeHidden({ timeout: 90_000 })
   // Activation can publish a generation while @shared is absent. This read acquires that
   // worker through the same resolver the launch uses.

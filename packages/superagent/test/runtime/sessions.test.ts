@@ -15,10 +15,18 @@ import { fakeClient } from './fake-sdk.js'
 import { tempStore, ticket } from './helpers.js'
 
 let temp: ReturnType<typeof tempStore>
+let lifetime: AbortController
+const preparations = new Set<Promise<string>>()
+const prepareStartupMs = process.platform === 'win32' ? 45_000 : 5_000
 beforeEach(() => {
   temp = tempStore()
+  lifetime = new AbortController()
 })
-afterEach(() => temp.close())
+afterEach(async () => {
+  lifetime.abort()
+  await Promise.allSettled(preparations)
+  temp.close()
+}, 15_000)
 
 /**
  * A prepare command running `source` as a Node module, which `sh` and PowerShell (the prepare shell on Windows) both
@@ -43,9 +51,17 @@ function setup(fields: Partial<SessionsDeps> = {}) {
     applyModel: async (role) => {
       models.push(role)
     },
-    lifetime: new AbortController().signal,
     ...fields,
+    lifetime: fields.lifetime ? AbortSignal.any([lifetime.signal, fields.lifetime]) : lifetime.signal,
   })
+  const ensureWorker = sessions.ensureWorker.bind(sessions)
+  sessions.ensureWorker = (...args) => {
+    const pending = ensureWorker(...args)
+    preparations.add(pending)
+    const release = () => preparations.delete(pending)
+    void pending.then(release, release)
+    return pending
+  }
   return { fake, registry, sessions, models }
 }
 
@@ -67,100 +83,120 @@ describe('worker sessions', () => {
     expect(again.fake.loadOptions).toContainEqual({ history: 'none', environment })
   })
 
-  it('creates the ticket directory, runs prepare inside it, then opens the worker session there', async () => {
-    const { fake, registry, sessions, models } = setup()
-    const dir = join(temp.dir, 'work', 'fix-login')
-    const id = await sessions.ensureWorker(ticket('t1', { title: 'Fix login' }), dir)
-    // The prepare command ran in the ticket directory with the ticket's variables and put the repository in repo/.
-    expect(readFileSync(join(dir, 'repo', 'ticket'), 'utf8').trim()).toBe('t1')
-    expect(existsSync(join(dir, 'repo', '.git'))).toBe(true)
-    expect(fake.workspaces).toEqual([dir])
-    expect(fake.sessions.get(id)?.options).toEqual({
-      cwd: dir,
-      sessionKey: 'superagent:worker:t1',
-      permission: 'full-access',
-      bundles: ['@agnes/superagent#worker'],
-      preset: 'superagent-worker',
-    })
-    // The SDK session key is the AGH session id, which the store records.
-    expect(id).toBe('superagent:worker:t1')
-    expect(registry.role(id)).toEqual({ kind: 'worker', ticketId: 't1' })
-    expect(new SessionRegistry(temp.store).role(id)).toEqual({ kind: 'worker', ticketId: 't1' })
-    expect(fake.renamed).toEqual([[id, 'Worker · Fix login']])
-    expect(models).toEqual(['worker'])
-  })
+  it(
+    'creates the ticket directory, runs prepare inside it, then opens the worker session there',
+    async () => {
+      const { fake, registry, sessions, models } = setup()
+      const dir = join(temp.dir, 'work', 'fix-login')
+      const id = await sessions.ensureWorker(ticket('t1', { title: 'Fix login' }), dir)
+      // The prepare command ran in the ticket directory with the ticket's variables and put the repository in repo/.
+      expect(readFileSync(join(dir, 'repo', 'ticket'), 'utf8').trim()).toBe('t1')
+      expect(existsSync(join(dir, 'repo', '.git'))).toBe(true)
+      expect(fake.workspaces).toEqual([dir])
+      expect(fake.sessions.get(id)?.options).toEqual({
+        cwd: dir,
+        sessionKey: 'superagent:worker:t1',
+        permission: 'full-access',
+        bundles: ['@agnes/superagent#worker'],
+        preset: 'superagent-worker',
+      })
+      // The SDK session key is the AGH session id, which the store records.
+      expect(id).toBe('superagent:worker:t1')
+      expect(registry.role(id)).toEqual({ kind: 'worker', ticketId: 't1' })
+      expect(new SessionRegistry(temp.store).role(id)).toEqual({ kind: 'worker', ticketId: 't1' })
+      expect(fake.renamed).toEqual([[id, 'Worker · Fix login']])
+      expect(models).toEqual(['worker'])
+    },
+    prepareStartupMs + 10_000,
+  )
 
-  it('fails the ticket without retrying when prepare fails, removing the directory it left empty', async () => {
-    const { fake, registry, sessions } = setup({
-      prepareCommand: prepare('fail', "console.error('no access')\nprocess.exit(3)"),
-    })
-    const dir = join(temp.dir, 'work', 'broken')
-    const failed = sessions.ensureWorker(ticket('t2'), dir)
-    await expect(failed).rejects.toBeInstanceOf(PrepareFailed)
-    // PowerShell, the prepare shell on Windows, ends with 1 when its last command failed.
-    await expect(failed).rejects.toThrow(
-      process.platform === 'win32' ? /exit 1.*no access/s : /exit 3.*no access/s,
-    )
-    expect(existsSync(dir)).toBe(false)
-    expect(fake.workspaces).toEqual([])
-    expect(registry.ids()).toEqual([])
-  })
+  it(
+    'fails the ticket without retrying when prepare fails, removing the directory it left empty',
+    async () => {
+      const { fake, registry, sessions } = setup({
+        prepareCommand: prepare('fail', "console.error('no access')\nprocess.exit(3)"),
+      })
+      const dir = join(temp.dir, 'work', 'broken')
+      const failed = sessions.ensureWorker(ticket('t2'), dir)
+      await expect(failed).rejects.toBeInstanceOf(PrepareFailed)
+      // PowerShell, the prepare shell on Windows, ends with 1 when its last command failed.
+      await expect(failed).rejects.toThrow(
+        process.platform === 'win32' ? /exit 1.*no access/s : /exit 3.*no access/s,
+      )
+      expect(existsSync(dir)).toBe(false)
+      expect(fake.workspaces).toEqual([])
+      expect(registry.ids()).toEqual([])
+    },
+    prepareStartupMs + 10_000,
+  )
 
-  it('prepares again a directory whose prepare was stopped part way, and only then counts it as prepared', async () => {
-    const dir = join(temp.dir, 'work', 'stopped')
-    const lifetime = new AbortController()
-    const first = setup({
-      prepareCommand: prepare(
-        'slow',
-        "fs.mkdirSync('repo')\nfs.writeFileSync('repo/half', '')\nsetTimeout(() => fs.writeFileSync('repo/done', ''), 5000)",
-      ),
-      lifetime: lifetime.signal,
-    })
-    const stopped = first.sessions.ensureWorker(ticket('t12'), dir)
-    await vi.waitFor(() => expect(existsSync(join(dir, 'repo', 'half'))).toBe(true))
-    lifetime.abort()
-    await expect(stopped).rejects.toThrow(/stopped/)
-    expect(existsSync(join(dir, '.superagent-prepared'))).toBe(false)
-    // The next launch finds the half-prepared directory, moves it aside whole, and prepares the ticket again.
-    const warnings: string[] = []
-    const again = setup({
-      prepareCommand: prepare('done', "fs.mkdirSync('repo')\nfs.writeFileSync('repo/done', '')"),
-      log: { warn: (message) => warnings.push(message) },
-    })
-    await again.sessions.ensureWorker(ticket('t12'), dir)
-    expect(existsSync(join(dir, 'repo', 'done'))).toBe(true)
-    expect(existsSync(join(dir, 'repo', 'half'))).toBe(false)
-    expect(existsSync(join(dir, '.superagent-prepared'))).toBe(true)
-    const aside = readdirSync(join(temp.dir, 'work')).filter((name) =>
-      name.startsWith('stopped.interrupted-'),
-    )
-    expect(aside).toHaveLength(1)
-    expect(existsSync(join(temp.dir, 'work', aside[0]!, 'repo', 'half'))).toBe(true)
-    expect(warnings).toEqual([expect.stringContaining(join(temp.dir, 'work', aside[0]!))])
-    // A failed check of the prepared directory leaves it unprepared too.
-    const checked = join(temp.dir, 'work', 'unchecked')
-    const failing = setup({
-      prepareCommand: prepare('made', "fs.writeFileSync('made', '')"),
-      verify: async () => {
-        throw new Error('git config is wrong')
-      },
-    })
-    await expect(failing.sessions.ensureWorker(ticket('t13'), checked)).rejects.toThrow('git config is wrong')
-    expect(existsSync(join(checked, '.superagent-prepared'))).toBe(false)
-  })
+  it(
+    'prepares again a directory whose prepare was stopped part way, and only then counts it as prepared',
+    async () => {
+      const dir = join(temp.dir, 'work', 'stopped')
+      const lifetime = new AbortController()
+      const first = setup({
+        prepareCommand: prepare(
+          'slow',
+          "fs.mkdirSync('repo')\nfs.writeFileSync('repo/half', '')\nsetTimeout(() => fs.writeFileSync('repo/done', ''), 120_000)",
+        ),
+        lifetime: lifetime.signal,
+      })
+      const stopped = first.sessions.ensureWorker(ticket('t12'), dir)
+      await vi.waitFor(() => expect(existsSync(join(dir, 'repo', 'half'))).toBe(true), {
+        timeout: prepareStartupMs,
+      })
+      lifetime.abort()
+      await expect(stopped).rejects.toThrow(/stopped/)
+      expect(existsSync(join(dir, '.superagent-prepared'))).toBe(false)
+      // The next launch finds the half-prepared directory, moves it aside whole, and prepares the ticket again.
+      const warnings: string[] = []
+      const again = setup({
+        prepareCommand: prepare('done', "fs.mkdirSync('repo')\nfs.writeFileSync('repo/done', '')"),
+        log: { warn: (message) => warnings.push(message) },
+      })
+      await again.sessions.ensureWorker(ticket('t12'), dir)
+      expect(existsSync(join(dir, 'repo', 'done'))).toBe(true)
+      expect(existsSync(join(dir, 'repo', 'half'))).toBe(false)
+      expect(existsSync(join(dir, '.superagent-prepared'))).toBe(true)
+      const aside = readdirSync(join(temp.dir, 'work')).filter((name) =>
+        name.startsWith('stopped.interrupted-'),
+      )
+      expect(aside).toHaveLength(1)
+      expect(existsSync(join(temp.dir, 'work', aside[0]!, 'repo', 'half'))).toBe(true)
+      expect(warnings).toEqual([expect.stringContaining(join(temp.dir, 'work', aside[0]!))])
+      // A failed check of the prepared directory leaves it unprepared too.
+      const checked = join(temp.dir, 'work', 'unchecked')
+      const failing = setup({
+        prepareCommand: prepare('made', "fs.writeFileSync('made', '')"),
+        verify: async () => {
+          throw new Error('git config is wrong')
+        },
+      })
+      await expect(failing.sessions.ensureWorker(ticket('t13'), checked)).rejects.toThrow(
+        'git config is wrong',
+      )
+      expect(existsSync(join(checked, '.superagent-prepared'))).toBe(false)
+    },
+    3 * prepareStartupMs + 10_000,
+  )
 
-  it('loads an existing session instead of creating another, and an existing directory counts as prepared', async () => {
-    const { fake, sessions } = setup()
-    const dir = join(temp.dir, 'work', 'again')
-    const first = await sessions.ensureWorker(ticket('t3'), dir)
-    const reopened = setup({ prepareCommand: prepare('exit', 'process.exit(1)') })
-    // A new process: the session exists in the daemon and the store, not in memory.
-    reopened.fake.sessions.set(first, fake.sessions.get(first)!)
-    expect(await reopened.sessions.ensureWorker(ticket('t3', { title: 'Renamed' }), dir)).toBe(first)
-    expect(reopened.fake.loads).toEqual([first])
-    // A worker opened before its role showed in the title gets the role title on this ordinary open.
-    expect(reopened.fake.renamed).toEqual([[first, 'Worker · Renamed']])
-  })
+  it(
+    'loads an existing session instead of creating another, and an existing directory counts as prepared',
+    async () => {
+      const { fake, sessions } = setup()
+      const dir = join(temp.dir, 'work', 'again')
+      const first = await sessions.ensureWorker(ticket('t3'), dir)
+      const reopened = setup({ prepareCommand: prepare('exit', 'process.exit(1)') })
+      // A new process: the session exists in the daemon and the store, not in memory.
+      reopened.fake.sessions.set(first, fake.sessions.get(first)!)
+      expect(await reopened.sessions.ensureWorker(ticket('t3', { title: 'Renamed' }), dir)).toBe(first)
+      expect(reopened.fake.loads).toEqual([first])
+      // A worker opened before its role showed in the title gets the role title on this ordinary open.
+      expect(reopened.fake.renamed).toEqual([[first, 'Worker · Renamed']])
+    },
+    prepareStartupMs + 10_000,
+  )
 
   it('opens a registered worker session its owner deleted again, under the same key', async () => {
     const { fake, registry, sessions } = setup()

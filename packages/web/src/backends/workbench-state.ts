@@ -2,7 +2,6 @@ import { remoteFrontendOrigin } from '@agnes/protocol'
 import type { BackendId, BackendSnapshot } from './frame-contract.js'
 
 export const CLOUD_ORIGIN_KEY = 'agnes.cloud.origin.v1'
-export const CLOUD_DISCOVERY_KEY = 'agnes.cloud.auto-credential.v1'
 
 export function isSharedCloudOrigin(origin: string | undefined, saved: string | null): boolean {
   if (!origin || !saved) return false

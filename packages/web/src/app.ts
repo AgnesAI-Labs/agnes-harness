@@ -974,7 +974,7 @@ const statusCheck = mountStatusCheck({
 })
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')
-onPageHide(installCloudConnectionSettings(clientModules.locale))
+onPageHide(installCloudConnectionSettings(clientModules.locale, client))
 const openSettingsSection = async (section: string, fromWorkbench = false) => {
   if (!fromWorkbench && requestDiagnosticBackend(section)) return
   settingsRegion.open('model')

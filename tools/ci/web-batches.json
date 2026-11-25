@@ -326,9 +326,7 @@
           "auto-review.spec.ts",
           "base-conversation.spec.ts",
           "browser-layout.spec.ts",
-          "browser.spec.ts",
-          "business-agents.spec.ts",
-          "community-market-metadata.spec.ts"
+          "browser.spec.ts"
         ],
         "widths": "",
         "timeoutMinutes": 10
@@ -368,13 +366,23 @@
       },
       {
         "id": "main-5",
-        "args": ["memory.spec.ts", "plugin-config.spec.ts", "session-create.spec.ts"],
+        "args": [
+          "community-market-metadata.spec.ts",
+          "memory.spec.ts",
+          "plugin-config.spec.ts",
+          "session-create.spec.ts"
+        ],
         "widths": "",
         "timeoutMinutes": 10
       },
       {
         "id": "main-6",
-        "args": ["plugin-purpose.spec.ts", "prompt-trace.spec.ts", "session-activity.spec.ts"],
+        "args": [
+          "business-agents.spec.ts",
+          "plugin-purpose.spec.ts",
+          "prompt-trace.spec.ts",
+          "session-activity.spec.ts"
+        ],
         "widths": "",
         "timeoutMinutes": 10
       },

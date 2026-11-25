@@ -38,6 +38,7 @@ export function noticeText(notice: DaemonNotice): string | null {
     case 'packages_changed':
     case 'tree_changed':
     case 'decisions_changed':
+    case 'credential_deleted':
       return null
   }
 }

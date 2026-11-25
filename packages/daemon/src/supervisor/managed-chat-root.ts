@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto'
-import { constants } from 'node:fs'
+import { type BigIntStats, closeSync, constants, fstatSync, readSync } from 'node:fs'
 import { lstat, mkdir, open, readFile, realpath, rename } from 'node:fs/promises'
 import { isAbsolute, join, relative } from 'node:path'
+import { sameRegisteredInode } from '@agnes/daemon-foundation/storage/managed-chat-authority'
 import { createPlatform } from '@agnes/host'
 import {
   createPrivateDirectorySync,
+  openCanonicalFileSync,
   windowsEnsurePrivateDirectorySync,
   windowsProtectPrivateDirectorySync,
 } from '@agnes/system-node'
@@ -65,22 +67,17 @@ const contains = (parent: string, child: string) => {
   const suffix = relative(parent, child)
   return suffix === '' || (!suffix.startsWith('..') && !isAbsolute(suffix))
 }
-const sameRegisteredInode = (actual: string, expected: string) => {
-  const actualSep = actual.indexOf(':')
-  const expectedSep = expected.indexOf(':')
-  return actualSep > 0 && expectedSep > 0 && actual.slice(actualSep + 1) === expected.slice(expectedSep + 1)
-}
-async function identity(path: string): Promise<string> {
+const windows = createPlatform().os === 'win32'
+const uid = process.getuid?.()
+const hasPrivateMode = (info: BigIntStats, mode: bigint): boolean =>
+  windows || (uid !== undefined && (info.mode & 0o7777n) === mode && info.uid === BigInt(uid))
+
+export async function privateManagedDirectory(path: string): Promise<BigIntStats> {
   const info = await lstat(path, { bigint: true })
-  if (!info.isDirectory() || info.isSymbolicLink() || (await realpath(path)) !== path)
+  if (!info.isDirectory() || !hasPrivateMode(info, 0o700n) || (await realpath(path)) !== path)
     throw new ManagedChatRootError()
-  if (
-    createPlatform().os !== 'win32' &&
-    (Number(info.mode) & 0o077 || info.uid !== BigInt(process.getuid?.() ?? Number(info.uid)))
-  )
-    throw new ManagedChatRootError()
-  if (createPlatform().os === 'win32') windowsProtectPrivateDirectorySync(path)
-  return `${info.dev}:${info.ino}`
+  if (windows) windowsProtectPrivateDirectorySync(path)
+  return info
 }
 async function persist(path: string, record: RootRecord) {
   const temporary = `${path}.${randomUUID()}.tmp`
@@ -114,17 +111,49 @@ async function verify(record: RootRecord, dataDir: string, privateRoots: readonl
   for (const root of privateRoots)
     if (contains(root, record.canonicalRoot) || contains(record.canonicalRoot, root))
       throw new ManagedChatRootError()
-  const before = await identity(record.canonicalRoot)
-  if (!sameRegisteredInode(before, record.directoryIdentity)) throw new ManagedChatRootError()
+  const before = await privateManagedDirectory(record.canonicalRoot)
+  const currentIdentity = `${before.dev}:${before.ino}`
+  if (!sameRegisteredInode(currentIdentity, record.directoryIdentity)) throw new ManagedChatRootError()
   const markerPath = join(record.canonicalRoot, '.agh-managed-root.json')
-  const markerInfo = await lstat(markerPath)
-  if (!markerInfo.isFile() || markerInfo.isSymbolicLink()) throw new ManagedChatRootError()
-  const marker = JSON.parse(await readFile(markerPath, 'utf8'))
+  const markerInfo = await lstat(markerPath, { bigint: true })
+  if (
+    !markerInfo.isFile() ||
+    markerInfo.nlink !== 1n ||
+    markerInfo.dev !== before.dev ||
+    !hasPrivateMode(markerInfo, 0o600n)
+  )
+    throw new ManagedChatRootError()
+  const descriptor = openCanonicalFileSync(markerPath)
+  const verifyMarker = (info: typeof markerInfo) => {
+    if (
+      !info.isFile() ||
+      info.nlink !== 1n ||
+      !hasPrivateMode(info, 0o600n) ||
+      info.dev !== markerInfo.dev ||
+      info.ino !== markerInfo.ino ||
+      info.size !== markerInfo.size ||
+      info.mtimeNs !== markerInfo.mtimeNs ||
+      info.ctimeNs !== markerInfo.ctimeNs
+    )
+      throw new ManagedChatRootError()
+  }
+  let marker: { version?: number; id?: string; ownerNonce?: string }
+  try {
+    verifyMarker(fstatSync(descriptor, { bigint: true }))
+    const bytes = Buffer.alloc(256)
+    const bytesRead = readSync(descriptor, bytes, 0, bytes.length, 0)
+    if (bytesRead !== Number(markerInfo.size) || bytesRead === bytes.length) throw new ManagedChatRootError()
+    verifyMarker(fstatSync(descriptor, { bigint: true }))
+    verifyMarker(await lstat(markerPath, { bigint: true }))
+    marker = JSON.parse(bytes.subarray(0, bytesRead).toString('utf8'))
+  } finally {
+    closeSync(descriptor)
+  }
   if (marker.version !== 1 || marker.id !== record.id || marker.ownerNonce !== record.ownerNonce)
     throw new ManagedChatRootError()
-  const after = await identity(record.canonicalRoot)
-  if (after !== before) throw new ManagedChatRootError()
-  return after
+  const after = await privateManagedDirectory(record.canonicalRoot)
+  if (after.dev !== before.dev || after.ino !== before.ino) throw new ManagedChatRootError()
+  return currentIdentity
 }
 
 /** Must run under the daemon's existing single-writer lock. Orphan candidates are never adopted. */
@@ -133,7 +162,7 @@ export async function prepareManagedChatRoot(input: {
   privateRoots: readonly string[]
   documentsDirectory: () => Promise<string>
   checkpoint?: (stage: Checkpoint) => void
-}): Promise<{ id: string; root: string }> {
+}): Promise<{ id: string; root: string; directoryIdentity: string }> {
   let registeredRoot: Readonly<{ id: string; root: string }> | undefined
   try {
     await mkdir(input.dataDir, { recursive: true, mode: 0o700 })
@@ -150,10 +179,11 @@ export async function prepareManagedChatRoot(input: {
     const metadata = join(dataDir, 'managed-chat-root.json')
     let record: RootRecord | undefined
     try {
-      const info = await lstat(metadata)
-      if (!info.isFile() || info.isSymbolicLink()) throw new ManagedChatRootError()
+      const info = await lstat(metadata, { bigint: true })
+      if (!info.isFile()) throw new ManagedChatRootError()
       record = trustedRecord(JSON.parse(await readFile(metadata, 'utf8')), dataDir)
       registeredRoot = { id: record.id, root: record.canonicalRoot }
+      if (info.nlink !== 1n || !hasPrivateMode(info, 0o600n)) throw new ManagedChatRootError()
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
@@ -164,12 +194,13 @@ export async function prepareManagedChatRoot(input: {
       for (const root of privateRoots) if (contains(root, parent)) throw new ManagedChatRootError()
       if (createPlatform().os === 'win32') windowsEnsurePrivateDirectorySync(parent)
       else await mkdir(parent, { recursive: true, mode: 0o700 })
-      await identity(parent)
+      await privateManagedDirectory(parent)
       const id = randomUUID()
       const root = join(parent, `chats-${id}`)
       if (createPlatform().os === 'win32') createPrivateDirectorySync(root)
       else await mkdir(root, { mode: 0o700 })
-      const directoryIdentity = await identity(root)
+      const rootInfo = await privateManagedDirectory(root)
+      const directoryIdentity = `${rootInfo.dev}:${rootInfo.ino}`
       input.checkpoint?.('after-mkdir')
       const ownerNonce = randomUUID()
       const marker = await open(
@@ -213,7 +244,7 @@ export async function prepareManagedChatRoot(input: {
       record = { ...record, directoryIdentity: currentIdentity, state: 'ready' }
       await persist(metadata, record)
     }
-    return { id: record.id, root: record.canonicalRoot }
+    return { id: record.id, root: record.canonicalRoot, directoryIdentity: currentIdentity }
   } catch (cause) {
     if (cause instanceof ManagedChatRootError && !registeredRoot) throw cause
     throw new ManagedChatRootError(cause, registeredRoot)

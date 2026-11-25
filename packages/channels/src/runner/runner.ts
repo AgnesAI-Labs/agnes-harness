@@ -542,7 +542,8 @@ export function createRunner(dependencies: RunnerDeps): Runner {
           if (
             payload.kind === 'packages_changed' ||
             payload.kind === 'tree_changed' ||
-            payload.kind === 'decisions_changed'
+            payload.kind === 'decisions_changed' ||
+            payload.kind === 'credential_deleted'
           )
             return
           const text = noticeText(payload)
