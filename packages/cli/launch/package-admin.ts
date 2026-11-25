@@ -179,18 +179,20 @@ export function localPackageAdmin(
         binding.credentialRef,
       ),
   )
-  const stopCloudNotices = client.on('notice', (payload) => {
-    const notice = payload as DaemonNotice | undefined
-    if (notice?.kind !== 'credential_deleted' || typeof notice.detail?.id !== 'string') return
-    handleCloudAuthorization.revokeCredential(notice.detail.id)
-    cloudGateway.revokeCredential(notice.detail.id)
-  })
-  const stopCloudConnection = client.on('connectionStateChanged', (state) => {
-    if (state !== 'reconnecting' && state !== 'closed') return
-    // A notice may have been lost. No existing grant or exchange survives that gap.
-    handleCloudAuthorization.revokeAll()
-    cloudGateway.revokeAll()
-  })
+  const stopCloudNotices =
+    client.on?.('notice', (payload) => {
+      const notice = payload as DaemonNotice | undefined
+      if (notice?.kind !== 'credential_deleted' || typeof notice.detail?.id !== 'string') return
+      handleCloudAuthorization.revokeCredential(notice.detail.id)
+      cloudGateway.revokeCredential(notice.detail.id)
+    }) ?? (() => {})
+  const stopCloudConnection =
+    client.on?.('connectionStateChanged', (state) => {
+      if (state !== 'reconnecting' && state !== 'closed') return
+      // A notice may have been lost. No existing grant or exchange survives that gap.
+      handleCloudAuthorization.revokeAll()
+      cloudGateway.revokeAll()
+    }) ?? (() => {})
   // createAdminSurface validates each schema before dispatching this fixed typed mapping.
   const invoke = async (action: AdminSurfaceAction, params: unknown): Promise<unknown> => {
     await initialize()

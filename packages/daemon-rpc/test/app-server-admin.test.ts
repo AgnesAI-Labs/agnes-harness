@@ -675,7 +675,7 @@ it('manages write-only generic credentials with MCP references, restart persiste
         id: ++command,
         method: '_agnes/v1/admin.cloud.authorize',
         params: {
-          origin: 'http://cloud.fixture:8443',
+          origin: 'https://cloud.fixture:8443',
           credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111',
         },
       })

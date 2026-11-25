@@ -1,9 +1,11 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
+import { randomInt } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { cp, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { AGH_DIR, type DiagnosticsEventsResult } from '@agnes/protocol'
 import {
   createClient,
@@ -16,6 +18,34 @@ import {
 
 const requestedEntry = process.env.AGH_WEB_TEST_ENTRY
 const entry = resolve(requestedEntry ?? 'packages/cli/dist/local/agnes.mjs')
+const loopback = '127.0.0.1'
+const workbenchWebSocket = /data-ws="([^"]+)"/u
+
+async function probePort(port: number): Promise<number> {
+  const listener = createServer()
+  await new Promise<void>((done, reject) => {
+    listener.once('error', reject)
+    listener.listen(port, loopback, done)
+  })
+  const address = listener.address()
+  await new Promise<void>((done, reject) => listener.close((error) => (error ? reject(error) : done())))
+  if (!address || typeof address === 'string') throw new Error('Missing loopback port')
+  return address.port
+}
+
+async function workbenchPort(): Promise<number> {
+  // Preserve the browser origin across restarts without competing with Linux's default ephemeral ports.
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      return await probePort(randomInt(18_000, 32_000))
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code !== 'EADDRINUSE' && code !== 'EACCES') throw error
+    }
+  }
+  return probePort(0)
+}
+
 export async function isolatedRuntime(
   launcher: 'root' | 'installed' = 'root',
   options: {
@@ -26,6 +56,8 @@ export async function isolatedRuntime(
     extraEnv?: Readonly<Record<string, string>>
   } = {},
 ) {
+  const port = await workbenchPort()
+  const url = `http://${loopback}:${port}`
   // Short paths avoid macOS Unix socket limits. Never inherit the user's profile or credentials.
   const parent = options.realModel ? join(homedir(), 'agh-real-eval') : sep === '\\' ? tmpdir() : '/tmp'
   await mkdir(parent, { recursive: true })
@@ -43,15 +75,6 @@ export async function isolatedRuntime(
     join(workspace, AGH_DIR, 'skills/e2e-playbook/SKILL.md'),
     '---\nname: e2e-playbook\ndescription: Synthetic offline test skill\n---\nReply with E2E_SKILL_LOADED.\n',
   )
-  const listener = createServer()
-  await new Promise<void>((done, reject) => {
-    listener.once('error', reject)
-    listener.listen(0, '127.0.0.1', done)
-  })
-  const address = listener.address()
-  if (!address || typeof address === 'string') throw new Error('Missing loopback port')
-  const url = `http://127.0.0.1:${address.port}`
-  await new Promise<void>((done) => listener.close(() => done()))
   const env = {
     PATH: process.env.PATH ?? '',
     HOME: root,
@@ -177,10 +200,23 @@ export async function isolatedRuntime(
     const closedClients = await Promise.allSettled([...clients].map((client) => client.close()))
     const failures = closedClients.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []))
     clients.clear()
-    if (web && web.exitCode === null && web.signalCode === null) {
-      const closed = new Promise<void>((done) => web?.once('exit', () => done()))
-      web.kill('SIGTERM')
-      const kill = setTimeout(() => web?.kill('SIGKILL'), 5000)
+    const child = web
+    if (child?.pid !== undefined && child.exitCode === null && child.signalCode === null) {
+      const pid = child.pid
+      const closed = new Promise<void>((done) => child.once('close', () => done()))
+      child.kill('SIGTERM')
+      const kill = setTimeout(() => {
+        if (child.exitCode !== null || child.signalCode !== null) return
+        if (sep === '\\') child.kill('SIGKILL')
+        else {
+          // Include the actual server if the POSIX launcher is only a wrapper around it.
+          try {
+            process.kill(-pid, 'SIGKILL')
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') child.kill('SIGKILL')
+          }
+        }
+      }, 5000)
       await closed
       clearTimeout(kill)
     }
@@ -190,42 +226,63 @@ export async function isolatedRuntime(
   }
   const start = async () => {
     const started = Date.now()
-    const command =
-      launcher === 'installed' && !requestedEntry ? resolve('packages/cli/bin/agh') : process.execPath
+    // Windows termination cannot forward through a launcher. Open the listener-owning entry directly.
+    const directEntry = Boolean(requestedEntry) || sep === '\\'
+    const installed = launcher === 'installed' && !directEntry
+    const command = installed ? resolve('packages/cli/bin/agh') : process.execPath
     const args = [
-      ...(requestedEntry ? [entry] : launcher === 'root' ? [resolve('agnes.mjs')] : []),
+      ...(installed ? [] : [directEntry ? entry : resolve('agnes.mjs')]),
       'serve',
       '--port',
-      String(address.port),
+      String(port),
     ]
-    web = spawn(command, args, {
+    const child = spawn(command, args, {
       cwd: workspace,
       env,
+      detached: sep !== '\\',
       stdio: ['ignore', 'pipe', 'pipe'],
     })
-    web.stdout?.on('data', (data) => {
+    web = child
+    let childOut = ''
+    let listening = false
+    child.stdout?.setEncoding('utf8').on('data', (text: string) => {
+      log += text
+      if (listening) return
+      childOut += text
+      // `agh serve` prints the URL on its own line after binding the workbench listener.
+      listening = `\n${childOut.replaceAll('\r\n', '\n')}`.includes(`\n${url}/\n`)
+    })
+    child.stderr?.on('data', (data) => {
       log += data.toString()
     })
-    web.stderr?.on('data', (data) => {
-      log += data.toString()
-    })
-    web.on('error', (error) => {
+    let spawnError: Error | undefined
+    child.on('error', (error) => {
+      spawnError = error
       log += error.message
     })
     const deadline = Date.now() + (sep === '\\' ? 120_000 : 25_000)
-    const child = web
     while (Date.now() < deadline) {
       if (web !== child) throw new Error('serve startup was cancelled')
-      if (child.exitCode !== null) throw new Error(`serve exited: ${log}`)
+      if (spawnError) throw new Error('serve failed to start', { cause: spawnError })
+      if (child.exitCode !== null || child.signalCode !== null) throw new Error(`serve exited: ${log}`)
+      if (!listening) {
+        await delay(100)
+        continue
+      }
+      let html: string | undefined
       try {
-        if ((await fetch(url, { signal: AbortSignal.timeout(1000) })).ok) {
-          starts.push({ start: started, ready: Date.now() })
-          return
-        }
+        const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(1000) })
+        if (response.ok) html = await response.text()
+        else await response.body?.cancel()
       } catch {
         /* Wait for the real daemon and BFF. */
       }
-      await new Promise((done) => setTimeout(done, 100))
+      if (html && workbenchWebSocket.test(html) && child.exitCode === null && child.signalCode === null) {
+        if (web !== child) throw new Error('serve startup was cancelled')
+        starts.push({ start: started, ready: Date.now() })
+        return
+      }
+      await delay(100)
     }
     throw new Error(`serve readiness timeout: ${log}`)
   }
@@ -247,7 +304,7 @@ export async function isolatedRuntime(
           if (transport === 'web') {
             // Discover only the served document's endpoint; administrative operations use SDK RPC.
             const html = await (await fetch(url)).text()
-            ws = html.match(/data-ws="([^"]+)"/)?.[1] ?? ''
+            ws = html.match(workbenchWebSocket)?.[1] ?? ''
             if (!ws) throw new Error('The real workbench did not advertise a daemon WebSocket')
           } else {
             const owner = JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8'))
