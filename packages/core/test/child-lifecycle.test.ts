@@ -1,11 +1,14 @@
 import { CHILD_CONTROL_FORMAT } from '@agnes/core-child-control/child/types'
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { CoreError } from '@agnes/core-common/types'
 import { buildToolContext } from '@agnes/core-effects/effects/tool-context'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import { readChildCheckpoint } from '../src/child/status.js'
+import { childControls } from '../src/child/pause-control.js'
+import { ROLE_DELEGATION } from '../src/child/roles.js'
+import { readChildCheckpoint, snapshotFromLedger } from '../src/child/status.js'
 import { childSessionToolFilter } from '../src/child/tool-filter.js'
 import { Kernel } from '../src/kernel.js'
 import { applyChildControl, controlledChildTree } from '../src/loop/child-controls.js'
@@ -620,21 +623,38 @@ it.each(['removed', 'replaced'] as const)(
       expect(collected.completionId).toBe(snap?.completionId)
       expect(collected.completionSeq).toBe(snap?.completionSeq)
 
-      // 2. Web control tree exposes controls.continue=true for pinned idle child, false for unbound child.
+      // 2. Web control tree exposes controls.continue/pause/retain for pinned idle child, false for unbound child.
       const tree = await controlledChildTree(parent2)
-      expect(tree.find((row) => row.id === restricted.key)?.controls.continue).toBe(true)
-      expect(tree.find((row) => row.id === unbound.key)?.controls.continue).toBe(false)
+      expect(tree.find((row) => row.id === restricted.key)?.controls).toMatchObject({
+        continue: true,
+        pause: true,
+        retain: true,
+      })
+      expect(tree.find((row) => row.id === unbound.key)?.controls).toMatchObject({
+        continue: false,
+        pause: false,
+        retain: false,
+        close: true,
+      })
 
-      // 3. Unbound child fails closed on cold sendMessage and Web continue.
+      // 3. Unbound child fails closed on cold sendMessage, Web continue/retain, and direct retainChild.
       await expect(
         parent2.d.children.sendMessage!(unbound.key, 'should fail', new AbortController().signal),
       ).rejects.toMatchObject({ code: 'E_RELATION' })
       await expect(
         applyChildControl(parent2, unbound.key, 'continue', actor, 'adm-unbound', 'should fail'),
       ).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
-
       await expect(
         applyChildControl(parent2, unbound.key, 'retain', actor, 'adm-bad-retain'),
+      ).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
+      await expect(
+        applyChildControl(parent2, unbound.key, 'pause', actor, 'adm-bad-pause'),
+      ).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
+      // Backend contract still refuses direct retainChild without a valid pinned binding.
+      await expect(
+        (parent2.d.children as unknown as { controls(): { retainChild(k: string): Promise<unknown> } })
+          .controls()
+          .retainChild(unbound.key),
       ).rejects.toMatchObject({ code: 'E_RELATION' })
 
       await applyChildControl(parent2, restricted.key, 'retain', actor, 'adm-cold-retain')
@@ -761,3 +781,633 @@ it.each(['idle', 'paused'] as const)(
     }
   },
 )
+
+function makeToolContext(parent: SessionImpl) {
+  return buildToolContext(
+    {
+      sessionKey: parent.key,
+      lane: parent.lane,
+      turn: 1,
+      step: 1,
+      depth: 0,
+      generationDepth: 0,
+      actor,
+      cwd: '/w',
+      workspaceRoot: '/w',
+      runtime: parent.d.runtime,
+      preset: parent.preset,
+      children: parent.d.children,
+      fsOps: testFsOps(),
+      netFetch: async () => new Response(''),
+      log: parent.d.logger,
+      invoke: async () => ({ content: [] }),
+      listTools: () => [],
+      appendPlan: async () => 1,
+      requestCompaction: () => {},
+      progress: () => {},
+      artifactJobEvent: async () => {},
+      lease: { remainingMs: () => 5000 },
+    },
+    {
+      toolUseId: 'subagent-tool',
+      name: 'subagent_collect',
+      signal: new AbortController().signal,
+      timeoutMs: 5000,
+      outputMaxBytes: 32768,
+    },
+  )
+}
+
+it('fails retryably on cold ledger read error without ACK, preserves list tolerance and zero-seq cancel (#04)', async () => {
+  const storage = new MemoryStorage()
+  const provider = Object.assign(fakeProvider([textTurn('real completed text')]), {
+    models: () => [catalogue()],
+  })
+  const first = kernel({ storage, provider })
+  const parent1 = await first.session('cold-read-parent', sessionOpts)
+  const completed = await parent1.d.children.createWithKind!('spawn', {
+    parent: parent1.key,
+    cwd: '/w',
+    input: 'finish work',
+  })
+  await completed.run('finish work')
+  const deferredCancelled = await parent1.d.children.createWithKind!('spawn', {
+    parent: parent1.key,
+    cwd: '/w',
+    input: 'never started',
+    start: false,
+  })
+  await parent1.d.children.cancel!(deferredCancelled.key)
+  await first.close()
+
+  const second = kernel({ storage, provider })
+  try {
+    const parent2 = await second.session('cold-read-parent', { ...sessionOpts, writerRunId: 'r2' })
+    const ctx = makeToolContext(parent2)
+    const origScan = storage.scan.bind(storage)
+    let failReads = true
+    vi.spyOn(storage, 'scan').mockImplementation(async (key, q) => {
+      if (failReads && key === completed.key) throw new Error('transient EIO')
+      return origScan(key, q)
+    })
+
+    // List degrades gracefully to known durable state; snapshotFromLedger omits claimable completionId.
+    const listing = await parent2.d.children.list!()
+    expect(listing.find((row) => row.id === completed.key)).toMatchObject({ status: 'completed' })
+    const snap = await snapshotFromLedger(parent2, (await storage.lookupByKey(completed.key))!)
+    expect(snap.ledgerReadFailed).toBe(true)
+    expect(snap.completionId).toBeUndefined()
+    expect(snap.completionSeq).toBeUndefined()
+
+    // Explicit collect throws a retryable error and writes NO collected ACK.
+    await expect(ctx.subagent.collect(completed.key)).rejects.toMatchObject({
+      code: 'E_STORAGE_FAULT',
+      detail: expect.objectContaining({ retryable: true }),
+    })
+    const acksDuringFault = await parent2.scan({ type: 'x/core/child-result-collected', limit: 20 })
+    expect(
+      acksDuringFault.filter((row) => (row.data as { childKey?: string }).childKey === completed.key),
+    ).toEqual([])
+
+    // Once storage recovers, collect returns the real text and completion identity and writes the ACK.
+    failReads = false
+    const recovered = await ctx.subagent.collect(completed.key)
+    expect(recovered).toMatchObject({
+      childKey: completed.key,
+      status: 'completed',
+      text: 'real completed text',
+    })
+    expect(recovered.completionId).toBeTruthy()
+    expect(recovered.completionSeq).toBeGreaterThan(0)
+    const acksAfter = await parent2.scan({ type: 'x/core/child-result-collected', limit: 20 })
+    expect(
+      acksAfter.some(
+        (row) =>
+          (row.data as { childKey?: string; resultSeq?: number }).childKey === completed.key &&
+          (row.data as { resultSeq?: number }).resultSeq === recovered.completionSeq,
+      ),
+    ).toBe(true)
+
+    // Legitimate zero-seq cancel still collects and ACKs cleanly.
+    const cancelledRes = await ctx.subagent.collect(deferredCancelled.key)
+    expect(cancelledRes).toMatchObject({
+      childKey: deferredCancelled.key,
+      status: 'cancelled',
+      completionSeq: 0,
+    })
+    expect(cancelledRes.completionId).toBeTruthy()
+  } finally {
+    vi.restoreAllMocks()
+    await second.close()
+  }
+})
+
+it('settles cold cancel to cancelled when stopped, keeps cancelling when unconfirmed/leased, and reconciles CAS races (#05)', async () => {
+  const storage = new MemoryStorage()
+  const preset = { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 1, maxFanOut: 1 }
+  const provider = Object.assign(
+    fakeProvider([textTurn('paused a'), textTurn('fresh b'), textTurn('unconfirmed c')]),
+    { models: () => [catalogue()] },
+  )
+  const first = kernel({ storage, provider, preset })
+  const parent1 = await first.session('cold-cancel-parent', sessionOpts)
+  const childA = await parent1.d.children.createWithKind!('spawn', {
+    parent: parent1.key,
+    cwd: '/w',
+    input: 'pause me',
+    resident: true,
+  })
+  await childA.run('pause me')
+  await parent1.d.children.pause!(childA.key)
+  await first.close()
+
+  const second = kernel({ storage, provider, preset })
+  try {
+    const parent2 = await second.session('cold-cancel-parent', { ...sessionOpts, writerRunId: 'r2' })
+    const ctx = makeToolContext(parent2)
+
+    // Cold paused child with no live writer lease settles to cancelled and frees the fan-out slot.
+    const cancelled = await ctx.subagent.cancel(childA.key)
+    expect(cancelled).toMatchObject({
+      childKey: childA.key,
+      status: 'cancelled',
+      executionState: 'cancelled',
+    })
+    expect((await storage.lookupByKey(childA.key))?.state).toBe('cancelled')
+    expect((await parent2.d.children.list!()).find((row) => row.id === childA.key)).toMatchObject({
+      status: 'cancelled',
+      executionState: 'cancelled',
+    })
+    expect(await ctx.subagent.collect(childA.key)).toMatchObject({
+      status: 'cancelled',
+      executionState: 'cancelled',
+    })
+
+    // Fan-out slot (maxFanOut=1) is free after cold cancel settled to cancelled.
+    const childB = await parent2.d.children.createWithKind!('spawn', {
+      parent: parent2.key,
+      cwd: '/w',
+      input: 'second slot',
+      resident: true,
+    })
+    await childB.run('second slot')
+    await parent2.d.children.pause!(childB.key)
+    // Inject an unconfirmed stop receipt and drop local handle by reopening in a third kernel.
+    const childBSession = second.get(childB.key)!
+    await childBSession.append([
+      childBSession.ev(
+        'x/core/child-stop-receipt',
+        {
+          childKey: childB.key,
+          toolUseId: 't1',
+          toolName: 'write_note',
+          cancelRequestedAt: 1,
+          toolReturnedAt: null,
+          terminalConfirmedAt: null,
+          disposition: 'timed_out_unknown',
+        },
+        { ignorable: true },
+      ),
+    ])
+    await second.close()
+
+    const third = kernel({ storage, provider, preset })
+    try {
+      const parent3 = await third.session('cold-cancel-parent', { ...sessionOpts, writerRunId: 'r3' })
+      const ctx3 = makeToolContext(parent3)
+      const unconfirmed = await ctx3.subagent.cancel(childB.key)
+      expect(unconfirmed).toMatchObject({
+        childKey: childB.key,
+        status: 'running',
+        executionState: 'cancelling',
+      })
+      expect((await storage.lookupByKey(childB.key))?.state).toBe('cancelling')
+      expect((await parent3.d.children.list!()).find((row) => row.id === childB.key)).toMatchObject({
+        status: 'running',
+        executionState: 'cancelling',
+      })
+      expect(await ctx3.subagent.collect(childB.key)).toMatchObject({
+        status: 'running',
+        executionState: 'cancelling',
+      })
+      // Unconfirmed cancelling child still holds the fan-out slot.
+      await expect(
+        parent3.d.children.createWithKind!('spawn', {
+          parent: parent3.key,
+          cwd: '/w',
+          input: 'blocked by cancelling',
+        }),
+      ).rejects.toMatchObject({ code: 'E_CHILD_LIMIT' })
+
+      // CAS race: if the child moves to completed concurrently, cancel re-reads and reports completed.
+      const rowB = (await storage.lookupByKey(childB.key))!
+      // Create a fresh cold child C whose casState('cancelling') races with an external 'completed' transition.
+      const fourth = kernel({
+        storage,
+        provider,
+        preset: { ...preset, maxFanOut: 4 },
+      })
+      try {
+        const parent4 = await fourth.session('cold-cancel-race', { ...sessionOpts, writerRunId: 'r4' })
+        const childC = await parent4.d.children.createWithKind!('spawn', {
+          parent: parent4.key,
+          cwd: '/w',
+          input: 'race child',
+          resident: true,
+        })
+        await childC.run('race child')
+        await parent4.d.children.pause!(childC.key)
+        await fourth.close()
+        const fifth = kernel({ storage, provider, preset: { ...preset, maxFanOut: 4 } })
+        try {
+          const parent5 = await fifth.session('cold-cancel-race', { ...sessionOpts, writerRunId: 'r5' })
+          const origCas = storage.casState.bind(storage)
+          let raced = false
+          vi.spyOn(storage, 'casState').mockImplementation(async (k, rev, next, adm) => {
+            if (!raced && k === childC.key && next === 'cancelling') {
+              raced = true
+              await origCas(k, rev, 'completed')
+              return false
+            }
+            return origCas(k, rev, next, adm)
+          })
+          const racedRes = await makeToolContext(parent5).subagent.cancel(childC.key)
+          expect(racedRes).toMatchObject({
+            childKey: childC.key,
+            status: 'completed',
+            executionState: 'completed',
+          })
+          expect((await storage.lookupByKey(childC.key))?.state).toBe('completed')
+          expect(rowB.state).toBe('cancelling')
+        } finally {
+          vi.restoreAllMocks()
+          await fifth.close()
+        }
+      } finally {
+        await fourth.close()
+      }
+    } finally {
+      await third.close()
+    }
+  } finally {
+    await second.close()
+  }
+})
+
+it('reopens a cold paused role ancestor through its pinned composition without cancelling on reopen failure (#06 & #18)', async () => {
+  const storage = new MemoryStorage()
+  const rootPreset = { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 2, maxFanOut: 8 }
+  const rolePreset = {
+    ...presetDefaults(),
+    name: 'role-specialist',
+    permission: 'read-only' as const,
+    treeBudgetCredits: 100,
+    generationLimit: 2,
+    maxFanOut: 8,
+  }
+  const roleRef = { ref: '@test/app#specialist' as const, title: { en: 'Specialist' } }
+  const provider = Object.assign(
+    fakeProvider([
+      textTurn('role turn 1'),
+      textTurn('grandchild turn 1'),
+      textTurn('forged grandchild turn 1'),
+      textTurn('grandchild turn 2'),
+    ]),
+    { models: () => [catalogue()] },
+  )
+
+  const openRoleIn = (hostKernel: Kernel, failNext: () => boolean, count: { reopens: number }) => ({
+    list: async () => [roleRef],
+    resolve: async (parent: SessionImpl) => ({
+      role: roleRef,
+      open: async (key: string, options: Parameters<Kernel['session']>[1]) => {
+        const s = await hostKernel.session(key, {
+          ...options,
+          preset: rolePreset,
+          policyDigest: 'role-policy-digest',
+        })
+        await s.append([
+          s.ev(
+            ROLE_DELEGATION,
+            {
+              role: roleRef,
+              parentKey: parent.key,
+              actor,
+              tools: ['read_only'],
+              generationLimit: 2,
+              maxFanOut: 8,
+              permission: 'read-only',
+              approvalPolicy: 'never',
+              parentPolicy: 'default',
+              sandboxRequired: false,
+              filesystem: fakeSeams().sandbox.fsPolicy(),
+            },
+            { ignorable: true },
+          ),
+        ])
+        return s
+      },
+    }),
+    reopen: async (key: string, options: Parameters<Kernel['session']>[1]) => {
+      count.reopens += 1
+      if (failNext()) throw new CoreError('E_UNSUPPORTED', 'injected role reopen failure')
+      return hostKernel.session(key, {
+        ...options,
+        preset: rolePreset,
+        policyDigest: 'role-policy-digest',
+      })
+    },
+  })
+
+  const firstRoleKernel = kernel({ storage, provider, preset: rolePreset })
+  const count = { reopens: 0 }
+  const firstRootKernel = kernel({
+    storage,
+    provider,
+    preset: rootPreset,
+    childRoles: openRoleIn(firstRoleKernel, () => false, count),
+  })
+  const root1 = await firstRootKernel.session('role-tree-root', sessionOpts)
+  const roleHandle = await root1.d.children.createWithKind!('spawn', {
+    parent: root1.key,
+    cwd: '/w',
+    input: 'role parent',
+    role: roleRef.ref,
+    resident: true,
+    toolFilter: { allow: ['read_only'] },
+  })
+  await roleHandle.run('role parent')
+  const roleSession = firstRoleKernel.get(roleHandle.key)!
+  // Grandchild G under role R (different preset & policyDigest from root!) with narrow toolFilter.
+  const grand = await roleSession.d.children.create({
+    parent: roleSession.key,
+    cwd: '/w',
+    input: 'grandchild work',
+    resident: true,
+    toolFilter: { allow: ['read_only'] },
+  })
+  await grand.run('grandchild work')
+  // Second grandchild G2 whose retained authority is forged to root's authority (with valid self-digest).
+  const forged = await roleSession.d.children.create({
+    parent: roleSession.key,
+    cwd: '/w',
+    input: 'forged grandchild',
+    resident: true,
+    toolFilter: { allow: ['read_only'] },
+  })
+  await forged.run('forged grandchild')
+  const forgedSession = firstRoleKernel.get(forged.key)!
+  const rootAuthority = sha256Hex(
+    canonicalJson({
+      profile: root1.d.resolvedProfileHash,
+      policy: root1.d.policyDigest,
+      preset: root1.preset,
+      actor: root1.d.actor,
+      loop: root1.loop,
+    }),
+  )
+  const forgedPinned = {
+    authority: rootAuthority,
+    generationDepth: 2,
+    cwd: '/w',
+    toolFilter: { allow: ['read_only'], deny: [] },
+  }
+  await forgedSession.append([
+    forgedSession.ev(
+      'x/core/child-retained',
+      {
+        childKey: forged.key,
+        binding: {
+          ...forgedPinned,
+          digest: sha256Hex(canonicalJson({ childKey: forged.key, ...forgedPinned })),
+        },
+      },
+      { ignorable: true },
+    ),
+  ])
+
+  await root1.d.children.pause!(roleHandle.key)
+  const pausedRoleBefore = { ...(await storage.lookupByKey(roleHandle.key))! }
+  const roleCheckpointBefore = await readChildCheckpoint(root1, pausedRoleBefore)
+  await firstRootKernel.close()
+  await firstRoleKernel.close()
+
+  let injectReopenFail = true
+  const secondRoleKernel = kernel({ storage, provider, preset: rolePreset })
+  const secondRootKernel = kernel({
+    storage,
+    provider,
+    preset: rootPreset,
+    childRoles: openRoleIn(secondRoleKernel, () => injectReopenFail, count),
+  })
+  try {
+    const root2 = await secondRootKernel.session('role-tree-root', { ...sessionOpts, writerRunId: 'r2' })
+    // #18: Cold tree shows valid grandchild as continuable even when intermediate role has different preset/policy.
+    const tree = await controlledChildTree(root2)
+    expect(tree.find((row) => row.id === grand.key)?.controls).toMatchObject({
+      continue: true,
+      pause: true,
+      retain: true,
+    })
+
+    // #06: Injected role reopen failure MUST NOT mutate paused role ancestor R to cancelled.
+    await expect(applyChildControl(root2, grand.key, 'pause', actor, 'adm-fail')).rejects.toThrow(
+      'injected role reopen failure',
+    )
+    expect(await storage.lookupByKey(roleHandle.key)).toMatchObject({
+      state: 'paused',
+      stateRevision: pausedRoleBefore.stateRevision,
+    })
+    expect(await readChildCheckpoint(root2, (await storage.lookupByKey(roleHandle.key))!)).toEqual(
+      roleCheckpointBefore,
+    )
+    expect(await storage.lookupByKey(grand.key)).toMatchObject({ state: 'idle' })
+
+    // #06: Clear failure — pausing grandchild reopens role R through pinned Host composition, keeping R paused.
+    injectReopenFail = false
+    const reopensBefore = count.reopens
+    await applyChildControl(root2, grand.key, 'pause', actor, 'adm-pause-g')
+    expect(count.reopens).toBeGreaterThan(reopensBefore)
+    expect(await storage.lookupByKey(roleHandle.key)).toMatchObject({
+      state: 'paused',
+      stateRevision: pausedRoleBefore.stateRevision,
+    })
+    expect(await secondRoleKernel.get(roleHandle.key)!.controls.paused()).toBe(true)
+    expect(childSessionToolFilter(secondRoleKernel.get(roleHandle.key)!)).toEqual({
+      allow: ['read_only'],
+      deny: [],
+    })
+    expect(await storage.lookupByKey(grand.key)).toMatchObject({ state: 'paused' })
+
+    // #18: Resume and continue valid grandchild under direct role parent's pinned authority; toolFilter preserved.
+    await applyChildControl(root2, grand.key, 'resume', actor, 'adm-resume-g')
+    await applyChildControl(root2, grand.key, 'continue', actor, 'adm-cont-g', 'follow up under role')
+    await vi.waitFor(async () => {
+      const snap = await secondRoleKernel.get(roleHandle.key)!.d.children.inspect!(grand.key)
+      expect(snap?.text).toBe('grandchild turn 2')
+      expect(snap?.idle).toBe(true)
+    })
+    expect(childSessionToolFilter(secondRoleKernel.get(grand.key)!)).toEqual({
+      allow: ['read_only'],
+      deny: [],
+    })
+
+    // #18: Grandchild whose binding was forged with root's authority is refused under direct role parent's authority.
+    await expect(
+      applyChildControl(root2, forged.key, 'continue', actor, 'adm-forged', 'should refuse'),
+    ).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
+  } finally {
+    await secondRootKernel.close()
+    await secondRoleKernel.close()
+  }
+})
+
+it('refuses a forged-authority cold grandchild when direct parent is reopened on demand (#18)', async () => {
+  const storage = new MemoryStorage()
+  const rootPreset = { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 2, maxFanOut: 8 }
+  const rolePreset = {
+    ...presetDefaults(),
+    name: 'role-b',
+    permission: 'read-only' as const,
+    treeBudgetCredits: 100,
+    generationLimit: 2,
+    maxFanOut: 8,
+  }
+  const roleRef = { ref: '@test/app#spec2' as const, title: { en: 'Spec2' } }
+  const provider = Object.assign(fakeProvider([textTurn('r1'), textTurn('g1')]), {
+    models: () => [catalogue()],
+  })
+  const makeRoles = (hostKernel: Kernel) => ({
+    list: async () => [roleRef],
+    resolve: async (parent: SessionImpl) => ({
+      role: roleRef,
+      open: async (key: string, options: Parameters<Kernel['session']>[1]) => {
+        const s = await hostKernel.session(key, { ...options, preset: rolePreset, policyDigest: 'p-role' })
+        await s.append([
+          s.ev(
+            ROLE_DELEGATION,
+            {
+              role: roleRef,
+              parentKey: parent.key,
+              actor,
+              tools: [],
+              generationLimit: 2,
+              maxFanOut: 8,
+              permission: 'read-only',
+              approvalPolicy: 'never',
+              parentPolicy: 'default',
+              sandboxRequired: false,
+              filesystem: fakeSeams().sandbox.fsPolicy(),
+            },
+            { ignorable: true },
+          ),
+        ])
+        return s
+      },
+    }),
+    reopen: async (key: string, options: Parameters<Kernel['session']>[1]) =>
+      hostKernel.session(key, { ...options, preset: rolePreset, policyDigest: 'p-role' }),
+  })
+  const rk1 = kernel({ storage, provider, preset: rolePreset })
+  const k1 = kernel({ storage, provider, preset: rootPreset, childRoles: makeRoles(rk1) })
+  const root1 = await k1.session('forged-root', sessionOpts)
+  const role = await root1.d.children.createWithKind!('spawn', {
+    parent: root1.key,
+    cwd: '/w',
+    input: 'role',
+    role: roleRef.ref,
+    resident: true,
+  })
+  await role.run('role')
+  const roleSession = rk1.get(role.key)!
+  const forged = await roleSession.d.children.create({
+    parent: roleSession.key,
+    cwd: '/w',
+    input: 'forged',
+    resident: true,
+  })
+  await forged.run('forged')
+  const forgedSession = rk1.get(forged.key)!
+  const pinned = { authority: 'wrong-authority', generationDepth: 2, cwd: '/w' }
+  await forgedSession.append([
+    forgedSession.ev(
+      'x/core/child-retained',
+      {
+        childKey: forged.key,
+        binding: { ...pinned, digest: sha256Hex(canonicalJson({ childKey: forged.key, ...pinned })) },
+      },
+      { ignorable: true },
+    ),
+  ])
+  await k1.close()
+  await rk1.close()
+
+  const rk2 = kernel({ storage, provider, preset: rolePreset })
+  const k2 = kernel({ storage, provider, preset: rootPreset, childRoles: makeRoles(rk2) })
+  try {
+    const root2 = await k2.session('forged-root', { ...sessionOpts, writerRunId: 'r2' })
+    await expect(
+      applyChildControl(root2, forged.key, 'continue', actor, 'adm-forged-cold', 'nope'),
+    ).rejects.toMatchObject({
+      code: 'E_RELATION',
+      detail: expect.objectContaining({ reason: 'BINDING_AUTHORITY_MISMATCH' }),
+    })
+  } finally {
+    await k2.close()
+    await rk2.close()
+  }
+})
+
+it('hides pause and retain for legacy cold idle children missing a pinned binding', async () => {
+  const storage = new MemoryStorage()
+  const k = kernel({ storage })
+  try {
+    const parent = await k.session('legacy-idle-root', sessionOpts)
+    await storage.ensureRootScope('root', 10_000_000n)
+    const created = await storage.createDelegatedChild({
+      fresh: true,
+      childKey: `${parent.key}/legacy`,
+      parentKey: parent.key,
+      boundarySeq: 0,
+      creationId: 'legacy-1',
+      kind: 'spawn',
+      rootTaskId: 'root',
+      runtimeOwnerSessionKey: parent.key,
+      generationDepth: 1,
+      generationLimit: 2,
+      maxFanOut: 4,
+      inputHash: 'h',
+      inputText: 'legacy idle child',
+      cwd: '/w',
+      actorId: actor.id,
+      isolation: 'shared',
+      workspaceId: 'ws:legacy',
+      treeCapMicro: 10_000_000n,
+      childCapMicro: null,
+      writerRunId: 'w',
+    })
+    if (created.status !== 'created') throw new Error('expected created')
+    await storage.casState(created.record.childKey, created.record.stateRevision, 'idle')
+    const tree = await controlledChildTree(parent)
+    expect(tree.find((row) => row.id === created.record.childKey)?.controls).toMatchObject({
+      pause: false,
+      retain: false,
+      continue: false,
+      close: true,
+    })
+    await expect(
+      applyChildControl(parent, created.record.childKey, 'pause', actor, 'adm-legacy-pause'),
+    ).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
+    await expect(
+      applyChildControl(parent, created.record.childKey, 'retain', actor, 'adm-legacy-retain'),
+    ).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
+    await expect(parent.d.children.pause!(created.record.childKey)).rejects.toMatchObject({
+      code: 'E_RELATION',
+    })
+    await expect(childControls(parent).retainChild(created.record.childKey)).rejects.toMatchObject({
+      code: 'E_RELATION',
+    })
+  } finally {
+    await k.close()
+  }
+})

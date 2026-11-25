@@ -3,12 +3,13 @@ import {
   resolveTerminalChildState,
 } from '@agnes/core-child-control/child/status-projection'
 import { requireChildControl } from '@agnes/core-child-control/child/store'
-import type { ChildTaskRecord } from '@agnes/core-child-control/child/types'
+import { type ChildTaskRecord, isTerminalChildState } from '@agnes/core-child-control/child/types'
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { CoreError } from '@agnes/core-common/types'
 import type { ChildStatus } from '@agnes/core-effects/effects/tool-context'
 import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import { SessionLogImpl } from '@agnes/core-ledger/log/session-log'
+import { clipUtf16 } from '@agnes/core-ledger/project/clip'
 import type {
   ChildAgentToolFilter,
   ChildCheckpointRecord,
@@ -24,6 +25,7 @@ import { childControlMetrics } from './control-metrics.js'
 import { childExecutionReceipt } from './execution-receipt.js'
 import { type ChildEnd, lastChildEnd } from './failure.js'
 import { retiredCompletionIdentity } from './idle-retirement-fact.js'
+import { ROLE_DELEGATION, recordedChildRole } from './roles.js'
 import { childSessionToolFilter, narrowChildToolFilter } from './tool-filter.js'
 
 export function projectChildControls(record: ChildTaskRecord) {
@@ -49,9 +51,13 @@ type Snapshot = ChildStatus &
     stopReceipt?: NonInterruptibleStopReceipt
   }
 
-export async function requireConfirmedColdStop(parent: SessionImpl, record: ChildTaskRecord) {
+export async function hasUnconfirmedColdStop(parent: SessionImpl, record: ChildTaskRecord): Promise<boolean> {
   const { stopReceipt } = await lifecycleFacts(parent, record)
-  if (stopReceipt?.disposition === 'timed_out_unknown')
+  return stopReceipt?.disposition === 'timed_out_unknown'
+}
+
+export async function requireConfirmedColdStop(parent: SessionImpl, record: ChildTaskRecord) {
+  if (await hasUnconfirmedColdStop(parent, record))
     throw new CoreError('E_RELATION', 'Tool return is unconfirmed; child remains cancelling')
 }
 
@@ -71,6 +77,24 @@ async function lifecycleFacts(parent: SessionImpl, record: ChildTaskRecord) {
   }
 }
 
+/** Strip paired Markdown formatting while preserving literal identifiers (`web_search`, `C#`, `#42`). */
+export function cleanChildLabel(inputText: string): string {
+  const firstLine = inputText.trim().split(/\r?\n/, 1)[0] ?? ''
+  const cleaned = firstLine
+    .replace(/^\s*#{1,6}\s+/, '')
+    .replace(/\s+#+\s*$/, '')
+    .replace(/`+([^`]+)`+/g, '$1')
+    .replace(/\*\*\*([^*]+)\*\*\*/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/(^|[\s([{"'（【「])\*([^*\s](?:[^*]*[^*\s])?)\*(?=$|[\s.,;:!?)\]}"'）】」。，！？])/g, '$1$2')
+    .replace(/(^|[^\p{L}\p{N}_])___([^_]+)___(?=$|[^\p{L}\p{N}_])/gu, '$1$2')
+    .replace(/(^|[^\p{L}\p{N}_])__([^_]+)__(?=$|[^\p{L}\p{N}_])/gu, '$1$2')
+    .replace(/(^|[^\p{L}\p{N}_])_([^_\s](?:[^_]*[^_\s])?)_(?=$|[^\p{L}\p{N}_])/gu, '$1$2')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return clipUtf16(cleaned, 80)
+}
+
 export async function humanChildState(
   parent: SessionImpl,
   record: ChildTaskRecord,
@@ -80,13 +104,13 @@ export async function humanChildState(
   const projected = projectChildControls(record)
   const capabilities = child?.d.loopFactory.controls
   const steer = (child ? capabilities?.steer : parent.d.loopFactory.controls?.steer) === true
-  const label = record.inputText
-    .trim()
-    .split('\n', 1)[0]
-    ?.replace(/[*_`#]+/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 80)
+  const label = cleanChildLabel(record.inputText)
+  const canBindCold = Boolean(child) || continuable
+  const canRetain = child
+    ? projected.controls.retain
+    : record.state === 'paused'
+      ? await hasColdCheckpointBinding(parent, record, record.parentKey === parent.key)
+      : projected.controls.retain && continuable
   return {
     id: record.childKey,
     parentId: record.parentKey,
@@ -95,7 +119,8 @@ export async function humanChildState(
     ...projected,
     controls: {
       ...projected.controls,
-      pause: projected.controls.pause && (!child || capabilities?.pause === true),
+      pause: projected.controls.pause && canBindCold && (!child || capabilities?.pause === true),
+      retain: canRetain,
       stop: projected.controls.stop && capabilities?.interrupt === true && !!child?.op(),
       continue: projected.controls.cancel && record.state !== 'paused' && steer && continuable,
     },
@@ -111,13 +136,11 @@ export function snapshotFromRecord(record: ChildTaskRecord): Snapshot {
       record.state === 'failed' || record.state === 'cancelled' ? 'error' : terminal ? 'done' : 'running',
     lastSeq: 0,
     ...(record.state === 'idle' ? { idle: true } : {}),
-    ...(record.state === 'cancelled' ? { cancelled: true as const } : {}),
-    ...(terminal
+    ...(record.state === 'cancelled'
       ? {
-          completionId: childCompletionId(
-            record.childKey,
-            record.state as 'completed' | 'failed' | 'cancelled',
-          ),
+          cancelled: true as const,
+          completionId: childCompletionId(record.childKey, 'cancelled'),
+          completionSeq: 0,
         }
       : {}),
   }
@@ -131,6 +154,7 @@ export async function snapshotFromLedger(
 ): Promise<Snapshot> {
   record = { ...record }
   const base = snapshotFromRecord(record)
+  const terminal = record.state === 'completed' || record.state === 'failed' || record.state === 'cancelled'
   try {
     const fromSeq = (record.boundarySeq + 1) as typeof record.boundarySeq
     const tail = await parent.d.log.storage.scan(record.childKey, { fromSeq, order: 'desc', limit: 1 })
@@ -148,13 +172,16 @@ export async function snapshotFromLedger(
       .join('')
     const idle = record.state === 'idle'
     const completionSeq =
-      base.completionId || idle ? await childResultSequence(parent, record, tail[0]?.seq ?? 0) : undefined
+      terminal || idle ? await childResultSequence(parent, record, tail[0]?.seq ?? 0) : undefined
     const completionId =
       completionSeq === undefined
         ? undefined
         : ((await retiredCompletionIdentity(parent, record, completionSeq)) ??
-          base.completionId ??
-          (idle ? childCompletionId(record.childKey, 'completed', completionSeq) : undefined))
+          (terminal
+            ? childCompletionId(record.childKey, record.state as 'completed' | 'failed' | 'cancelled')
+            : idle
+              ? childCompletionId(record.childKey, 'completed', completionSeq)
+              : undefined))
     return {
       ...base,
       ...(await lifecycleFacts(parent, record)),
@@ -164,8 +191,13 @@ export async function snapshotFromLedger(
       ...(text ? { text } : {}),
       receipt: await childExecutionReceipt(parent, record),
     }
-  } catch {
-    return base
+  } catch (error) {
+    const { completionId: _id, completionSeq: _seq, ...degraded } = base
+    return {
+      ...degraded,
+      ledgerReadFailed: true as const,
+      readError: error instanceof Error ? error.message : String(error),
+    }
   }
 }
 
@@ -297,19 +329,39 @@ function bindingDigest(childKey: string, binding: Omit<RetainedBinding, 'digest'
   return sha256Hex(canonicalJson({ childKey, ...binding }))
 }
 
-export function bindingMatchesParent(
-  parent: SessionImpl,
+export function bindingMatchesRecord(
   record: ChildTaskRecord,
   binding: RetainedBinding | undefined,
 ): binding is RetainedBinding {
   if (!binding) return false
   const { digest, ...pinned } = binding
   return (
+    typeof pinned.authority === 'string' &&
+    pinned.authority.length > 0 &&
     pinned.cwd === record.cwd &&
     pinned.generationDepth === record.generationDepth &&
-    pinned.authority === authority(parent) &&
     digest === bindingDigest(record.childKey, pinned)
   )
+}
+
+export function bindingMatchesParent(
+  parent: SessionImpl,
+  record: ChildTaskRecord,
+  binding: RetainedBinding | undefined,
+): binding is RetainedBinding {
+  return bindingMatchesRecord(record, binding) && binding.authority === authority(parent)
+}
+
+async function hasColdCheckpointBinding(
+  parent: SessionImpl,
+  record: ChildTaskRecord,
+  directParent: boolean,
+): Promise<boolean> {
+  const checkpoint = await latestCheckpoint(parent, record)
+  if (!checkpoint) return false
+  return directParent
+    ? bindingMatchesParent(parent, record, checkpoint.binding)
+    : bindingMatchesRecord(record, checkpoint.binding)
 }
 
 export function retainedOpenOptions(
@@ -464,24 +516,47 @@ export async function requireOpenWorkspace(
 }
 
 export async function childCloseOutcome(parent: SessionImpl, record: ChildTaskRecord) {
+  if (isTerminalChildState(record.state)) return resolveTerminalChildState(record.state, 'cancelled')
   const checkpoint = record.state === 'paused' ? await readChildCheckpoint(parent, record) : undefined
-  const [end] = await parent.d.log.storage.scan(record.childKey, {
-    type: 'turn/end',
+  const query = {
     fromSeq: record.boundarySeq + 1,
-    order: 'desc',
+    ...(checkpoint ? { toSeq: checkpoint.pausedAtSeq } : {}),
+    order: 'desc' as const,
     limit: 1,
-  })
-  const reason = (end?.data as { reason?: string } | undefined)?.reason
+  }
+  const [[start], [end]] = await Promise.all([
+    parent.d.log.storage.scan(record.childKey, { ...query, type: 'turn/start' }),
+    parent.d.log.storage.scan(record.childKey, { ...query, type: 'turn/end' }),
+  ])
+  const hasOpenTurn = (start?.seq ?? 0) > (end?.seq ?? 0)
+  const currentEndReason = !hasOpenTurn ? (end?.data as { reason?: string } | undefined)?.reason : undefined
+  const effectiveState = record.state === 'paused' ? checkpoint?.previousState : record.state
   const outcome =
-    reason && ['error', 'budget', 'max_steps'].includes(reason)
+    currentEndReason && ['error', 'budget', 'max_steps'].includes(currentEndReason)
       ? 'failed'
-      : record.state === 'idle' ||
-          checkpoint?.previousState === 'idle' ||
-          checkpoint?.artifactPaths.length ||
-          reason === 'completed'
+      : !hasOpenTurn && effectiveState === 'idle'
         ? 'completed'
         : 'cancelled'
   return resolveTerminalChildState(record.state, outcome)
+}
+
+export async function childHasPendingWork(
+  parent: SessionImpl,
+  key: string,
+  child?: SessionImpl,
+): Promise<boolean> {
+  if (child) {
+    const inbox = child.latest('inbox') as { items?: unknown[] } | undefined
+    return Boolean(child.op() || inbox?.items?.length)
+  }
+  const registers = await parent.d.log.storage.registers(key)
+  return registers.some(
+    (row) =>
+      (row.register === 'op.state' && row.data !== null) ||
+      (row.register === 'inbox' &&
+        Array.isArray((row.data as { items?: unknown[] } | undefined)?.items) &&
+        ((row.data as { items?: unknown[] }).items?.length ?? 0) > 0),
+  )
 }
 
 export async function checkpointPauseFence(
@@ -508,6 +583,22 @@ export async function checkpointPauseFence(
     )
   if (child) await child.locked(write)
   else await write()
+}
+
+export async function recordedOwnChildRole(parent: SessionImpl, record: ChildTaskRecord) {
+  const [row] = await parent.d.log.storage.scan(record.childKey, {
+    type: ROLE_DELEGATION,
+    fromSeq: record.boundarySeq + 1,
+    limit: 1,
+  })
+  if (!row || row.origin !== 'system' || row.trust !== 'trusted') return undefined
+  const [owned] = await parent.d.log.storage.scanIntegrity(record.childKey, {
+    fromSeq: row.seq,
+    toSeq: row.seq,
+    limit: 1,
+  })
+  if (owned && (owned.sessionKey !== record.childKey || owned.event.id !== row.id)) return undefined
+  return recordedChildRole(parent, record.childKey)
 }
 
 export async function childApprovalPending(parent: SessionImpl, key: string, child?: SessionImpl) {

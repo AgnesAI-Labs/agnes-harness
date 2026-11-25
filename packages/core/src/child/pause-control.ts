@@ -30,6 +30,8 @@ import {
   checkpointPauseFence,
   childApprovalPending,
   childCloseOutcome,
+  childHasPendingWork,
+  hasUnconfirmedColdStop,
   pinnedChildBinding,
   projectChildControls,
   readChildCheckpoint,
@@ -78,6 +80,60 @@ export function childControls(parent: SessionImpl) {
   const controls = controllers.get(parent)
   if (!controls) throw new CoreError('E_UNSUPPORTED', 'Child lifecycle controller is unavailable')
   return controls
+}
+
+export async function settleColdCancelling(
+  parent: SessionImpl,
+  store: ReturnType<typeof requireChildControl>,
+  childKey: string,
+): Promise<'cancelled' | 'completed' | 'failed' | 'cancelling'> {
+  let live: ChildTaskRecord | null = null
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    live = await store.lookupByKey(childKey)
+    if (!live) return 'cancelled'
+    if (isTerminalChildState(live.state)) return live.state as 'completed' | 'failed' | 'cancelled'
+    if (live.state === 'cancelling') break
+    if (await store.casState(childKey, live.stateRevision, 'cancelling')) {
+      live = await store.lookupByKey(childKey)
+      break
+    }
+  }
+  if (!live) return 'cancelled'
+  if (isTerminalChildState(live.state)) return live.state as 'completed' | 'failed' | 'cancelled'
+  if (live.state !== 'cancelling') return 'cancelling'
+  if (await hasUnconfirmedColdStop(parent, live)) return 'cancelling'
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (!live) return 'cancelled'
+    if (isTerminalChildState(live.state)) return live.state as 'completed' | 'failed' | 'cancelled'
+    if (live.state !== 'cancelling') return 'cancelling'
+    if (live.creationPhase === 'committed' && store.settleLostChild) {
+      const settled = await store.settleLostChild(childKey, live.stateRevision)
+      if (settled) return settled
+      const latest = await store.lookupByKey(childKey)
+      if (!latest) return 'cancelled'
+      if (isTerminalChildState(latest.state)) return latest.state as 'completed' | 'failed' | 'cancelled'
+      if (latest.state !== 'cancelling' || latest.stateRevision === live.stateRevision) return 'cancelling'
+      live = latest
+      continue
+    }
+    const leaseRunId = `cold-cancel:${parent.d.ids.ulid()}`
+    try {
+      await parent.d.log.storage.open(childKey, { writerRunId: leaseRunId, ttlMs: 1_000 })
+    } catch (error) {
+      if (error instanceof CoreError && error.code === 'E_WRITER_LEASE') return 'cancelling'
+      throw error
+    }
+    try {
+      if (await store.casState(childKey, live.stateRevision, 'cancelled')) return 'cancelled'
+    } finally {
+      await parent.d.log.storage.release(childKey, leaseRunId).catch(() => undefined)
+    }
+    live = await store.lookupByKey(childKey)
+  }
+  const latest = await store.lookupByKey(childKey)
+  return latest && isTerminalChildState(latest.state)
+    ? (latest.state as 'completed' | 'failed' | 'cancelled')
+    : 'cancelling'
 }
 
 /** One controller per owning factory. Never keep the child lock while waiting for a tool or the next run. */
@@ -180,7 +236,7 @@ export class ChildLifecycleControls {
               await this.transition(record, 'paused')
             } catch (err) {
               if (child && !child.closingOrClosed)
-                await checkpointPauseFence(this.parent(), record, child, false)
+                await checkpointPauseFence(this.parent(), record, child, false).catch(() => undefined)
               this.wake(key)
               throw err
             }
@@ -203,6 +259,11 @@ export class ChildLifecycleControls {
       return { done: drain ? result(record, record.state, true) : done }
     })
     return request.done
+  }
+
+  pendingPause(key: string): Promise<Result> | undefined {
+    const park = this.parks.get(key)
+    return park?.pending ? park.done : undefined
   }
 
   resumeChild(key: string): Promise<Result> {
@@ -240,14 +301,15 @@ export class ChildLifecycleControls {
       if (child) restoreCheckpointEffects(child, checkpoint)
       else checkpointOpenOptions(this.parent(), record, checkpoint)
     }
-    const ready = await this.transition(record, 'ready')
-    let admitted = ready
+    const previous = checkpoint?.previousState
+    const directIdle = previous === 'idle' && !(await childHasPendingWork(this.parent(), key, child))
+    let admitted = directIdle ? await this.transition(record, 'idle') : await this.transition(record, 'ready')
     try {
-      const previous = checkpoint?.previousState
-      if (previous === 'waiting_approval' && (await childApprovalPending(this.parent(), key, child)))
-        admitted = await this.transition(ready, 'waiting_approval')
-      else if (previous === 'idle') admitted = await this.transition(ready, 'idle')
-      else if (park && child?.op()) admitted = await this.transition(ready, 'running')
+      if (!directIdle) {
+        if (previous === 'waiting_approval' && (await childApprovalPending(this.parent(), key, child)))
+          admitted = await this.transition(admitted, 'waiting_approval')
+        else if (park && child?.op()) admitted = await this.transition(admitted, 'running')
+      }
       if (child || checkpoint) await checkpointPauseFence(this.parent(), record, child, false)
       if ((admitted.state !== 'running' && admitted.state !== 'waiting_approval') || !park)
         await this.port.activate(admitted, checkpoint)
@@ -306,16 +368,22 @@ export class ChildLifecycleControls {
       const requestedAt = this.parent().d.clock()
       const cancelling = record.state === 'cancelling' ? record : await this.transition(record, 'cancelling')
       const drain = child && stopChildDispatch(child, requestedAt)
-      if (!drain && record.state === 'cancelling') await requireConfirmedColdStop(this.parent(), record)
-      if (child) await checkpointPauseFence(this.parent(), record, child, true)
-      if (drain) await drainChildStop(drain, graceMs)
-      if (child) {
-        await child.abort()
-        await child.drainCancelledTurn()
+      if (!child) {
+        await requireConfirmedColdStop(this.parent(), cancelling)
+        const settled = await settleColdCancelling(this.parent(), this.store, key)
+        if (settled === 'cancelling')
+          throw new CoreError('E_RELATION', 'Child writer lease is still active; child remains cancelling')
+        this.wake(key, true)
+        await this.port.release(key, settled)
+        return result(record, settled)
       }
+      await checkpointPauseFence(this.parent(), record, child, true)
+      if (drain) await drainChildStop(drain, graceMs)
+      await child.abort()
+      await child.drainCancelledTurn()
       const live = await this.owned(key)
       const outcome = resolveTerminalChildState(live.state, 'cancelled')
-      if (!isTerminalChildState(live.state)) await this.transition(cancelling, outcome)
+      if (!isTerminalChildState(live.state)) await this.transition(live, outcome)
       await drain?.record('drained_clean')
       this.wake(key, true)
       await this.port.release(key, outcome)

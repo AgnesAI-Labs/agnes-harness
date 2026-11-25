@@ -4,21 +4,27 @@ import { isTerminalChildState } from '@agnes/core-child-control/child/types'
 import { sha256Hex } from '@agnes/core-common/request/hash'
 import { CoreError } from '@agnes/core-common/types'
 import type { ChildHandle, ChildStatus } from '@agnes/core-effects/effects/tool-context'
-import type { ChildAgentListing, ChildTaskRecord } from '@agnes/extension-api'
-import type { Actor } from '@agnes/protocol'
+import type { ChildWorkspaceLifecycle } from '@agnes/core-effects/workspace/runtime'
+import type { ChildAgentListing, ChildAgentResult, ChildTaskRecord } from '@agnes/extension-api'
+import type { Actor, AgentRef } from '@agnes/protocol'
 import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
+import { withCancelledChildAck } from './collected-result.js'
+import { cancelOpenAttempt, reportFailedCreation } from './creation.js'
 import { noteChildIdle } from './idle-retirement.js'
-import { ChildLifecycleControls, childControls } from './pause-control.js'
-import { recordedChildRole } from './roles.js'
+import { ChildLifecycleControls, childControls, settleColdCancelling } from './pause-control.js'
+import type { ChildRolePort, ResolvedChildRole } from './roles.js'
 import { childBackend } from './sessions.js'
 import {
   bindingMatchesParent,
+  bindingMatchesRecord,
   type Checkpoint,
   checkpointOpenOptions,
+  cleanChildLabel,
   humanChildState,
   readChildCheckpoint,
   readTrustedRetained,
+  recordedOwnChildRole,
   requireOpenWorkspace,
   retainedBindingOf,
   retainedOpenOptions,
@@ -98,6 +104,8 @@ export async function applyHumanChildControl(
   return seq
 }
 
+export type PendingPauseSettlement = Promise<Awaited<ReturnType<ChildLifecycleControls['pauseChild']>>>
+
 export async function applyHumanLifecycle(
   parent: SessionImpl,
   key: string,
@@ -105,6 +113,7 @@ export async function applyHumanLifecycle(
   action: 'pause' | 'resume' | 'close' | 'retain',
   actor: Actor,
   admissionId: string,
+  onPending?: (pending: PendingPauseSettlement) => void,
 ) {
   const controls = childControls(parent)
   await (child ?? parent).controls.require(
@@ -122,6 +131,24 @@ export async function applyHumanLifecycle(
   const committed = await parent.d.log.append([
     parent.ev('x/core/child-control-result', { action, admissionId, ...result }, { actor, ignorable: true }),
   ])
+  if (action === 'pause' && result.pausePending) {
+    const pending = controls.pendingPause(key)
+    if (pending) {
+      void pending
+        .then(async (settled) => {
+          if (parent.closingOrClosed) return
+          await parent.d.log.append([
+            parent.ev(
+              'x/core/child-control-result',
+              { action, admissionId, ...settled },
+              { actor, ignorable: true },
+            ),
+          ])
+        })
+        .catch(bestEffort(parent.d.logger, 'child-pause-control-result'))
+      onPending?.(pending)
+    }
+  }
   return committed.firstSeq
 }
 
@@ -130,8 +157,11 @@ const retainers = new WeakMap<SessionImpl, () => void>()
 async function canReopenRetained(parent: SessionImpl, record: ChildTaskRecord): Promise<boolean> {
   if (record.state !== 'idle' && record.state !== 'interrupted') return false
   const retained = await readTrustedRetained(parent, record)
-  if (retained !== undefined) return bindingMatchesParent(parent, record, retained?.binding)
-  return !!(await recordedChildRole(parent, record.childKey))
+  if (retained !== undefined)
+    return record.parentKey === parent.key
+      ? bindingMatchesParent(parent, record, retained?.binding)
+      : bindingMatchesRecord(record, retained?.binding)
+  return !!(await recordedOwnChildRole(parent, record))
 }
 
 /** Install at attach, before publishing the handle. Reopen also honors an earlier durable retain. */
@@ -203,15 +233,16 @@ export async function listLocalChildren(
     rows.map(async (row) => {
       const resident = port.resident(row.childKey)
       const text = (await port.inspect(row.childKey))?.text
-      const status = projectChildStatus(row, {
+      const projected = projectChildStatus(row, {
         humanStopped: port.humanStopped(row.childKey),
         residentIdle: resident?.idle() === true,
-      }).status
-      const label = row.inputText.trim().split('\n', 1)[0]?.slice(0, 80)
+      })
+      const label = cleanChildLabel(row.inputText)
       return {
         id: row.childKey,
         providerId: 'in-process',
-        status,
+        status: projected.status,
+        executionState: projected.executionState,
         continuable: resident !== undefined || (await canReopenRetained(parent, row)),
         ...(label ? { label } : {}),
         ...(text ? { text } : {}),
@@ -283,7 +314,7 @@ export async function reopenRetainedResident<T>(
   if (!record || !port.owns(record)) return undefined
   if (record.state !== 'idle' && record.state !== 'interrupted') return undefined
   await requireOpenWorkspace(parent, record)
-  if (await recordedChildRole(parent, childKey)) {
+  if (await recordedOwnChildRole(parent, record)) {
     await port.resumeRole(childKey)
     return port.resident(childKey)
   }
@@ -301,18 +332,104 @@ export async function reopenRetainedResident<T>(
 export async function reopenColdControlOwner(
   parent: SessionImpl,
   record: ChildTaskRecord,
-  open: (options: ReturnType<typeof checkpointOpenOptions>) => Promise<ChildHandle>,
+  open: (
+    options: ReturnType<typeof checkpointOpenOptions> & {
+      role?: AgentRef
+      resolvedRole?: ResolvedChildRole
+    },
+  ) => Promise<ChildHandle>,
   reopenRetained: () => Promise<unknown>,
   markIdle: () => void,
+  roles?: ChildRolePort,
 ) {
   if (record.parentKey !== parent.key) return undefined
   if (record.state === 'paused') {
     await requireOpenWorkspace(parent, record)
     const checkpoint = await readChildCheckpoint(parent, record)
-    await open(checkpointOpenOptions(parent, record, checkpoint))
+    const options = checkpointOpenOptions(parent, record, checkpoint)
+    const role = await recordedOwnChildRole(parent, record)
+    if (role) {
+      if (!roles?.reopen)
+        throw new CoreError('E_UNSUPPORTED', 'A role child must reopen through its pinned Host composition')
+      await open({
+        ...options,
+        role: role.ref,
+        resident: true,
+        resolvedRole: { role, open: roles.reopen },
+      })
+    } else {
+      await open(options)
+    }
     if (checkpoint.previousState === 'idle') markIdle()
   } else await reopenRetained()
   return childBackend(record.childKey)
+}
+
+/** Roll back only a newly created attempt; re-attaching an already-committed session never mutates durable state. */
+export async function cleanupFailedChildOpen(
+  store: ReturnType<typeof requireChildControl>,
+  parent: SessionImpl,
+  attempt: ChildTaskRecord,
+  createdByThisOpen: boolean,
+  error: unknown,
+  port: {
+    handle: ChildHandle | undefined
+    workspace: ChildWorkspaceLifecycle | undefined
+    session(): SessionImpl | undefined
+    drop(key: string, child: SessionImpl): Promise<void>
+    clearHandle(key: string): void
+  },
+): Promise<never> {
+  let cancellationError: unknown
+  if (createdByThisOpen) {
+    let live: ChildTaskRecord | null = null
+    try {
+      live = await store.lookupByKey(attempt.childKey)
+    } catch (cause) {
+      cancellationError = cause
+    }
+    if (
+      !cancellationError &&
+      live?.creationPhase === 'creating' &&
+      live.creationId === attempt.creationId &&
+      live.attemptId === attempt.attemptId
+    ) {
+      try {
+        await cancelOpenAttempt(store, parent, live)
+      } catch (cause) {
+        cancellationError = cause
+      }
+    } else if (
+      !cancellationError &&
+      live &&
+      !isTerminalChildState(live.state) &&
+      live.creationId === attempt.creationId &&
+      live.attemptId === attempt.attemptId
+    ) {
+      try {
+        await store.casState(live.childKey, live.stateRevision, 'cancelled')
+      } catch (cause) {
+        cancellationError = cause
+      }
+    }
+  }
+  let workspaceCloseDelegated = false
+  const child = port.session()
+  if (port.handle && createdByThisOpen)
+    await reportFailedCreation(parent, attempt.childKey, child?.state.creditsUsed ?? 0).catch(
+      bestEffort(parent.d.logger, 'failed-child-creation-report'),
+    )
+  if (child) {
+    workspaceCloseDelegated = true
+    if (createdByThisOpen) await child.d.log.abandon().catch(bestEffort(parent.d.logger, 'child-abandon'))
+    await port.drop(attempt.childKey, child)
+  }
+  if (!workspaceCloseDelegated)
+    await port.workspace?.close().catch(bestEffort(parent.d.logger, 'child-workspace-close'))
+  port.clearHandle(attempt.childKey)
+  if (cancellationError)
+    throw new AggregateError([error, cancellationError], 'child open and durable cancellation failed')
+  throw error
 }
 
 export async function activateCheckpointChild(
@@ -328,7 +445,7 @@ export async function activateCheckpointChild(
   },
 ) {
   const cached = port.cached()
-  if (!cached && checkpoint && !(await recordedChildRole(parent, record.childKey))) {
+  if (!cached && checkpoint && !(await recordedOwnChildRole(parent, record))) {
     const handle = await port.open(checkpointOpenOptions(parent, record, checkpoint))
     if (record.state === 'idle') {
       port.markIdle?.()
@@ -376,6 +493,7 @@ export function controlNotRunning(error: unknown): boolean {
 }
 
 export async function cancelChildSubtree(
+  parent: SessionImpl,
   store: ReturnType<typeof requireChildControl>,
   childKey: string,
   port: { handle(key: string): ChildHandle | undefined; session(key: string): SessionImpl | undefined },
@@ -388,16 +506,12 @@ export async function cancelChildSubtree(
   port.session(childKey)?.ac.abort()
   const results = await Promise.allSettled(
     children.map((kid) =>
-      descendants ? descendants.cancel(kid.childKey) : cancelChildSubtree(store, kid.childKey, port),
+      descendants ? descendants.cancel(kid.childKey) : cancelChildSubtree(parent, store, kid.childKey, port),
     ),
   )
   try {
     if (handle?.cancel) await handle.cancel()
-    else {
-      const live = await store.lookupByKey(childKey)
-      if (live && !isTerminalChildState(live.state))
-        await store.casState(childKey, live.stateRevision, 'cancelling')
-    }
+    else await settleColdCancelling(parent, store, childKey)
   } catch (error) {
     results.push({ status: 'rejected', reason: error })
   }
@@ -407,4 +521,31 @@ export async function cancelChildSubtree(
       failures.map((result) => result.reason),
       'Child subtree cleanup failed',
     )
+}
+
+export async function cancelOwnedChild(
+  parent: SessionImpl,
+  store: ReturnType<typeof requireChildControl>,
+  childKey: string,
+  port: {
+    handle(key: string): ChildHandle | undefined
+    session(key: string): SessionImpl | undefined
+    awaitSettled(key: string): Promise<void>
+    finish(key: string, result: ChildAgentResult): void
+  },
+): Promise<void> {
+  const run = async () => {
+    await cancelChildSubtree(parent, store, childKey, port)
+    await port.awaitSettled(childKey)
+  }
+  if (port.handle(childKey)) {
+    await withCancelledChildAck(parent, childKey, run)
+  } else {
+    await run()
+    if ((await store.lookupByKey(childKey))?.state === 'cancelled')
+      await withCancelledChildAck(parent, childKey, async () => {})
+  }
+  const final = await store.lookupByKey(childKey)
+  if (final && isTerminalChildState(final.state))
+    port.finish(childKey, { status: final.state as ChildAgentResult['status'], text: '' })
 }

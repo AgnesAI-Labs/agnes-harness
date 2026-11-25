@@ -38,13 +38,27 @@ export type ChildStatus = {
   cancelled?: true
   idle?: boolean
   status?: ChildResult['status']
+  executionState?: ChildResult['executionState']
   /** Durable identity of the completed result returned by this snapshot. */
   completionId?: string
   completionSeq?: Seq
   receipt?: ChildResult['receipt']
+  /** Set when a cold ledger read failed; list may degrade, explicit collect must throw and never ACK. */
+  ledgerReadFailed?: true
+  readError?: string
 }
+const EXPLICIT_COLLECT_STATUSES = new Set<ChildResult['status']>([
+  'waiting_approval',
+  'paused',
+  'disconnected',
+  'interrupted',
+  'idle',
+  'completed',
+  'failed',
+  'cancelled',
+])
 function collectStatus(snapshot: ChildStatus): ChildResult['status'] {
-  if (snapshot.status === 'paused') return 'paused'
+  if (snapshot.status && EXPLICIT_COLLECT_STATUSES.has(snapshot.status)) return snapshot.status
   if (snapshot.idle) return 'idle'
   if (snapshot.state === 'done') return 'completed'
   if (snapshot.state === 'error') return snapshot.cancelled ? 'cancelled' : 'failed'
@@ -509,11 +523,20 @@ export function buildToolContext(
           const child = d.children.get?.(childKey)
           const snap = child ? await child.status() : await d.children.inspect?.(childKey)
           if (!snap) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
-          if (snap.completionId)
-            await d.children.collected?.(childKey, snap.completionId, snap.completionSeq ?? 0)
+          if (snap.ledgerReadFailed)
+            throw new CoreError(
+              'E_STORAGE_FAULT',
+              `Failed to read child ledger for ${childKey}${snap.readError ? `: ${snap.readError}` : ''}`,
+              { childKey, retryable: true },
+            )
+          const ackSeq =
+            snap.completionSeq !== undefined ? snap.completionSeq : snap.cancelled ? 0 : undefined
+          if (snap.completionId && ackSeq !== undefined)
+            await d.children.collected?.(childKey, snap.completionId, ackSeq)
           return {
             childKey: child?.key ?? childKey,
             status: collectStatus(snap),
+            ...(snap.executionState ? { executionState: snap.executionState } : {}),
             ...(snap.completionId === undefined ? {} : { completionId: snap.completionId }),
             ...(snap.completionSeq === undefined ? {} : { completionSeq: snap.completionSeq }),
             ...(snap.text !== undefined ? { text: snap.text } : {}),
@@ -525,7 +548,8 @@ export function buildToolContext(
         const deadline = Date.now() + Math.max(1, d.lease.remainingMs())
         while (Date.now() < deadline) {
           const current = await snapshot()
-          if (current.status !== 'running') return current
+          if (current.status !== 'running' && current.status !== 'starting') return current
+          if (call.signal.aborted) break
           await new Promise((resolve) => setTimeout(resolve, 20))
         }
         return { ...(await snapshot()), waitTimedOut: true }
@@ -547,13 +571,9 @@ export function buildToolContext(
         if (!snap) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
         return {
           childKey,
-          // A child that ended before the cancel keeps its own outcome.
-          status:
-            snap.state === 'done'
-              ? 'completed'
-              : snap.state === 'error' && !snap.cancelled
-                ? 'failed'
-                : 'cancelled',
+          // A child that ended before cancel keeps its own outcome; an unconfirmed cancel stays cancelling.
+          status: snap.executionState === 'cancelling' ? 'running' : collectStatus(snap),
+          ...(snap.executionState ? { executionState: snap.executionState } : {}),
           ...(snap.text !== undefined ? { text: snap.text } : {}),
         }
       },

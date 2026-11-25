@@ -4,7 +4,8 @@ import { CoreError } from '@agnes/core-common/types'
 import type { ChildAgentListing, ChildTaskRecord } from '@agnes/extension-api'
 import type { Actor } from '@agnes/protocol'
 import type { SessionControlledChild } from '@agnes/protocol/gen/agnes-v1'
-import { readHumanChildState } from '../child/human-control.js'
+import { bestEffort } from '../best-effort.js'
+import { type PendingPauseSettlement, readHumanChildState } from '../child/human-control.js'
 import { IN_PROCESS_CHILD_PROVIDER_ID } from '../child/provider.js'
 import { childBackend, ownedChildTree } from '../child/sessions.js'
 import type { SessionImpl } from '../step/session.js'
@@ -134,6 +135,15 @@ function loopRefusal(
   return undefined
 }
 
+function controlErrorOutcome(error: unknown): 'refused' | 'uncertain' {
+  return error instanceof CoreError &&
+    ['E_UNSUPPORTED', 'E_RELATION', 'E_CHILD_NOT_FOUND', 'E_CHILD_CONFLICT', 'E_ENVELOPE'].includes(
+      error.code,
+    )
+    ? 'refused'
+    : 'uncertain'
+}
+
 export async function applyChildControl(
   s: SessionImpl,
   id: string,
@@ -179,10 +189,23 @@ export async function applyChildControl(
     s.controls.fact(name, 'requested', actor, { admissionId, childId: id }),
   ])
   try {
+    let pendingPause: PendingPauseSettlement | undefined
     if (resolved.kind === 'core') {
+      const directBackendWasLive = childBackend(resolved.row.parentId) !== undefined
       const backend = await resolveCoreBackend(s, resolved.row)
       if (!backend) throw new CoreError('E_CHILD_NOT_FOUND', 'Child backend is not bound', { childId: id })
-      await backend.humanControl(id, action, actor, admissionId, text)
+      if (!directBackendWasLive) {
+        const verified = await backend.humanControlState(id)
+        if (!verified.controls[action])
+          throw new CoreError(
+            'E_RELATION',
+            'Child binding cannot be verified under its direct parent authority',
+            { control: action, reason: 'BINDING_AUTHORITY_MISMATCH' },
+          )
+      }
+      await backend.humanControl(id, action, actor, admissionId, text, (pending) => {
+        pendingPause = pending
+      })
     } else {
       const port = s.loopChildrenPort()
       if (!port)
@@ -195,24 +218,51 @@ export async function applyChildControl(
           throw new CoreError('E_RELATION', 'Child is no longer running', { reason: 'CONTROL_NOT_RUNNING' })
       } else await port.sendMessage(id, text ?? '', new AbortController().signal)
     }
-    await s.d.log.append([s.controls.fact(name, 'applied', actor, { admissionId, childId: id })])
-  } catch (error) {
-    await s.d.log.append([
-      s.controls.fact(
-        name,
-        error instanceof CoreError &&
-          ['E_UNSUPPORTED', 'E_RELATION', 'E_CHILD_NOT_FOUND', 'E_CHILD_CONFLICT', 'E_ENVELOPE'].includes(
-            error.code,
-          )
-          ? 'refused'
-          : 'uncertain',
-        actor,
-        {
+    if (pendingPause) {
+      await s.d.log.append([
+        s.controls.fact(name, 'queued', actor, {
           admissionId,
           childId: id,
-          reason: error instanceof CoreError ? (error.detail?.reason ?? error.code) : 'CONTROL_FAILED',
-        },
-      ),
+          pausePending: true,
+          reason: 'WAITING_SAFEPOINT',
+        }),
+      ])
+      void pendingPause
+        .then(
+          async (settled) => {
+            if (s.closingOrClosed) return
+            const outcome = settled.executionState === 'paused' ? 'applied' : 'withdrawn'
+            await s.d.log.append([
+              s.controls.fact(name, outcome, actor, {
+                admissionId,
+                childId: id,
+                ...(outcome === 'withdrawn' ? { executionState: settled.executionState } : {}),
+              }),
+            ])
+          },
+          async (error) => {
+            if (s.closingOrClosed) return
+            await s.d.log.append([
+              s.controls.fact(name, controlErrorOutcome(error), actor, {
+                admissionId,
+                childId: id,
+                reason:
+                  error instanceof CoreError ? (error.detail?.reason ?? error.code) : 'CHECKPOINT_FAILED',
+              }),
+            ])
+          },
+        )
+        .catch(bestEffort(s.d.logger, 'child-pause-control-fact'))
+    } else {
+      await s.d.log.append([s.controls.fact(name, 'applied', actor, { admissionId, childId: id })])
+    }
+  } catch (error) {
+    await s.d.log.append([
+      s.controls.fact(name, controlErrorOutcome(error), actor, {
+        admissionId,
+        childId: id,
+        reason: error instanceof CoreError ? (error.detail?.reason ?? error.code) : 'CONTROL_FAILED',
+      }),
     ])
     throw error
   }

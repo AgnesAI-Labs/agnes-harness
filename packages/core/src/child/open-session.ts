@@ -6,7 +6,8 @@ import type { ChildTaskRecord } from '@agnes/extension-api'
 import type { Kernel, SessionOptions } from '../kernel.js'
 import type { SessionImpl } from '../step/session.js'
 import { NO_TOOL_FILTER } from '../step/tool-filter.js'
-import { type ResolvedChildRole, recordedChildRole } from './roles.js'
+import type { ResolvedChildRole } from './roles.js'
+import { recordedOwnChildRole } from './status.js'
 import { childSessionToolFilter, narrowChildToolFilter } from './tool-filter.js'
 
 export async function openDelegatedSession(
@@ -24,7 +25,7 @@ export async function openDelegatedSession(
   delegation?: SessionOptions['delegation'],
   workspace?: ChildWorkspaceLifecycle,
 ): Promise<SessionImpl> {
-  if (!opts.resolvedRole && (await recordedChildRole(parent, record.childKey)))
+  if (!opts.resolvedRole && (await recordedOwnChildRole(parent, record)))
     throw new CoreError('E_UNSUPPORTED', 'A role child must reopen through its pinned Host composition')
   const childPreset = {
     ...(modelTarget

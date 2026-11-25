@@ -294,6 +294,79 @@ describe('ToolContext subagent options', () => {
     expect(cancel).not.toHaveBeenCalled()
     expect(close).not.toHaveBeenCalled()
   })
+
+  it.each(['waiting_approval', 'disconnected', 'interrupted', 'paused'] as const)(
+    'surfaces explicit local %s status immediately without 20ms wait spinning (#15)',
+    async (explicitStatus) => {
+      const runtime = new SeamRuntime(fakeSeams(), presetDefaults(), {
+        clock: () => 0,
+        onFailure: () => undefined,
+      })
+      const inspect = vi.fn(async () => ({
+        state: 'running' as const,
+        status: explicitStatus,
+        executionState: explicitStatus,
+        lastSeq: 4,
+      }))
+      const children: ChildrenFactory = {
+        create: async () => {
+          throw new Error('unused')
+        },
+        inspect,
+      }
+      const context = buildToolContext(
+        {
+          sessionKey: 'parent-1',
+          lane: 'main',
+          turn: 1,
+          step: 1,
+          depth: 0,
+          generationDepth: 0,
+          actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+          cwd: '/workspace/parent',
+          workspaceRoot: '/workspace/parent',
+          runtime,
+          preset: presetDefaults(),
+          children,
+          fsOps: {
+            read: async () => new Uint8Array(),
+            write: async () => undefined,
+            list: async () => [],
+            stat: async () => ({ kind: 'file', size: 0, mtimeMs: 0 }),
+          },
+          netFetch: async () => new Response(''),
+          log: {
+            debug: () => undefined,
+            info: () => undefined,
+            warn: () => undefined,
+            error: () => undefined,
+          },
+          invoke: async () => ({ content: [] }),
+          listTools: () => [],
+          appendPlan: async () => 1,
+          requestCompaction: () => undefined,
+          progress: () => undefined,
+          artifactJobEvent: async () => undefined,
+          lease: { remainingMs: () => 500 },
+        },
+        {
+          toolUseId: 'tool-explicit',
+          name: 'subagent_collect',
+          signal: new AbortController().signal,
+          timeoutMs: 1_000,
+          outputMaxBytes: 32768,
+        },
+      )
+      const res = await context.subagent.collect('child-1', { wait: true })
+      expect(res).toMatchObject({
+        childKey: 'child-1',
+        status: explicitStatus,
+        executionState: explicitStatus,
+      })
+      expect(res.waitTimedOut).toBeUndefined()
+      expect(inspect).toHaveBeenCalledTimes(1)
+    },
+  )
 })
 
 describe('ToolContext platform view and sandbox enforcement (spec 2026-09-15 §4 rows 1 and 9)', () => {

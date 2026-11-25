@@ -670,5 +670,23 @@ describe('sqlite child control', () => {
       now += LEASE + 1
       expect(await settle('parent/live', rev.live)).toBe('failed')
     })
+
+    it('allows paused -> idle without consuming a fan-out slot when full, while idle -> ready still enforces quota (#19)', async () => {
+      const a = await child('a', 'idle')
+      expect(await store.casState(a.childKey, a.stateRevision, 'paused')).toBe(true)
+      const pausedA = (await store.lookupByKey(a.childKey))!
+      // Occupy the single active fan-out slot with sibling B.
+      expect(await create('b', 1)).toMatchObject({ status: 'created' })
+      // Resuming paused -> idle does not acquire an active slot.
+      expect(await store.casState(pausedA.childKey, pausedA.stateRevision, 'idle', { maxFanOut: 1 })).toBe(
+        true,
+      )
+      const idleA = (await store.lookupByKey(a.childKey))!
+      expect(idleA.state).toBe('idle')
+      // Waking idle -> ready enforces fan-out limit.
+      await expect(
+        store.casState(idleA.childKey, idleA.stateRevision, 'ready', { maxFanOut: 1 }),
+      ).rejects.toMatchObject({ code: 'E_CHILD_LIMIT' })
+    })
   })
 })

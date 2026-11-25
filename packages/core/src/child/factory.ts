@@ -20,9 +20,9 @@ import type { Kernel } from '../kernel.js'
 import { childFirstInputActor } from '../step/opening-input.js'
 import type { SessionImpl } from '../step/session.js'
 import { bindChildPrompt } from './child-prompt-budget.js'
-import { recordChildResultCollected, withCancelledChildAck } from './collected-result.js'
+import { recordChildResultCollected } from './collected-result.js'
 import { type ChildCompletionOptions, isBackgroundChild } from './completion-notice.js'
-import { cancelOpenAttempt, generationDepthOf, reportFailedCreation, rootTaskIdOf } from './creation.js'
+import { generationDepthOf, rootTaskIdOf } from './creation.js'
 import { type ChildEnd, childEnd, lastChildText, thrownChildEnd } from './failure.js'
 import { attachChildHeartbeat, childEventStreamFor } from './heartbeat.js'
 import {
@@ -30,11 +30,13 @@ import {
   applyHumanChildControl,
   applyHumanLifecycle,
   bindChildRetention,
-  cancelChildSubtree,
+  cancelOwnedChild,
+  cleanupFailedChildOpen,
   controlNotRunning,
   createFactoryLifecycleControls,
   disposeLocalChildren,
   listLocalChildren,
+  type PendingPauseSettlement,
   readHumanChildState,
   reopenColdControlOwner,
   reopenRetainedResident,
@@ -407,6 +409,7 @@ export class KernelChildren implements ChildrenFactory {
   ): Promise<ChildHandle> {
     const store = requireChildControl(parent.d.log.storage)
     let attempt = (await store.lookupByKey(initial.childKey)) ?? initial
+    const createdByThisOpen = attempt.creationPhase !== 'committed'
     if (attempt.creationPhase === 'deferred') {
       const nextAttemptId = `attempt:${this.kernel.ids.ulid()}`
       track(nextAttemptId)
@@ -467,56 +470,13 @@ export class KernelChildren implements ChildrenFactory {
       if (child) forkChecks.delete(child.d.log)
       return handle
     } catch (error) {
-      let cancellationError: unknown
-      let live: ChildTaskRecord | null = null
-      try {
-        live = await store.lookupByKey(attempt.childKey)
-      } catch (cause) {
-        cancellationError = cause
-      }
-      if (
-        !cancellationError &&
-        live?.creationPhase === 'creating' &&
-        live.creationId === attempt.creationId &&
-        live.attemptId === attempt.attemptId
-      ) {
-        try {
-          await cancelOpenAttempt(store, parent, live)
-        } catch (cause) {
-          cancellationError = cause
-        }
-      } else if (
-        !cancellationError &&
-        live &&
-        !isTerminalChildState(live.state) &&
-        live.creationId === attempt.creationId &&
-        live.attemptId === attempt.attemptId
-      ) {
-        try {
-          await store.casState(live.childKey, live.stateRevision, 'cancelled')
-        } catch (cause) {
-          cancellationError = cause
-        }
-      }
-      let workspaceCloseDelegated = false
-      const child = this.session(attempt.childKey)
-      if (handle)
-        await reportFailedCreation(parent, attempt.childKey, child?.state.creditsUsed ?? 0).catch(
-          bestEffort(parent.d.logger, 'failed-child-creation-report'),
-        )
-      if (child) {
-        workspaceCloseDelegated = true
-        // Never publish a completion/cost for a handle that was not admitted. That would also
-        // wait on the very parent verification which invalidated this attempt.
-        await child.d.log.abandon().catch(bestEffort(parent.d.logger, 'child-abandon'))
-        await this.dropLocalChild(attempt.childKey, child)
-      }
-      if (!workspaceCloseDelegated)
-        await workspace?.close().catch(bestEffort(parent.d.logger, 'child-workspace-close'))
-      this.handles.delete(attempt.childKey)
-      if (cancellationError)
-        throw new AggregateError([error, cancellationError], 'child open and durable cancellation failed')
-      throw error
+      return cleanupFailedChildOpen(store, parent, attempt, createdByThisOpen, error, {
+        handle,
+        workspace,
+        session: () => this.session(attempt.childKey),
+        drop: (k, c) => this.dropLocalChild(k, c),
+        clearHandle: (k) => void this.handles.delete(k),
+      })
     }
   }
 
@@ -577,15 +537,15 @@ export class KernelChildren implements ChildrenFactory {
     const record = await store.lookupByKey(childKey)
     if (!record || !this.owns(record, parent.key))
       throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
-    await withCancelledChildAck(parent, childKey, async () => {
-      await cancelChildSubtree(store, childKey, {
-        handle: (k) => this.handles.get(k),
-        session: (k) => this.session(k),
-      })
-      await Promise.allSettled([this.residentTasks.get(childKey), this.runningTasks.get(childKey)])
-      await this.cleanups.get(childKey)
+    await cancelOwnedChild(parent, store, childKey, {
+      handle: (k) => this.handles.get(k),
+      session: (k) => this.session(k),
+      awaitSettled: async (k) => {
+        await Promise.allSettled([this.residentTasks.get(k), this.runningTasks.get(k)])
+        await this.cleanups.get(k)
+      },
+      finish: (k, r) => this.finishChild(k, r),
     })
-    this.finishChild(childKey, { status: 'cancelled', text: '' })
   }
 
   dispose(): Promise<void> {
@@ -1129,10 +1089,19 @@ export class KernelChildren implements ChildrenFactory {
     actor: Actor,
     admissionId: string,
     text?: string,
+    onPending?: (pending: PendingPauseSettlement) => void,
   ): Promise<number> {
     this.controls()
     if (action === 'pause' || action === 'resume' || action === 'close' || action === 'retain')
-      return applyHumanLifecycle(this.parent(), childKey, this.session(childKey), action, actor, admissionId)
+      return applyHumanLifecycle(
+        this.parent(),
+        childKey,
+        this.session(childKey),
+        action,
+        actor,
+        admissionId,
+        onPending,
+      )
     const child =
       this.session(childKey) ??
       (action === 'continue' ? (await this.reopenResident(childKey))?.child : undefined)
@@ -1183,6 +1152,7 @@ export class KernelChildren implements ChildrenFactory {
       (opts) => this.open(record.kind, this.parent(), record, opts),
       () => this.reopenResident(record.childKey),
       () => this.markIdle(record.childKey),
+      this.kernel.o.childRoles,
     )
 
   private reopenResident(key: string) {

@@ -11,17 +11,23 @@ import {
   trackChildDispatch,
 } from '../src/child/non-interruptible-receipt.js'
 import { ChildLifecycleControls } from '../src/child/pause-control.js'
+import { buildChildRecap } from '../src/child/recap-snapshot.js'
 import {
   checkpointOpenOptions,
+  cleanChildLabel,
   humanChildState,
   readChildCheckpoint,
   snapshotFromLedger,
   snapshotFromLive,
   snapshotFromRecord,
 } from '../src/child/status.js'
+import { Kernel } from '../src/kernel.js'
+import { applyChildControl } from '../src/loop/child-controls.js'
 import type { SessionImpl } from '../src/step/session.js'
+import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
-import { actor, openSession, writeTool } from './helpers/open-session.js'
+import { fakeSeams } from './helpers/fake-seams.js'
+import { actor, noTimers, openSession, testFsOps, writeTool } from './helpers/open-session.js'
 
 function gate() {
   let resolve!: () => void
@@ -491,4 +497,178 @@ it('refuses to checkpoint a deferred child without a trusted binding', async () 
   expect(await f.storage.scan(row.childKey, { type: 'x/core/child-checkpoint', limit: 1 })).toEqual([])
   expect(await f.controls.closeChild(row.childKey)).toMatchObject({ status: 'cancelled' })
   expect(await f.storage.scan(row.childKey, { type: 'turn/start', limit: 1 })).toEqual([])
+})
+
+it('does not mark an incomplete paused turn with draft artifacts as completed on close (#07)', async ({
+  onTestFinished,
+}) => {
+  const dir = await mkdtemp(join(tmpdir(), 'child-close-draft-'))
+  onTestFinished(() => rm(dir, { recursive: true, force: true }))
+  const draft = join(dir, 'draft.txt')
+  await writeFile(draft, 'work in progress')
+  const f = await fixture('waiting_approval')
+  // Real historical completed turn followed by a newer open turn that wrote a draft and waited for approval.
+  await f.child.append([
+    f.child.ev('turn/start', { turn: 1, trigger: 'prompt' }),
+    f.child.ev('turn/end', { reason: 'completed', lastAssistantSeq: null }),
+  ])
+  await f.child.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'write draft' }] })
+  await f.child.acceptInput()
+  await f.child.append([f.child.ev('x/agnes/tools-core/file-change', { path: draft }, { ignorable: true })])
+  await pendingDecision(f.child)
+  await f.controls.pauseChild(key)
+  const cp = await readChildCheckpoint(f.parent, await f.read())
+  expect(cp.artifactPaths).toContain(draft)
+
+  const closed = await f.controls.closeChild(key)
+  expect(closed).toMatchObject({ status: 'cancelled', executionState: 'cancelled' })
+  expect((await f.read()).state).toBe('cancelled')
+  // Draft file remains preserved on disk and recap reports cancelled (not completed).
+  expect(await readFile(draft, 'utf8')).toBe('work in progress')
+  const recap = await buildChildRecap(f.parent)
+  expect(recap.snapshot.counts.completed).toBe(0)
+  expect(recap.snapshot.counts.cancelled).toBe(1)
+  expect(recap.snapshot.subtasks.find((s) => s.taskId === key)?.status).toBe('cancelled')
+})
+
+it('resumes a paused-from-idle child without pending work even when fan-out is full, but enforces quota when inbox has pending work (#19)', async () => {
+  // Case 1: no pending work — resumes paused -> idle directly while sibling holds maxFanOut=1 slot.
+  const f = await fixture('idle')
+  await f.controls.pauseChild(key)
+  expect(
+    (
+      await f.storage.createDelegatedChild({
+        ...f.input,
+        childKey: 'sibling-busy',
+        creationId: 'sibling-busy',
+        workspaceId: 'ws-busy',
+      })
+    ).status,
+  ).toBe('created')
+  expect(await f.controls.resumeChild(key)).toMatchObject({
+    previousStatus: 'paused',
+    status: 'idle',
+    executionState: 'idle',
+  })
+  expect((await f.read()).state).toBe('idle')
+  // Waking the idle child to execute still enforces fan-out limit.
+  await expect(
+    f.storage.casState(key, (await f.read()).stateRevision, 'ready', { maxFanOut: 1 }),
+  ).rejects.toMatchObject({ code: 'E_CHILD_LIMIT' })
+
+  // Case 2: queued inbox message — must require fan-out quota and refuse when full.
+  await f.controls.pauseChild(key)
+  await f.child.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'pending follow-up' }] })
+  await expect(f.controls.resumeChild(key)).rejects.toMatchObject({ code: 'E_CHILD_LIMIT' })
+  expect((await f.read()).state).toBe('paused')
+})
+
+it('records waiting-safepoint control fact instead of premature applied for deferred pause, then final applied/uncertain (#20)', async () => {
+  const storage = new MemoryStorage()
+  const provider = fakeProvider([textTurn('ok'), textTurn('ok2')])
+  const k = Kernel.create({
+    loops: defaultLoops(),
+    storage,
+    seams: fakeSeams(),
+    provider,
+    contract: { contract_id: null, parser_version: '1' },
+    preset: { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 1, maxFanOut: 4 },
+    fsOps: testFsOps(),
+    netFetch: async () => new Response(''),
+    logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+    timers: noTimers,
+    clock: () => 1_757_203_200_000,
+  })
+  try {
+    const parent = await k.session('pause-facts-parent', {
+      actor,
+      resolvedProfileHash: 'h1',
+      cwd: '/w',
+      writerRunId: 'r1',
+    })
+    const childHandle = await parent.d.children.create({
+      parent: parent.key,
+      cwd: '/w',
+      input: 'non-interruptible work',
+      resident: true,
+    })
+    const childSession = k.get(childHandle.key)!
+    const row = (await storage.lookupByKey(childHandle.key))!
+    await storage.casState(childHandle.key, row.stateRevision, 'running')
+
+    // Case A: delayed tool return -> queued (WAITING_SAFEPOINT), then applied once drained.
+    const tool1 = gate()
+    trackChildDispatch(childSession, 'eff-1', 'write_note', tool1.promise)
+    await applyChildControl(parent, childHandle.key, 'pause', actor, 'adm-pause-ok')
+    const beforeDrain = (await parent.controls.state()).facts.filter(
+      (f) => (f.details as { admissionId?: string }).admissionId === 'adm-pause-ok',
+    )
+    expect(beforeDrain.map((f) => f.outcome)).toEqual(['requested', 'queued'])
+    expect(beforeDrain[1]?.details).toMatchObject({ pausePending: true, reason: 'WAITING_SAFEPOINT' })
+    tool1.resolve()
+    await vi.waitFor(async () => {
+      const after = (await parent.controls.state()).facts.filter(
+        (f) => (f.details as { admissionId?: string }).admissionId === 'adm-pause-ok',
+      )
+      expect(after.map((f) => f.outcome)).toEqual(['requested', 'queued', 'applied'])
+    })
+    expect((await storage.lookupByKey(childHandle.key))?.state).toBe('paused')
+
+    // Case B: checkpoint write fails after drain -> final outcome is uncertain (never applied), child stays non-paused.
+    const childHandle2 = await parent.d.children.create({
+      parent: parent.key,
+      cwd: '/w',
+      input: 'non-interruptible work 2',
+      resident: true,
+    })
+    const childSession2 = k.get(childHandle2.key)!
+    const row2 = (await storage.lookupByKey(childHandle2.key))!
+    await storage.casState(childHandle2.key, row2.stateRevision, 'running')
+    const tool2 = gate()
+    trackChildDispatch(childSession2, 'eff-2', 'write_note', tool2.promise)
+    const origAppend = childSession2.d.log.append.bind(childSession2.d.log)
+    vi.spyOn(childSession2.d.log, 'append').mockImplementation(async (rows, opts) => {
+      if (rows.some((e) => e.type === 'x/core/child-checkpoint')) throw new Error('disk full')
+      return origAppend(rows, opts)
+    })
+    await applyChildControl(parent, childHandle2.key, 'pause', actor, 'adm-pause-fail')
+    const pendingFail = (await parent.controls.state()).facts.filter(
+      (f) => (f.details as { admissionId?: string }).admissionId === 'adm-pause-fail',
+    )
+    expect(pendingFail.map((f) => f.outcome)).toEqual(['requested', 'queued'])
+    tool2.resolve()
+    await vi.waitFor(async () => {
+      const afterFail = (await parent.controls.state()).facts.filter(
+        (f) => (f.details as { admissionId?: string }).admissionId === 'adm-pause-fail',
+      )
+      expect(afterFail.map((f) => f.outcome)).toEqual(['requested', 'queued', 'uncertain'])
+    })
+    expect((await storage.lookupByKey(childHandle2.key))?.state).toBe('running')
+  } finally {
+    await k.close()
+  }
+})
+
+it('preserves underscores, hashes, C# and surrogate pairs while stripping paired Markdown in child labels (#31)', async () => {
+  expect(cleanChildLabel('web_search')).toBe('web_search')
+  expect(cleanChildLabel('lane_1.txt')).toBe('lane_1.txt')
+  expect(cleanChildLabel('订单对账_g #42')).toBe('订单对账_g #42')
+  expect(cleanChildLabel('Fix C# parser for #42')).toBe('Fix C# parser for #42')
+  expect(cleanChildLabel('## Review **web_search** in `lane_1.txt` and __bold__ _em_')).toBe(
+    'Review web_search in lane_1.txt and bold em',
+  )
+  const emojiInput = `${'a'.repeat(79)}😀tail`
+  const clipped = cleanChildLabel(emojiInput)
+  expect(clipped.length).toBeLessThanOrEqual(80)
+  // Must never leave an unpaired high surrogate at the end.
+  expect(clipped.charCodeAt(clipped.length - 1)).not.toBeGreaterThanOrEqual(0xd800)
+
+  const f = await fixture('idle')
+  const state = await humanChildState(
+    f.parent,
+    { ...(await f.read()), inputText: '## 订单对账_g #42 (`web_search` / C#)' },
+    f.child,
+    true,
+  )
+  expect(state.label).toBe('订单对账_g #42 (web_search / C#)')
 })
