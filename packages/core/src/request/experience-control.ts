@@ -28,7 +28,7 @@ export const EXPERIENCE_OFF_NOTICE =
 export const HELD_LINE = 'Held until their task can be read:'
 /** How many held entries the line names; the rest are counted. */
 export const HELD_NAMED = 32
-const SAFE_REF = /^(prompt|memory|skill|subagent)\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
+export const SAFE_REF = /^(prompt|memory|skill|subagent)\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
 const HELD_MORE = / and (\d+) more$/u
 /**
  * The held line for these `kind/id` refs, in order: Core's own words, naming only refs of a known kind
@@ -43,11 +43,55 @@ export function heldLine(refs: readonly string[]): string {
 }
 const HELD = /(prompt|memory|skill|subagent)\/([A-Za-z0-9][A-Za-z0-9._-]*)/gu
 
-const DELIVERED = /^- \[(prompt|memory|skill|subagent)\/([A-Za-z0-9][A-Za-z0-9._-]*) v(\d+)\]/gmu
-const ENDED = /\[(prompt|memory|skill|subagent)\/([A-Za-z0-9][A-Za-z0-9._-]*) v\d+\] (?:expired|withdrawn):/gu
+export const DELIVERED_LINE = 'Delivered:'
+const LEGACY_DELIVERED = /^- \[(prompt|memory|skill|subagent)\/([A-Za-z0-9][A-Za-z0-9._-]*) v(\d+)\]/gmu
+const ENDED =
+  /\[((?:prompt|memory|skill|subagent)\/[A-Za-z0-9][A-Za-z0-9._-]*) v(\d+)\] (?:expired|withdrawn):/gu
+
+type Delivery = { ref: string; version: number; hash?: string; text?: string }
+
+/** An absent header identifies legacy notes. A malformed header never authorizes reading the data block. */
+export function headerDeliveries(head: string): Delivery[] | undefined {
+  const line = head.split('\n').find((line) => line.startsWith(DELIVERED_LINE))
+  if (line === undefined) return undefined
+  const deliveries: Delivery[] = []
+  if (!line.startsWith(`${DELIVERED_LINE} `)) return deliveries
+  for (const item of line.slice(DELIVERED_LINE.length + 1).split(', ')) {
+    const match = /^(\S+) v([1-9]\d*)(?:#([a-f0-9]{16}))?$/u.exec(item)
+    if (!match) continue
+    const [, ref, count, hash] = match
+    const version = Number(count)
+    if (ref && SAFE_REF.test(ref) && Number.isSafeInteger(version))
+      deliveries.push({ ref, version, ...(hash && { hash }) })
+  }
+  return deliveries
+}
+
+function legacyDeliveries(entries: string): Delivery[] {
+  const rows = [...entries.matchAll(LEGACY_DELIVERED)]
+  return rows.map((row, i) => {
+    const [header, kind, id, version] = row
+    const delivery = { ref: `${kind}/${id}`, version: Number(version) }
+    const start = row.index + header.length
+    const mark = ' (saved) '
+    if (!entries.startsWith(mark, start)) return delivery
+    const next = rows[i + 1]
+    const text = entries.slice(start + mark.length, next && next.index - 1)
+    return {
+      ...delivery,
+      text:
+        next && next[1] !== kind
+          ? text.replace(
+              /\n(?:Prompt rules:|Memory:|Skills \(metadata only\):|Subagents \(metadata only\):)$/u,
+              '',
+            )
+          : text,
+    }
+  })
+}
 
 /** The text of one content block, or '' when it is not text. */
-function block(content: unknown, at: number): string {
+export function block(content: unknown, at: number): string {
   const part = Array.isArray(content) ? (content[at] as { type?: unknown; text?: unknown } | null) : null
   return part?.type === 'text' && typeof part.text === 'string' ? part.text : ''
 }
@@ -83,6 +127,8 @@ const voidsAll = (body: string) =>
  */
 export function surfaceRefs(surface: readonly SurfaceNode[]): {
   delivered: Map<string, number>
+  maxVersion: Map<string, number>
+  deliveredSavedHash: Map<string, string>
   deliveredSavedText: Map<string, string>
   withdrawn: Set<string>
   held: Set<string>
@@ -90,11 +136,21 @@ export function surfaceRefs(surface: readonly SurfaceNode[]): {
   off: boolean
 } {
   const delivered = new Map<string, number>()
+  const maxVersion = new Map<string, number>()
+  const deliveredSavedHash = new Map<string, string>()
   const deliveredSavedText = new Map<string, string>()
   const withdrawn = new Set<string>()
   const held = new Set<string>()
   let heldMore = false
   let off = false
+  const remember = (ref: string, version: number) =>
+    maxVersion.set(ref, Math.max(version, maxVersion.get(ref) ?? 0))
+  const withdraw = (ref: string) => {
+    delivered.delete(ref)
+    deliveredSavedHash.delete(ref)
+    deliveredSavedText.delete(ref)
+    withdrawn.add(ref)
+  }
   for (const node of surface) {
     if (node.kind !== 'user' || node.event.type !== 'user/message' || node.event.origin !== 'system') continue
     const data = node.event.data as { kind?: unknown; content?: unknown }
@@ -104,13 +160,14 @@ export function surfaceRefs(surface: readonly SurfaceNode[]): {
     if (!head.startsWith(EXPERIENCE_PREFIX)) continue
     const body = head.slice(EXPERIENCE_PREFIX.length)
     if (body.split('\n', 1)[0] === CONTROL_FORMAT_LINE) {
-      const gone = voidsAll(body)
-        ? [...delivered.keys()]
-        : [...body.matchAll(ENDED)].map(([, kind, id]) => `${kind}/${id}`)
-      for (const ref of gone) {
-        delivered.delete(ref)
-        deliveredSavedText.delete(ref)
-        withdrawn.add(ref)
+      if (voidsAll(body)) {
+        for (const ref of delivered.keys()) withdraw(ref)
+      } else {
+        for (const [, ref, version] of body.matchAll(ENDED)) {
+          if (!ref) continue
+          remember(ref, Number(version))
+          withdraw(ref)
+        }
       }
       off = body.includes(EXPERIENCE_OFF_NOTICE)
       continue
@@ -120,32 +177,19 @@ export function surfaceRefs(surface: readonly SurfaceNode[]): {
     const listed = named?.slice(HELD_LINE.length).replace(HELD_MORE, '')
     for (const [, kind, id] of listed?.matchAll(HELD) ?? []) held.add(`${kind}/${id}`)
     heldMore = named !== undefined && HELD_MORE.test(named)
-    const entries = block(data.content, 1)
-    const rows = [...entries.matchAll(DELIVERED)]
-    for (const [i, row] of rows.entries()) {
-      const [header, kind, id, version] = row
-      const ref = `${kind}/${id}`
-      delivered.set(ref, Number(version))
+    for (const { ref, version, hash, text } of headerDeliveries(body) ??
+      legacyDeliveries(block(data.content, 1))) {
+      delivered.set(ref, version)
+      remember(ref, version)
       withdrawn.delete(ref)
       held.delete(ref)
-      const start = row.index + header.length
-      const mark = ' (saved) '
-      if (entries.startsWith(mark, start)) {
-        const next = rows[i + 1]
-        const body = entries.slice(start + mark.length, next && next.index - 1)
-        deliveredSavedText.set(
-          ref,
-          next && next[1] !== kind
-            ? body.replace(
-                /\n(?:Prompt rules:|Memory:|Skills \(metadata only\):|Subagents \(metadata only\):)$/u,
-                '',
-              )
-            : body,
-        )
-      } else deliveredSavedText.delete(ref)
+      if (hash !== undefined) deliveredSavedHash.set(ref, hash)
+      else deliveredSavedHash.delete(ref)
+      if (text !== undefined) deliveredSavedText.set(ref, text)
+      else deliveredSavedText.delete(ref)
     }
   }
-  return { delivered, deliveredSavedText, withdrawn, held, heldMore, off }
+  return { delivered, maxVersion, deliveredSavedHash, deliveredSavedText, withdrawn, held, heldMore, off }
 }
 
 /** The `kind/id` of every entry a visible note delivered and no later visible control note withdrew. */

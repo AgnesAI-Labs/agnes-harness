@@ -112,10 +112,9 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
     }
   }
   const inspection = snapshot?.inspection
+  const index = inspection?.files.find((entry) => entry.path === 'MEMORY.md')
   const numbers = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 })
-  const used = numbers.format(
-    (inspection?.files.find((entry) => entry.path === 'MEMORY.md')?.bytes ?? 0) / 1024,
-  )
+  const used = numbers.format((index?.bytes ?? 0) / 1024)
   const limit = numbers.format((inspection?.settings.indexMaxBytes ?? 0) / 1024)
   const files = inspection ? [...new Set(['MEMORY.md', ...inspection.files.map((entry) => entry.path)])] : []
   const sizeOf = (path: string) => {
@@ -256,6 +255,8 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
           {file && cwd && (
             <SavedParagraphsBlock
               key={cwd}
+              refreshKey={`${index?.hash ?? ''}:${file.hash}:${visit}`}
+              indexContent={file.path === 'MEMORY.md' ? file.content : undefined}
               memoryOff={inspection.settings.mode === 'off'}
               cwd={cwd}
               canSave={canSave}
@@ -270,6 +271,7 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
           {file && cwd && (
             <SavedParagraphsBlock
               key={`${cwd}:user`}
+              refreshKey={`${visit}:${inspection.settings.userEnabled}`}
               cwd={cwd}
               canSave={canSave}
               locale={locale}

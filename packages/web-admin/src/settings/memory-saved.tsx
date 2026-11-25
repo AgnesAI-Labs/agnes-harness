@@ -1,7 +1,8 @@
 import type { SavedParagraph, SavedParagraphRequest } from '@agnes/protocol/gen/app-server'
 import { appServerErrorMessage, Banner, Button, SettingsBlock, SettingsItem } from '@agnes/web-ui'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { memoryRequest } from './memory-api.js'
+import { analyzeExpiry, useDeadlineTick } from './memory-expiry.js'
 
 type Text = (key: string, vars?: Record<string, string | number>) => string
 const errorEnvelope = (error: unknown) => (error as { envelope?: unknown })?.envelope ?? true
@@ -27,6 +28,8 @@ const title = (text: string) => {
 export function SavedParagraphsBlock(
   props: {
     cwd: string
+    refreshKey: string
+    indexContent?: string | undefined
     canSave: boolean
     locale: string
     t: Text
@@ -34,14 +37,28 @@ export function SavedParagraphsBlock(
     onFileChanged(): void
   } & ({ layer?: 'workspace'; memoryOff: boolean } | { layer: 'user'; readsUser: boolean }),
 ) {
-  const { cwd, canSave, locale, t } = props
+  const { cwd, canSave, locale, t, refreshKey, indexContent } = props
   const user = props.layer === 'user'
   const [paragraphs, setParagraphs] = useState<SavedParagraph[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>()
+  const earliest = useMemo(() => {
+    const now = Date.now()
+    let next = indexContent ? analyzeExpiry(indexContent, now).earliest : undefined
+    for (const paragraph of paragraphs) {
+      for (const deadline of [paragraph.reviewAfter, analyzeExpiry(paragraph.text, now).earliest]) {
+        if (deadline !== undefined && deadline > now) next = Math.min(next ?? deadline, deadline)
+      }
+    }
+    return next
+  }, [paragraphs, indexContent])
+  const tick = useDeadlineTick(earliest)
+  const listing = useRef<AbortController | undefined>(undefined)
+  // MemoryPanel keys each block by workspace and layer. Keep its rows visible during a refresh.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshKey and tick invalidate the host listing.
   useEffect(() => {
     const abort = new AbortController()
-    setParagraphs([])
+    listing.current = abort
     setError(undefined)
     void memoryRequest(
       { cwd, saved: { action: 'list', ...(user ? { layer: 'user' } : {}) } },
@@ -55,7 +72,7 @@ export function SavedParagraphsBlock(
       },
     )
     return () => abort.abort()
-  }, [cwd, user])
+  }, [cwd, user, refreshKey, tick])
   const act = async (action: Exclude<SavedParagraphRequest['action'], 'list'>, paragraphId: string) => {
     if (busy) return
     setBusy(true)
@@ -65,6 +82,7 @@ export function SavedParagraphsBlock(
         cwd,
         saved: { action, paragraphId, ...(user ? { layer: 'user' as const } : {}) },
       })
+      listing.current?.abort()
       setParagraphs(result.saved?.paragraphs ?? [])
       if (action !== 'renew' && !user) props.onFileChanged()
     } catch (failure) {

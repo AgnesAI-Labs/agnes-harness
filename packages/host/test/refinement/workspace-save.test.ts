@@ -1044,6 +1044,7 @@ describe('hand-written text and the rules', () => {
     await save.save(request(ws))
     const edited = (await ws.file()).replace(BODY, 'Run pnpm lint AND pnpm test before commit.')
     await ws.writeStored(edited)
+    expect(await save.save(request(ws))).toMatchObject({ outcome: 'refused', reason: 'human-edited' })
     for (const initiator of ['model', 'auto'] as const)
       expect(
         await save.save(request(ws, { initiator, confirmations: 2, ...entry({ content: NEW }) })),
@@ -1321,6 +1322,9 @@ describe('rewriting a saved paragraph by id', () => {
     const ws = await workspace()
     const save = ws.service()
     const pid = paragraphOf(await save.save(request(ws)))
+    expect(await save.save(request(ws, entry({ id: 'other', content: NEW })))).toMatchObject({
+      outcome: 'saved',
+    })
     const registry = ws.registry()
     registry.update((draft) => {
       const p = draft.paragraphs.find((q) => q.id === pid)

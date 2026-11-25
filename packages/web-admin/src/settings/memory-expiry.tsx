@@ -15,7 +15,7 @@ function expiryTime(value: string): number {
   return time ? Date.parse(`${date}T${time}${zone ?? 'Z'}`) : midnight.getTime()
 }
 
-function analyzeExpiry(content: string, now: number) {
+export function analyzeExpiry(content: string, now: number) {
   let expired = 0
   let invalid = 0
   let future = 0
@@ -37,10 +37,8 @@ function analyzeExpiry(content: string, now: number) {
   return { expired, invalid, future, earliest }
 }
 
-export function MemoryExpiryStatus({ content, memoryOff }: { content: string; memoryOff: boolean }) {
-  const { locale, t } = useUiText('@agnes/web/memory', memoryCatalog)
-  const [, refresh] = useReducer((tick: number) => tick + 1, 0)
-  const { expired, invalid, future, earliest } = analyzeExpiry(content, Date.now())
+export function useDeadlineTick(earliest: number | undefined) {
+  const [tick, refresh] = useReducer((tick: number) => tick + 1, 0)
   useEffect(() => {
     if (earliest === undefined) return
     let timer: ReturnType<typeof setTimeout>
@@ -52,6 +50,13 @@ export function MemoryExpiryStatus({ content, memoryOff }: { content: string; me
     wake()
     return () => clearTimeout(timer)
   }, [earliest])
+  return tick
+}
+
+export function MemoryExpiryStatus({ content, memoryOff }: { content: string; memoryOff: boolean }) {
+  const { locale, t } = useUiText('@agnes/web/memory', memoryCatalog)
+  const { expired, invalid, future, earliest } = analyzeExpiry(content, Date.now())
+  useDeadlineTick(earliest)
 
   if (!expired && !invalid && !future) return null
   return (

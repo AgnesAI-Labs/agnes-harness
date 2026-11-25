@@ -290,6 +290,7 @@ it('opens the memory files subpage with MEMORY.md, saves with the version it rea
   try {
     const drill = host.querySelector<HTMLButtonElement>('[data-testid="memory-open"]')
     expect(drill?.textContent).toContain('1')
+    await act(async () => radio(host, 'auto')?.click())
     await act(async () => drill?.click())
     // The file, then the saved task experience paragraphs beside it, the workspace's and those in user
     // memory (none here: no section is shown).
@@ -304,14 +305,20 @@ it('opens the memory files subpage with MEMORY.md, saves with the version it rea
     expect(editor?.value).toBe('- prefers tables')
     const save = host.querySelector<HTMLButtonElement>('[data-testid="memory-save"]')
     expect(save?.disabled).toBe(true)
-    await editContent(host, '- prefers lists')
+    const annotated =
+      '<!-- expires_at: 2020-01-01 -->\n<!-- refinement:ra000000001 -->\nPrefer lists\n<!-- /refinement:ra000000001 -->'
+    await editContent(host, annotated)
+    saved = [{ id: 'ra000000001', text: 'Prefer lists', validity: 'valid', hidden: true }]
     await act(async () => save?.click())
-    expect(memory.at(-1)).toEqual({
+    expect(memory).toContainEqual({
       cwd: '/work/WorkLLM',
       file: 'MEMORY.md',
-      content: '- prefers lists',
+      content: annotated,
       baseHash: hash('a'),
     })
+    expect(host.querySelector('[data-testid="memory-saved-paragraph"]')?.textContent).toMatch(
+      /Prefer lists.*expiry annotation.*hides this paragraph/i,
+    )
     expect(host.querySelector('[data-testid="memory-root"]')?.textContent).toBe('/data/agh/memory/WorkLLM')
     expect(host.querySelector('[data-testid="memory-writer"]')?.textContent).toBe('shoe-portal · 4')
     expect(host.querySelector('[data-testid="memory-size"]')?.textContent).toContain('200')
@@ -321,6 +328,48 @@ it('opens the memory files subpage with MEMORY.md, saves with the version it rea
     await unmount()
   }
 })
+
+it.each(['reviewAfter', 'paragraph annotation', 'index annotation'])(
+  'refreshes a saved row at its %s deadline',
+  async (source) => {
+    const now = Date.UTC(2027, 0, 1)
+    const deadline = now + 30_000
+    const annotation = `<!-- expires_at: ${new Date(deadline).toISOString()} -->`
+    const item = {
+      id: 'ra000000001',
+      text: source === 'paragraph annotation' ? `Remember\n${annotation}\nDetails` : 'Remember',
+      validity: 'valid',
+      reviewAfter: source === 'reviewAfter' ? deadline : now + 86_400_000,
+    }
+    saved = [item]
+    vi.useFakeTimers({ now, toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    server()
+    const { host, unmount } = await render()
+    const row = () => host.querySelector('[data-testid="memory-saved-paragraph"]')?.textContent
+    try {
+      await act(async () => radio(host, 'auto')?.click())
+      await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="memory-open"]')?.click())
+      if (source === 'index annotation') {
+        await editContent(
+          host,
+          `${annotation}\n<!-- refinement:${item.id} -->\nRemember\n<!-- /refinement:${item.id} -->`,
+        )
+        await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="memory-save"]')?.click())
+      }
+      expect(row()).toContain('The agent sees it.')
+      saved = source === 'reviewAfter' ? [{ ...item, validity: 'expired' }] : [{ ...item, hidden: true }]
+      await act(async () => vi.advanceTimersByTimeAsync(29_999))
+      expect(row()).toContain('The agent sees it.')
+      await act(async () => vi.advanceTimersByTimeAsync(1))
+      expect(row()).toMatch(
+        source === 'reviewAfter' ? /past its review date/i : /expiry annotation.*hides this paragraph/i,
+      )
+    } finally {
+      await unmount()
+      vi.useRealTimers()
+    }
+  },
+)
 
 it('asks for a workspace when none is open', async () => {
   vi.stubGlobal(
@@ -472,9 +521,16 @@ it('re-reads memory written while settings were closed and keeps an unsaved draf
     expect(editor()?.value).toBe('')
     // An agent writes the file while the dialog is closed; the next visit shows it.
     stored = 'Prefer concise synthetic summaries.'
+    const closed = reads.length
     await show(2)
     await act(async () => {})
-    expect(reads.at(-1)).toEqual({ cwd: '/work/WorkLLM', file: 'MEMORY.md' })
+    expect(reads.slice(closed)).toEqual(
+      expect.arrayContaining([
+        { cwd: '/work/WorkLLM', file: 'MEMORY.md' },
+        { cwd: '/work/WorkLLM', saved: { action: 'list' } },
+        { cwd: '/work/WorkLLM', saved: { action: 'list', layer: 'user' } },
+      ]),
+    )
     expect(editor()?.value).toBe('Prefer concise synthetic summaries.')
     expect(host.querySelector('[data-testid="memory-writer"]')?.textContent).toBe('agent · 1')
     // An unsaved edit is the reader's own: a later visit refreshes the summary, not the editor.
@@ -483,9 +539,11 @@ it('re-reads memory written while settings were closed and keeps an unsaved draf
       editor()?.dispatchEvent(new Event('input', { bubbles: true }))
     })
     stored = 'Changed elsewhere.'
+    const draft = reads.length
     await show(3)
     await act(async () => {})
-    expect(reads.at(-1)).toEqual({ cwd: '/work/WorkLLM' })
+    expect(reads.slice(draft)).toContainEqual({ cwd: '/work/WorkLLM' })
+    expect(reads.slice(draft).some((read) => read.file !== undefined)).toBe(false)
     expect(editor()?.value).toBe('Draft')
   } finally {
     await act(async () => root.unmount())

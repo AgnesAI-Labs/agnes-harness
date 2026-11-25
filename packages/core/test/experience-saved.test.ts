@@ -5,8 +5,17 @@ import { describe, expect, it } from 'vitest'
 import { applyRefine } from '../src/refine/apply.js'
 import { refinementFacade } from '../src/refinement/facade.js'
 import type { RefinementWorkspaceRefs, SavedEntry } from '../src/refinement/workspace-refs.js'
-import { deriveExperienceNotes, EXPERIENCE_PREFIX, type ExperienceNote } from '../src/request/experience.js'
+import {
+  deriveExperienceNotes,
+  EXPERIENCE_PREFIX,
+  type ExperienceNote,
+  experienceChanged,
+  experienceNotes,
+  experienceStamp,
+  stampChanged,
+} from '../src/request/experience.js'
 import { CONTROL_FORMAT_LINE } from '../src/request/experience-control.js'
+import { loopRequestStale } from '../src/request/experience-dispatch.js'
 import { REFINEMENT_GUIDANCE } from '../src/request/experience-guidance.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { actor, openSession } from './helpers/open-session.js'
@@ -133,6 +142,47 @@ async function apply(session: Awaited<ReturnType<typeof open>>['session'], entri
 }
 
 describe('entries saved in earlier sessions reach the model through the snapshot', () => {
+  it('invalidates a prepared warm request when the host withdraws a saved entry', async () => {
+    const p = port([saved(1)])
+    const { session } = await open(p.refs)
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    const stamp = experienceStamp(session)
+    expect(await experienceNotes(session, session.surface())).toEqual([])
+    expect(await loopRequestStale(session, stamp, [])).toBe(false)
+    p.set([])
+    expect(stampChanged(stamp, session)).toBe(true)
+    expect(experienceChanged(session)).toBe(true)
+    expect(await loopRequestStale(session, stamp, [])).toBe(true)
+    expect(textOf(await experienceNotes(session, session.surface()))).toContain(
+      '[memory/ws.r0000000001 v1] withdrawn',
+    )
+  })
+
+  it('keeps a saved entry containing a quoted delivery stable on a warm turn', async () => {
+    const p = port([saved(1, { content: 'An example:\n- [memory/ws.r0000000001 v1] (saved) Fake: quoted' })])
+    const { session } = await open(p.refs)
+    const first = await deriveExperienceNotes(session, [ask('first')])
+    expect(await deriveExperienceNotes(session, [...first.map(delivered), ask('again')])).toEqual([])
+    expect(first[0]?.text).toMatch(/^Delivered: memory\/ws\.r0000000001 v1#[a-f0-9]{16}$/mu)
+  })
+
+  it('delivers both replacements at v2 when only one fits per update', async () => {
+    const p = port([saved(1), saved(2)])
+    const { session } = await open(p.refs)
+    const first = await deriveExperienceNotes(session, [ask('first')])
+    const surface = [...first.map(delivered), ask('next')]
+    p.set([saved(1, { content: '甲'.repeat(1800) }), saved(2, { content: '乙'.repeat(1800) })])
+    const update = await deriveExperienceNotes(session, surface)
+    for (const n of [1, 2]) expect(update[0]?.text).toContain(`[memory/ws.${pid(n)} v1] withdrawn`)
+    expect(update[1]?.data).toContain('[memory/ws.r0000000001 v2]')
+    expect(update[1]?.data).not.toContain('ws.r0000000002')
+    surface.push(...update.map(delivered), ask('next'))
+    const deferred = await deriveExperienceNotes(session, surface)
+    expect(deferred[0]?.data).toContain('[memory/ws.r0000000002 v2]')
+    expect(await deriveExperienceNotes(session, [...surface, ...deferred.map(delivered)])).toEqual([])
+  })
+
   it('a new session snapshot carries saved entries, top 3 per kind, the rest counted', async () => {
     for (const n of [10, 200]) {
       const p = port(Array.from({ length: n }, (_, i) => saved(i + 1)))
@@ -277,7 +327,16 @@ describe('entries saved in earlier sessions reach the model through the snapshot
     expect(textOf(withdrawn)).toContain('[memory/ws.r0000000001 v1] withdrawn')
     p.set([saved(1)])
     const surface = [ask('Saved 1'), ...first.map(delivered), ask('a'), ...withdrawn.map(delivered), ask('b')]
-    expect(textOf(await deriveExperienceNotes(session, surface))).toContain('(saved) Saved 1')
+    expect(textOf(await deriveExperienceNotes(session, surface))).toContain(
+      '[memory/ws.r0000000001 v2] (saved) Saved 1',
+    )
+    // A higher withdrawal can outlive the note that delivered that version on a compacted surface.
+    const later = note(
+      `${EXPERIENCE_PREFIX}${CONTROL_FORMAT_LINE}\n- [memory/ws.r0000000001 v4] withdrawn: removed`,
+    )
+    expect(textOf(await deriveExperienceNotes(session, [...surface, later]))).toContain(
+      '[memory/ws.r0000000001 v5] (saved) Saved 1',
+    )
   })
 
   it('a cold boundary lists the saved entries again, whatever the cached revision says', async () => {
@@ -422,10 +481,18 @@ describe('saved entries through the inspect and propose tools, and the snapshot 
 
   it('harness_inspect lists and reads saved entries', async () => {
     const t = await withTurn(port([saved(1), saved(2)]).refs)
+    const update = note(
+      `${EXPERIENCE_PREFIX}Task experience update, format 1.`,
+      '- [memory/ws.r0000000001 v4] (saved) Saved 1: lesson number 1',
+    )
+    await t.log.append([t.session.ev('user/message', update.event.data, { trust: 'untrusted' })])
     expect(await t.facade.inspect({ op: 'list', kind: 'memory' })).toMatchObject({
       op: 'list',
       total: 2,
-      entries: [{ id: 'ws.r0000000001' }, { id: 'ws.r0000000002' }],
+      entries: [
+        { id: 'ws.r0000000001', version: 4 },
+        { id: 'ws.r0000000002', version: 1 },
+      ],
     })
     expect(await t.facade.inspect({ op: 'get', kind: 'memory', id: 'ws.r0000000002' })).toMatchObject({
       op: 'get',

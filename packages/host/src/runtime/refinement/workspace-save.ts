@@ -668,9 +668,6 @@ export function placement(
     return 'busy'
   const active = snapshot.paragraphs.filter((paragraph) => paragraph.state === 'active')
   const hash = normalizedContentHash(text)
-  // Only a paragraph the file shows counts as already saved; one under a damaged marker is hidden.
-  const existing = active.find((paragraph) => paragraph.contentHash === hash && inFile.has(paragraph.id))
-  if (existing) return { existing: { id: existing.id, fileHash: existing.fileHash } }
   // Text already equal to what is being saved loses nothing a person wrote.
   const already = (currentText: string) => normalizedContentHash(currentText) === hash
   // A rewrite of a saved paragraph goes into that paragraph only, and only while it is in force there.
@@ -679,12 +676,20 @@ export function placement(
       (paragraph) => paragraph.id === replaces && now < paragraph.reviewAfter && inFile.has(paragraph.id),
     )
     if (!target) return 'gone'
+    const liveText = inFile.get(target.id)
+    if (liveText !== undefined && target.contentHash === hash && already(liveText))
+      return { existing: { id: target.id, fileHash: target.fileHash } }
     return {
       id: target.id,
       untouched: (currentText) =>
         normalizedContentHash(currentText) === target.contentHash || already(currentText),
     }
   }
+  const existing = active.find((paragraph) => {
+    const liveText = inFile.get(paragraph.id)
+    return liveText !== undefined && paragraph.contentHash === hash && already(liveText)
+  })
+  if (existing) return { existing: { id: existing.id, fileHash: existing.fileHash } }
   const lineage = active.find((paragraph) => same(paragraph.source))
   if (lineage)
     return {

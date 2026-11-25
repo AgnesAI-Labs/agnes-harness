@@ -1,3 +1,4 @@
+import { sha256Hex } from '@agnes/core-common/request/hash'
 import type { EventInput, Seq } from '@agnes/core-common/types'
 import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
@@ -9,11 +10,15 @@ import { isSavedRef, type SavedEntry, savedEntriesOf, savedRevisionOf } from '..
 import { isChildSession } from '../step/child-session.js'
 import type { SessionImpl } from '../step/session.js'
 import {
+  block,
   CONTROL_FORMAT_LINE,
   controlLines,
+  DELIVERED_LINE,
   EXPERIENCE_OFF_NOTICE,
   EXPERIENCE_RESET_NOTICE,
+  headerDeliveries,
   heldLine,
+  SAFE_REF,
   surfaceRefs,
 } from './experience-control.js'
 import {
@@ -79,10 +84,11 @@ const RECENT_MESSAGES = 6
 const RECENT_CHARS = 8_000
 
 const isFullText = (kind: HarnessEntry['kind']) => kind === 'prompt' || kind === 'memory'
+const isSavedKey = (ref: string) => isSavedRef(ref.slice(ref.indexOf('/') + 1))
 /**
  * A `harness/entry` payload is not schema-checked when the register folds it, so a legacy or damaged
- * cell can hold anything. Only a cell with a known kind and string id, title and content is rendered;
- * the rest are counted as left out rather than thrown on, which would fail every request.
+ * cell can hold anything. Render only entries whose reference and version can appear in the trusted
+ * header verbatim and whose title and content are text. Count damaged cells as omitted.
  */
 const usable = (item: EffectiveEntry): boolean => {
   const e = item.entry as Partial<Record<keyof HarnessEntry, unknown>> | null
@@ -91,6 +97,10 @@ const usable = (item: EffectiveEntry): boolean => {
     typeof e === 'object' &&
     KINDS.includes(e.kind as HarnessEntry['kind']) &&
     typeof e.id === 'string' &&
+    SAFE_REF.test(`${e.kind}/${e.id}`) &&
+    typeof e.version === 'number' &&
+    Number.isSafeInteger(e.version) &&
+    e.version > 0 &&
     typeof e.title === 'string' &&
     typeof e.content === 'string'
   )
@@ -99,6 +109,8 @@ const reference = (e: HarnessEntry) => `[${e.kind}/${e.id} v${e.version}]`
 /** The `source` of an entry saved in an earlier session, as the snapshot carries it. */
 const SAVED_SOURCE = 'saved:'
 const isSaved = (e: HarnessEntry) => typeof e.source === 'string' && e.source.startsWith(SAVED_SOURCE)
+const savedHash = (e: Pick<SavedEntry, 'title' | 'content'>) =>
+  sha256Hex(`${e.title}\0${e.content}`).slice(0, 16)
 /** Marks a line as an entry saved in an earlier session; it follows the reference, so parsing is unchanged. */
 const SAVED_MARK = ' (saved)'
 function clip(text: string, max: number): string {
@@ -112,10 +124,11 @@ function line(e: HarnessEntry): string {
   return `- ${reference(e)}${mark} ${clip(summary, METADATA_CHARS)}`
 }
 
-type Candidate = { entry: HarnessEntry; text: string; tokens: number }
+type Candidate = { entry: HarnessEntry; text: string; delivery: string; tokens: number }
 const candidate = (entry: HarnessEntry): Candidate => {
   const text = line(entry)
-  return { entry, text, tokens: estimateTokens(`${text}\n`) }
+  const delivery = `${entry.kind}/${entry.id} v${entry.version}${isSaved(entry) ? `#${savedHash(entry)}` : ''}`
+  return { entry, text, delivery, tokens: estimateTokens(`${text}\n${delivery}, `) }
 }
 const total = (items: readonly Candidate[]) => items.reduce((sum, item) => sum + item.tokens, 0)
 /** Greedy, in the given order: an item that does not fit is skipped, and a smaller later one may. */
@@ -141,31 +154,36 @@ function layout(
   budgets: ExperienceBudgets,
   more: Partial<Record<HarnessEntry['kind'], number>>,
   unusable: number,
-): { lines: string[]; counts: string[]; omitted: number } {
+): { lines: string[]; headerLines: string[]; omitted: number } {
   const bodyBudget = budgets.body + Math.max(0, budgets.metadata - total(metadata))
   const metadataBudget = budgets.metadata + Math.max(0, budgets.body - total(full))
   const a = fit(full, bodyBudget)
   const b = fit(metadata, metadataBudget)
   const kept = new Set([...a.kept, ...b.kept])
-  // Entry lines (the untrusted data) apart from Core's counts, which point the model at a tool and so
-  // must be read as the harness's words rather than as data.
+  // Only Core's counts and the exact references it selected belong in the header.
   const lines: string[] = []
-  const counts: string[] = []
+  const headerLines: string[] = []
+  const delivered: string[] = []
   for (const kind of KINDS) {
     const rows = [...full, ...metadata].filter((item) => item.entry.kind === kind && kept.has(item))
     const extra = more[kind] ?? 0
-    if (rows.length) lines.push(HEADING[kind], ...rows.map((row) => row.text))
+    if (rows.length) lines.push(HEADING[kind])
+    for (const row of rows) {
+      lines.push(row.text)
+      delivered.push(row.delivery)
+    }
     if (extra)
-      counts.push(
+      headerLines.push(
         `${extra} more ${kind} ${extra === 1 ? 'entry is' : 'entries are'} not shown here (including any saved from earlier sessions); use harness_inspect to list them.`,
       )
   }
   const omitted = a.left + b.left + unusable
   if (omitted)
-    counts.push(
+    headerLines.push(
       `${omitted} ${omitted === 1 ? 'entry was' : 'entries were'} left out to fit the context budget; use harness_inspect to read ${omitted === 1 ? 'it' : 'them'}.`,
     )
-  return { lines, counts, omitted }
+  if (delivered.length) headerLines.push(`${DELIVERED_LINE} ${delivered.join(', ')}`)
+  return { lines, headerLines, omitted }
 }
 
 function renderControl(control: readonly string[] | undefined, budget: number): string {
@@ -211,7 +229,7 @@ export function renderExperience(
     metadata.push(...ranked.slice(0, METADATA_TOP).map((item) => candidate(item.entry)))
     if (ranked.length > METADATA_TOP) more[kind] = ranked.length - METADATA_TOP
   }
-  const { lines, counts, omitted } = layout(
+  const { lines, headerLines, omitted } = layout(
     full,
     metadata,
     ctx.budgets,
@@ -220,7 +238,7 @@ export function renderExperience(
   )
   return {
     control: renderControl(view.control, ctx.budgets.control),
-    body: counts.length ? `${REFINEMENT_GUIDANCE}\n\n${counts.join('\n')}` : REFINEMENT_GUIDANCE,
+    body: headerLines.length ? `${REFINEMENT_GUIDANCE}\n\n${headerLines.join('\n')}` : REFINEMENT_GUIDANCE,
     data: lines.join('\n'),
     omitted,
   }
@@ -243,7 +261,7 @@ export function renderExperienceUpdate(
         (a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0),
     )
     .map((item) => candidate(item.entry))
-  const { lines, counts, omitted } = layout(
+  const { lines, headerLines, omitted } = layout(
     ordered.filter((item) => isFullText(item.entry.kind)),
     ordered.filter((item) => !isFullText(item.entry.kind)),
     budgets,
@@ -251,7 +269,7 @@ export function renderExperienceUpdate(
     entries.length - ordered.length,
   )
   return {
-    body: [`${UPDATE_FORMAT_LINE} ${UPDATE_LINE}`, ...counts].join('\n'),
+    body: [`${UPDATE_FORMAT_LINE} ${UPDATE_LINE}`, ...headerLines].join('\n'),
     data: lines.join('\n'),
     omitted,
   }
@@ -296,7 +314,7 @@ export function visibleExperience(surface: readonly SurfaceNode[]): {
     if (node.event.origin !== 'system') continue
     const data = node.event.data as { kind?: unknown; content?: unknown }
     if (data.kind !== 'runtime_context') continue
-    const text = messageText(data.content)
+    const text = block(data.content, 0)
     if (!text.startsWith(EXPERIENCE_PREFIX)) continue
     const head = text.slice(EXPERIENCE_PREFIX.length)
     const first = head.split('\n', 1)[0]
@@ -312,7 +330,9 @@ export function visibleExperience(surface: readonly SurfaceNode[]): {
       snapshot = true
       legacy = first !== SNAPSHOT_FORMAT_LINE
     }
-    if (text.includes(`]${SAVED_MARK} `)) saved = true
+    const manifest = headerDeliveries(head)
+    saved ||=
+      manifest?.some(({ ref }) => isSavedKey(ref)) ?? messageText(data.content).includes(`]${SAVED_MARK} `)
   }
   return { snapshot, voided, lastSeq, legacy, saved }
 }
@@ -383,7 +403,7 @@ function savedAsEntries(
   s: SessionImpl,
   saved: readonly SavedEntry[],
   session: readonly EffectiveEntry[],
-  version: (e: SavedEntry) => number = () => 1,
+  version: (e: SavedEntry) => number,
 ): EffectiveEntry[] {
   const ids = new Set(session.map(({ entry }) => entry.id))
   const texts = new Set(session.map(({ entry }) => normalized(`${entry.title}\n${entry.content}`)))
@@ -418,7 +438,15 @@ export async function inspectableEntries(
   valid: readonly EffectiveEntry[],
 ): Promise<EffectiveEntry[]> {
   const saved = await savedEntriesOf(s)
-  return [...valid, ...savedAsEntries(s, saved ?? [], valid)]
+  if (!saved?.length) return [...valid]
+  const refs = surfaceRefs(s.surface())
+  return [
+    ...valid,
+    ...savedAsEntries(s, saved, valid, (e) => {
+      const ref = `${e.kind}/${e.ref}`
+      return refs.delivered.get(ref) ?? refs.maxVersion.get(ref) ?? 1
+    }),
+  ]
 }
 
 /** What the last snapshot built for a session chose from, for its `refinement-prefix-change` row. */
@@ -445,12 +473,19 @@ function switchedOn(s: SessionImpl): boolean {
 }
 
 /** What a request's task-experience notes were derived from; see `experienceChanged`. */
-export type ExperienceStamp = Readonly<{ on: boolean; entries: unknown; meta: unknown; tombstones: unknown }>
+export type ExperienceStamp = Readonly<{
+  on: boolean
+  saved: string
+  entries: unknown
+  meta: unknown
+  tombstones: unknown
+}>
 type Stamp = ExperienceStamp
 const stamps = new WeakMap<SessionImpl, Stamp>()
 /** The state task-experience notes derived now would be derived from. */
 export const experienceStamp = (s: SessionImpl): Stamp => ({
   on: switchedOn(s),
+  saved: savedRevisionOf(s),
   entries: s.state.registers.harnessEntries,
   meta: s.state.refinementEntryMeta,
   tombstones: s.state.refinementTombstones,
@@ -469,11 +504,12 @@ export function experienceChanged(s: SessionImpl): boolean {
   return stampChanged(was, s)
 }
 
-/** Whether the switch, an entry, its metadata or a removal changed since `was` was taken. */
+/** Whether the switch, the host's saved revision or any session entry state changed since `was`. */
 export function stampChanged(was: Stamp, s: SessionImpl): boolean {
   const now = experienceStamp(s)
   return (
     was.on !== now.on ||
+    was.saved !== now.saved ||
     was.entries !== now.entries ||
     was.meta !== now.meta ||
     was.tombstones !== now.tombstones
@@ -531,7 +567,6 @@ export async function deriveExperienceNotes(
   const present = new Set([...valid, ...expired, ...held].map(({ entry }) => `${entry.kind}/${entry.id}`))
   // Entries saved in earlier sessions are listed at a cold boundary, for a format 1 snapshot that never
   // carried them, and whenever the model was given one, so that one gone since is withdrawn.
-  const isSavedKey = (ref: string) => isSavedRef(ref.slice(ref.indexOf('/') + 1))
   const givenSaved = [...refs.delivered.keys()].filter(isSavedKey)
   const withdrawnSaved = [...refs.withdrawn].filter(isSavedKey)
   // A format 1 snapshot never carried saved entries: they are looked for once. A snapshot sent while the
@@ -543,20 +578,27 @@ export async function deriveExperienceNotes(
     cold || givenSaved.length || withdrawnSaved.length
       ? await savedFor(s, cold)
       : { entries: [], failed: false }
-  const replacements = new Map<string, number>()
+  const replacements = new Set<string>()
   for (const e of saved.entries) {
     const ref = `${e.kind}/${e.ref}`
-    const previous = refs.delivered.get(ref)
+    const hash = refs.deliveredSavedHash.get(ref)
     const text = refs.deliveredSavedText.get(ref)
-    if (previous !== undefined && text !== undefined && text !== `${e.title}: ${e.content}`) {
-      replacements.set(ref, previous + 1)
+    if (
+      hash !== undefined ? hash !== savedHash(e) : text !== undefined && text !== `${e.title}: ${e.content}`
+    ) {
+      replacements.add(ref)
     } else present.add(ref)
   }
-  const version = (e: SavedEntry) =>
-    replacements.get(`${e.kind}/${e.ref}`) ?? refs.delivered.get(`${e.kind}/${e.ref}`) ?? 1
   // A host that cannot answer withdraws nothing: what it said before still stands.
   if (saved.failed) for (const ref of givenSaved) present.add(ref)
   const control = controlLines(refs.delivered, expired, present, handedOffRefs(s.state))
+  const notice = renderControl(control, EXPERIENCE_BUDGETS.control)
+  const version = (e: SavedEntry) => {
+    const ref = `${e.kind}/${e.ref}`
+    const current = refs.delivered.get(ref)
+    if (current !== undefined && !replacements.has(ref) && notice !== EXPERIENCE_RESET_NOTICE) return current
+    return (refs.maxVersion.get(ref) ?? 0) + 1
+  }
   // Held entries the model was not given at their version are named in the note, so that once their
   // task can be read they are owed, however many notes were written meanwhile.
   const heldBack = held
@@ -586,7 +628,7 @@ export async function deriveExperienceNotes(
     snapshotChoices.set(s, {
       candidates,
       saved: all.length - entries.length,
-      included: [...out.data.matchAll(/^- \[([a-z]+\/[A-Za-z0-9._-]+) v\d+\]/gmu)].map((m) => m[1] as string),
+      included: headerDeliveries(out.body)?.map(({ ref }) => ref) ?? [],
     })
     const notes: ExperienceNote[] = []
     if (out.control) notes.push(controlNote(out.control))
@@ -605,7 +647,6 @@ export async function deriveExperienceNotes(
   // re-sent until the next cold boundary: the next request sees the update note and treats everything
   // before it as delivered.
   const notes: ExperienceNote[] = []
-  const notice = renderControl(control, EXPERIENCE_BUDGETS.control)
   if (notice) notes.push(controlNote(notice))
   // A reset voids every note before it, so every entry still in force is given again after it. An
   // entry withdrawn earlier and in force again, or voided by a reset and left out of that update for
