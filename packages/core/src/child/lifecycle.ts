@@ -46,8 +46,10 @@ function attach(child: SessionImpl, value: Epoch, owner: Epoch): void {
   value.parent = owner
   value.root = owner.root
   const stop = () => {
-    revokeChildLifecycle(child)
-    child.ac.abort('stopped')
+    const reason = owner.controller.signal.reason
+    revokeChildLifecycle(child, reason)
+    child.ac.abort(reason)
+    if (reason === 'closed') return
     // Revocation is synchronous; its canonical stopped state follows through the child writer gate.
     void child.decisions.stop().catch((error: unknown) => {
       child.d.logger.warn('descendant decision withdrawal failed', {
@@ -62,11 +64,11 @@ function attach(child: SessionImpl, value: Epoch, owner: Epoch): void {
 }
 
 /** Close/abort are explicit revocation. A process crash executes none of this and writes no stop. */
-export function revokeChildLifecycle(session: SessionImpl): void {
+export function revokeChildLifecycle(session: SessionImpl, reason: 'stopped' | 'closed' = 'stopped'): void {
   const value = epoch(session)
   session.decisions.revokeScope()
   value.detach?.()
-  value.controller.abort('stopped')
+  value.controller.abort(reason)
 }
 
 /** Join the durable stop before releasing the owning writer or admitting a new lifecycle. */

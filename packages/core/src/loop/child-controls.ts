@@ -1,11 +1,12 @@
 import { externalChild } from '@agnes/core-child-control/child/directory'
 import { hasChildControl } from '@agnes/core-child-control/child/store'
 import { CoreError } from '@agnes/core-common/types'
-import type { ChildAgentListing } from '@agnes/extension-api'
+import type { ChildAgentListing, ChildTaskRecord } from '@agnes/extension-api'
 import type { Actor } from '@agnes/protocol'
 import type { SessionControlledChild } from '@agnes/protocol/gen/agnes-v1'
+import { readHumanChildState } from '../child/human-control.js'
 import { IN_PROCESS_CHILD_PROVIDER_ID } from '../child/provider.js'
-import { childBackend } from '../child/sessions.js'
+import { childBackend, ownedChildTree } from '../child/sessions.js'
 import type { SessionImpl } from '../step/session.js'
 
 const TERMINAL_CHILD = new Set(['completed', 'failed', 'cancelled'])
@@ -19,17 +20,9 @@ type ResolvedChild =
 /** Resolve by recorded ownership, never by a client-supplied key prefix or the newest generation. */
 export async function controlledChildTree(s: SessionImpl): Promise<SessionControlledChild[]> {
   const rows: SessionControlledChild[] = []
-  const visited = new Set<string>()
-  async function visit(parentId: string) {
-    if (visited.has(parentId)) return
-    visited.add(parentId)
-    const backend = childBackend(parentId)
-    for (const child of (await backend?.list()) ?? []) {
-      rows.push(await backend!.humanControlState(child.id))
-      await visit(child.id)
-    }
-  }
-  if (hasChildControl(s.d.log.storage)) await visit(s.key)
+  const storage = s.d.log.storage
+  if (hasChildControl(storage))
+    for await (const record of ownedChildTree(storage, s.key)) rows.push(await readControlledChild(s, record))
   for (const child of (await s.loopChildrenPort()?.list()) ?? []) {
     if (rows.some((row) => row.id === child.id)) continue
     rows.push({
@@ -71,21 +64,44 @@ async function resolveControlledChild(s: SessionImpl, id: string): Promise<Resol
   return { kind: 'missing' }
 }
 
-async function coreControlledChild(s: SessionImpl, id: string): Promise<SessionControlledChild | undefined> {
-  if (!hasChildControl(s.d.log.storage)) return undefined
-  const visited = new Set<string>()
-  async function visit(parentId: string): Promise<SessionControlledChild | undefined> {
-    if (visited.has(parentId)) return undefined
-    visited.add(parentId)
-    const backend = childBackend(parentId)
-    for (const child of (await backend?.list()) ?? []) {
-      if (child.id === id) return backend!.humanControlState(id)
-      const nested = await visit(child.id)
-      if (nested) return nested
-    }
-    return undefined
+async function readControlledChild(s: SessionImpl, record: ChildTaskRecord) {
+  const backend = childBackend(record.parentKey)
+  return backend
+    ? backend.humanControlState(record.childKey)
+    : readHumanChildState(s, record.childKey, (row) => row.parentKey === record.parentKey, undefined, false)
+}
+
+async function ownedChildPath(s: SessionImpl, id: string) {
+  const store = s.d.log.storage
+  if (!hasChildControl(store) || id === s.key) return undefined
+  const seen = new Set([s.key])
+  const path: ChildTaskRecord[] = []
+  for (let key = id; !seen.has(key); ) {
+    seen.add(key)
+    const record = await store.lookupByKey(key)
+    if (!record) return undefined
+    path.unshift(record)
+    if (record.parentKey === s.key) return path
+    key = record.parentKey
   }
-  return visit(s.key)
+  return undefined
+}
+
+async function coreControlledChild(s: SessionImpl, id: string) {
+  const record = (await ownedChildPath(s, id))?.at(-1)
+  return record && readControlledChild(s, record)
+}
+
+async function resolveCoreBackend(s: SessionImpl, row: SessionControlledChild) {
+  const live = childBackend(row.parentId)
+  if (live) return live
+  const path = await ownedChildPath(s, row.id)
+  let backend = childBackend(s.key)
+  for (const ancestor of path?.slice(0, -1) ?? []) {
+    if (!backend) break
+    backend = childBackend(ancestor.childKey) ?? (await backend.reopenControlOwner(ancestor))
+  }
+  return path && childBackend(row.parentId)
 }
 
 async function refuse(
@@ -164,7 +180,7 @@ export async function applyChildControl(
   ])
   try {
     if (resolved.kind === 'core') {
-      const backend = childBackend(resolved.row.parentId)
+      const backend = await resolveCoreBackend(s, resolved.row)
       if (!backend) throw new CoreError('E_CHILD_NOT_FOUND', 'Child backend is not bound', { childId: id })
       await backend.humanControl(id, action, actor, admissionId, text)
     } else {

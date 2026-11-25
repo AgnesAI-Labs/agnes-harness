@@ -269,8 +269,10 @@ it('releases the slot on pause and preserves the checkpoint if re-admission is r
 })
 
 it('refuses a cold resume after the isolated workspace was removed', async () => {
-  const f = await fixture('idle', 'worktree', false)
+  const f = await fixture('idle', 'worktree')
   await f.controls.pauseChild(key)
+  await f.child.close()
+  f.local.clear()
   await f.storage.updateWorkspace('ws', { phase: 'worktree_removed' })
   await expect(f.controls.resumeChild(key)).rejects.toMatchObject({ code: 'E_WORKSPACE_CLOSED' })
   expect((await f.read()).state).toBe('paused')
@@ -468,7 +470,7 @@ it('cancels a waiting checkpoint before detach and keeps the live driver', async
   expect(await f.child.scan({ type: 'x/core/child-checkpoint', limit: 1 })).toEqual([])
 })
 
-it('checkpoints a deferred child before any child session has been opened', async () => {
+it('refuses to checkpoint a deferred child without a trusted binding', async () => {
   const f = await fixture('idle')
   const deferred = await f.storage.createDelegatedChild({
     ...f.input,
@@ -485,13 +487,8 @@ it('checkpoints a deferred child before any child session has been opened', asyn
     expectedRevision: row.creationRevision,
     deferredAt: f.parent.d.clock(),
   })
-  expect(await f.controls.pauseChild(row.childKey)).toMatchObject({
-    previousStatus: 'starting',
-    status: 'paused',
-  })
-  expect(await f.controls.closeChild(row.childKey)).toMatchObject({
-    previousStatus: 'paused',
-    status: 'cancelled',
-  })
+  await expect(f.controls.pauseChild(row.childKey)).rejects.toMatchObject({ code: 'E_RELATION' })
+  expect(await f.storage.scan(row.childKey, { type: 'x/core/child-checkpoint', limit: 1 })).toEqual([])
+  expect(await f.controls.closeChild(row.childKey)).toMatchObject({ status: 'cancelled' })
   expect(await f.storage.scan(row.childKey, { type: 'turn/start', limit: 1 })).toEqual([])
 })

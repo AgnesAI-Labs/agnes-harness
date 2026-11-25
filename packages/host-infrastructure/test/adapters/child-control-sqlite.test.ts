@@ -89,6 +89,7 @@ describe('sqlite child control', () => {
         await expect(peer.createDelegatedChild(input('during-recovery'))).resolves.toMatchObject({
           status: 'refused',
           reason: 'fan_out',
+          fanOut: { limit: 1, active: 1, activeChildKeys: [recovery.childKey] },
         })
         const live = (await store.lookupByKey(recovery.childKey))!
         await store.casState(live.childKey, live.stateRevision, 'running')

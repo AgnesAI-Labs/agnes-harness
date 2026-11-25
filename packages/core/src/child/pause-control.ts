@@ -26,14 +26,15 @@ import {
 import { IN_PROCESS_CHILD_CAPABILITIES } from './provider.js'
 import {
   type Checkpoint,
+  checkpointOpenOptions,
   checkpointPauseFence,
   childApprovalPending,
   childCloseOutcome,
+  pinnedChildBinding,
   projectChildControls,
   readChildCheckpoint,
   requireConfirmedColdStop,
   requireOpenWorkspace,
-  retainedBindingOf,
   withChildLog,
   writeChildCheckpoint,
 } from './status.js'
@@ -235,7 +236,10 @@ export class ChildLifecycleControls {
     await requireOpenWorkspace(this.parent(), record, child)
     const checkpoint =
       record.state === 'paused' ? await readChildCheckpoint(this.parent(), record) : undefined
-    if (checkpoint && child) restoreCheckpointEffects(child, checkpoint)
+    if (checkpoint) {
+      if (child) restoreCheckpointEffects(child, checkpoint)
+      else checkpointOpenOptions(this.parent(), record, checkpoint)
+    }
     const ready = await this.transition(record, 'ready')
     let admitted = ready
     try {
@@ -265,13 +269,10 @@ export class ChildLifecycleControls {
       if (!projectChildControls(record).controls.retain)
         throw new CoreError('E_RELATION', 'Child cannot be retained')
       const live = this.port.live(key)
+      const binding = await pinnedChildBinding(this.parent(), record, live)
       await withChildLog(this.parent(), record, live, (log) =>
         log.append([
-          this.parent().ev(
-            'x/core/child-retained',
-            { childKey: key, ...(live ? { binding: retainedBindingOf(record, live) } : {}) },
-            { ignorable: true },
-          ),
+          this.parent().ev('x/core/child-retained', { childKey: key, binding }, { ignorable: true }),
         ]),
       )
       this.port.retain(key)

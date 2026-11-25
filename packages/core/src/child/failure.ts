@@ -69,3 +69,12 @@ export function childFailureSuffix(end: ChildEnd): string {
   if (end.stopReason === 'max_steps') return ': stopped at its step limit'
   return ''
 }
+
+export async function lastChildText(child: SessionImpl): Promise<string> {
+  const [row] = await child.scan({ type: 'assistant/message', order: 'desc', limit: 1 })
+  const content = (row?.data as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
+  return (content ?? [])
+    .filter((block) => block.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('')
+}

@@ -14,7 +14,8 @@ import type {
   ServiceInstance,
   ServicePorts,
 } from '@agnes/extension-api'
-import type { ContentBlock, InferenceEvent, RequestBody } from '@agnes/protocol'
+import { type ContentBlock, type InferenceEvent, type RequestBody, validateEvent } from '@agnes/protocol'
+import { guardRecapMessage } from '../child/recap-validator.js'
 import { releaseTreeReservation } from '../child/runtime-budget.js'
 import { ModelExecution } from '../execution/model-execution.js'
 import { recordRequestComposition } from '../execution/request-composition.js'
@@ -592,18 +593,28 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
           const op = requireOp()
           if (s.pendingEffects().length)
             throw new CoreError('E_RELATION', 'Assistant commit requires settled effects')
+          const data = {
+            content: message.content,
+            stopReason: message.stopReason,
+            ...(s.turn?.lastHeaderSeq ? { requestSeq: s.turn.lastHeaderSeq } : {}),
+          }
+          const row = s.ev('assistant/message', data, { origin: 'model' })
+          // Keep the normal ledger rejection for an invalid Loop payload.
+          const valid = validateEvent({
+            ...row,
+            seq: 1,
+            ts: new Date(0).toISOString(),
+            id: '0'.repeat(26),
+          }).ok
+          const { content, event } =
+            valid && message.stopReason !== 'tool_use'
+              ? await guardRecapMessage(s, message.content, op.meta.triggerSeq)
+              : { content: message.content, event: undefined }
           await s.transition(
             [
-              s.ev(
-                'assistant/message',
-                {
-                  content: message.content,
-                  stopReason: message.stopReason,
-                  ...(s.turn?.lastHeaderSeq ? { requestSeq: s.turn.lastHeaderSeq } : {}),
-                },
-                { origin: 'model' },
-              ),
+              { ...row, data: { ...data, content } },
               s.ev(CHECKPOINT_EVENT, { loop: s.loop, checkpoint: next }, { ignorable: true }),
+              ...(event ? [event] : []),
             ],
             (cur, seq) => {
               if (!cur) throw new CoreError('E_RELATION', 'Assistant commit lost its turn')

@@ -555,12 +555,24 @@ export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, 
     }
     const parentActive = [...this.childTasks.values()].filter(
       (row) => row.parentKey === input.parentKey && this.slot(row),
-    ).length
+    )
     const rootActive = [...this.childTasks.values()].filter(
       (row) => row.rootTaskId === input.rootTaskId && this.slot(row),
-    ).length
-    const fan = admitFanOut(parentActive, rootActive, input.maxFanOut)
-    if (!fan.ok) return { status: 'refused', reason: 'fan_out', message: fan.message }
+    )
+    const fan = admitFanOut(parentActive.length, rootActive.length, input.maxFanOut)
+    if (!fan.ok) {
+      const active = parentActive.length >= input.maxFanOut ? parentActive : rootActive
+      return {
+        status: 'refused',
+        reason: 'fan_out',
+        message: fan.message,
+        fanOut: {
+          limit: input.maxFanOut,
+          active: active.length,
+          activeChildKeys: active.map((row) => row.childKey).sort(),
+        },
+      }
+    }
 
     const root = this.scopes.get(`root:${input.rootTaskId}`)
     if (!root) return { status: 'refused', reason: 'budget', message: 'tree budget scope is missing' }

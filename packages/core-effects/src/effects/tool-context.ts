@@ -37,10 +37,18 @@ export type ChildStatus = {
   /** `state` is `error` because the child was cancelled, not because it failed. */
   cancelled?: true
   idle?: boolean
-  /** Backend-only identity of the completed result returned by this snapshot. */
+  status?: ChildResult['status']
+  /** Durable identity of the completed result returned by this snapshot. */
   completionId?: string
   completionSeq?: Seq
   receipt?: ChildResult['receipt']
+}
+function collectStatus(snapshot: ChildStatus): ChildResult['status'] {
+  if (snapshot.status === 'paused') return 'paused'
+  if (snapshot.idle) return 'idle'
+  if (snapshot.state === 'done') return 'completed'
+  if (snapshot.state === 'error') return snapshot.cancelled ? 'cancelled' : 'failed'
+  return 'running'
 }
 /** Why a failed child ended, as a collected result carries it; nothing for any other outcome. */
 function failureOf(status: ChildStatus): Pick<ChildResult, 'error' | 'stopReason'> {
@@ -499,41 +507,15 @@ export function buildToolContext(
               ...(external.listing.text !== undefined ? { text: external.listing.text } : {}),
             }
           const child = d.children.get?.(childKey)
-          if (child) {
-            const status = await child.status()
-            if (status.completionId)
-              await d.children.collected?.(childKey, status.completionId, status.completionSeq ?? 0)
-            return {
-              childKey: child.key,
-              status: (status.idle
-                ? 'idle'
-                : status.state === 'done'
-                  ? 'completed'
-                  : status.state === 'error'
-                    ? status.cancelled
-                      ? 'cancelled'
-                      : 'failed'
-                    : 'running') as 'running' | 'idle' | 'completed' | 'failed' | 'cancelled',
-              ...(status.text !== undefined ? { text: status.text } : {}),
-              ...(status.idle ? {} : failureOf(status)),
-              ...(status.receipt === undefined ? {} : { receipt: status.receipt }),
-            }
-          }
-          const snap = await d.children.inspect?.(childKey)
+          const snap = child ? await child.status() : await d.children.inspect?.(childKey)
           if (!snap) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
           if (snap.completionId)
             await d.children.collected?.(childKey, snap.completionId, snap.completionSeq ?? 0)
           return {
-            childKey,
-            status: (snap.idle
-              ? 'idle'
-              : snap.state === 'done'
-                ? 'completed'
-                : snap.state === 'error'
-                  ? snap.cancelled
-                    ? 'cancelled'
-                    : 'failed'
-                  : 'running') as 'running' | 'idle' | 'completed' | 'failed' | 'cancelled',
+            childKey: child?.key ?? childKey,
+            status: collectStatus(snap),
+            ...(snap.completionId === undefined ? {} : { completionId: snap.completionId }),
+            ...(snap.completionSeq === undefined ? {} : { completionSeq: snap.completionSeq }),
             ...(snap.text !== undefined ? { text: snap.text } : {}),
             ...(snap.idle ? {} : failureOf(snap)),
             ...(snap.receipt === undefined ? {} : { receipt: snap.receipt }),

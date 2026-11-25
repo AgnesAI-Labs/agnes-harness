@@ -17,7 +17,8 @@ import {
   type Checkpoint,
   checkpointOpenOptions,
   humanChildState,
-  type RetainedBinding,
+  readChildCheckpoint,
+  readTrustedRetained,
   requireOpenWorkspace,
   retainedBindingOf,
   retainedOpenOptions,
@@ -126,53 +127,29 @@ export async function applyHumanLifecycle(
 
 const retainers = new WeakMap<SessionImpl, () => void>()
 
-type RetainedData = { childKey?: string; binding?: RetainedBinding }
-
-async function readTrustedRetained(parent: SessionImpl, childKey: string): Promise<RetainedData | undefined> {
-  const [row] = await parent.d.log.storage.scan(childKey, {
-    type: 'x/core/child-retained',
-    order: 'desc',
-    limit: 1,
-  })
-  const data = row?.data as RetainedData | undefined
-  if (row?.origin !== 'system' || row.trust !== 'trusted' || data?.childKey !== childKey) return undefined
-  return data
-}
-
 async function canReopenRetained(parent: SessionImpl, record: ChildTaskRecord): Promise<boolean> {
   if (record.state !== 'idle' && record.state !== 'interrupted') return false
-  if (await recordedChildRole(parent, record.childKey)) return true
-  const retained = await readTrustedRetained(parent, record.childKey)
-  return bindingMatchesParent(parent, record, retained?.binding)
+  const retained = await readTrustedRetained(parent, record)
+  if (retained !== undefined) return bindingMatchesParent(parent, record, retained?.binding)
+  return !!(await recordedChildRole(parent, record.childKey))
 }
 
 /** Install at attach, before publishing the handle. Reopen also honors an earlier durable retain. */
 export async function bindChildRetention(
+  parent: SessionImpl,
   record: ChildTaskRecord,
   child: SessionImpl,
   makeResident: () => void,
   resident?: boolean,
 ) {
   retainers.set(child, makeResident)
-  const [row] = await child.scan({ type: 'x/core/child-retained', order: 'desc', limit: 1 })
-  const data = row?.data as RetainedData | undefined
-  const trusted = row?.origin === 'system' && row.trust === 'trusted' && data?.childKey === child.key
-  if (trusted) {
-    if (!data?.binding)
-      await child.append([
-        child.ev(
-          'x/core/child-retained',
-          { childKey: child.key, binding: retainedBindingOf(record, child) },
-          { ignorable: true },
-        ),
-      ])
-    return makeResident()
-  }
+  const retained = await readTrustedRetained(child, record)
+  if (retained) return makeResident()
   if (resident) {
     await child.append([
       child.ev(
         'x/core/child-retained',
-        { childKey: child.key, binding: retainedBindingOf(record, child) },
+        { childKey: child.key, binding: retainedBindingOf(parent, record, child) },
         { ignorable: true },
       ),
     ])
@@ -310,7 +287,7 @@ export async function reopenRetainedResident<T>(
     await port.resumeRole(childKey)
     return port.resident(childKey)
   }
-  const retained = await readTrustedRetained(parent, childKey)
+  const retained = await readTrustedRetained(parent, record)
   if (!retained) {
     if (record.state === 'idle')
       throw new CoreError('E_RELATION', 'Cannot restore the pinned retained child binding')
@@ -321,13 +298,30 @@ export async function reopenRetainedResident<T>(
   return port.resident(childKey)
 }
 
+export async function reopenColdControlOwner(
+  parent: SessionImpl,
+  record: ChildTaskRecord,
+  open: (options: ReturnType<typeof checkpointOpenOptions>) => Promise<ChildHandle>,
+  reopenRetained: () => Promise<unknown>,
+  markIdle: () => void,
+) {
+  if (record.parentKey !== parent.key) return undefined
+  if (record.state === 'paused') {
+    await requireOpenWorkspace(parent, record)
+    const checkpoint = await readChildCheckpoint(parent, record)
+    await open(checkpointOpenOptions(parent, record, checkpoint))
+    if (checkpoint.previousState === 'idle') markIdle()
+  } else await reopenRetained()
+  return childBackend(record.childKey)
+}
+
 export async function activateCheckpointChild(
   parent: SessionImpl,
   record: ChildTaskRecord,
   checkpoint: Checkpoint | undefined,
   port: {
     cached(): ChildHandle | undefined
-    legacyResume(): Promise<ChildHandle>
+    legacyResume(checkpoint?: Checkpoint): Promise<ChildHandle>
     open(options: ReturnType<typeof checkpointOpenOptions>): Promise<ChildHandle>
     markIdle?(): void
     pump(): void
@@ -340,8 +334,10 @@ export async function activateCheckpointChild(
       port.markIdle?.()
       port.pump()
     } else void handle.run(record.inputText).catch(bestEffort(parent.d.logger, 'checkpoint-resume'))
-  } else if (cached && record.state === 'idle') port.pump()
-  else await port.legacyResume()
+  } else if (cached && record.state === 'idle') {
+    port.markIdle?.()
+    port.pump()
+  } else await port.legacyResume(checkpoint)
 }
 
 export function createFactoryLifecycleControls(
@@ -349,7 +345,7 @@ export function createFactoryLifecycleControls(
   port: {
     session(key: string): SessionImpl | undefined
     handle(key: string): ChildHandle | undefined
-    resumeUnpaused(key: string): Promise<ChildHandle>
+    resumeUnpaused(key: string, checkpoint?: Checkpoint): Promise<ChildHandle>
     open(record: ChildTaskRecord, options: ReturnType<typeof checkpointOpenOptions>): Promise<ChildHandle>
     markIdle(key: string): void
     pump(key: string): void
@@ -361,7 +357,7 @@ export function createFactoryLifecycleControls(
     activate: (record, checkpoint) =>
       activateCheckpointChild(parent(), record, checkpoint, {
         cached: () => port.handle(record.childKey),
-        legacyResume: () => port.resumeUnpaused(record.childKey),
+        legacyResume: (saved) => port.resumeUnpaused(record.childKey, saved),
         open: (options) => port.open(record, options),
         markIdle: () => port.markIdle(record.childKey),
         pump: () => port.pump(record.childKey),

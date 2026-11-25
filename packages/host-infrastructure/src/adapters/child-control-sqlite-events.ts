@@ -11,6 +11,54 @@ import {
 
 type Db = Pick<DatabaseSync, 'prepare' | 'exec'>
 
+export type ReservationRecord = {
+  permitId: string
+  rootTaskId: string
+  scopeIds: string[]
+  qMicro: bigint
+  effectId: string
+  requestHash: string
+  writerGeneration: number
+  status: 'held' | 'settled' | 'released' | 'unknown'
+}
+
+type OriginEnvelope = {
+  v: 2
+  permitId: string
+  effectId: string
+  requestHash: string
+  writerGeneration: number
+  scopeIds: string[]
+}
+
+export function originEnvelope(reservation: ReservationRecord): OriginEnvelope {
+  return {
+    v: 2,
+    permitId: reservation.permitId,
+    effectId: reservation.effectId,
+    requestHash: reservation.requestHash,
+    writerGeneration: reservation.writerGeneration,
+    scopeIds: [...reservation.scopeIds],
+  }
+}
+
+export function sameOriginEnvelope(value: unknown, expected: OriginEnvelope): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const row = value as Record<string, unknown>
+  const keys = Object.keys(row).sort()
+  if (keys.join(',') !== 'effectId,permitId,requestHash,scopeIds,v,writerGeneration') return false
+  return (
+    row.v === 2 &&
+    row.permitId === expected.permitId &&
+    row.effectId === expected.effectId &&
+    row.requestHash === expected.requestHash &&
+    row.writerGeneration === expected.writerGeneration &&
+    Array.isArray(row.scopeIds) &&
+    row.scopeIds.length === expected.scopeIds.length &&
+    row.scopeIds.every((scope, index) => scope === expected.scopeIds[index])
+  )
+}
+
 const MAX_CHILD_EVENTS = 1000
 const ONE_CREDIT_MICRO = 1_000_000n
 

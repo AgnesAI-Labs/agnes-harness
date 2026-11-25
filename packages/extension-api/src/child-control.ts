@@ -174,6 +174,7 @@ export type CreateDelegatedChildResult =
       status: 'refused'
       reason: 'generation' | 'fan_out' | 'budget' | 'format' | 'mode'
       message: string
+      fanOut?: { limit: number; active: number; activeChildKeys: string[] }
     }
 
 export type ReserveRequest = {

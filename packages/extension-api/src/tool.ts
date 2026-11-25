@@ -219,6 +219,8 @@ export type ChildStatus = {
   stopReason?: 'budget' | 'max_steps'
   credits?: number
   waitTimedOut?: boolean
+  completionId?: string
+  completionSeq?: number
   /** Backend ledger facts; child prose is not evidence of tool execution or workspace integration. */
   receipt?: {
     workspace: {

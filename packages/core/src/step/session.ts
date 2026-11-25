@@ -170,6 +170,7 @@ import {
   type AbortResult,
   abortSession,
   cancelSessionRuntimes,
+  collectCloseFailures,
   drainClosingWork,
   finishAborted,
 } from './control.js'
@@ -2107,7 +2108,9 @@ export class SessionImpl {
     }
     this.turnEndError = undefined
     const cancelled = () => opts.signal.aborted || this.abortRevision !== abortRevision
-    const onAbort = () => void this.abort().catch(bestEffort(this.d.logger, 'session-abort'))
+    const onAbort = () => {
+      if (opts.signal.reason !== 'closed') void this.abort().catch(bestEffort(this.d.logger, 'session-abort'))
+    }
     opts.signal.addEventListener('abort', onAbort, { once: true })
     // A phase edge that reports where it went without writing where it went leaves step() reading
     // the same phase forever. Bound consecutive edges without a committed program-counter change,
@@ -2705,7 +2708,7 @@ export class SessionImpl {
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise
     this.closing = true
-    revokeChildLifecycle(this)
+    revokeChildLifecycle(this, 'closed')
     this.d.log.cancelHistoryVerification()
     const revocation = this.preparePermissionRevocation()
     void revocation.catch(() => undefined)
@@ -2719,13 +2722,7 @@ export class SessionImpl {
     this.loopChildren?.cancel()
     this.closePromise = Promise.resolve().then(async () => {
       const failures: unknown[] = []
-      const attempt = async (fn: () => unknown | Promise<unknown>) => {
-        try {
-          await fn()
-        } catch (error) {
-          failures.push(error)
-        }
-      }
+      const attempt = collectCloseFailures(failures)
       await attempt(() => revocation)
       await attempt(() => persistChildLifecycleStop(this, { preserveRetained: true }))
       await attempt(() => this.loopDriver?.cancel())
@@ -2740,7 +2737,10 @@ export class SessionImpl {
       await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.dispose())))
       if (this.loopContext) disposeLoopContext(this.loopContext)
       // An inactive ledger continuation remains resumable after releasing its writer.
-      if (draining && this.op()) await attempt(() => finishAborted(this))
+      if (draining && this.op())
+        await attempt(async () => {
+          if (!(await this.controls.paused())) await finishAborted(this)
+        })
       await attempt(() => this.hooks.shutdown?.())
       await attempt(() => this.d.memory?.close?.())
       await attempt(() => this.d.log.close())

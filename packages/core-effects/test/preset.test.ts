@@ -62,7 +62,7 @@ describe('preset view', () => {
     expect(d.deferred).toEqual({ pollMs: 2000 })
     expect(d.depthLimit).toBe(2)
     expect(d.generationLimit).toBe(1)
-    expect(d.maxFanOut).toBe(4)
+    expect(d.maxFanOut).toBe(8)
     expect(d.treeBudgetCredits).toBeNull()
     expect(d.ext).toEqual({ eventsPerTurn: 200 })
   })
@@ -144,7 +144,7 @@ describe('preset view', () => {
         telemetry: { invariants: 'strict', timing: true },
         recovery: { unknown_child: 'human' },
         deferred: { poll_ms: 59 },
-        subagent: { max_depth: 4 },
+        subagent: { max_depth: 4, max_fan_out: 6 },
         ext: { events_per_turn: 61 },
       },
       'full',
@@ -180,7 +180,7 @@ describe('preset view', () => {
       deferred: { pollMs: 59 },
       depthLimit: 5,
       generationLimit: 4,
-      maxFanOut: 4,
+      maxFanOut: 6,
       budgetInherit: 'aggregate',
       treeBudgetCredits: null,
       isolation: 'shared',

@@ -100,6 +100,7 @@ export class ChildAdmissionGuard {
         throw new CoreError(
           result.reason === 'fan_out' || result.reason === 'generation' ? 'E_CHILD_LIMIT' : 'E_UNSUPPORTED',
           result.message,
+          result.fanOut,
         )
       }
       const { childKey, creationId, attemptId, creationRevision: expectedRevision } = result.record

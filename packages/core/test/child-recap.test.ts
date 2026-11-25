@@ -1,17 +1,18 @@
 import { trackExternalChild } from '@agnes/core-child-control/child/directory'
 import type { EventInput } from '@agnes/core-common/types'
 import type { ChildExecutionState } from '@agnes/extension-api'
+import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { childCompletionInput, deliverChildStateNotice } from '../src/child/completion-notice.js'
 import { renderTruthBase } from '../src/child/recap-formatter.js'
 import { generateHybridRecap } from '../src/child/recap-narrative.js'
 import { buildRecapFactSnapshot } from '../src/child/recap-snapshot.js'
 import { guardParentRecapReply, validateRecapOutput } from '../src/child/recap-validator.js'
-import { fakeProvider } from './helpers/fake-provider.js'
-import { openSession } from './helpers/open-session.js'
+import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
+import { actor, openSession } from './helpers/open-session.js'
 
-async function batch() {
-  const { session: parent, storage } = await openSession({ provider: fakeProvider([]) })
+async function batch(provider = fakeProvider([])) {
+  const { session: parent, storage } = await openSession({ provider })
   await storage.ensureRootScope(parent.key, 100_000_000n)
   let serial = 0
   async function append(key: string, type: string, data: unknown, extra?: Partial<EventInput>) {
@@ -177,6 +178,11 @@ describe('child recap', () => {
       },
     })
     expect(snapshot.allowedArtifactPaths).toEqual(['new.txt', 'present.md'])
+    expect(snapshot.subtasks[0]?.artifacts).toEqual([
+      { path: 'present.md', kind: 'file', verified: true },
+      { path: 'new.txt', kind: 'patch', verified: true },
+    ])
+    expect(renderTruthBase(snapshot)).not.toContain('missing.md')
   })
 
   it('starts every fact after the fork boundary, including the source of a tool result', async () => {
@@ -395,4 +401,56 @@ describe('child recap', () => {
     expect(renderTruthBase(snapshot)).toContain('**全部完成（已完成 2/2）**')
     expect(renderTruthBase(snapshot)).toContain('### Pending approvals and blockers\nNone.')
   })
+})
+
+it('replaces a fabricated final recap in the ledger and preserves a later ordinary reply', async () => {
+  const normal = 'The example subtasks are completed in README.md.'
+  const b = await batch(
+    fakeProvider([
+      toolTurn('subagent_recap', {}),
+      textTurn('All subtasks completed. See fake.md.'),
+      textTurn(normal),
+      textTurn('All subtasks completed. See fake.md.'),
+    ]),
+  )
+  const parent = b.parent
+  try {
+    await b.task('failed-child', 'failed')
+    parent.d.registry.add(
+      {
+        name: 'subagent_recap',
+        description: 'Read task evidence.',
+        parameters: Type.Object({}, { additionalProperties: false }),
+        meta: {
+          isReadOnly: true,
+          isDestructive: false,
+          isConcurrencySafe: true,
+          isOpenWorld: false,
+          replay: 'safe',
+          requiresApproval: 'never',
+        },
+        execute: async () => ({ content: [{ type: 'text', text: 'failed-child failed' }] }),
+      },
+      { source: 'test', trust: 'builtin' },
+    )
+    const run = async (text: string) => {
+      await parent.enqueue('next-turn', { actor, content: [{ type: 'text', text }] })
+      expect((await parent.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+      const [row] = await parent.scan({ type: 'assistant/message', order: 'desc', limit: 1 })
+      return (row?.data as { content: { text: string }[] } | undefined)?.content[0]?.text
+    }
+    const recap = await run('What happened?')
+    expect(recap).toContain('Runtime ledger facts')
+    expect(recap).toContain('failed-child')
+    expect(recap).not.toContain('fake.md')
+    expect(await run('Summarize the subtask status vocabulary in this codebase.')).toBe(normal)
+    const requestedRecap = await run('Are all the subtasks completed?')
+    expect(requestedRecap).toContain('Runtime ledger facts')
+    expect(requestedRecap).not.toContain('fake.md')
+    expect(await parent.scan({ type: 'x/core/recap-exit-guard', limit: 3 })).toHaveLength(2)
+  } finally {
+    await parent.close()
+  }
 })

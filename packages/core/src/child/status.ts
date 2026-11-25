@@ -89,7 +89,7 @@ export async function humanChildState(
     .slice(0, 80)
   return {
     id: record.childKey,
-    parentId: parent.key,
+    parentId: record.parentKey,
     providerId: 'in-process',
     ...(label ? { label } : {}),
     ...projected,
@@ -252,6 +252,7 @@ export async function withChildLog<T>(
 export const CHECKPOINT = 'x/core/child-checkpoint'
 export type RetainedBinding = {
   authority: string
+  digest: string
   generationDepth: number
   cwd: string
   toolFilter?: ChildAgentToolFilter
@@ -274,17 +275,26 @@ function authority(s: SessionImpl) {
   )
 }
 
-export function retainedBindingOf(record: ChildTaskRecord, child: SessionImpl): RetainedBinding {
+export function retainedBindingOf(
+  parent: SessionImpl,
+  record: ChildTaskRecord,
+  child: SessionImpl,
+): RetainedBinding {
   const filter = narrowChildToolFilter(
     childSessionToolFilter(child),
     child.toolFilter === NO_TOOL_FILTER ? undefined : child.toolFilter,
   )
-  return {
-    authority: authority(child),
+  const binding = {
+    authority: authority(parent),
     generationDepth: record.generationDepth,
     cwd: record.cwd,
     ...(filter ? { toolFilter: filter } : {}),
   }
+  return { ...binding, digest: bindingDigest(record.childKey, binding) }
+}
+
+function bindingDigest(childKey: string, binding: Omit<RetainedBinding, 'digest'>) {
+  return sha256Hex(canonicalJson({ childKey, ...binding }))
 }
 
 export function bindingMatchesParent(
@@ -292,11 +302,13 @@ export function bindingMatchesParent(
   record: ChildTaskRecord,
   binding: RetainedBinding | undefined,
 ): binding is RetainedBinding {
+  if (!binding) return false
+  const { digest, ...pinned } = binding
   return (
-    !!binding &&
-    binding.cwd === record.cwd &&
-    binding.generationDepth === record.generationDepth &&
-    binding.authority === authority(parent)
+    pinned.cwd === record.cwd &&
+    pinned.generationDepth === record.generationDepth &&
+    pinned.authority === authority(parent) &&
+    digest === bindingDigest(record.childKey, pinned)
   )
 }
 
@@ -331,9 +343,37 @@ export function checkpointOpenOptions(parent: SessionImpl, record: ChildTaskReco
   }
 }
 
+const RETAINED = 'x/core/child-retained'
+
+export async function readTrustedRetained(parent: SessionImpl, record: ChildTaskRecord) {
+  const [row] = await parent.d.log.storage.scan(record.childKey, {
+    type: RETAINED,
+    fromSeq: record.boundarySeq + 1,
+    order: 'desc',
+    limit: 1,
+  })
+  if (!row) return undefined
+  const data = row.data as { childKey?: string; binding?: RetainedBinding } | undefined
+  return row.origin === 'system' && row.trust === 'trusted' && data?.childKey === record.childKey
+    ? data
+    : null
+}
+
+export async function pinnedChildBinding(parent: SessionImpl, record: ChildTaskRecord, live?: SessionImpl) {
+  if (live) return retainedBindingOf(parent, record, live)
+  const source =
+    record.state === 'paused'
+      ? await readChildCheckpoint(parent, record)
+      : await readTrustedRetained(parent, record)
+  if (!bindingMatchesParent(parent, record, source?.binding))
+    throw new CoreError('E_RELATION', 'Cannot restore the pinned child binding')
+  return source.binding
+}
+
 async function latestCheckpoint(parent: SessionImpl, record: ChildTaskRecord) {
   const [row] = await parent.d.log.storage.scan(record.childKey, {
     type: CHECKPOINT,
+    fromSeq: record.boundarySeq + 1,
     order: 'desc',
     limit: 1,
   })
@@ -388,18 +428,8 @@ export async function writeChildCheckpoint(
     }
   }
   if (outstanding.size) throw new CoreError('E_RELATION', 'Checkpoint has unresolved one-shot effects')
-  const filter = child && narrowChildToolFilter(childSessionToolFilter(child), child.toolFilter)
   const checkpoint: Checkpoint = {
-    ...(child
-      ? {
-          binding: {
-            authority: authority(child),
-            generationDepth: record.generationDepth,
-            cwd: record.cwd,
-            ...(filter ? { toolFilter: filter } : {}),
-          },
-        }
-      : {}),
+    binding: await pinnedChildBinding(parent, record, child),
     childKey: record.childKey,
     reason,
     pausedAtSeq,

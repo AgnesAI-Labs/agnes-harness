@@ -1,6 +1,8 @@
 import { externalChildren } from '@agnes/core-child-control/child/directory'
 import { hasChildControl } from '@agnes/core-child-control/child/store'
+import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { ChildAgentStatus, RecapFactSnapshot, SubtaskFactRecord } from '@agnes/extension-api'
+import type { AssistantMessage } from '@agnes/protocol'
 import type { SessionImpl } from '../step/session.js'
 import { composeRecapMarkdown, renderDeterministicNarrative, renderTruthBase } from './recap-formatter.js'
 import { buildRecapFactSnapshot } from './recap-snapshot.js'
@@ -18,10 +20,12 @@ function completionChecks(text: string, snapshot: RecapFactSnapshot, errors: Vio
   for (const pattern of universalCompletion)
     for (const m of prose.matchAll(pattern))
       if (!negated(prose.slice(0, m.index))) errors.push({ code: 'FALSE_COMPLETION_CLAIM', detail: m[0] })
+  const completed =
+    snapshot.counts.completed + snapshot.subtasks.filter((task) => task.status === 'idle').length
   for (const m of prose.matchAll(
     /(\d+)\s*(?:\/|of|out of)\s*(\d+)\s*(?:(?:sub)?tasks?\s+)?(?:completed?|done|已完成)/giu,
   ))
-    if (Number(m[1]) > snapshot.counts.completed && !negated(prose.slice(0, m.index)))
+    if (Number(m[1]) > completed && !negated(prose.slice(0, m.index)))
       errors.push({ code: 'FALSE_COMPLETION_CLAIM', detail: m[0] })
 }
 const negative =
@@ -184,32 +188,99 @@ const HARD_EXIT_VIOLATIONS = new Set([
   'AMBIGUOUS_SAME_NAME_ARTIFACT',
 ])
 
-/** Parent final-reply exit gate: intercepts redline hallucinations or dropped items after subagent_recap. */
-export async function guardSessionRecapExit(parent: SessionImpl, replyText: string, turnStartSeq: number) {
+type RecapScope = 'recap' | 'delegation' | 'ordinary'
+
+const requestedChildRecap = [
+  /^(?:please\s+)?(?:recap|summari[sz]e|review)\s+(?:(?:all|my|our|the|these|current)\s+)*(?:subtasks?|subagents?)(?:\s+(?:status|results?|outcomes?))?[.?!]?$/iu,
+  /^(?:are|have|did)\s+(?:(?:all|both|my|our|the|these)\s+)+(?:subtasks?|subagents?)\s+(?:been\s+)?(?:complete[d]?|done|finished|succeed(?:ed)?)[.?!]?$/iu,
+  /^(?:请|帮我)?(?:回顾|总结|汇总)(?:一下|当前|所有|这些)*(?:子任务|子代理)(?:的)?(?:状态|结果|进度)?[。？！]?$/u,
+  /^(?:现在)?(?:所有|全部)?(?:子任务|子代理)(?:都|均|已经|已)*(?:完成|结束)(?:了)?(?:吗|没有)?[。？！?]?$/u,
+]
+
+/** Restrict recap checks to tool use and assertions about actual delegated work. */
+export async function recapTurnScope(parent: SessionImpl, turnStartSeq: number): Promise<RecapScope> {
+  const [trigger] = await parent.scan({ fromSeq: turnStartSeq, toSeq: turnStartSeq, lane: parent.lane })
+  const input = messageText((trigger?.data as { content?: AssistantMessage['content'] } | undefined)?.content)
+  if (
+    /^(?:Use subagent_recap to summarize the verified results and current status of subagent \S+\.|请调用 subagent_recap，回顾子代理 \S+ 的当前状态和已核实的结果。)$/u.test(
+      input,
+    )
+  )
+    return 'recap'
   const storage = parent.d.log.storage
-  const hasLocal = hasChildControl(storage) && (await storage.listByParent(parent.key)).length > 0
-  if (!hasLocal && externalChildren(parent.key).length === 0) return { text: replyText }
-  const snapshot = await buildRecapFactSnapshot(parent)
-  if (!snapshot.subtasks.length) return { text: replyText }
-  const { valid, violations } = validateRecapOutput(replyText, snapshot)
-  if (valid) return { text: replyText }
-  let enforce = violations.some((v) => HARD_EXIT_VIOLATIONS.has(v.code))
-  if (!enforce) {
-    const calls = await parent.scan({
-      type: 'tool/call',
-      fromSeq: turnStartSeq,
-      lane: parent.lane,
-      limit: 64,
-    })
-    enforce = calls.some((row) => (row.data as { name?: string }).name === 'subagent_recap')
+  if (
+    requestedChildRecap.some((pattern) => pattern.test(input.trim())) &&
+    hasChildControl(storage) &&
+    ((await storage.listByParent(parent.key)).length > 0 || externalChildren(parent.key).length > 0)
+  )
+    return 'recap'
+  let scope: RecapScope = 'ordinary'
+  for await (const rows of scanPages((query) => parent.scan(query), {
+    type: 'tool/call',
+    fromSeq: turnStartSeq,
+    toSeq: parent.lastSeq,
+    lane: parent.lane,
+  })) {
+    for (const row of rows) {
+      const name = (row.data as { name?: string }).name
+      if (name === 'subagent_recap') return 'recap'
+      if (name && /^(?:subagent_(?:fork|spawn|collect|cancel|pause|resume|close|send_message))$/.test(name))
+        scope = 'delegation'
+    }
   }
-  if (!enforce) return { text: replyText }
+  return scope
+}
+
+function messageText(content?: AssistantMessage['content']) {
+  return (content ?? []).map((block) => (block.type === 'text' ? block.text : '')).join('')
+}
+
+/** Gate the committed reply; ordinary answers are outside recap validation. */
+export async function guardSessionRecapExit(
+  parent: SessionImpl,
+  replyText: string,
+  turnStartSeq: number,
+  scope?: RecapScope,
+) {
+  const storage = parent.d.log.storage
+  if (!hasChildControl(storage)) return { text: replyText }
+  const records = await storage.listByParent(parent.key)
+  const ids = [
+    ...records.map((record) => record.childKey),
+    ...externalChildren(parent.key).map((x) => x.listing.id),
+  ]
+  scope ??= await recapTurnScope(parent, turnStartSeq)
+  const knownChild = ids.some((id) => replyText.includes(id))
+  const recapClaim =
+    scope === 'delegation' &&
+    /\b(?:sub[ -]?tasks?|sub[ -]?agents?|delegated (?:tasks?|work)|child (?:agents?|tasks?))\b|子任务|子代理|委派任务/iu.test(
+      replyText,
+    )
+  if (scope !== 'recap' && (!ids.length || (!knownChild && !recapClaim))) return { text: replyText }
+
+  const snapshot = await buildRecapFactSnapshot(parent)
+  const { violations } = validateRecapOutput(replyText, snapshot)
+  if (
+    !violations.some(
+      (v) => scope === 'recap' || (HARD_EXIT_VIOLATIONS.has(v.code) && v.code !== 'FABRICATED_ARTIFACT'),
+    )
+  )
+    return { text: replyText }
   return {
     text: composeRecapMarkdown(snapshot, renderDeterministicNarrative(snapshot)),
-    event: parent.ev(
-      'x/core/recap-exit-guard',
-      { violations: violations.map((v) => ({ code: v.code, detail: v.detail })) },
-      { ignorable: true },
-    ),
+    event: parent.ev('x/core/recap-exit-guard', { violations }, { ignorable: true }),
   }
+}
+
+export async function guardRecapMessage(
+  parent: SessionImpl,
+  content: AssistantMessage['content'],
+  turnStartSeq: number,
+  scope?: RecapScope,
+) {
+  const reply = messageText(content)
+  if (!reply) return { content }
+  const guarded = await guardSessionRecapExit(parent, reply, turnStartSeq, scope)
+  if (!guarded.event) return { content }
+  return { content: [{ type: 'text' as const, text: guarded.text }], event: guarded.event }
 }

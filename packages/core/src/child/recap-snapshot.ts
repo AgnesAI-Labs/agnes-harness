@@ -17,14 +17,19 @@ import type { SessionImpl } from '../step/session.js'
 import { childEnd, childFailureSuffix, clipText } from './failure.js'
 import { previewOutput, renderTruthBase, stateFacts } from './recap-formatter.js'
 import { ROLE_DELEGATION } from './roles.js'
+import { ownedChildTree } from './sessions.js'
 
 type SnapshotOptions = { stat?: (absolutePath: string) => Promise<{ kind: string }> }
 type Pending = NonNullable<SubtaskFactRecord['approvalPending']>
 
-async function children(parent: SessionImpl) {
-  const rows = await requireChildControl(parent.d.log.storage).listByParent(parent.key)
-  // Memory storage returns live records. Freeze the observed states before awaiting ledger reads.
-  const records = rows.map((row) => ({ ...row }))
+async function children(parent: SessionImpl, descendants = false) {
+  const storage = requireChildControl(parent.d.log.storage)
+  const records: ChildTaskRecord[] = []
+  if (descendants) {
+    for await (const record of ownedChildTree(storage, parent.key)) records.push(record)
+  } else {
+    records.push(...(await storage.listByParent(parent.key)).map((row) => ({ ...row })))
+  }
   const local = new Set(records.map((r) => r.childKey))
   const external = externalChildren(parent.key)
     .map((x) => x.listing)
@@ -125,10 +130,10 @@ function trackWrites(
   }
 }
 
-async function verifiedFiles(paths: Map<string, SubtaskArtifactRef>, { stat }: SnapshotOptions) {
+async function verifiedFiles(paths: Map<string, SubtaskArtifactRef>, stat: SnapshotOptions['stat']) {
   const artifacts = []
   for (const [abs, ref] of paths) {
-    if (!stat || (await stat(abs).catch(() => undefined))?.kind === 'file') artifacts.push(ref)
+    if ((await stat?.(abs).catch(() => undefined))?.kind === 'file') artifacts.push(ref)
   }
   return artifacts
 }
@@ -197,6 +202,9 @@ async function localTask(
   }
   const { status, executionState } = projectChildStatus(record)
   const approval = open.values().next().value
+  const invocation = parent.d.workspaceInvocation
+  const stat =
+    options.stat ?? (invocation && (async (path: string) => invocation.run((view) => view.fs().stat(path))))
   return {
     taskId,
     label: clipText(record.inputText.trim().split('\n')[0] || taskId, 120),
@@ -205,7 +213,7 @@ async function localTask(
     executionState,
     summaryText,
     requestCount,
-    artifacts: await verifiedFiles(paths, options),
+    artifacts: await verifiedFiles(paths, stat),
     ...stateFacts(status, `[${producer}] Failed${childFailureSuffix(end)}`, approval),
     updatedAt: tail ? Date.parse(tail.ts) : record.attemptStartedAt,
   }
@@ -231,7 +239,7 @@ export async function buildRecapFactSnapshot(
   parent: SessionImpl,
   options: SnapshotOptions = {},
 ): Promise<RecapFactSnapshot> {
-  const { records, external } = await children(parent)
+  const { records, external } = await children(parent, true)
   const generatedAt = parent.d.clock()
   const subtasks = await Promise.all(records.map((r) => localTask(parent, r, options)))
   subtasks.push(...external.map((x) => externalTask(x, generatedAt)))

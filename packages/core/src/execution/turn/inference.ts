@@ -1,3 +1,4 @@
+import { guardRecapMessage, recapTurnScope } from '../../child/recap-validator.js'
 import { attachmentOmittedThrough, attachmentSurface } from '../../request/attachment-surface.js'
 import { estimateTokens } from '../model-tokens.js'
 import { recordRequestComposition } from '../request-composition.js'
@@ -1051,6 +1052,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     step,
     memory: t,
   })
+  const recapScope = await recapTurnScope(s, op.meta.triggerSeq)
   let text = ''
   let thinking = ''
   let buffered = ''
@@ -1082,7 +1084,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
           ? {
               content: [
                 ...(thinking ? [{ type: 'thinking', text: thinking }] : []),
-                ...(text ? [{ type: 'text', text }] : []),
+                ...(text && recapScope === 'ordinary' ? [{ type: 'text', text }] : []),
               ],
             }
           : {}),
@@ -1156,7 +1158,8 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         written(outputRow('started'))
         await flushQueue
       }
-      s.preview.publish({ lane: s.lane, effectId: effect.effectId, stream: kind, offset, delta })
+      if (recapScope === 'ordinary' || kind !== 'text')
+        s.preview.publish({ lane: s.lane, effectId: effect.effectId, stream: kind, offset, delta })
       const now = s.d.clock()
       const said = text.length + thinking.length
       if (!outputCut && now - outputAt >= OUTPUT_PROGRESS_MS && said !== outputChars) {
@@ -1282,7 +1285,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     // provider on the next request as part of the assistant turn, and a provider that rejects empty
     // text blocks refuses the whole request over a block core invented.
     const stopReason = truncated ? 'max_tokens' : calls.length ? 'tool_use' : 'end_turn'
-    const content = [
+    const rawContent = [
       ...(thinking
         ? [
             {
@@ -1294,6 +1297,11 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         : []),
       ...(text ? [{ type: 'text' as const, text }] : []),
     ]
+    const { content, event } =
+      stopReason === 'tool_use'
+        ? { content: rawContent, event: undefined }
+        : await guardRecapMessage(s, rawContent, op.meta.triggerSeq, recapScope)
+    if (event) events.push(event)
     await s.loopEvents.dispatch(
       'after_model_response',
       { content, stopReason },

@@ -23,7 +23,7 @@ import { bindChildPrompt } from './child-prompt-budget.js'
 import { recordChildResultCollected, withCancelledChildAck } from './collected-result.js'
 import { type ChildCompletionOptions, isBackgroundChild } from './completion-notice.js'
 import { cancelOpenAttempt, generationDepthOf, reportFailedCreation, rootTaskIdOf } from './creation.js'
-import { type ChildEnd, childEnd, thrownChildEnd } from './failure.js'
+import { type ChildEnd, childEnd, lastChildText, thrownChildEnd } from './failure.js'
 import { attachChildHeartbeat, childEventStreamFor } from './heartbeat.js'
 import {
   admitChildContinuation,
@@ -36,6 +36,7 @@ import {
   disposeLocalChildren,
   listLocalChildren,
   readHumanChildState,
+  reopenColdControlOwner,
   reopenRetainedResident,
   throwMissingContinuable,
 } from './human-control.js'
@@ -52,7 +53,7 @@ import { buildChildRecap } from './recap-snapshot.js'
 import { resumeRoleChild } from './resume-role.js'
 import type { ResolvedChildRole } from './roles.js'
 import { bindChildFactory } from './sessions.js'
-import { snapshotFromLedger, snapshotFromLive, snapshotFromRecord } from './status.js'
+import { type Checkpoint, snapshotFromLedger, snapshotFromLive, snapshotFromRecord } from './status.js'
 import { ChildAdmissionGuard } from './tree-admission.js'
 
 type CreateOpts = Parameters<ChildrenFactory['create']>[0] & {
@@ -114,7 +115,7 @@ export class KernelChildren implements ChildrenFactory {
     this.lifecycleControls ??= createFactoryLifecycleControls(this.parent, {
       session: (k) => this.session(k),
       handle: (k) => this.handles.get(k),
-      resumeUnpaused: (k) => this.resumeUnpaused(k),
+      resumeUnpaused: (k, checkpoint) => this.resumeUnpaused(k, checkpoint),
       open: (r, o) => this.open(r.kind, this.parent(), r, o),
       markIdle: (k) => this.markIdle(k, true),
       pump: (k) => this.pump(k),
@@ -535,7 +536,7 @@ export class KernelChildren implements ChildrenFactory {
     return this.resumeUnpaused(childKey)
   }
 
-  private async resumeUnpaused(childKey: string): Promise<ChildHandle> {
+  private async resumeUnpaused(childKey: string, checkpoint?: Checkpoint): Promise<ChildHandle> {
     const parent = this.parent()
     const store = requireChildControl(parent.d.log.storage)
     const record = await store.lookupByKey(childKey)
@@ -549,14 +550,17 @@ export class KernelChildren implements ChildrenFactory {
         void cached.run(record.inputText).catch(bestEffort(parent.d.logger, 'child-resume'))
       return cached
     }
-    return resumeRoleChild(parent, record, this.kernel.o.childRoles, {
-      open: (opts) => this.open(record.kind, parent, record, opts),
-      session: () => this.session(childKey)!,
-      continued: () => {
-        this.continued.add(childKey)
-        noteChildIdle(this.session(childKey)!, true)
+    return resumeRoleChild(
+      parent,
+      record,
+      this.kernel.o.childRoles,
+      {
+        open: (opts) => this.open(record.kind, parent, record, opts),
+        session: () => this.session(childKey)!,
+        continued: () => this.markIdle(childKey),
       },
-    })
+      checkpoint,
+    )
   }
 
   async recover(): Promise<void> {
@@ -747,15 +751,7 @@ export class KernelChildren implements ChildrenFactory {
       record.state === 'running' && !opts.recovering ? 'running' : 'ready'
     let ended = false
     let cachedText = ''
-    const lastText = async (): Promise<string> => {
-      const rows = await child.scan({ type: 'assistant/message', order: 'desc', limit: 1 })
-      const content = (rows[0]?.data as { content?: Array<{ type?: string; text?: string }> } | undefined)
-        ?.content
-      return (content ?? [])
-        .filter((block) => block.type === 'text' && typeof block.text === 'string')
-        .map((block) => block.text)
-        .join('')
-    }
+    const lastText = () => lastChildText(child)
     const emitEnd = async (outcome: 'completed' | 'cancelled' | 'failed'): Promise<void> => {
       if (ended) return
       ended = true
@@ -889,8 +885,7 @@ export class KernelChildren implements ChildrenFactory {
                 result.reason === 'completed' ? (queued ? 'ready' : 'idle') : 'interrupted',
               )
             state = 'ready'
-            this.continued.add(record.childKey)
-            noteChildIdle(child, status === 'idle')
+            this.markIdle(record.childKey, status === 'idle')
             if (status === 'idle')
               await notify('completed', {
                 credits: Math.max(0, child.state.creditsUsed),
@@ -927,7 +922,7 @@ export class KernelChildren implements ChildrenFactory {
           this.stopReady.get(record.childKey)?.()
           this.turnSignals.delete(record.childKey)
           cachedText = await lastText().catch(() => cachedText)
-          if (!residentHold) {
+          if (!residentHold && (await store.lookupByKey(record.childKey))?.state !== 'paused') {
             const outcome = state === 'done' ? 'completed' : state === 'cancelled' ? 'cancelled' : 'failed'
             await emitEnd(outcome)
             this.finishChild(record.childKey, { status: outcome, text: cachedText })
@@ -1003,7 +998,7 @@ export class KernelChildren implements ChildrenFactory {
           run,
         })
     }
-    await bindChildRetention(record, child, makeResident, resident)
+    await bindChildRetention(parent, record, child, makeResident, resident)
     bindIdleChild({
       kernel: this.kernel,
       parent,
@@ -1045,6 +1040,7 @@ export class KernelChildren implements ChildrenFactory {
       const opened = this.session(child.key)
       if (opened) await this.dropLocalChild(child.key, opened)
       const record = await requireChildControl(parent.d.log.storage).lookupByKey(child.key)
+      if (record?.state === 'paused') return
       this.finishChild(child.key, {
         status: record?.state === 'cancelled' || record?.state === 'cancelling' ? 'cancelled' : 'failed',
         text: error instanceof Error ? error.message : String(error),
@@ -1179,6 +1175,15 @@ export class KernelChildren implements ChildrenFactory {
     const parent = this.parent()
     return admitChildContinuation(parent, childKey, (r) => this.owns(r, parent.key))
   }
+
+  reopenControlOwner = (record: ChildTaskRecord) =>
+    reopenColdControlOwner(
+      this.parent(),
+      record,
+      (opts) => this.open(record.kind, this.parent(), record, opts),
+      () => this.reopenResident(record.childKey),
+      () => this.markIdle(record.childKey),
+    )
 
   private reopenResident(key: string) {
     return reopenRetainedResident(this.parent(), key, {

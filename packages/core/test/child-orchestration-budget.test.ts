@@ -152,7 +152,10 @@ describe.each(['memory', 'sqlite'] as const)('%s child admission', (backend) => 
     await observer.release()
     await expect(
       ChildAdmissionGuard.reserve(store, { ...input('b', 1), maxFanOut: 1 }),
-    ).rejects.toMatchObject({ code: 'E_CHILD_LIMIT' })
+    ).rejects.toMatchObject({
+      code: 'E_CHILD_LIMIT',
+      detail: { limit: expect.any(Number), active: expect.any(Number), activeChildKeys: expect.any(Array) },
+    })
     const controller = new AbortController()
     await expect(
       first.bind(async () => {
