@@ -16,6 +16,8 @@ import {
   PACKAGE_ADMIN_PERMISSIONS,
   type PackageAdminContext,
   type PackageAdminPermission,
+  type PackageCatalogListParams,
+  type PackageCatalogPage,
   type RpcError,
   RuntimeAdminSnapshot,
   rpcError,
@@ -34,6 +36,7 @@ import {
 } from '@agnes/protocol/gen/agnes-v1'
 
 import { backendCause, invalidResponse, responseCause } from './admin-failure.js'
+import { validCatalogProjection } from './catalog-query.js'
 import { configurationFailureStatus, configurationReadOnly } from './permissions.js'
 
 const PREFIX = '/admin/plugins/api/'
@@ -895,7 +898,14 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
         })
         const context: PackageAdminContext = {
           ...configuredContext,
-          features: [...new Set([...(configuredContext.features ?? []), ...backendFeatures])],
+          features: [
+            ...new Set([
+              ...(configuredContext.features ?? []).filter(
+                (feature) => !feature.startsWith('packages.community-discovery.'),
+              ),
+              ...backendFeatures,
+            ]),
+          ],
           permissions: readOnly
             ? configuredPermissions.filter(
                 (permission) => permission === 'packages.read' || permission === 'credentials.read',
@@ -957,7 +967,11 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
           return true
         }
         const result = await options.invoke(name, body)
-        if (!validatePackageAdminCall(method, 'result', result).ok) {
+        if (
+          !validatePackageAdminCall(method, 'result', result).ok ||
+          (method === '_agnes/v1/packages.catalog.list' &&
+            !validCatalogProjection(body as PackageCatalogListParams, result as PackageCatalogPage))
+        ) {
           error(response, 502, 'E_ADMIN_RESPONSE', '', responseCause(`result/${name}`))
           return true
         }

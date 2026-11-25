@@ -27,6 +27,7 @@ export async function realHosted(
     packageDirs?: Record<string, string>
     seams?: Parameters<typeof createTestHost>[0]['seams']
     packages?: Parameters<typeof createTestHost>[0]['packages']
+    execution?: Pick<Parameters<typeof createTestHost>[0], 'platform' | 'sandboxSeam' | 'presets'>
   } = {},
 ) {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-hosted-real-'))
@@ -55,6 +56,7 @@ export async function realHosted(
     ...(o.packageDirs ? { packageDirs: o.packageDirs } : {}),
     ...(o.seams ? { seams: o.seams } : {}),
     ...(o.packages ? { packages: o.packages } : {}),
+    ...o.execution,
   })
   const host = o.wrapHost ? o.wrapHost(built.host) : built.host
   const sent: Frame[] = []

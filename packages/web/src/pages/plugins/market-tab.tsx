@@ -158,38 +158,47 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
   const [importSource, setImportSource] = useState<string | null>(null)
   const [source, setSource] = useState<PluginSource | ''>('')
   const { snapshot, failed } = useCommunityDiscovery(view)
-  const [selected, setSelected] = useState<CommunityRepository | null>(null)
+  const [selectedId, setSelectedId] = useState<CommunityRepository['id'] | null>(null)
+  const selected = snapshot?.items.find((row) => row.id === selectedId) ?? null
+  const canFilterUnknown = view.state.communityVersion === 3
+  const [filterUnknown, setFilterUnknown] = useState(false)
+  const unknown = canFilterUnknown && filterUnknown
+  if (!canFilterUnknown && filterUnknown) setFilterUnknown(false)
   const detailTrigger = useRef<HTMLElement | null>(null)
   const tail = useRef<HTMLDivElement>(null)
-  const listKey = JSON.stringify([source, view.query, view.kind])
+  const listKey = JSON.stringify([source, view.query, view.kind, unknown])
   const [display, setDisplay] = useState({ key: listKey, count: BATCH_SIZE })
   const count = display.key === listKey ? display.count : BATCH_SIZE
   if (display.key !== listKey) setDisplay({ key: listKey, count })
-  const rows = view.state.catalog.filter(
-    (item) =>
-      !item.metadata?.exampleOf &&
-      discoverableAgent(item, view.state.installed) &&
-      matchesPluginFilters(item, source, view.kind),
-  )
+  const rows = unknown
+    ? []
+    : view.state.catalog.filter(
+        (item) =>
+          !item.metadata?.exampleOf &&
+          discoverableAgent(item, view.state.installed) &&
+          matchesPluginFilters(item, source, view.kind),
+      )
   const grouped = new Map<string, PackageCatalogDescriptor[]>()
   for (const row of rows) grouped.set(row.id, [...(grouped.get(row.id) ?? []), row])
   const groups = [...grouped.values()]
+  const keyword = view.query.toLowerCase()
   const community =
     !source || source === 'community'
-      ? (snapshot?.items ?? []).filter(
-          (row) =>
-            !view.kind &&
-            `${row.name ?? ''} ${communityText(row.title, locale)} ${communityText(row.summary, locale)} ${row.fullName} ${row.description} ${row.author ?? ''}`
-              .toLowerCase()
-              .includes(view.query.toLowerCase()),
-        )
+      ? (snapshot?.items ?? []).filter((row) => {
+          const version = row.versions?.[0]
+          const provides = version && 'compatibility' in version ? version.provides : undefined
+          if (unknown ? provides !== undefined : view.kind && !provides?.includes(view.kind)) return false
+          return `${row.name ?? ''} ${communityText(row.title, locale)} ${communityText(row.summary, locale)} ${row.fullName} ${row.description} ${row.author ?? ''}`
+            .toLowerCase()
+            .includes(keyword)
+        })
       : []
   const entries = [
     ...groups.map((group) => ({ kind: 'package' as const, group })),
     ...community.map((row) => ({ kind: 'community' as const, row })),
   ]
   const closeDetail = () => {
-    setSelected(null)
+    setSelectedId(null)
     requestAnimationFrame(() => {
       if (detailTrigger.current?.isConnected) detailTrigger.current.focus()
     })
@@ -229,6 +238,11 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
         t={t}
         onQuery={() => void view.loadCatalog()}
         leading={<PluginSourceFilter value={source} onChange={setSource} t={t} />}
+        unknownKind={
+          canFilterUnknown
+            ? { label: t('community.typeUnknown'), selected: unknown, setSelected: setFilterUnknown }
+            : undefined
+        }
       />
       {importSource !== null && (
         <SkillInstallDialog
@@ -263,7 +277,7 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
         <EmptyState
           className="plugin-empty"
           icon={<Icon name="puzzle" size={48} />}
-          title={view.query || view.kind || source ? t('market.none') : t('market.empty')}
+          title={view.query || view.kind || unknown || source ? t('market.none') : t('market.empty')}
           description={t(
             source === 'community' && (failed || snapshot?.error)
               ? 'community.loadFailed'
@@ -282,7 +296,7 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
                 t={t}
                 onView={(row, trigger) => {
                   detailTrigger.current = trigger
-                  setSelected(row)
+                  setSelectedId(row.id)
                 }}
               />
             ),
@@ -296,7 +310,7 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
         t={t}
         onClose={closeDetail}
         onSkillImport={(url) => {
-          setSelected(null)
+          setSelectedId(null)
           setImportSource(`git:${url}.git`)
         }}
       />

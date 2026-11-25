@@ -39,6 +39,7 @@ async function server(
     runtimeAdmin?: NonNullable<AdminSurfaceOptions['runtimeAdmin']>
     available?: NonNullable<AdminSurfaceOptions['available']>
     backendFeatures?: NonNullable<AdminSurfaceOptions['backendFeatures']>
+    features?: NonNullable<AdminSurfaceOptions['features']>
   } = {},
 ) {
   let now = Date.now()
@@ -197,11 +198,54 @@ describe('local package admin surface trust boundary', () => {
       features: [],
     })
     expect(context.authScope).toMatch(/^auth\.[a-f0-9]{32}$/)
-    let features = ['packages.community-discovery.v2']
-    const dynamic = await server(undefined, undefined, { backendFeatures: async () => features })
-    expect((await (await dynamic.request('context')).json()).features).toEqual(features)
+    const v2 = 'packages.community-discovery.v2'
+    const v3 = 'packages.community-discovery.v3'
+    let features = [v2, v3]
+    const dynamic = await server(undefined, undefined, {
+      backendFeatures: async () => features,
+      features: [v3],
+    })
+    const spoofed = { 'X-Agnes-Features': v3 }
+    expect((await (await dynamic.request('context', undefined, spoofed)).json()).features).toEqual(features)
+    features = [v2]
+    expect((await (await dynamic.request('overview', undefined, spoofed)).json()).context.features).toEqual([
+      v2,
+    ])
     features = []
-    expect((await (await dynamic.request('context')).json()).features).toEqual([])
+    expect((await (await dynamic.request('context', undefined, spoofed)).json()).features).toEqual([])
+  })
+
+  it('allows a coherent stale-context downgrade but rejects unrequested or mixed indexed versions', async () => {
+    const legacy = {
+      version: '1.0.0',
+      source: { type: 'git', ref: `git:https://github.com/acme/plugin.git#${'a'.repeat(40)}` },
+    }
+    const enriched = { ...legacy, version: '2.0.0', compatibility: { kind: 'undeclared' } }
+    const result = (versions: unknown[]) => ({
+      items: [],
+      nextCursor: null,
+      communityIndex: {
+        state: 'ready',
+        lastSuccessAt: null,
+        nextAttemptAt: null,
+        error: null,
+        totalReported: 1,
+        items: [{ id: 'p', fullName: 'acme/plugin', description: '', versions }],
+      },
+    })
+    const invoke = vi.fn(
+      async (_action: AdminSurfaceAction, _params: unknown): Promise<unknown> => result([legacy]),
+    )
+    const backendFeatures = vi.fn(async () => ['packages.community-discovery.v2'])
+    const admin = await server(invoke, undefined, { backendFeatures })
+    const params = { profile: 'local-dev', communityVersion: 3 }
+    expect((await admin.request('catalog/list', params)).status).toBe(200)
+    expect(backendFeatures).not.toHaveBeenCalled()
+    invoke.mockResolvedValueOnce(result([legacy, enriched]))
+    expect((await admin.request('catalog/list', params)).status).toBe(502)
+    invoke.mockResolvedValueOnce(result([enriched]))
+    expect((await admin.request('catalog/list', { ...params, communityVersion: 2 })).status).toBe(502)
+    expect((await admin.request('catalog/list', { profile: params.profile })).status).toBe(502)
   })
 
   it('returns one freshly verified inventory with the matching context and fails closed on recovery', async () => {

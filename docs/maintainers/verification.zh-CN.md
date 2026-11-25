@@ -77,6 +77,8 @@ mise exec -- node tools/toolchain/run.mjs exec vitest run tools/plugin-performan
 
 在 Windows 上，检查符号链接越界的测试需要具备创建符号链接的权限（开发者模式或对应账户权限）。如果准备夹具时 `symlinkSync` 返回 `EPERM`，说明环境前提未满足，安全断言尚未执行。共享 CI 的启动耗时诊断在完整测试失败后仍会运行；测试未执行或任务取消时不会运行。
 
+[重型测试分片清单](../../tools/ci/heavy-shards.json)依据 Linux、macOS 和 Windows 上的文件执行耗时分配真实进程测试。第六片执行清单未列出的重型测试，包括新文件，并保留浏览器和 refinement registry 测试。更新清单时同时比较执行耗时与文件数量，为冷启动及平台专有步骤留出余量。
+
 ## 前一构建升级门
 
 [前一构建测试](../../tools/upgrade/previous-build.e2e.test.ts) **默认暂停**，包括 CI heavy 层。固定基线早于扩展 API 5.0 和 SQLite 数据目录闸门，夹具插件的 API 范围与持久格式均不兼容。跳过不代表升级验收通过。

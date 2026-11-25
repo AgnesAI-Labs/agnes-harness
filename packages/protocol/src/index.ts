@@ -456,6 +456,11 @@ export type {
   PackageCatalogGetParams,
   PackageCatalogListParams,
   PackageCatalogPage,
+  PackageCommunityCompatibility,
+  PackageCommunityProvides,
+  PackageCommunityPublishTimestamp,
+  PackageCommunityVersionV2,
+  PackageCommunityVersionV3,
   PackageContributionSummary,
   PackageDisableParams,
   PackageEnableParams,
@@ -793,11 +798,7 @@ export * from './runtime-target-artifact.js'
 export * from './schedules.js'
 export * from './sequence.js'
 export { validateExtensionCall, validateExtensionCallError, validateServiceCapability } from './services.js'
-export {
-  ARTIFACT_REGISTERED_EVENT,
-  SESSION_ARTIFACT_ROOT_EVENT_TYPES,
-  sessionArtifactRoots,
-} from './session-artifacts.js'
+export * from './session-artifacts.js'
 export * from './session-capabilities.js'
 export {
   parseAgentRef,

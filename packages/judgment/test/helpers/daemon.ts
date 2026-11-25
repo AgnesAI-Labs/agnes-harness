@@ -1,13 +1,15 @@
-import { type ChildProcess, spawn } from 'node:child_process'
+import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { answersFor, type FakeSystemOneBehaviour, startFakeSystemOne } from '@agnes/ai/testkit'
 import { redactSecrets } from '@agnes/extension-api'
 import { createCredentialStore, initializeHome } from '@agnes/host'
 import type { EventEnvelope, PackageOperationReceipt } from '@agnes/protocol'
 import { createClient, memoryJournal, unixTransport } from '@agnes/sdk'
+import { windowsTestHostEnv } from '../../../../tools/test-fixtures/windows-host-env.mjs'
 import { ensureJudgmentPayload } from '../../../package-manager/tools/ensure-judgment-payload.mjs'
 
 export const PROFILE = 'local-dev'
@@ -20,6 +22,10 @@ export const DONE_REPLY = 'The synthetic inspection is complete.'
 const sourceDaemon = fileURLToPath(
   new URL('../../../daemon/test/fixtures/source-loop-daemon.ts', import.meta.url),
 )
+const stopSourceDaemon = fileURLToPath(
+  new URL('../../../daemon/test/fixtures/stop-source-daemon.ts', import.meta.url),
+)
+const exec = promisify(execFile)
 
 export async function bounded<T>(promise: Promise<T>, label: string, ms = 120_000): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -32,6 +38,31 @@ export async function bounded<T>(promise: Promise<T>, label: string, ms = 120_00
     ])
   } finally {
     clearTimeout(timer)
+  }
+}
+
+async function stopOwnedDaemon(daemon: ChildProcess, exited: Promise<number | null>, home: string) {
+  const windows = process.platform === 'win32' // guards-allow-platform: Windows fixtures need a cooperative daemon stop request.
+  if (windows) {
+    try {
+      await exec(process.execPath, ['--import', 'tsx', stopSourceDaemon, home], {
+        timeout: 45_000,
+        windowsHide: true,
+      })
+      await bounded(exited, 'owned daemon shutdown', 5_000)
+    } catch (error) {
+      daemon.kill('SIGKILL')
+      await bounded(exited, 'forced owned daemon shutdown', 5_000)
+      throw error
+    }
+    return
+  }
+  daemon.kill('SIGTERM')
+  const kill = setTimeout(() => daemon.kill('SIGKILL'), 20_000)
+  try {
+    await bounded(exited, 'owned daemon shutdown', 25_000)
+  } finally {
+    clearTimeout(kill)
   }
 }
 
@@ -51,6 +82,8 @@ export async function judgmentDaemon(
 ) {
   await ensureJudgmentPayload()
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-judgment-e2e-')))
+  const home = join(root, 'home')
+  const workspace = join(root, 'workspace')
   let daemon: ChildProcess | undefined
   let exited: Promise<number | null> | undefined
   let sdk: Sdk | undefined
@@ -76,15 +109,8 @@ export async function judgmentDaemon(
       await sdk?.close()
     } finally {
       try {
-        if (daemon && daemon.exitCode === null && daemon.signalCode === null) {
-          daemon.kill('SIGTERM')
-          const kill = setTimeout(() => daemon?.kill('SIGKILL'), 20_000)
-          try {
-            await bounded(exited!, 'owned daemon shutdown', 25_000)
-          } finally {
-            clearTimeout(kill)
-          }
-        }
+        if (daemon?.pid && exited && daemon.exitCode === null && daemon.signalCode === null)
+          await stopOwnedDaemon(daemon, exited, home)
       } finally {
         try {
           await fake.close()
@@ -92,20 +118,23 @@ export async function judgmentDaemon(
           const remaining = delayedUntil - Date.now()
           if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining + 25))
         } finally {
-          if (socketDirectory) rmSync(socketDirectory, { recursive: true, force: true })
-          rmSync(root, { recursive: true, force: true })
+          if (!daemon?.pid || daemon.exitCode !== null || daemon.signalCode !== null) {
+            if (socketDirectory) rmSync(socketDirectory, { recursive: true, force: true })
+            rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+          }
         }
       }
     }
   }
   const close = () => (closing ??= shutdown())
   try {
-    initializeHome(root, PROFILE)
+    initializeHome(home, PROFILE)
+    mkdirSync(workspace)
     if (options.tools) {
-      mkdirSync(join(root, 'source'))
-      writeFileSync(join(root, 'source', 'example.ts'), 'export const semanticSample = true\n')
+      mkdirSync(join(workspace, 'source'))
+      writeFileSync(join(workspace, 'source', 'example.ts'), 'export const semanticSample = true\n')
     }
-    await createCredentialStore({ root }).putApiKey('secret://jev/key', 'TEST-KEY-0123456789')
+    await createCredentialStore({ root: home }).putApiKey('secret://jev/key', 'TEST-KEY-0123456789')
     const model = (over: Record<string, unknown>) => ({
       name: over.id,
       reasoning: false,
@@ -137,7 +166,10 @@ export async function judgmentDaemon(
       { type: 'done', reason: 'toolUse' },
     ]
     if (options.scriptedTool)
-      writeFileSync(join(root, 'synthetic-rule.txt'), 'Synthetic record: pending review. No private data.\n')
+      writeFileSync(
+        join(workspace, 'synthetic-rule.txt'),
+        'Synthetic record: pending review. No private data.\n',
+      )
     const replies = options.tools
       ? [
           toolReply('find_relevant', { query: 'semantic sample', path: 'source' }),
@@ -156,12 +188,12 @@ export async function judgmentDaemon(
           ]
         : [reply(PROMISE_REPLY), reply(DONE_REPLY)]
     writeFileSync(
-      join(root, 'profiles', PROFILE, 'profile.yaml'),
+      join(home, 'profiles', PROFILE, 'profile.yaml'),
       JSON.stringify({
         name: PROFILE,
         computerUse: { enabled: false },
         limits: { 'worker.startup_ms': 120_000 },
-        adapters: { secrets: { kind: 'file', path: join(root, 'secrets') } },
+        adapters: { secrets: { kind: 'file', path: join(home, 'secrets') } },
         provider: {
           package: '@agnes/ai',
           catalog: { include: [] },
@@ -206,8 +238,14 @@ export async function judgmentDaemon(
         },
       }),
     )
-    daemon = spawn(process.execPath, ['--import', 'tsx', sourceDaemon, root, root], {
-      env: { PATH: process.env.PATH, TMPDIR: tmpdir(), AGH_HOME: root, NO_PROXY: '127.0.0.1,localhost' },
+    daemon = spawn(process.execPath, ['--import', 'tsx', sourceDaemon, home, workspace], {
+      env: {
+        ...windowsTestHostEnv(join(root, 'windows-user')),
+        PATH: process.env.PATH,
+        TMPDIR: tmpdir(),
+        AGH_HOME: home,
+        NO_PROXY: '127.0.0.1,localhost',
+      },
       stdio: ['ignore', 'ignore', 'pipe'],
     })
     exited = new Promise((resolve) => daemon!.once('exit', resolve))
@@ -228,7 +266,7 @@ export async function judgmentDaemon(
       }),
       'daemon boot',
     )
-    const owner = JSON.parse(readFileSync(join(root, 'daemon', 'owner.json'), 'utf8'))
+    const owner = JSON.parse(readFileSync(join(home, 'daemon', 'owner.json'), 'utf8'))
     const pipe = owner.socketPath.startsWith('\\\\.\\pipe\\')
     socketDirectory = pipe ? undefined : dirname(owner.socketPath)
     sdk = createClient({
@@ -294,13 +332,12 @@ export async function judgmentDaemon(
       sdk: client,
       operation,
       fake,
-      root,
       close,
       respond(next: FakeSystemOneBehaviour = {}, yes = 0.1) {
         behaviour = next
         probability = yes
       },
-      session: (name: string) => client.session.new({ cwd: root, sessionKey: `judgment-${name}` }),
+      session: (name: string) => client.session.new({ cwd: workspace, sessionKey: `judgment-${name}` }),
       async configure(value: Parameters<Sdk['packages']['config']['save']>[0]['value']) {
         const common = { profile: PROFILE, clientId: await client.clientId() }
         if (!installed) {

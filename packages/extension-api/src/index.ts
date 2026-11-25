@@ -2,7 +2,7 @@ export type { SystemInput, SystemInputPresentation } from '@agnes/protocol'
 // `@agnes/extension-api` author API version (independent semver). Compare the manifest `apiRange`
 // against it; a mismatch yields `E_API_RANGE`.
 
-export * from './api-range.js'
+export { checkApiRange, parseSemver, type Semver, satisfiesApiRange } from './api-range.js'
 export * from './attachments.js'
 export type * from './bundled-app.js'
 export * from './channel.js'

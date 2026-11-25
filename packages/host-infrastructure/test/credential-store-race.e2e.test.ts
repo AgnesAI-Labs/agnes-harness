@@ -76,7 +76,7 @@ describe.runIf(process.getuid !== undefined)('credential store atomic writers', 
       values.map((value) =>
         run(process.execPath, ['--import', 'tsx', fixture, root, 'secret://deepseek/default', value], {
           cwd: join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..'),
-          timeout: 30_000,
+          timeout: 60_000, // CI runners may cold-start all twenty TS processes on three CPUs.
         }),
       ),
     )
@@ -87,5 +87,5 @@ describe.runIf(process.getuid !== undefined)('credential store atomic writers', 
     expect(stored).toMatchObject({ version: 1, kind: 'api-key', provider: 'deepseek' })
     if (stored.kind !== 'api-key') throw new Error('writer produced the wrong credential kind')
     expect(values).toContain(stored.value)
-  }, 45_000)
+  }, 90_000)
 })

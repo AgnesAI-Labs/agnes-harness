@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CLOUD_AUTHORIZATION_PATH } from '@agnes/protocol'
+import { CLOUD_AUTHORIZATION_PATH, type PackageCatalogPage, type PackageSource } from '@agnes/protocol'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { LocalBackend } from './backend.js'
 
@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => {
       schemaVersion: 1,
     }),
   )
-  const catalogList = vi.fn(async () => ({ items: [], nextCursor: null }))
+  const catalogList = vi.fn(async (): Promise<PackageCatalogPage> => ({ items: [], nextCursor: null }))
   const initialize = vi.fn(async (): Promise<{ features?: string[] }> => ({}))
   const close = vi.fn(async () => undefined)
   const surfaceClose = vi.fn()
@@ -235,6 +235,65 @@ it('advertises exactly the frozen hot-update features and forwards catalog reads
   await expect(options?.backendFeatures()).resolves.toEqual([])
   await options?.invoke('catalog/list', { profile: 'local-dev', includeCommunity: true })
   expect(mocks.catalogList).toHaveBeenLastCalledWith({ profile: 'local-dev' })
+  const v2 = 'packages.community-discovery.v2'
+  const v3 = 'packages.community-discovery.v3'
+  const request = { profile: 'local-dev', query: 'example', cursor: 'page-2', limit: 25 }
+  const source: PackageSource = {
+    type: 'git',
+    ref: `git:https://github.com/example/plugin.git#${'a'.repeat(40)}`,
+  }
+  const release = { version: '1.0.0', source }
+  const snapshot = {
+    state: 'ready',
+    lastSuccessAt: null,
+    nextAttemptAt: null,
+    error: null,
+    totalReported: 1,
+    items: [
+      { id: 'example/plugin', fullName: 'example/plugin', description: 'Example', versions: [release] },
+    ],
+  } satisfies NonNullable<PackageCatalogPage['communityIndex']>
+  const legacyPage = { items: [], nextCursor: 'page-3', communityIndex: snapshot }
+  mocks.initialize.mockResolvedValueOnce({ features: [v2] })
+  mocks.catalogList.mockResolvedValueOnce(legacyPage)
+  await expect(options?.invoke('catalog/list', { ...request, communityVersion: 3 })).resolves.toEqual(
+    legacyPage,
+  )
+  expect(mocks.catalogList).toHaveBeenLastCalledWith({ ...request, communityVersion: 2 })
+
+  await options?.invoke('catalog/list', { ...request, communityVersion: 3 })
+  expect(mocks.catalogList).toHaveBeenLastCalledWith(request)
+
+  mocks.initialize.mockResolvedValueOnce({ features: [v2, v3] })
+  mocks.catalogList.mockResolvedValueOnce(legacyPage)
+  await expect(options?.invoke('catalog/list', { ...request, communityVersion: 2 })).resolves.toEqual(
+    legacyPage,
+  )
+  expect(mocks.catalogList).toHaveBeenLastCalledWith({ ...request, communityVersion: 2 })
+
+  const currentPage: PackageCatalogPage = {
+    ...legacyPage,
+    communityIndex: {
+      ...snapshot,
+      items: snapshot.items.map((row) => ({
+        ...row,
+        versions: [{ ...release, provides: ['tool'], compatibility: { kind: 'undeclared' } }],
+      })),
+    },
+  }
+  mocks.initialize.mockResolvedValueOnce({ features: [v2, v3] })
+  mocks.catalogList.mockResolvedValueOnce(currentPage)
+  await expect(options?.invoke('catalog/list', { ...request, communityVersion: 3 })).resolves.toEqual(
+    currentPage,
+  )
+  expect(mocks.catalogList).toHaveBeenLastCalledWith({ ...request, communityVersion: 3 })
+
+  mocks.initialize.mockResolvedValueOnce({ features: [v2, v3] })
+  mocks.catalogList.mockResolvedValueOnce(currentPage)
+  await expect(options?.invoke('catalog/list', { ...request, communityVersion: 2 })).rejects.toThrow(
+    'invalid community catalog projection',
+  )
+
   await options?.invoke('tree/list', { profile: 'local-dev' })
   expect(mocks.treeList).toHaveBeenCalledWith({ profile: 'local-dev' })
   await options?.invoke('tree/get', { profile: 'local-dev' })

@@ -484,7 +484,7 @@ seatbelt(
         (await probe('git-init', ['/usr/bin/git', 'init', '--quiet', '--template=', allowed], env, 10_000))
           .code,
       ).toBe(0)
-      const status = await probe('git-status', confine('git -C "$1" status --short', allowed), env)
+      const status = await probe('git-status', confine('git -C "$1" status --short', allowed), env, 10_000)
       expect(status.code).toBe(0)
       expect(status.stdout).toContain('?? ok')
       expect(await probe('null-rw', confine('echo x > /dev/null; exec 3<> /dev/null'))).toEqual({

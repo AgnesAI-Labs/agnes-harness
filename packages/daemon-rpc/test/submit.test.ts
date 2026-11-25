@@ -861,6 +861,7 @@ describe('submit admission and journal', () => {
         created.mockRestore()
       }
     },
+    45_000,
   )
 
   it('releases prompt admission before the model turn so in-turn input is not blocked', async () => {

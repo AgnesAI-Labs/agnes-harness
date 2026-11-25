@@ -51,7 +51,7 @@ import {
   type InstallReviewState,
   type PluginRuntimeSource,
 } from '../types.js'
-import { type CatalogPublish, CatalogReads } from './catalog-read.js'
+import { type CatalogPublish, CatalogReads, resetCommunityCatalog } from './catalog-read.js'
 import { confirmEnable, confirmSimple, offeredActions, PreviewFacts, RollbackFacts } from './confirms.js'
 import { blockedDependents, startDependentReview } from './dependent-update.js'
 import { adminErrorKey, element, markSettingsPage, setDialog } from './dom.js'
@@ -567,13 +567,13 @@ export class PluginAdminPage {
       const { context, inventory } = await PluginAdminApi.overview()
       if (!current()) return false
       resolvedContext = context
+      // Context also controls read-only UI when the inventory cannot be read.
       if (JSON.stringify(this.#state.context) !== JSON.stringify(context) || !this.#api) {
         this.#api = new PluginAdminApi(context)
         this.#generation++
+        this.#catalogReads.invalidate()
+        this.#publishCatalog((state) => resetCommunityCatalog(state, context))
       }
-      // Context remains useful even when inventory cannot be read: its recovery flag must still
-      // disable effects, while read-only catalog calls may remain available.
-      this.#state = { ...this.#state, context }
       if (!inventory)
         throw new AdminApiError({
           code: 'E_ADMIN_READ_ONLY',

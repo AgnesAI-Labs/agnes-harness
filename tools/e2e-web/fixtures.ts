@@ -5,14 +5,19 @@ import { isolatedRuntime, type Runtime } from './runtime.js'
 /** All local surfaces mount directly in the top-level document; only Cloud B uses an isolated frame. */
 export const root = base.extend<{
   runtime: Runtime
+  runtimeSetup: NonNullable<Parameters<typeof isolatedRuntime>[1]> & {
+    prepare?: (runtime: Runtime) => Promise<void>
+  }
   browserHealth: undefined
   expectedBrowserErrors: string[]
 }>({
+  runtimeSetup: [{}, { option: true }],
   // biome-ignore lint/correctness/noEmptyPattern: Playwright inspects the destructured fixture dependencies.
   expectedBrowserErrors: async ({}, use) => {
     await use([])
   },
-  runtime: async ({ page, screenshot }, use, info) => {
+  runtime: async ({ page, screenshot, runtimeSetup }, use, info) => {
+    const { prepare, ...options } = runtimeSetup
     const runtime = await isolatedRuntime(
       info.title.startsWith('guided first run zh-CN') ? 'installed' : 'root',
       {
@@ -28,9 +33,11 @@ export const root = base.extend<{
         realModel:
           info.title.startsWith('application permission switch') ||
           (info.title.startsWith('agent launch sweep') && process.env.AGH_REAL_AGENT_SWEEP === '1'),
+        ...options,
       },
     )
     try {
+      await prepare?.(runtime)
       await runtime.start()
       // UI specs own their navigation and screen assertions; SDK flows do not boot a second client.
       await use({

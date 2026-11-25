@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -37,7 +37,16 @@ it.runIf(process.platform === 'win32')(
         call('shell', { command: '[Console]::Write($kept)', persistent: true }),
         say('second'),
         call('shell', {
-          command: 'Start-Sleep -Milliseconds 500; Set-Content -LiteralPath timeout.txt -Value survived',
+          // Gate the write on the test so the foreground wait must expire before it can finish.
+          // Use .NET methods directly to avoid first-use cmdlet module loading in Windows PowerShell.
+          command: [
+            '$directory = $ExecutionContext.SessionState.Path.CurrentFileSystemLocation.Path',
+            "$release = [IO.Path]::Combine($directory, 'release-timeout.txt')",
+            '$deadline = [DateTime]::UtcNow.AddSeconds(60)',
+            'while (![IO.File]::Exists($release) -and [DateTime]::UtcNow -lt $deadline) { [Threading.Thread]::Sleep(100) }',
+            'if (![IO.File]::Exists($release)) { exit 1 }',
+            "[IO.File]::WriteAllText([IO.Path]::Combine($directory, 'timeout.txt'), 'survived')",
+          ].join('\n'),
           timeoutMs: 20,
         }),
         say('timeout'),
@@ -82,10 +91,14 @@ it.runIf(process.platform === 'win32')(
       })
       const timeoutResult = results.at(-1)?.data as { isError?: boolean } | undefined
       expect(Boolean(timeoutResult?.isError)).toBe(false)
-      for (const name of ['ready.txt', 'timeout.txt'])
+      expect(existsSync(join(root, 'timeout.txt'))).toBe(false)
+      writeFileSync(join(root, 'release-timeout.txt'), '')
+      for (const name of ['ready.txt', 'timeout.txt']) {
+        const path = join(root, name)
         await expect
-          .poll(() => readFileSync(join(root, name), 'utf8'), { timeout: 15000 })
+          .poll(() => (existsSync(path) ? readFileSync(path, 'utf8') : undefined), { timeout: 30_000 })
           .toContain('survived')
+      }
       await session.close()
     } finally {
       await host.close()

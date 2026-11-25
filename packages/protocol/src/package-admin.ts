@@ -3,6 +3,8 @@ import * as P from '../gen/ts/package-admin.js'
 import { adminPayloadBudget, checkAdminData as check, contract } from './admin-contract.js'
 import type { ValidationResult } from './validate.js'
 
+export { validatePackageCatalogSnapshotVersion } from './package-catalog.js'
+
 /** Browser client-module slots currently backed by a real Web host outlet. */
 export const WEB_CLIENT_MODULE_SLOT_NAMES = Object.freeze([
   'tool.card.inline',
@@ -838,6 +840,7 @@ export function validatePackageAdminData(
 ): ValidationResult<unknown> {
   return check(DATA_SCHEMAS[name], value, adminPayloadBudget(name))
 }
+
 export function validatePackageAdminCall(
   name: PackageAdminMethodName,
   side: 'params' | 'result',

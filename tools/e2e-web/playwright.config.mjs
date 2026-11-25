@@ -28,6 +28,7 @@ export default defineConfig({
     'runtime.spec.ts',
     'plugin-config.spec.ts',
     'plugin-purpose.spec.ts',
+    'community-market-metadata.spec.ts',
     'ui-gate.spec.ts',
     'ui-flows.spec.ts',
     'answer-tables.spec.ts',
