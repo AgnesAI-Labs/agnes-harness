@@ -139,7 +139,7 @@ it('runs Windows candidates unisolated with bounded argv execution and the suppl
   expect(vi.mocked(runIsolatedCommand).mock.calls.at(-1)).toEqual([
     process.execPath,
     argv.slice(1),
-    { cwd: root, env, signal, timeoutMs: 45, maxOutputBytes: 256 },
+    { cwd: root, env, signal, timeoutMs: 45, maxOutputBytes: 256, captureStderrOnFailure: true },
   ])
   await result.sandbox.exec(argv, { cwd: root, signal })
   expect(vi.mocked(runIsolatedCommand).mock.calls.at(-1)?.[2]).toEqual({
@@ -148,6 +148,7 @@ it('runs Windows candidates unisolated with bounded argv execution and the suppl
     signal,
     timeoutMs: 60_000,
     maxOutputBytes: 16384,
+    captureStderrOnFailure: true,
   })
 })
 it('refuses missing POSIX isolation or a remote session', async () => {

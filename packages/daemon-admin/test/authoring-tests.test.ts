@@ -77,6 +77,16 @@ it('retains redacted assertion details, package-relative locations and bounded c
   expect(timedOut.output).toContain('./test/fail.test.mjs:4:1')
   expect(timedOut.output).toContain('command timed out')
   expect(timedOut.output).not.toContain(privateHome)
+  exec.mockRejectedValue(
+    Object.assign(new Error('command exited with status 1'), {
+      stdout: '',
+      stderr: `bwrap: failed to mount ${privateHome}/private/runtime: No such file or directory`,
+    }),
+  )
+  const launchFailed = await runAuthoringTests(directory, files, new AbortController().signal)
+  expect(launchFailed).toMatchObject({ state: 'failed', count: 0 })
+  expect(launchFailed.output).toContain('bwrap: failed to mount [REDACTED:path] No such file or directory')
+  expect(launchFailed.output).not.toContain(privateHome)
   const ac = new AbortController()
   build.mockImplementation(async () => {
     ac.abort(new Error('stopped'))

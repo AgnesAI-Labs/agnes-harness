@@ -275,24 +275,11 @@ for (const [locale, theme] of [
           profile: 'local-dev',
           candidateId: candidate.candidateId,
         })
-      const testCandidate = async () => {
-        await promptOnDemand(
-          `call plugin_helper_install ${JSON.stringify({ action: 'test', proposalId: candidate.candidateId })}`,
-        )
-        return (await candidateStatus()).tests
-      }
-      let tests = await testCandidate()
-      // A runner exit before TAP starts has no assertion result. Retry the same draft once,
-      // then require real passing tests of that exact hash before entering the review UI.
-      if (
-        tests?.state === 'failed' &&
-        tests.count === 0 &&
-        tests.output.trim() === 'Error: command exited with status 1; no passing result recorded.'
-      ) {
-        await info.attach('candidate-test-launch-failure', { body: tests.output, contentType: 'text/plain' })
-        tests = await testCandidate()
-      }
-      expect(tests).toMatchObject({
+      await promptOnDemand(
+        `call plugin_helper_install ${JSON.stringify({ action: 'test', proposalId: candidate.candidateId })}`,
+      )
+      const { tests } = await candidateStatus()
+      expect(tests, tests?.output ?? 'Missing candidate test receipt').toMatchObject({
         state: 'passed',
         hash: candidate.candidateHash,
       })

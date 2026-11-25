@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { withCommandOutput } from './process-output.js'
+import { captureCommandStderr, withCommandOutput } from './process-output.js'
 import { runWindowsIsolatedCommand } from './process-win32.js'
 
 const windows = process.platform === 'win32' // guards-allow-platform: shared bounded command platform dispatch.
@@ -37,6 +37,8 @@ export function runIsolatedCommand(
     signal?: AbortSignal
     timeoutMs: number
     maxOutputBytes: number
+    /** Retain a separately bounded stderr prefix on rejection for callers that sanitize it. */
+    captureStderrOnFailure?: boolean
     windowsBatch?: 'script' | 'argv-proxy'
   }>,
 ): Promise<{ stdout: string }> {
@@ -47,9 +49,13 @@ export function runIsolatedCommand(
       cwd: options.cwd,
       env: options.env,
       detached: true,
-      stdio: ['ignore', 'pipe', 'ignore'],
+      stdio: ['ignore', 'pipe', options.captureStderrOnFailure ? 'pipe' : 'ignore'],
     })
     const chunks: Buffer[] = []
+    const stderr = captureCommandStderr(
+      child.stderr,
+      options.captureStderrOnFailure ? options.maxOutputBytes : 0,
+    )
     let bytes = 0
     let failure: Error | undefined
     let terminating: Promise<void> | undefined
@@ -72,7 +78,7 @@ export function runIsolatedCommand(
       terminate()
     }, options.timeoutMs)
     options.signal?.addEventListener('abort', abort, { once: true })
-    child.stdout.on('data', (chunk: Buffer) => {
+    child.stdout?.on('data', (chunk: Buffer) => {
       bytes += chunk.length
       if (bytes > options.maxOutputBytes) {
         failure ??= new Error('command output exceeded limit')
@@ -88,9 +94,12 @@ export function runIsolatedCommand(
       clearTimeout(timeout)
       options.signal?.removeEventListener('abort', abort)
       void (terminating ?? Promise.resolve()).then(() => {
-        if (failure) reject(withCommandOutput(failure, chunks))
+        if (failure) reject(withCommandOutput(failure, chunks, stderr()))
         else if (code === 0) resolve({ stdout: Buffer.concat(chunks).toString('utf8') })
-        else reject(withCommandOutput(new Error(`command exited with status ${code ?? 'signal'}`), chunks))
+        else
+          reject(
+            withCommandOutput(new Error(`command exited with status ${code ?? 'signal'}`), chunks, stderr()),
+          )
       })
     })
   })

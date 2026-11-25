@@ -3,8 +3,9 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { join } from 'node:path'
 import type { PackageCatalogPage, PackageOperation, PackagePreview, PackageSource } from '@agnes/protocol'
-import type { Locator, Page, TestInfo } from '@playwright/test'
+import type { Locator, Page, Request, TestInfo } from '@playwright/test'
 import { test as base, expect } from './fixtures.js'
+import { settled } from './quality.js'
 import type { Runtime } from './runtime.js'
 import { homePage } from './ui.js'
 
@@ -80,6 +81,7 @@ const cachePath = (home: string) => join(home, 'profiles', profile, 'community-d
 type BrowserTraffic = {
   requests: string[]
   checks: { method: string; body: unknown }[]
+  beginInteraction: () => Promise<number>
 }
 
 type DaemonProxy = {
@@ -166,6 +168,20 @@ const test = base.extend<{
   },
   browserTraffic: async ({ page, runtime }, use, info) => {
     const requests: string[] = []
+    const startupReads = new Set([
+      `${apiRoot}catalog/list`,
+      `${apiRoot}catalog/get`,
+      `${apiRoot}overview`,
+      `${apiRoot}candidates/list`,
+      `${apiRoot}tree/list`,
+      `${apiRoot}surfaces`,
+      `${apiRoot}composition`,
+      '/admin/api/runtime',
+      '/admin/api/composition',
+    ])
+    const pendingReads = new Set<Request>()
+    let catalogLoaded = false
+    let lastRead = Date.now()
     const checks: BrowserTraffic['checks'] = []
     const external: string[] = []
     const writes: string[] = []
@@ -179,8 +195,20 @@ const test = base.extend<{
       const address = `${url.origin}${url.pathname}`
       requests.push(`${request.method()} ${address}`)
       if (url.origin !== runtime.url) external.push(address)
+      else if (startupReads.has(url.pathname)) {
+        pendingReads.add(request)
+        lastRead = Date.now()
+      }
       if (isPackageWrite(url)) writes.push(url.pathname)
     })
+    const finishRead = (request: Request) => {
+      if (pendingReads.delete(request)) lastRead = Date.now()
+    }
+    page.on('requestfinished', (request) => {
+      if (request.url() === `${runtime.url}${apiRoot}catalog/list`) catalogLoaded = true
+      finishRead(request)
+    })
+    page.on('requestfailed', finishRead)
     page.on('websocket', (socket) => {
       const { hostname, origin, pathname } = new URL(socket.url())
       // The real daemon may advertise a separate loopback port for its socket.
@@ -242,7 +270,21 @@ const test = base.extend<{
         await route.fulfill({ json: operation })
       else await route.fallback()
     })
-    await use({ requests, checks })
+    await use({
+      requests,
+      checks,
+      beginInteraction: async () => {
+        await settled(page)
+        // Overview and runtime reads can schedule a second pass after the first cards render.
+        lastRead = Date.now()
+        await expect
+          .poll(() => catalogLoaded && pendingReads.size === 0 && Date.now() - lastRead >= 500, {
+            message: 'Initial Marketplace reads finish before measuring the interaction',
+          })
+          .toBe(true)
+        return requests.length
+      },
+    })
     await info.attach('community-browser-requests.json', {
       body: JSON.stringify({ requests, checks, external, writes, modelMethods }, null, 2),
       contentType: 'application/json',
@@ -332,7 +374,13 @@ function actionRequestsSince(requests: string[], start: number, origin: string) 
     const prefix = `${origin}${apiRoot}`
     if (!address.startsWith(prefix)) return false
     const operation = address.slice(prefix.length)
-    return operation === 'inspect' || operation === 'operation/get' || effects.test(operation)
+    return (
+      operation === 'catalog/list' ||
+      operation === 'catalog/get' ||
+      operation === 'inspect' ||
+      operation === 'operation/get' ||
+      effects.test(operation)
+    )
   })
 }
 
@@ -435,7 +483,7 @@ for (const locale of ['en', 'zh-CN'] as const) {
       browserTraffic,
     }, info) => {
       test.setTimeout(120_000)
-      const { requests, checks } = browserTraffic
+      const { requests, checks, beginInteraction } = browserTraffic
       const cached = await readFile(cachePath(runtime.home), 'utf8')
       await openMarket(page, runtime, daemonProxy)
       const cards = page.getByTestId('community-card')
@@ -457,7 +505,7 @@ for (const locale of ['en', 'zh-CN'] as const) {
       await sourceFilter.selectOption('community')
       await expect(names).toHaveText([observerTitle[locale], archiveTitle[locale], stationTitle[locale]])
       await expect(page.getByTestId('market-card')).toHaveCount(0)
-      const browseStart = requests.length
+      const browseStart = await beginInteraction()
       await filterKind(page, locale, text.tool)
       await expect(names).toHaveText([observerTitle[locale], stationTitle[locale]])
       await filterKind(page, locale, text.ui)
@@ -468,7 +516,7 @@ for (const locale of ['en', 'zh-CN'] as const) {
       await expect(names).toHaveText([archiveTitle[locale]])
       expect(
         actionRequestsSince(requests, browseStart, runtime.url),
-        'Capability filters do not inspect or change packages',
+        'Capability filters read only the displayed cache',
       ).toEqual([])
 
       await filterKind(page, locale, text.tool)
@@ -485,7 +533,7 @@ for (const locale of ['en', 'zh-CN'] as const) {
       await expect(names).toHaveText([observerTitle[locale], archiveTitle[locale], stationTitle[locale]])
 
       await page.setViewportSize({ width: 390, height: 844 })
-      const detailStart = requests.length
+      const detailStart = await beginInteraction()
       const card = (name: string) => cards.filter({ has: page.getByRole('heading', { name, exact: true }) })
       const trigger = card(observerTitle[locale]).getByRole('button', { name: text.view, exact: true })
       const drawer = page.getByRole('dialog', { name: observerTitle[locale], exact: true })
@@ -539,7 +587,7 @@ for (const locale of ['en', 'zh-CN'] as const) {
       await commitFacts(drawer, observed, selectedSha)
       expect(
         actionRequestsSince(requests, detailStart, runtime.url),
-        'Opening and switching cached versions do not inspect or change packages',
+        'Opening and switching cached versions require no catalog requests or package actions',
       ).toEqual([])
       await checkSelectedVersion(page, runtime, drawer, locale, checks, info)
 
@@ -560,14 +608,14 @@ for (const locale of ['en', 'zh-CN'] as const) {
         browserTraffic,
       }, info) => {
         test.setTimeout(90_000)
-        const { requests, checks } = browserTraffic
+        const { requests, checks, beginInteraction } = browserTraffic
         const cached = await readFile(cachePath(runtime.home), 'utf8')
         await openMarket(page, runtime, daemonProxy)
         await page.getByRole('combobox', { name: text.source, exact: true }).selectOption('community')
         const card = page.getByTestId('community-card')
         await expect(card.getByRole('heading')).toHaveText(archiveTitle[locale])
         await page.setViewportSize({ width: 390, height: 844 })
-        const start = requests.length
+        const start = await beginInteraction()
         await filterKind(page, locale, text.unknownType)
         await card.getByRole('button', { name: text.view, exact: true }).click()
         const drawer = page.getByRole('dialog', { name: archiveTitle[locale], exact: true })

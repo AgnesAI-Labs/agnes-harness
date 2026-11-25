@@ -268,7 +268,8 @@ test('session terminal survives UI detachment, follows agent output and honors p
   page,
   runtime,
 }, info) => {
-  test.setTimeout(240_000)
+  // Each viewport reload reattaches real terminals; leave time for both confined probes and cleanup.
+  test.setTimeout(360_000)
   // Real protected mount targets make the OS refusal observable. Bubblewrap cannot
   // create a missing deny mount below a read-only parent; keep that refusal intact.
   const protectedFiles = [
@@ -396,12 +397,11 @@ test('session terminal survives UI detachment, follows agent output and honors p
         },
         { locale, theme },
       )
-      // Reattach the terminal after changing preferences. Both viewports can use that attachment.
-      await page.reload()
-      await expect(panel.getByTestId('terminal-tab')).toHaveCount(2)
-      await expect(terminalText).toContainText('WB1_AFTER_INTERRUPT')
       for (const width of [1440, 1280]) {
         await page.setViewportSize({ width, height: 900 })
+        await page.reload()
+        await expect(panel.getByTestId('terminal-tab')).toHaveCount(2)
+        await expect(terminalText).toContainText('WB1_AFTER_INTERRUPT')
         await settled(page)
         await workbenchScreen(page, info, `p2-${locale}-${theme}-${width}-after`, folder)
         await page.getByTestId('workbench-right-toggle').click()

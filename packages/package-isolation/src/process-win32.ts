@@ -1,6 +1,6 @@
 import { startWindowsJobProcess } from '@agnes/system-node/process-spawn'
 import type { runIsolatedCommand } from './process.js'
-import { withCommandOutput } from './process-output.js'
+import { captureCommandStderr, withCommandOutput } from './process-output.js'
 
 export async function runWindowsIsolatedCommand(
   command: string,
@@ -11,6 +11,7 @@ export async function runWindowsIsolatedCommand(
   let failure: Error | undefined
   let started = false
   const chunks: Buffer[] = []
+  let stderr = () => ''
   const stop = (message: string) => {
     failure ??= new Error(message)
     controller.abort()
@@ -36,7 +37,7 @@ export async function runWindowsIsolatedCommand(
       if (bytes > options.maxOutputBytes) stop('command output exceeded limit')
       else chunks.push(chunk)
     })
-    child.stderr.resume()
+    stderr = captureCommandStderr(child.stderr, options.captureStderrOnFailure ? options.maxOutputBytes : 0)
     child.stdin.end()
     const result = await child.completion
     if (result.error) throw result.error
@@ -53,9 +54,9 @@ export async function runWindowsIsolatedCommand(
           (cause.name === 'AbortError' || ('code' in cause && cause.code === 'ABORT_ERR'))))
     ) {
       if (cause !== failure) failure.cause = cause
-      throw withCommandOutput(failure, chunks)
+      throw withCommandOutput(failure, chunks, stderr())
     }
-    throw cause instanceof Error ? withCommandOutput(cause, chunks) : cause
+    throw cause instanceof Error ? withCommandOutput(cause, chunks, stderr()) : cause
   } finally {
     clearTimeout(timeout)
     options.signal?.removeEventListener('abort', abort)

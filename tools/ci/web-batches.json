@@ -92,7 +92,7 @@
       },
       {
         "id": "main-25",
-        "args": ["ui-gate.spec.ts", "--grep", " en/dark$"],
+        "args": ["ui-gate.spec.ts", "v3-navigation.spec.ts", "--grep", " en/dark$"],
         "widths": "",
         "timeoutMinutes": 10
       },
@@ -177,7 +177,7 @@
         "args": [
           "v3-navigation.spec.ts",
           "--grep",
-          "permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/"
+          "permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/light$"
         ],
         "widths": "",
         "timeoutMinutes": 10
@@ -256,7 +256,7 @@
       },
       {
         "id": "batch-2",
-        "batches": ["main-16", "main-3"]
+        "batches": ["main-16", "main-26"]
       },
       {
         "id": "batch-3",
@@ -264,7 +264,7 @@
       },
       {
         "id": "batch-4",
-        "batches": ["main-12", "main-26"]
+        "batches": ["main-12", "main-3"]
       },
       {
         "id": "batch-5",
