@@ -23,7 +23,7 @@ import { unavailableDecisions, unavailableProjections } from '@agnes/extension-a
 import type { Actor } from '@agnes/protocol'
 import type { CheckpointWorkspaceContext, WorkspaceHookSandbox } from '../workspace/runtime.js'
 import { ToolEffectScope } from './effect-scope.js'
-import { assertNotDenied } from './fs-guard.js'
+import { assertNotDenied, FS_DENIED, isDenial } from './fs-guard.js'
 import type { RejectedBeforeEffectError } from './tool-dispatch.js'
 import type { SeamRuntime } from './wrap.js'
 
@@ -232,19 +232,34 @@ export function buildToolContext(
   const effects = new ToolEffectScope()
   // The checkpoint taken before each write of this call, so a receipt can name what restores it.
   const checkpoints = new Map<string, string>()
+  const memory = d.memory
+  // Ask the Host about the path before snapshotting it. A missing file may be created,
+  // while an unavailable checkpoint stops the write so its old bytes remain recoverable.
+  const checkpointWrite = async (path: string, attestPolicy: boolean) => {
+    try {
+      await assertNotDenied(d.fsOps, path)
+      await d.fsOps.preflight?.(path, 'write')
+      await d.fsOps.authorizeWrite?.(path)
+    } catch (error) {
+      if (attestPolicy && isDenial(error))
+        effects.reject({
+          code: FS_DENIED,
+          message:
+            (error instanceof Error && error.message) || 'E_FS_DENIED: filesystem write denied by policy',
+          path,
+        })
+      throw error
+    }
+    effects.beginEffect()
+    const snap = await d.runtime.checkpointSnapshot([path], stepId, d.workspace?.checkpoint, d.sessionKey)
+    if (!snap.ok) throw new CoreError('E_SEAM_MISSING', `checkpoint unavailable: ${snap.reason}`, { path })
+    checkpoints.set(path, snap.id)
+  }
   const workspaceFiles: FsOps = {
     read: (path, opts) => d.fsOps.read(path, opts),
-    // A write is snapshotted before it happens, so a rewind has something to go back to. An
-    // unavailable checkpoint seam therefore stops the write rather than losing the old bytes.
-    // The file system is asked about the path first, so a snapshot is not taken of a file the
-    // write is about to be refused for - asked, not decided here, and a missing file is not a
-    // refusal because the path being written may not exist yet.
+    // A custom provider can perform its own mutation before delegating to the workspace.
     write: async (path, data) => {
-      effects.beginEffect()
-      await assertNotDenied(d.fsOps, path)
-      const snap = await d.runtime.checkpointSnapshot([path], stepId, d.workspace?.checkpoint, d.sessionKey)
-      if (!snap.ok) throw new CoreError('E_SEAM_MISSING', `checkpoint unavailable: ${snap.reason}`, { path })
-      checkpoints.set(path, snap.id)
+      await checkpointWrite(path, !memory || memory.trustedProvider === true)
       return d.fsOps.write(path, data)
     },
     list: (path) => d.fsOps.list(path),
@@ -252,7 +267,6 @@ export function buildToolContext(
   }
   let approvalRequested = false
   const memorySource = Object.freeze({ sessionKey: d.sessionKey, turn: d.turn, toolUseId: call.toolUseId })
-  const memory = d.memory
   const files: MemoryFilePort = memory
     ? memory.session.files(workspaceFiles, memorySource, call.signal, async (proposal) => {
         // The service must ask before mutation. Bind its proposal to this admitted operation.
@@ -625,16 +639,7 @@ export function buildToolContext(
             create: (path: string, data: Uint8Array) =>
               effects.write(async () => {
                 const bytes = data.slice()
-                await assertNotDenied(d.fsOps, path)
-                const snap = await d.runtime.checkpointSnapshot(
-                  [path],
-                  stepId,
-                  d.workspace?.checkpoint,
-                  d.sessionKey,
-                )
-                if (!snap.ok)
-                  throw new CoreError('E_SEAM_MISSING', `checkpoint unavailable: ${snap.reason}`, { path })
-                checkpoints.set(path, snap.id)
+                await checkpointWrite(path, true)
                 call.signal.throwIfAborted()
                 return d.fsOps.create!(path, bytes)
               }),

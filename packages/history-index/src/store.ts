@@ -282,7 +282,7 @@ export class HistoryIndex {
         const visible = visibility(request.access)
         const params: Array<string | number> = [...visible.params]
         const where = visible.sql + this.eventFilters(request, params)
-        return recallEvents(this.db, request, where, params, limit, this.generation())
+        return recallEvents(this.db, request, where, params, limit, () => this.generation())
       } catch (error) {
         if (error instanceof HistoryIndexError) throw error
         throw searchError(error)

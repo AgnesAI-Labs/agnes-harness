@@ -15,12 +15,12 @@ export class ToolEffectScope {
   beginEffect(): void {
     this.started = true
   }
-  reject(diagnostic: RejectedBeforeEffectError): never {
+  reject(diagnostic: RejectedBeforeEffectError, safe = !this.started && this.writes === 1): never {
     const error = Object.assign(new Error(diagnostic.message), {
       name: 'ToolPreEffectRefusal',
       code: diagnostic.code,
     })
-    this.refused.set(error, { diagnostic, safe: !this.started && this.writes === 1 })
+    this.refused.set(error, { diagnostic, safe })
     throw error
   }
   read(error: unknown): RejectedBeforeEffectError | undefined {
@@ -39,8 +39,13 @@ export class ToolEffectScope {
       return result
     } catch (error) {
       if (!error || typeof error !== 'object' || !this.refused.has(error)) {
-        const diagnostic = clean && !this.started ? refusedBeforeEffect?.(error) : undefined
-        if (diagnostic) this.reject(diagnostic)
+        const diagnostic = refusedBeforeEffect?.(error)
+        if (diagnostic) {
+          // The provider proved this write stopped. An earlier or overlapping effect still counts.
+          const safe = clean && !this.started && this.writes === 1
+          if (!safe) this.beginEffect()
+          this.reject(diagnostic, safe)
+        }
         this.beginEffect()
         // The tool may use this reserved name to retry an exact edit. Never forward it from
         // a provider without a proof belonging to this operation.

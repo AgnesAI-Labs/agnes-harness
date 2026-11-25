@@ -70,6 +70,8 @@ export async function experienceForRequest(
   if (control.length === 0) return notes
   const left = room(s)
   if (noteTokens(notes) <= left) return notes
+  // A deferred snapshot did not deliver the recovered listing.
+  if (stamp && notes.length > control.length) delete stamp.delivery
   if (noteTokens(control) <= left) return control
   const minimal = control.map((note) =>
     note.text.includes(EXPERIENCE_OFF_NOTICE)

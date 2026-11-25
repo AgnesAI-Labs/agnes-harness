@@ -168,21 +168,26 @@ export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions, l
             if (exact.applied.length === 0) return exactFailure(ctx, exact, planned.length)
             text = await viewAfter(ctx, args.path, exact.failure ? original : text)
           } else {
-            if (isAttestedPreEffect(e)) throw e
             const code = failureCode(e, 'FS_WRITE_FAILED')
-            const hint =
-              code === 'E_FS_DENIED'
-                ? 'edit denied by file policy; choose an allowed path or ask the user to change the workspace/access policy; read the file before retrying.'
-                : 'edit failed while writing the batch; inspect the file with read and check write access before retrying. A backend failure may have written partial content.'
-            // Unexpected I/O still propagates, with safe JSON feedback in the error result text.
-            if (code !== 'E_FS_DENIED')
-              throw Object.assign(
-                new Error(
-                  `${code}: ${JSON.stringify({ category: 'write_failed', index: null, written: 'unknown', hint })}`,
-                ),
-                { code },
+            if (isAttestedPreEffect(e)) {
+              if (code !== 'E_FS_DENIED') throw e
+              return editFailure(
+                ctx,
+                code,
+                'write_failed',
+                null,
+                false,
+                'edit denied by file policy; choose an allowed path or ask the user to change the workspace/access policy; read the file before retrying.',
               )
-            return editFailure(ctx, code, 'write_failed', null, false, hint)
+            }
+            const hint =
+              'edit failed while writing the batch; inspect the file with read and check write access before retrying. A backend failure may have written partial content.'
+            throw Object.assign(
+              new Error(
+                `${code}: ${JSON.stringify({ category: 'write_failed', index: null, written: 'unknown', hint })}`,
+              ),
+              { code },
+            )
           }
         }
         if (record)

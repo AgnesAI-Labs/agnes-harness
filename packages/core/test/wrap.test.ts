@@ -739,7 +739,12 @@ describe('settlesWithin', () => {
 })
 
 describe('buildToolContext hands every path to the file system, and decides none of them', () => {
-  const build = (fsPolicy: FsPolicy, seen: string[], seams: Record<string, unknown> = {}) => {
+  const build = (
+    fsPolicy: FsPolicy,
+    seen: string[],
+    seams: Record<string, unknown> = {},
+    admission: Pick<FsOps, 'preflight' | 'authorizeWrite'> = {},
+  ) => {
     const runtime = new SeamRuntime(
       fakeSeams({ sandbox: { fsPolicy: () => fsPolicy }, ...seams } as never),
       presetDefaults(),
@@ -780,7 +785,7 @@ describe('buildToolContext hands every path to the file system, and decides none
         runtime,
         preset: presetDefaults(),
         children: { create: async () => ({}) as never },
-        fsOps: fencedFs(record, fsPolicy),
+        fsOps: { ...fencedFs(record, fsPolicy), ...admission },
         netFetch: async () => new Response(''),
         log: { debug: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined },
         invoke: async () => ({ content: [] }),
@@ -866,14 +871,31 @@ describe('buildToolContext hands every path to the file system, and decides none
     const seen: string[] = []
     const snapshots: string[][] = []
     const policy: FsPolicy = testFsPolicy('/w', { deny: ['secrets'] })
-    const ctx = build(policy, seen, {
-      checkpoint: {
-        snapshot: async (paths: string[]) => {
-          snapshots.push(paths)
-          return { id: 'cp' }
+    const ctx = build(
+      policy,
+      seen,
+      {
+        checkpoint: {
+          snapshot: async (paths: string[]) => {
+            snapshots.push(paths)
+            return { id: 'cp' }
+          },
         },
       },
-    })
+      {
+        async preflight(path) {
+          if (path === 'read-only') throw new Error('E_FS_DENIED: read-only')
+        },
+        async authorizeWrite(path) {
+          if (path === 'restricted') throw Object.assign(new Error('denied'), { code: 'E_FS_DENIED' })
+        },
+      },
+    )
+    for (const path of ['read-only', 'restricted']) {
+      const refusal = { name: 'ToolPreEffectRefusal', code: 'E_FS_DENIED' }
+      await expect(ctx.fs.write(path, 'x')).rejects.toMatchObject(refusal)
+      await expect(ctx.fs.create!(path, new Uint8Array())).rejects.toMatchObject(refusal)
+    }
     await expect(ctx.fs.write('./secrets/api-key', 'x')).rejects.toThrow(/E_FS_DENIED/)
     expect(snapshots).toEqual([])
     await ctx.fs.write('notes.md', 'x')

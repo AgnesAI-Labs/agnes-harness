@@ -486,23 +486,98 @@ describe('entries saved in earlier sessions reach the model through the snapshot
     expect(cold).not.toContain('old text')
   })
 
-  it('a listing that fails at the cold boundary is tried again on the next request', async () => {
-    const p = port([saved(1)])
-    let fail = false
-    const entries = p.refs.entries
-    p.refs.entries = async (at) => {
-      if (fail) throw new Error('busy')
-      return entries?.(at) ?? []
+  it.each([false, true])(
+    'delivers the recovered cold listing exactly once (stale commit: %s)',
+    async (stale) => {
+      const outage = { fail: true }
+      const p = port([saved(1)], outage)
+      const provider = fakeProvider([textTurn('ok')])
+      const { session, log } = await openSession({
+        provider,
+        refinementEnabled: () => true,
+        refinement: { settings: () => ({}) as never, planner: () => undefined, workspaceRefs: p.refs },
+      })
+      const turn = async () => {
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'next' }], actor })
+        expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+          'completed',
+        )
+      }
+      try {
+        await turn()
+        expect(JSON.stringify(provider.requests[0]?.messages)).not.toContain('(saved)')
+        outage.fail = false
+        if (stale) {
+          const append = log.append.bind(log)
+          vi.spyOn(log, 'append').mockImplementation((rows, options) =>
+            append(rows, {
+              ...options,
+              beforeCommit: async () => {
+                await options?.beforeCommit?.()
+                if (
+                  rows.some(
+                    (row) =>
+                      row.type === 'user/message' && JSON.stringify(row.data).includes('lesson number 1'),
+                  )
+                )
+                  p.set([saved(1, { content: 'revised before dispatch' })])
+              },
+            }),
+          )
+        }
+        await turn()
+        const body = `(saved) Saved 1: ${stale ? 'revised before dispatch' : 'lesson number 1'}`
+        expect(JSON.stringify(provider.requests[1]?.messages)).toContain(body)
+        await turn()
+        // Later requests still see the already-delivered note in history, exactly once.
+        expect(JSON.stringify(provider.requests[2]?.messages).split(body)).toHaveLength(2)
+        const rows = await log.scan({ type: 'user/message', toSeq: session.lastSeq })
+        expect(rows.filter((row) => JSON.stringify(row.data).includes('(saved)'))).toHaveLength(1)
+        expect(JSON.stringify(rows)).toContain(body)
+      } finally {
+        await session.close()
+      }
+    },
+  )
+
+  it.each(['permuted', 'changing'])('bounds preparation for a %s unversioned listing', async (mode) => {
+    const p = port([])
+    delete p.refs.revision
+    let revision = 0
+    p.refs.entries = () => {
+      revision++
+      const list = [saved(1), saved(2), saved(3, { savedAt: saved(2).savedAt })]
+      if (mode === 'changing') return [saved(1, { content: `revision ${revision}` })]
+      return revision % 2 === 1 ? list : list.reverse()
     }
-    const { session } = await open(p.refs)
-    p.set([saved(1)])
-    expect(textOf(await deriveExperienceNotes(session, [ask('first')]))).toContain('(saved) Saved 1')
-    fail = true
-    const first = await deriveExperienceNotes(session, [ask('Saved 1')])
-    expect(textOf(first)).not.toContain('(saved)')
-    fail = false
-    const next = await deriveExperienceNotes(session, [ask('Saved 1'), ...first.map(delivered), ask('again')])
-    expect(textOf(next)).toContain('(saved) Saved 1')
+    const provider = fakeProvider([textTurn('ok')])
+    const { session, log } = await openSession({
+      provider,
+      refinementEnabled: () => true,
+      refinement: { settings: () => ({}) as never, planner: () => undefined, workspaceRefs: p.refs },
+    })
+    try {
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
+      expect(await session.acceptInput()).toBe(true)
+      if (mode === 'permuted') {
+        await session.runInference()
+        expect(provider.requests).toHaveLength(1)
+        expect(JSON.stringify(provider.requests[0]?.messages)).toContain('(saved) Saved 1')
+      } else {
+        // A finite driver also terminates if the retry ceiling regresses.
+        const prepare = async () => {
+          for (let attempt = 0; attempt < 10; attempt++) await session.runInference()
+        }
+        await expect(prepare()).rejects.toMatchObject({
+          code: 'E_REQUEST_FROZEN',
+          message: expect.stringContaining('repeatedly'),
+        })
+        expect(provider.requests).toEqual([])
+        expect(await log.scan({ type: 'request/header', toSeq: session.lastSeq })).toEqual([])
+      }
+    } finally {
+      await session.close()
+    }
   })
 
   it('a format 1 surface with nothing saved lists the saved entries once, not on every request', async () => {

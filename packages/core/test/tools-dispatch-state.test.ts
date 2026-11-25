@@ -198,10 +198,25 @@ describe('durable tool dispatch state', () => {
     },
   )
 
-  it.each(['rejected', 'unanswered', 'prior-write', 'forged', 'cloned', 'parallel', 'wrong-source'] as const)(
+  const memoryRefusalCases = [
+    'rejected',
+    'unanswered',
+    'prior-write',
+    'prior-protected-write',
+    'published-denial',
+    'published-before-delegating',
+    'forged',
+    'cloned',
+    'parallel',
+    'wrong-source',
+  ] as const
+  it.each(memoryRefusalCases)(
     'accepts only the bound memory port refusal before any write: %s',
     async (mode) => {
       const committed = new Map<string, string>()
+      const published = mode === 'published-denial' || mode === 'published-before-delegating'
+      const protectedError = Object.assign(new Error('protected'), { code: 'MEMORY_HUMAN_EDITED' })
+      let received: unknown
       const memory: MemorySession = {
         root: '/w/memory',
         snapshot: async () => undefined,
@@ -209,6 +224,12 @@ describe('durable tool dispatch state', () => {
           ...fallback,
           async write(path, content) {
             if (path !== '/w/memory/MEMORY.md') return fallback.write(path, content)
+            if (published) {
+              committed.set(path, String(content))
+              if (mode === 'published-before-delegating') return fallback.write('/outside', content)
+              throw Object.assign(new Error('publication failed'), { code: 'E_FS_DENIED' })
+            }
+            if (mode === 'prior-protected-write') throw protectedError
             const answer = await approve({
               path,
               baseHash: '0'.repeat(64),
@@ -244,7 +265,8 @@ describe('durable tool dispatch state', () => {
                 code: 'MEMORY_APPROVAL_REJECTED',
                 effect: 'none',
               })
-            if (mode === 'prior-write') await ctx.fs.write('/w/other', 'earlier effect')
+            if (mode === 'prior-write' || mode === 'prior-protected-write')
+              await ctx.fs.write('/w/other', 'earlier effect')
             if (mode === 'parallel')
               await Promise.all([
                 ctx.fs.write('/w/memory/MEMORY.md', 'approved candidate'),
@@ -253,6 +275,7 @@ describe('durable tool dispatch state', () => {
             try {
               await ctx.fs.write('/w/memory/MEMORY.md', 'Synthetic preference')
             } catch (error) {
+              received = error
               if (mode !== 'cloned') throw error
               throw Object.assign(new Error('copied refusal'), {
                 code: (error as { code: string }).code,
@@ -282,7 +305,8 @@ describe('durable tool dispatch state', () => {
       })
       const opened = await openSession({
         memory,
-        trustedMemorySession: (candidate) => candidate === memory,
+        trustedMemorySession: (candidate) => candidate === memory && !published,
+        memoryPreEffectProof: (error) => error === protectedError,
         fsOps: {
           ...testFsOps(),
           write: async (path, content) => {
@@ -336,9 +360,15 @@ describe('durable tool dispatch state', () => {
           outcome: safe ? 'error' : 'unknown',
         })
         expect(committed.get('/w/memory/MEMORY.md')).toBe(
-          mode === 'parallel' ? 'approved candidate' : undefined,
+          mode === 'parallel' ? 'approved candidate' : published ? 'Synthetic preference' : undefined,
         )
-        expect(committed.get('/w/other')).toBe(mode === 'prior-write' ? 'earlier effect' : undefined)
+        const priorWrite = mode === 'prior-write' || mode === 'prior-protected-write'
+        expect(committed.get('/w/other')).toBe(priorWrite ? 'earlier effect' : undefined)
+        if (priorWrite)
+          expect(received).toMatchObject({
+            name: 'ToolPreEffectRefusal',
+            code: mode === 'prior-write' ? 'MEMORY_APPROVAL_REJECTED' : protectedError.code,
+          })
       } finally {
         await opened.session.close()
       }

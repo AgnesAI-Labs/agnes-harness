@@ -397,6 +397,10 @@ async function savedFor(
   return { entries: listed, failed: false }
 }
 
+const compareText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+const compareSaved = (a: SavedEntry, b: SavedEntry) =>
+  a.savedAt - b.savedAt || compareText(a.kind, b.kind) || compareText(a.ref, b.ref)
+
 const normalized = (text: string) => text.replace(/\s+/g, ' ').trim()
 
 /**
@@ -419,7 +423,7 @@ function savedAsEntries(
         !(e.source?.sessionKey === s.key && ids.has(e.source.entryId)) &&
         !texts.has(normalized(`${e.title}\n${e.content}`)),
     )
-    .sort((a, b) => a.savedAt - b.savedAt)
+    .sort(compareSaved)
   return kept.map((e, i) => ({
     entry: {
       kind: e.kind,
@@ -484,7 +488,19 @@ export type ExperienceStamp = Readonly<{
   entries: unknown
   meta: unknown
   tombstones: unknown
-}> & { savedView?: { digest?: string; required: boolean } }
+}> & {
+  savedView?: { digest?: string; required: boolean }
+  delivery?: { legacyLooked: boolean; savedOwed: boolean }
+}
+
+/** Consume a cold or legacy listing only once the request carrying its notes is durable. */
+export function markExperienceCommitted(s: SessionImpl, stamp?: Pick<ExperienceStamp, 'delivery'>): void {
+  if (!stamp?.delivery) return
+  if (stamp.delivery.legacyLooked) legacyLooked.add(s)
+  if (stamp.delivery.savedOwed) savedOwed.add(s)
+  else savedOwed.delete(s)
+}
+
 /** The state task-experience notes derived now would be derived from. */
 export function experienceStamp(s: SessionImpl): ExperienceStamp {
   const on = switchedOn(s)
@@ -512,7 +528,8 @@ export function stampChanged(was: ExperienceStamp, s: SessionImpl): boolean {
 
 // savedEntriesOf has already validated and normalized each entry. Include ranking and source
 // metadata because both can change the bodies selected for a snapshot.
-const savedDigest = (entries: readonly SavedEntry[]) => sha256Hex(JSON.stringify(entries))
+const savedDigest = (entries: readonly SavedEntry[]) =>
+  sha256Hex(JSON.stringify([...entries].sort(compareSaved)))
 
 export async function savedViewChange(
   s: SessionImpl,
@@ -615,10 +632,10 @@ export async function deriveExperienceNotes(
   const named = heldLine(heldBack)
   const withHeld = (text: string) => (named ? `${text}\n${named}` : text)
   // A format 1 snapshot never carried saved entries: with some in force, a new snapshot gives them once.
-  if (legacy) legacyLooked.add(s)
   if (cold) {
-    if (saved.failed) savedOwed.add(s)
-    else savedOwed.delete(s)
+    const delivery = { legacyLooked: legacy, savedOwed: saved.failed }
+    if (stamp) stamp.delivery = delivery
+    else markExperienceCommitted(s, { delivery })
   }
   if (!seen.snapshot || ((legacy || owedBefore) && !saved.failed && saved.entries.length > 0)) {
     const all = [...entries, ...savedAsEntries(s, saved.entries, entries, version)]
@@ -643,8 +660,11 @@ export async function deriveExperienceNotes(
       prefix: EXPERIENCE_PREFIX,
       text: withHeld(out.body),
       ...(out.data ? { data: out.data } : {}),
-      // A snapshot still on the surface but voided by the switched-off notice does not count as one.
-      dedup: seen.voided ? { kind: 'latest' } : { kind: 'present', key: SNAPSHOT_FORMAT_LINE },
+      // A recovered listing or a snapshot following a void replaces the earlier snapshot.
+      dedup:
+        seen.voided || legacy || owedBefore
+          ? { kind: 'latest' }
+          : { kind: 'present', key: SNAPSHOT_FORMAT_LINE },
     })
     return notes
   }

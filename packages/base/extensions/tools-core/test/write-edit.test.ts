@@ -239,15 +239,17 @@ describe('a file that is readable but not writable', () => {
     expect(dec.decode(ctx.mem.files.get('/work/proj/state.yaml'))).toBe('name: a\n')
   })
 
-  it('still lets any other write failure propagate', async () => {
+  it.each(['EIO', 'E_FS_DENIED'])('propagates an unattested %s from the writer', async (code) => {
     const ctx = await observedCtxOf({
       files: { 'state.yaml': 'name: a\n' },
-      writeErrors: { 'state.yaml': { code: 'EIO', message: 'EIO: disk' } },
+      writeErrors: { 'state.yaml': { code, message: code, unattested: true } },
     })
-    await expect(writeTool.execute({ path: 'state.yaml', content: 'name: b\n' }, ctx)).rejects.toThrow('EIO')
+    await expect(writeTool.execute({ path: 'state.yaml', content: 'name: b\n' }, ctx)).rejects.toMatchObject({
+      code,
+    })
     await expect(
       editTool.execute({ path: 'state.yaml', edits: [{ oldText: 'name: a', newText: 'name: b' }] }, ctx),
-    ).rejects.toThrow('EIO')
+    ).rejects.toMatchObject({ code, message: expect.stringContaining('"written":"unknown"') })
   })
 })
 

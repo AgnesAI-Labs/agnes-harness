@@ -1,8 +1,10 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { MemoryFilePort, MemoryProposal } from '@agnes/extension-api'
-import { fileMemoryProvider } from '@agnes/memory-file'
+import { ToolRegistry } from '@agnes/core'
+import { actor, fakeProvider, fakeSeams, openSession, textTurn, toolTurn } from '@agnes/core/testkit'
+import type { MemoryFilePort, MemorySession } from '@agnes/extension-api'
+import { fileMemoryProvider, isMemoryPreEffectRefusal } from '@agnes/memory-file'
 import { afterEach, describe, expect, it } from 'vitest'
 import { editTool } from '../extensions/tools-core/src/tools/edit.js'
 import { readTool } from '../extensions/tools-core/src/tools/read.js'
@@ -17,7 +19,10 @@ const block = (id: string, text: string) => `<!-- refinement:${id} -->\n${text}\
 const STORED = `Keep tests small.\nUse pnpm.\n\n${block(EXPIRED, 'HIDDEN-PARAGRAPH-BODY')}\nBottom line.\n`
 
 const dirs: string[] = []
+const sessions = new Set<MemorySession>()
 afterEach(async () => {
+  for (const session of sessions) await session.close?.()
+  sessions.clear()
   await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
 })
 
@@ -30,7 +35,7 @@ const outside: MemoryFilePort = {
 
 async function setup(
   stored = STORED,
-  decide: (n: number, proposal: MemoryProposal) => 'approved' | 'rejected' = () => 'approved',
+  decide: (n: number) => 'approved' | 'rejected' = () => 'approved',
   humanBottom = false,
 ) {
   const home = await mkdtemp(join(tmpdir(), 'agh-edit-hidden-'))
@@ -46,6 +51,7 @@ async function setup(
         id === EXPIRED ? (expired ? 'expired' : 'valid') : id === 'rvisible001' ? 'valid' : 'unknown',
     },
   })
+  sessions.add(session)
   await session.configure?.({ mode: 'auto' })
   const index = join(session.root, 'MEMORY.md')
   const seedSignal = new AbortController().signal
@@ -54,7 +60,7 @@ async function setup(
     session.files(outside, { sessionKey: 's', turn, toolUseId: 'seed' }, seedSignal, seedApprove)
   const paragraphs = session.paragraphs!({ sessionKey: 's', turn: 0 }, seedSignal)
   if (stored === STORED) {
-    await seedPort(1).write(index, 'Keep tests small.\nUse pnpm.\n')
+    await seedPort(0).write(index, 'Keep tests small.\nUse pnpm.\n')
     await paragraphs.commit(
       await paragraphs.propose({ op: 'put', id: EXPIRED, text: 'HIDDEN-PARAGRAPH-BODY' }),
     )
@@ -72,38 +78,65 @@ async function setup(
   expect(await readFile(index, 'utf8')).toBe(stored)
   await session.configure?.({ mode: 'ask' })
   let asked = 0
-  const port = session.files(
-    outside,
-    { sessionKey: 's', turn: 3, toolUseId: 't' },
-    new AbortController().signal,
-    async (proposal) => {
-      asked += 1
-      return decide(asked, proposal) === 'approved' ? { status: 'approved' } : { status: 'rejected' }
-    },
-  )
-  const ctx = fakeToolContext({ sessionKey: `real-${dirs.length}-${Math.random()}` })
-  ctx.fs.read = async (path) => port.read(path)
-  ctx.fs.write = async (path, data) =>
-    port.write(path, typeof data === 'string' ? data : new TextDecoder().decode(data))
-  if (port.replaceExact) ctx.fs.replaceExact = (path, a, b) => port.replaceExact!(path, a, b)
-  await readTool.execute({ path: index }, ctx)
-  return { ctx, index, asked: () => asked }
+  async function run(
+    args: Parameters<typeof editTool.execute>[0] | Parameters<typeof writeTool.execute>[0],
+    memory = session,
+  ) {
+    const name = 'edits' in args ? 'edit' : 'write'
+    const registry = new ToolRegistry()
+    for (const tool of [readTool, writeTool, editTool])
+      registry.add(tool, {
+        source: 'test',
+        trust: 'builtin',
+        packageIdentity: '@agnes/base',
+        packageVersion: '1.0.0-test',
+      })
+    const opened = await openSession({
+      key: 's',
+      commandPathScope: async () => ({ root: session.root }),
+      provider: fakeProvider([toolTurn('read', { path: index }), toolTurn(name, args), textTurn('done')]),
+      registry,
+      memory,
+      trustedMemorySession: (candidate) => candidate === session,
+      memoryPreEffectProof: isMemoryPreEffectRefusal,
+      seams: fakeSeams({
+        approval: {
+          ask: async (request) => ({
+            verdict:
+              request.scope?.startsWith('memory:') && decide(++asked) === 'rejected'
+                ? 'rejected'
+                : 'allowed-once',
+            answeredBy: actor,
+          }),
+        },
+      }),
+    })
+    try {
+      await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'update' }] })
+      await opened.session.run({ until: 'turn-end', signal: seedSignal })
+      const results = await opened.log.scan({ type: 'tool/result', limit: 5 })
+      expect(results).toHaveLength(2)
+      expect(results[0]?.data).toMatchObject({ isError: false })
+      return results[1]?.data
+    } finally {
+      await opened.session.close()
+      sessions.delete(session)
+    }
+  }
+  return { run, session, index, asked: () => asked }
 }
 
 describe('edit through the memory provider with a hidden paragraph', () => {
   it('changes visible lines in one call and keeps the hidden paragraph byte for byte', async () => {
-    const { ctx, index } = await setup()
-    const result = await editTool.execute(
-      {
-        path: index,
-        edits: [
-          { oldText: 'Use pnpm.', newText: 'Use pnpm 10.' },
-          { oldText: 'Bottom line.', newText: 'Bottom line, updated.' },
-        ],
-      },
-      ctx,
-    )
-    expect(result.isError).toBeUndefined()
+    const { run, index } = await setup()
+    const result = await run({
+      path: index,
+      edits: [
+        { oldText: 'Use pnpm.', newText: 'Use pnpm 10.' },
+        { oldText: 'Bottom line.', newText: 'Bottom line, updated.' },
+      ],
+    })
+    expect(result).toMatchObject({ isError: false })
     expect(await readFile(index, 'utf8')).toBe(
       STORED.replace('Use pnpm.', 'Use pnpm 10.').replace('Bottom line.', 'Bottom line, updated.'),
     )
@@ -112,24 +145,23 @@ describe('edit through the memory provider with a hidden paragraph', () => {
   it.each(['MEMORY_APPROVAL_REJECTED', 'MEMORY_HUMAN_EDITED'])(
     'reports exactly which edits were applied when a later replacement fails with %s',
     async (code) => {
-      const { ctx, index, asked } = await setup(
+      const { run, index, asked } = await setup(
         STORED,
         (n) => (n === 2 ? 'rejected' : 'approved'),
         code === 'MEMORY_HUMAN_EDITED',
       )
-      const result = await editTool.execute(
-        {
-          path: index,
-          edits: [
-            { oldText: 'Use pnpm.', newText: 'Use pnpm 10.' },
-            { oldText: 'Bottom line.', newText: 'Bottom line, updated.' },
-          ],
-        },
-        ctx,
-      )
+      const result = await run({
+        path: index,
+        edits: [
+          { oldText: 'Use pnpm.', newText: 'Use pnpm 10.' },
+          { oldText: 'Bottom line.', newText: 'Bottom line, updated.' },
+        ],
+      })
       expect(asked()).toBe(code === 'MEMORY_APPROVAL_REJECTED' ? 2 : 1)
-      expect(result.isError).toBe(true)
-      expect(result.structured).toMatchObject({ index: 1, written: true, applied: [0], notApplied: [1] })
+      expect(result).toMatchObject({
+        isError: true,
+        structured: { index: 1, written: true, applied: [0], notApplied: [1] },
+      })
       const text = JSON.stringify(result)
       expect(text).toContain(code)
       expect(text).not.toContain('Nothing was written')
@@ -139,52 +171,110 @@ describe('edit through the memory provider with a hidden paragraph', () => {
   )
 
   it('edits the text of a visible managed paragraph, which a whole-file rewrite may not, with nothing hidden', async () => {
-    const { ctx, index } = await setup(`${block('rvisible001', 'Prefer small PRs.')}Use pnpm.\n`)
-    const result = await editTool.execute(
-      { path: index, edits: [{ oldText: 'Prefer small PRs.', newText: 'Prefer small, reviewed PRs.' }] },
-      ctx,
-    )
-    expect(result.isError).toBeUndefined()
+    const { run, index } = await setup(`${block('rvisible001', 'Prefer small PRs.')}Use pnpm.\n`)
+    const result = await run({
+      path: index,
+      edits: [{ oldText: 'Prefer small PRs.', newText: 'Prefer small, reviewed PRs.' }],
+    })
+    expect(result).toMatchObject({ isError: false })
     expect(await readFile(index, 'utf8')).toBe(
       `${block('rvisible001', 'Prefer small, reviewed PRs.')}Use pnpm.\n`,
     )
   })
 
   it('refuses an edit that reaches into the hidden paragraph without leaking it', async () => {
-    const { ctx, index } = await setup()
-    const result = await editTool.execute(
-      { path: index, edits: [{ oldText: 'HIDDEN-PARAGRAPH-BODY', newText: 'x' }] },
-      ctx,
-    )
-    expect(result.isError).toBe(true)
+    const { run, index } = await setup()
+    const result = await run({
+      path: index,
+      edits: [{ oldText: 'HIDDEN-PARAGRAPH-BODY', newText: 'x' }],
+    })
+    expect(result).toMatchObject({ isError: true })
     expect(await readFile(index, 'utf8')).toBe(STORED)
   })
 
   it.each(['MEMORY_HUMAN_EDITED', 'MEMORY_PREFERENCE_CONFLICT'])(
-    'returns explicit non-written guidance on %s without throwing from write or edit',
+    'propagates raw %s from write and exact replacement',
     async (code) => {
-      const { ctx, index } = await setup()
+      const path = '/work/proj/notes.txt'
+      const ctx = fakeToolContext({ files: { [path]: 'old' } })
+      await readTool.execute({ path }, ctx)
+      const error = Object.assign(new Error(code), { code })
       ctx.fs.write = async () => {
-        throw Object.assign(new Error(code), { code })
+        throw error
+      }
+      await expect(writeTool.execute({ path, content: 'new' }, ctx)).rejects.toBe(error)
+      const edit = () => editTool.execute({ path, edits: [{ oldText: 'old', newText: 'new' }] }, ctx)
+      await expect(edit()).rejects.toMatchObject({
+        code,
+        message: expect.stringContaining('"written":"unknown"'),
+      })
+      ctx.fs.write = async () => {
+        throw Object.assign(new Error('hidden'), {
+          name: 'ToolPreEffectRefusal',
+          code: 'MEMORY_HIDDEN_PARAGRAPHS',
+        })
       }
       ctx.fs.replaceExact = async () => {
-        throw Object.assign(new Error(code), { code })
+        throw error
       }
-      const wRes = await writeTool.execute(
-        { path: index, content: STORED.replace('Use pnpm.', 'Use npm.') },
-        ctx,
-      )
-      expect(wRes.isError).toBe(true)
-      expect(JSON.stringify(wRes)).toContain('Nothing was written')
-      expect(JSON.stringify(wRes)).toContain(code)
-
-      const eRes = await editTool.execute(
-        { path: index, edits: [{ oldText: 'Use pnpm.', newText: 'Use npm.' }] },
-        ctx,
-      )
-      expect(eRes.isError).toBe(true)
-      expect(JSON.stringify(eRes)).toContain('Nothing was written')
-      expect(JSON.stringify(eRes)).toContain(code)
+      await expect(edit()).rejects.toMatchObject({
+        code,
+        message: expect.stringContaining('outcome unknown'),
+      })
     },
   )
+
+  it.each(['write', 'edit'] as const)(
+    'settles %s as unknown when a provider publishes then denies',
+    async (name) => {
+      const stored = `${block('rvisible001', 'Prefer small PRs.')}Use pnpm.\n`
+      const { run, session, index } = await setup(stored)
+      const provider: MemorySession = {
+        ...session,
+        files(...args) {
+          const files = session.files(...args)
+          return {
+            ...files,
+            async write(path, data) {
+              await files.write(path, data)
+              throw Object.assign(new Error('provider failed after publishing'), { code: 'E_FS_DENIED' })
+            },
+          }
+        },
+      }
+      const result = await run(
+        name === 'write'
+          ? { path: index, content: stored.replace('Use pnpm.', 'Use npm.') }
+          : { path: index, edits: [{ oldText: 'Use pnpm.', newText: 'Use npm.' }] },
+        provider,
+      )
+      expect(result).toMatchObject({ isError: true, code: 'TOOL_OUTCOME_UNKNOWN' })
+      expect(await readFile(index, 'utf8')).toBe(stored.replace('Use pnpm.', 'Use npm.'))
+    },
+  )
+
+  it.each([
+    ['write', 'MEMORY_HUMAN_EDITED'],
+    ['edit', 'MEMORY_HUMAN_EDITED'],
+    ['write', 'MEMORY_PREFERENCE_CONFLICT'],
+    ['edit', 'MEMORY_PREFERENCE_CONFLICT'],
+  ] as const)('records the provider refusal before any effect for %s (%s)', async (name, code) => {
+    const stored = `${block('rvisible001', 'Prefer small PRs.')}Use pnpm.\n`
+    const { session, index, run } = await setup(stored)
+    const original = await session.readFile('MEMORY.md')
+    const human = `${stored}\nPreference: test_runner = Jest\n`
+    const oldText = code === 'MEMORY_HUMAN_EDITED' ? 'Preference: test_runner = Jest' : 'Use pnpm.'
+    const newText = 'test_runner = vitest'
+    await session.editFile('MEMORY.md', human, original.hash)
+    const result = await run(
+      name === 'write'
+        ? { path: index, content: human.replace(oldText, newText) }
+        : { path: index, edits: [{ oldText, newText }] },
+    )
+    expect(result).toMatchObject({
+      code: 'TOOL_REJECTED_BEFORE_EFFECT',
+      structured: { effect: 'none', code },
+    })
+    expect(await readFile(index, 'utf8')).toBe(human)
+  })
 })

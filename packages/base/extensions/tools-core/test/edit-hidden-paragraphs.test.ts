@@ -186,9 +186,14 @@ describe('edit on a memory file that hides paragraphs', () => {
     expect(calls).toEqual([])
   })
 
-  it('stops at the first replacement that fails and says exactly which edits were applied', async () => {
+  it.each([
+    'MEMORY_APPROVAL_REJECTED',
+    'MEMORY_HUMAN_EDITED',
+    'MEMORY_PARAGRAPH_EDITED',
+    'MEMORY_PREFERENCE_CONFLICT',
+  ])('reports the applied prefix after %s on a later replacement', async (code) => {
     const { ctx, calls, stored } = await observed({
-      failCall: { 2: { code: 'MEMORY_APPROVAL_REJECTED' } },
+      failCall: { 2: { code } },
     })
     const result = await editTool.execute(
       {
@@ -211,10 +216,10 @@ describe('edit on a memory file that hides paragraphs', () => {
       applied: [0],
       notApplied: [1, 2],
     })
-    expect(result.details).toMatchObject({ code: 'MEMORY_APPROVAL_REJECTED' })
+    expect(result.details).toMatchObject({ code })
     const text = textOf(result)
     expect(text).toContain('edit 1 was applied')
-    expect(text).toContain('edit 2 failed (MEMORY_APPROVAL_REJECTED)')
+    expect(text).toContain(`edit 2 failed (${code})`)
     expect(text).toContain('edit 3 was not attempted')
     expect(text).toContain('managed paragraphs')
   })

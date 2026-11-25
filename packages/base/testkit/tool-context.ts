@@ -73,7 +73,7 @@ export type FakeToolContextOpts = {
    */
   readErrors?: Record<string, { code?: string; message?: string }>
   /** The same, for `fs.write`: a file whose content was readable but may not be replaced. */
-  writeErrors?: Record<string, { code?: string; message?: string }>
+  writeErrors?: Record<string, { code?: string; message?: string; unattested?: boolean }>
   /** The same, for `fs.list`: a directory a listing tool is refused rather than handed. */
   listErrors?: Record<string, { code?: string; message?: string }>
   /**
@@ -154,7 +154,11 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
       },
       async write(p: string, data: Uint8Array | string): Promise<void> {
         const fail = writeErrors.get(abs(p))
-        if (fail) throw Object.assign(new Error(fail.message ?? 'write failed'), { code: fail.code })
+        if (fail)
+          throw Object.assign(new Error(fail.message ?? 'write failed'), {
+            code: fail.code,
+            name: fail.code === 'E_FS_DENIED' && !fail.unattested ? 'ToolPreEffectRefusal' : 'Error',
+          })
         mem.files.set(abs(p), typeof data === 'string' ? enc.encode(data) : data)
       },
       async list(p: string) {

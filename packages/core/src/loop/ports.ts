@@ -23,7 +23,7 @@ import { approveAndExecute } from '../execution/turn/tools.js'
 import { unrecordedParkEvents } from '../execution/turn/unknown-outcome.js'
 import { hasCompleteToolPolicyEnvelope } from '../registry/tool-policy.js'
 import type { DeriveOutput } from '../request/derive.js'
-import type { ExperienceStamp } from '../request/experience.js'
+import { type ExperienceStamp, markExperienceCommitted } from '../request/experience.js'
 import {
   ExperienceChangedSinceDerive,
   experienceCommitCheck,
@@ -258,6 +258,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         },
       },
     )
+    markExperienceCommitted(s, stamp)
     const headerSeq = seqs.at(-2)
     const intentSeq = seqs.at(-1)
     if (headerSeq === undefined || intentSeq === undefined)

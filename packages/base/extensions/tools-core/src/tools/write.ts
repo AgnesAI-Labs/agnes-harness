@@ -106,8 +106,7 @@ export function createWriteTool(record?: FileChangeRecorder, lsp?: LspSessions) 
           // A file the fence lets the model read but not replace fails here, not at the read above.
           // Left to propagate, a refusal that wrote nothing would reach the model as a call whose
           // outcome is unknown, and nothing in it would say the policy said no.
-          if (isAttestedPreEffect(e)) throw e
-          if ((e as { code?: string }).code !== 'E_FS_DENIED') throw e
+          if (!isAttestedPreEffect(e) || (e as { code?: string }).code !== 'E_FS_DENIED') throw e
           return fsFailure(ctx, 'write before writing', args.path, e)
         }
         if (record)

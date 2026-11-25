@@ -67,7 +67,7 @@ export function recallEvents(
   where: string,
   params: (string | number)[],
   limit: number,
-  generation: number,
+  readGeneration: () => number,
 ): HistoryPage {
   if (request.cursor) throw new HistoryIndexError('INVALID_CURSOR')
   if (!request.query.trim() || request.query.length > 256) throw new HistoryIndexError('INVALID_QUERY')
@@ -89,18 +89,24 @@ export function recallEvents(
     return rows
   }
   const en = expandEnglishInflections(query.en)
+  // Reading the generation first pins a WAL snapshot for both channels and the backfill status.
+  db.exec('BEGIN')
   try {
+    const generation = readGeneration()
     const ranked = fuse(
       [channel('docs_fts', en), channel('docs_cjk', [query.cjk, en].filter(Boolean).join(' OR '))],
       (row) => row.id,
     )
-    return {
+    const page = {
       items: ranked.slice(0, limit).map(({ item: { id: _, ...item } }) => item),
       truncated: ranked.length > limit,
       generation,
       ...(cjkPartial(db) ? { partial: true } : {}),
     }
+    db.exec('COMMIT')
+    return page
   } catch (error) {
+    if (db.isTransaction) db.exec('ROLLBACK')
     throw searchError(error)
   }
 }

@@ -34,11 +34,31 @@ export function experienceCommitCheck(s: SessionImpl, stamp?: ExperienceStamp) {
   }
 }
 
+const MAX_EXPERIENCE_REDERIVES = 5
+const staleAttempts = new WeakMap<SessionImpl, { turn: number; step: number; count: number }>()
+
 export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   try {
-    return await runPreparedInference(s)
+    const result = await runPreparedInference(s)
+    staleAttempts.delete(s)
+    return result
   } catch (error) {
-    if (error instanceof ExperienceChangedSinceDerive) return { phase: 'inference' }
+    const op = s.op()
+    if (error instanceof ExperienceChangedSinceDerive && op) {
+      const { turn } = op.meta
+      const prior = staleAttempts.get(s)
+      const count = prior?.turn === turn && prior.step === op.step ? prior.count + 1 : 1
+      if (count < MAX_EXPERIENCE_REDERIVES) {
+        staleAttempts.set(s, { turn, step: op.step, count })
+        return { phase: 'inference' }
+      }
+      staleAttempts.delete(s)
+      throw new CoreError(
+        'E_REQUEST_FROZEN',
+        'Task experience changed repeatedly before dispatch; retry the request',
+      )
+    }
+    staleAttempts.delete(s)
     throw error
   }
 }

@@ -58,6 +58,7 @@ import {
 import {
   type ExperienceStamp,
   experienceStamp,
+  markExperienceCommitted,
   messageText,
   withExperienceRows,
 } from '../../request/experience.js'
@@ -1026,6 +1027,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       ),
       experienceCommitCheck(s, preparedOutput.stamp),
     )
+    markExperienceCommitted(s, preparedOutput.stamp)
     // Update the in-memory dedup key only after the atomic transition committed the header. A retry
     // that derives the same request reuses that durable header; each actual dispatch still gets its
     // own provider receipt below.

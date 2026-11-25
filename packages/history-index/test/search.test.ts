@@ -206,6 +206,43 @@ describe('history index', () => {
     expect(() => index.query(recall)).toThrowError(error('FAILED'))
   })
 
+  it('pins recall hits and backfill status to the generation read before a concurrent sync', () => {
+    const { dir, index, access } = openSeed()
+    const path = join(dir, 'history-index.db')
+    const writer = openHistoryIndex(path)
+    indexes.push(writer)
+    using db = new DatabaseSync(path)
+    db.exec("UPDATE meta SET value=(SELECT MAX(rowid) FROM docs) WHERE key='cjk_backfill_end'")
+    const request = {
+      kind: 'recall' as const,
+      access,
+      title: '',
+      workspace: '',
+      sessionId: 'peer',
+      omitSelf: true,
+      query: 'alpha 橘子',
+    }
+    const before = index.query(request)
+    expect(before.partial).toBe(true)
+    expect(before.items.map((row) => row.seq)).toEqual([1])
+
+    using source = new DatabaseSync(join(dir, 'sessions.db'))
+    source
+      .prepare("INSERT INTO events VALUES ('peer',2,'t2','peer:2','user/message','user','untrusted',NULL,?)")
+      .run(JSON.stringify({ content: [{ type: 'text', text: '橘子 alpha' }] }))
+    const generation = index.generation.bind(index)
+    vi.spyOn(index, 'generation').mockImplementationOnce(() => {
+      const at = generation()
+      expect(writer.sync(dir)).toEqual({ synced: true, generation: at + 1 })
+      return at
+    })
+    expect(index.query(request)).toEqual(before)
+    const after = index.query(request)
+    expect(after.generation).toBe(before.generation + 1)
+    expect(after.partial).toBeUndefined()
+    expect(after.items.map((row) => row.seq).sort()).toEqual([1, 2])
+  })
+
   it('matches regular English inflections and ignores stopwords in recall while search stays literal', () => {
     const { index, access } = openSeed((dir) => {
       const ledger = new DatabaseSync(join(dir, 'sessions.db'))
