@@ -12,9 +12,18 @@ import type {
   UIProjectionUpdate,
   UITimeline,
 } from '@agnes/protocol'
-import { attachmentLink, FILE_UPLOAD_PATH, MAX_FRAME_BYTES } from '@agnes/protocol'
+import {
+  attachmentLink,
+  FILE_UPLOAD_PATH,
+  MAX_FRAME_BYTES,
+  REMOTE_FRONTEND_INFO,
+  REMOTE_FRONTEND_KEY_VERSION,
+  REMOTE_FRONTEND_WS,
+  remoteFrontendSessionPath,
+} from '@agnes/protocol'
 import type { InitializeInfo, LedgerEvent } from '@agnes/sdk/browser'
-import { act } from 'react'
+import type { ClientContext, DshSlotProps } from '@agnes/web-client'
+import { act, createElement, type ReactNode, useEffect, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createBrowserFixture } from './fresh-browser-fixture.js'
@@ -34,7 +43,7 @@ async function renderUI(work: () => void | Promise<void>): Promise<void> {
   }
 }
 
-async function bootApp(): Promise<void> {
+async function bootApp(entry: 'app' | 'cloud-bootstrap' = 'app'): Promise<void> {
   // Reload hints are independent of each case's admin/upload HTTP fixtures.
   const fetcher = globalThis.fetch
   vi.stubGlobal(
@@ -47,7 +56,8 @@ async function bootApp(): Promise<void> {
     }),
   )
   await renderUI(async () => {
-    await import('../src/app.js')
+    if (entry === 'cloud-bootstrap') await import('../src/bootstrap.js')
+    else await import('../src/app.js')
     if (!releaseRuntime || !mountRelease) throw new Error('Client modules did not start')
     await mountRelease()
   })
@@ -57,6 +67,20 @@ const sdk = vi.hoisted(() => ({
   createClient: vi.fn(),
   memoryJournal: vi.fn(() => ({})),
 }))
+const moduleImports = vi.hoisted(() => ({
+  load: undefined as ((url: string) => Promise<unknown>) | undefined,
+}))
+vi.mock('../src/client-modules/reconcile.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/client-modules/reconcile.js')>()
+  return {
+    ...actual,
+    createReconciler: (options: Parameters<typeof actual.createReconciler>[0]) =>
+      actual.createReconciler({
+        ...options,
+        ...(moduleImports.load ? { importer: moduleImports.load } : {}),
+      }),
+  }
+})
 const initialized = async (): Promise<InitializeInfo> => ({
   agnesVersion: '0.1.0',
   capabilities: {},
@@ -459,6 +483,7 @@ afterEach(async () => {
     configurationCallback.saved = undefined
     selectionController.open = undefined
     sdk.createClient.mockReset()
+    moduleImports.load = undefined
     vi.resetModules()
     vi.clearAllMocks()
     binding.loadWebSession.mockReset()
@@ -2389,6 +2414,257 @@ describe('web session selection', () => {
     )
   })
 
+  it.each([
+    { catalogState: 'ready', sidebarReady: true },
+    { catalogState: 'ready', sidebarReady: false },
+    { catalogState: 'empty', sidebarReady: true },
+  ] as const)(
+    'initializes a cloud frame through bootstrap (catalog=$catalogState, sidebarReady=$sidebarReady)',
+    async ({ catalogState, sidebarReady }) => {
+      installPublicFixture()
+      const remote = 'https://8443-fixture.ap-shanghai.tencentags.com'
+      const parentOrigin = 'http://localhost:4177'
+      const path = remoteFrontendSessionPath(
+        `${(Date.now() + 3600000).toString(36)}.${'a'.repeat(22)}.${'b'.repeat(43)}`,
+      )
+      const { backendFrameSource } = await import('../src/backends/workbench-state.js')
+      history.replaceState(null, '', backendFrameSource(remote, ''))
+      const meta = document.querySelector<HTMLMetaElement>('#agnes-config')
+      if (!meta) throw new Error('missing cloud configuration')
+      Object.assign(meta.dataset, { backendFrame: 'cloud', remote, parentOrigin })
+      const parent = {
+        postMessage: vi.fn((message: { kind: string; requestId?: string }) => {
+          if (message.kind !== 'authorization-request') return
+          window.dispatchEvent(
+            new MessageEvent('message', {
+              source: parent as unknown as Window,
+              origin: parentOrigin,
+              data: {
+                type: 'agh.backend.frame/v1',
+                kind: 'authorization',
+                requestId: message.requestId,
+                remote,
+                path,
+                proxied: true,
+              },
+            }),
+          )
+        }),
+      }
+      const parentProperty = vi.spyOn(window, 'parent', 'get').mockReturnValue(parent as unknown as Window)
+      const nativeFetch = window.fetch
+      const NativeSocket = window.WebSocket
+      const catalog = deferred<Response>()
+      const model = { route: 'fixture-cloud', id: 'cloud-model' }
+      const requests: string[] = []
+      const serviceInputs: unknown[] = []
+      window.fetch = vi.fn<typeof fetch>(async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : String(input), location.href)
+        requests.push(url.href)
+        if (!url.pathname.startsWith(`${path}/`)) throw new Error('unscoped cloud request')
+        const resource = url.pathname.slice(path.length)
+        if (resource === REMOTE_FRONTEND_INFO)
+          return Response.json({
+            version: REMOTE_FRONTEND_KEY_VERSION,
+            access: 'key-owner',
+            wsPath: REMOTE_FRONTEND_WS,
+            instanceId: 'fixture-instance',
+          })
+        if (resource === '/api/client-modules/profile') {
+          const request = input instanceof Request ? input : new Request(url, init)
+          serviceInputs.push(await request.json())
+          return (await catalog.promise).clone()
+        }
+        if (resource === '/admin/api/loops') return Response.json({ revision: 0, defaults: {}, loops: [] })
+        if (resource === '/admin/api/model-adapters') return Response.json({ modelAdapters: [] })
+        if (resource === '/admin/api/runtime')
+          return Response.json({
+            providers: [],
+            bundles: [],
+            presets: [{ id: 'workspace-write', isDefault: true }],
+            permissions: [{ id: 'workspace-write', isDefault: true }],
+            localPluginFolders: { home: '/synthetic/plugins', workspace: '/workspace/data/.agh/plugins' },
+          })
+        if (resource === '/admin/api/bundles') return Response.json({ catalog: [] })
+        if (resource === '/plugins/changes')
+          return Response.json({ epoch: 'fixture', cursor: 0, reset: false, events: [] })
+        return Response.json({ available: false })
+      })
+      vi.stubGlobal('fetch', window.fetch)
+      // Replace only loading the synthetic module's bytes; roster admission, scoped services and slots are real.
+      moduleImports.load = async () => ({
+        apply(ctx: ClientContext) {
+          const query = () => ctx.profile.services.query('fixture.models.list', {})
+          function CloudCatalog({
+            actions,
+          }: {
+            actions: {
+              setCatalog(models: readonly (typeof model)[] | undefined): void
+              renderDefault(): ReactNode
+            }
+          }) {
+            const [loaded, setLoaded] = useState(false)
+            useEffect(() => {
+              let active = true
+              actions.setCatalog([])
+              void query().then((value) => {
+                if (active) {
+                  actions.setCatalog((value as { models: (typeof model)[] }).models)
+                  setLoaded(true)
+                }
+              })
+              return () => {
+                active = false
+                actions.setCatalog(undefined)
+              }
+            }, [actions.setCatalog])
+            return createElement(
+              'span',
+              { 'data-testid': 'fixture-cloud-models', 'data-loaded': loaded },
+              actions.renderDefault(),
+            )
+          }
+          return ctx.slots.inject('conversation.input.model.catalog', () =>
+            ctx.slots.register(
+              { name: 'conversation.input.model.catalog', id: 'fixture-cloud-catalog', priority: 40 },
+              (props: DshSlotProps) => {
+                expect(props.owner).toMatchObject({ remote: true, draft: true })
+                return createElement(CloudCatalog, {
+                  actions: props.actions as Parameters<typeof CloudCatalog>[0]['actions'],
+                })
+              },
+            ),
+          )
+        },
+      })
+      const client = {
+        initialize: vi.fn(initialized),
+        on: vi.fn(),
+        close: vi.fn(async () => undefined),
+        request: vi.fn(async () => undefined),
+        apis: vi.fn(async () => ({ profile: { models: [model] } })),
+        config: {
+          get: vi.fn(async () => ({ configured: true, profile: 'cloud-fixture', accounts: [] })),
+          providers: vi.fn(async () => ({ providers: [] })),
+        },
+        workspace: {
+          list: vi.fn(async () => ({
+            items: [
+              {
+                path: '/workspace/data',
+                name: 'data',
+                workspaceId: 'a'.repeat(64),
+                available: true,
+                lastUsedAt: null,
+                sessionCount: 0,
+              },
+            ],
+          })),
+        },
+        session: {
+          groups: vi.fn(async () => ({ ready: sidebarReady, items: [] })),
+          activity: vi.fn(async () => ({ items: [] })),
+          list: vi.fn(async () => ({ items: [] })),
+          new: vi.fn(),
+          load: vi.fn(),
+        },
+        clientModules: {
+          list: vi.fn(async () => ({
+            revision: 'cloud-r1',
+            modules: [],
+            statuses: [],
+            rows: [
+              {
+                rowId: 'web:cloud-fixture',
+                packageId: 'cloud-fixture',
+                moduleName: 'cloud-fixture',
+                clientId: 'catalog',
+                revision: 'r1',
+                enabled: true,
+                phase: 'ready',
+                entryUrl: '/plugins/cloud-fixture/r1/index.js',
+                styleUrls: [],
+                slots: ['conversation.input.model.catalog'],
+                extIds: [],
+                services: ['fixture.models.list'],
+                slotCatalogVersion: 'dsh-client-slots/v1',
+                binding: {
+                  owner: 'web:cloud-fixture',
+                  packageId: 'cloud-fixture',
+                  integrity: `sha256-${'a'.repeat(64)}`,
+                  profileId: 'cloud-fixture',
+                  activationId: 'r1',
+                  lifetime: 'profile',
+                  availability: 'active',
+                },
+              },
+            ],
+          })),
+        },
+      }
+      sdk.createClient.mockReturnValue(client)
+      try {
+        await bootApp('cloud-bootstrap')
+        await vi.waitFor(() =>
+          expect(serviceInputs).toContainEqual({
+            rowId: 'web:cloud-fixture',
+            service: 'fixture.models.list',
+            input: {},
+          }),
+        )
+        expect(document.body.dataset.aghBackendFrame).toBe('cloud')
+        expect(sdk.createClient.mock.calls.at(-1)?.[0]).toMatchObject({
+          transport: {
+            kind: 'ws',
+            url: `${location.origin.replace(/^http/u, 'ws')}${path}${REMOTE_FRONTEND_WS}`,
+          },
+        })
+        expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(true)
+        expect(client.session.new).not.toHaveBeenCalled()
+        await renderUI(async () =>
+          catalog.resolve(Response.json({ output: { models: catalogState === 'ready' ? [model] : [] } })),
+        )
+        await vi.waitFor(() =>
+          expect(
+            document.querySelector('[data-testid="fixture-cloud-models"]')?.getAttribute('data-loaded'),
+          ).toBe('true'),
+        )
+        await vi.waitFor(() =>
+          expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
+        )
+        editPrompt('cloud draft without pressing plus')
+        await vi.waitFor(() =>
+          expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(
+            catalogState !== 'ready',
+          ),
+        )
+        expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(
+          catalogState !== 'ready',
+        )
+        if (catalogState === 'ready') {
+          expect((document.getElementById('composer-attach') as HTMLButtonElement).disabled).toBe(false)
+          document.getElementById('model')?.click()
+          await openModelList()
+          expect(modelMenu().textContent).toContain(model.id)
+          modelMenu().querySelector<HTMLElement>('[role="option"]')?.click()
+          await vi.waitFor(() =>
+            expect(document.getElementById('model')?.getAttribute('aria-label')).toContain(model.id),
+          )
+        }
+        expect(document.querySelector('[data-testid="first-run-guide"]')).toBeNull()
+        expect(new URL(location.href).searchParams.get('new')).toBe('1')
+        expect(requests.every((url) => new URL(url).origin === location.origin)).toBe(true)
+        expect(client.session.new).not.toHaveBeenCalled()
+        expect(binding.loadWebSession).not.toHaveBeenCalled()
+      } finally {
+        catalog.resolve(Response.json({ output: { models: [] } }))
+        window.fetch = nativeFetch
+        window.WebSocket = NativeSocket
+        parentProperty.mockRestore()
+      }
+    },
+  )
+
   // A draft names its workspace in the address, so a refresh (which keeps `?new=1`) restores it
   // without asking again; without one it reuses the most recent available workspace.
   it.each([
@@ -2457,6 +2733,13 @@ describe('web session selection', () => {
     )
     expect(dialog.open).toBe(false)
     if (!search.includes('new=1')) return
+    await vi.waitFor(() => {
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
+      expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false)
+      expect((document.getElementById('composer-attach') as HTMLButtonElement).disabled).toBe(false)
+    })
+    // Entering the draft prepares controls without creating a durable session or sending a turn.
+    expect(sdk.createClient.mock.results.at(-1)?.value.session.new).not.toHaveBeenCalled()
     expect(new URL(location.href).searchParams.get('workspaceId')).toBe(
       expected === 'linked' ? linked : 'a'.repeat(64),
     )

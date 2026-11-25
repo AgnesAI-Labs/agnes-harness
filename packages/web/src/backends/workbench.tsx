@@ -422,7 +422,8 @@ export function CloudWorkbenchStage({ children }: { children?: ReactNode } = {})
           safeThemeStorage().setItem(CLOUD_ORIGIN_KEY, next)
         }
         if (next !== latest.current.cloud) {
-          const session = automatic ? cloudSelection.current.session : undefined
+          // A newly chosen deployment starts a draft; recovery keeps its existing selection.
+          const session = automatic ? cloudSelection.current.session : ''
           clearCloudFrame()
           cloudSelection.current = { session, awaiting: session !== undefined }
           setCloudFrame({ revision: 0, search: sessionFrameSearch(session), retired: false })
@@ -430,6 +431,12 @@ export function CloudWorkbenchStage({ children }: { children?: ReactNode } = {})
           latest.current.cloud = next
           if (!activate && latest.current.active === 'cloud' && !latest.current.configure)
             setAddress('cloud', session)
+        } else if (!automatic && cloudSelection.current.session === undefined) {
+          // A saved origin may exist before the user configures its first conversation.
+          cloudSelection.current = { session: '', awaiting: true }
+          restartCloudFrame()
+          if (!activate && latest.current.active === 'cloud' && !latest.current.configure)
+            setAddress('cloud', '')
         } else if (credentialRef !== undefined || !latest.current.states.cloud?.connected) restartCloudFrame()
         if (activate) select('cloud')
       } catch (error) {
@@ -651,7 +658,7 @@ export function CloudWorkbenchStage({ children }: { children?: ReactNode } = {})
         onReplaced: (credentialRef, generation) =>
           handleCloudAction({ action: 'credential-replaced', credentialRef, generation }),
         onOriginChange: (next, sameRef) => {
-          const session = sameRef ? cloudSelection.current.session : undefined
+          const session = sameRef ? cloudSelection.current.session : next ? '' : undefined
           cancelPendingConnect()
           abortFrameAuth.current?.()
           setConfigurationError('')

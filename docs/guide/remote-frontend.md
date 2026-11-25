@@ -60,7 +60,7 @@ Create a new cloud session after upgrading B and the plugin. Eligible existing s
 1. Start the matching build on A with `agh serve` and open the local URL it prints.
 2. Open **Settings → Permissions → Credentials** and create a generic credential using the Key issued for the existing LLMSG sandbox. Keep Keys out of URLs, command history and logs.
 3. Open **Settings → Advanced → Cloud connection**. Select the credential and choose **Save and connect**. **Manage local credentials** opens A's credentials page, and **Refresh credentials** reloads the list.
-4. Wait for **Ready**, then select **Cloud** below session search and use **+** to start a session. Check that its model and workspace belong to B. Switch to **Local** to return to A's sessions. A's sidebar management links open A's settings. Use B's own workbench to administer B.
+4. Wait for **Ready**, then select **Cloud** below session search. A newly configured connection opens a new conversation draft automatically; check that its model and workspace belong to B. Use **+** for another new conversation. Switch to **Local** to return to A's sessions. A's sidebar management links open A's settings. Use B's own workbench to administer B.
 
 The connection screen discovers the sandbox from the selected credential. It has no manual address field. A legacy `?remote=` link selects an explicit backend origin and requires an existing credential binding for that exact origin in the same browser. A direct service origin looks like `https://harness.example.com:8443`. A fresh browser should use the credential discovery flow on a deployment that supports it. Keep Keys and temporary capabilities out of the link.
 

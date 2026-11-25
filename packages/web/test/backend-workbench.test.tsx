@@ -898,6 +898,58 @@ async function diagnosticWorkbench(active: 'local' | 'cloud') {
   }
 }
 
+it.each(['first', 'saved-origin', 'selected-session'] as const)(
+  'initializes the cloud selection after manual configuration (%s)',
+  async (mode) => {
+    const fixture = await diagnosticWorkbench(mode === 'selected-session' ? 'cloud' : 'local')
+    const credentialRef = 'secret://generic/11111111-1111-1111-1111-111111111111'
+    const remote = mode === 'first' ? 'https://8443-first.ap-shanghai.tencentags.com' : fixture.remote
+    const fetcher = vi.spyOn(window, 'fetch').mockImplementation(async (input) => {
+      if (String(input).endsWith('/admin/api/credentials'))
+        return Response.json({
+          items: [
+            {
+              id: credentialRef,
+              label: 'fixture',
+              kind: 'api-key',
+              createdAt: '2026-11-25T00:00:00Z',
+              references: [],
+            },
+          ],
+        })
+      if (new URL(String(input), location.href).pathname !== CLOUD_AUTHORIZATION_PATH)
+        throw Error('unexpected request')
+      return Response.json({
+        token: `${(Date.now() + 3600000).toString(36)}.${'a'.repeat(22)}.${'b'.repeat(43)}`,
+        expiresAt: Date.now() + 3600000,
+        proxied: true,
+        origin: remote,
+      })
+    })
+    try {
+      if (mode === 'first') await fixture.message('local', { kind: 'cloud-action', action: 'disconnect' })
+      const previous = mode === 'first' ? undefined : fixture.frame('cloud')
+      await fixture.message('local', { kind: 'cloud-action', action: 'connect', credentialRef })
+      await vi.waitFor(() => {
+        expect(fixture.frame('cloud').dataset.backendOrigin).toBe(remote)
+        expect(fixture.frame('cloud')).not.toBe(previous)
+      })
+      const frame = fixture.frame('cloud')
+      const query = new URL(frame.src).searchParams
+      expect(query.get('new')).toBe(mode === 'selected-session' ? null : '1')
+      expect(query.get('session')).toBe(mode === 'selected-session' ? 'kept-session' : null)
+      // Selecting Cloud must retain the initialized draft, rather than issue a second new command.
+      await fixture.message('local', { kind: 'sidebar-select', backend: 'cloud' })
+      expect(fixture.frame('cloud')).toBe(frame)
+      expect(new URL(frame.src).search).toBe(`?${query}`)
+    } finally {
+      forgetRemoteAccess(remote)
+      fetcher.mockRestore()
+      await fixture.close()
+    }
+  },
+)
+
 it.each([
   '/?settings=model/account&account=saved#settings-subsection-auxiliary-models',
   '/?page=plugins&tab=plugins.search&view=%40scope%2Fpkg/review',
