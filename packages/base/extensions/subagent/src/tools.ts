@@ -155,7 +155,11 @@ function missedChild(error: unknown): boolean {
 }
 
 function controlFailure(error: unknown): ToolResult {
-  if (error instanceof CoreError) return fail(error.message)
+  if (error instanceof CoreError) {
+    const hint =
+      error.code === 'E_CHILD_NOT_FOUND' ? ' Call subagent_list to inspect valid childKey handles.' : ''
+    return { ...fail(`${error.message}${hint}`), details: { code: error.code } }
+  }
   throw error
 }
 
@@ -477,7 +481,7 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
     parameters: collectParameters,
     meta: {
       isReadOnly: false,
-      isDestructive: true,
+      isDestructive: false,
       isConcurrencySafe: true,
       isOpenWorld: false,
       replay: 'safe',
@@ -487,7 +491,12 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
     },
     async execute(args, ctx) {
       if (args.childKey.length === 0) return fail('childKey must not be empty')
-      const result = await ctx.subagent.collect(args.childKey, { wait: args.wait ?? true })
+      let result: ChildStatus
+      try {
+        result = await ctx.subagent.collect(args.childKey, { wait: args.wait ?? true })
+      } catch (error) {
+        return controlFailure(error)
+      }
       if (result.childKey !== args.childKey) return fail('subagent backend returned a mismatched child key')
 
       const runtime = runtimeOf(deps)
@@ -553,10 +562,14 @@ export function subagentCancelTool(deps: SubagentDeps): ToolDef<typeof cancelPar
     },
     async execute(args, ctx) {
       if (args.childKey.length === 0) return fail('childKey must not be empty')
-      const result = await ctx.subagent.cancel(args.childKey)
-      return {
-        content: [{ type: 'text', text: `cancelled ${result.childKey}: ${result.status}` }],
-        details: { childKey: result.childKey, status: result.status },
+      try {
+        const result = await ctx.subagent.cancel(args.childKey)
+        return {
+          content: [{ type: 'text', text: `cancelled ${result.childKey}: ${result.status}` }],
+          details: { childKey: result.childKey, status: result.status },
+        }
+      } catch (error) {
+        return controlFailure(error)
       }
     },
   }

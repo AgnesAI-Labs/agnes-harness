@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { CoreError, resetChildAgentAllowlists, setChildAgentAllowlist, trackExternalChild } from '@agnes/core'
-import { checkToolDef, type ToolContext, type ToolDef } from '@agnes/extension-api'
+import { checkToolDef, defaultToolPolicy, type ToolContext, type ToolDef } from '@agnes/extension-api'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createSubagentExtension } from '../src/index.js'
+import { subagentCloseTool, subagentPauseTool, subagentResumeTool } from '../src/lifecycle-tools.js'
 import type { SubagentDeps } from '../src/tools.js'
 import {
   createSubagentRuntime,
@@ -157,7 +158,7 @@ describe('subagent tool definitions', () => {
     expect(tools[1]?.description).toContain('non-git')
     expect(tools[0]?.description).toContain('non-git')
     expect(tools[0]?.meta).toMatchObject({ isReadOnly: false, isOpenWorld: true, replay: 'never' })
-    expect(tools[2]?.meta).toMatchObject({ isReadOnly: false, isDestructive: true })
+    expect(tools[2]?.meta).toMatchObject({ isReadOnly: false, isDestructive: false })
   })
 
   it('the explicit extension factory registers and disposes all child tools', () => {
@@ -831,6 +832,54 @@ describe('child allowlist and continuable controls', () => {
       expect(stop.details).toEqual({ childKey: 'ext', accepted: true })
     } finally {
       untrack()
+    }
+  })
+
+  it('returns recoverable tool errors for unknown child handles instead of throwing into unknown-outcome', async () => {
+    const missing = () => Promise.reject(new CoreError('E_CHILD_NOT_FOUND', 'unknown child bogus-id'))
+    const { ctx } = context()
+    ctx.subagent.collect = missing
+    ctx.subagent.cancel = missing
+    ctx.subagent.resume = missing
+    ctx.subagent.pause = missing
+    ctx.subagent.close = missing
+    const d = deps()
+    for (const run of [
+      () => subagentCollectTool(d).execute({ childKey: 'bogus-id', wait: true }, ctx),
+      () => subagentCancelTool(d).execute({ childKey: 'bogus-id' }, ctx),
+      () => subagentPauseTool.execute({ childKey: 'bogus-id' }, ctx),
+      () => subagentResumeTool.execute({ childKey: 'bogus-id' }, ctx),
+      () => subagentCloseTool.execute({ childKey: 'bogus-id' }, ctx),
+    ]) {
+      const result = await run()
+      expect(result.isError).toBe(true)
+      expect(result.details).toMatchObject({ code: 'E_CHILD_NOT_FOUND' })
+      expect(JSON.stringify(result.content)).toContain('unknown child bogus-id')
+    }
+  })
+
+  it('exempts pause/resume/close/recap management tools from tainted-turn approval prompts', () => {
+    for (const name of ['subagent_pause', 'subagent_resume', 'subagent_close', 'subagent_recap']) {
+      const decision = defaultToolPolicy.decide(
+        {
+          call: { name, args: {} },
+          policy: {
+            isReadOnly: name === 'subagent_recap',
+            isDestructive: false,
+            isPresentational: false,
+            isConcurrencySafe: true,
+            isOpenWorld: false,
+            replay: name === 'subagent_recap' ? 'safe' : 'never',
+            requiresApproval: 'never',
+            approvalScopes: [],
+          },
+          tainted: true,
+          fullAccess: false,
+          approvalMode: 'default',
+        } as never,
+        new AbortController().signal,
+      )
+      expect(decision).toMatchObject({ effect: 'allow' })
     }
   })
 })
