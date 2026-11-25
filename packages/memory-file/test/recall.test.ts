@@ -28,7 +28,7 @@ const outside = async (): Promise<never> => {
   throw new Error('outside memory')
 }
 const fallback: MemoryFilePort = { read: outside, list: outside, stat: outside, write: outside }
-function fixture(validity?: MemoryValidityView) {
+function fixture(validity?: MemoryValidityView, userValidity = validity, clock = Date.now) {
   const home = mkdtempSync(join(tmpdir(), 'recall-'))
   clean.push(() => rmSync(home, { force: true, recursive: true }))
   const pipeline = createDefaultPipeline()
@@ -38,7 +38,9 @@ function fixture(validity?: MemoryValidityView) {
     workspaceRoot: home,
     sessionKey: 'test',
     pipeline,
-    ...(validity ? { validity, userValidity: validity } : {}),
+    clock,
+    ...(validity ? { validity } : {}),
+    ...(userValidity ? { userValidity } : {}),
   })
   clean.push(() => session.close?.())
   const port = (turn: number) =>
@@ -58,7 +60,7 @@ function fixture(validity?: MemoryValidityView) {
   const meta = new MetaStore(store)
   const internal = new SearchIndex(meta)
   clean.push(() => internal.close())
-  return { session, port, recall, root, userRoot, meta, store, internal, pipeline }
+  return { home, session, port, recall, root, userRoot, meta, store, internal, pipeline }
 }
 
 describe('file memory recall', () => {
@@ -195,6 +197,105 @@ describe('file memory recall', () => {
       db.close()
     }
     expect((await f.recall(2, 'lake')).hits).toHaveLength(1)
+  })
+
+  it.each(['workspace', 'user'] as const)(
+    'keeps a renewed %s paragraph in the shared index',
+    async (layer) => {
+      let valid = false
+      const registry: MemoryValidityView = {
+        revision: () => String(valid),
+        validity: () => (valid ? 'valid' : 'expired'),
+      }
+      const f = fixture(registry)
+      await f.session.configure({ mode: 'auto', userEnabled: true })
+      const root = layer === 'user' ? f.userRoot : f.root
+      mkdirSync(root, { recursive: true })
+      writeFileSync(
+        join(root, 'MEMORY.md'),
+        '<!-- refinement:r0000000001 -->\nKestrel\n<!-- /refinement:r0000000001 -->',
+      )
+      await f.session.snapshot(1)
+      valid = true
+      const renewed = openMemory({
+        home: f.home,
+        workspaceRoot: f.home,
+        sessionKey: 'renewed',
+        validity: registry,
+        userValidity: registry,
+      })
+      clean.push(() => renewed.close?.())
+      const options = { includeUser: true }
+      const port = renewed.files(
+        fallback,
+        { sessionKey: 'renewed', turn: 1 },
+        new AbortController().signal,
+        outside,
+      )
+      expect((await port.recall?.({ query: 'kestrel', ...options }))?.hits).toMatchObject([{ layer }])
+      using db = new DatabaseSync(join(root, 'meta', 'index.sqlite'))
+      db.exec('BEGIN IMMEDIATE')
+      expect((await f.recall(1, 'kestrel', options)).hits).toEqual([])
+      db.exec('COMMIT')
+      expect((await f.recall(1, 'kestrel', options)).hits).toEqual([])
+      expect(db.prepare("SELECT text FROM chunks WHERE text LIKE '%Kestrel%'").all()).toHaveLength(1)
+    },
+  )
+
+  it('withdraws user citations and advances deadlines across both layers during a turn', async () => {
+    let now = Date.parse('2027-01-01T00:00:00Z')
+    let cited = true
+    const f = fixture(
+      undefined,
+      {
+        revision: () => String(cited),
+        validity: (id) => (id === 'r0000000001' || (cited && id === 'r0000000002') ? 'valid' : 'expired'),
+      },
+      () => now,
+    )
+    await f.session.configure({ mode: 'auto', userEnabled: true })
+    mkdirSync(f.userRoot, { recursive: true })
+    writeFileSync(
+      join(f.userRoot, 'MEMORY.md'),
+      [
+        '<!-- refinement:r0000000001 -->\nManaged lesson\n\n<!-- expires_at: 2027-01-01T00:00:04Z -->\nHeron\n<!-- /refinement:r0000000001 -->',
+        '<!-- refinement:r0000000003 -->\nUnverified lesson\n<!-- /refinement:r0000000003 -->',
+        'Handwritten preference',
+        'Kestrel citation <!-- ref:r0000000002 -->',
+        '<!-- expires_at: tomorrow -->\nInvaliddeadline',
+        '<!-- expires_at: 2027-01-01T00:00:01Z -->\nPeacock',
+        '<!-- expires_at: 2027-01-01T00:00:03Z -->\nWagtail',
+      ].join('\n\n'),
+    )
+    writeFileSync(join(f.root, 'MEMORY.md'), '<!-- expires_at: 2027-01-01T00:00:02Z -->\nPelican')
+    const recall = async (query: string) => (await f.recall(1, query, { includeUser: true })).hits
+    const first = await f.session.snapshot(1)
+    expect(first?.content).toContain('Kestrel citation')
+    expect(first?.content).not.toContain('Invaliddeadline')
+    expect(await recall('kestrel')).toMatchObject([{ layer: 'user' }])
+    expect(await recall('invaliddeadline')).toEqual([])
+    cited = false
+    expect(await recall('kestrel')).toEqual([])
+    expect(await recall('peacock')).toHaveLength(1)
+    now += 1000
+    expect(await recall('peacock')).toEqual([])
+    expect(await recall('pelican')).toHaveLength(1)
+    now += 1000
+    expect(await recall('pelican')).toEqual([])
+    expect(await recall('wagtail')).toHaveLength(1)
+    now += 1000
+    expect(await recall('wagtail')).toEqual([])
+    const next = await f.session.snapshot(2)
+    expect(next?.content).not.toMatch(/Kestrel|Peacock|Wagtail|Invaliddeadline|Unverified lesson/u)
+    expect(next?.content).toMatch(
+      /Handwritten preference[\s\S]*Managed lesson[\s\S]*Heron\n\n\[1 task-experience paragraphs omitted/u,
+    )
+    expect(next?.revision).not.toBe(first?.revision)
+    now += 1000
+    const last = await f.session.snapshot(3)
+    expect(last?.content).not.toContain('Heron')
+    expect(last?.content).toContain('Managed lesson')
+    expect(last?.revision).not.toBe(next?.revision)
   })
 
   it('omits outdated, empty and deleted topic summaries from eager, rebuilt and turn indexes', async () => {

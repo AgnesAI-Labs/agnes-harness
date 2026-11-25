@@ -16,7 +16,7 @@ import { buildIndexView, formatLifecycleOmission, inspectConsistency } from './c
 import { fault, file, fitBytes, hash, validateContent } from './content.js'
 import { createFilePort } from './file-port.js'
 import { MetaStore } from './meta.js'
-import { resolveReadOverlay, type TurnReadState } from './overlay.js'
+import { nextLayerExpiry, resolveReadOverlay, type TurnReadState } from './overlay.js'
 import { paragraphPort } from './paragraph-port.js'
 import { markerLines, validityOf } from './paragraphs.js'
 import { canonical, inside, name, roots } from './paths.js'
@@ -106,6 +106,10 @@ function emptyView(path: string): MemoryView {
   }
 }
 
+function nonManaged(range: HideRange): boolean {
+  return range.reason !== 'managed-omitted' && range.reason !== 'managed-delivered'
+}
+
 function captureTurnSnapshot(args: {
   root: string
   store: MemoryStore
@@ -128,15 +132,13 @@ function captureTurnSnapshot(args: {
     touchedValidity = true
     return validity(id)
   }
-  const userIndex = config.userEnabled ? user.read('MEMORY.md') : file('MEMORY.md', '')
-  const userValid = passes(userIndex, config)
   const userFiles = config.userEnabled
     ? pipeline.recall
       ? user.files()
-      : userIndex.bytes > 0
-        ? [userIndex]
-        : []
+      : [user.read('MEMORY.md')].filter((entry) => entry.bytes > 0)
     : []
+  const userIndex = userFiles.find((entry) => entry.path === 'MEMORY.md') ?? file('MEMORY.md', '')
+  const userValid = passes(userIndex, config)
   const ctx: ViewContext = {
     layer: 'workspace',
     files,
@@ -166,7 +168,7 @@ function captureTurnSnapshot(args: {
     baseRanges.set(entry.path, ranges)
     readViews.set(entry.path, view)
     agent.set(entry.path, view.content !== entry.content ? file(entry.path, view.content) : entry)
-    if (ranges.some((range) => range.reason !== 'managed-omitted' && range.reason !== 'managed-delivered')) {
+    if (ranges.some(nonManaged)) {
       nonManagedDiffs.push([entry.path, hash(view.content)])
     }
   }
@@ -180,11 +182,8 @@ function captureTurnSnapshot(args: {
     indexView = readViews.get('MEMORY.md')!
     const indexRanges = baseRanges.get('MEMORY.md') ?? []
     noteView = buildView(index, indexRanges, 'note', formatLifecycleOmission)
-    if (noteView.content !== indexView.content) {
-      const hasExtra = indexRanges.some(
-        (range) => range.reason !== 'managed-omitted' && range.reason !== 'managed-delivered',
-      )
-      if (hasExtra) nonManagedDiffs.push(['MEMORY.md:note', hash(noteView.content)])
+    if (noteView.content !== indexView.content && indexRanges.some(nonManaged)) {
+      nonManagedDiffs.push(['MEMORY.md:note', hash(noteView.content)])
     }
   } else {
     const empty = emptyView('MEMORY.md')
@@ -193,29 +192,31 @@ function captureTurnSnapshot(args: {
   }
 
   const indexManaged = markerLines(index.content).length > 0
-  const userView = renderUserLayer(userValid ? userIndex.content : '', userValidityView)
   const userBaseRanges = new Map<string, HideRange[]>()
   const userReadViews = new Map<string, MemoryView>()
   let touchedUserValidity = false
-  if (config.userEnabled) {
-    const userCtx: ViewContext = {
-      layer: 'user',
-      files: userFiles,
-      userFiles,
-      userEnabled: true,
-      now,
-      validity: (id) => {
-        touchedUserValidity = true
-        return userValidity(id)
-      },
-      meta: userMeta,
-    }
-    for (const entry of userFiles) {
-      if (entry.path === 'MEMORY.md' && !userValid) continue
-      const ranges = pipeline.collectHideRanges(entry, userCtx)
-      userBaseRanges.set(entry.path, ranges)
-      userReadViews.set(entry.path, buildView(entry, ranges, 'read', formatLifecycleOmission))
-    }
+  const userCtx: ViewContext = {
+    ...ctx,
+    layer: 'user',
+    files: userFiles,
+    validity: (id) => {
+      touchedUserValidity = true
+      return userValidity(id)
+    },
+    meta: userMeta,
+  }
+  for (const entry of userFiles) {
+    if (entry.path === 'MEMORY.md' && !userValid) continue
+    const ranges = pipeline.collectHideRanges(entry, userCtx)
+    const view = buildView(entry, ranges, 'read', formatLifecycleOmission)
+    userBaseRanges.set(entry.path, ranges)
+    userReadViews.set(entry.path, view)
+    if (ranges.some(nonManaged)) nonManagedDiffs.push([`user:${entry.path}`, hash(view.content)])
+  }
+  const userIndexRanges = userBaseRanges.get('MEMORY.md')?.filter(nonManaged)
+  const userView = renderUserLayer(userValid ? userIndex.content : '', userValidityView, userIndexRanges)
+  if (userIndexRanges?.length && userView.text !== userReadViews.get('MEMORY.md')?.content) {
+    nonManagedDiffs.push(['user:MEMORY.md:note', hash(userView.text)])
   }
 
   // Consult validity revision lazily so unmanaged files never touch the registry.
@@ -274,7 +275,7 @@ function captureTurnSnapshot(args: {
     revision,
     validityRev,
     userValidityRev,
-    nextExpiry: pipeline.nextExpiry(files, ctx),
+    nextExpiry: nextLayerExpiry(pipeline, ctx, userCtx),
     userFiles,
     userBaseRanges,
     userReadViews,
@@ -400,6 +401,7 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
         target,
         active,
         viewCtx,
+        userValidity,
       })
     },
     inspect,

@@ -82,26 +82,25 @@ export function recallEvents(
       FROM ${table} JOIN docs e ON e.rowid=${table}.rowid JOIN sessions s ON s.session_id=e.session_id
       WHERE ${table} MATCH ? AND e.seq>=1 AND ${where}
       ORDER BY rank,e.session_id,e.seq LIMIT ?`
-    let rows: Row[]
-    try {
-      rows = db.prepare(sql).all(match, ...params, HISTORY_FETCH_CAP + 1) as Row[]
-    } catch (error) {
-      throw searchError(error)
-    }
+    const rows = db.prepare(sql).all(match, ...params, HISTORY_FETCH_CAP + 1) as Row[]
     if (table === 'docs_cjk') {
       for (const row of rows) row.snippet = excerpt(row.snippet, terms)
     }
     return rows
   }
   const en = expandEnglishInflections(query.en)
-  const ranked = fuse(
-    [channel('docs_fts', en), channel('docs_cjk', [query.cjk, en].filter(Boolean).join(' OR '))],
-    (row) => row.id,
-  )
-  return {
-    items: ranked.slice(0, limit).map(({ item: { id: _, ...item } }) => item),
-    truncated: ranked.length > limit,
-    generation,
-    ...(cjkPartial(db) ? { partial: true } : {}),
+  try {
+    const ranked = fuse(
+      [channel('docs_fts', en), channel('docs_cjk', [query.cjk, en].filter(Boolean).join(' OR '))],
+      (row) => row.id,
+    )
+    return {
+      items: ranked.slice(0, limit).map(({ item: { id: _, ...item } }) => item),
+      truncated: ranked.length > limit,
+      generation,
+      ...(cjkPartial(db) ? { partial: true } : {}),
+    }
+  } catch (error) {
+    throw searchError(error)
   }
 }

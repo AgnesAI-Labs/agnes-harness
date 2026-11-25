@@ -5,7 +5,7 @@ import { buildIndexView } from './consistency.js'
 import { fault } from './content.js'
 import type { MetaStore } from './meta.js'
 import { managedParagraphRanges } from './paragraphs.js'
-import type { MemoryPipeline, RecallEnvironment } from './pipeline.js'
+import type { MemoryPipeline, RecallEnvironment, ViewContext } from './pipeline.js'
 import { readDocuments, SearchIndex } from './search-index.js'
 import type { MemoryView } from './view.js'
 
@@ -13,6 +13,13 @@ function cap(value: number | undefined, fallback: number, maximum: number) {
   return value === undefined || !Number.isFinite(value)
     ? fallback
     : Math.max(0, Math.min(Math.floor(value), maximum))
+}
+
+export function liveDocuments(pipeline: MemoryPipeline, ctx: ViewContext, settings: MemorySettings) {
+  const views = new Map(
+    ctx.files.map((file) => [file.path, buildIndexView(file, pipeline.collectHideRanges(file, ctx))]),
+  )
+  return readDocuments(ctx.files, views, settings)
 }
 
 function recall(
@@ -30,7 +37,8 @@ function recall(
     const docs = readDocuments(files, views, settings, ranges)
     const byPath = new Map(docs.map((doc) => [doc.file.path, doc]))
     const chunks = new Map<string, ReturnType<typeof chunkView>>()
-    for (const hit of index.query(query.query, files, docs)) {
+    const { liveDocs } = env
+    for (const hit of index.query(query.query, files, docs, liveDocs && (() => liveDocs(layer)))) {
       const doc = byPath.get(hit.doc)
       if (!doc || doc.fingerprint !== hit.fingerprint) continue
       const visible = chunks.get(hit.doc) ?? chunkView(doc.file, doc.view)
@@ -94,10 +102,7 @@ export function registerRetrieval(pipeline: MemoryPipeline): RetrievalHandle {
   )
   pipeline.addObserver((_intent, _committed, ctx) => {
     try {
-      const views = new Map(
-        ctx.files.map((file) => [file.path, buildIndexView(file, pipeline.collectHideRanges(file, ctx))]),
-      )
-      indexFor(ctx.meta).committed(readDocuments(ctx.files, views, ctx.meta.store.configuration()))
+      indexFor(ctx.meta).committed(liveDocuments(pipeline, ctx, ctx.meta.store.configuration()))
     } catch {
       // Markdown and audit are durable. Recall can reconcile a missed update, or an explicit rebuild can repair corruption.
     }

@@ -32,7 +32,6 @@ function* annotations(content: string) {
 }
 
 export const expiryViewFilter: ViewFilter = (entry, ctx) => {
-  if (ctx.layer !== 'workspace') return []
   const ranges: HideRange[] = []
   for (const { start, end, expiresAt } of annotations(entry.content)) {
     if (expiresAt > ctx.now) continue

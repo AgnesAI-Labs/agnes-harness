@@ -4,7 +4,6 @@ import type { HideRange } from './view.js'
 const reference = /<!--\s*ref:(r[0-9a-z]{10})\s*-->|\bref:[ \t]+(r[0-9a-z]{10})\b/gu
 
 export const refViewFilter: ViewFilter = (entry, ctx) => {
-  if (ctx.layer !== 'workspace') return []
   const ranges: HideRange[] = []
   let start = 0
   let withdrawn = false

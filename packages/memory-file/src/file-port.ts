@@ -16,6 +16,7 @@ import type { TurnReadState } from './overlay.js'
 import { markerLines, markerSet, paragraphTexts, parseParagraphs } from './paragraphs.js'
 import { canonical, inside, type roots } from './paths.js'
 import type { CommitIntent, MemoryClock, MemoryPipeline, ViewContext } from './pipeline.js'
+import { liveDocuments } from './recall.js'
 import type { MemoryStore } from './store.js'
 import { buildView, replaceInMemoryView, retainedEditRanges } from './view.js'
 
@@ -37,6 +38,7 @@ export type FilePortDeps<TTurn extends TurnReadState = TurnReadState> = Readonly
   target: (path: string) => string | undefined
   active: () => MemorySettings & { mode: 'ask' | 'auto' }
   viewCtx: (now: number, config?: MemorySettings) => ViewContext
+  userValidity: ViewContext['validity']
 }>
 
 /** Build the agent-facing `MemoryFilePort` bound to a single turn, source, and pipeline. */
@@ -58,6 +60,7 @@ export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<T
     target,
     active,
     viewCtx,
+    userValidity,
   } = deps
   const get = (path: string): { shown: MemoryFile; state: TurnReadState } => {
     active()
@@ -176,11 +179,29 @@ export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<T
     ...(pipeline.recall
       ? {
           async recall(query) {
-            active()
+            const settings = active()
             signal.throwIfAborted()
             const state = resolvedFor(capture(source.turn))
             return pipeline.recall!(query, {
               revision: state.revision,
+              liveDocs(layer) {
+                if (layer === 'workspace')
+                  return liveDocuments(pipeline, viewCtx(clock(), settings), settings)
+                const files = deps.user.files()
+                return liveDocuments(
+                  pipeline,
+                  {
+                    layer,
+                    files,
+                    userFiles: files,
+                    userEnabled: settings.userEnabled,
+                    now: clock(),
+                    validity: userValidity,
+                    meta: userMeta,
+                  },
+                  settings,
+                )
+              },
               workspaceViews: state.readViews,
               workspaceRanges: state.baseRanges,
               workspaceFiles: state.files,

@@ -337,13 +337,32 @@ describe('file memory contract', () => {
     await f.files(2).write(join(f.session.root, 'topic.md'), 'Convention details')
     await f.files(3).write(f.index, '[topic](topic.md)')
     expect(await readFile(f.index, 'utf8')).toBe('[topic](topic.md)')
-    await rm(join(f.session.root, 'writer.json'))
-    await mkdir(join(f.session.root, 'writer.json'))
-    await expect(f.files(4).write(f.index, 'Committed file with failed provenance')).rejects.toMatchObject({
-      code: 'MEMORY_COMMITTED_METADATA_FAILED',
-    })
-    expect(await readFile(f.index, 'utf8')).toBe('Committed file with failed provenance')
   })
+
+  it.each(['writer.json', 'acknowledged.json', 'meta/links.json'])(
+    'audits and indexes the commit when %s cannot be written',
+    async (failed) => {
+      const f = await fixture()
+      await f.session.configure({ mode: 'auto' })
+      await f.files(1).write(join(f.session.root, 'topic.md'), 'Convention details')
+      const path = join(f.session.root, failed)
+      await rm(path, { force: true })
+      await mkdir(path)
+      const content = '[topic](topic.md)\n\nIndependent guidance'
+      const before = await f.session.readFile('MEMORY.md')
+      await expect(f.session.editFile('MEMORY.md', content, before.hash)).rejects.toMatchObject({
+        code: 'MEMORY_COMMITTED_METADATA_FAILED',
+      })
+      const meta = new MetaStore(new MemoryStore(roots(f.home, f.home).protectedRoot, f.session.root))
+      const committed = await f.session.readFile('MEMORY.md')
+      expect(committed.content).toBe(content)
+      expect(readAuditEntries(meta).at(-1)).toMatchObject({ action: 'commit', afterHash: committed.hash })
+      if (failed !== 'acknowledged.json')
+        expect(meta.store.acknowledged()?.['MEMORY.md']).toBe(committed.hash)
+      using db = new DatabaseSync(meta.pathOf('index.sqlite'), { readOnly: true })
+      expect(db.prepare('SELECT text FROM chunks WHERE text = ?').get('Independent guidance')).toBeDefined()
+    },
+  )
   it('refuses symbolic memory files where the OS permits creating a file symlink', async ({ skip }) => {
     const f = await fixture()
     await f.session.configure({ mode: 'auto' })
@@ -408,6 +427,8 @@ describe('user memory without saved sections', () => {
     expect(snapshot?.revision).toBe(PINNED_REVISION)
     expect(snapshot?.content.split(f.session.root).join('<root>')).toBe(PINNED_CONTENT)
     expect(snapshot?.omitted).toBe(false)
+    await f.files(2).recall?.({ query: 'pnpm', includeUser: true })
+    expect(await f.session.snapshot(3)).toEqual(snapshot)
   })
 })
 

@@ -80,7 +80,7 @@ For a replaceable enterprise implementation, see [Memory providers](../extend/me
 
 ## Expiring ordinary memory
 
-In workspace `MEMORY.md` or a topic file, put `<!-- expires_at: ISO8601 -->` on its own line immediately before the paragraph it applies to. The paragraph ends at the next blank line or the end of the file.
+In workspace or user `MEMORY.md`, or in a workspace topic file, put `<!-- expires_at: ISO8601 -->` on its own line immediately before the paragraph it applies to. The paragraph ends at the next blank line or the end of the file.
 
 ```markdown
 <!-- expires_at: 2027-02-01T09:00:00Z -->
@@ -90,6 +90,8 @@ Use the production queue for scheduled jobs.
 ```
 
 At 09:00 UTC on February 1, the agent's reads and recall stop showing the staging instruction. The next turn's memory note also omits it. The production instruction remains visible. An invalid date hides the annotated paragraph immediately. The memory editor keeps the original text so you can correct or extend the date.
+
+To tie a paragraph to a saved memory in the same layer, include its ID as `<!-- ref:r0000000001 -->` or `ref: r0000000001` within the paragraph. If that memory expires, is withdrawn, or cannot be verified, reads and recall hide the citing paragraph and the next turn’s memory note omits it. Enable user memory to include the user layer.
 
 ## Human-authored memory protection
 

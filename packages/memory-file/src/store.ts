@@ -257,16 +257,26 @@ export class MemoryStore {
         admission?.assertActive()
       })
       // The file has committed if metadata fails: do not report an unwritten file.
+      let metadataFailed = false
       try {
         this.atomic(join(this.root, 'writer.json'), JSON.stringify(source), admission?.assertActive)
+      } catch {
+        metadataFailed = true
+      }
+      try {
         this.acknowledge({
           ...(this.acknowledged() ?? hashes(all)),
           [candidate.path]: candidate.hash,
         })
+      } catch {
+        metadataFailed = true
+      }
+      try {
         onCommitted?.()
       } catch {
-        throw fault('MEMORY_COMMITTED_METADATA_FAILED')
+        metadataFailed = true
       }
+      if (metadataFailed) throw fault('MEMORY_COMMITTED_METADATA_FAILED')
       return candidate
     }
     return this.locked(

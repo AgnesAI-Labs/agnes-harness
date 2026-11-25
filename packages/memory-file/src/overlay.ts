@@ -86,6 +86,13 @@ function rebuildLayer(
   return { ranges, views, agent, changed }
 }
 
+export function nextLayerExpiry(pipeline: MemoryPipeline, workspace: ViewContext, user: ViewContext) {
+  const ws = pipeline.nextExpiry(workspace.files, workspace)
+  const usr = workspace.userEnabled ? pipeline.nextExpiry(user.files, user) : undefined
+  if (ws === undefined) return usr
+  return usr === undefined ? ws : Math.min(ws, usr)
+}
+
 /** Advance the agent read view independently of the original snapshot and whole-file CAS baseline. */
 export function resolveReadOverlay(turn: TurnReadState, live: LiveOverlayInputs): TurnReadState {
   const files = survivingFiles(live.store, turn.files)
@@ -116,18 +123,14 @@ export function resolveReadOverlay(turn: TurnReadState, live: LiveOverlayInputs)
     live.pipeline,
     turn.invalidIndexLimits ? 'MEMORY.md' : undefined,
   )
-  const usr = rebuildLayer(
-    turn.userBaseRanges,
-    turn.userReadViews,
-    {
-      ...wsCtx,
-      layer: 'user',
-      files: userFiles,
-      validity: live.userValidity,
-      meta: live.userMeta,
-    },
-    live.pipeline,
-  )
+  const userCtx: ViewContext = {
+    ...wsCtx,
+    layer: 'user',
+    files: userFiles,
+    validity: live.userValidity,
+    meta: live.userMeta,
+  }
+  const usr = rebuildLayer(turn.userBaseRanges, turn.userReadViews, userCtx, live.pipeline)
   const revision =
     filesRemoved || ws.changed || usr.changed
       ? hash(
@@ -151,7 +154,7 @@ export function resolveReadOverlay(turn: TurnReadState, live: LiveOverlayInputs)
     userReadViews: usr.views,
     validityRev: live.validityRev,
     userValidityRev: live.userValidityRev,
-    nextExpiry: expiryCrossed ? live.pipeline.nextExpiry(files, wsCtx) : turn.nextExpiry,
+    nextExpiry: expiryCrossed ? nextLayerExpiry(live.pipeline, wsCtx, userCtx) : turn.nextExpiry,
     revision,
   }
 }

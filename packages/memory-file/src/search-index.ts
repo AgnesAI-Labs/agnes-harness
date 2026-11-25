@@ -22,7 +22,7 @@ import type { MetaStore } from './meta.js'
 import { safe } from './paths.js'
 import type { HideRange, MemoryView } from './view.js'
 
-type ReadDocument = { file: MemoryFile; view: MemoryView; fingerprint: string }
+export type ReadDocument = { file: MemoryFile; view: MemoryView; fingerprint: string }
 export function readDocuments(
   files: readonly MemoryFile[],
   views: ReadonlyMap<string, MemoryView>,
@@ -217,14 +217,23 @@ export class SearchIndex {
     return available(() => this.search(this.open(), query))
   }
 
-  query(query: string, files: readonly MemoryFile[], docs: readonly ReadDocument[]) {
+  query(
+    query: string,
+    files: readonly MemoryFile[],
+    docs: readonly ReadDocument[],
+    liveDocs?: () => readonly ReadDocument[],
+  ) {
     return available(() => {
       if (this.closed) throw fault('MEMORY_RECALL_UNAVAILABLE')
       if (!docs.length && !statSync(this.meta.pathOf('index.sqlite'), { throwIfNoEntry: false })?.size)
         return []
       const current = this.meta.store.files()
       const pinned = new Map(files.map((file) => [file.path, file.hash]))
-      if (current.length !== files.length || current.some((file) => pinned.get(file.path) !== file.hash)) {
+      if (
+        current.length !== files.length ||
+        current.some((file) => pinned.get(file.path) !== file.hash) ||
+        (liveDocs && JSON.stringify(manifestOf(docs)) !== JSON.stringify(manifestOf(liveDocs())))
+      ) {
         const db = new DatabaseSync(':memory:')
         try {
           rebuildAll(db, docs.map(materialize))

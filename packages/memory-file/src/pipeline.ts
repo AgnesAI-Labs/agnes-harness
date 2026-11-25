@@ -12,6 +12,7 @@ import type { MetaStore } from './meta.js'
 import { managedParagraphRanges } from './paragraphs.js'
 import { registerMemoryProtection } from './preference-conflict.js'
 import { registerRetrieval } from './recall.js'
+import type { ReadDocument } from './search-index.js'
 import type { HideRange, MemoryView } from './view.js'
 
 export type MemoryClock = () => number
@@ -54,6 +55,7 @@ export type CommitObserver = (intent: CommitIntent, committed: MemoryFile, ctx: 
 
 export type RecallEnvironment = Readonly<{
   revision: string
+  liveDocs?: (layer: ViewContext['layer']) => readonly ReadDocument[]
   workspaceViews: ReadonlyMap<string, MemoryView>
   workspaceRanges?: ReadonlyMap<string, readonly HideRange[]>
   workspaceFiles: readonly MemoryFile[]
@@ -137,7 +139,15 @@ export function createPipeline(): MemoryPipeline {
       return { kind: 'allow' }
     },
     runObservers(intent, committed, ctx) {
-      for (const observer of observers) observer(intent, committed, ctx)
+      let firstFailure: { error: unknown } | undefined
+      for (const observer of observers) {
+        try {
+          observer(intent, committed, ctx)
+        } catch (error) {
+          firstFailure ??= { error }
+        }
+      }
+      if (firstFailure) throw firstFailure.error
     },
     get recall() {
       return recallHandler

@@ -194,9 +194,16 @@ describe('history index', () => {
     ).toEqual([])
     const local = index.query({ ...request, kind: 'recall', access: { kind: 'local', principal: 'owner-b' } })
     expect(local.items.map((item) => item.sessionId).sort()).toEqual(['other-owner', 'readerless'])
+    const recall = { ...request, kind: 'recall' as const }
+    const error = (code: 'INVALID_QUERY' | 'INVALID_CURSOR' | 'FAILED') =>
+      expect.objectContaining({ name: 'HistoryIndexError', code })
+    expect(() => index.query({ ...recall, query: ' ' })).toThrowError(error('INVALID_QUERY'))
+    expect(() => index.query({ ...recall, cursor: 'invalid' })).toThrowError(error('INVALID_CURSOR'))
     using db = new DatabaseSync(join(dir, 'history-index.db'))
     db.exec('DROP TABLE docs_cjk')
     expect(() => index.query({ ...request, kind: 'recall' })).toThrowError(new HistoryIndexError('FAILED'))
+    db.exec('DROP TABLE meta')
+    expect(() => index.query(recall)).toThrowError(error('FAILED'))
   })
 
   it('matches regular English inflections and ignores stopwords in recall while search stays literal', () => {

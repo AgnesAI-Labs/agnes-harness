@@ -278,10 +278,15 @@ export class HistoryIndex {
     this.live()
     const limit = pageLimit(request.limit)
     if (request.kind === 'recall') {
-      const visible = visibility(request.access)
-      const params: Array<string | number> = [...visible.params]
-      const where = visible.sql + this.eventFilters(request, params)
-      return recallEvents(this.db, request, where, params, limit, this.generation())
+      try {
+        const visible = visibility(request.access)
+        const params: Array<string | number> = [...visible.params]
+        const where = visible.sql + this.eventFilters(request, params)
+        return recallEvents(this.db, request, where, params, limit, this.generation())
+      } catch (error) {
+        if (error instanceof HistoryIndexError) throw error
+        throw searchError(error)
+      }
     }
     const filters = cursorFilters(request)
     let offset = 0

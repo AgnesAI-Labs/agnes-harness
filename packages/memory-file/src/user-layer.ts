@@ -10,6 +10,7 @@ import type {
   MemoryValidityView,
 } from '@agnes/extension-api'
 import { checkProposalGuards, commitHooks } from './commit-hooks.js'
+import { formatLifecycleOmission } from './consistency.js'
 import { defaults, diff, fault, file, validateContent } from './content.js'
 import type { MetaStore } from './meta.js'
 import {
@@ -21,6 +22,7 @@ import {
 } from './paragraphs.js'
 import type { CommitIntent, MemoryClock, MemoryPipeline, ViewContext } from './pipeline.js'
 import type { MemoryStore } from './store.js'
+import { buildView, type HideRange } from './view.js'
 
 const INDEX = 'MEMORY.md'
 const SEPARATOR = '\n\n'
@@ -32,15 +34,13 @@ export type UserParagraphPortHooks = Readonly<{
 }>
 
 /**
- * User memory as the agent reads it. A file without any marker is shown exactly as stored. Otherwise the
- * hand-written text comes first (the file with every saved section and every damaged marker region cut
- * out), then the saved sections in force, in file order, as their text only, then one line counting the
- * sections left out (past their review date, or nothing vouches for them). Hand-written text is never
- * pushed out by a saved section: whatever the budget cuts from the end is saved text first.
+ * A plain user file without lifecycle restrictions is shown byte for byte. Hand-written text
+ * comes first, followed by valid saved sections in file order and a count of omitted sections.
+ * This order keeps hand-written preferences visible when the injection budget cuts off the end.
  */
 export type UserLayer = Readonly<{
   text: string
-  /** True when the file holds any marker-like line; only then may revision inputs change. */
+  /** True when the file holds any marker-like line. */
   managed: boolean
   /** Ids left out, sorted; damaged markers without an id are not listed. */
   omittedIds: readonly string[]
@@ -48,8 +48,12 @@ export type UserLayer = Readonly<{
   sections: readonly string[]
 }>
 
-export function renderUserLayer(content: string, view: MemoryValidityView | undefined): UserLayer {
-  return layerOf(content, validityOf(view))
+export function renderUserLayer(
+  content: string,
+  view: MemoryValidityView | undefined,
+  nonManagedRanges: readonly HideRange[] = [],
+): UserLayer {
+  return layerOf(content, validityOf(view), nonManagedRanges)
 }
 
 /**
@@ -70,9 +74,27 @@ function bytesOf(layer: UserLayer): { handWritten: number; rsiInForce: number } 
   }
 }
 
-function layerOf(content: string, validity: (id: string) => MemoryParagraphValidity): UserLayer {
-  if (!markerLines(content).length)
-    return { text: content, managed: false, omittedIds: [], handWritten: content, sections: [] }
+function layerOf(
+  content: string,
+  validity: (id: string) => MemoryParagraphValidity,
+  ranges: readonly HideRange[] = [],
+): UserLayer {
+  // Parse markers in the original bytes. An overlapping withdrawal must never turn a
+  // damaged or expired managed section into ordinary hand-written text.
+  const visible = (start: number, end: number) => {
+    const text = content.slice(start, end)
+    if (!ranges.length) return text
+    const clipped = ranges
+      .filter((r) => r.start < end && start < r.end)
+      .map((r) => ({ ...r, start: r.start - start, end: r.end - start }))
+    return clipped.length
+      ? buildView(file(INDEX, text), clipped, 'note', formatLifecycleOmission).content
+      : text
+  }
+  if (!markerLines(content).length) {
+    const text = visible(0, content.length)
+    return { text, managed: false, omittedIds: [], handWritten: text, sections: [] }
+  }
   const { paragraphs, anomalies } = parseParagraphs(content)
   const valid = paragraphs.filter((paragraph) => validity(paragraph.id) === 'valid')
   // A delivered section is given to the model by the Host: it is neither shown here nor counted.
@@ -90,15 +112,19 @@ function layerOf(content: string, validity: (id: string) => MemoryParagraphValid
   let outside = ''
   let cursor = 0
   for (const region of regions) {
-    outside += content.slice(cursor, region.start)
+    outside += visible(cursor, region.start)
     cursor = Math.max(cursor, region.end)
   }
-  outside += content.slice(cursor)
+  outside += visible(cursor, content.length)
   const handWritten = outside
     .replace(/\n{3,}/g, '\n\n')
     .replace(/^\n+/u, '')
     .replace(/\s+$/u, '')
-  const sections = valid.map((paragraph) => paragraph.text)
+  const sections = valid.map((paragraph) => {
+    if (!ranges.length) return paragraph.text
+    const start = content.indexOf('\n', paragraph.start) + 1
+    return visible(start, start + paragraph.text.length)
+  })
   const count = new Set(left.map(({ start, end }) => `${start}:${end}`)).size
   const text = [handWritten, ...sections, ...(count ? [omissionLine(count)] : [])]
     .filter((piece) => piece.length > 0)
