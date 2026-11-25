@@ -8,7 +8,7 @@ import type {
   MemorySettings,
   MemorySource,
 } from '@agnes/extension-api'
-import { checkProposalGuards, commitHooks } from './commit-hooks.js'
+import { checkProposalGuards, commitHooks, type VerifyCommitView } from './commit-hooks.js'
 import { formatLifecycleOmission } from './consistency.js'
 import { diff, fault, file, validateContent } from './content.js'
 import type { MetaStore } from './meta.js'
@@ -73,12 +73,13 @@ export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<T
     validateContent(entry, store.configuration(), path === 'MEMORY.md')
     return { shown: state.agent.get(path) ?? entry, state }
   }
-  const submit = (leaf: string, before: MemoryFile, candidate: MemoryFile) =>
+  const submit = (leaf: string, before: MemoryFile, candidate: MemoryFile, verifyView: VerifyCommitView) =>
     reviewAndCommit(
       { store, pipeline, clock, root: paths.root, source, signal, approve, active, viewCtx },
       leaf,
       before,
       candidate,
+      verifyView,
     )
 
   return Object.freeze<MemoryFilePort>({
@@ -136,7 +137,16 @@ export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<T
       // A managed paragraph's text changes only by exact replacement or the paragraph port.
       if (leaf === 'MEMORY.md' && paragraphTexts(candidate.content) !== paragraphTexts(before.content))
         throw fault('MEMORY_PARAGRAPH_TEXT_CHANGED')
-      await submit(leaf, before, candidate)
+      await submit(leaf, before, candidate, (current, ctx) => {
+        const view = buildView(
+          current,
+          pipeline.collectHideRanges(current, ctx),
+          'read',
+          formatLifecycleOmission,
+        )
+        if (view.hidden || resolvedFor(turn).readViews.get(leaf)?.hidden)
+          throw fault('MEMORY_HIDDEN_PARAGRAPHS')
+      })
     },
     async replaceExact(path, oldText, newText) {
       const leaf = target(path)
@@ -146,35 +156,40 @@ export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<T
       }
       active()
       signal.throwIfAborted()
-      const state = resolvedFor(capture(source.turn))
+      const turn = capture(source.turn)
+      const state = resolvedFor(turn)
       const before = store.read(leaf)
       const prior = state.files.find((entry) => entry.path === leaf)
       if (leaf === 'MEMORY.md' && state.invalidIndexLimits && prior)
         validateContent(prior, state.invalidIndexLimits, true)
       if (!prior?.bytes && before.bytes) throw fault('MEMORY_REPLACE_NOT_FOUND')
-      const ctx = viewCtx(clock())
-      const omitted = new Set(state.readViews.get(leaf)?.omitted)
-      const ranges = pipeline.collectHideRanges(before, {
-        ...ctx,
-        validity: (id) => (omitted.has(id) ? 'expired' : ctx.validity(id)),
-      })
-      for (const { start, end, reason } of retainedEditRanges(
-        prior?.content ?? '',
-        before.content,
-        state.baseRanges.get(leaf) ?? [],
-      )) {
-        ranges.push({ start, end, reason, appliesTo: 'read' })
+      const replace = (current: MemoryFile, ctx: ViewContext, readState: TurnReadState) => {
+        const omitted = new Set(readState.readViews.get(leaf)?.omitted)
+        const ranges = pipeline.collectHideRanges(current, {
+          ...ctx,
+          validity: (id) => (omitted.has(id) ? 'expired' : ctx.validity(id)),
+        })
+        for (const { start, end, reason } of retainedEditRanges(
+          prior?.content ?? '',
+          current.content,
+          readState.baseRanges.get(leaf) ?? [],
+        )) {
+          ranges.push({ start, end, reason, appliesTo: 'read' })
+        }
+        const view = buildView(current, ranges, 'read', formatLifecycleOmission)
+        return replaceInMemoryView(
+          current.content,
+          view,
+          markerLines(current.content),
+          oldText,
+          newText,
+          markerSet,
+        )
       }
-      const view = buildView(before, ranges, 'read', formatLifecycleOmission)
-      const replaced = replaceInMemoryView(
-        before.content,
-        view,
-        markerLines(before.content),
-        oldText,
-        newText,
-        markerSet,
-      )
-      await submit(leaf, before, file(leaf, replaced))
+      const candidate = file(leaf, replace(before, viewCtx(clock()), state))
+      await submit(leaf, before, candidate, (current, ctx) => {
+        if (replace(current, ctx, resolvedFor(turn)) !== candidate.content) throw fault('MEMORY_CONFLICT')
+      })
     },
     ...(pipeline.recall
       ? {
@@ -235,6 +250,7 @@ async function reviewAndCommit(
   leaf: string,
   before: MemoryFile,
   candidate: MemoryFile,
+  verifyView: VerifyCommitView,
 ): Promise<void> {
   const { store, pipeline, clock, source, signal, approve, active, viewCtx } = context
   const config = active()
@@ -287,6 +303,6 @@ async function reviewAndCommit(
     config.mode,
     signal,
     admission,
-    commitHooks(pipeline, intent, () => viewCtx(clock())),
+    commitHooks(pipeline, intent, viewCtx, clock, verifyView),
   )
 }

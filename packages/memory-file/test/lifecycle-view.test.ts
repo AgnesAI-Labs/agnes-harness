@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { MemoryFile, MemoryParagraphValidity } from '@agnes/extension-api'
+import type { MemoryApprovalResult, MemoryFile, MemoryParagraphValidity } from '@agnes/extension-api'
 import { afterEach, expect, it } from 'vitest'
 import {
   buildIndexView,
@@ -63,12 +63,15 @@ async function fixture() {
   const outside = async (): Promise<never> => {
     throw new Error('outside memory')
   }
-  const files = (turn: number) =>
+  const files = (
+    turn: number,
+    approve: () => Promise<MemoryApprovalResult> = async () => ({ status: 'approved' }),
+  ) =>
     session.files(
       { read: outside, write: outside, list: outside, stat: outside },
       { sessionKey: 'writer', turn },
       new AbortController().signal,
-      async () => ({ status: 'approved' }),
+      approve,
     )
   const path = (leaf: string) => join(session.root, leaf)
   const read = async (turn: number, leaf = index) =>
@@ -220,6 +223,38 @@ it('removes withdrawn references immediately from reads and recall and from the 
       code: 'MEMORY_REPLACE_NOT_FOUND',
     },
   )
+})
+
+it.each([
+  ['replaceExact', 'expiry', 'MEMORY_REPLACE_NOT_FOUND'],
+  ['replaceExact', 'withdrawal', 'MEMORY_REPLACE_NOT_FOUND'],
+  ['write', 'expiry', 'MEMORY_HIDDEN_PARAGRAPHS'],
+] as const)('rechecks %s when %s occurs during approval', async (operation, restriction, code) => {
+  const f = await fixture()
+  const id = 'r0000000001'
+  f.statuses.set(id, 'valid')
+  const raw =
+    restriction === 'expiry'
+      ? '<!-- expires_at: 2027-01-01T00:00:01Z -->\nDeployment fact.'
+      : `Deployment fact. <!-- ref:${id} -->`
+  const path = f.path(index)
+  await f.files(0).write(path, raw)
+  await f.session.configure({ mode: 'ask' })
+  const port = f.files(1, async () => {
+    await Promise.resolve()
+    if (restriction === 'expiry') f.state.now += 1000
+    else {
+      f.statuses.delete(id)
+      f.state.revision++
+    }
+    return { status: 'approved' }
+  })
+  const edit =
+    operation === 'write'
+      ? port.write(path, 'Changed.')
+      : port.replaceExact?.(path, 'Deployment fact.', 'Changed.')
+  await expect(edit).rejects.toMatchObject({ code })
+  expect((await f.session.readFile(index)).content).toBe(raw)
 })
 
 it('maps visible text to its raw lines, preserves hidden bytes on replacement, and refuses whole-file writes', async () => {

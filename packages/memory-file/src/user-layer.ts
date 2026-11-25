@@ -238,7 +238,7 @@ export function userParagraphPort(
         false,
         signal,
         admission,
-        hooks ? commitHooks(hooks.pipeline, entry.intent, () => makeContext(hooks.clock())) : undefined,
+        hooks ? commitHooks(hooks.pipeline, entry.intent, makeContext, hooks.clock) : undefined,
       )
       return { hash: committed.hash }
     },

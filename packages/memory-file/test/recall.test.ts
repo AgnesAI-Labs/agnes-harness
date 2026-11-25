@@ -199,6 +199,33 @@ describe('file memory recall', () => {
     expect((await f.recall(2, 'lake')).hits).toHaveLength(1)
   })
 
+  it('answers the pinned query when another connection publishes after the initial view check', async () => {
+    const f = fixture()
+    await f.session.configure({ mode: 'auto' })
+    const path = join(f.root, 'topic.md')
+    await f.port(0).write(path, 'Old mountain')
+    const pinned = f.store.files()
+    const docsFor = (files: typeof pinned) =>
+      readDocuments(
+        files,
+        new Map(files.map((entry) => [entry.path, buildView(entry, [], 'read')])),
+        f.store.configuration(),
+      )
+    const writer = new SearchIndex(f.meta)
+    clean.push(() => writer.close())
+    const hits = f.internal.query('mountain', pinned, docsFor(pinned), () => {
+      const live = docsFor(f.store.files())
+      // Finish the competing publication after taking the initial live snapshot.
+      if (live[0]?.file.hash === pinned[0]?.hash) {
+        writeFileSync(path, 'New lake')
+        writer.committed(docsFor(f.store.files()))
+      }
+      return live
+    })
+    expect(hits).toMatchObject([{ text: 'Old mountain' }])
+    expect(writer.inspectIndexedChunks()).toMatchObject([{ text: 'New lake' }])
+  })
+
   it.each(['workspace', 'user'] as const)(
     'keeps a renewed %s paragraph in the shared index',
     async (layer) => {

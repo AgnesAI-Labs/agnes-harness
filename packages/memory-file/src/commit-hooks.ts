@@ -1,7 +1,7 @@
 import type { MemoryFile } from '@agnes/extension-api'
 import { appendAudit } from './audit.js'
 import { fault } from './content.js'
-import type { CommitIntent, MemoryPipeline, ViewContext } from './pipeline.js'
+import type { CommitIntent, MemoryClock, MemoryPipeline, ViewContext } from './pipeline.js'
 import { prepareMemoryProtection } from './preference-conflict.js'
 
 function guardRefusal(pipeline: MemoryPipeline, intent: CommitIntent, ctx: ViewContext) {
@@ -45,21 +45,39 @@ export async function checkProposalGuards(
   throw refusal.error
 }
 
+export type VerifyCommitView = (before: MemoryFile, ctx: ViewContext) => void
+
 /** Recheck policy and metadata capacity under the store lock, then observe the published file. */
 export function commitHooks(
   pipeline: MemoryPipeline,
   source: Omit<CommitIntent, 'before' | 'candidate'>,
-  context: () => ViewContext,
+  context: (now: number) => ViewContext,
+  clock: MemoryClock,
+  verifyView?: VerifyCommitView,
 ) {
   return (before: MemoryFile, candidate: MemoryFile) => {
     const intent = { ...source, before, candidate }
-    const ctx = context()
+    const ctx = context(clock())
+    verifyView?.(before, ctx)
     const refusal = intent.origin !== 'human' && guardRefusal(pipeline, intent, ctx)
     if (refusal) {
       refusal.audit()
       throw refusal.error
     }
     prepareMemoryProtection(pipeline, intent, ctx)
-    return () => pipeline.runObservers(intent, candidate, context())
+    return () => {
+      const now = clock()
+      let postCtx: ViewContext
+      try {
+        postCtx = context(now)
+      } catch {
+        // External file changes can prevent enumeration after rename. Preserve the commit for observers.
+        const byPath = new Map(ctx.files.map((file) => [file.path, file]))
+        byPath.set(candidate.path, candidate)
+        const files = [...byPath.values()]
+        postCtx = { ...ctx, now, files, ...(ctx.layer === 'user' ? { userFiles: files } : {}) }
+      }
+      pipeline.runObservers(intent, candidate, postCtx)
+    }
   }
 }

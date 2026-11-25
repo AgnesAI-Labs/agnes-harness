@@ -21,6 +21,7 @@ import { defaults, fault, file, settings, storedSettings, validateContent } from
 import { isMemoryName, missing, name, safe } from './paths.js'
 
 const MAX_FILE_BYTES = 1024 * 1024
+const MAX_FILES = 128
 
 export class MemoryStore {
   constructor(
@@ -68,7 +69,7 @@ export class MemoryStore {
       )
       .map((entry) => entry.name)
       .sort()
-    if (paths.length > 128) throw fault('MEMORY_CONSOLIDATION_REQUIRED')
+    if (paths.length > MAX_FILES) throw fault('MEMORY_CONSOLIDATION_REQUIRED')
     return paths.map((path) => this.read(path))
   }
   configuration(): MemorySettings {
@@ -235,6 +236,8 @@ export class MemoryStore {
       const current = this.read(candidate.path)
       if (current.hash !== baseHash) throw fault('MEMORY_CONFLICT')
       const all = this.files('commit')
+      if (!all.some((entry) => entry.path === candidate.path) && all.length + 1 > MAX_FILES)
+        throw fault('MEMORY_CONSOLIDATION_REQUIRED')
       const bytes =
         all.filter((entry) => entry.path !== candidate.path).reduce((n, entry) => n + entry.bytes, 0) +
         candidate.bytes

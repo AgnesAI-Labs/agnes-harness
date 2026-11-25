@@ -442,7 +442,8 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
         commitHooks(
           pipeline,
           { origin: 'human', actor, path: leaf, via: 'edit', layer: 'workspace', source: editSource },
-          () => viewCtx(clock()),
+          viewCtx,
+          clock,
         ),
       )
     },

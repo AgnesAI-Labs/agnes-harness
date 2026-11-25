@@ -227,23 +227,34 @@ export class SearchIndex {
       if (this.closed) throw fault('MEMORY_RECALL_UNAVAILABLE')
       if (!docs.length && !statSync(this.meta.pathOf('index.sqlite'), { throwIfNoEntry: false })?.size)
         return []
-      const current = this.meta.store.files()
       const pinned = new Map(files.map((file) => [file.path, file.hash]))
-      if (
-        current.length !== files.length ||
-        current.some((file) => pinned.get(file.path) !== file.hash) ||
-        (liveDocs && JSON.stringify(manifestOf(docs)) !== JSON.stringify(manifestOf(liveDocs())))
-      ) {
-        const db = new DatabaseSync(':memory:')
-        try {
-          rebuildAll(db, docs.map(materialize))
-          return this.search(db, query)
-        } finally {
-          db.close()
+      const isStale = () => {
+        const current = this.meta.store.files()
+        return (
+          current.length !== files.length ||
+          current.some((file) => pinned.get(file.path) !== file.hash) ||
+          (liveDocs && JSON.stringify(manifestOf(docs)) !== JSON.stringify(manifestOf(liveDocs())))
+        )
+      }
+      const searchSnapshot = () => {
+        using db = new DatabaseSync(':memory:')
+        rebuildAll(db, docs.map(materialize))
+        return this.search(db, query)
+      }
+      if (isStale()) return searchSnapshot()
+      const db = this.open()
+      if (!upToDate(db, docs)) {
+        const stale = transaction(db, () => {
+          if (upToDate(db, docs)) return false
+          if (isStale()) return true
+          this.reconcile(db, docs, false)
+          return false
+        })
+        if (stale) {
+          this.disconnect()
+          return searchSnapshot()
         }
       }
-      const db = this.open()
-      if (!upToDate(db, docs)) transaction(db, () => this.reconcile(db, docs, false))
       return this.search(db, query)
     })
   }

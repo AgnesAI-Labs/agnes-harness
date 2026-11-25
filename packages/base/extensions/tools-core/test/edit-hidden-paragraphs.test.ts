@@ -18,6 +18,8 @@ type Opts = {
   after?: string
   /** Fail the nth replaceExact call (1-based) with this error. */
   failCall?: Record<number, Fault>
+  /** Raise a metadata error after writing the nth replacement. */
+  failMetadataAt?: number
   /** Runs when the whole-file write is refused, before the refusal is raised. */
   onRefusedWrite?: (state: State) => void
   withReplaceExact?: boolean
@@ -57,6 +59,8 @@ function memoryCtx(opts: Opts = {}) {
       if (end <= b) state.before = state.before.replace(oldText, () => newText)
       else if (at >= b + NOTICE.length) state.after = state.after.replace(oldText, () => newText)
       else throw Object.assign(new Error('MEMORY_HIDDEN_PARAGRAPHS'), { code: 'MEMORY_HIDDEN_PARAGRAPHS' })
+      if (calls.length === opts.failMetadataAt)
+        throw Object.assign(new Error('metadata failed'), { code: 'MEMORY_COMMITTED_METADATA_FAILED' })
     }
   return { ctx, state, calls, stored }
 }
@@ -195,6 +199,35 @@ describe('edit on a memory file that hides paragraphs', () => {
     expect(text).toContain('edit 3 was not attempted')
     expect(text).toContain('managed paragraphs')
   })
+
+  it.each([
+    { total: 1, index: 0, applied: [0], notApplied: [] },
+    { total: 3, index: 1, applied: [0, 1], notApplied: [2] },
+  ])(
+    'reports the written edit after metadata fails in a batch of $total',
+    async ({ total, index, applied, notApplied }) => {
+      const { ctx, stored } = await observed({ failMetadataAt: index + 1 })
+      const edits = ['alpha', 'beta', 'gamma'].slice(0, total).map((word) => ({
+        oldText: `${word} line`,
+        newText: `${word} changed`,
+      }))
+      const result = await editTool.execute({ path: 'memory/MEMORY.md', edits }, ctx)
+      expect(result.isError).toBe(true)
+      expect(result.details).toMatchObject({ code: 'MEMORY_COMMITTED_METADATA_FAILED' })
+      expect(result.structured).toMatchObject({
+        category: 'write_failed',
+        index,
+        written: true,
+        applied,
+        notApplied,
+      })
+      const text = textOf(result)
+      expect(text).toContain(`edit ${index + 1} was written`)
+      expect(text).toContain('metadata update failed')
+      if (total > 1) expect(text).toContain('edit 3 was not attempted')
+      expect(stored()).toBe(`alpha changed\nbeta ${total > 1 ? 'changed' : 'line'}\n${HIDDEN}gamma line\n`)
+    },
+  )
 
   it('reports nothing applied when the first replacement fails', async () => {
     const { ctx, stored } = await observed({ failCall: { 1: { code: 'MEMORY_APPROVAL_REJECTED' } } })

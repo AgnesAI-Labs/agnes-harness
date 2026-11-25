@@ -124,7 +124,12 @@ export function paragraphPort(
         signal,
         admission,
         hooks
-          ? commitHooks(hooks.pipeline, entry.intent, () => makeContext(store.configuration(), hooks.clock()))
+          ? commitHooks(
+              hooks.pipeline,
+              entry.intent,
+              (now) => makeContext(store.configuration(), now),
+              hooks.clock,
+            )
           : undefined,
       )
       return { hash: committed.hash }

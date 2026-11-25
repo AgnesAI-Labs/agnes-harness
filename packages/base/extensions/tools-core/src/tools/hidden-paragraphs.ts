@@ -10,6 +10,7 @@ export const PARAGRAPH_TEXT_CHANGED = 'MEMORY_PARAGRAPH_TEXT_CHANGED'
 export const HUMAN_EDITED = 'MEMORY_HUMAN_EDITED'
 export const PARAGRAPH_EDITED = 'MEMORY_PARAGRAPH_EDITED'
 export const PREFERENCE_CONFLICT = 'MEMORY_PREFERENCE_CONFLICT'
+const COMMITTED_METADATA_FAILED = 'MEMORY_COMMITTED_METADATA_FAILED'
 
 /** The refusals after which a change must go through as single exact replacements. */
 export const isHiddenParagraphs = (error: unknown): boolean => {
@@ -83,8 +84,10 @@ export async function replaceOneByOne(
     try {
       await replaceExact.call(ctx.fs, path, edit.oldText, edit.newText)
     } catch (e) {
-      if (ctx.signal.aborted) throw e
-      return { applied, failure: { index, code: failureCode(e, 'FS_EDIT_REPLACE_FAILED') } }
+      const code = failureCode(e, 'FS_EDIT_REPLACE_FAILED')
+      if (code === COMMITTED_METADATA_FAILED) applied.push(index)
+      else if (ctx.signal.aborted) throw e
+      return { applied, failure: { index, code } }
     }
     applied.push(index)
   }
@@ -99,6 +102,23 @@ export function exactFailure(ctx: ToolContext, outcome: ExactOutcome, total: num
   const index = failure?.index ?? null
   const code = failure?.code ?? HIDDEN_PARAGRAPHS
   const rest = index === null ? [] : Array.from({ length: total - index - 1 }, (_, k) => index + 1 + k)
+  if (index !== null && applied.includes(index)) {
+    const parts = [
+      `Memory edit ${index + 1} was written to the file, but the metadata update failed (${code}).`,
+    ]
+    if (applied.length > 1) parts.push('Earlier edits stay applied.')
+    if (rest.length === 1) parts.push(`Remaining edit ${nth(rest)} was not attempted.`)
+    if (rest.length > 1) parts.push(`Remaining edits ${nth(rest)} were not attempted.`)
+    const hint = rest.length
+      ? `Read the file again and resend only ${rest.length === 1 ? 'edit' : 'edits'} ${nth(rest)}.`
+      : 'All edits from this call are already in the file.'
+    parts.push(hint)
+    return editFailure(ctx, code, 'write_failed', index, true, parts.join(' '), {
+      applied,
+      notApplied: rest,
+      hint,
+    })
+  }
   const notApplied = index === null ? Array.from({ length: total }, (_, k) => k) : [index, ...rest]
   const parts =
     index === null

@@ -1,4 +1,5 @@
-import { appendFile, link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { existsSync, writeFileSync } from 'node:fs'
+import { appendFile, link, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, parse } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -317,6 +318,38 @@ describe('file memory contract', () => {
     expect((await f.session.readFile('MEMORY.md')).content).toBe('stable convention '.repeat(40))
   })
 
+  it('refuses a 129th file before publication and still allows edits to existing files', async () => {
+    const f = await fixture()
+    await f.session.configure({ mode: 'auto' })
+    const names = Array.from({ length: 128 }, (_, i) => `topic-${i}.md`).sort()
+    await Promise.all(names.map((name) => writeFile(join(f.session.root, name), '')))
+    await expect(f.files(1).write(f.index, 'New index')).rejects.toMatchObject({
+      code: 'MEMORY_CONSOLIDATION_REQUIRED',
+    })
+    expect((await readdir(f.session.root)).filter((name) => name.endsWith('.md')).sort()).toEqual(names)
+    expect((await f.session.inspect()).files).toHaveLength(128)
+    await f.files(2).write(join(f.session.root, 'topic-0.md'), 'Updated topic')
+    expect((await f.session.readFile('topic-0.md')).content).toBe('Updated topic')
+  })
+
+  it('records the published file when an external file prevents post-commit enumeration', async () => {
+    const f = await fixture()
+    await f.session.configure({ mode: 'ask' })
+    const admission = {
+      verify: async () => {},
+      assertActive() {
+        if (existsSync(f.index)) writeFileSync(join(f.session.root, 'invalid name.md'), '')
+      },
+    }
+    await f.files(1, async () => ({ status: 'approved', admission })).write(f.index, 'Published fact')
+    await expect(f.session.inspect()).rejects.toMatchObject({ code: 'MEMORY_SCOPE_DENIED' })
+    const committed = await f.session.readFile('MEMORY.md')
+    const meta = new MetaStore(new MemoryStore(roots(f.home, f.home).protectedRoot, f.session.root))
+    expect(readAuditEntries(meta).at(-1)).toMatchObject({ action: 'commit', afterHash: committed.hash })
+    using db = new DatabaseSync(meta.pathOf('index.sqlite'), { readOnly: true })
+    expect(db.prepare('SELECT text FROM chunks').all()).toEqual([{ text: 'Published fact' }])
+  })
+
   it('denies cross-workspace and hardlink escapes and missing topic references', async () => {
     const f = await fixture()
     await f.session.configure({ mode: 'auto' })
@@ -451,7 +484,6 @@ it.each(
   const admission = { verify: async () => assertActive(), assertActive }
   const { MemoryStore } = await import('../src/store.js')
   const { vi } = await import('vitest')
-  const { readdir } = await import('node:fs/promises')
   const atomic = MemoryStore.prototype.atomic
   const spy = vi.spyOn(MemoryStore.prototype, 'atomic').mockImplementation(function (
     this: import('../src/store.js').MemoryStore,
