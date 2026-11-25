@@ -640,7 +640,9 @@ describe('subagent_collect', () => {
       collect: async (childKey) => ({
         childKey,
         status,
-        ...(status === 'completed' ? { text: 'done', credits: 3 } : {}),
+        ...(status === 'completed'
+          ? { text: 'done', credits: 3, completionId: 'done-1', completionSeq: 19 }
+          : {}),
       }),
     })
 
@@ -655,10 +657,12 @@ describe('subagent_collect', () => {
     const done = await subagentCollectTool(d).execute({ childKey: 'c1' }, c.ctx)
     expect(c.calls.collect.at(-1)).toEqual(['c1', { wait: true }])
     expect(done.content).toEqual([{ type: 'text', text: 'done' }])
-    expect(done.details).toEqual({
+    expect(done.structured).toEqual({
       childKey: 'c1',
       status: 'completed',
       credits: 3,
+      completionId: 'done-1',
+      completionSeq: 19,
     })
     expect(wt.calls.finish).toEqual([])
     expect((await subagentSpawnTool(d).execute({ task: 'now allowed' }, c.ctx)).isError).toBeUndefined()
@@ -893,7 +897,7 @@ describe('child allowlist and continuable controls', () => {
     expect(first.isError).toBeUndefined()
     const second = await spawn.execute({ task: 'lane-2' }, ctx)
     expect(second.isError).toBe(true)
-    expect(second.details).toMatchObject({
+    expect(second.structured).toEqual({
       code: 'E_CHILD_LIMIT',
       limit: 1,
       active: 1,

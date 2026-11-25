@@ -158,7 +158,8 @@ export function controlFailure(error: unknown): ToolResult {
   if (error instanceof CoreError) {
     const hint =
       error.code === 'E_CHILD_NOT_FOUND' ? ' Call subagent_list to inspect valid childKey handles.' : ''
-    return { ...fail(`${error.message}${hint}`), details: { code: error.code } }
+    const details = { ...error.detail, code: error.code }
+    return { ...fail(`${error.message}${hint}`), details, structured: details }
   }
   throw error
 }
@@ -322,16 +323,18 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
           .filter(([, rec]) => rec.running)
           .map(([key]) => key)
         prune(runtime, sessionKey, state)
+        const details = {
+          code: 'E_CHILD_LIMIT',
+          limit: deps.limits.maxFanOut,
+          active: activeCount,
+          activeChildKeys,
+        }
         return {
           ...fail(
             `fan-out limit ${deps.limits.maxFanOut} reached (${activeCount} active). Collect or wait for an active child with subagent_collect, or pause/cancel one, before spawning the next batch.`,
           ),
-          details: {
-            code: 'E_CHILD_LIMIT',
-            limit: deps.limits.maxFanOut,
-            active: activeCount,
-            activeChildKeys,
-          },
+          details,
+          structured: details,
         }
       }
 
@@ -424,7 +427,16 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
           const hint = error.message.includes('fan-out limit')
             ? ' Collect or wait for an active child with subagent_collect, or pause/cancel one, before spawning the next batch.'
             : ''
-          return { ...fail(`${error.message}${hint}`), details: { code: error.code } }
+          const { limit, active, activeChildKeys } = error.detail ?? {}
+          const details = {
+            code: error.code,
+            ...(typeof limit === 'number' ? { limit } : {}),
+            ...(typeof active === 'number' ? { active } : {}),
+            ...(Array.isArray(activeChildKeys)
+              ? { activeChildKeys: activeChildKeys.filter((key): key is string => typeof key === 'string') }
+              : {}),
+          }
+          return { ...fail(`${error.message}${hint}`), details, structured: details }
         }
         // Core refuses an unusable model before it creates anything.
         const refusedModel = childKey ? undefined : modelRefusal(error, ctx)
@@ -525,7 +537,10 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
         childKey: result.childKey,
         status: result.status,
         ...failureDetails(result),
+        ...(result.completionId === undefined ? {} : { completionId: result.completionId }),
+        ...(result.completionSeq === undefined ? {} : { completionSeq: result.completionSeq }),
         ...(result.credits === undefined ? {} : { credits: result.credits }),
+        ...(result.waitTimedOut ? { waitTimedOut: true } : {}),
       }
 
       if (result.status === 'running' && args.wait === false) {
@@ -550,6 +565,7 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
       return {
         content: [{ type: 'text', text }],
         details,
+        structured: details,
         ...(result.status === 'failed' ? { isError: true } : {}),
       }
     },

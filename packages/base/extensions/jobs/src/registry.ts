@@ -34,6 +34,7 @@ interface Job {
   view: ShellJobView
   /** When the registry took the job on; a read of a running job says how long it has run. */
   startedAt: number
+  childIdle?: boolean
   /** Last output, input or read; an idle persistent shell or terminal is closed from it. */
   activeAt: number
   capturedBytes: number
@@ -526,12 +527,30 @@ export class ShellJobs {
         })
       if (controls.cancel) job.stop = () => controls.cancel!(child.id)
       if (child.text !== undefined) this.appendChildText(job, child.text)
-      if (['completed', 'failed', 'cancelled'].includes(child.status)) {
-        if (child.status === 'cancelled') job.view.status = 'killed'
-        job.finish(child.status === 'completed' ? 0 : -1)
-      }
+      this.syncChildOutcome(job, child.status)
     }
   }
+  private syncChildOutcome(job: Job, status: import('@agnes/extension-api').ChildAgentStatus) {
+    if (status === 'idle') {
+      if (job.view.status === 'killed') return
+      // The resident's last turn is done. Keep the job open for its next turn.
+      job.childIdle = true
+      job.view.status = 'completed'
+      job.view.code = 0
+      return
+    }
+    if (job.childIdle) {
+      job.childIdle = false
+      job.startedAt = Date.now()
+      job.view.status = 'running'
+      job.view.code = null
+    }
+    if (job.view.code !== null) return
+    if (status === 'cancelled') job.view.status = 'killed'
+    if (status === 'completed' || status === 'failed' || status === 'cancelled')
+      job.finish(status === 'completed' ? 0 : -1)
+  }
+
   output(ctx: JobOwner, id: string, cursor?: string) {
     const job = this.get(ctx, id)
     job.activeAt = Date.now()
@@ -594,14 +613,18 @@ export class ShellJobs {
   }
   async kill(ctx: JobOwner, id: string): Promise<ShellJobView> {
     const job = this.get(ctx, id)
-    if (job.view.status === 'running' || job.cleanupPending) {
+    if (job.view.status === 'running' || job.cleanupPending || job.childIdle) {
+      const { status, code } = job.view
+      job.view.code = null
       job.view.status = 'killed'
       try {
         await job.stop()
         job.cleanupPending = false
+        job.childIdle = false
         job.finish(-1)
       } catch (error) {
-        job.view.status = 'running'
+        job.view.status = status
+        job.view.code = code
         throw error
       }
     }

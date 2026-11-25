@@ -13,12 +13,13 @@ it('unifies child output/cancellation with owner isolation and completion notifi
   const jobs = new ShellJobs(),
     ctx = fakeToolContext({ sessionKey: 'parent' })
   let cancelled = false
+  let idle = false
   let latest = 'child output'
   ctx.subagent.list = async () => [
     {
       id: 'child-1',
       providerId: 'acp',
-      status: cancelled ? 'cancelled' : 'running',
+      status: cancelled ? 'cancelled' : idle ? 'idle' : 'running',
       continuable: true,
     },
   ]
@@ -75,6 +76,16 @@ it('unifies child output/cancellation with owner isolation and completion notifi
   expect(
     (await output!.execute({ jobId: 'child:child-1' }, fakeToolContext({ sessionKey: 'foreign' }))).isError,
   ).toBe(true)
+  idle = true
+  const settled = await output!.execute({ jobId: 'child:child-1' }, ctx)
+  expect(settled.structured).toMatchObject({ status: 'completed' })
+  expect(jobs.list(ctx)).toMatchObject([{ status: 'completed', code: 0 }])
+  expect(JSON.stringify(settled.content)).not.toContain('running for')
+  expect(jobs.completions(ctx)).toEqual([])
+  idle = false
+  expect((await output!.execute({ jobId: 'child:child-1' }, ctx)).structured).toMatchObject({
+    status: 'running',
+  })
   expect((await kill!.execute({ jobId: 'child:child-1' }, ctx)).structured).toEqual({
     jobId: 'child:child-1',
     status: 'killed',
