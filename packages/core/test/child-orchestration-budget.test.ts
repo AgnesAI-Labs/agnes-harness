@@ -171,12 +171,12 @@ describe.each(['memory', 'sqlite'] as const)('%s child admission', (backend) => 
   it('accounts for unbounded children and keeps their floor out of spend', async () => {
     const { store, input } = await budgetStore(backend, 3)
     const first = await ChildAdmissionGuard.reserve(store, input('unbounded', null))
-    expect(await computeRemainingTreeCredits(store, 'root')).toBe(2.25)
+    expect(await computeRemainingTreeCredits(store, 'root', 4)).toBe(2.25)
     await expect(ChildAdmissionGuard.reserve(store, input('too-big', 3))).rejects.toMatchObject({
       code: 'E_BUDGET',
     })
     await first.release()
-    expect(await computeRemainingTreeCredits(store, 'root')).toBe(3)
+    expect(await computeRemainingTreeCredits(store, 'root', 4)).toBe(3)
   })
 })
 

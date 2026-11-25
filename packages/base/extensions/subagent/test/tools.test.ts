@@ -158,7 +158,7 @@ describe('subagent tool definitions', () => {
     expect(tools[1]?.description).toContain('non-git')
     expect(tools[0]?.description).toContain('non-git')
     expect(tools[0]?.meta).toMatchObject({ isReadOnly: false, isOpenWorld: true, replay: 'never' })
-    expect(tools[2]?.meta).toMatchObject({ isReadOnly: false, isDestructive: false })
+    expect(tools[2]?.meta).toMatchObject({ isReadOnly: true, isDestructive: false })
   })
 
   it('the explicit extension factory registers and disposes all child tools', () => {

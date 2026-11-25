@@ -1,7 +1,7 @@
-import { CoreError } from '@agnes/core'
 import type { ToolContext, ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
+import { controlFailure } from './tools.js'
 
 const childKey = Type.String({ minLength: 1 })
 const target = Type.Object({ childKey }, { additionalProperties: false })
@@ -18,18 +18,6 @@ type Result = Awaited<ReturnType<NonNullable<ToolContext['subagent']['pause']>>>
 
 function unsupported(message: string): ToolResult {
   return { isError: true, content: [{ type: 'text', text: message }], details: { code: 'E_UNSUPPORTED' } }
-}
-function lifecycleFailure(error: unknown): ToolResult {
-  if (error instanceof CoreError) {
-    const hint =
-      error.code === 'E_CHILD_NOT_FOUND' ? ' Call subagent_list to inspect valid childKey handles.' : ''
-    return {
-      isError: true,
-      content: [{ type: 'text', text: `${error.message}${hint}` }],
-      details: { code: error.code },
-    }
-  }
-  throw error
 }
 function report(result: Result): ToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { ...result } }
@@ -53,7 +41,7 @@ export const subagentPauseTool = defineTool({
     try {
       return report(await ctx.subagent.pause(childKey, reason ? { reason } : {}))
     } catch (error) {
-      return lifecycleFailure(error)
+      return controlFailure(error)
     }
   },
 })
@@ -70,7 +58,7 @@ export const subagentResumeTool = defineTool({
         return unsupported('The child backend did not report the resume outcome.')
       return report({ childKey, previousStatus, status, executionState })
     } catch (error) {
-      return lifecycleFailure(error)
+      return controlFailure(error)
     }
   },
 })
@@ -85,7 +73,7 @@ export const subagentCloseTool = defineTool({
     try {
       return report(await ctx.subagent.close(childKey))
     } catch (error) {
-      return lifecycleFailure(error)
+      return controlFailure(error)
     }
   },
 })

@@ -154,7 +154,7 @@ function missedChild(error: unknown): boolean {
   return error instanceof CoreError && (error.code === 'E_UNSUPPORTED' || error.code === 'E_CHILD_NOT_FOUND')
 }
 
-function controlFailure(error: unknown): ToolResult {
+export function controlFailure(error: unknown): ToolResult {
   if (error instanceof CoreError) {
     const hint =
       error.code === 'E_CHILD_NOT_FOUND' ? ' Call subagent_list to inspect valid childKey handles.' : ''
@@ -498,7 +498,7 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
       'Read the current or terminal result of a spawned child on demand. Do not poll: when a child finishes its turn or ends, the platform delivers a child-completed notice to this session.',
     parameters: collectParameters,
     meta: {
-      isReadOnly: false,
+      isReadOnly: true,
       isDestructive: false,
       isConcurrencySafe: true,
       isOpenWorld: false,
