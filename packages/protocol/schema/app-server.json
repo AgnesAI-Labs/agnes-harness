@@ -3331,8 +3331,13 @@
           "enum": ["valid", "expired", "unknown"]
         },
         "hidden": {
-          "description": "True when the paragraph is within its review period in the registry, yet all of its content is hidden from the agent by an expiry annotation or a withdrawn reference.",
+          "description": "True when the paragraph is within its review period in the registry, yet all of its content is hidden from the agent by a provider visibility filter, such as an expiry annotation, withdrawn reference, or unverified topic summary.",
           "const": true
+        },
+        "nextExpiry": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Earliest upcoming visibility expiry timestamp (epoch ms) for this paragraph's visible body, when an expiry annotation sets one earlier than or alongside reviewAfter."
         },
         "reviewAfter": {
           "type": "integer",

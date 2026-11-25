@@ -181,7 +181,7 @@ it.each(visibilityCases)(
         ['memory-user-saved-paragraph', mode !== 'off' && userEnabled],
       ] as const) {
         const row = [...host.querySelectorAll(`[data-testid="${id}"]`)].at(-1)?.textContent
-        const reason = zh ? '到期标注或引用的记忆已撤回' : 'expiry annotation or a withdrawn reference'
+        const reason = zh ? '关联的主题已更改或删除' : 'outdated or missing topic'
         if (visibleLayer) {
           expect(row).toContain(reason)
           expect(row).toContain(
@@ -329,7 +329,7 @@ it('opens the memory files subpage with MEMORY.md, saves with the version it rea
   }
 })
 
-it.each(['reviewAfter', 'paragraph annotation', 'index annotation'])(
+it.each(['reviewAfter', 'paragraph annotation', 'index annotation', 'provider expiry'])(
   'refreshes a saved row at its %s deadline',
   async (source) => {
     const now = Date.UTC(2027, 0, 1)
@@ -339,9 +339,11 @@ it.each(['reviewAfter', 'paragraph annotation', 'index annotation'])(
       id: 'ra000000001',
       text: source === 'paragraph annotation' ? `Remember\n${annotation}\nDetails` : 'Remember',
       validity: 'valid',
+      ...(source === 'provider expiry' ? { nextExpiry: deadline } : {}),
       reviewAfter: source === 'reviewAfter' ? deadline : now + 86_400_000,
     }
     saved = [item]
+    if (source === 'provider expiry') userSaved = [item]
     vi.useFakeTimers({ now, toFake: ['Date', 'setTimeout', 'clearTimeout'] })
     server()
     const { host, unmount } = await render()
@@ -358,9 +360,14 @@ it.each(['reviewAfter', 'paragraph annotation', 'index annotation'])(
       }
       expect(row()).toContain('The agent sees it.')
       saved = source === 'reviewAfter' ? [{ ...item, validity: 'expired' }] : [{ ...item, hidden: true }]
+      if (source === 'provider expiry') userSaved = [{ ...item, hidden: true }]
       await act(async () => vi.advanceTimersByTimeAsync(29_999))
       expect(row()).toContain('The agent sees it.')
       await act(async () => vi.advanceTimersByTimeAsync(1))
+      if (source === 'provider expiry')
+        expect(host.querySelector('[data-testid="memory-user-saved-paragraph"]')?.textContent).toMatch(
+          /expiry annotation/i,
+        )
       expect(row()).toMatch(
         source === 'reviewAfter' ? /past its review date/i : /expiry annotation.*hides this paragraph/i,
       )

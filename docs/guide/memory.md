@@ -40,7 +40,7 @@ Do not start a line of your own with `<!-- refinement:` or `<!-- /refinement:`. 
 - the agent changes memory paragraph by paragraph: an edit is applied as exact replacements one at a time (under ask, one approval each);
 - a write of the whole file is refused while some text is hidden from the agent, or when it would change or drop a saved paragraph's text.
 
-**On the memory page.** In **Memory files**, the **Saved task experience** section lists each saved paragraph with whether the agent sees it, its review date and who saved it. For each one:
+**On the memory page.** In **Memory files**, the **Saved task experience** section lists each saved paragraph with whether the agent sees it, its review date and who saved it. The page refreshes at the review date or an earlier expiry annotation, including an annotation above the opening marker. A saved summary of a changed or deleted topic stays hidden until the summary is updated. For each one:
 
 - **Renew** starts a new 30-day review period. The file is not changed.
 - **Withdraw** removes the paragraph from the file and records that you took it back: automatic and model saves of the same content are refused from then on. Only your own save brings it back.
@@ -99,6 +99,6 @@ Use the Memory page to change or withdraw a paragraph you wrote or edited. Choos
 
 For preferences such as `- test_runner: jest`, `tab_width = 4`, or `Preference: style = concise`, an automated write that introduces a different value for the same key returns `MEMORY_PREFERENCE_CONFLICT`. A human-authored preference in `MEMORY.md` or any workspace topic file applies across all workspace memory files. The check also covers handwritten preferences in enabled user memory. Managed user-memory sections can have different values. To change your preference, edit the original on the Memory page.
 
-Use `memory_recall` to search learned preferences by text. Each match names the memory layer, file, and original line range. If the provider cannot search, use `read` on `MEMORY.md`.
+Use `memory_recall` to search learned preferences by text. Each match names the memory layer, file, and original line range. The session ledger and model request identify recalled text as untrusted. If the provider cannot search, use `read` on `MEMORY.md`.
 
 With user memory enabled, set `includeUser` to search the user index and supported topic files in the same directory. Files with unsupported names or content above the topic size limit are excluded from the results.

@@ -177,6 +177,7 @@ export type KernelOptions = {
     /** A child session (delegated, role or fork): it gets no task-experience notes of its own. */
     child?: boolean
   }) => import('@agnes/extension-api').MemorySession | undefined
+  trustedMemorySession?: SessionDeps['trustedMemorySession']
   memoryPreEffectProof?: SessionDeps['memoryPreEffectProof']
   /** Trusted Host classification for file paths with independently enforced domain gates. */
   commandPathScopeFor?: (input: {
@@ -708,6 +709,7 @@ export class Kernel {
             }
           : {}),
         ...(memory ? { memory } : {}),
+        ...(this.o.trustedMemorySession ? { trustedMemorySession: this.o.trustedMemorySession } : {}),
         ...(this.o.memoryPreEffectProof ? { memoryPreEffectProof: this.o.memoryPreEffectProof } : {}),
         ...(so.roleDelegation ? { roleDelegation: so.roleDelegation } : {}),
         ...(this.commandRules(so) ? { outwardCommandRules: true as const } : {}),

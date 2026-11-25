@@ -13,14 +13,13 @@ export const PREFERENCE_CONFLICT = 'MEMORY_PREFERENCE_CONFLICT'
 const COMMITTED_METADATA_FAILED = 'MEMORY_COMMITTED_METADATA_FAILED'
 
 /** Preserve the error object for Core to verify. The name alone grants no authority. */
-export function propagateWriteRefusal(error: unknown): void {
-  if (error instanceof Error && error.name === 'ToolPreEffectRefusal') throw error
-}
+export const isAttestedPreEffect = (error: unknown): boolean =>
+  error instanceof Error && error.name === 'ToolPreEffectRefusal'
 
 /** The refusals after which a change must go through as single exact replacements. */
 export const isHiddenParagraphs = (error: unknown): boolean => {
   const code = (error as { code?: unknown } | null)?.code
-  return code === HIDDEN_PARAGRAPHS || code === PARAGRAPH_TEXT_CHANGED
+  return isAttestedPreEffect(error) && (code === HIDDEN_PARAGRAPHS || code === PARAGRAPH_TEXT_CHANGED)
 }
 
 export const refusalCode = (error: unknown): string =>
@@ -36,16 +35,6 @@ const PROTECTED_TEXT: Readonly<Record<string, string>> = {
   [PREFERENCE_CONFLICT]:
     'This preference key conflicts with a human-authored preference. Ask the user to update it on the Memory page.',
 }
-
-export function memoryProtectedRefusal(error: unknown): { code: string; text: string } | undefined {
-  const code = (error as { code?: unknown } | null)?.code
-  if (typeof code !== 'string' || !Object.hasOwn(PROTECTED_TEXT, code)) return undefined
-  const text = PROTECTED_TEXT[code]
-  return { code, text: `Nothing was written. ${text}` }
-}
-
-export const WRITE_HIDDEN_TEXT =
-  'write refused: this memory file has managed paragraphs (some may be hidden), so it cannot be overwritten as a whole. Nothing was written; use edit to change only the part you mean to.'
 
 export const EDIT_UNSUPPORTED_TEXT =
   'edit refused: this memory file has managed paragraphs and offers no replacement of single passages. Nothing was written.'
@@ -89,10 +78,11 @@ export async function replaceOneByOne(
     try {
       await replaceExact.call(ctx.fs, path, edit.oldText, edit.newText)
     } catch (e) {
-      propagateWriteRefusal(e)
       const code = failureCode(e, 'FS_EDIT_REPLACE_FAILED')
       if (code === COMMITTED_METADATA_FAILED) applied.push(index)
-      else if (ctx.signal.aborted) throw e
+      else if (!isAttestedPreEffect(e))
+        throw Object.assign(new Error(`${code}: exact edit outcome unknown`), { code })
+      else if (ctx.signal.aborted || !applied.length) throw e
       return { applied, failure: { index, code } }
     }
     applied.push(index)

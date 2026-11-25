@@ -5,7 +5,8 @@ API additions require a minor version; removals or semantic changes require a ma
 ## 5.24.0
 
 - `MemoryParagraphList.content?` gives callers the full stored index from the same read as the listed paragraphs and hash. The Host uses it to check visibility across marker boundaries in both memory layers.
-- `MemorySession.stateRevision?()` fingerprints the current workspace and user indexes and settings. The Host rereads saved entries on each request when this method is absent.
+- `MemoryParagraph.visibleText?` and `nextExpiry?` carry the provider-filtered body and its next visibility deadline in workspace and user memory.
+- `MemorySession.stateRevision?()` fingerprints the current workspace and user indexes, topics and settings. The Host rereads saved entries on each request when this method is absent.
 
 ## 5.23.0
 

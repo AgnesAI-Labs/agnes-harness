@@ -47,7 +47,7 @@ export const memoryCatalog: LocaleCatalog = {
       'Workspace memory is off. None of these paragraphs are sent to the agent or available for it to read. Turning memory on takes effect on the next turn.',
     'saved.valid': 'The agent sees it. Review by {date}.',
     'saved.hidden':
-      'Within its review period until {date}. An expiry annotation or a withdrawn reference currently hides this paragraph from the agent.',
+      'Within its review period until {date}. An expiry annotation, a withdrawn reference, or an outdated or missing topic hides this paragraph from the agent.',
     'saved.validOff':
       'Workspace memory is off. Hidden from the agent until you turn it on. Review by {date}.',
     'saved.expired':
@@ -65,7 +65,7 @@ export const memoryCatalog: LocaleCatalog = {
     'saved.user.help':
       'Lessons that hold in every workspace, written to user memory automatically. Workspaces that read user memory see current lessons after your own text. Each has a 30-day review date. Renewing an expired lesson makes it visible in those workspaces from the next turn. Withdrawing one removes it and stops the same content being written again.',
     'saved.user.hidden':
-      'Within its review period until {date}. An expiry annotation or a withdrawn reference currently hides this paragraph from the agent.',
+      'Within its review period until {date}. An expiry annotation, a withdrawn reference, or an outdated or missing topic hides this paragraph from the agent.',
     'saved.user.validUnread':
       'Current in other workspaces that read user memory. This workspace does not read it. Review by {date}.',
     'saved.user.read': 'This workspace reads user memory.',
@@ -114,7 +114,8 @@ export const memoryCatalog: LocaleCatalog = {
       '从任务经验保存到 MEMORY.md 的段落。每段的复核期限为 30 天。工作区记忆开启时，为过期段落续期将在下一轮生效，智能体就能再次看到它。撤回会删除这一段，并阻止自动和模型再次保存同样的内容。转为普通记忆会保留文字、不再有复核日期。工作区记忆写满时保存会停止，不会自动合并。请在这里或文件里腾出空间。',
     'saved.off': '工作区记忆已关闭。这些段落都不会发送给智能体，智能体也无法读取。开启记忆将在下一轮生效。',
     'saved.valid': '智能体能看到它。复核日期：{date}。',
-    'saved.hidden': '这一段仍在复核期内（截至 {date}）。由于到期标注或引用的记忆已撤回，智能体目前看不到它。',
+    'saved.hidden':
+      '这一段仍在复核期内（截至 {date}）。由于到期标注、引用的记忆已撤回，或关联的主题已更改或删除，智能体目前看不到它。',
     'saved.validOff': '工作区记忆已关闭，开启前智能体看不到这一段。请在 {date} 前复核。',
     'saved.expired':
       '已过复核日期（{date}），智能体看不到这一段。续期将在下一轮生效，读取这份记忆的工作区就能再次看到它。',
@@ -130,7 +131,7 @@ export const memoryCatalog: LocaleCatalog = {
     'saved.user.help':
       '适用于所有工作区的经验，会自动写入用户记忆。读取用户记忆的工作区能看到有效的经验，排在你自己写的内容之后。每条的复核期限为 30 天。为过期经验续期将在下一轮生效，这些工作区就能再次看到它。撤回后会删除它，并且相同内容不会再被写入。',
     'saved.user.hidden':
-      '这一段仍在复核期内（截至 {date}）。由于到期标注或引用的记忆已撤回，智能体目前看不到它。',
+      '这一段仍在复核期内（截至 {date}）。由于到期标注、引用的记忆已撤回，或关联的主题已更改或删除，智能体目前看不到它。',
     'saved.user.validUnread': '读取用户记忆的其他工作区可见，当前工作区不可见。请在 {date} 前复核。',
     'saved.user.read': '本工作区读取用户记忆。',
     'saved.user.unread':

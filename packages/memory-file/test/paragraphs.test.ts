@@ -415,7 +415,9 @@ describe('file memory managed paragraphs', () => {
     tracked.set(B, 'valid')
     expect(text(await f.files(2).read(f.index))).toBe(stored)
     const port = f.paragraphs()
-    expect((await port.list()).paragraphs).toEqual([{ id: B, text: 'expired body', validity: 'valid' }])
+    expect((await port.list()).paragraphs).toEqual([
+      { id: B, text: 'expired body', visibleText: 'expired body', validity: 'valid' },
+    ])
     await port.commit(await port.propose({ op: 'remove', id: B }))
     expect(await f.raw()).toBe('\uFEFFhuman\n')
   })
@@ -560,7 +562,7 @@ describe('file memory paragraph port', () => {
     expect(await port.list()).toEqual({
       hash: sha(original),
       content: original,
-      paragraphs: [{ id: B, text: 'Hidden beta', validity: 'expired' }],
+      paragraphs: [{ id: B, text: 'Hidden beta', visibleText: 'Hidden beta', validity: 'expired' }],
     })
     const added = await port.commit(await port.propose({ op: 'put', id: A, text: 'Alpha' }))
     expect(await f.raw()).toBe(`${original}\n${block(A, 'Alpha')}`)

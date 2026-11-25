@@ -12,7 +12,7 @@ import type {
 } from '@agnes/extension-api'
 import { chunkView } from './chunker.js'
 import { commitHooks } from './commit-hooks.js'
-import { buildIndexView, formatLifecycleOmission, inspectConsistency } from './consistency.js'
+import { buildIndexView, formatLifecycleOmission, inspectConsistency, nonManaged } from './consistency.js'
 import { fault, file, fitBytes, hash, validateContent } from './content.js'
 import { createFilePort } from './file-port.js'
 import { MetaStore } from './meta.js'
@@ -104,10 +104,6 @@ function emptyView(path: string): MemoryView {
     hidden: false,
     omitted: [],
   }
-}
-
-function nonManaged(range: HideRange): boolean {
-  return range.reason !== 'managed-omitted' && range.reason !== 'managed-delivered'
 }
 
 function captureTurnSnapshot(args: {
@@ -370,7 +366,7 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
   const session: MemorySession = Object.freeze<MemorySession>({
     root: paths.root,
     stateRevision() {
-      const fingerprint = (read: () => string | undefined) => {
+      const fingerprint = <T>(read: () => T) => {
         try {
           return read()
         } catch {
@@ -380,9 +376,10 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
       const settings = fingerprint(() => store.settingsText())
       return hash(
         JSON.stringify([
-          settings ?? fingerprint(() => JSON.stringify(store.configuration())),
-          fingerprint(() => store.read('MEMORY.md').hash),
-          fingerprint(() => user.read('MEMORY.md').hash),
+          settings ?? fingerprint(() => store.configuration()),
+          ...[store, user].map((layer) =>
+            fingerprint(() => layer.files().map(({ path, hash }) => [path, hash])),
+          ),
         ]),
       )
     },
@@ -474,22 +471,24 @@ export async function rebuildMemoryIndex(session: MemorySession): Promise<{ inde
   const retrieval = internal ? retrievalOf(internal.pipeline) : undefined
   if (!internal || !retrieval) throw fault('MEMORY_RECALL_UNAVAILABLE')
   const { store, user, meta, pipeline, clock, validity } = internal
-  const config = store.configuration()
-  const files = store.files()
-  const userFiles = config.userEnabled ? user.files() : []
-  const ctx: ViewContext = {
-    layer: 'workspace',
-    files,
-    userFiles,
-    userEnabled: config.userEnabled,
-    now: clock(),
-    validity,
-    meta,
-  }
-  const views = new Map(
-    files.map((entry) => [entry.path, buildIndexView(entry, pipeline.collectHideRanges(entry, ctx))]),
-  )
-  return { indexedEntries: retrieval.rebuildIndex(meta, files, views, config) }
+  return store.locked(() => {
+    const config = store.configuration()
+    const files = store.files()
+    const userFiles = config.userEnabled ? user.files() : []
+    const ctx: ViewContext = {
+      layer: 'workspace',
+      files,
+      userFiles,
+      userEnabled: config.userEnabled,
+      now: clock(),
+      validity,
+      meta,
+    }
+    const views = new Map(
+      files.map((entry) => [entry.path, buildIndexView(entry, pipeline.collectHideRanges(entry, ctx))]),
+    )
+    return { indexedEntries: retrieval.rebuildIndex(meta, files, views, config) }
+  })
 }
 
 export async function inspectMemoryConsistency(

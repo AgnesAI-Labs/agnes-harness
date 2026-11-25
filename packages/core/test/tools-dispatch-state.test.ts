@@ -282,6 +282,7 @@ describe('durable tool dispatch state', () => {
       })
       const opened = await openSession({
         memory,
+        trustedMemorySession: (candidate) => candidate === memory,
         fsOps: {
           ...testFsOps(),
           write: async (path, content) => {

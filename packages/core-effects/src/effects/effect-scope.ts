@@ -16,7 +16,10 @@ export class ToolEffectScope {
     this.started = true
   }
   reject(diagnostic: RejectedBeforeEffectError): never {
-    const error = Object.assign(new Error(diagnostic.message), { code: diagnostic.code })
+    const error = Object.assign(new Error(diagnostic.message), {
+      name: 'ToolPreEffectRefusal',
+      code: diagnostic.code,
+    })
     this.refused.set(error, { diagnostic, safe: !this.started && this.writes === 1 })
     throw error
   }
@@ -37,15 +40,12 @@ export class ToolEffectScope {
     } catch (error) {
       if (!error || typeof error !== 'object' || !this.refused.has(error)) {
         const diagnostic = clean && !this.started ? refusedBeforeEffect?.(error) : undefined
-        if (diagnostic) {
-          const refusal = Object.assign(new Error(diagnostic.message), {
-            name: 'ToolPreEffectRefusal',
-            code: diagnostic.code,
-          })
-          this.refused.set(refusal, { diagnostic, safe: true })
-          throw refusal
-        }
+        if (diagnostic) this.reject(diagnostic)
         this.beginEffect()
+        // The tool may use this reserved name to retry an exact edit. Never forward it from
+        // a provider without a proof belonging to this operation.
+        if (error instanceof Error && error.name === 'ToolPreEffectRefusal')
+          throw new Error('Unverified write failure', { cause: error })
       }
       throw error
     } finally {

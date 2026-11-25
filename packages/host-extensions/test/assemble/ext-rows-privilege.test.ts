@@ -49,7 +49,10 @@ function fixture(override: Partial<ResolvedPackage> = {}) {
 describe('verified ext: row privilege grants', () => {
   it('keeps the complete official distribution grant set in one declaration', () => {
     const h = fixture()
-    expect(h.authority.memoryPreEffectProof()).toBe(h.module.isMemoryPreEffectRefusal)
+    expect(h.authority.memoryPreEffectProof()).toEqual({
+      sourcePackage: '@agnes/base',
+      verify: h.module.isMemoryPreEffectRefusal,
+    })
     expect(h.grants()).toEqual([
       { sessionTasks: true, childControl: true, searchProvider: true, hookRank: 3 },
       {

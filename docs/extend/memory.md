@@ -50,9 +50,11 @@ Extension API 5.5.0 adds the validity answer `delivered` and the optional `Memor
 
 ## Saved paragraph visibility and freshness (5.24.0)
 
-Both paragraph ports can return `content` from the same full-index read as `hash` and `paragraphs`. The Host checks each body against its markers and applies surrounding references and expiry annotations. For older providers it can verify workspace paragraphs through `readFile('MEMORY.md')` with a matching hash. Delivery of user paragraphs requires the user index in the listing.
+Both paragraph ports can return `visibleText` alongside each stored body. Apply the full index's visibility filters, including expiry annotations outside the markers, withdrawn references and stale or missing topic summaries. Return `null` for a fully hidden body. Supply `nextExpiry` in epoch milliseconds when a future annotation can change the visible body. The Host uses these fields for workspace and user memory. It delivers paragraphs whose provider validity is `valid` or `delivered` and whose registry record is in force.
 
-Implement `MemorySession.stateRevision()` with a synchronous fingerprint that changes with the workspace index, user index and settings. When it is absent, the Host reads live entries on every request.
+For providers that omit `visibleText`, return full-index `content` from the same read as `hash` and `paragraphs`. The Host verifies the bytes and marker pairs before applying surrounding references and expiry annotations. For workspace paragraphs it can also read `MEMORY.md` and verify the listing hash.
+
+Implement `MemorySession.stateRevision()` with a synchronous fingerprint that changes with settings and the index and topic files in both layers. When the method is absent, the Host reads live entries on every request.
 
 ## Optional memory recall and human-edit guards (5.23.0)
 

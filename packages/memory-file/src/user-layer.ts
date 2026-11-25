@@ -13,6 +13,7 @@ import { checkProposalGuards, commitHooks } from './commit-hooks.js'
 import { formatLifecycleOmission } from './consistency.js'
 import { defaults, diff, fault, file, validateContent } from './content.js'
 import type { MetaStore } from './meta.js'
+import { listParagraphs } from './paragraph-port.js'
 import {
   applyParagraphChanges,
   markerLines,
@@ -152,7 +153,7 @@ export function userParagraphPort(
   view: MemoryValidityView | undefined,
   source: MemorySource,
   signal: AbortSignal,
-  hooks?: UserParagraphPortHooks,
+  hooks: UserParagraphPortHooks,
 ): MemoryParagraphPort {
   if (
     source.maintenance !== undefined &&
@@ -162,27 +163,22 @@ export function userParagraphPort(
   const answer = validityOf(view)
   const made = new WeakMap<MemoryProposal, { candidate: MemoryFile; intent: CommitIntent }>()
   const actor = source.maintenance ? `host:${source.maintenance}` : `host:${source.sessionKey}`
-  const makeContext = (now: number): ViewContext => ({
-    layer: 'user',
-    files: user.files(),
-    userFiles: user.files(),
-    userEnabled: true,
-    now,
-    validity: answer,
-    meta: hooks!.userMeta,
-  })
+  const makeContext = (now: number): ViewContext => {
+    const files = user.files()
+    return {
+      layer: 'user',
+      files,
+      userFiles: files,
+      userEnabled: true,
+      now,
+      validity: answer,
+      meta: hooks.userMeta,
+    }
+  }
   return Object.freeze<MemoryParagraphPort>({
     async list() {
       signal.throwIfAborted()
-      const stored = user.read(INDEX)
-      const paragraphs = parseParagraphs(stored.content).paragraphs.map(({ id, text }) =>
-        Object.freeze({ id, text, validity: answer(id) }),
-      )
-      return Object.freeze({
-        hash: stored.hash,
-        content: stored.content,
-        paragraphs: Object.freeze(paragraphs),
-      })
+      return listParagraphs(hooks.pipeline, makeContext(hooks.clock()))
     },
     async propose(changes, baseHash) {
       signal.throwIfAborted()
@@ -220,7 +216,7 @@ export function userParagraphPort(
         source,
         changes: list,
       }
-      if (hooks) await checkProposalGuards(hooks.pipeline, intent, makeContext(hooks.clock()), signal)
+      await checkProposalGuards(hooks.pipeline, intent, makeContext(hooks.clock()), signal)
       const proposal: MemoryProposal = Object.freeze({
         path: join(user.root, INDEX),
         baseHash: before.hash,
@@ -242,7 +238,7 @@ export function userParagraphPort(
         false,
         signal,
         admission,
-        hooks ? commitHooks(hooks.pipeline, entry.intent, makeContext, hooks.clock) : undefined,
+        commitHooks(hooks.pipeline, entry.intent, makeContext, hooks.clock),
       )
       return { hash: committed.hash }
     },

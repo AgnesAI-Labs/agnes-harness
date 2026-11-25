@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { MemoryFilePort, MemoryRecallQuery, MemoryValidityView } from '@agnes/extension-api'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chunkView } from '../src/chunker.js'
 import { file } from '../src/content.js'
 import {
@@ -198,6 +198,101 @@ describe('file memory recall', () => {
     }
     expect((await f.recall(2, 'lake')).hits).toHaveLength(1)
   })
+
+  it('retains pinned hits when a second connection publishes between manifest verification and search', async () => {
+    const f = fixture()
+    await f.session.configure({ mode: 'auto' })
+    const path = join(f.root, 'topic.md')
+    await f.port(0).write(path, 'Green mountain')
+    await f.session.snapshot(1)
+    const prepare = DatabaseSync.prototype.prepare
+    const hook = vi.spyOn(DatabaseSync.prototype, 'prepare').mockImplementation(function (
+      this: DatabaseSync,
+      sql,
+    ) {
+      if (sql.includes('FROM fts_en JOIN')) {
+        hook.mockRestore()
+        writeFileSync(path, 'Blue lake')
+        const files = f.store.files()
+        f.internal.committed(
+          readDocuments(
+            files,
+            new Map(files.map((entry) => [entry.path, buildView(entry, [], 'read')])),
+            f.store.configuration(),
+          ),
+        )
+      }
+      return prepare.call(this, sql)
+    })
+    try {
+      expect((await f.recall(1, 'mountain')).hits).toMatchObject([{ text: 'Green mountain' }])
+      expect(f.internal.inspectIndexedChunks()).toMatchObject([{ text: 'Blue lake' }])
+    } finally {
+      hook.mockRestore()
+    }
+  })
+
+  it('rebuilds from the files published by a commit already holding the store lock', async () => {
+    const f = fixture()
+    await f.session.configure({ mode: 'auto' })
+    let rebuild: ReturnType<typeof rebuildMemoryIndex> | undefined
+    const candidate = file('topic.md', 'New mountain')
+    await f.store.commit(
+      candidate,
+      f.store.read(candidate.path).hash,
+      { sessionKey: 'test', turn: 0 },
+      false,
+      undefined,
+      {
+        verify: async () => {
+          rebuild = rebuildMemoryIndex(f.session)
+        },
+        assertActive() {},
+      },
+    )
+    expect(await rebuild).toEqual({ indexedEntries: 1 })
+    expect(f.internal.inspectIndexedChunks()).toMatchObject([{ text: 'New mountain' }])
+  })
+
+  it.each(['workspace', 'user'] as const)(
+    'projects topic freshness and outer expiry into %s saved bodies',
+    async (layer) => {
+      const now = 1_800_000_000_000
+      const f = fixture({ revision: () => 'valid', validity: () => 'valid' }, undefined, () => now)
+      await f.session.configure({ mode: 'auto', userEnabled: true })
+      const root = layer === 'workspace' ? f.root : f.userRoot
+      mkdirSync(root, { recursive: true })
+      const topic = join(root, 'topic.md')
+      writeFileSync(topic, 'Reference material')
+      const port = (layer === 'workspace' ? f.session.paragraphs : f.session.userParagraphs)?.(
+        { sessionKey: 'test', turn: 0 },
+        new AbortController().signal,
+      )
+      if (!port) throw new Error('Missing paragraph port')
+      const id = 'r0000000001'
+      const text = 'Verified kestrel [source](topic.md)'
+      await port.commit(await port.propose({ op: 'put', id, text }))
+      const path = join(root, 'MEMORY.md')
+      const deadline = now + 1000
+      writeFileSync(
+        path,
+        `<!-- expires_at: ${new Date(deadline).toISOString()} -->\n${readFileSync(path, 'utf8')}`,
+      )
+      expect((await port.list()).paragraphs).toMatchObject([
+        { id, text, visibleText: text, nextExpiry: deadline },
+      ])
+      expect((await f.recall(1, 'kestrel', { includeUser: true })).hits).toHaveLength(1)
+      const bound = f.session.stateRevision?.()
+      writeFileSync(topic, 'Changed reference')
+      const changed = f.session.stateRevision?.()
+      expect(changed).not.toBe(bound)
+      expect((await port.list()).paragraphs).toMatchObject([{ id, visibleText: null }])
+      expect((await f.recall(2, 'kestrel', { includeUser: true })).hits).toEqual([])
+      rmSync(topic)
+      expect(f.session.stateRevision?.()).not.toBe(changed)
+      expect((await port.list()).paragraphs).toMatchObject([{ id, visibleText: null }])
+    },
+  )
 
   it('answers the pinned query when another connection publishes after the initial view check', async () => {
     const f = fixture()

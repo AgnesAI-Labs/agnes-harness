@@ -1,4 +1,10 @@
-import type { MemoryParagraphList, MemoryParagraphValidity, MemorySession } from '@agnes/extension-api'
+import { createHash } from 'node:crypto'
+import type {
+  MemoryParagraph,
+  MemoryParagraphList,
+  MemoryParagraphValidity,
+  MemorySession,
+} from '@agnes/extension-api'
 import type { RefinementRegistry } from '@agnes/host-infrastructure/refinement-registry'
 import { registryView } from './registry-view.js'
 
@@ -7,10 +13,14 @@ type Span = { start: number; end: number }
 type Validity = (id: string) => MemoryParagraphValidity
 
 async function rawIndex(memory: MemorySession, layer: Layer, listed: MemoryParagraphList) {
-  if (listed.content !== undefined) return listed.content
-  if (layer === 'user' || typeof memory.readFile !== 'function') return undefined
-  const stored = await memory.readFile('MEMORY.md')
-  return stored.hash === listed.hash ? stored.content : undefined
+  let content = listed.content
+  if (content === undefined) {
+    if (layer === 'user' || typeof memory.readFile !== 'function') return undefined
+    const stored = await memory.readFile('MEMORY.md')
+    if (stored.hash !== listed.hash) return undefined
+    content = stored.content
+  }
+  return createHash('sha256').update(content).digest('hex') === listed.hash ? content : undefined
 }
 
 type Markers = { open: Span; close: Span }
@@ -104,23 +114,23 @@ export async function paragraphVisibility(
   listed: MemoryParagraphList,
   registry: RefinementRegistry,
   clock: () => number,
-  futureExpiry?: (at: number) => void,
-): Promise<(id: string, text: string, view?: 'stored' | 'visible') => string | undefined> {
-  const raw = await rawIndex(memory, layer, listed)
-  if (raw === undefined) return () => undefined
-  const { validity } = registryView(registry, clock)
-  const now = clock()
-  const markers = paragraphMarkers(raw)
-  const { hidden, deadlines } = visibilitySpans(raw, validity, now)
-  return function paragraphText(id, text, view = 'visible') {
-    const pair = markers.get(id)
-    // Two reads raced or the supplied index has ambiguous markers. Wait for a consistent listing.
-    if (!pair || raw.slice(pair.open.end, pair.close.start).replace(/\r?\n$/u, '') !== text) return undefined
-    if (view === 'stored') return text
+) {
+  const legacy = listed.paragraphs.some((p) => p.visibleText === undefined)
+  const raw = legacy ? await rawIndex(memory, layer, listed) : undefined
+  const markers = raw === undefined ? undefined : paragraphMarkers(raw)
+  const spans =
+    raw === undefined ? undefined : visibilitySpans(raw, registryView(registry, clock).validity, clock())
+  return function projection({ id, text, visibleText, nextExpiry }: MemoryParagraph) {
+    if (visibleText !== undefined) return { visibleText, nextExpiry }
+    const pair = markers?.get(id)
+    if (!pair || !spans || raw?.slice(pair.open.end, pair.close.start).replace(/\r?\n$/u, '') !== text)
+      return undefined
+    const { hidden, deadlines } = spans
     const start = pair.open.end
     const end = start + text.length
     for (const deadline of deadlines) {
-      if (deadline.start < end && deadline.end > start) futureExpiry?.(deadline.at)
+      if (deadline.start < end && deadline.end > start)
+        nextExpiry = Math.min(nextExpiry ?? deadline.at, deadline.at)
     }
     let cursor = 0
     const kept: string[] = []
@@ -130,13 +140,15 @@ export async function paragraphVisibility(
       kept.push(text.slice(cursor, Math.max(span.start - start, 0)))
       cursor = Math.min(span.end, end) - start
     }
-    if (!kept.length) return text.trim() ? text : undefined
+    if (!kept.length) return { visibleText: text.trim() ? text : null, nextExpiry }
     kept.push(text.slice(cursor))
-    return (
-      kept
-        .join('')
-        .replace(/\n(?:[^\S\n]*\n)+/gu, '\n\n')
-        .trim() || undefined
-    )
+    return {
+      visibleText:
+        kept
+          .join('')
+          .replace(/\n(?:[^\S\n]*\n)+/gu, '\n\n')
+          .trim() || null,
+      nextExpiry,
+    }
   }
 }

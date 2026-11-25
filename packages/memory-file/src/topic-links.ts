@@ -47,7 +47,7 @@ function* summaries(content: string) {
 
 export const topicLinksObserver: CommitObserver = (intent, committed, ctx) => {
   // Each store commit changes one file. A later topic commit cannot confirm the summary's wording.
-  if (ctx.layer !== 'workspace' || committed.path !== 'MEMORY.md') return
+  if (committed.path !== 'MEMORY.md') return
   const before = new Set(Array.from(summaries(intent.before.content), (line) => line.text))
   const after = [...summaries(committed.content)]
   const previous = readBindings(ctx.meta)
@@ -71,7 +71,7 @@ export const topicLinksObserver: CommitObserver = (intent, committed, ctx) => {
 }
 
 export const topicLinksViewFilter: ViewFilter = (entry, ctx) => {
-  if (ctx.layer !== 'workspace' || entry.path !== 'MEMORY.md') return []
+  if (entry.path !== 'MEMORY.md') return []
   const lines = [...summaries(entry.content)]
   if (!lines.length) return []
   const bindings = readBindings(ctx.meta)

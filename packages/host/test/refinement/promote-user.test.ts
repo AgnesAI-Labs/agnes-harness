@@ -345,6 +345,12 @@ describe('promoting a confirmed lesson to user memory', () => {
   it('reports a user section hidden by an annotation outside its markers', async () => {
     const h = await home()
     const id = sectionId(await h.saves.save(request(h)))
+    const deadline = Date.UTC(2099, 0, 1)
+    writeFileSync(
+      h.userFile,
+      `${HAND}\n<!-- expires_at: ${new Date(deadline).toISOString()} -->\n${marked(id, TEXT)}`,
+    )
+    expect((await h.manage({ action: 'list' })).paragraphs).toMatchObject([{ id, nextExpiry: deadline }])
     writeFileSync(h.userFile, `${HAND}\n<!-- expires_at: 2020-01-01 -->\n${marked(id, TEXT)}`)
     expect((await h.manage({ action: 'list' })).paragraphs).toMatchObject([
       { id, validity: 'valid', hidden: true },

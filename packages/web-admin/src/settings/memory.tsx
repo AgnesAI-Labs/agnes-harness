@@ -271,7 +271,7 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
           {file && cwd && (
             <SavedParagraphsBlock
               key={`${cwd}:user`}
-              refreshKey={`${visit}:${inspection.settings.userEnabled}`}
+              refreshKey={`${visit}:${file.hash}:${inspection.settings.userEnabled}`}
               cwd={cwd}
               canSave={canSave}
               locale={locale}

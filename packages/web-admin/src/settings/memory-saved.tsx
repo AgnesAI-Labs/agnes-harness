@@ -46,7 +46,11 @@ export function SavedParagraphsBlock(
     const now = Date.now()
     let next = indexContent ? analyzeExpiry(indexContent, now).earliest : undefined
     for (const paragraph of paragraphs) {
-      for (const deadline of [paragraph.reviewAfter, analyzeExpiry(paragraph.text, now).earliest]) {
+      for (const deadline of [
+        paragraph.reviewAfter,
+        paragraph.nextExpiry,
+        analyzeExpiry(paragraph.text, now).earliest,
+      ]) {
         if (deadline !== undefined && deadline > now) next = Math.min(next ?? deadline, deadline)
       }
     }

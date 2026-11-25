@@ -31,9 +31,11 @@ export type MemoryInvocation = Readonly<{ sessionKey: string; turn: number; tool
 
 const MEMORY_PRE_EFFECT_REFUSALS: Readonly<Record<string, string>> = {
   MEMORY_DISABLED: 'Memory writes are disabled',
-  MEMORY_HIDDEN_PARAGRAPHS: 'Memory file hides managed paragraphs from whole-file writes',
+  MEMORY_HIDDEN_PARAGRAPHS:
+    'Nothing was written. This memory file hides managed paragraphs. Use edit to change a visible passage.',
   MEMORY_PARAGRAPH_TEXT_CHANGED: 'Whole-file write would alter a managed paragraph',
-  MEMORY_HUMAN_EDITED: 'Human-authored memory content cannot be modified or deleted by the agent',
+  MEMORY_HUMAN_EDITED:
+    'Nothing was written. Ask the user to update human-edited text on the Memory page, or append a separate paragraph.',
   MEMORY_PARAGRAPH_EDITED: 'Managed paragraph text was edited by a human',
   MEMORY_PREFERENCE_CONFLICT: 'Structured preference conflicts with human-authored value',
 }
@@ -162,6 +164,7 @@ export type ToolContextDeps = {
   memory?: {
     session: Pick<import('@agnes/extension-api').MemorySession, 'files'>
     readOnly?: true
+    trustedProvider?: boolean
     refusedBeforeEffect?: (error: unknown, source: MemoryInvocation) => RejectedBeforeEffectError | undefined
     approve(
       proposal: import('@agnes/extension-api').MemoryProposal,
@@ -263,15 +266,19 @@ export function buildToolContext(
         if (approvalRequested) effects.beginEffect()
         approvalRequested = true
         const result = await memory.approve(proposal)
-        if (result.status !== 'approved')
-          effects.reject({
+        if (result.status !== 'approved') {
+          const diagnostic = {
             code: result.status === 'rejected' ? 'MEMORY_APPROVAL_REJECTED' : 'MEMORY_APPROVAL_UNANSWERED',
             message:
               result.status === 'rejected'
                 ? 'Memory file approval was rejected'
                 : `Memory file approval unanswered: ${result.reason}`,
             path: proposal.path,
-          })
+          }
+          if (memory.trustedProvider === true || memory.readOnly === true) effects.reject(diagnostic)
+          effects.beginEffect()
+          throw Object.assign(new Error(diagnostic.message), { code: diagnostic.code })
+        }
         return result
       })
     : workspaceFiles

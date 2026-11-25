@@ -86,7 +86,7 @@ function memory(texts: Record<string, string>, mode: 'off' | 'ask' | 'auto' = 'a
     editFile: write('editFile'),
     paragraphs: () => ({
       list: async () => ({
-        hash: normalizedContentHash(indexText(texts)),
+        hash: createHash('sha256').update(indexText(texts)).digest('hex'),
         content: indexText(texts),
         paragraphs: Object.entries(texts).map(([id, text]) => ({ id, text, validity: 'valid' as const })),
       }),
@@ -96,6 +96,11 @@ function memory(texts: Record<string, string>, mode: 'off' | 'ask' | 'auto' = 'a
   } as unknown as MemorySession
   return { session, writes }
 }
+
+const seed = (registry: RefinementRegistry, paragraphs: RegistryParagraph[]) =>
+  registry.update((draft) => {
+    draft.paragraphs.push(...paragraphs)
+  }, registry.read().revision)
 
 function setup(
   o: { paragraphs?: RegistryParagraph[]; revocations?: Revocation[]; memory?: MemorySession } = {},
@@ -220,6 +225,38 @@ describe('entries saved to the workspace, for the planner', () => {
     ])
     expect(await ws.refs.renew(AT, `workspace-memory/${id}`, version)).toBe(true)
   })
+
+  it.each(['expired', 'unknown'] as const)(
+    'requires provider validity (%s) even with matching registry and visible bytes',
+    async (validity) => {
+      const { id } = paragraph()
+      const base = layered({ [id]: TEXT }, {})
+      const { stateRevision: _revision, ...legacy } = base
+      const session = {
+        ...legacy,
+        paragraphs: () => ({
+          list: async () => ({
+            hash: 'provider-revision',
+            paragraphs: [{ id, text: TEXT, validity, visibleText: TEXT }],
+          }),
+          propose: async () => {
+            throw new Error('unexpected proposal')
+          },
+          commit: async () => {
+            throw new Error('unexpected commit')
+          },
+        }),
+      }
+      const ws = setup({ memory: session })
+      const empty = ws.refs.revision?.(AT)
+      seed(ws.registry, [paragraph()])
+      expect(ws.refs.revision?.(AT)).toMatch(/^uncached:/)
+      expect(ws.refs.revision?.(AT)).not.toBe(empty)
+      expect(await ws.refs.list(AT)).toEqual([])
+      expect(await ws.refs.entries?.(AT)).toEqual([])
+      expect(await ws.refs.renew(AT, `workspace-memory/${id}`, normalizedContentHash(TEXT))).toBe(false)
+    },
+  )
 
   it('memory off or a provider without paragraphs lists nothing', async () => {
     expect(
@@ -361,7 +398,7 @@ function layered(
 ) {
   const port = (texts: Record<string, string>) => () => ({
     list: async () => ({
-      hash: normalizedContentHash(indexText(texts)),
+      hash: createHash('sha256').update(indexText(texts)).digest('hex'),
       content: indexText(texts),
       paragraphs: Object.entries(texts).map(([id, text]) => ({ id, text, validity: 'delivered' as const })),
     }),
@@ -405,10 +442,6 @@ describe('entries saved earlier, for the experience snapshot', () => {
     })
     return { registry, userRegistry, refs }
   }
-  const seed = (registry: RefinementRegistry, paragraphs: RegistryParagraph[]) =>
-    registry.update((draft) => {
-      draft.paragraphs.push(...paragraphs)
-    }, registry.read().revision)
 
   it('lists saved workspace paragraphs in full, with whether a person edited them since', async () => {
     const t = both(layered({ r0000000001: TEXT, r0000000002: SOME }, {}))
@@ -444,6 +477,36 @@ describe('entries saved earlier, for the experience snapshot', () => {
     ])
   })
 
+  it('delivers only the projected body for both layers when the provider supplies no raw index', async () => {
+    const { id } = paragraph()
+    const base = layered({}, {})
+    let visibleText: string | null = 'Verified lesson'
+    const port = () => ({
+      list: async () => ({
+        hash: 'revision',
+        paragraphs: [{ id, text: TEXT, visibleText, validity: 'delivered' as const }],
+      }),
+      propose: async () => {
+        throw new Error('unexpected proposal')
+      },
+      commit: async () => {
+        throw new Error('unexpected commit')
+      },
+    })
+    const t = both({ ...base, paragraphs: port, userParagraphs: port }, [paragraph()])
+    seed(t.registry, [paragraph()])
+    expect(await t.refs.entries?.(AT)).toMatchObject([
+      { ref: `ws.${id}`, content: visibleText, untouched: false },
+      { ref: `user.${id}`, content: visibleText, untouched: false },
+    ])
+    const version = normalizedContentHash(visibleText)
+    expect(await t.refs.list(AT)).toMatchObject([{ version }, { version }])
+    visibleText = null
+    expect(await t.refs.entries?.(AT)).toEqual([])
+    expect(await t.refs.list(AT)).toEqual([])
+    expect(await t.refs.renew(AT, `user-memory/${id}`, version)).toBe(false)
+  })
+
   it('lists user sections only while user memory is enabled, and nothing while memory is off', async () => {
     const user = [paragraph({ id: 'r0000000009', contentHash: normalizedContentHash(SOME) })]
     const on = both(layered({}, { r0000000009: SOME }), user)
@@ -457,6 +520,7 @@ describe('entries saved earlier, for the experience snapshot', () => {
 
   it.each([
     'read error',
+    'stale inline content',
     'stale',
     'expired',
     'wrong body',
@@ -475,8 +539,13 @@ describe('entries saved earlier, for the experience snapshot', () => {
           : scenario === 'duplicate opener'
             ? `<!-- refinement:${id} -->\n${raw}`
             : raw
+    const hash = createHash('sha256').update(content).digest('hex')
     const port = () => ({
-      list: async () => ({ hash: 'listed', paragraphs: [{ id, text: TEXT, validity: 'valid' as const }] }),
+      list: async () => ({
+        hash,
+        ...(scenario === 'stale inline content' ? { content: `${content}changed` } : {}),
+        paragraphs: [{ id, text: TEXT, validity: 'valid' as const }],
+      }),
       propose: async () => {
         throw new Error('unexpected proposal')
       },
@@ -495,7 +564,7 @@ describe('entries saved earlier, for the experience snapshot', () => {
           bytes: content.length,
           lines: content.split('\n').length,
           content,
-          hash: scenario === 'stale' ? 'another revision' : 'listed',
+          hash: scenario === 'stale' ? 'another revision' : hash,
         }
       },
     }
@@ -665,8 +734,10 @@ describe('fixes after the branch review', () => {
             `<!-- expires_at: 2020-01-01 -->\n${body}`,
             (await memory.readFile('MEMORY.md')).hash,
           )
-        if (withoutRevision) expect([before, refs.revision?.(AT)]).toEqual(['', ''])
-        else expect(refs.revision?.(AT)).not.toBe(before)
+        if (withoutRevision) {
+          expect(before).toMatch(/^uncached:/)
+          expect(refs.revision?.(AT)).toBe(before)
+        } else expect(refs.revision?.(AT)).not.toBe(before)
         expect(await refs.entries?.(AT)).toEqual([])
         expect(await refs.list(AT)).toEqual([])
         expect(await refs.renew(AT, `workspace-memory/${id}`, normalizedContentHash(TEXT))).toBe(false)
@@ -693,12 +764,14 @@ describe('fixes after the branch review', () => {
     registry.update((draft) => {
       draft.paragraphs.push(source, dependent)
     }, registry.read().revision)
-    const memory = fileProvider().open({
+    const input = {
       home,
       workspaceRoot: ROOT,
       sessionKey: AT.key,
       userValidity: registryView(registry, clock),
-    })
+      clock,
+    }
+    const memory = fileProvider().open(input)
     const refs = createWorkspaceRefs({
       dataDir,
       session: () => ({ workspaceRoot: ROOT, memory }),

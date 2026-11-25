@@ -104,7 +104,17 @@ export interface MemoryValidityView {
 }
 
 /** A managed paragraph of the stored memory file, as stored. */
-export type MemoryParagraph = Readonly<{ id: string; text: string; validity: MemoryParagraphValidity }>
+export type MemoryParagraph = Readonly<{
+  id: string
+  text: string
+  validity: MemoryParagraphValidity
+  /** Optional since 5.24.0. Body after provider visibility filters, including expiry, withdrawn
+   * references and unverified topic summaries. Null when the entire body is hidden. */
+  visibleText?: string | null
+  /** Optional since 5.24.0. Earliest future epoch millisecond at which an expiry annotation,
+   * including one outside the markers, can change the visibility of this body. */
+  nextExpiry?: number
+}>
 
 /** Put inserts a new paragraph or replaces one with the same id in place; remove deletes it. */
 export type MemoryParagraphChange = Readonly<
@@ -151,7 +161,7 @@ export type MemoryParagraphPort = Readonly<{
 /** One implementation pinned to a session. Settings are live; revision snapshots are per turn. */
 export interface MemorySession {
   readonly root: string
-  /** Optional since 5.24.0. Synchronous fingerprint of workspace and user indexes and settings.
+  /** Optional since 5.24.0. Synchronous fingerprint of workspace and user indexes, referenced topics and settings.
    * Without it callers must read the provider again on each request. */
   stateRevision?(): string
   /** Release resources opened lazily by this session; called after in-flight work drains. */

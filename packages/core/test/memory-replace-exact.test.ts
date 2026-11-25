@@ -69,7 +69,7 @@ function memorySession(withReplace: boolean, replaced: unknown[]): MemorySession
   }
 }
 
-async function runTool(memory: MemorySession | undefined, approved: boolean) {
+async function runTool(memory: MemorySession | undefined, approved: boolean, trusted = false) {
   const seen: { present?: boolean } = {}
   const registry = new ToolRegistry()
   registry.add(
@@ -89,7 +89,7 @@ async function runTool(memory: MemorySession | undefined, approved: boolean) {
     },
   })
   const opened = await openSession({
-    ...(memory ? { memory } : {}),
+    ...(memory ? { memory, trustedMemorySession: (candidate) => trusted && candidate === memory } : {}),
     registry,
     seams,
     provider: fakeProvider([toolTurn('memory_editor', {}), textTurn('ok')]),
@@ -105,14 +105,14 @@ async function runTool(memory: MemorySession | undefined, approved: boolean) {
 }
 
 async function runWriteOrRecall(options: {
-  proof?: 'matching' | 'wrong call'
+  proof?: 'matching' | 'wrong call' | 'untrusted provider'
   writeErrorCode?: string
   withRecall?: boolean
   query?: string
   writesOff?: boolean
   isReadOnly?: boolean
 }) {
-  const seen: { hasMemory?: boolean; hasReplace?: boolean; recallResult?: unknown } = {}
+  const seen: { errorName?: string; hasMemory?: boolean; hasReplace?: boolean; recallResult?: unknown } = {}
   const errors = new WeakMap<object, MemorySource>()
   const memory: MemorySession = {
     root: '/w/memory',
@@ -121,7 +121,10 @@ async function runWriteOrRecall(options: {
       ...fallback,
       write: async () => {
         if (options.writeErrorCode) {
-          const error = { code: options.writeErrorCode }
+          const error = Object.assign(new Error('provider refusal'), {
+            code: options.writeErrorCode,
+            name: 'ToolPreEffectRefusal',
+          })
           errors.set(error, options.proof === 'wrong call' ? { ...source, toolUseId: 'other' } : source)
           throw error
         }
@@ -169,13 +172,21 @@ async function runWriteOrRecall(options: {
       if (options.query !== undefined && ctx.memory) {
         seen.recallResult = await ctx.memory.recall({ query: options.query })
       }
-      if (options.writeErrorCode) await ctx.fs.write(MEMORY, 'next')
+      if (options.writeErrorCode) {
+        try {
+          await ctx.fs.write(MEMORY, 'next')
+        } catch (error) {
+          if (error instanceof Error) seen.errorName = error.name
+          throw error
+        }
+      }
       return { content: [{ type: 'text', text: 'done' }] }
     }, options.isReadOnly),
     { source: 'fixture/memory-editor', trust: 'builtin' },
   )
   const opened = await openSession({
     memory,
+    trustedMemorySession: (candidate) => candidate === memory && options.proof !== 'untrusted provider',
     ...(options.proof
       ? {
           memoryPreEffectProof(error: unknown, source: MemorySource) {
@@ -226,10 +237,14 @@ describe('ToolContext.fs.replaceExact', () => {
     expect(replaced).toEqual([])
   })
 
-  it('counts as a write, so a refused approval proves nothing was changed', async () => {
+  it.each([true, false])('binds a refused approval to provider trust (%s)', async (trusted) => {
     const replaced: unknown[] = []
-    const { result } = await runTool(memorySession(true, replaced), false)
+    const { result } = await runTool(memorySession(true, replaced), false, trusted)
     expect(replaced).toEqual([])
+    if (!trusted) {
+      expect(result).toMatchObject({ isError: true, code: 'TOOL_OUTCOME_UNKNOWN' })
+      return
+    }
     expect(result).toMatchObject({
       isError: true,
       code: 'TOOL_REJECTED_BEFORE_EFFECT',
@@ -251,12 +266,14 @@ describe('ToolContext.fs.replaceExact', () => {
   )
 
   it.each([
+    ['MEMORY_HIDDEN_PARAGRAPHS', 'untrusted provider'],
     ['MEMORY_HUMAN_EDITED', undefined],
     ['MEMORY_HUMAN_EDITED', 'wrong call'],
     ['toString', undefined],
     ['toString', 'matching'],
   ] as const)('keeps %s uncertain with proof %s', async (code, proof) => {
-    const { result } = await runWriteOrRecall({ writeErrorCode: code, ...(proof ? { proof } : {}) })
+    const { result, seen } = await runWriteOrRecall({ writeErrorCode: code, ...(proof ? { proof } : {}) })
+    expect(seen.errorName).toBe('Error')
     expect(result).toMatchObject({ isError: true, code: 'TOOL_OUTCOME_UNKNOWN' })
   })
 

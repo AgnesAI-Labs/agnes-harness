@@ -59,11 +59,13 @@ async function layerParagraphs(
   if (settings.mode === 'off' || (layer === 'user' && !settings.userEnabled)) return null
   const port = open.call(memory, { sessionKey, turn: 0 }, new AbortController().signal)
   const listed = await port.list()
-  const visible = await paragraphVisibility(memory, layer, listed, registry, clock, futureExpiry)
+  const paragraphs = listed.paragraphs.filter((p) => p.validity === 'valid' || p.validity === 'delivered')
+  const visible = await paragraphVisibility(memory, layer, { ...listed, paragraphs }, registry, clock)
   const stored = new Map<string, { raw: string; text: string }>()
-  for (const p of listed.paragraphs) {
-    const text = visible(p.id, p.text)
-    if (text !== undefined) stored.set(p.id, { raw: p.text, text })
+  for (const p of paragraphs) {
+    const projection = visible(p)
+    if (projection?.nextExpiry !== undefined) futureExpiry?.(projection.nextExpiry)
+    if (projection?.visibleText) stored.set(p.id, { raw: p.text, text: projection.visibleText })
   }
   return stored
 }
@@ -247,14 +249,15 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
     },
     revision(at) {
       const where = deps.session(at)
-      if (!where || (where.memory && typeof where.memory.stateRevision !== 'function')) return ''
+      if (!where) return ''
       const userRegistry = deps.userRegistry?.()
-      return [
+      const base = [
         registryView(registryOf(where.workspaceRoot), deps.clock).revision(),
         userRegistry ? registryView(userRegistry, deps.clock).revision() : '',
-        where.memory?.stateRevision?.() ?? '',
         expiryRevision(where.memory),
       ].join(':')
+      if (where.memory && typeof where.memory.stateRevision !== 'function') return `uncached:${base}`
+      return `${base}:${where.memory?.stateRevision?.() ?? ''}`
     },
     async renew(at, ref, version) {
       const where = deps.session(at)

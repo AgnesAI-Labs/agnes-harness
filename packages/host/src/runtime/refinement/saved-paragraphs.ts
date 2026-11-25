@@ -29,6 +29,7 @@ export type SavedParagraph = {
   text: string
   validity: MemoryParagraphValidity
   hidden?: true
+  nextExpiry?: number
   reviewAfter?: number
   initiator?: SaveSource['initiator']
   kind?: SaveSource['kind']
@@ -74,21 +75,25 @@ export async function describeParagraphs(
   if (!paragraphs.length) return []
   const paragraphText = await paragraphVisibility(memory, layer, listed, registry, clock)
   const records = registry.read().paragraphs
-  return paragraphs
-    .filter(({ id, text }) => paragraphText(id, text, 'stored') !== undefined)
-    .map(({ id, text, validity }) => {
-      const record = records.find((entry) => entry.id === id && entry.state === 'active')
-      const status = validity === 'delivered' ? 'valid' : validity
-      return {
+  return paragraphs.flatMap((paragraph) => {
+    const projection = paragraphText(paragraph)
+    if (!projection) return []
+    const { id, text, validity } = paragraph
+    const record = records.find((entry) => entry.id === id && entry.state === 'active')
+    const status = validity === 'delivered' ? 'valid' : validity
+    return [
+      {
         id,
         text,
         validity: status,
-        ...(status === 'valid' && paragraphText(id, text) === undefined ? { hidden: true } : {}),
+        ...(status === 'valid' && projection.visibleText === null ? { hidden: true as const } : {}),
+        ...(projection.nextExpiry !== undefined ? { nextExpiry: projection.nextExpiry } : {}),
         ...(record
           ? { reviewAfter: record.reviewAfter, initiator: record.source.initiator, kind: record.source.kind }
           : {}),
-      }
-    })
+      },
+    ]
+  })
 }
 
 /** A person may renew an overdue record once its stored body and surrounding visibility are verified. */
@@ -104,7 +109,7 @@ export async function verifyRenewal(
   const paragraph = listed?.paragraphs.find((p) => p.id === id)
   if (listed && paragraph) {
     const visible = await paragraphVisibility(memory, layer, listed, registry, clock)
-    if (visible(id, paragraph.text) !== undefined) return
+    if (visible(paragraph)?.visibleText) return
   }
   throw fault('MEMORY_PARAGRAPH_NOT_RENEWABLE')
 }

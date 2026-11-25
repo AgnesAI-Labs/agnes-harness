@@ -14,7 +14,7 @@ function expiryTime(value: string): number {
   return time ? Date.parse(`${date}T${time}${zone ?? 'Z'}`) : midnight.getTime()
 }
 
-function* annotations(content: string) {
+export function* annotations(content: string) {
   let pending: { start: number; expiresAt: number }[] = []
   for (const line of content.matchAll(/[^\n]*\n|[^\n]+$/gu)) {
     const text = line[0].trim()

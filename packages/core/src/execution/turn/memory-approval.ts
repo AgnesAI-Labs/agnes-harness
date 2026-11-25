@@ -9,6 +9,8 @@ import { memoryAdmission } from './memory-admission.js'
 
 export type SessionMemoryDeps = {
   memory?: MemorySession
+  /** Host verifies the session belongs to the selected, pinned file provider. */
+  trustedMemorySession?: (session: MemorySession) => boolean
   memoryPreEffectProof?: (error: unknown, source: MemoryInvocation) => boolean
 }
 
@@ -45,8 +47,10 @@ export async function toolMemoryPort(
       approve: async () => ({ status: 'rejected' as const }),
     }
   }
-  const prove = session.d.memoryPreEffectProof
+  const trustedProvider = session.d.trustedMemorySession?.(session.d.memory) === true
+  const prove = trustedProvider && session.d.memoryPreEffectProof
   return {
+    trustedProvider,
     session: session.d.memory,
     ...(prove
       ? {

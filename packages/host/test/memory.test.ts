@@ -556,6 +556,58 @@ it('i01: turning full access off in a workspace session prevents a fresh automat
   }
 })
 
+it.each(['@agnes/base', '@agnes/code'])(
+  'binds file-provider refusals to the package that registered the session (%s)',
+  async (owner) => {
+    const home = await realpath(await mkdtemp(join(tmpdir(), 'agh-memory-provider-owner-')))
+    homes.push(home)
+    const target = hostMemoryRoot(home)
+    const loop = plugins.filter((row) => row.declaration.export === 'defaultLoopPlugin')
+    const memory = plugins.filter((row) => row.declaration.export === 'memoryPlugin')
+    const { host } = await createTestHost({
+      dataDir: home,
+      disableSessionTitle: true,
+      packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+      packages: {
+        '@agnes/base': { plugins: owner === '@agnes/base' ? plugins : loop },
+        ...(owner === '@agnes/code' ? { '@agnes/code': { plugins: memory } } : {}),
+      },
+      approval: async () => ({
+        verdict: 'allowed-once',
+        answeredBy: { id: 'human', org: 'local', role: 'user', deptPath: [], attrs: {} },
+      }),
+      script: [
+        () => call('read', { path: target }),
+        () => call('write', { path: target, content: 'Overwritten preference', allowShrink: true }),
+        () => done,
+      ],
+    })
+    try {
+      const sessionMemory = host.memory(home, 'human')
+      if (!sessionMemory) throw new Error('Missing memory provider')
+      await sessionMemory.configure({ mode: 'auto' })
+      const body = '<!-- refinement:r0000000001 -->\nHidden lesson\n<!-- /refinement:r0000000001 -->'
+      await sessionMemory.editFile('MEMORY.md', body, (await sessionMemory.readFile('MEMORY.md')).hash)
+      const session = await host.createSession({ cwd: home, preset: 'standard' })
+      await session.enqueue('next-turn', {
+        actor: session.d.actor,
+        content: [{ type: 'text', text: 'Edit the memory index.' }],
+      })
+      await session.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
+      const result = (await session.scan({ type: 'tool/result', limit: 10 })).at(-1)?.data
+      if (owner === '@agnes/base')
+        expect(result).toMatchObject({
+          code: 'TOOL_REJECTED_BEFORE_EFFECT',
+          structured: { effect: 'none', code: 'MEMORY_HIDDEN_PARAGRAPHS' },
+        })
+      else expect(result).toMatchObject({ code: 'TOOL_OUTCOME_UNKNOWN' })
+      expect((await sessionMemory.readFile('MEMORY.md')).content).toBe(body)
+    } finally {
+      await host.close()
+    }
+  },
+)
+
 it('records the official provider’s pre-commit refusals for ordinary write and edit tools', async () => {
   const home = await realpath(await mkdtemp(join(tmpdir(), 'agh-protected-memory-')))
   homes.push(home)
@@ -632,6 +684,7 @@ it('a session opened with memory writes off can recall a preference and cannot o
   const workspace = join(home, 'workspace')
   await mkdir(workspace)
   const target = hostMemoryRoot(home, workspace)
+  let recallRequest: RequestBody | undefined
   const { host } = await createTestHost({
     dataDir: home,
     workspaceRoot: workspace,
@@ -647,7 +700,10 @@ it('a session opened with memory writes off can recall a preference and cannot o
       // The first call discloses the deferred tool for the next request.
       () => call('memory_recall', { query: 'alpine' }),
       () => call('memory_recall', { query: 'alpine' }),
-      () => call('write', { path: target, content: 'WRITES_OFF_MEMORY' }),
+      (request) => {
+        recallRequest = request
+        return call('write', { path: target, content: 'WRITES_OFF_MEMORY' })
+      },
       () => done,
     ],
   })
@@ -666,7 +722,20 @@ it('a session opened with memory writes off can recall a preference and cannot o
     await session.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
     const results = await session.scan({ type: 'tool/result', limit: 10 })
     expect(results).toHaveLength(3)
+    expect(results[1]?.trust).toBe('untrusted')
     expect(JSON.stringify(results[1]?.data)).toContain(saved)
+    const hits = recallRequest?.messages.flatMap((message) =>
+      message.content.flatMap((block) =>
+        message.role === 'tool_result' && block.type === 'text' && block.text.includes(saved)
+          ? [block.text]
+          : [],
+      ),
+    )
+    expect(hits).toEqual([
+      expect.stringMatching(
+        /^<untrusted id="([^"]+)" bytes="\d+">[\s\S]*Use alpine for the build\.[\s\S]*<\/untrusted id="\1">$/,
+      ),
+    ])
     expect(results[2]?.data).toMatchObject({ isError: true })
     expect((await inspection.readFile('MEMORY.md')).content).toBe(saved)
   } finally {

@@ -21,7 +21,7 @@ export const memoryRecallTool = defineTool({
     isReadOnly: true,
     isDestructive: false,
     isConcurrencySafe: true,
-    isOpenWorld: false,
+    isOpenWorld: true,
     replay: 'safe',
     deferLoading: true,
     requiresApproval: 'never',

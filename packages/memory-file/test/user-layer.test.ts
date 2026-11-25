@@ -212,7 +212,9 @@ describe('user memory: the managed section write', () => {
     const stored = `${HAND}\n${block(A, 'Lesson A.')}`
     await writeFile(f.userFile, stored)
     const listed = await f.port().list()
-    expect(listed.paragraphs).toEqual([{ id: A, text: 'Lesson A.', validity: 'valid' }])
+    expect(listed.paragraphs).toEqual([
+      { id: A, text: 'Lesson A.', visibleText: 'Lesson A.', validity: 'valid' },
+    ])
     const proposal = await f.port().propose({ op: 'put', id: B, text: 'Lesson B.' }, listed.hash)
     const port = f.port()
     const again = await port.propose({ op: 'put', id: B, text: 'Lesson B.' }, listed.hash)

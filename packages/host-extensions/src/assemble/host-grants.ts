@@ -182,7 +182,7 @@ function pinCapabilities(
       if (!owner) return undefined
       const proof = bound.get(owner)
       return proof?.memoryPreEffectProof && verified(owner, proof.module)
-        ? proof.memoryPreEffectProof
+        ? { sourcePackage: owner, verify: proof.memoryPreEffectProof }
         : undefined
     },
     integrity(owner: string) {

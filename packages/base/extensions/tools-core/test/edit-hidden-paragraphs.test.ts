@@ -12,7 +12,7 @@ import { writeTool } from '../src/tools/write.js'
 const NOTICE = '[1 task-experience paragraphs omitted: expired or unverifiable]\n'
 const HIDDEN = '<!-- refinement:r0000000001 -->\nSECRET-HIDDEN-TEXT\n<!-- /refinement:r0000000001 -->\n'
 
-type Fault = { code?: string; message?: string }
+type Fault = { code?: string; message?: string; unattested?: boolean }
 type Opts = {
   before?: string
   after?: string
@@ -25,6 +25,7 @@ type Opts = {
   withReplaceExact?: boolean
   /** The code the whole-file write is refused with. */
   writeCode?: string
+  unattested?: boolean
 }
 type State = { before: string; after: string }
 
@@ -43,13 +44,17 @@ function memoryCtx(opts: Opts = {}) {
   ctx.fs.write = async () => {
     opts.onRefusedWrite?.(state)
     const code = opts.writeCode ?? 'MEMORY_HIDDEN_PARAGRAPHS'
-    throw Object.assign(new Error(code), { code })
+    throw Object.assign(new Error(code), { code, name: opts.unattested ? 'Error' : 'ToolPreEffectRefusal' })
   }
   if (opts.withReplaceExact !== false)
     ctx.fs.replaceExact = async (_path, oldText, newText) => {
       calls.push([oldText, newText])
       const fail = opts.failCall?.[calls.length]
-      if (fail) throw Object.assign(new Error(fail.message ?? 'refused'), { code: fail.code })
+      if (fail)
+        throw Object.assign(new Error(fail.message ?? 'refused'), {
+          code: fail.code,
+          name: fail.code && !fail.unattested ? 'ToolPreEffectRefusal' : 'Error',
+        })
       const text = view()
       const at = text.indexOf(oldText)
       if (at < 0 || text.indexOf(oldText, at + 1) >= 0)
@@ -72,9 +77,23 @@ async function observed(opts?: Opts) {
 }
 
 const textOf = (r: ToolResult) => r.content.map((c) => (c.type === 'text' ? c.text : '')).join('\n')
-const everything = (r: ToolResult) => JSON.stringify(r)
 
 describe('edit on a memory file that hides paragraphs', () => {
+  it.each(['MEMORY_HIDDEN_PARAGRAPHS', 'MEMORY_HUMAN_EDITED'])(
+    'propagates an unattested %s without retrying',
+    async (code) => {
+      const { ctx, calls } = await observed({ writeCode: code, unattested: true })
+      const path = 'memory/MEMORY.md'
+      await expect(
+        editTool.execute({ path, edits: [{ oldText: 'alpha', newText: 'delta' }] }, ctx),
+      ).rejects.toMatchObject({ code })
+      await expect(
+        writeTool.execute({ path, content: `alpha line\nbeta line\n${NOTICE}gamma changed\n` }, ctx),
+      ).rejects.toMatchObject({ code })
+      expect(calls).toEqual([])
+    },
+  )
+
   it('edit falls back to exact replacement when the memory file hides paragraphs', async () => {
     const { ctx, calls, stored } = await observed()
     const result = await editTool.execute(
@@ -229,15 +248,36 @@ describe('edit on a memory file that hides paragraphs', () => {
     },
   )
 
+  it('propagates an uncertain exact edit even after a preceding replacement succeeded', async () => {
+    const { ctx, calls, stored } = await observed({
+      failCall: { 2: { code: 'MEMORY_HUMAN_EDITED', unattested: true } },
+    })
+    await expect(
+      editTool.execute(
+        {
+          path: 'memory/MEMORY.md',
+          edits: [
+            { oldText: 'alpha line', newText: 'alpha changed' },
+            { oldText: 'beta line', newText: 'beta changed' },
+            { oldText: 'gamma line', newText: 'gamma changed' },
+          ],
+        },
+        ctx,
+      ),
+    ).rejects.toThrow('MEMORY_HUMAN_EDITED: exact edit outcome unknown')
+    expect(calls).toHaveLength(2)
+    expect(stored()).toContain('alpha changed')
+  })
+
   it('reports nothing applied when the first replacement fails', async () => {
     const { ctx, stored } = await observed({ failCall: { 1: { code: 'MEMORY_APPROVAL_REJECTED' } } })
     const before = stored()
-    const result = await editTool.execute(
-      { path: 'memory/MEMORY.md', edits: [{ oldText: 'alpha line', newText: 'alpha changed' }] },
-      ctx,
-    )
-    expect(result.isError).toBe(true)
-    expect(result.structured).toMatchObject({ index: 0, written: false, applied: [], notApplied: [0] })
+    await expect(
+      editTool.execute(
+        { path: 'memory/MEMORY.md', edits: [{ oldText: 'alpha line', newText: 'alpha changed' }] },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ name: 'ToolPreEffectRefusal', code: 'MEMORY_APPROVAL_REJECTED' })
     expect(stored()).toBe(before)
   })
 
@@ -260,15 +300,12 @@ describe('edit on a memory file that hides paragraphs', () => {
   it('never puts hidden text or a provider message into an error', async () => {
     const leak = 'provider says: SECRET-HIDDEN-TEXT and sk-live-0123456789abcdef0123456789abcdef'
     const { ctx } = await observed({ failCall: { 1: { message: leak } } })
-    const result = await editTool.execute(
-      { path: 'memory/MEMORY.md', edits: [{ oldText: 'alpha line', newText: 'alpha changed' }] },
-      ctx,
-    )
-    expect(result.isError).toBe(true)
-    expect(everything(result)).not.toContain('SECRET-HIDDEN-TEXT')
-    expect(everything(result)).not.toContain('provider says')
-    expect(everything(result)).not.toContain('sk-live')
-    expect(result.details).toMatchObject({ code: 'FS_EDIT_REPLACE_FAILED' })
+    await expect(
+      editTool.execute(
+        { path: 'memory/MEMORY.md', edits: [{ oldText: 'alpha line', newText: 'alpha changed' }] },
+        ctx,
+      ),
+    ).rejects.toThrow(/^FS_EDIT_REPLACE_FAILED: exact edit outcome unknown$/)
   })
 
   it('keeps the provider code when there is no exact replacement for a text change', async () => {
@@ -328,18 +365,15 @@ describe('edit on an ordinary file', () => {
 })
 
 describe('write on a memory file that hides paragraphs', () => {
-  it('write is refused with a hint when paragraphs are hidden', async () => {
+  it('preserves the pre-effect refusal for the ledger when paragraphs are hidden', async () => {
     const { ctx, calls, stored } = await observed()
     const before = stored()
-    const result = await writeTool.execute(
-      { path: 'memory/MEMORY.md', content: `alpha line\nbeta line\n${NOTICE}gamma line\nnew line\n` },
-      ctx,
-    )
-    expect(result.isError).toBe(true)
-    expect(result.details).toMatchObject({ code: 'MEMORY_HIDDEN_PARAGRAPHS' })
-    expect(textOf(result)).toContain('managed paragraphs')
-    expect(textOf(result)).toContain('use edit')
-    expect(everything(result)).not.toContain('SECRET-HIDDEN-TEXT')
+    await expect(
+      writeTool.execute(
+        { path: 'memory/MEMORY.md', content: `alpha line\nbeta line\n${NOTICE}gamma line\nnew line\n` },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'MEMORY_HIDDEN_PARAGRAPHS', name: 'ToolPreEffectRefusal' })
     expect(calls).toEqual([])
     expect(stored()).toBe(before)
   })

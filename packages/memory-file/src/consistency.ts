@@ -25,6 +25,10 @@ export function formatLifecycleOmission(group: string, count: number): string {
   return ''
 }
 
+export function nonManaged(range: HideRange): boolean {
+  return range.reason !== 'managed-omitted' && range.reason !== 'managed-delivered'
+}
+
 type Chunk = Readonly<{ path: string; lineStart: number; lineEnd: number; text: string }>
 
 /** Reads retain unverified summary text for editing. Recall only indexes verified summaries. */

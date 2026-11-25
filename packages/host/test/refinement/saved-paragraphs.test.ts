@@ -135,12 +135,15 @@ describe('saved paragraphs on the memory page', () => {
 
   it('marks only valid paragraphs whose whole body is hidden', async () => {
     const ws = await workspace()
+    const deadline = Date.UTC(2099, 0, 1)
     const partial = `Still visible\n\n<!-- ref:${C} -->\nHidden block`
     ws.seed(paragraph(A, LESSON_A, T0 + DAY), paragraph(B, partial, T0 + DAY))
-    await ws.write(`<!-- expires_at: 2020-01-01 -->\n${marked(A, LESSON_A)}\n\n${marked(B, partial)}`)
+    await ws.write(
+      `<!-- expires_at: 2020-01-01 -->\n${marked(A, LESSON_A)}\n\n<!-- expires_at: ${new Date(deadline).toISOString()} -->\n${marked(B, partial)}`,
+    )
     const { paragraphs } = await ws.run('list')
     expect(paragraphs[0]).toMatchObject({ id: A, text: LESSON_A, validity: 'valid', hidden: true })
-    expect(paragraphs[1]).toMatchObject({ id: B, text: partial, validity: 'valid' })
+    expect(paragraphs[1]).toMatchObject({ id: B, text: partial, validity: 'valid', nextExpiry: deadline })
     expect(paragraphs[1]).not.toHaveProperty('hidden')
     await expect(ws.run('renew', A)).rejects.toMatchObject({ code: 'MEMORY_PARAGRAPH_NOT_RENEWABLE' })
   })

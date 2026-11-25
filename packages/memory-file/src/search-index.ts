@@ -243,19 +243,20 @@ export class SearchIndex {
       }
       if (isStale()) return searchSnapshot()
       const db = this.open()
-      if (!upToDate(db, docs)) {
-        const stale = transaction(db, () => {
-          if (upToDate(db, docs)) return false
-          if (isStale()) return true
-          this.reconcile(db, docs, false)
-          return false
-        })
-        if (stale) {
-          this.disconnect()
-          return searchSnapshot()
-        }
+      db.exec('BEGIN')
+      try {
+        if (upToDate(db, docs)) return this.search(db, query)
+      } finally {
+        db.exec('ROLLBACK')
       }
-      return this.search(db, query)
+      const hits = transaction(db, () => {
+        if (!upToDate(db, docs)) {
+          if (isStale()) return undefined
+          this.reconcile(db, docs, false)
+        }
+        return this.search(db, query)
+      })
+      return hits ?? searchSnapshot()
     })
   }
 }

@@ -104,8 +104,15 @@ async function selectCoreProviders(
  * refinement on or off (a provider that does not know the fields ignores them); the same opener serves
  * background work on workspace and user memory.
  */
-function sessionMemory(ctx: AssemblyContext, pluginTree: HostPluginTreeBase, refinement: RefinementHost) {
+function sessionMemory(
+  ctx: AssemblyContext,
+  pluginTree: HostPluginTreeBase,
+  refinement: RefinementHost,
+  grants: PackageSet['grants'],
+) {
   const { providerSelections, deps } = ctx
+  const proof = grants.memoryPreEffectProof()
+  const trustedSessions = new WeakSet<MemorySession>()
   const open = (workspaceRoot: string, sessionKey: string, child = false): MemorySession | undefined => {
     const selection = providerSelections.memory ?? { provider: 'file', version: '1.0.0' }
     if (
@@ -113,16 +120,41 @@ function sessionMemory(ctx: AssemblyContext, pluginTree: HostPluginTreeBase, ref
       !pluginTree.root.providers.catalog().some((entry) => entry.kind === 'memory')
     )
       return undefined
-    return pluginTree.root.providers.resolve(memoryKind, selection).open({
+    const providers = pluginTree.root.providers
+    const provider = providers.resolve(memoryKind, selection)
+    const trusted =
+      selection.provider === 'file' &&
+      provider.id === selection.provider &&
+      providers
+        .catalog()
+        .some(
+          (entry) =>
+            entry.kind === 'memory' &&
+            entry.id === provider.id &&
+            entry.version === provider.version &&
+            entry.sourcePackage === proof?.sourcePackage &&
+            providers.resolve(memoryKind, { provider: entry.id, version: entry.version }) === provider,
+        )
+    const session = provider.open({
       home: dirname(dirname(deps.profileDir)),
       workspaceRoot,
       sessionKey,
       validity: refinement.workspace.validity(workspaceRoot, sessionKey, child),
       userValidity: refinement.workspace.userValidity(sessionKey, child),
     })
+    if (trusted) trustedSessions.add(session)
+    return session
   }
   refinement.workspace.bindMemory(open)
-  return open
+  return {
+    open,
+    options: {
+      trustedMemorySession: (session: MemorySession) => trustedSessions.has(session),
+      ...(proof ? { memoryPreEffectProof: proof.verify } : {}),
+      memoryFor: ({ key, workspaceRoot, child }: { key: string; workspaceRoot: string; child?: boolean }) =>
+        refinement.workspace.opened(workspaceRoot, open(workspaceRoot, key, child === true)),
+    },
+  }
 }
 
 /**
@@ -182,7 +214,7 @@ export async function createKernel(
     : undefined
   const extensionSessions = new ExtensionSessions<HookPort>()
   const { compaction, loop, systemPromptProvider } = await selectCoreProviders(ctx, pluginTree, view)
-  const memory = sessionMemory(ctx, pluginTree, input.refinement)
+  const memory = sessionMemory(ctx, pluginTree, input.refinement, input.pkgs.grants)
   const toolProviderCatalog = (kind: 'tool-runtime' | 'tool-policy') =>
     Object.freeze(
       pluginTree.root.providers
@@ -190,7 +222,6 @@ export async function createKernel(
         .filter((entry) => entry.kind === kind)
         .map(({ id, version, sourcePackage }) => Object.freeze({ id, version, sourcePackage })),
     )
-  const memoryPreEffectProof = input.pkgs.grants.memoryPreEffectProof()
   const kernel = Kernel.create({
     ...(deps.childRoles ? { childRoles: deps.childRoles } : {}),
     ...input.refinement.kernelOptions,
@@ -248,9 +279,7 @@ export async function createKernel(
       ...adapters.fs,
       read: (path, opts) => adapters.fs.read(path, { ...opts, unit: 'bytes' }),
     },
-    ...(memoryPreEffectProof ? { memoryPreEffectProof } : {}),
-    memoryFor: ({ key, workspaceRoot, child }) =>
-      input.refinement.workspace.opened(workspaceRoot, memory(workspaceRoot, key, child === true)),
+    ...memory.options,
     commandPathScopeFor: hostCommandPathScope,
     netFetch: deps.netFetch ?? createNetFetch(),
     publicFetch: deps.publicFetch ?? createPublicFetch(deps.env),
@@ -338,5 +367,5 @@ export async function createKernel(
   ctx.live.kernel.set(kernel)
   rollback.push('kernel', () => kernel.close())
   input.refinement.bindKernel(kernel)
-  return { kernel, extensionSessions, compositionLease, systemPromptProvider, memory }
+  return { kernel, extensionSessions, compositionLease, systemPromptProvider, memory: memory.open }
 }

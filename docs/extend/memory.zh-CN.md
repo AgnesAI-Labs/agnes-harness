@@ -50,9 +50,11 @@ Extension API 5.5.0 新增有效性答案 `delivered` 和可选的 `MemoryValidi
 
 ## 已保存段落的可见性与版本（5.24.0）
 
-两个段落端口都可以返回与 `hash`、`paragraphs` 同次读取的完整索引文本 `content`。Host 核对正文与标记，并检查段落周围的引用和到期注释。旧 provider 的工作区段落可通过 hash 匹配的 `readFile('MEMORY.md')` 验证。投递用户段落需要列表携带用户索引全文。
+工作区和用户段落端口都可以通过 `visibleText` 返回过滤后的正文。对完整索引应用可见性规则，包括标记外的到期注释、已撤回的引用、过时或缺失的主题摘要。如果整个正文都已隐藏，返回 `null`。如果到期注释会改变段落可见性，用 `nextExpiry` 返回最早的到期时间（Unix 毫秒）。Host 只投递登记仍有效且提供方判定为 `valid` 或 `delivered` 的段落。
 
-`MemorySession.stateRevision()` 同步返回指纹，工作区索引、用户索引或设置变化时指纹随之变化。省略此方法时，Host 每次请求都重新读取当前条目。
+省略 `visibleText` 的提供方可以返回与 `hash`、`paragraphs` 同次读取的完整索引文本 `content`。Host 核对文件字节和标记，再检查段落周围的引用和到期注释。工作区段落也可通过哈希匹配的 `readFile('MEMORY.md')` 验证。
+
+`MemorySession.stateRevision()` 同步返回指纹。设置、工作区或用户层的索引和主题文件发生变化时，指纹应随之变化。省略此方法时，Host 每次请求都重新读取当前条目。
 
 ## 可选的按需召回与人工编辑保护（5.23.0）
 

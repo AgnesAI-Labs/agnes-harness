@@ -12,9 +12,8 @@ import {
   EDIT_UNSUPPORTED_TEXT,
   type ExactOutcome,
   exactFailure,
+  isAttestedPreEffect,
   isHiddenParagraphs,
-  memoryProtectedRefusal,
-  propagateWriteRefusal,
   refusalCode,
   replaceOneByOne,
   viewAfter,
@@ -169,17 +168,7 @@ export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions, l
             if (exact.applied.length === 0) return exactFailure(ctx, exact, planned.length)
             text = await viewAfter(ctx, args.path, exact.failure ? original : text)
           } else {
-            propagateWriteRefusal(e)
-            const protectedRefusal = memoryProtectedRefusal(e)
-            if (protectedRefusal)
-              return editFailure(
-                ctx,
-                protectedRefusal.code,
-                'write_failed',
-                null,
-                false,
-                protectedRefusal.text,
-              )
+            if (isAttestedPreEffect(e)) throw e
             const code = failureCode(e, 'FS_WRITE_FAILED')
             const hint =
               code === 'E_FS_DENIED'
