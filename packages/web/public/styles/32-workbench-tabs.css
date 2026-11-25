@@ -143,9 +143,11 @@
   .workbench-terminal-pill .workbench-terminal-select {
     width: 100%;
     display: flex;
+    justify-content: flex-start;
     gap: var(--s4);
     padding-inline: var(--s4);
     color: var(--agnes-text-secondary);
+    text-align: start;
   }
   .workbench-terminal-tabs .workbench-terminal-pill [aria-pressed="true"] {
     color: var(--agnes-text-primary);
@@ -162,8 +164,11 @@
     white-space: nowrap;
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
+    text-align: start;
   }
   .workbench-terminal-runtime {
+    flex: none;
+    margin-inline-start: auto;
     font: 10px var(--font-mono);
     color: var(--agnes-text-secondary);
     white-space: nowrap;

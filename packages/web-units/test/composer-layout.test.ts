@@ -710,85 +710,113 @@ it('uses the shared ghost seam for live follow-up hints and invalidates dismisse
   expect(loadHint).toHaveBeenCalledTimes(5)
 })
 
-it.each(['running', 'idle', 'interrupted', 'completed', 'failed', 'cancelled'] as const)(
-  'shows only usable child controls and labels follow-ups (%s)',
-  (status) => {
-    const active = !['completed', 'failed', 'cancelled'].includes(status)
-    const { host } = mount(
-      {
-        onChildControl: async () => {},
-        dependencies: {
-          ...dependencies,
-          translate: (key, vars) =>
-            (webUnitsLocaleCatalog['zh-CN'][key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) =>
-              String(vars?.[name] ?? name),
-            ),
+it.each([
+  'starting',
+  'running',
+  'waiting_approval',
+  'paused',
+  'disconnected',
+  'idle',
+  'completed',
+  'failed',
+  'cancelled',
+  'interrupted',
+] as const)('shows only usable child controls and labels follow-ups (%s)', (status) => {
+  const active = !['completed', 'failed', 'cancelled'].includes(status)
+  const working = status === 'starting' || status === 'running'
+  const { host } = mount(
+    {
+      onChildControl: async () => {},
+      dependencies: {
+        ...dependencies,
+        translate: (key, vars) =>
+          (webUnitsLocaleCatalog['zh-CN'][key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) =>
+            String(vars?.[name] ?? name),
+          ),
+      },
+    },
+    {
+      ...idle,
+      children: [
+        {
+          id: 'child',
+          parentId: 'parent',
+          providerId: 'in-process',
+          status,
+          controls: { stop: working, continue: active },
+          totalTokens: 15,
+          durationMs: 1200,
         },
-      },
-      {
-        ...idle,
-        children: [
-          {
-            id: 'child',
-            parentId: 'parent',
-            providerId: 'in-process',
-            status,
-            controls: { stop: status === 'running', continue: active },
-            totalTokens: 15,
-            durationMs: 1200,
-          },
-        ],
-      },
-    )
-    expect(host.querySelector('[data-testid="child-stop"]') !== null).toBe(status === 'running')
-    const steerToggle = host.querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')
-    expect(steerToggle !== null).toBe(active)
-    expect(host.querySelector('[data-testid="child-continue-message"]')).toBeNull()
-    if (active) {
-      act(() => {
-        steerToggle?.click()
-      })
-      expect(host.querySelector('[data-testid="child-continue"]')?.textContent).toBe(
-        status === 'running' ? '发送' : '继续',
-      )
-    } else {
-      expect(host.querySelector('[data-testid="child-continue"]')).toBeNull()
-    }
-    const metrics = host.querySelector('[data-testid="child-control-metrics"]')?.textContent
-    expect(metrics).toContain('15')
-    expect(metrics).toContain('1.2')
-    // The built-in provider reads as a subagent; the end of the id keeps two children apart.
-    const name = host.querySelector('.composer-child-name')
-    expect(name?.textContent).toBe('子智能体 · child')
-    expect(name?.getAttribute('title')).toBe('child')
-    // Status is stated in words first; the tag tone only backs it.
-    const state = host.querySelector('[data-testid="child-control-row"] [role="status"]')
-    expect(state?.textContent).toBe(
-      {
-        running: '运行中',
-        idle: '空闲',
-        interrupted: '已停止',
-        completed: '已完成',
-        failed: '失败',
-        cancelled: '已取消',
-      }[status as 'running'],
-    )
-    expect(state?.getAttribute('data-tone')).toBe(
-      { running: 'info', idle: null, interrupted: 'warn', completed: 'ok', failed: 'bad', cancelled: null }[
-        status as 'running'
       ],
-    )
-    // The collapsed header still states how much of the tree is working.
-    const header = host.querySelector('[data-testid="child-control-tree"] .agh-disclosure-meta')
-    expect(header?.textContent ?? null).toBe(status === 'running' ? '1 个运行中' : null)
-    const input = host.querySelector('[data-testid="child-continue-message"]')
-    expect(input !== null).toBe(active)
-    if (active) {
-      expect(input?.getAttribute('placeholder')).toBe('发给子代理的消息')
-      expect(input?.getAttribute('aria-label')).toBe('发给子代理的消息')
-    }
-  },
-)
+    },
+  )
+  expect(host.querySelector('[data-testid="child-stop"]') !== null).toBe(working)
+  const steerToggle = host.querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')
+  expect(steerToggle !== null).toBe(active)
+  expect(host.querySelector('[data-testid="child-continue-message"]')).toBeNull()
+  if (active) {
+    act(() => {
+      steerToggle?.click()
+    })
+    expect(host.querySelector('[data-testid="child-continue"]')?.textContent).toBe(working ? '发送' : '继续')
+  } else {
+    expect(host.querySelector('[data-testid="child-continue"]')).toBeNull()
+  }
+  const metrics = host.querySelector('[data-testid="child-control-metrics"]')?.textContent
+  expect(metrics).toContain('15')
+  expect(metrics).toContain('1.2')
+  // The built-in provider reads as a subagent; the end of the id keeps two children apart.
+  const name = host.querySelector('.composer-child-name')
+  expect(name?.textContent).toBe('子智能体 · child')
+  expect(name?.getAttribute('title')).toBe('child')
+  // Status is stated in words first (never raw translation keys); the tag tone only backs it.
+  const state = host.querySelector('[data-testid="child-control-row"] [role="status"]')
+  expect(state?.textContent).toBe(
+    {
+      starting: '正在启动',
+      running: '运行中',
+      waiting_approval: '待审批',
+      paused: '已暂停',
+      disconnected: '已断开',
+      idle: '空闲',
+      completed: '已完成',
+      failed: '失败',
+      cancelled: '已取消',
+      interrupted: '已停止',
+    }[status],
+  )
+  expect(state?.getAttribute('data-tone')).toBe(
+    {
+      starting: 'info',
+      running: 'info',
+      waiting_approval: 'warn',
+      paused: 'warn',
+      disconnected: 'warn',
+      idle: null,
+      completed: 'ok',
+      failed: 'bad',
+      cancelled: null,
+      interrupted: 'warn',
+    }[status],
+  )
+  // The collapsed header always reports a non-blank status summary.
+  const header = host.querySelector('[data-testid="child-control-tree"] .agh-disclosure-meta')
+  expect(header?.textContent).toBe(
+    working
+      ? '1 个运行中'
+      : status === 'waiting_approval' || status === 'paused' || status === 'disconnected'
+        ? '1 个待处理'
+        : status === 'failed'
+          ? '1 个失败'
+          : '1 个已结束',
+  )
+  const input = host.querySelector('[data-testid="child-continue-message"]')
+  expect(input !== null).toBe(active)
+  if (active) {
+    expect(input?.getAttribute('placeholder')).toBe('发给子代理的消息')
+    expect(input?.getAttribute('aria-label')).toBe('发给子代理的消息')
+  }
+})
 
 it('pins live children above folded idle and cancelled history and strips markdown from labels', () => {
   const { host } = mount(
@@ -907,4 +935,97 @@ it.each([
   expect(button).not.toBeNull()
   await act(async () => button?.click())
   expect(onChildControl).toHaveBeenCalledWith('controlled-child', action, undefined)
+})
+
+it('keeps idle ancestors with waiting_approval grandchildren out of history, preserves literal chars, formats unknown metrics and separates write from refresh', async () => {
+  const retryRefresh = vi.fn(async () => {})
+  const onChildControl = vi.fn(async () => ({ refreshFailed: 'network timeout', retryRefresh }))
+  const zhTranslate = (key: string, vars?: Record<string, string | number>) =>
+    (webUnitsLocaleCatalog['zh-CN'][key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) =>
+      String(vars?.[name] ?? name),
+    )
+  const { host } = mount(
+    {
+      onChildControl,
+      dependencies: { ...dependencies, translate: zhTranslate },
+    },
+    {
+      ...idle,
+      children: [
+        {
+          id: 'root/parent-a',
+          parentId: 'root',
+          providerId: 'in-process',
+          label: '订单对账_g #42 (C# lane_1.txt)',
+          status: 'idle',
+          controls: { stop: false, continue: true },
+          totalTokens: null,
+          durationMs: null,
+        },
+        {
+          id: 'root/parent-a/grandchild',
+          parentId: 'root/parent-a',
+          providerId: 'in-process',
+          label: 'web_search `query` **bold**',
+          status: 'waiting_approval',
+          controls: { stop: true, continue: false },
+          totalTokens: 0,
+          durationMs: 0,
+        },
+        {
+          id: 'root/finished-b',
+          parentId: 'root',
+          providerId: 'in-process',
+          label: '已完成兄弟',
+          status: 'completed',
+          controls: { stop: false, continue: false },
+          totalTokens: 50,
+          durationMs: 1000,
+        },
+      ],
+    },
+  )
+  // Header summarizes attention + settled without omitting pending grandchildren.
+  expect(host.querySelector('[data-testid="child-control-tree"] .agh-disclosure-meta')?.textContent).toBe(
+    '1 个待处理 · 2 个已结束',
+  )
+  // Active top list keeps idle parent-a AND its waiting_approval grandchild; only finished-b folds into history.
+  const topList = host.querySelector('.composer-children-list')
+  expect(topList?.querySelector('[data-child-id="root/parent-a"]')).not.toBeNull()
+  expect(topList?.querySelector('[data-child-id="root/parent-a/grandchild"]')).not.toBeNull()
+  const history = host.querySelector('[data-testid="child-control-history"]')
+  expect(history?.querySelector('[data-child-id="root/finished-b"]')).not.toBeNull()
+  expect(history?.querySelector('[data-child-id="root/parent-a/grandchild"]')).toBeNull()
+  // Underscores and hashes are preserved while paired markdown markers are stripped.
+  const parentRow = topList?.querySelector('[data-child-id="root/parent-a"]') as HTMLElement
+  const grandchildRow = topList?.querySelector('[data-child-id="root/parent-a/grandchild"]') as HTMLElement
+  expect(parentRow.querySelector('.composer-child-title')?.textContent).toBe('订单对账_g #42 (C# lane_1.txt)')
+  expect(grandchildRow.querySelector('.composer-child-title')?.textContent).toBe('web_search query bold')
+  // Null/null metrics render natural language instead of "未知 · 未知s"; known zeros stay visible.
+  expect(parentRow.querySelector('[data-testid="child-control-metrics"]')?.textContent).toBe('暂无用量')
+  expect(grandchildRow.querySelector('[data-testid="child-control-metrics"]')?.textContent).toContain('0.0s')
+  // Accessible button labels include task context.
+  const steerToggle = parentRow.querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')
+  expect(steerToggle?.getAttribute('aria-label')).toContain('订单对账_g #42')
+  // Write succeeds + refresh fails: clears draft, shows read-only refresh warning, retry does not re-send write.
+  act(() => steerToggle?.click())
+  const input = parentRow.querySelector<HTMLInputElement>('[data-testid="child-continue-message"]')!
+  expect(input.getAttribute('aria-label')).toContain('订单对账_g #42')
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(input, '继续核对')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  const sendBtn = parentRow.querySelector<HTMLButtonElement>('[data-testid="child-continue"]')!
+  await act(async () => sendBtn.click())
+  expect(onChildControl).toHaveBeenCalledTimes(1)
+  expect(parentRow.querySelector('[data-testid="child-continue-message"]')).toBeNull()
+  expect(parentRow.querySelector('[data-testid="child-refresh-warning"]')?.textContent).toContain(
+    '操作已提交',
+  )
+  const retryBtn = parentRow.querySelector<HTMLButtonElement>('[data-testid="child-refresh-retry"]')!
+  await act(async () => retryBtn.click())
+  expect(retryRefresh).toHaveBeenCalledTimes(1)
+  expect(onChildControl).toHaveBeenCalledTimes(1)
+  expect(parentRow.querySelector('[data-testid="child-refresh-warning"]')).toBeNull()
 })

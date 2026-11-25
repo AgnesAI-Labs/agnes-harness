@@ -95,7 +95,9 @@ export function TraceListRow({
             <span className="trace-visually-hidden">{row.status}</span>
           </span>
         ) : null}
-        {timed ? <span className="trace-row-duration">{durationLabel(row.durationMs)}</span> : null}
+        {timed ? (
+          <span className="trace-row-duration">{durationLabel(row.durationMs, row.statusCode)}</span>
+        ) : null}
       </span>
     </Button>
   )

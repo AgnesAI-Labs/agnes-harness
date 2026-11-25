@@ -25,6 +25,10 @@ export interface ShellJobView {
   foregroundCode?: number
   shell?: PersistentShellName
   sessionId?: string
+  /** Underlying child-agent status when `kind === 'child'`, preserving states finer than generic job status. */
+  childStatus?: import('@agnes/extension-api').ChildAgentStatus
+  /** Human-readable task label for a child-agent job when supplied by the child listing. */
+  childLabel?: string
 }
 export type ProcessJobContext = Pick<ToolContext, 'session' | 'cwd' | 'signal' | 'fs'> & {
   sandbox: Pick<ToolContext['sandbox'], 'openProcess'> | ToolContext['sandbox']
@@ -35,6 +39,7 @@ interface Job {
   /** When the registry took the job on; a read of a running job says how long it has run. */
   startedAt: number
   childIdle?: boolean
+  childTerminal?: boolean
   /** Last output, input or read; an idle persistent shell or terminal is closed from it. */
   activeAt: number
   capturedBytes: number
@@ -497,19 +502,26 @@ export class ShellJobs {
   async syncChildren(
     ctx: JobOwner & Pick<ToolContext, 'cwd'> & { subagent?: ToolContext['subagent'] },
     port?: SessionChildJobs,
+    selectedJobId?: string,
   ): Promise<void> {
     const controls =
       port ??
       (ctx.subagent?.list
         ? {
-            list: async () =>
-              Promise.all(
-                (await ctx.subagent!.list!()).map(async (child) => {
-                  if (child.text !== undefined) return child
+            list: async () => {
+              const rows = await ctx.subagent!.list!()
+              // Avoid N per-child collect calls during listing (collect also acknowledges results);
+              // only read on demand for the explicitly selected child when its listing has no text.
+              if (!selectedJobId?.startsWith('child:')) return rows
+              const targetId = selectedJobId.slice('child:'.length)
+              return Promise.all(
+                rows.map(async (child) => {
+                  if (child.id !== targetId || child.text !== undefined) return child
                   const snapshot = await ctx.subagent!.collect(child.id, { wait: false })
                   return { ...child, ...(snapshot.text !== undefined ? { text: snapshot.text } : {}) }
                 }),
-              ),
+              )
+            },
             cancel: async (id: string) => {
               await ctx.subagent!.cancel(id)
             },
@@ -526,29 +538,49 @@ export class ShellJobs {
           await controls.cancel(child.id)
         })
       if (controls.cancel) job.stop = () => controls.cancel!(child.id)
+      if (child.label !== undefined) job.view.childLabel = child.label
       if (child.text !== undefined) this.appendChildText(job, child.text)
       this.syncChildOutcome(job, child.status)
     }
   }
   private syncChildOutcome(job: Job, status: import('@agnes/extension-api').ChildAgentStatus) {
+    job.view.childStatus = status
     if (status === 'idle') {
-      if (job.view.status === 'killed') return
+      if (job.childTerminal) return
       // The resident's last turn is done. Keep the job open for its next turn.
       job.childIdle = true
       job.view.status = 'completed'
       job.view.code = 0
       return
     }
+    if (status === 'interrupted') {
+      if (job.childTerminal) return
+      // Stopped mid-turn; no longer running, yet continuable on a later turn.
+      job.childIdle = true
+      job.view.status = 'killed'
+      job.view.code = null
+      return
+    }
+    if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+      job.childTerminal = true
+      job.childIdle = false
+      if (status === 'cancelled') job.view.status = 'killed'
+      if (job.view.code !== null && job.view.status !== 'killed') {
+        // A resident that was previously idle (code 0, completed) closed with a new terminal status.
+        job.view.status = status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'killed'
+        job.view.code = status === 'completed' ? 0 : -1
+        return
+      }
+      if (job.view.code === null) job.finish(status === 'completed' ? 0 : -1)
+      return
+    }
+    // Active / attention-needed non-terminal states: starting, running, waiting_approval, paused, disconnected.
     if (job.childIdle) {
       job.childIdle = false
       job.startedAt = Date.now()
       job.view.status = 'running'
       job.view.code = null
     }
-    if (job.view.code !== null) return
-    if (status === 'cancelled') job.view.status = 'killed'
-    if (status === 'completed' || status === 'failed' || status === 'cancelled')
-      job.finish(status === 'completed' ? 0 : -1)
   }
 
   output(ctx: JobOwner, id: string, cursor?: string) {
@@ -570,12 +602,11 @@ export class ShellJobs {
     ctx.signal.throwIfAborted()
     const job = this.get(ctx, id)
     job.activeAt = Date.now()
-    if (job.view.status !== 'running' || ms <= 0) return copy(job)
     if (job.view.kind === 'child' && ctx.cwd && ctx.subagent) {
-      const deadline = Date.now() + ms
+      const deadline = Date.now() + Math.max(0, ms)
       do {
-        await this.syncChildren({ session: ctx.session, cwd: ctx.cwd, subagent: ctx.subagent })
-        if (job.view.status !== 'running') return copy(job)
+        await this.syncChildren({ session: ctx.session, cwd: ctx.cwd, subagent: ctx.subagent }, undefined, id)
+        if (job.view.status !== 'running' || ms <= 0) return copy(job)
         await this.wait(
           { session: ctx.session, signal: ctx.signal },
           id,
@@ -584,6 +615,7 @@ export class ShellJobs {
       } while (Date.now() < deadline)
       return copy(job)
     }
+    if (job.view.status !== 'running' || ms <= 0) return copy(job)
     return new Promise((resolve, reject) => {
       const cleanup = () => {
         clearTimeout(timer)

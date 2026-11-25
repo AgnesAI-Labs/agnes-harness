@@ -92,6 +92,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
   const removed = useRef(new Set<string>())
   const [notice, setNotice] = useState('')
   const [dismissed, setDismissed] = useState('')
+  const [missingChild, setMissingChild] = useState('')
   const scope = useRef(session?.id),
     restored = useRef(false)
   // A tab the composer asked for, held until a jobs read names it, and the selection already applied.
@@ -102,6 +103,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
     restored.current = false
     requestedJob.current = ''
     handledSelection.current = undefined
+    setMissingChild('')
     try {
       removed.current = new Set(
         JSON.parse(localStorage.getItem(`${storageKey(sessionId ?? '')}.removed`) ?? '[]'),
@@ -126,6 +128,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
     handledSelection.current = context.selection
     const wanted = `${CHILD_JOB_PREFIX}${childId}`
     requestedJob.current = wanted
+    setMissingChild('')
     setIds((values) => (values.includes(wanted) ? values : [...values, wanted]))
     setActive(wanted)
   }, [context.selection])
@@ -209,9 +212,12 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
         const wanted = requestedJob.current
         if (wanted && value.jobs.some((row) => row.id === wanted)) {
           requestedJob.current = ''
+          setMissingChild('')
           removed.current.delete(wanted)
           setIds((known) => (known.includes(wanted) ? known : [...known, wanted]))
           setActive(wanted)
+        } else if (wanted && restored.current) {
+          setMissingChild(wanted)
         }
       } catch (cause) {
         if (alive)
@@ -461,6 +467,11 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
           </section>
         ) : (
           <div className="workbench-terminal-empty" data-testid="terminal-empty">
+            {missingChild && active === missingChild && (
+              <SettingsState tone="empty" data-testid="terminal-child-unavailable">
+                {t('workbench.terminal.childUnavailable')}
+              </SettingsState>
+            )}
             <Button type="text" disabled={busy} onClick={() => create(shell)}>
               + {t('workbench.terminal.new')}
             </Button>

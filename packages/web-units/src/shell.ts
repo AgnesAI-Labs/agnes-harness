@@ -10,6 +10,7 @@ export {
 export {
   Composer,
   type ComposerAttachmentBlock,
+  type ComposerChildControlOutcome,
   type ComposerDependencies,
   type ComposerDraftReferences,
   type ComposerHandle,

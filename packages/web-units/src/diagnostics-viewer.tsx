@@ -16,6 +16,7 @@ import {
   diagnosticsViewerLabels,
 } from './diagnostics-locale.js'
 import type { DiagnosticsBundle } from './diagnostics-types.js'
+import { formatDurationMs } from './trace-model.js'
 
 /** Keep script breakers inert even when a downstream consumer re-embeds the JSON. */
 export function escapeBundleJson(bundle: DiagnosticsBundle): string {
@@ -181,13 +182,16 @@ function nodeText(node: UINode, labels: Labels, locale: DiagnosticsLocale): stri
       return ''
   }
 }
-function formatDuration(ms: number | undefined, labels: Labels): string {
-  if (ms === undefined) return labels.durationRunning
-  if (ms < 1000) return fill(labels.durationMs, { n: ms })
-  if (ms < 60000) return fill(labels.durationSeconds, { n: (ms / 1000).toFixed(ms < 10000 ? 1 : 0) })
-  return fill(labels.durationMinutes, {
-    minutes: Math.floor(ms / 60000),
-    seconds: Math.round((ms % 60000) / 1000),
+function formatDuration(ms: number | undefined, status: UISpan['status'], labels: Labels): string {
+  return formatDurationMs(ms, {
+    running: status === 'running',
+    format: {
+      running: labels.durationRunning,
+      unknown: labels.durationUnknown,
+      ms: (n) => fill(labels.durationMs, { n }),
+      seconds: (n) => fill(labels.durationSeconds, { n }),
+      minutes: (minutes, seconds) => fill(labels.durationMinutes, { minutes, seconds }),
+    },
   })
 }
 function Span({ span, depth, labels }: { span: UISpan; depth: number; labels: Labels }) {
@@ -195,7 +199,7 @@ function Span({ span, depth, labels }: { span: UISpan; depth: number; labels: La
     span.kind,
     span.name,
     labels.status[span.status] ?? span.status,
-    formatDuration(span.durationMs, labels),
+    formatDuration(span.durationMs, span.status, labels),
   ]
   if (span.model) parts.push(span.model)
   if (span.error?.message) parts.push(fill(labels.error, { message: span.error.message }))
@@ -210,12 +214,34 @@ function Span({ span, depth, labels }: { span: UISpan; depth: number; labels: La
     </>
   )
 }
+function emptySectionState(
+  selected: boolean | undefined,
+  present: boolean,
+  labels: Labels,
+  kind: 'conversation' | 'trace' | 'logs' | 'system' | 'artifacts',
+) {
+  if (selected === false) return <SettingsState>{labels.notSelected}</SettingsState>
+  if (selected === true) {
+    if (kind === 'artifacts') return <SettingsState>{labels.emptyArtifacts}</SettingsState>
+    return <SettingsState>{present ? labels.emptyExported : labels.unavailableExported}</SettingsState>
+  }
+  return <SettingsState>{labels.notIncluded}</SettingsState>
+}
 function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: DiagnosticsLocale }) {
   const labels = diagnosticsViewerLabels(locale)
   const text = (key: Parameters<typeof diagnosticsText>[0], vars?: Record<string, string | number>) =>
     diagnosticsText(key, vars, locale)
-  const empty = <SettingsState>{labels.notIncluded}</SettingsState>
+  const include = bundle.include as Partial<DiagnosticsBundle['include']> | undefined
   const turns = bundle.trace?.turns.filter((turn) => turn.trace) ?? []
+  const logCards = bundle.logs
+    ? (['requestAudit', 'host', 'runtime', 'browser'] as const)
+        .map((key) => {
+          const value =
+            key === 'requestAudit' ? (bundle.logs?.requestAudit ?? bundle.logs?.daemon) : bundle.logs?.[key]
+          return value ? { key, value } : null
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    : []
   return (
     <>
       <header>
@@ -309,7 +335,7 @@ function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: Diagnos
                   </div>
                 )
               })
-            : empty}
+            : emptySectionState(include?.conversation, bundle.trace !== undefined, labels, 'conversation')}
         </section>
         <section id="tab-trace" role="tabpanel" aria-labelledby="agh-tab-trace" hidden>
           {turns.length
@@ -319,16 +345,11 @@ function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: Diagnos
                   {turn.trace && <Span span={turn.trace} depth={0} labels={labels} />}
                 </div>
               ))
-            : empty}
+            : emptySectionState(include?.conversation, bundle.trace !== undefined, labels, 'trace')}
         </section>
         <section id="tab-logs" role="tabpanel" aria-labelledby="agh-tab-logs" hidden>
-          {bundle.logs
-            ? (['requestAudit', 'host', 'runtime', 'browser'] as const).map((key) => {
-                const value =
-                  key === 'requestAudit'
-                    ? (bundle.logs?.requestAudit ?? bundle.logs?.daemon)
-                    : bundle.logs?.[key]
-                if (!value) return null
+          {logCards.length
+            ? logCards.map(({ key, value }) => {
                 const content =
                   'entries' in value
                     ? value.entries.map((entry) => `[${entry.ts}] ${entry.level} ${entry.text}`).join('\n')
@@ -344,10 +365,14 @@ function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: Diagnos
                   </div>
                 )
               })
-            : empty}
+            : emptySectionState(include?.logs, bundle.logs !== undefined, labels, 'logs')}
         </section>
         <section id="tab-system" role="tabpanel" aria-labelledby="agh-tab-system" hidden>
-          {bundle.system ? <pre>{JSON.stringify(bundle.system, null, 2)}</pre> : empty}
+          {bundle.system ? (
+            <pre>{JSON.stringify(bundle.system, null, 2)}</pre>
+          ) : (
+            emptySectionState(include?.system, false, labels, 'system')
+          )}
         </section>
         <section id="tab-artifacts" role="tabpanel" aria-labelledby="agh-tab-artifacts" hidden>
           {bundle.artifacts.length ? (
@@ -369,7 +394,7 @@ function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: Diagnos
               ))}
             </SettingsList>
           ) : (
-            empty
+            emptySectionState(include?.conversation, true, labels, 'artifacts')
           )}
         </section>
       </main>

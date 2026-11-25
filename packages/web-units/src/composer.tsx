@@ -801,6 +801,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
 export type {
   ComposerAttachmentBlock,
+  ComposerChildControlOutcome,
   ComposerDependencies,
   ComposerDraftReferences,
   ComposerHandle,

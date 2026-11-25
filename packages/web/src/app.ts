@@ -1097,19 +1097,13 @@ const controlsHistory = new Map<
   string,
   { through: number; facts: NonNullable<SessionControlStateResult['facts']> }
 >()
-const childControlRefreshTimer = setInterval(() => {
-  const session = sessionBinding.session
-  if (
-    connected &&
-    session &&
-    !sessionPending &&
-    sessionControls?.value.children?.some((child) =>
-      ['starting', 'running', 'interrupted'].includes(child.status),
-    )
-  )
-    void refreshSessionControls(session).catch(showError)
-}, 1500)
-onPageHide(() => clearInterval(childControlRefreshTimer))
+onPageHide(
+  commandController.startChildControlPolling({
+    isVisible: pageVisible,
+    onVisible: onPageVisible,
+    onFocus: onWindowFocus,
+  }),
+)
 let projection: UITimeline | undefined
 let listGeneration = 0
 // The window's first node is the session's first, so its first user message titles the task.

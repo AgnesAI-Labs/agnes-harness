@@ -545,3 +545,37 @@ it('hides completed one-shot agent shell commands from the tab list and badge co
   expect(host.querySelector('#terminal-tab-build-live')).not.toBeNull()
   expect(host.querySelector('#terminal-tab-curl-done')).toBeNull()
 })
+
+it('shows friendly status labels without Exit -1 for child tabs and explains unavailable child reports', async () => {
+  const stoppedChild = job({
+    id: 'child:agent:stop1',
+    kind: 'child',
+    command: 'in-process',
+    status: 'killed',
+    code: -1,
+    stdout: 'partial report',
+  })
+  const doneChild = job({
+    id: 'child:agent:done2',
+    kind: 'child',
+    command: 'in-process',
+    status: 'completed',
+    code: 0,
+    stdout: 'final report',
+  })
+  const { host, render } = mount([stoppedChild, doneChild], { childId: 'agent:stop1' })
+  await vi.waitFor(() => expect(host.querySelector('#terminal-tab-child\\:agent\\:stop1')).not.toBeNull())
+  const stoppedTab = host.querySelector('#terminal-tab-child\\:agent\\:stop1') as HTMLElement
+  expect(stoppedTab.textContent).toContain('已停止')
+  expect(stoppedTab.textContent).not.toContain('退出 -1')
+  expect(stoppedTab.getAttribute('title')).toContain('已停止')
+  expect(stoppedTab.querySelector('[data-tone="danger"]')).toBeNull()
+
+  // Requesting a grandchild or archived child not in the active jobs list shows a clear explanation.
+  render({ childId: 'agent:cold-grandchild' })
+  await vi.waitFor(() =>
+    expect(host.querySelector('[data-testid="terminal-child-unavailable"]')?.textContent).toContain(
+      '无法在终端抽屉中打开该子智能体报告',
+    ),
+  )
+})

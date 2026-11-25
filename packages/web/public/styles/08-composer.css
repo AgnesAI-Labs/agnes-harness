@@ -400,6 +400,7 @@
     border-inline-start: 1px solid var(--agnes-line-hairline);
   }
   .composer-child {
+    container-type: inline-size;
     min-width: 0;
     border: 1px solid var(--agnes-line-hairline);
     border-radius: var(--radius-md);
@@ -409,7 +410,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--s8);
+    gap: var(--s4) var(--s8);
     min-width: 0;
     padding: var(--s4) var(--s8) var(--s4) var(--s12);
   }
@@ -449,9 +450,14 @@
   }
   .composer-child-id {
     flex: none;
+    padding: 0 var(--s4);
+    border-radius: var(--radius-xs);
     color: var(--agnes-text-tertiary);
+    background: var(--agnes-bg-subtle);
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    line-height: var(--line-sm);
   }
   /* The child's state in words; the tag colour only backs the word. */
   .composer-child-state {
@@ -462,6 +468,7 @@
     color: var(--agnes-text-secondary);
     background: var(--agnes-bg-fill);
     font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     line-height: var(--line-sm);
     white-space: nowrap;
   }
@@ -491,14 +498,29 @@
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
+    line-height: var(--line-sm);
     white-space: nowrap;
   }
   .composer-child-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: var(--s2);
+    margin: 0 0 0 auto;
+    padding: 0;
+    border: 0;
+    min-inline-size: 0;
     max-width: 100%;
+  }
+  .composer-child-actions .agnes-ui-button[data-emphasis="primary"]:not(:disabled) {
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+    font-weight: var(--font-weight-medium);
+  }
+  .composer-child-actions .agnes-ui-button[data-danger="true"]:hover:not(:disabled) {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
   }
   .composer-child-reply {
     display: flex;
@@ -511,17 +533,37 @@
     min-width: 0;
     font-size: var(--font-size-sm);
   }
-  .composer-child-error {
+  .composer-child-error,
+  .composer-child-refresh-warning {
     margin: 0 var(--s8) var(--s8) var(--s12);
   }
-  /* A narrow card stacks the numbers under the name instead of squeezing the row. */
+  .composer-child-refresh-warning {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    padding: var(--s4) var(--s8);
+    border: 1px solid var(--agnes-status-warning-border);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+    font-size: var(--font-size-xs);
+  }
+  /* Narrow panel (desktop split-pane or mobile): stack metrics and actions cleanly while keeping the short ID visible. */
+  @container (max-width: 32rem) {
+    .composer-child-metrics,
+    .composer-child-actions {
+      flex-basis: 100%;
+      margin-inline-start: 0;
+      justify-content: flex-start;
+    }
+  }
   @media (max-width: 540px) {
     .composer-child-metrics,
     .composer-child-actions {
       flex-basis: 100%;
-    }
-    .composer-child-id {
-      display: none;
+      margin-inline-start: 0;
+      justify-content: flex-start;
     }
     .composer-children-sublist {
       margin-inline-start: var(--s4);
@@ -960,6 +1002,23 @@
     gap: var(--s8);
     min-width: 0;
     container-type: inline-size;
+  }
+  /* Keep the permission chip readable instead of clipping to half a glyph in split-pane widths. */
+  .composer-controls .composer-permission {
+    flex: 0 0 auto;
+  }
+  .composer-controls .composer-permission > svg {
+    flex: none;
+  }
+  @container (max-width: 34rem) {
+    .composer-controls {
+      flex-wrap: wrap;
+      row-gap: var(--s4);
+    }
+    .composer-controls .composer-permission {
+      flex: 0 1 auto;
+      max-width: 100%;
+    }
   }
   .composer-session-controls {
     display: inline-flex;

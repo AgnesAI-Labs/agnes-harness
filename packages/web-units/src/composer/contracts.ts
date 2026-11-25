@@ -17,6 +17,12 @@ import type { ComposerSkill, ComposerSkills } from '../skill-picker.js'
 
 export type ComposerChildAction = 'stop' | 'continue' | 'pause' | 'resume' | 'close' | 'retain' | 'recap'
 
+/** Returned when a child control write succeeded but the follow-up state read failed. */
+export type ComposerChildControlOutcome = {
+  readonly refreshFailed?: string
+  readonly retryRefresh?: () => Promise<void>
+}
+
 export type ModelPickerOption = {
   id: string
   route: string
@@ -230,7 +236,11 @@ export interface ComposerRegionOptions {
   onPermissionSelect(mode: PermissionMode): Promise<boolean>
   /** `steer` is true for the guidance shortcut (⌘/Ctrl+Enter): while the agent runs it joins at the next step. */
   onSubmit(options?: { steer?: boolean }): void
-  onChildControl?(id: string, action: ComposerChildAction, text?: string): Promise<void>
+  onChildControl?(
+    id: string,
+    action: ComposerChildAction,
+    text?: string,
+  ): Promise<void | ComposerChildControlOutcome>
   onPauseResume?(): void
   onEditQueued?(itemId: string, text: string): Promise<void>
   onSendNow?(itemId: string): void

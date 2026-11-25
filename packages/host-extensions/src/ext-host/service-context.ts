@@ -6,7 +6,7 @@ import {
   platformView,
   type SeamImplementations,
 } from '@agnes/core'
-import type { Logger, ServiceContext } from '@agnes/extension-api'
+import type { ChildAgentListing, Logger, ServiceContext } from '@agnes/extension-api'
 import { createNetFetch } from '@agnes/host-infrastructure/adapters/net'
 import { type Decision, inspectJsonData, validateAgainst } from '@agnes/protocol'
 import { Action, Decision as DecisionSchema, Target } from '@agnes/protocol/gen/authz'
@@ -55,20 +55,35 @@ export function serviceContext(deps: {
             childJobs: Object.freeze({
               list: async () => {
                 alive()
-                const backend = childBackend(identity.session!.key)
-                const rows = (await backend?.list()) ?? []
-                const local = await Promise.all(
-                  rows.map(async (row) => {
-                    const snapshot = await backend?.inspect(row.id)
-                    return { ...row, ...(snapshot?.text !== undefined ? { text: snapshot.text } : {}) }
-                  }),
-                )
-                return [...local, ...externalChildren(identity.session!.key).map((child) => child.listing)]
+                const rootKey = identity.session!.key
+                // Walk verified live parent→child ownership so nested grandchildren can open
+                // read-only in the terminal drawer, without redundant per-child inspect queries.
+                const seen = new Set<string>([rootKey])
+                const queue: string[] = [rootKey]
+                const rows: ChildAgentListing[] = []
+                while (queue.length) {
+                  const parentKey = queue.shift()!
+                  const backend = childBackend(parentKey)
+                  const local = (await backend?.list()) ?? []
+                  for (const row of local) {
+                    if (seen.has(row.id)) continue
+                    seen.add(row.id)
+                    rows.push(row)
+                    queue.push(row.id)
+                  }
+                  for (const ext of externalChildren(parentKey)) {
+                    if (seen.has(ext.listing.id)) continue
+                    seen.add(ext.listing.id)
+                    rows.push(ext.listing)
+                  }
+                }
+                return rows
               },
               ...(entry.capability.kind === 'effect'
                 ? {
                     cancel: async (id: string) => {
                       alive()
+                      // Kill authority stays strictly bound to direct children of this session.
                       const external = externalChild(identity.session!.key, id)
                       if (external) {
                         if (!external.cancel) throw new Error('child cancellation is unavailable')

@@ -4,6 +4,7 @@ import type { UISpan, UITimeline, UITurn } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import type { DiagnosticsBundle } from '../src/diagnostics-types.js'
 import { escapeBundleJson, renderDiagnosticsViewer } from '../src/diagnostics-viewer.js'
+import { durationLabel, traceStats } from '../src/trace-model.js'
 
 function makeBundle(overrides: Partial<DiagnosticsBundle> = {}): DiagnosticsBundle {
   return {
@@ -214,5 +215,88 @@ describe('renderDiagnosticsViewer', () => {
     expect(artifactsText).toContain('abcdef012345')
     expect(artifactsText).not.toContain('abcdef0123456789abcdef0123456789')
     expect(artifactsText).toContain('image/png')
+  })
+
+  it('distinguishes unknown duration from running, carries minute boundaries and reports exported-but-empty tabs accurately', () => {
+    const trace = twoLevelTimeline()
+    trace.turns[0]!.trace = {
+      id: 'root',
+      kind: 'generation',
+      name: 'root',
+      status: 'completed',
+      startSeq: 1,
+      startedAt: '2026-09-24T01:00:00.000Z',
+      children: [
+        {
+          id: 'c1',
+          kind: 'tool',
+          name: 'check',
+          status: 'completed',
+          startSeq: 2,
+          startedAt: '2026-09-24T01:00:00.000Z',
+          children: [],
+        },
+        {
+          id: 'c2',
+          kind: 'tool',
+          name: 'wait',
+          status: 'completed',
+          startSeq: 3,
+          startedAt: '2026-09-24T01:00:00.000Z',
+          durationMs: 119_900,
+          children: [],
+        },
+        {
+          id: 'c3',
+          kind: 'tool',
+          name: 'edge',
+          status: 'completed',
+          startSeq: 4,
+          startedAt: '2026-09-24T01:00:00.000Z',
+          durationMs: 59_999,
+          children: [],
+        },
+        {
+          id: 'c4',
+          kind: 'tool',
+          name: 'live',
+          status: 'running',
+          startSeq: 5,
+          startedAt: '2026-09-24T01:00:00.000Z',
+          children: [],
+        },
+      ],
+    }
+    const doc = new DOMParser().parseFromString(
+      renderDiagnosticsViewer(
+        makeBundle({ include: { conversation: true, logs: false, system: true }, trace, artifacts: [] }),
+        'zh-CN',
+      ),
+      'text/html',
+    )
+    const traceText = doc.getElementById('tab-trace')?.textContent ?? ''
+    expect(traceText).toContain('tool · check · 已完成 · 时长未知')
+    expect(traceText).not.toContain('已完成 · 进行中')
+    expect(traceText).toContain('tool · wait · 已完成 · 2 分 0 秒')
+    expect(traceText).not.toContain('1 分 60 秒')
+    expect(traceText).toContain('tool · edge · 已完成 · 1 分 0 秒')
+    expect(traceText).toContain('tool · live · 进行中 · 进行中')
+    expect(doc.getElementById('tab-conversation')?.textContent).toContain('已导出，本次没有记录')
+    expect(doc.getElementById('tab-artifacts')?.textContent).toContain('本次导出没有产物记录')
+    expect(doc.getElementById('tab-logs')?.textContent).toContain('未选择导出')
+    expect(doc.getElementById('tab-system')?.textContent).toContain('已选择导出，但内容不可用或未包含')
+
+    // Online trace helpers share the same carry and missing-duration semantics.
+    expect(durationLabel(119_900)).toBe('2 min 0 s')
+    expect(durationLabel(59_999)).toBe('1 min 0 s')
+    expect(durationLabel(undefined, 'completed')).toBe('Duration unknown')
+    expect(durationLabel(0, 'completed')).toBe('0 ms')
+    const unknownStats = traceStats([trace.turns[0]!])
+    expect(unknownStats[0]?.[1]).toBe('Duration unknown')
+    const partialStats = traceStats([
+      trace.turns[0]!,
+      { ...trace.turns[0]!, id: 'turn-2', turn: 2, durationMs: 1200 },
+    ])
+    expect(partialStats[0]?.[1]).toBe('1.2 s (partial)')
   })
 })

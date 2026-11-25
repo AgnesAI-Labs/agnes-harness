@@ -197,14 +197,19 @@
     color: var(--agnes-text-tertiary);
   }
   @media (max-width: 1279px) {
+    /* Anchor the right dock to main like desktop so an expanded child-agent drawer never crushes it. */
+    main:not([data-home-page]):has(.workbench-right-open) {
+      position: relative;
+    }
     .workbench-split.workbench-right-open {
+      position: static;
       grid-template-columns: minmax(0, 1fr);
     }
     #workbench-right {
       position: absolute;
       z-index: 15;
       right: 0;
-      top: 0;
+      top: 2.75rem;
       bottom: 0;
       width: min(var(--workbench-width, 320px), calc(100vw - 16px));
     }

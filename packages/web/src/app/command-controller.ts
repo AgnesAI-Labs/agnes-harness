@@ -1,10 +1,20 @@
 import type { ContentBlock } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import type { Session } from '@agnes/sdk/browser'
+import type { ComposerChildControlOutcome } from '@agnes/web-units/shell'
 import type { AppSessionContext } from '../app.js'
 import { showCommandFeedback } from './command-feedback.js'
 
 export type ApplySessionControls = (options?: { render?: boolean }) => Promise<void>
+
+const POLLABLE_CHILD_STATUSES = new Set(['starting', 'running', 'waiting_approval', 'disconnected'])
+
+export type ChildControlPollerOptions = {
+  intervalMs?: number
+  isVisible: () => boolean
+  onVisible: (handler: () => void) => () => void
+  onFocus: (handler: () => void) => () => void
+}
 
 export function createCommandController(
   context: Pick<
@@ -39,6 +49,17 @@ export function createCommandController(
 ) {
   let stopRequest = 0
   let controlsRefresh = 0
+  let inFlightRefresh: { session: Session; promise: Promise<void> } | undefined
+  let trailingRefresh:
+    | {
+        session: Session
+        promise: Promise<void>
+        resolve: () => void
+        reject: (error: unknown) => void
+      }
+    | undefined
+  let armChildPoller: (() => void) | undefined
+
   function handleComposerCancel(): void {
     requestStop(false)
   }
@@ -175,8 +196,41 @@ export function createCommandController(
       })
   }
 
-  async function refreshSessionControls(session: Session): Promise<void> {
-    await (await readSessionControls(session))()
+  function runSingleRefresh(session: Session): Promise<void> {
+    const promise = (async () => {
+      await (await readSessionControls(session))()
+    })()
+    const entry = { session, promise }
+    inFlightRefresh = entry
+    const onSettled = () => {
+      if (inFlightRefresh === entry) inFlightRefresh = undefined
+      if (trailingRefresh && trailingRefresh.session === session) {
+        const next = trailingRefresh
+        trailingRefresh = undefined
+        void runSingleRefresh(next.session).then(next.resolve, next.reject)
+      }
+    }
+    promise.then(onSettled, onSettled)
+    return promise
+  }
+
+  /**
+   * Single-flight per session: concurrent refreshes for the same session coalesce into at most
+   * one trailing read after the in-flight read settles, so slow reads are never starved by overlap.
+   */
+  function refreshSessionControls(session: Session): Promise<void> {
+    if (inFlightRefresh && inFlightRefresh.session === session) {
+      if (trailingRefresh && trailingRefresh.session === session) return trailingRefresh.promise
+      let resolve!: () => void
+      let reject!: (error: unknown) => void
+      const promise = new Promise<void>((res, rej) => {
+        resolve = res
+        reject = rej
+      })
+      trailingRefresh = { session, promise, resolve, reject }
+      return promise
+    }
+    return runSingleRefresh(session)
   }
 
   /**
@@ -235,20 +289,137 @@ export function createCommandController(
       sessionStorage.setItem(key, 'pending')
     }
     if (render) context.render()
+    if (hasPollableChildren(session)) armChildPoller?.()
     await showCommandFeedback(context, session)
+  }
+
+  function hasPollableChildren(session: Session | undefined = context.current): boolean {
+    if (!context.connected || !session || context.sessionPending) return false
+    if (context.sessionControls?.sessionId !== session.id) return false
+    return (
+      context.sessionControls.value.children?.some((child) => POLLABLE_CHILD_STATUSES.has(child.status)) ??
+      false
+    )
+  }
+
+  /**
+   * Serial, visibility-aware polling for active child tasks: waits for the previous read to finish
+   * before scheduling the next interval, pauses when hidden, and catches up on tab return.
+   */
+  function startChildControlPolling(options: ChildControlPollerOptions): () => void {
+    const intervalMs = options.intervalMs ?? 1500
+    let stopped = false
+    let polling = false
+    let catchUp = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const schedule = (delay: number) => {
+      if (stopped || timer !== undefined || polling || !options.isVisible()) return
+      if (!hasPollableChildren()) return
+      timer = setTimeout(() => {
+        timer = undefined
+        void tick()
+      }, delay)
+    }
+    const tick = async (): Promise<void> => {
+      if (stopped || !options.isVisible()) return
+      const session = context.current
+      if (!session || !hasPollableChildren(session)) return
+      if (polling) {
+        catchUp = true
+        return
+      }
+      polling = true
+      catchUp = false
+      try {
+        if (inFlightRefresh && inFlightRefresh.session === session) await inFlightRefresh.promise
+        else await refreshSessionControls(session)
+      } catch (error) {
+        if (!stopped && options.isVisible() && context.current === session) context.showError(error)
+      } finally {
+        polling = false
+        if (!stopped && options.isVisible() && hasPollableChildren()) {
+          if (catchUp) {
+            catchUp = false
+            void tick()
+          } else schedule(intervalMs)
+        }
+      }
+    }
+    const wake = () => {
+      if (stopped || !options.isVisible()) return
+      if (timer !== undefined) {
+        clearTimeout(timer)
+        timer = undefined
+      }
+      if (hasPollableChildren()) void tick()
+    }
+    armChildPoller = () => schedule(intervalMs)
+    const stopVisible = options.onVisible(wake)
+    const stopFocus = options.onFocus(wake)
+    schedule(intervalMs)
+    return () => {
+      stopped = true
+      if (timer !== undefined) {
+        clearTimeout(timer)
+        timer = undefined
+      }
+      armChildPoller = undefined
+      stopVisible()
+      stopFocus()
+    }
   }
 
   async function handleChildControl(
     id: string,
     action: 'stop' | 'continue' | 'pause' | 'resume' | 'close' | 'retain' | 'recap',
     text?: string,
-  ): Promise<void> {
+  ): Promise<void | ComposerChildControlOutcome> {
     const session = context.current
-    if (!session || context.sessionPending || !context.connected) return
-    if (action === 'recap') await session.followUp(context.t('composer.child.recapPrompt', { id }))
-    else await session.control(`child-${action}`, { childId: id, ...(text === undefined ? {} : { text }) })
-    await refreshSessionControls(session)
-    if (context.current === session) context.live?.refresh()
+    if (!session || context.sessionPending || !context.connected)
+      throw new Error(context.t('composer.child.unavailable'))
+    const binding = context.sessionBinding.capture()
+    try {
+      if (action === 'recap') await session.followUp(context.t('composer.child.recapPrompt', { id }))
+      else
+        await session.control(`child-${action}`, {
+          childId: id,
+          ...(text === undefined ? {} : { text }),
+        })
+    } catch (error) {
+      if (context.sessionBinding.isCurrent(binding, session))
+        void showCommandFeedback(context, session).catch(() => undefined)
+      throw error
+    }
+    // The write succeeded. Refresh errors must not masquerade as a failed write or trigger a duplicate send.
+    if (!context.sessionBinding.isCurrent(binding, session)) return
+    context.live?.refresh()
+    try {
+      await refreshSessionControls(session)
+    } catch (error) {
+      if (!context.sessionBinding.isCurrent(binding, session)) return
+      const retryRefresh = async () => {
+        if (!context.sessionBinding.isCurrent(binding, session)) return
+        await refreshSessionControls(session)
+        if (context.sessionBinding.isCurrent(binding, session)) context.notice.setText('')
+      }
+      context.notice.setText(context.t('composer.child.refreshFailed'))
+      context.notice.setKind('warning')
+      context.notice.offer?.({
+        label: context.t('composer.child.refreshRetry'),
+        run: () => {
+          void retryRefresh().catch(() => {
+            if (context.sessionBinding.isCurrent(binding, session)) {
+              context.notice.setText(context.t('composer.child.refreshFailed'))
+              context.notice.setKind('warning')
+            }
+          })
+        },
+      })
+      return {
+        refreshFailed: error instanceof Error ? error.message : String(error),
+        retryRefresh,
+      }
+    }
   }
 
   function handlePauseResume(): void {
@@ -297,6 +468,7 @@ export function createCommandController(
     handleQueuedAction,
     refreshSessionControls,
     readSessionControls,
+    startChildControlPolling,
     handleChildControl,
     handlePauseResume,
     handleEditQueued,

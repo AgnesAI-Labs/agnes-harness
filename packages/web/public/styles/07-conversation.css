@@ -16,7 +16,7 @@
    overflow: hidden），鼠标停在留白上时找不到可滚动祖先，滚轮会毫无反应。 */
   #transcript-content {
     margin-inline: auto;
-    padding: var(--s16) var(--s32);
+    padding: var(--s16) var(--s32) 3rem;
     width: min(100%, var(--chat-content-width));
   }
   #empty-state {
@@ -446,16 +446,16 @@
     color: var(--agnes-text-tertiary);
     font-weight: 600;
   }
-  /* Back to the newest content: a small round button centred over the composer edge. */
+  /* Back to the newest content: anchored at the trailing edge so it never covers centred prose. */
   .new-content.agh-btn {
     position: absolute;
-    left: 50%;
+    right: var(--s16);
     bottom: var(--s12);
+    z-index: 4;
     width: 2rem;
     min-width: 2rem;
     height: 2rem;
     padding: 0;
-    translate: -50% 0;
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-full);
     color: var(--agnes-text-secondary);
