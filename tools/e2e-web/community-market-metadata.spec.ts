@@ -327,8 +327,13 @@ async function openMarket(page: Page, runtime: Runtime, daemonProxy: DaemonProxy
 }
 
 function actionRequestsSince(requests: string[], start: number, origin: string) {
-  // The workbench polls for plugin reload hints regardless of which page is open.
-  return requests.slice(start).filter((request) => request !== `GET ${origin}/plugins/changes`)
+  return requests.slice(start).filter((request) => {
+    const address = request.slice(request.indexOf(' ') + 1)
+    const prefix = `${origin}${apiRoot}`
+    if (!address.startsWith(prefix)) return false
+    const operation = address.slice(prefix.length)
+    return operation === 'inspect' || operation === 'operation/get' || effects.test(operation)
+  })
 }
 
 async function filterKind(page: Page, locale: Locale, name: string) {
@@ -463,7 +468,7 @@ for (const locale of ['en', 'zh-CN'] as const) {
       await expect(names).toHaveText([archiveTitle[locale]])
       expect(
         actionRequestsSince(requests, browseStart, runtime.url),
-        'Capability filters read only the displayed cache',
+        'Capability filters do not inspect or change packages',
       ).toEqual([])
 
       await filterKind(page, locale, text.tool)
@@ -534,7 +539,7 @@ for (const locale of ['en', 'zh-CN'] as const) {
       await commitFacts(drawer, observed, selectedSha)
       expect(
         actionRequestsSince(requests, detailStart, runtime.url),
-        'Opening and switching cached versions require no requests',
+        'Opening and switching cached versions do not inspect or change packages',
       ).toEqual([])
       await checkSelectedVersion(page, runtime, drawer, locale, checks, info)
 

@@ -60,7 +60,7 @@ afterEach(async () => {
 // about 30-70 s on a loaded hosted runner. The SDK request and history-load idle budgets must both
 // cover that startup window; allow both generations plus hot replacement and fixture/RPC cleanup.
 const sourceWorkerStartupMs = 90_000
-const integrationTimeoutMs = sourceWorkerStartupMs * 3
+const integrationTimeoutMs = sourceWorkerStartupMs * 4
 it(
   'Web saves one profile, CLI executes it, both retain history after daemon restart',
   async () => {

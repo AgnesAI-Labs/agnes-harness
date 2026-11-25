@@ -1,6 +1,7 @@
 import { copyFile, mkdir, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { stripVTControlCharacters } from 'node:util'
+import type { AuthoringCandidate } from '@agnes/protocol'
 import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, settled, translated } from './quality.js'
@@ -268,14 +269,43 @@ for (const [locale, theme] of [
       )
       const created = (await toolResult(authoring, 'plugin_helper_create'))?.content[0]
       if (created?.type !== 'text') throw new Error('The fixture candidate must be created')
-      const candidate = JSON.parse(created.text) as { candidateId: string; packageId: string }
-      await promptOnDemand(
-        `call plugin_helper_install ${JSON.stringify({ action: 'test', proposalId: candidate.candidateId })}`,
-      )
+      const candidate = JSON.parse(created.text) as AuthoringCandidate
+      const candidateStatus = () =>
+        client.request('_agnes/v1/plugins.candidates.show', {
+          profile: 'local-dev',
+          candidateId: candidate.candidateId,
+        })
+      const testCandidate = async () => {
+        await promptOnDemand(
+          `call plugin_helper_install ${JSON.stringify({ action: 'test', proposalId: candidate.candidateId })}`,
+        )
+        return (await candidateStatus()).tests
+      }
+      let tests = await testCandidate()
+      // A runner exit before TAP starts has no assertion result. Retry the same draft once,
+      // then require real passing tests of that exact hash before entering the review UI.
+      if (
+        tests?.state === 'failed' &&
+        tests.count === 0 &&
+        tests.output.trim() === 'Error: command exited with status 1; no passing result recorded.'
+      ) {
+        await info.attach('candidate-test-launch-failure', { body: tests.output, contentType: 'text/plain' })
+        tests = await testCandidate()
+      }
+      expect(tests).toMatchObject({
+        state: 'passed',
+        hash: candidate.candidateHash,
+      })
+      expect(tests?.count).toBeGreaterThan(0)
       await promptOnDemand(
         'call plugin_helper_install ' +
           JSON.stringify({ action: 'commit', proposalId: candidate.candidateId }),
       )
+      expect(await candidateStatus()).toMatchObject({
+        state: 'review',
+        candidateHash: candidate.candidateHash,
+        reviewHash: expect.stringMatching(/^sha256-[0-9a-f]{64}$/),
+      })
       await prompt(session, 'call write {"path":"review notes.ts","content":"export const result = 42\\n"}')
       await prompt(session, '/goal --max-rounds 1 Review the delivery')
       expect((await client.apis()).profile.models).toEqual(

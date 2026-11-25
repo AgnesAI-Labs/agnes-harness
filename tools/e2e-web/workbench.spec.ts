@@ -388,25 +388,27 @@ test('session terminal survives UI detachment, follows agent output and honors p
   const folder = process.env.AGH_WORKBENCH_REPORT
   if (folder) await mkdir(folder, { recursive: true })
   for (const locale of ['en', 'zh-CN'])
-    for (const theme of ['light', 'dark'])
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(
+        ({ locale, theme }) => {
+          localStorage.setItem('agnes-locale', locale)
+          localStorage.setItem('agnes-theme', theme)
+        },
+        { locale, theme },
+      )
+      // Reattach the terminal after changing preferences. Both viewports can use that attachment.
+      await page.reload()
+      await expect(panel.getByTestId('terminal-tab')).toHaveCount(2)
+      await expect(terminalText).toContainText('WB1_AFTER_INTERRUPT')
       for (const width of [1440, 1280]) {
         await page.setViewportSize({ width, height: 900 })
-        await page.evaluate(
-          ({ locale, theme }) => {
-            localStorage.setItem('agnes-locale', locale)
-            localStorage.setItem('agnes-theme', theme)
-          },
-          { locale, theme },
-        )
-        await page.reload()
-        await expect(panel.getByTestId('terminal-tab')).toHaveCount(2)
-        await expect(terminalText).toContainText('WB1_AFTER_INTERRUPT')
         await settled(page)
         await workbenchScreen(page, info, `p2-${locale}-${theme}-${width}-after`, folder)
         await page.getByTestId('workbench-right-toggle').click()
         await workbenchScreen(page, info, `p2-${locale}-${theme}-${width}-before`, folder)
         await page.getByTestId('workbench-right-toggle').click()
       }
+    }
   await page.evaluate(() => {
     localStorage.setItem('agnes-locale', 'en')
     localStorage.setItem('agnes-theme', 'light')

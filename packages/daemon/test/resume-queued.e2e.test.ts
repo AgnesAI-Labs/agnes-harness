@@ -11,6 +11,7 @@ import { sourceTranspileCache } from './source-transpile-cache.js'
 
 const sourceDaemon = fileURLToPath(new URL('./fixtures/source-loop-daemon.ts', import.meta.url))
 const STEP_MS = 60_000
+const WORKER_STARTUP_MS = 90_000
 const MARKER = 'RESUME_QUEUED_PROBE'
 const COMMAND_ID = 'resume-queued-follow-up'
 // A stable client id: the daemon command journal dedupes per (principal, client, session, commandId).
@@ -55,6 +56,7 @@ function writeProfile(root: string, baseUrl: string) {
       name: 'local-dev',
       cacheDir: sourceTranspileCache(),
       computerUse: { enabled: false },
+      limits: { 'worker.startup_ms': WORKER_STARTUP_MS },
       adapters: { secrets: { kind: 'file', path: secretDir } },
       provider: {
         package: '@agnes/ai',
@@ -109,7 +111,7 @@ function connect(root: string) {
     journal: memoryJournal(CLIENT_ID),
     auth: { kind: 'local' },
     transport: { kind: 'unix', path: owner.socketPath },
-    timeouts: { request: STEP_MS },
+    timeouts: { request: WORKER_STARTUP_MS, loadIdle: WORKER_STARTUP_MS },
   })
   return { client, socketPath: owner.socketPath }
 }

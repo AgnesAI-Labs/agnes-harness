@@ -9,6 +9,7 @@ import { redactSecrets } from '@agnes/extension-api'
 import { createCredentialStore, initializeHome } from '@agnes/host'
 import type { EventEnvelope, PackageOperationReceipt } from '@agnes/protocol'
 import { createClient, memoryJournal, unixTransport } from '@agnes/sdk'
+import { sourceTranspileCache } from '../../../../tools/test-fixtures/source-transpile-cache.mjs'
 import { windowsTestHostEnv } from '../../../../tools/test-fixtures/windows-host-env.mjs'
 import { ensureJudgmentPayload } from '../../../package-manager/tools/ensure-judgment-payload.mjs'
 
@@ -26,6 +27,7 @@ const stopSourceDaemon = fileURLToPath(
   new URL('../../../daemon/test/fixtures/stop-source-daemon.ts', import.meta.url),
 )
 const exec = promisify(execFile)
+const WORKER_STARTUP_MS = 120_000
 
 export async function bounded<T>(promise: Promise<T>, label: string, ms = 120_000): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -191,8 +193,9 @@ export async function judgmentDaemon(
       join(home, 'profiles', PROFILE, 'profile.yaml'),
       JSON.stringify({
         name: PROFILE,
+        cacheDir: sourceTranspileCache(),
         computerUse: { enabled: false },
-        limits: { 'worker.startup_ms': 120_000 },
+        limits: { 'worker.startup_ms': WORKER_STARTUP_MS },
         adapters: { secrets: { kind: 'file', path: join(home, 'secrets') } },
         provider: {
           package: '@agnes/ai',
@@ -271,7 +274,7 @@ export async function judgmentDaemon(
     socketDirectory = pipe ? undefined : dirname(owner.socketPath)
     sdk = createClient({
       journal: memoryJournal(),
-      timeouts: { request: 120_000 },
+      timeouts: { request: WORKER_STARTUP_MS, loadIdle: WORKER_STARTUP_MS },
       transport: {
         kind: 'unix',
         path: owner.socketPath,
@@ -287,7 +290,8 @@ export async function judgmentDaemon(
     const client = sdk
     await bounded(client.initialize(), 'SDK initialize')
     async function operation(receipt: PackageOperationReceipt, stage = 'package-operation') {
-      const deadline = Date.now() + (options.scriptedTool ? 45_000 : 120_000)
+      // Enabling the package waits for a replacement @shared worker to mount.
+      const deadline = Date.now() + WORKER_STARTUP_MS
       let last: Awaited<ReturnType<Sdk['packages']['operation']['get']>> | undefined
       let previous = ''
       const stages: { stage: string; operation: string; state: string; progress: number }[] = []

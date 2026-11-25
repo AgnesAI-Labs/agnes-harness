@@ -21,6 +21,7 @@ import { sourceTranspileCache } from './source-transpile-cache.js'
 
 const sourceDaemon = fileURLToPath(new URL('./fixtures/source-loop-daemon.ts', import.meta.url))
 const examples = fileURLToPath(new URL('../../../examples/loops/', import.meta.url))
+const WORKER_STARTUP_MS = 90_000
 
 async function bounded<T>(promise: Promise<T>, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -37,7 +38,7 @@ async function bounded<T>(promise: Promise<T>, label: string): Promise<T> {
 }
 
 async function operation(sdk: ReturnType<typeof createClient>, receipt: PackageOperationReceipt) {
-  const deadline = Date.now() + 30_000
+  const deadline = Date.now() + WORKER_STARTUP_MS
   while (Date.now() < deadline) {
     const result = await sdk.packages.operation.get({
       profile: receipt.profile,
@@ -147,6 +148,7 @@ async function runExample(kind: 'react' | 'dag') {
       // Source workers transpile every official plugin; share that cache, not this home.
       cacheDir: sourceTranspileCache(),
       computerUse: { enabled: false },
+      limits: { 'worker.startup_ms': WORKER_STARTUP_MS },
       adapters: { secrets: { kind: 'file', path: secretDir } },
       provider: {
         package: '@agnes/ai',
@@ -192,7 +194,12 @@ async function runExample(kind: 'react' | 'dag') {
     await bounded(ready, 'source daemon boot')
     const owner = JSON.parse(readFileSync(join(root, 'daemon', 'owner.json'), 'utf8'))
     socketPath = owner.socketPath
-    sdk = createClient({ journal: memoryJournal(), transport: { kind: 'unix', path: owner.socketPath } })
+    // Runtime selection reads the real source worker, even though the supervisor is already listening.
+    sdk = createClient({
+      journal: memoryJournal(),
+      transport: { kind: 'unix', path: owner.socketPath },
+      timeouts: { request: WORKER_STARTUP_MS },
+    })
     await sdk.initialize()
     stage = 'workspace trust'
     const runtime = () => sdk!.call<RuntimeAdminSnapshot>('_agnes/v1/sessionSelection.runtime', {})

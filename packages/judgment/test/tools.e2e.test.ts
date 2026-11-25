@@ -1,12 +1,14 @@
 import type { EventEnvelope } from '@agnes/protocol'
-import { expect, it } from 'vitest'
+import { expect, it, onTestFailed } from 'vitest'
 import { CALLER, judgmentDaemon, MODEL } from './helpers/daemon.js'
 
 const data = (row: EventEnvelope) => row.data as Record<string, unknown>
 it('installs the real tools, runs isolated synthetic loopback judgments, accounts and revokes', async () => {
+  let stage = 'fixture startup'
+  onTestFailed(() => console.error(`Synthetic judgment tools fixture last reached ${stage}`))
   const fixture = await judgmentDaemon({ tools: true })
-  let stage = 'absent session'
   try {
+    stage = 'absent session'
     const absent = await fixture.session('tools-absent')
     expect((await absent.tools()).tools.map((tool) => tool.name)).not.toContain('judge_batch')
     stage = 'configure off'
@@ -57,6 +59,7 @@ it('installs the real tools, runs isolated synthetic loopback judgments, account
     const costs = turn.events.filter((row) => row.type === 'cost/ledger' && data(row).caller === CALLER)
     expect(costs).toHaveLength(4)
     expect(costs.every((row) => data(row).purpose === 'side-call' && data(row).route === 'jev-a')).toBe(true)
+    stage = 'revoke tools'
     await fixture.configure({ judge: { route: 'jev-a', model: MODEL } })
     const revoked = (await (await fixture.session('tools-revoked')).tools()).tools.map((tool) => tool.name)
     expect(revoked).not.toContain('find_relevant')

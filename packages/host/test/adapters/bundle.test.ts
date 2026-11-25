@@ -1,4 +1,5 @@
 import { closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isHostError } from '@agnes/host-common/errors'
@@ -47,7 +48,8 @@ const lock: LockState = {
 
 describe('openAdapters', () => {
   let dir: string
-  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+  // Windows can briefly retain the copied Node image after the broker exits.
+  afterEach(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
 
   it.runIf(process.platform === 'win32')(
     'requires a separate explicit Node runtime in a SEA host',
