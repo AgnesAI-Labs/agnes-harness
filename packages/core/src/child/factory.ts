@@ -722,7 +722,7 @@ export class KernelChildren implements ChildrenFactory {
           { type: 'text', text: body },
         ],
         actor: await childFirstInputActor(parent, child),
-        ...(parent.preset.budget.maxSteps === null ? { maxSteps: 25 } : {}),
+        ...(parent.preset.budget.maxSteps === null ? { maxSteps: 40 } : {}),
       })
       checkParent()
     }
