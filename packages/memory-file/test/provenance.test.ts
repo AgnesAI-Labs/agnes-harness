@@ -120,11 +120,16 @@ it.each(['missing', 'broken JSON', 'broken schema', 'external edit'])(
   },
 )
 
-it('compares new structured preferences against same-file human values and enabled handwritten user values', async () => {
+it('compares new structured preferences across workspace files and enabled handwritten user values', async () => {
   const f = await setup()
   await f.human('Preference: test_RUNNER = Jest')
   const put = (text: string) => f.paragraphs.propose({ op: 'put', id, text })
   await expect(put('- test_runner: vitest')).rejects.toMatchObject({ code: 'MEMORY_PREFERENCE_CONFLICT' })
+  await expect(f.agent('test_runner = vitest', join(f.session.root, 'topic.md'))).rejects.toMatchObject({
+    code: 'MEMORY_PREFERENCE_CONFLICT',
+  })
+  await f.session.editFile('topic.md', 'coverage_tool = c8', hash(''))
+  await expect(put('coverage_tool = nyc')).rejects.toMatchObject({ code: 'MEMORY_PREFERENCE_CONFLICT' })
   const user = fileMemoryRoots(f.home, f.home).userRoot
   await mkdir(user, { recursive: true })
   await writeFile(join(user, 'MEMORY.md'), `tab_width = 4\n\n${managed('- style: concise')}`)
@@ -143,6 +148,30 @@ it('compares new structured preferences against same-file human values and enabl
   await expect(put('- test_runner: JEST\nstyle = verbose\nI prefer two spaces.')).resolves.toBeDefined()
   await f.human('tab_width = 2')
 })
+
+it.each(['Legacy note', 'Updated note'])(
+  'upgrades an unrecorded managed paragraph after a verified Host put of "%s"',
+  async (text) => {
+    const f = await setup()
+    await writeFile(f.index, managed('Legacy note'))
+    await expect(readFile(f.provenance)).rejects.toMatchObject({ code: 'ENOENT' })
+    const change = { op: 'put' as const, id, text }
+    await expect(f.paragraphs.propose(change)).rejects.toMatchObject({ code: 'MEMORY_PARAGRAPH_EDITED' })
+    await expect(f.paragraphs.propose({ ...change, expectTextHash: hash('Other') })).rejects.toMatchObject({
+      code: 'MEMORY_PARAGRAPH_EDITED',
+    })
+    await f.paragraphs.commit(await f.paragraphs.propose({ ...change, expectTextHash: hash('Legacy note') }))
+    expect(JSON.parse(await readFile(f.provenance, 'utf8')).files['MEMORY.md'].blocks).toMatchObject([
+      { id, origin: 'host', textHash: hash(text) },
+    ])
+    await f.human(managed('Human revision'))
+    await expect(
+      f.paragraphs.propose({ ...change, expectTextHash: hash('Human revision') }),
+    ).rejects.toMatchObject({
+      code: 'MEMORY_PARAGRAPH_EDITED',
+    })
+  },
+)
 
 it('uses user-layer markers for origin and requires an explicit CAS for an existing user section', async () => {
   const f = await setup()

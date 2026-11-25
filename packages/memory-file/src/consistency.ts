@@ -4,7 +4,7 @@ import { expiryNextExpiry, expiryViewFilter } from './expiry-annotation.js'
 import type { MemoryPipeline, ViewContext } from './pipeline.js'
 import { refViewFilter } from './ref-filter.js'
 import { topicLinksObserver, topicLinksViewFilter } from './topic-links.js'
-import { buildView, type MemoryView } from './view.js'
+import { buildView, type HideRange, type MemoryView } from './view.js'
 
 const lifecyclePipelines = new WeakSet<MemoryPipeline>()
 
@@ -26,6 +26,23 @@ export function formatLifecycleOmission(group: string, count: number): string {
 }
 
 type Chunk = Readonly<{ path: string; lineStart: number; lineEnd: number; text: string }>
+
+/** Reads retain unverified summary text for editing. Recall only indexes verified summaries. */
+export function buildIndexView(
+  entry: MemoryFile,
+  ranges: readonly HideRange[],
+  read?: MemoryView,
+): MemoryView {
+  const isSummary = (range: HideRange) =>
+    range.reason === 'topic-outdated' || range.reason === 'topic-missing'
+  if (read && !ranges.some(isSummary)) return read
+  const indexRanges = ranges.map((range) =>
+    isSummary(range)
+      ? { start: range.start, end: range.end, reason: range.reason, appliesTo: 'both' as const }
+      : range,
+  )
+  return buildView(entry, indexRanges, 'read', formatLifecycleOmission)
+}
 type IndexInspection = {
   readIndexedChunks: () => readonly Chunk[] | Promise<readonly Chunk[]>
   /** The index owner's chunker, including its exclusion of synthetic notice segments. */
@@ -90,7 +107,7 @@ export async function inspectConsistency(
     if (entry.path === 'MEMORY.md')
       expectedIndex = buildView(entry, ranges, 'note', formatLifecycleOmission).content
     if (args.chunkView) {
-      for (const chunk of args.chunkView(entry, read)) chunks.push(chunk)
+      for (const chunk of args.chunkView(entry, buildIndexView(entry, ranges, read))) chunks.push(chunk)
     }
   }
   for (const path of extraReads) mismatches.push(`read: ${path}`)

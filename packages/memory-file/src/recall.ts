@@ -1,13 +1,13 @@
 import type { MemoryFile, MemoryRecallHit, MemoryRecallQuery, MemorySettings } from '@agnes/extension-api'
 import { fitHits } from '@agnes/lexical-search'
 import { chunkView } from './chunker.js'
-import { formatLifecycleOmission } from './consistency.js'
+import { buildIndexView } from './consistency.js'
 import { fault } from './content.js'
 import type { MetaStore } from './meta.js'
 import { managedParagraphRanges } from './paragraphs.js'
 import type { MemoryPipeline, RecallEnvironment } from './pipeline.js'
 import { readDocuments, SearchIndex } from './search-index.js'
-import { buildView, type MemoryView } from './view.js'
+import type { MemoryView } from './view.js'
 
 function cap(value: number | undefined, fallback: number, maximum: number) {
   return value === undefined || !Number.isFinite(value)
@@ -26,7 +26,8 @@ function recall(
     const files = layer === 'workspace' ? env.workspaceFiles : env.userFiles
     const views = layer === 'workspace' ? env.workspaceViews : env.userViews
     const index = indexFor(layer === 'workspace' ? env.meta : env.userMeta)
-    const docs = readDocuments(files, views, settings)
+    const ranges = layer === 'workspace' ? env.workspaceRanges : env.userRanges
+    const docs = readDocuments(files, views, settings, ranges)
     const byPath = new Map(docs.map((doc) => [doc.file.path, doc]))
     const chunks = new Map<string, ReturnType<typeof chunkView>>()
     for (const hit of index.query(query.query, files, docs)) {
@@ -92,13 +93,14 @@ export function registerRetrieval(pipeline: MemoryPipeline): RetrievalHandle {
       : [],
   )
   pipeline.addObserver((_intent, _committed, ctx) => {
-    const views = new Map(
-      ctx.files.map((file) => [
-        file.path,
-        buildView(file, pipeline.collectHideRanges(file, ctx), 'read', formatLifecycleOmission),
-      ]),
-    )
-    indexFor(ctx.meta).committed(readDocuments(ctx.files, views, ctx.meta.store.configuration()))
+    try {
+      const views = new Map(
+        ctx.files.map((file) => [file.path, buildIndexView(file, pipeline.collectHideRanges(file, ctx))]),
+      )
+      indexFor(ctx.meta).committed(readDocuments(ctx.files, views, ctx.meta.store.configuration()))
+    } catch {
+      // Markdown and audit are durable. Recall can reconcile a missed update, or an explicit rebuild can repair corruption.
+    }
   })
   pipeline.setRecall(async (query, env) => recall(query, env, indexFor))
   pipeline.addCloseHook(() => {

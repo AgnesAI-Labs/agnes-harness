@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { MemoryFile, MemoryParagraphValidity } from '@agnes/extension-api'
 import { afterEach, expect, it } from 'vitest'
 import {
+  buildIndexView,
   formatLifecycleOmission,
   inspectConsistency,
   rebuildConsistencyIndex,
@@ -212,6 +213,13 @@ it('removes withdrawn references immediately from reads and recall and from the 
   expect(buildView(stored, ranges, 'read', formatLifecycleOmission).content).toBe(
     `${notice}\n\n${notice}\n\nStill visible.`,
   )
+  f.statuses.set(id, 'valid')
+  f.state.revision++
+  await expect(f.files(2).replaceExact!(f.path(index), 'Deployment fact.', 'Changed.')).rejects.toMatchObject(
+    {
+      code: 'MEMORY_REPLACE_NOT_FOUND',
+    },
+  )
 })
 
 it('maps visible text to its raw lines, preserves hidden bytes on replacement, and refuses whole-file writes', async () => {
@@ -229,6 +237,8 @@ it('maps visible text to its raw lines, preserves hidden bytes on replacement, a
   })
   await f.files(1).replaceExact!(f.path(leaf), 'Visible line.', 'Edited line.')
   expect((await f.session.readFile(leaf)).content).toBe(raw.replace('Visible line.', 'Edited line.'))
+  await f.files(1).replaceExact!(f.path(leaf), 'Edited line.', 'Final line.')
+  expect((await f.session.readFile(leaf)).content).toBe(raw.replace('Visible line.', 'Final line.'))
 
   const silent = 'silent.md'
   await f.files(1).write(f.path(silent), 'Draft line.\nVisible line.')
@@ -241,6 +251,28 @@ it('maps visible text to its raw lines, preserves hidden bytes on replacement, a
     code: 'MEMORY_HIDDEN_PARAGRAPHS',
   })
   expect((await f.session.readFile(silent)).content).toBe('Draft line.\nVisible line.')
+})
+
+it('keeps exact edits within the observed turn limits and surviving files', async () => {
+  const f = await fixture()
+  await f.files(0).write(f.path(index), 'First\nSecond\nThird')
+  const topic = f.path('deploy.md')
+  await f.files(0).write(topic, 'Deploy now')
+  await f.session.configure({ indexMaxLines: 2 })
+  await f.note(1)
+  await f.session.configure({ indexMaxLines: 4 })
+  await expect(f.files(1).replaceExact!(f.path(index), 'Third', 'Last')).rejects.toMatchObject({
+    code: 'MEMORY_CONSOLIDATION_REQUIRED',
+  })
+  await rm(topic)
+  await expect(f.files(1).read(topic)).rejects.toMatchObject({ code: 'ENOENT' })
+  await writeFile(topic, 'Deploy now')
+  await expect(f.files(1).replaceExact!(topic, 'now', 'later')).rejects.toMatchObject({
+    code: 'MEMORY_REPLACE_NOT_FOUND',
+  })
+  await f.files(2).replaceExact!(f.path(index), 'Third', 'Last')
+  await f.files(2).replaceExact!(topic, 'now', 'later')
+  expect((await f.session.readFile('deploy.md')).content).toBe('Deploy later')
 })
 
 it('checks turn-boundary views against raw filters and detects stale index chunks until rebuilt', async () => {
@@ -267,14 +299,16 @@ it('checks turn-boundary views against raw filters and detects stale index chunk
   let chunks: ReturnType<typeof chunkView> = []
   const rebuild = () =>
     rebuildConsistencyIndex(() => {
-      chunks = args.context.files.flatMap((entry) => chunkView(entry, args.readViews.get(entry.path)!))
+      chunks = args.context.files.flatMap((entry) =>
+        chunkView(entry, buildIndexView(entry, args.pipeline.collectHideRanges(entry, args.context))),
+      )
     })
   const inspect = () => inspectConsistency({ ...args, readIndexedChunks: () => chunks, chunkView })
   await rebuild()
   expect(await inspect()).toEqual({ ok: true, mismatches: [] })
   await f.edit('deploy.md', '<!-- expires_at: 2026-11-01 -->\nDeploy on Friday.\n\nCurrent checklist.')
   args = await capture(2)
-  expect(await inspect()).toEqual({ ok: false, mismatches: ['index: deploy.md'] })
+  expect(await inspect()).toEqual({ ok: false, mismatches: ['index: MEMORY.md', 'index: deploy.md'] })
   await rebuild()
   expect(chunks.some(({ text }) => text.includes('Friday'))).toBe(false)
   expect(await inspect()).toEqual({ ok: true, mismatches: [] })

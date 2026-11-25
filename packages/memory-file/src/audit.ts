@@ -95,7 +95,11 @@ export function appendAudit(meta: MetaStore, entry: Omit<AuditEntry, 'seq'>): Au
   } finally {
     closeSync(fd)
   }
-  chmodSync(current, 0o600)
+  try {
+    chmodSync(current, 0o600)
+  } catch {
+    // Some filesystems do not support POSIX file modes.
+  }
   return record
 }
 

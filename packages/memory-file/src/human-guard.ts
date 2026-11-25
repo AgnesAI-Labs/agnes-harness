@@ -1,5 +1,5 @@
 import type { CommitGuard } from './pipeline.js'
-import { attributedBlocks, blockVersion, memoryBlocks } from './provenance.js'
+import { attributedBlocks, blockVersion, memoryBlocks, verifiedLegacyPut } from './provenance.js'
 
 export const humanGuard: CommitGuard = (intent, ctx) => {
   if (intent.origin === 'human') return { kind: 'allow' }
@@ -13,12 +13,14 @@ export const humanGuard: CommitGuard = (intent, ctx) => {
     if (block.origin !== 'human') continue
     const key = blockVersion(block)
     const count = remaining.get(key) ?? 0
-    if (!count)
+    if (!count) {
+      if (verifiedLegacyPut(block, intent, ctx)) continue
       return {
         kind: 'refuse',
         code: intent.origin === 'agent' ? 'MEMORY_HUMAN_EDITED' : 'MEMORY_PARAGRAPH_EDITED',
         detail: 'A human-authored paragraph would be changed or removed. Edit it on the Memory page.',
       }
+    }
     remaining.set(key, count - 1)
   }
   if (intent.origin === 'host' && intent.via === 'paragraph') {

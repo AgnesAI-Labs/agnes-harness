@@ -12,7 +12,7 @@ import type {
 } from '@agnes/extension-api'
 import { chunkView } from './chunker.js'
 import { commitHooks } from './commit-hooks.js'
-import { formatLifecycleOmission, inspectConsistency } from './consistency.js'
+import { buildIndexView, formatLifecycleOmission, inspectConsistency } from './consistency.js'
 import { fault, file, fitBytes, hash, validateContent } from './content.js'
 import { createFilePort } from './file-port.js'
 import { MetaStore } from './meta.js'
@@ -467,10 +467,7 @@ export async function rebuildMemoryIndex(session: MemorySession): Promise<{ inde
     meta,
   }
   const views = new Map(
-    files.map((entry) => [
-      entry.path,
-      buildView(entry, pipeline.collectHideRanges(entry, ctx), 'read', formatLifecycleOmission),
-    ]),
+    files.map((entry) => [entry.path, buildIndexView(entry, pipeline.collectHideRanges(entry, ctx))]),
   )
   return { indexedEntries: retrieval.rebuildIndex(meta, files, views, config) }
 }
@@ -530,10 +527,7 @@ export async function inspectMemoryConsistency(
     return view ? safeChunks(entry, view).map(keyOf) : []
   })
   const rawFilteredIds = snap.files.flatMap((entry) =>
-    safeChunks(
-      entry,
-      buildView(entry, pipeline.collectHideRanges(entry, ctx), 'read', formatLifecycleOmission),
-    ).map(keyOf),
+    safeChunks(entry, buildIndexView(entry, pipeline.collectHideRanges(entry, ctx))).map(keyOf),
   )
   const indexIds = retrieval ? retrieval.inspectIndexedChunks(meta).map(keyOf) : []
   const noteIds = snap.noteViewContent

@@ -13,6 +13,7 @@ import {
   inspectMemoryConsistency,
   MetaStore,
   openMemory,
+  rebuildMemoryIndex,
 } from '../src/index.js'
 import { registerRetrieval } from '../src/recall.js'
 import { readDocuments, SearchIndex } from '../src/search-index.js'
@@ -132,6 +133,10 @@ describe('file memory recall', () => {
         .map((chunk) => chunk.text)
         .join(' '),
     ).not.toMatch(/kestrel|observatory|syntheticwonder/i)
+    valid = true
+    await expect(f.port(1).replaceExact!(path, 'Retained observatory', 'Reactivated')).rejects.toMatchObject({
+      code: 'MEMORY_REPLACE_NOT_FOUND',
+    })
     await f.port(1).replaceExact?.(path, 'Visible lighthouse', 'Visible beacon')
     expect(readFileSync(path, 'utf8')).toBe(original.replace('Visible lighthouse', 'Visible beacon'))
   })
@@ -139,6 +144,8 @@ describe('file memory recall', () => {
   it('requires both user flags, filters user validity and bounds bytes and count', async () => {
     const f = fixture()
     await f.session.configure({ mode: 'auto', userEnabled: true })
+    expect((await f.recall(0, 'astronomy', { includeUser: true })).hits).toEqual([])
+    expect(existsSync(join(f.userRoot, 'meta', 'index.sqlite'))).toBe(false)
     mkdirSync(f.userRoot, { recursive: true })
     writeFileSync(join(f.userRoot, 'Meeting notes.md'), 'Unindexed astronomy')
     writeFileSync(join(f.userRoot, 'archive.md'), 'x'.repeat(1024 * 1024 + 1))
@@ -169,6 +176,54 @@ describe('file memory recall', () => {
     const second = await f.recall(3, 'habitat', { includeUser: true })
     expect(second.hits[0]?.text).toBe('Lunar habitat 2')
     expect(second.revision).not.toBe(first.revision)
+  })
+
+  it('reads clean and stale turns while another writer holds the derived index lock', async () => {
+    const f = fixture()
+    await f.session.configure({ mode: 'auto' })
+    const path = join(f.root, 'topic.md')
+    await f.port(0).write(path, 'green mountain')
+    await f.session.snapshot(1)
+    const db = new DatabaseSync(f.meta.pathOf('index.sqlite'))
+    try {
+      db.exec('BEGIN IMMEDIATE')
+      expect((await f.recall(1, 'green')).hits).toHaveLength(1)
+      await f.session.editFile('topic.md', 'blue lake', (await f.session.readFile('topic.md')).hash)
+      expect((await f.recall(1, 'green')).hits).toHaveLength(1)
+      expect((await f.recall(1, 'lake')).hits).toEqual([])
+    } finally {
+      db.close()
+    }
+    expect((await f.recall(2, 'lake')).hits).toHaveLength(1)
+  })
+
+  it('omits outdated, empty and deleted topic summaries from eager, rebuilt and turn indexes', async () => {
+    const f = fixture()
+    await f.session.configure({ mode: 'auto' })
+    const topic = join(f.root, 'deploy.md')
+    const index = join(f.root, 'MEMORY.md')
+    const monday = 'Deploy Monday. [[deploy.md]]'
+    const thursday = 'Deploy Thursday. [[deploy.md]]'
+    await f.port(0).write(topic, 'Original schedule')
+    await f.port(0).write(index, monday + '\nIndependent note')
+    expect((await f.recall(1, 'monday')).hits).toHaveLength(1)
+    await f.port(1).write(topic, 'New schedule')
+    expect(f.internal.queryIndex('monday')).toEqual([])
+    await rebuildMemoryIndex(f.session)
+    expect(f.internal.queryIndex('monday')).toEqual([])
+    expect((await f.recall(2, 'monday')).hits).toEqual([])
+    expect((await f.recall(2, 'independent')).hits).toMatchObject([{ lineStart: 2, lineEnd: 2 }])
+    expect(await inspectMemoryConsistency(f.session, 2)).toMatchObject({ consistent: true })
+    await f.port(2).replaceExact!(index, monday, thursday)
+    expect((await f.recall(3, 'thursday')).hits).toMatchObject([{ text: expect.stringContaining(thursday) }])
+    expect((await f.recall(3, 'monday')).hits).toEqual([])
+    await f.port(3).write(topic, '')
+    expect((await f.recall(3, 'thursday')).hits).toEqual([])
+    rmSync(topic)
+    expect((await f.recall(4, 'thursday')).hits).toEqual([])
+    expect(Buffer.from(await f.port(4).read(index)).toString()).toContain(
+      thursday + '\n[Summary of deploy.md removed: topic no longer exists]',
+    )
   })
 
   it('transactionally repairs a version mismatch in place and releases the WAL on close', async () => {
@@ -226,6 +281,20 @@ describe('file memory recall', () => {
     fresh.meta.ensureDir()
     writeFileSync(fresh.meta.pathOf('index.sqlite'), 'corrupt')
     await expect(fresh.recall(1, 'example')).rejects.toMatchObject({ code: 'MEMORY_RECALL_UNAVAILABLE' })
+    await fresh.port(1).write(join(fresh.root, 'topic.md'), 'Example survives corruption')
+    expect(readFileSync(fresh.meta.pathOf('audit.jsonl'), 'utf8')).toContain('"action":"commit"')
+    await expect(rebuildMemoryIndex(fresh.session)).resolves.toEqual({ indexedEntries: 1 })
+    expect((await fresh.recall(2, 'example')).hits).toHaveLength(1)
+    rmSync(fresh.meta.pathOf('index.sqlite'))
+    expect((await fresh.recall(3, 'example')).hits).toHaveLength(1)
+    const schema = new DatabaseSync(fresh.meta.pathOf('index.sqlite'))
+    try {
+      schema.exec('ALTER TABLE meta RENAME COLUMN key TO broken')
+    } finally {
+      schema.close()
+    }
+    await expect(rebuildMemoryIndex(fresh.session)).resolves.toEqual({ indexedEntries: 1 })
+    expect((await fresh.recall(4, 'example')).hits).toHaveLength(1)
   })
 
   it('splits long headings and paragraphs without splitting a Unicode code point', () => {

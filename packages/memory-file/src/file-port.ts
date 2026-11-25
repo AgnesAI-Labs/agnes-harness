@@ -17,7 +17,7 @@ import { markerLines, markerSet, paragraphTexts, parseParagraphs } from './parag
 import { canonical, inside, type roots } from './paths.js'
 import type { CommitIntent, MemoryClock, MemoryPipeline, ViewContext } from './pipeline.js'
 import type { MemoryStore } from './store.js'
-import { buildView, replaceInMemoryView } from './view.js'
+import { buildView, replaceInMemoryView, retainedEditRanges } from './view.js'
 
 export type FilePortDeps<TTurn extends TurnReadState = TurnReadState> = Readonly<{
   fallback: MemoryFilePort
@@ -143,8 +143,25 @@ export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<T
       }
       active()
       signal.throwIfAborted()
+      const state = resolvedFor(capture(source.turn))
       const before = store.read(leaf)
-      const ranges = pipeline.collectHideRanges(before, viewCtx(clock()))
+      const prior = state.files.find((entry) => entry.path === leaf)
+      if (leaf === 'MEMORY.md' && state.invalidIndexLimits && prior)
+        validateContent(prior, state.invalidIndexLimits, true)
+      if (!prior?.bytes && before.bytes) throw fault('MEMORY_REPLACE_NOT_FOUND')
+      const ctx = viewCtx(clock())
+      const omitted = new Set(state.readViews.get(leaf)?.omitted)
+      const ranges = pipeline.collectHideRanges(before, {
+        ...ctx,
+        validity: (id) => (omitted.has(id) ? 'expired' : ctx.validity(id)),
+      })
+      for (const { start, end, reason } of retainedEditRanges(
+        prior?.content ?? '',
+        before.content,
+        state.baseRanges.get(leaf) ?? [],
+      )) {
+        ranges.push({ start, end, reason, appliesTo: 'read' })
+      }
       const view = buildView(before, ranges, 'read', formatLifecycleOmission)
       const replaced = replaceInMemoryView(
         before.content,
@@ -165,8 +182,10 @@ export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<T
             return pipeline.recall!(query, {
               revision: state.revision,
               workspaceViews: state.readViews,
+              workspaceRanges: state.baseRanges,
               workspaceFiles: state.files,
               userViews: state.userReadViews,
+              userRanges: state.userBaseRanges,
               userFiles: state.userFiles,
               userEnabled: state.userEnabled,
               meta,

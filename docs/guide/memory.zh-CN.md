@@ -95,7 +95,7 @@ Demo 模型不推理。`显示记住的偏好` 或 `show remembered preferences`
 
 你可以在记忆页修改或撤回自己写过、改过的段落。将受管段落转为普通记忆后，其正文也受保护。在 `ask` 和 `auto` 模式下，Agent 覆盖或删除人工段落会在审批前收到 `MEMORY_HUMAN_EDITED`。后台保存如果会覆盖人工改动，会收到 `MEMORY_PARAGRAPH_EDITED`。如果新段落会使工作区的段落来源记录超过 256 KiB，保存会在写入文件前返回 `MEMORY_CONSOLIDATION_REQUIRED`。仍可在空行后另起一段追加笔记。文件提供方无法核实段落来源时，会按人工内容保护。
 
-对于 `- test_runner: jest`、`tab_width = 4`、`Preference: style = concise` 这样的结构化偏好，如果自动写入为同一个键引入不同的值，会返回 `MEMORY_PREFERENCE_CONFLICT`。检查范围包括当前文件中的人工偏好，以及用户层启用时其中手写的偏好。用户层的受管段落可以保存不同的值。需要变更人工偏好时，请在记忆页修改原文。
+对于 `- test_runner: jest`、`tab_width = 4`、`Preference: style = concise` 这样的结构化偏好，如果自动写入为同一个键引入不同的值，会返回 `MEMORY_PREFERENCE_CONFLICT`。在 `MEMORY.md` 或任一工作区主题文件中手写的偏好，对该工作区的所有记忆文件都生效。检查范围也包括已启用的用户记忆中的手写偏好。用户层的受管段落可以保存不同的值。需要变更人工偏好时，请在记忆页修改原文。
 
 使用 `memory_recall` 可按文本搜索记忆。每条命中会标明所属层、文件和原文行号范围。如果提供方无法搜索，可用 `read` 读取 `MEMORY.md`。
 

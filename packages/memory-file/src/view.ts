@@ -252,6 +252,27 @@ export function mapViewSpanToRawLines(
   }
 }
 
+/** Keep previously hidden spans when editing live bytes. If a span itself changed and
+ * cannot be located uniquely, cover the changed region until the next turn. */
+export function retainedEditRanges(prior: string, live: string, ranges: readonly HideRange[]): HideRange[] {
+  const hidden = ranges.filter((range) => range.appliesTo !== 'note')
+  if (!hidden.length || prior === live) return hidden
+  let left = 0
+  while (left < prior.length && left < live.length && prior[left] === live[left]) left++
+  let right = prior.length
+  const delta = live.length - prior.length
+  while (right > left && right + delta > left && prior[right - 1] === live[right + delta - 1]) right--
+  return hidden.map((range) => {
+    if (range.end <= left) return range
+    if (range.start >= right) return { ...range, start: range.start + delta, end: range.end + delta }
+    const text = prior.slice(range.start, range.end)
+    const start = live.indexOf(text)
+    if (text && start >= 0 && live.indexOf(text, start + 1) < 0)
+      return { ...range, start, end: start + text.length }
+    return { ...range, start: Math.min(range.start, left), end: Math.max(range.end, right) + delta }
+  })
+}
+
 export function replaceInMemoryView(
   stored: string,
   view: MemoryView,

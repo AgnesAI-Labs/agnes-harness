@@ -7,6 +7,8 @@ import {
   normalize,
   prepareProvenance,
   provenanceObserver,
+  readProvenance,
+  verifiedLegacyPut,
 } from './provenance.js'
 
 const bullet = /^-\s+([a-z0-9_.-]{2,48})\s*:\s*(.+)$/i
@@ -29,11 +31,22 @@ export const preferenceConflictGuard: CommitGuard = (intent, ctx) => {
     values.add(value)
     protectedValues.set(key, values)
   }
-  for (const block of attributedBlocks(intent.before, ctx)) {
+  const records = ctx.layer === 'workspace' ? readProvenance(ctx.meta).files : {}
+  for (const block of attributedBlocks(intent.before, ctx, records[intent.path]?.blocks ?? [])) {
     for (const { key, value } of preferences(block)) {
       const line = JSON.stringify([block.id, key, value])
       existing.set(line, (existing.get(line) ?? 0) + 1)
-      if (block.origin === 'human') protect(key, value)
+      if (block.origin === 'human' && !verifiedLegacyPut(block, intent, ctx)) protect(key, value)
+    }
+  }
+  if (ctx.layer === 'workspace') {
+    for (const file of ctx.files) {
+      if (file.path === intent.path) continue
+      for (const block of attributedBlocks(file, ctx, records[file.path]?.blocks ?? [])) {
+        if (block.origin === 'human') {
+          for (const { key, value } of preferences(block)) protect(key, value)
+        }
+      }
     }
   }
   if (ctx.userEnabled) {

@@ -7,6 +7,7 @@ import type { CommitIntent, CommitObserver, ViewContext } from './pipeline.js'
 type Identity = { blockHash: string; id?: string; textHash?: string }
 export type MemoryBlock = Identity & { text: string }
 type Attribution = { origin: CommitIntent['origin']; at: number }
+type AttributedBlock = MemoryBlock & Attribution & { recorded?: boolean }
 type RecordBlock = Identity & Attribution
 type Provenance = { version: 1; files: Record<string, { blocks: RecordBlock[] }> }
 
@@ -56,7 +57,7 @@ function validRecord(value: unknown): value is RecordBlock {
   )
 }
 
-function readProvenance(meta: MetaStore): Provenance {
+export function readProvenance(meta: MetaStore): Provenance {
   const data = meta.readJson<unknown>(FILENAME)
   if (object(data) && data.version === 1 && object(data.files)) {
     const files: Provenance['files'] = Object.create(null)
@@ -99,15 +100,35 @@ export function attributedBlocks(
   file: MemoryFile,
   ctx: ViewContext,
   records?: readonly RecordBlock[],
-): Array<MemoryBlock & Attribution> {
+): AttributedBlock[] {
   const blocks = memoryBlocks(file.content)
   if (ctx.layer === 'user')
     return blocks.map((block) => ({ ...block, origin: block.id ? 'host' : 'human', at: ctx.now }))
   const prior = matchRecords(records ?? readProvenance(ctx.meta).files[file.path]?.blocks ?? [], blocks)
   return blocks.map((block) => {
     const retained = prior(block)
-    return { ...block, origin: retained?.origin ?? 'human', at: retained?.at ?? ctx.now }
+    return {
+      ...block,
+      origin: retained?.origin ?? 'human',
+      at: retained?.at ?? ctx.now,
+      recorded: retained !== undefined,
+    }
   })
+}
+
+/** A legacy managed paragraph can be claimed by a Host put that verifies its exact prior body. */
+export function verifiedLegacyPut(block: AttributedBlock, intent: CommitIntent, ctx: ViewContext): boolean {
+  return (
+    ctx.layer === 'workspace' &&
+    intent.origin === 'host' &&
+    intent.via === 'paragraph' &&
+    block.recorded === false &&
+    block.id !== undefined &&
+    block.textHash !== undefined &&
+    intent.changes?.some(
+      (change) => change.op === 'put' && change.id === block.id && change.expectTextHash === block.textHash,
+    ) === true
+  )
 }
 
 function nextProvenance(intent: CommitIntent, candidateFile: MemoryFile, ctx: ViewContext): Provenance {
@@ -117,8 +138,11 @@ function nextProvenance(intent: CommitIntent, candidateFile: MemoryFile, ctx: Vi
     if (!present.has(path)) delete data.files[path]
   }
   const candidate = memoryBlocks(candidateFile.content)
+  const before = attributedBlocks(intent.before, ctx, data.files[intent.path]?.blocks ?? [])
   const prior = matchRecords(
-    attributedBlocks(intent.before, ctx, data.files[intent.path]?.blocks ?? []),
+    before.map((block) =>
+      verifiedLegacyPut(block, intent, ctx) ? { ...block, origin: 'host' as const, at: ctx.now } : block,
+    ),
     candidate,
   )
   const blocks = candidate.map(({ text: _text, ...identity }) => {

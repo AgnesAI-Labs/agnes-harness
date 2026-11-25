@@ -55,8 +55,10 @@ export type CommitObserver = (intent: CommitIntent, committed: MemoryFile, ctx: 
 export type RecallEnvironment = Readonly<{
   revision: string
   workspaceViews: ReadonlyMap<string, MemoryView>
+  workspaceRanges?: ReadonlyMap<string, readonly HideRange[]>
   workspaceFiles: readonly MemoryFile[]
   userViews: ReadonlyMap<string, MemoryView>
+  userRanges?: ReadonlyMap<string, readonly HideRange[]>
   userFiles: readonly MemoryFile[]
   userEnabled: boolean
   meta: MetaStore
@@ -157,7 +159,6 @@ export function createDefaultPipeline(): MemoryPipeline {
   )
   registerLifecycle(pipeline)
   registerMemoryProtection(pipeline)
-  registerRetrieval(pipeline)
   pipeline.addObserver((intent, committed, ctx) => {
     appendAudit(ctx.meta, {
       at: new Date(ctx.now).toISOString(),
@@ -171,5 +172,6 @@ export function createDefaultPipeline(): MemoryPipeline {
       afterHash: committed.hash,
     })
   })
+  registerRetrieval(pipeline)
   return pipeline
 }
