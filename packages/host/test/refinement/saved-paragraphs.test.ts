@@ -74,8 +74,11 @@ async function workspace(mode: 'off' | 'ask' | 'auto' = 'auto') {
       // As sessions get it: paragraphs in force are delivered through the experience snapshot.
       validity: registryView(registry(), clock, undefined, 'delivered'),
     })
-  const withSession = async <T>(fn: (memory: ReturnType<typeof open>) => Promise<T>): Promise<T> => {
-    const memory = open()
+  const withSession = async <T>(
+    fn: (memory: ReturnType<typeof open>) => Promise<T>,
+    sessionKey?: string,
+  ): Promise<T> => {
+    const memory = open(sessionKey)
     try {
       return await fn(memory)
     } finally {
@@ -97,7 +100,7 @@ async function workspace(mode: 'off' | 'ask' | 'auto' = 'auto') {
   const manage = savedParagraphs({ registry, clock })
   const run = (action: 'list' | 'renew' | 'withdraw' | 'convert', paragraphId?: string) =>
     withSession((memory) => manage(memory, root, { action, ...(paragraphId ? { paragraphId } : {}) }))
-  return { root, now, clock, registry, open, file, write, seed, run }
+  return { root, now, clock, registry, open, file, write, seed, run, withSession }
 }
 
 const HUMAN = 'Human line.\n'
@@ -143,6 +146,7 @@ describe('saved paragraphs on the memory page', () => {
       {
         id: A,
         text: LESSON_A,
+        renewable: true,
         validity: 'valid',
         reviewAfter: T0 + 10 * DAY,
         initiator: 'auto',
@@ -151,13 +155,14 @@ describe('saved paragraphs on the memory page', () => {
       {
         id: B,
         text: LESSON_B,
+        renewable: true,
         validity: 'expired',
         reviewAfter: T0 - DAY,
         initiator: 'auto',
         kind: 'memory',
       },
       // Nothing vouches for C (for example a save whose result is not known): hidden until a person acts.
-      { id: C, text: LESSON_C, validity: 'unknown' },
+      { id: C, text: LESSON_C, validity: 'unknown', renewable: false },
     ])
   })
 
@@ -171,9 +176,60 @@ describe('saved paragraphs on the memory page', () => {
     )
     const { paragraphs } = await ws.run('list')
     expect(paragraphs[0]).toMatchObject({ id: A, text: LESSON_A, validity: 'valid', hidden: true })
-    expect(paragraphs[1]).toMatchObject({ id: B, text: partial, validity: 'valid', nextExpiry: deadline })
+    expect(paragraphs[1]).toMatchObject({
+      id: B,
+      text: partial,
+      validity: 'valid',
+      nextExpiry: deadline,
+      renewable: false,
+    })
     expect(paragraphs[1]).not.toHaveProperty('hidden')
     await expect(ws.run('renew', A)).rejects.toMatchObject({ code: 'MEMORY_PARAGRAPH_NOT_RENEWABLE' })
+  })
+
+  it('rejects a renewal if the verified registry changes before publication', async () => {
+    const ws = await workspace()
+    const target = paragraph(A, LESSON_A, T0 + DAY)
+    ws.seed(target)
+    await ws.write(marked(A, LESSON_A))
+    const registry = ws.registry()
+    const renew = registry.renew.bind(registry)
+    vi.spyOn(registry, 'renew').mockImplementation((...args) => {
+      registry.update((draft) => {
+        draft.revocations.push({ ...target.source, action: 'memory-withdrawn', at: T0 })
+      }, registry.read().revision)
+      return renew(...args)
+    })
+    const manage = savedParagraphs({ registry: () => registry, clock: ws.clock })
+    await expect(
+      ws.withSession((memory) => manage(memory, ws.root, { action: 'renew', paragraphId: A })),
+    ).rejects.toMatchObject({ code: 'MEMORY_CONFLICT' })
+    expect(registry.read().paragraphs).toEqual([target])
+  })
+
+  it('keeps an oversized index manageable after lowering the line limit', async () => {
+    const ws = await workspace()
+    ws.seed(paragraph(A, LESSON_A, T0 + DAY))
+    const hand = 'First line.\nSecond line.\n'
+    await ws.write(`${hand}\n${marked(A, LESSON_A)}\n`)
+    await ws.withSession((memory) => memory.configure({ indexMaxLines: 1 }))
+    expect((await ws.run('list')).paragraphs).toMatchObject([{ id: A, hidden: true, renewable: false }])
+    await expect(ws.write('password=synthetic-example\nsecond')).rejects.toMatchObject({
+      code: 'MEMORY_SECRET_LIKE_CONTENT',
+    })
+    expect((await ws.run('withdraw', A)).paragraphs).toEqual([])
+    expect(await ws.file()).toBe(hand)
+  })
+
+  it('withdraws a valid paragraph after an orphan opener', async () => {
+    const ws = await workspace()
+    const orphan = '<!-- refinement:r0000000001 -->\n'
+    const id = 'r0000000002'
+    ws.seed(paragraph(id, LESSON_B, T0 + DAY))
+    await ws.write(orphan + marked(id, LESSON_B))
+    expect((await ws.run('list')).paragraphs).toMatchObject([{ id, validity: 'valid' }])
+    expect((await ws.run('withdraw', id)).paragraphs).toEqual([])
+    expect(await ws.file()).toBe(orphan)
   })
 
   it('renewing gives a paragraph a new 30-day review period and touches no file', async () => {
@@ -222,20 +278,21 @@ describe('saved paragraphs on the memory page', () => {
     if (!saved) throw new Error('nothing saved')
     expect(saved).toMatchObject({ validity: 'valid', initiator: 'model' })
 
-    const editor = ws.open()
-    const editFile = vi.fn<typeof editor.editFile>(async (...args) => {
-      await editor.editFile(...args)
-      throw Object.assign(new Error('metadata write failed'), { code: 'MEMORY_COMMITTED_METADATA_FAILED' })
-    })
     const actor = 'workspace-owner'
-    const { hash } = await editor.readFile('MEMORY.md')
-    const { paragraphs } = await savedParagraphs({ registry: ws.registry, clock: ws.clock })(
-      { ...editor, editFile },
-      ws.root,
-      { action: 'withdraw', paragraphId: saved.id, actor },
-    )
-    expect(editFile).toHaveBeenCalledWith('MEMORY.md', HUMAN, hash, { actor })
-    expect(paragraphs).toEqual([])
+    await ws.withSession(async (editor) => {
+      const editFile = vi.fn<typeof editor.editFile>(async (...args) => {
+        await editor.editFile(...args)
+        throw Object.assign(new Error('metadata write failed'), { code: 'MEMORY_COMMITTED_METADATA_FAILED' })
+      })
+      const { hash } = await editor.readFile('MEMORY.md')
+      const { paragraphs } = await savedParagraphs({ registry: ws.registry, clock: ws.clock })(
+        { ...editor, editFile },
+        ws.root,
+        { action: 'withdraw', paragraphId: saved.id, actor },
+      )
+      expect(editFile).toHaveBeenCalledWith('MEMORY.md', HUMAN, hash, { actor })
+      expect(paragraphs).toEqual([])
+    })
     // The paragraph is cut with its separator; the person's text stays byte for byte.
     expect(await ws.file()).toBe(HUMAN)
     const store = ws.registry().read()
@@ -263,14 +320,18 @@ describe('saved paragraphs on the memory page', () => {
     const ws = await workspace()
     ws.seed(paragraph(A, LESSON_A, T0 - DAY))
     await ws.write(`${HUMAN}\n${marked(A, LESSON_A)}\n`)
-    expect((await ws.open('reader').snapshot(1))?.content).not.toContain('Run pnpm lint')
+    expect((await ws.withSession((memory) => memory.snapshot(1), 'reader'))?.content).not.toContain(
+      'Run pnpm lint',
+    )
     expect((await ws.run('convert', A)).paragraphs).toEqual([])
     expect(await ws.file()).toBe(`${HUMAN}\n${LESSON_A}\n`)
     const store = ws.registry().read()
     expect(store.paragraphs[0]?.state).toBe('converted')
     expect(store.revocations).toEqual([])
     // Ordinary memory has no review date: the agent sees it although the old date has passed.
-    expect((await ws.open('reader').snapshot(1))?.content).toContain('Run pnpm lint')
+    expect((await ws.withSession((memory) => memory.snapshot(1), 'reader'))?.content).toContain(
+      'Run pnpm lint',
+    )
   })
 
   it('works in every memory mode, like the editor, and refuses what it cannot find', async () => {
@@ -298,6 +359,10 @@ describe('saved paragraphs on the memory page', () => {
     const before = await ws.file()
     await expect(ws.run('withdraw', A)).rejects.toMatchObject({ code: 'MEMORY_PARAGRAPH_NOT_FOUND' })
     expect(await ws.file()).toBe(before)
+    const nested = marked(C, marked(A, LESSON_A))
+    await ws.write(nested)
+    await expect(ws.run('withdraw', A)).rejects.toMatchObject({ code: 'MEMORY_PARAGRAPH_NOT_FOUND' })
+    expect(await ws.file()).toBe(nested)
   })
 
   it('the admin memory request serves the saved paragraphs and refuses mixing them with an edit', async () => {
@@ -305,14 +370,21 @@ describe('saved paragraphs on the memory page', () => {
     ws.seed(paragraph(A, LESSON_A, T0 + DAY))
     await ws.write(`${HUMAN}\n${marked(A, LESSON_A)}\n`)
     const manage = savedParagraphs({ registry: ws.registry, clock: ws.clock })
-    const result = await manageMemory(ws.open(), { cwd: ws.root, saved: { action: 'list' } }, manage)
+    const result = await ws.withSession((memory) =>
+      manageMemory(memory, { cwd: ws.root, saved: { action: 'list' } }, manage),
+    )
     expect(result.saved?.paragraphs.map((entry) => entry.id)).toEqual([A])
     expect(result.inspection.settings.mode).toBe('auto')
     await expect(
-      manageMemory(ws.open(), { cwd: ws.root, saved: { action: 'list' }, file: 'MEMORY.md' }, manage),
+      ws.withSession((memory) =>
+        manageMemory(memory, { cwd: ws.root, saved: { action: 'list' }, file: 'MEMORY.md' }, manage),
+      ),
     ).rejects.toMatchObject({ data: { reason: 'MEMORY_INVALID_REQUEST' } })
     // A host without saved-paragraph management answers an empty list rather than failing the page.
-    expect((await manageMemory(ws.open(), { cwd: ws.root, saved: { action: 'list' } })).saved).toEqual({
+    expect(
+      (await ws.withSession((memory) => manageMemory(memory, { cwd: ws.root, saved: { action: 'list' } })))
+        .saved,
+    ).toEqual({
       paragraphs: [],
     })
   })

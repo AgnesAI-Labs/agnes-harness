@@ -2,6 +2,7 @@ import type { MemorySession } from '@agnes/extension-api'
 import type { RefinementRegistry, Revocation } from '@agnes/host-infrastructure/refinement-registry'
 import {
   describeParagraphs,
+  renewVerifiedParagraph,
   type SavedParagraph,
   type SavedParagraphRequest,
   verifyRenewal,
@@ -36,16 +37,8 @@ export async function manageUserSections(
   const id = request.paragraphId
   if (typeof id !== 'string') throw fault('MEMORY_INVALID_REQUEST')
   if (request.action === 'renew') {
-    await verifyRenewal(port, memory, 'user', registry, clock, id)
-    try {
-      registry.renew({ paragraphId: id })
-    } catch (error) {
-      throw fault(
-        code(error) === 'REGISTRY_ENTRY_NOT_RENEWABLE'
-          ? 'MEMORY_PARAGRAPH_NOT_RENEWABLE'
-          : 'MEMORY_REGISTRY_UNAVAILABLE',
-      )
-    }
+    const proof = await verifyRenewal(port, memory, 'user', registry, clock, id)
+    renewVerifiedParagraph(registry, id, proof)
     return { paragraphs: await list() }
   }
   if (request.action !== 'withdraw') throw fault('MEMORY_INVALID_REQUEST')

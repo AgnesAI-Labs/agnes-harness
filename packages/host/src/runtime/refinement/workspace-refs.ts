@@ -1,12 +1,12 @@
 import type { RefinementWorkspaceRefs, SavedEntry, WorkspaceReference } from '@agnes/core'
 import type { MemorySession } from '@agnes/extension-api'
 import {
+  dependencyDeadline,
   normalizedContentHash,
   REVIEW_AFTER_MS,
   RefinementRegistry,
   type RegistryParagraph,
   type RegistrySkill,
-  revocationMatches,
 } from '@agnes/host-infrastructure/refinement-registry'
 import { sha256Hex } from '@agnes/protocol'
 import { paragraphVisibility } from './paragraph-visibility.js'
@@ -63,12 +63,24 @@ async function layerParagraphs(
   const listed = await port.list()
   const paragraphs = listed.paragraphs.filter((p) => p.validity === 'valid' || p.validity === 'delivered')
   const visible = await paragraphVisibility(memory, layer, { ...listed, paragraphs }, registry, clock)
-  const stored = new Map<string, { raw: string; text: string; nextExpiry?: number }>()
+  const snapshot = futureExpiry && registry.read()
+  const now = clock()
+  const stored = new Map<
+    string,
+    { raw: string; text: string; refs: readonly string[]; nextExpiry?: number }
+  >()
   for (const p of paragraphs) {
     const projection = visible(p)
-    if (projection?.nextExpiry !== undefined) futureExpiry?.(projection.nextExpiry)
-    if (projection?.visibleText)
+    if (!projection) continue
+    if (snapshot && futureExpiry)
+      for (const id of projection.refs) {
+        const deadline = dependencyDeadline(snapshot, [id])
+        if (now < deadline) futureExpiry(deadline)
+      }
+    if (projection.nextExpiry !== undefined) futureExpiry?.(projection.nextExpiry)
+    if (projection.visibleText)
       stored.set(p.id, {
+        refs: projection.refs,
         raw: p.text,
         text: projection.visibleText,
         ...(projection.nextExpiry === undefined ? {} : { nextExpiry: projection.nextExpiry }),
@@ -282,11 +294,10 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
       // Every check is made on one snapshot, and the renewal is written only while the registry is
       // still at that snapshot's revision: any write in between (a merge, a revocation) refuses it.
       const snap = registry.read()
-      const found = snap.paragraphs.find(
-        (p) =>
-          p.id === id && p.state === 'active' && deps.clock() < p.reviewAfter && !registry.revoked(p.source),
-      )
-      if (!found) return false
+      const validity = registryView(registry, deps.clock)
+      const beforeValidity = validity.revision()
+      const reviewAfter = dependencyDeadline(snap, [id])
+      if (deps.clock() >= reviewAfter) return false
       // Recheck the exact visible version the planner confirmed.
       const stored = await storedParagraphs(
         where.memory,
@@ -296,22 +307,17 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
         deps.clock,
       )
       const entry = stored?.paragraphs.get(id)
-      if (!entry || sha256Hex(entry.text) !== version) return false
-      const expiresAt = entry.nextExpiry ?? Infinity
-      if (deps.clock() >= expiresAt) return false
+      if (!entry || sha256Hex(entry.text) !== version || validity.revision() !== beforeValidity) return false
       try {
-        registry.update((draft) => {
-          const p = draft.paragraphs.find((q) => q.id === id)
-          const now = deps.clock()
-          if (
-            p?.state !== 'active' ||
-            now >= p.reviewAfter ||
-            now >= expiresAt ||
-            draft.revocations.some((record) => revocationMatches(record, p.source))
-          )
-            throw new Error('not-renewable')
-          p.reviewAfter = now + REVIEW_AFTER_MS
-        }, snap.revision)
+        registry.renew(
+          { paragraphId: id },
+          {
+            expectedRevision: snap.revision,
+            before: Math.min(reviewAfter, entry.nextExpiry ?? Infinity),
+            requireUnrevoked: true,
+            dependencyIds: entry.refs,
+          },
+        )
         return true
       } catch {
         return false

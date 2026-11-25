@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { MemoryFilePort } from '@agnes/extension-api'
+import type { MemoryFilePort, MemorySession } from '@agnes/extension-api'
 import { afterEach, expect, it, vi } from 'vitest'
 import { hash } from '../src/content.js'
 import { createDefaultPipeline, fileMemoryRoots, openMemory } from '../src/index.js'
@@ -10,8 +10,10 @@ import { memoryBlocks } from '../src/provenance.js'
 
 const id = 'r1234567890'
 const managed = (body: string) => `<!-- refinement:${id} -->\n${body}\n<!-- /refinement:${id} -->`
+const sessions: MemorySession[] = []
 const homes: string[] = []
 afterEach(async () => {
+  await Promise.all(sessions.splice(0).map((session) => session.close?.()))
   await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true })))
 })
 
@@ -26,6 +28,7 @@ async function setup(mode: 'ask' | 'auto' = 'auto', answer: 'approved' | 'reject
   const pipeline = createDefaultPipeline()
   registerMemoryProtection(pipeline)
   const session = openMemory({ home, workspaceRoot: home, sessionKey: 's', pipeline })
+  sessions.push(session)
   await session.configure({ mode })
   const approve = vi.fn(async () =>
     answer === 'approved' ? { status: 'approved' as const } : { status: 'rejected' as const },
@@ -149,6 +152,21 @@ it('compares new structured preferences across workspace files and enabled handw
   await f.human('tab_width = 2')
 })
 
+it('preserves human ownership after a matching put on an externally edited recorded id', async () => {
+  const f = await setup()
+  const change = { op: 'put' as const, id, text: 'Use pnpm' }
+  await f.paragraphs.commit(await f.paragraphs.propose(change))
+  await writeFile(f.index, managed('Use PNPM'))
+  const expectTextHash = hash('Use PNPM')
+  const rewrite = () => f.paragraphs.propose({ ...change, text: 'Use npm', expectTextHash })
+  await expect(rewrite()).rejects.toMatchObject({ code: 'MEMORY_PARAGRAPH_EDITED' })
+  await f.paragraphs.commit(await f.paragraphs.propose({ ...change, text: 'Use PNPM', expectTextHash }))
+  expect(JSON.parse(await readFile(f.provenance, 'utf8')).files['MEMORY.md'].blocks).toMatchObject([
+    { id, origin: 'human', textHash: expectTextHash },
+  ])
+  await expect(rewrite()).rejects.toMatchObject({ code: 'MEMORY_PARAGRAPH_EDITED' })
+})
+
 it.each(['Legacy note', 'Updated note'])(
   'upgrades an unrecorded managed paragraph after a verified Host put of "%s"',
   async (text) => {
@@ -170,6 +188,31 @@ it.each(['Legacy note', 'Updated note'])(
     ).rejects.toMatchObject({
       code: 'MEMORY_PARAGRAPH_EDITED',
     })
+  },
+)
+
+it.each(['workspace', 'user'] as const)(
+  'hides saved projection for an invalid %s index while retaining its stored rows',
+  async (layer) => {
+    const f = await setup()
+    const user = fileMemoryRoots(f.home, f.home).userRoot
+    await mkdir(user, { recursive: true })
+    const path = layer === 'workspace' ? f.index : join(user, 'MEMORY.md')
+    const port =
+      layer === 'workspace'
+        ? f.paragraphs
+        : f.session.userParagraphs?.({ sessionKey: 'reader', turn: 0 }, new AbortController().signal)
+    if (!port) throw new Error('missing paragraph port')
+    await writeFile(path, 'Intro.\n\n' + managed('Visible'))
+    const listing = async () => (await port.list()).paragraphs
+    expect(await listing()).toMatchObject([{ id, visibleText: 'Visible' }])
+    for (const config of [{ indexMaxLines: 1 }, { indexMaxLines: 200, indexMaxBytes: 16 }]) {
+      await f.session.configure(config)
+      expect(await listing()).toMatchObject([{ id, text: 'Visible', visibleText: null }])
+    }
+    await f.session.configure({ indexMaxBytes: 16000 })
+    await writeFile(path, 'api_key=synthetic-sensitive-key\n\n' + managed('Visible'))
+    expect(await listing()).toMatchObject([{ id, text: 'Visible', visibleText: null }])
   },
 )
 

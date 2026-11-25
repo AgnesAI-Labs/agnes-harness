@@ -3330,6 +3330,10 @@
         "validity": {
           "enum": ["valid", "expired", "unknown"]
         },
+        "renewable": {
+          "type": "boolean",
+          "description": "Whether the Host currently permits renewing this saved paragraph."
+        },
         "hidden": {
           "description": "True when the paragraph is within its review period in the registry, yet all of its content is hidden from the agent by a provider visibility filter, such as an expiry annotation, withdrawn reference, or unverified topic summary.",
           "const": true

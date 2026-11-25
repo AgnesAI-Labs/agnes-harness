@@ -53,6 +53,7 @@ type Saved = {
   validity: string
   reviewAfter?: number
   initiator?: string
+  renewable?: boolean
   hidden?: true
 }
 let saved: Saved[] = []
@@ -563,6 +564,8 @@ it('lists saved task experience with review dates and renews, withdraws or conve
       id: 'ra000000001',
       text: 'Lint first\nRun pnpm lint before committing.',
       validity: 'valid',
+      hidden: true,
+      renewable: false,
       reviewAfter: Date.UTC(2026, 11, 1),
       initiator: 'auto',
     },
@@ -595,6 +598,7 @@ it('lists saved task experience with review dates and renews, withdraws or conve
     expect(rows()[0]?.textContent).toContain('2026')
     expect(rows()[1]?.textContent).toMatch(/past its review date.*next turn/i)
     expect(rows()[2]?.textContent).toMatch(/does not see it until you/i)
+    expect(rows()[0]?.querySelector('[data-testid="memory-saved-renew"]')).toBeNull()
     // No review date to renew for a paragraph nothing vouches for.
     expect(rows()[2]?.querySelector('[data-testid="memory-saved-renew"]')).toBeNull()
     await act(async () =>

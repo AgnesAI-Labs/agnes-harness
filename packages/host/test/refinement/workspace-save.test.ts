@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { reconcileWorkspace, WORKSPACE_MEMORY_KEY } from '../../src/runtime/refinement/reconcile.js'
 import { registryView } from '../../src/runtime/refinement/registry-view.js'
 import { SECRET_LIKE } from '../../src/runtime/refinement/save-rules.js'
+import { savedParagraphs } from '../../src/runtime/refinement/saved-paragraphs.js'
 import { INTENT_SETTLE_MS } from '../../src/runtime/refinement/workspace-commit.js'
 import {
   createWorkspaceSave,
@@ -211,6 +212,42 @@ describe('the save-to-workspace decision order', () => {
     expect(await save.save(request(ws, { initiator: 'auto', confirmations: 1 }))).toMatchObject({
       reason: 'memory-off',
     })
+  })
+
+  it('preserves an out-of-band edit even when a model submits its exact text', async () => {
+    const ws = await workspace()
+    const save = ws.service()
+    const put = (content: string) => save.save(request(ws, entry({ content })))
+    expect(await put('Use pnpm')).toMatchObject({ outcome: 'saved' })
+    const edited = (await ws.file()).replace('Use pnpm', 'Use PNPM')
+    writeFileSync(join(ws.open().root, 'MEMORY.md'), edited)
+    for (const content of ['Use PNPM', 'Use npm'])
+      expect(await put(content)).toMatchObject({ outcome: 'refused', reason: 'human-edited' })
+    expect(await ws.file()).toBe(edited)
+  })
+
+  it('refuses a duplicate whose placement read overlaps a withdrawal', async () => {
+    const ws = await workspace()
+    const save = ws.service()
+    const id = paragraphOf(await save.save(request(ws)))
+    ws.setWrap((memory) => ({
+      ...memory,
+      paragraphs(source, signal) {
+        const port = memory.paragraphs?.(source, signal)
+        if (!port) throw new Error('missing workspace paragraph port')
+        if (source.sessionKey !== 'session-1') return port
+        return {
+          ...port,
+          async list() {
+            const listed = await port.list()
+            await savedParagraphs(ws)(ws.open(), ws.root, { action: 'withdraw', paragraphId: id })
+            return listed
+          },
+        }
+      },
+    }))
+    expect(await save.save(request(ws))).toMatchObject({ outcome: 'refused', reason: 'user-revoked' })
+    expect(await ws.file()).toBe('')
   })
 
   it('model saves of revoked content are refused as user-revoked and user saves clear the record', async () => {
@@ -926,7 +963,7 @@ describe('saves under ask', () => {
     expect(await ws.file()).toBe(`${afterFirst}Human line.\n`)
   })
 
-  it.each(['before approval', 'under the commit lock'])(
+  it.each(['before approval', 'under the commit lock', 'hidden before approval', 'hidden at commit'])(
     'refuses a replacement that expires %s',
     async (when) => {
       const queue = approvals()
@@ -950,7 +987,23 @@ describe('saves under ask', () => {
       expect(waiting.outcome).toBe('awaiting-approval')
       const asked = queue.pending[0]
       if (!asked) throw new Error('missing approval')
-      if (when === 'before approval') ws.now.value = deadline
+      if (when.startsWith('hidden')) {
+        let hidden = when === 'hidden before approval'
+        ws.setWrap(
+          portWrap((port) => ({
+            async list() {
+              const result = await port.list()
+              return hidden
+                ? { ...result, paragraphs: result.paragraphs.map((p) => ({ ...p, visibleText: null })) }
+                : result
+            },
+            commit(proposal, admission) {
+              hidden = true
+              return port.commit(proposal, admission)
+            },
+          })),
+        )
+      } else if (when === 'before approval') ws.now.value = deadline
       else
         ws.setWrap(
           portWrap((port) => ({
@@ -1170,7 +1223,7 @@ describe('hand-written text and the rules', () => {
     expect(markedIds(await ws.file())).toHaveLength(1)
   })
 
-  it('saving exactly the text already in a paragraph is never a conflict', async () => {
+  it('an interrupted update can reuse its exact text after an unrelated file edit', async () => {
     const ws = await workspace()
     const save = ws.service()
     await save.save(request(ws))
@@ -1430,6 +1483,16 @@ describe('rewriting a saved paragraph by id', () => {
     expect(paragraphOf(again)).toBe(pid)
     expect(markedIds(await ws.file())).toEqual([pid])
     expect(await ws.file()).toContain('Run pnpm check first.')
+  })
+
+  it('refuses a rewrite hidden by a past file annotation', async () => {
+    const ws = await workspace()
+    const save = ws.service()
+    const id = paragraphOf(await save.save(request(ws)))
+    const hidden = `<!-- expires_at: 2020-01-01 -->\n${await ws.file()}`
+    await ws.writeStored(hidden)
+    expect(await save.save(later(ws, id, NEW))).toMatchObject({ outcome: 'refused', reason: 'conflict' })
+    expect(await ws.file()).toBe(hidden)
   })
 
   it('a paragraph no longer in force is not rewritten and nothing is appended', async () => {

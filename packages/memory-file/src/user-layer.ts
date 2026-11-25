@@ -169,9 +169,9 @@ export function userParagraphPort(
       throw fault('MEMORY_USER_BUDGET')
     throw error
   }
-  const assertUserBudget = (candidate: MemoryFile, puts: ReadonlySet<string>) => {
+  const assertUserBudget = (candidate: MemoryFile, puts: ReadonlySet<string>, before: MemoryFile) => {
     try {
-      validateContent(candidate, user.configuration(), true)
+      validateContent(candidate, user.configuration(), true, puts.size ? undefined : before)
     } catch (error) {
       userCapacityError(error)
     }
@@ -199,7 +199,7 @@ export function userParagraphPort(
   return Object.freeze<MemoryParagraphPort>({
     async list() {
       signal.throwIfAborted()
-      return listParagraphs(hooks.pipeline, makeContext(hooks.clock()))
+      return listParagraphs(hooks.pipeline, makeContext(hooks.clock()), workspace.configuration())
     },
     async propose(changes, baseHash) {
       signal.throwIfAborted()
@@ -210,7 +210,7 @@ export function userParagraphPort(
         : [changes as MemoryParagraphChange]
       const candidate = file(INDEX, applyParagraphChanges(before.content, list))
       const puts = new Set(list.flatMap((change) => (change.op === 'put' ? [change.id] : [])))
-      assertUserBudget(candidate, puts)
+      assertUserBudget(candidate, puts, before)
       const intent: CommitIntent = {
         origin: 'host',
         actor,
@@ -245,7 +245,7 @@ export function userParagraphPort(
         signal,
         admission,
         commitHooks(hooks.pipeline, entry.intent, makeContext, hooks.clock, () =>
-          assertUserBudget(entry.candidate, entry.puts),
+          assertUserBudget(entry.candidate, entry.puts, entry.intent.before),
         ),
         userCapacityError,
       )

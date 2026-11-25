@@ -95,7 +95,7 @@ export type RegistryRecords = {
   skills: RegistrySkill[]
   revocations: Revocation[]
   receipts: SaveReceipt[]
-  /** SHA-256 of the proposed text by pending receipt id, for recovery after a file change. */
+  /** SHA-256 of the proposed text by unknown receipt id, for recovery after a file change. */
   intentTextHashes?: Record<string, string>
 }
 export type RegistrySnapshot = RegistryRecords & { revision: string }
@@ -127,6 +127,18 @@ export function revocationMatches(
     (record.action === 'skill-uninstalled' || record.action === 'skill-rolled-back')
   const sameContent = (memoryContent || skillContent) && record.contentHash === source.contentHash
   return lineage || sameSkill || sameContent
+}
+
+/** The earliest review date among active, unrevoked dependencies. A missing dependency fails closed. */
+export function dependencyDeadline(records: RegistryRecords, ids: readonly string[]): number {
+  let deadline = Infinity
+  for (const id of ids) {
+    const record = records.paragraphs.find((p) => p.id === id)
+    if (record?.state !== 'active' || records.revocations.some((r) => revocationMatches(r, record.source)))
+      return -Infinity
+    deadline = Math.min(deadline, record.reviewAfter)
+  }
+  return deadline
 }
 
 const failure = (code: string, extra: object = {}) => Object.assign(new Error(code), { code, ...extra })
@@ -284,9 +296,7 @@ const cleanRecords = (value: Raw): RegistryRecords | undefined => {
   if (value.intentTextHashes !== undefined) {
     const hashes = obj(value.intentTextHashes)
     if (!hashes) return undefined
-    const pending = new Set(
-      receipts.filter((r) => r.outcome === 'unknown' && r.reason === undefined).map((r) => r.receiptId),
-    )
+    const pending = new Set(records.receipts.filter((r) => r.outcome === 'unknown').map((r) => r.receiptId))
     for (const [id, digest] of Object.entries(hashes)) {
       if (!isDigest(digest)) return undefined
       if (pending.has(id)) {
@@ -442,8 +452,15 @@ export class RefinementRegistry {
    * the registry only; no memory file is touched. An unknown paragraph, a removed or converted one, or a skill
    * that is uninstalled or rolled back throws `REGISTRY_ENTRY_NOT_RENEWABLE`.
    */
-  renew(target: { paragraphId: string } | { skillName: string }): void {
-    const reviewAfter = this.clock() + REVIEW_AFTER_MS
+  renew(
+    target: { paragraphId: string } | { skillName: string },
+    opts?: {
+      expectedRevision?: string
+      before?: number
+      requireUnrevoked?: boolean
+      dependencyIds?: readonly string[]
+    },
+  ): void {
     this.transact((draft) => {
       const record =
         'paragraphId' in target
@@ -451,9 +468,16 @@ export class RefinementRegistry {
           : draft.skills.find(
               (s) => s.name === target.skillName && (s.state === 'active' || s.state === 'review-disabled'),
             )
-      if (!record) throw failure('REGISTRY_ENTRY_NOT_RENEWABLE')
-      record.reviewAfter = reviewAfter
-    })
+      const now = this.clock()
+      if (
+        !record ||
+        now >= (opts?.before ?? Infinity) ||
+        (opts?.requireUnrevoked && draft.revocations.some((r) => revocationMatches(r, record.source))) ||
+        now >= dependencyDeadline(draft, opts?.dependencyIds ?? [])
+      )
+        throw failure('REGISTRY_ENTRY_NOT_RENEWABLE')
+      record.reviewAfter = now + REVIEW_AFTER_MS
+    }, opts?.expectedRevision)
   }
 
   /**

@@ -349,13 +349,18 @@ describe('renewing a confirmed entry', () => {
     },
   )
 
-  it.each(['review date', 'annotation'])(
+  it.each(['review date', 'annotation', 'dependency'])(
     'refuses renewal when the %s expires during the provider read',
     async (deadline) => {
-      const record = paragraph({ reviewAfter: deadline === 'review date' ? 20 : 100 })
-      const mem = memory({ [record.id]: TEXT }).session
-      const t = setup({ paragraphs: [record], memory: mem })
-      t.clock.mockReturnValue(19)
+      const source = paragraph({ reviewAfter: T0 + 20 })
+      const record = paragraph({
+        id: 'r0000000002',
+        reviewAfter: T0 + (deadline === 'review date' ? 20 : 100),
+      })
+      const text = deadline === 'dependency' ? `${TEXT}\nref: ${source.id}` : TEXT
+      const mem = memory({ [record.id]: text }).session
+      const t = setup({ paragraphs: [source, record], memory: mem })
+      t.clock.mockReturnValue(T0 + 19)
       const port = mem.paragraphs?.({ sessionKey: AT.key, turn: 0 }, new AbortController().signal)
       if (!port) throw new Error('missing paragraph port')
       t.where.memory = {
@@ -364,20 +369,20 @@ describe('renewing a confirmed entry', () => {
           ...port,
           async list() {
             const listed = await port.list()
-            t.clock.mockReturnValue(22)
+            t.clock.mockReturnValue(T0 + 22)
             return {
               ...listed,
               paragraphs: listed.paragraphs.map((p) => ({
                 ...p,
                 visibleText: p.text,
-                ...(deadline === 'annotation' ? { nextExpiry: 20 } : {}),
+                ...(deadline === 'annotation' ? { nextExpiry: T0 + 20 } : {}),
               })),
             }
           },
         }),
       }
-      expect(await t.refs.renew(AT, `workspace-memory/${record.id}`, sha256Hex(TEXT))).toBe(false)
-      expect(t.registry.read().paragraphs).toEqual([record])
+      expect(await t.refs.renew(AT, `workspace-memory/${record.id}`, sha256Hex(text))).toBe(false)
+      expect(t.registry.read().paragraphs).toEqual([source, record])
     },
   )
 
@@ -629,26 +634,30 @@ describe('entries saved earlier, for the experience snapshot', () => {
     expect(await t.refs.entries?.(AT)).toEqual([])
   })
 
-  it('fingerprints only bounded regular files on a symlink-free path', () => {
+  it('fingerprints only bounded regular files on a symlink-free path', async () => {
     const session = fileProvider().open({ home: scratch(), workspaceRoot: ROOT, sessionKey: AT.key })
-    const root = session.root
-    mkdirSync(root, { recursive: true })
-    const t = both(session)
-    const missing = t.refs.revision?.(AT)
-    const file = join(root, 'MEMORY.md')
-    writeFileSync(file, Buffer.alloc(1024 * 1024))
-    expect(t.refs.revision?.(AT)).not.toBe(missing)
-    writeFileSync(file, Buffer.alloc(1024 * 1024 + 1))
-    expect(t.refs.revision?.(AT)).not.toBe(missing)
-    // The user index sits under a directory link and the workspace index itself is a link.
-    const external = realpathSync(scratch())
-    writeFileSync(join(external, 'MEMORY.md'), TEXT)
-    rmSync(file)
-    symlinkSync(join(external, 'MEMORY.md'), file)
-    symlinkSync(external, join(root, '..', '..', 'user'), 'dir')
-    const linked = t.refs.revision?.(AT)
-    writeFileSync(join(external, 'MEMORY.md'), SOME)
-    expect(t.refs.revision?.(AT)).toBe(linked)
+    try {
+      const root = session.root
+      mkdirSync(root, { recursive: true })
+      const t = both(session)
+      const missing = t.refs.revision?.(AT)
+      const file = join(root, 'MEMORY.md')
+      writeFileSync(file, Buffer.alloc(1024 * 1024))
+      expect(t.refs.revision?.(AT)).not.toBe(missing)
+      writeFileSync(file, Buffer.alloc(1024 * 1024 + 1))
+      expect(t.refs.revision?.(AT)).not.toBe(missing)
+      // The user index sits under a directory link and the workspace index itself is a link.
+      const external = realpathSync(scratch())
+      writeFileSync(join(external, 'MEMORY.md'), TEXT)
+      rmSync(file)
+      symlinkSync(join(external, 'MEMORY.md'), file)
+      symlinkSync(external, join(root, '..', '..', 'user'), 'dir')
+      const linked = t.refs.revision?.(AT)
+      writeFileSync(join(external, 'MEMORY.md'), SOME)
+      expect(t.refs.revision?.(AT)).toBe(linked)
+    } finally {
+      await session.close?.()
+    }
   })
 
   it('its revision moves when a paragraph is saved, withdrawn or passes its review date', () => {
@@ -725,7 +734,7 @@ describe('fixes after the branch review', () => {
     expect(userRegistry.read().paragraphs[0]?.reviewAfter).toBe(T0 + REVIEW_AFTER_MS)
   })
 
-  it.each(['expired annotation', 'memory off', 'memory off without stateRevision'])(
+  it.each(['expired annotation', 'lowered index limit', 'memory off', 'memory off without stateRevision'])(
     'withdraws a cached delivery on the next request after %s',
     async (edit) => {
       const dataDir = scratch()
@@ -763,7 +772,8 @@ describe('fixes after the branch review', () => {
         await turn()
         expect(JSON.stringify(session.surface())).toContain(`[memory/ws.${id} v1] (saved)`)
         const before = refs.revision?.(AT)
-        if (edit.startsWith('memory off')) await memory.configure({ mode: 'off' })
+        if (edit === 'lowered index limit') await memory.configure({ indexMaxLines: 1 })
+        else if (edit.startsWith('memory off')) await memory.configure({ mode: 'off' })
         else
           await memory.editFile(
             'MEMORY.md',

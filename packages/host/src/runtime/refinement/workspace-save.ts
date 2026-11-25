@@ -28,7 +28,7 @@ import {
   type SaveSource,
 } from '@agnes/host-infrastructure/refinement-registry'
 import { sha256Hex } from '@agnes/protocol'
-import { paragraphVisibility } from './paragraph-visibility.js'
+import { liveTargetDeadline, paragraphVisibility, targetDeadline } from './paragraph-visibility.js'
 import { paragraphPortOf, reconcileWorkspace, recordedTextHash } from './reconcile.js'
 import { paragraphText, sourceRuleProblem } from './save-rules.js'
 import { reconcileSkillDeletions, saveSkillChange, type WorkspaceSkills } from './skill-update.js'
@@ -36,11 +36,13 @@ import { normalizedWorkflowHash, workflowTextProblem } from './workflow-runs.js'
 import {
   code,
   commitParagraph,
+  type ExistingParagraph,
   failedRules,
   INTENT_SETTLE_MS,
   type ParagraphCommit,
   pendingIntent,
   putReceipt,
+  recordExisting,
   refusalOf,
   resumeSaves,
   writeFresh,
@@ -57,6 +59,7 @@ export type PendingParagraph = Readonly<{
   paragraph: ParagraphCommit['paragraph']
   /** Whether the source explicitly requested a rewrite of an in-force paragraph. */
   requiresActiveTarget?: boolean
+  targetReviewAfter?: number
   /** The memory source the proposal was made for. */
   source: MemorySource
   settingsRevision: string
@@ -193,6 +196,13 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
             return await judge({ request, base, registry, memory, run })
           } catch (error) {
             const failure = code(error)
+            if (failure === 'REFINEMENT_SWITCH_CHANGED')
+              return {
+                ...base,
+                outcome: 'refused',
+                reason: 'refinement-off',
+                steps: steps({ switch: 'fail' }),
+              }
             if (failure === 'REGISTRY_REVISION_CONFLICT' && attempt === 0) continue
             const reason: SaveRefusal =
               failure === 'REGISTRY_REVISION_CONFLICT' ? 'conflict' : refusalOf(error)
@@ -391,24 +401,20 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     )
     if (placed === 'busy' || placed === 'gone') return refused('conflict', 'capacity')
     if (placed === 'human-edited') return refused('human-edited', 'rules')
-    if ('existing' in placed) {
-      const receipt: SaveReceipt = {
-        ...base,
-        outcome: 'saved',
-        steps: steps({ ...verdicts, capacity: 'pass' }),
-        target: {
-          kind: 'memory-paragraph',
-          paragraphId: placed.existing.id,
-          fileHash: placed.existing.fileHash,
-        },
-      }
-      writeFresh(registry, (draft) => {
-        override?.(draft)
-        putReceipt(draft, receipt)
-      })
-      return receipt
+    const decision = {
+      registry,
+      decided: { revision: snapshot.revision },
+      clock: deps.clock,
+      switchCurrent: () => switchAt(request.settingsRevision),
+      receipt: { ...base, steps: steps({ ...verdicts, capacity: 'pass' }) },
+      ...(override ? { onSaved: override } : {}),
     }
-    const decided = { revision: snapshot.revision }
+    if ('existing' in placed) return recordExisting(decision, placed.existing)
+    const verifyTarget =
+      replaces === undefined
+        ? undefined
+        : liveTargetDeadline(memory, 'workspace', port, registry, replaces, deps.clock)
+
     // Under ask the person sees the exact change after the provider's protection checks pass.
     if (mode === 'ask')
       return ask({
@@ -417,23 +423,20 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
         registry,
         port,
         paragraph: placed.paragraph,
+        ...(placed.targetReviewAfter === undefined ? {} : { targetReviewAfter: placed.targetReviewAfter }),
         baseHash: listed.hash,
         source,
-        decided,
+        decided: decision.decided,
         verdicts,
       })
     // 6. Capacity is known once the change is proposed; the commit records the rest.
     const result = await commitParagraph({
-      registry,
+      ...decision,
+      ...placed,
       memory,
       port,
       mode,
-      ...placed,
-      receipt: { ...base, steps: steps({ ...verdicts, capacity: 'pass' }) },
-      switchCurrent: () => switchAt(request.settingsRevision),
-      clock: deps.clock,
-      decided,
-      ...(override ? { onSaved: override } : {}),
+      ...(verifyTarget ? { verifyTarget } : {}),
       inFlight,
     })
     if ('stale' in result) return refused('conflict', 'capacity')
@@ -450,6 +453,7 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     registry: RefinementRegistry
     port: MemoryParagraphPort
     paragraph: ParagraphCommit['paragraph']
+    targetReviewAfter?: number
     baseHash: string
     source: MemorySource
     decided: { revision: string }
@@ -473,6 +477,8 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
       steps: steps({ ...verdicts, capacity: 'pass' }),
       target: { kind: 'memory-paragraph', paragraphId: paragraph.id, fileHash: proposal.newHash },
     }
+    if (deps.clock() >= (input.targetReviewAfter ?? Infinity))
+      return refuse(registry, base, 'conflict', { ...verdicts, capacity: 'fail' })
     registry.update((draft) => putReceipt(draft, waiting), input.decided.revision)
     let kept: SaveReceipt
     try {
@@ -481,6 +487,7 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
         receipt: waiting,
         paragraph,
         requiresActiveTarget: request.entry.replaces !== undefined,
+        ...(input.targetReviewAfter === undefined ? {} : { targetReviewAfter: input.targetReviewAfter }),
         source: input.source,
         settingsRevision: request.settingsRevision,
       })
@@ -589,8 +596,13 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
           const target = snap.paragraphs.find((p) => p.id === input.paragraph.id)
           // Older approval rows do not distinguish a lineage update from an explicit rewrite.
           const requiresActiveTarget = input.requiresActiveTarget ?? target !== undefined
-          if (requiresActiveTarget && (target?.state !== 'active' || deps.clock() >= target.reviewAfter))
-            return settle(without('conflict'))
+          const verifyTarget = requiresActiveTarget
+            ? liveTargetDeadline(memory, 'workspace', port, registry, input.paragraph.id, deps.clock)
+            : undefined
+          const deadline = verifyTarget
+            ? Math.min(input.targetReviewAfter ?? Infinity, await verifyTarget())
+            : undefined
+          if (deadline !== undefined && deps.clock() >= deadline) return settle(without('conflict'))
           const override = revoked
             ? (draft: RegistryRecords) => {
                 draft.revocations = draft.revocations.filter(
@@ -611,7 +623,9 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
               decided: { revision: snap.revision },
               ...(override ? { onSaved: override } : {}),
               approved: input.approved,
-              ...(requiresActiveTarget && target ? { targetReviewAfter: target.reviewAfter } : {}),
+              ...(verifyTarget && deadline !== undefined
+                ? { verifyTarget, targetReviewAfter: deadline }
+                : {}),
               inFlight,
             })
           } catch {
@@ -684,13 +698,10 @@ export function placement(
   now: number,
   listed: MemoryParagraphList,
   layer: 'workspace' | 'user',
-  replaces?: string,
-  visible: Awaited<ReturnType<typeof paragraphVisibility>> = (entry) => ({
-    visibleText: entry.visibleText === undefined ? entry.text.trim() || null : entry.visibleText,
-    nextExpiry: entry.nextExpiry,
-  }),
+  replaces: string | undefined,
+  visible: Awaited<ReturnType<typeof paragraphVisibility>>,
 ):
-  | { existing: { id: string; fileHash: string } }
+  | { existing: ExistingParagraph }
   | Pick<ParagraphCommit, 'paragraph' | 'baseHash' | 'targetReviewAfter'>
   | 'busy'
   | 'gone'
@@ -706,43 +717,68 @@ export function placement(
   const active = snapshot.paragraphs.filter((paragraph) => paragraph.state === 'active')
   const inFile = new Map(listed.paragraphs.map((entry) => [entry.id, entry]))
   const hash = normalizedContentHash(text)
-  const existing = (p: RegistryParagraph) => {
+  const proof = (p: RegistryParagraph) => {
     const entry = inFile.get(p.id)
-    if (!entry || entry.text !== text || (entry.validity !== 'valid' && entry.validity !== 'delivered'))
-      return false
-    const projection = visible(entry)
-    return (
-      !!projection?.visibleText &&
-      now < (projection.nextExpiry ?? Infinity) &&
-      p.contentHash === hash &&
-      (p.exactHash !== undefined ? p.exactHash === sha256Hex(text) : p.fileHash === listed.hash)
-    )
+    const projection = entry && visible(entry)
+    const deadline = targetDeadline(snapshot, entry, projection)
+    return projection && now < deadline ? { deadline, projection } : undefined
   }
-  const replace = (p: RegistryParagraph) => {
+  const existing = (p: RegistryParagraph) => {
+    if (
+      inFile.get(p.id)?.text !== text ||
+      p.contentHash !== hash ||
+      (p.exactHash !== undefined ? p.exactHash !== sha256Hex(text) : p.fileHash !== listed.hash)
+    )
+      return
+    const eligible = proof(p)
+    if (!eligible) return
+    const { refs, nextExpiry } = eligible.projection
+    return {
+      existing: {
+        id: p.id,
+        fileHash: listed.hash,
+        refs,
+        ...(nextExpiry === undefined ? {} : { nextExpiry }),
+      },
+    }
+  }
+  const matchesInterruptedIntent = (id: string, currentHash: string) =>
+    snapshot.receipts.some(
+      (r) =>
+        r.outcome === 'unknown' &&
+        same(r.source) &&
+        r.target?.kind === 'memory-paragraph' &&
+        r.target.paragraphId === id &&
+        snapshot.intentTextHashes?.[r.receiptId] === currentHash,
+    )
+  const replace = (p: RegistryParagraph, targetReviewAfter?: number) => {
     const current = inFile.get(p.id)?.text
     if (current === undefined) return 'gone'
     const expected = p.exactHash ?? recordedTextHash(snapshot, listed.hash, p.id, current)
-    if (!expected) return 'human-edited'
     // Workspace recovery can also confirm a change that already landed byte for byte.
-    const expectTextHash = layer === 'workspace' && current === text ? sha256Hex(text) : expected
-    if (sha256Hex(current) !== expectTextHash) return 'human-edited'
+    const currentHash = sha256Hex(current)
+    const expectTextHash =
+      layer === 'workspace' && current === text && matchesInterruptedIntent(p.id, currentHash)
+        ? currentHash
+        : expected
+    if (currentHash !== expectTextHash) return 'human-edited'
     return {
       paragraph: { id: p.id, text, expectTextHash },
       ...(p.exactHash === undefined ? { baseHash: listed.hash } : {}),
-      ...(replaces === undefined ? {} : { targetReviewAfter: p.reviewAfter }),
+      ...(targetReviewAfter === undefined ? {} : { targetReviewAfter }),
     }
   }
   // A rewrite of a saved paragraph goes into that paragraph only, and only while it is in force there.
   if (replaces !== undefined) {
-    const target = active.find(
-      (paragraph) => paragraph.id === replaces && now < paragraph.reviewAfter && inFile.has(paragraph.id),
-    )
-    if (!target) return 'gone'
-    if (existing(target)) return { existing: { id: target.id, fileHash: target.fileHash } }
-    return replace(target)
+    const target = active.find((p) => p.id === replaces)
+    const eligible = target && proof(target)
+    if (!target || !eligible) return 'gone'
+    return existing(target) ?? replace(target, eligible.deadline)
   }
-  const match = active.find((p) => now < p.reviewAfter && existing(p))
-  if (match) return { existing: { id: match.id, fileHash: match.fileHash } }
+  for (const p of active) {
+    const match = existing(p)
+    if (match) return match
+  }
   const lineage = active.find((paragraph) => same(paragraph.source))
   if (lineage) return replace(lineage)
   const left = snapshot.receipts.findLast(
@@ -760,8 +796,9 @@ export function placement(
     if (current === undefined) return 'gone'
     if (left.target.fileHash === listed.hash)
       return { paragraph: { id, text, expectTextHash: sha256Hex(current) }, baseHash: listed.hash }
-    if (layer === 'workspace' && current === text)
-      return { paragraph: { id, text, expectTextHash: sha256Hex(text) } }
+    const currentHash = sha256Hex(current)
+    if (snapshot.intentTextHashes?.[left.receiptId] === currentHash)
+      return { paragraph: { id, text, expectTextHash: currentHash } }
     return 'human-edited'
   }
   const taken = new Set([...snapshot.paragraphs.map((paragraph) => paragraph.id), ...inFile.keys()])

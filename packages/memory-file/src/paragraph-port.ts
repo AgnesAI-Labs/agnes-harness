@@ -10,7 +10,7 @@ import type {
 } from '@agnes/extension-api'
 import { checkProposalGuards, commitHooks } from './commit-hooks.js'
 import { buildIndexView, nonManaged } from './consistency.js'
-import { diff, fault, file, validateContent } from './content.js'
+import { diff, fault, file, indexContentValid, validateContent } from './content.js'
 import { annotations } from './expiry-annotation.js'
 import type { MetaStore } from './meta.js'
 import { applyParagraphChanges, parseParagraphs, validityOf } from './paragraphs.js'
@@ -28,16 +28,18 @@ export type ParagraphPortHooks = Readonly<{
 }>
 
 /** Project only raw body segments. Notices synthesized for reads never become saved experience. */
-export function listParagraphs(pipeline: MemoryPipeline, context: ViewContext) {
+export function listParagraphs(pipeline: MemoryPipeline, context: ViewContext, config: MemorySettings) {
   const stored = context.files.find((entry) => entry.path === INDEX) ?? file(INDEX, '')
-  const ranges = pipeline.collectHideRanges(stored, context).filter(nonManaged)
-  const view = buildIndexView(stored, ranges)
-  const deadlines = [...annotations(stored.content)].filter((a) => a.expiresAt > context.now)
+  const valid = indexContentValid(stored, config)
+  const view = valid
+    ? buildIndexView(stored, pipeline.collectHideRanges(stored, context).filter(nonManaged))
+    : undefined
+  const deadlines = valid ? [...annotations(stored.content)].filter((a) => a.expiresAt > context.now) : []
   const paragraphs = parseParagraphs(stored.content).paragraphs.map(({ id, text, start }) => {
     const from = stored.content.indexOf('\n', start) + 1
     const to = from + text.length
     let body = ''
-    for (const segment of view.segments) {
+    for (const segment of view?.segments ?? []) {
       if (segment.raw === undefined) continue
       const left = Math.max(from, segment.raw)
       const right = Math.min(to, segment.raw + segment.length)
@@ -106,7 +108,8 @@ export function paragraphPort(
   return Object.freeze<MemoryParagraphPort>({
     async list() {
       signal.throwIfAborted()
-      return listParagraphs(hooks.pipeline, makeContext(store.configuration(), hooks.clock()))
+      const config = store.configuration()
+      return listParagraphs(hooks.pipeline, makeContext(config, hooks.clock()), config)
     },
     async propose(changes, baseHash) {
       signal.throwIfAborted()

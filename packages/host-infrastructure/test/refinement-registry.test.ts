@@ -354,9 +354,13 @@ describe('RefinementRegistry', () => {
   })
 
   it('renew refuses what it cannot renew', () => {
-    const { registry } = make()
+    const { registry, clock } = make()
     registry.update((draft) => {
-      draft.paragraphs.push(paragraph({ id: 'gone', state: 'removed' }))
+      draft.paragraphs.push(
+        paragraph(),
+        paragraph({ id: 'dependency', reviewAfter: T0 + 20 }),
+        paragraph({ id: 'gone', state: 'removed' }),
+      )
       draft.skills.push(skill({ name: 'old', state: 'uninstalled' }))
     }, registry.read().revision)
     const revision = registry.read().revision
@@ -369,6 +373,13 @@ describe('RefinementRegistry', () => {
       expect(() => registry.renew(target)).toThrowError(
         expect.objectContaining({ code: 'REGISTRY_ENTRY_NOT_RENEWABLE' }),
       )
+    }
+    lockFault.open = () => clock.set(T0 + 20)
+    for (const proof of [{ before: T0 + 20 }, { dependencyIds: ['dependency'] }]) {
+      clock.set(T0 + 19)
+      expect(() =>
+        registry.renew({ paragraphId: 'p1' }, { ...proof, expectedRevision: revision }),
+      ).toThrowError(expect.objectContaining({ code: 'REGISTRY_ENTRY_NOT_RENEWABLE' }))
     }
     expect(registry.read().revision).toBe(revision)
   })
@@ -517,6 +528,15 @@ describe('RefinementRegistry', () => {
         receipt({ receiptId: 'settled-unknown', outcome: 'unknown', reason: 'conflict', at: 2 }),
       )
     }, registry.read().revision)
+    const hash = 'a'.repeat(64)
+    registry.update((draft) => {
+      draft.receipts.push(
+        receipt({ receiptId: 'saved', outcome: 'saved' }),
+        receipt({ receiptId: 'refused', outcome: 'refused' }),
+      )
+      draft.intentTextHashes = { intent: hash, 'settled-unknown': hash, saved: hash, refused: hash }
+    }, registry.read().revision)
+    expect(registry.read().intentTextHashes).toEqual({ intent: hash, 'settled-unknown': hash })
     for (let batch = 0; batch < 6; batch++)
       registry.update((draft) => {
         for (let i = 0; i < 100; i++)
@@ -532,6 +552,7 @@ describe('RefinementRegistry', () => {
     const receipts = registry.read().receipts
     expect(receipts).toHaveLength(500)
     expect(receipts.slice(0, 2).map((r) => r.receiptId)).toEqual(['waiting', 'intent'])
+    expect(registry.read().intentTextHashes).toEqual({ intent: hash })
     // The settled ones went oldest first.
     expect(receipts.some((r) => r.receiptId === 'settled-unknown')).toBe(false)
     expect(receipts.at(-1)?.receiptId).toBe('n5-99')

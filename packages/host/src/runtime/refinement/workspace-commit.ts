@@ -5,6 +5,7 @@ import type {
   MemorySession,
 } from '@agnes/extension-api'
 import {
+  dependencyDeadline,
   normalizedContentHash,
   REVIEW_AFTER_MS,
   type RefinementRegistry,
@@ -105,6 +106,39 @@ function putParagraph(
   else draft.paragraphs[at] = record
 }
 
+export type ExistingParagraph = { id: string; fileHash: string; nextExpiry?: number; refs: readonly string[] }
+
+/** A duplicate has no file commit. Its receipt must still be admitted against the placement snapshot. */
+export function recordExisting(
+  input: Pick<
+    ParagraphCommit,
+    'registry' | 'decided' | 'receipt' | 'clock' | 'switchCurrent' | 'assertAllowed' | 'onSaved'
+  >,
+  existing: ExistingParagraph,
+): SaveReceipt {
+  const receipt: SaveReceipt = {
+    ...input.receipt,
+    outcome: 'saved',
+    target: {
+      kind: 'memory-paragraph',
+      paragraphId: existing.id,
+      fileHash: existing.fileHash,
+    },
+  }
+  input.registry.update((draft) => {
+    if (!input.switchCurrent()) throw fault('REFINEMENT_SWITCH_CHANGED')
+    input.assertAllowed?.()
+    input.onSaved?.(draft)
+    if (
+      input.clock() >=
+      Math.min(existing.nextExpiry ?? Infinity, dependencyDeadline(draft, [existing.id, ...existing.refs]))
+    )
+      throw fault('REGISTRY_REVISION_CONFLICT')
+    putReceipt(draft, receipt)
+  }, input.decided.revision)
+  return receipt
+}
+
 /** Everything one paragraph commit needs; the port is the one the request made its proposals with. */
 export type ParagraphCommit = {
   registry: RefinementRegistry
@@ -134,6 +168,7 @@ export type ParagraphCommit = {
   baseHash?: string
   /** An explicit replacement can only land before its target expires at the decided revision. */
   targetReviewAfter?: number
+  verifyTarget?: () => Promise<number>
   /** An approved proposal: the file must still give exactly this proposal, or nothing is written. */
   approved?: { baseHash: string; newHash: string }
   /** Paragraph ids whose commit is in flight in this process; resume leaves them alone. */
@@ -262,6 +297,7 @@ function settle(input: ParagraphCommit, reason: SaveRefusal): SaveReceipt {
  * the one the proposal was made under (checked before the write).
  */
 function admissionFor(input: ParagraphCommit, revision: string): MemoryEffectAdmission {
+  let liveDeadline = Infinity
   return permissionEffectAdmission({
     ...(input.targetReviewAfter === undefined ? {} : { expiresAt: input.targetReviewAfter }),
     clock: input.clock,
@@ -269,8 +305,10 @@ function admissionFor(input: ParagraphCommit, revision: string): MemoryEffectAdm
       if (!input.switchCurrent()) throw fault('REFINEMENT_SWITCH_CHANGED')
       if (input.registry.read().revision !== revision) throw fault('REFINEMENT_REGISTRY_CHANGED')
       input.assertAllowed?.()
+      if (input.clock() >= liveDeadline) throw fault('REFINEMENT_SAVE_STALE')
     },
     async verify() {
+      if (input.verifyTarget) liveDeadline = await input.verifyTarget()
       if (input.mode === undefined) return
       const mode = (await input.memory.inspect()).settings.mode
       if (mode !== input.mode) throw fault('REFINEMENT_MEMORY_MODE_CHANGED')

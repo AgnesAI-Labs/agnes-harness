@@ -13,7 +13,7 @@ import type {
 import { chunkView } from './chunker.js'
 import { commitHooks } from './commit-hooks.js'
 import { buildIndexView, formatLifecycleOmission, inspectConsistency, nonManaged } from './consistency.js'
-import { fault, file, fitBytes, hash, validateContent } from './content.js'
+import { fault, file, fitBytes, hash, indexContentValid, validateContent } from './content.js'
 import { createFilePort } from './file-port.js'
 import { MetaStore } from './meta.js'
 import { nextLayerExpiry, resolveReadOverlay, type TurnReadState } from './overlay.js'
@@ -135,7 +135,7 @@ function captureTurnSnapshot(args: {
       : [user.read('MEMORY.md')].filter((entry) => entry.bytes > 0)
     : []
   const userIndex = userFiles.find((entry) => entry.path === 'MEMORY.md') ?? file('MEMORY.md', '')
-  const userValid = passes(userIndex, config)
+  const userValid = indexContentValid(userIndex, config)
   const ctx: ViewContext = {
     layer: 'workspace',
     files,
@@ -146,7 +146,7 @@ function captureTurnSnapshot(args: {
     meta,
   }
   const index = files.find((entry) => entry.path === 'MEMORY.md') ?? file('MEMORY.md', '')
-  const indexValid = passes(index, config)
+  const indexValid = indexContentValid(index, config)
   const baseRanges = new Map<string, HideRange[]>()
   const readViews = new Map<string, MemoryView>()
   const agent = new Map<string, MemoryFile>()
@@ -564,15 +564,6 @@ export async function inspectMemoryConsistency(
     indexIds,
     rawFilteredIds,
     mismatches: res.mismatches,
-  }
-}
-
-function passes(entry: MemoryFile, config: MemorySettings): boolean {
-  try {
-    validateContent(entry, config, true)
-    return true
-  } catch {
-    return false
   }
 }
 

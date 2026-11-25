@@ -140,7 +140,10 @@ export function SavedParagraphsBlock(
           label={<span translate="no">{title(paragraph.text)}</span>}
           description={status(paragraph)}
         >
-          {paragraph.reviewAfter !== undefined && (
+          {(paragraph.renewable ??
+            (paragraph.reviewAfter !== undefined &&
+              paragraph.validity !== 'unknown' &&
+              !paragraph.hidden)) && (
             <Button
               size="small"
               data-testid="memory-saved-renew"

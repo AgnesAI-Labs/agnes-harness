@@ -185,6 +185,46 @@ describe('promoting a confirmed lesson to user memory', () => {
     expect(await h.saves.save({ ...request(h), commandId: receipt.commandId })).toEqual(receipt)
   })
 
+  it('refuses a duplicate when its user section is withdrawn during placement', async () => {
+    const h = await home()
+    const id = sectionId(await h.saves.save(request(h)))
+    h.setWrap(
+      wrapUserPort((port, source) =>
+        source.sessionKey !== 'session-1'
+          ? {}
+          : {
+              async list() {
+                const listed = await port.list()
+                await h.manage({ action: 'withdraw', paragraphId: id })
+                return listed
+              },
+            },
+      ),
+    )
+    expect(await h.saves.save(request(h))).toMatchObject({ outcome: 'refused', reason: 'user-revoked' })
+    expect(h.user()).toBe(HAND)
+  })
+
+  it('rejects a human renewal when its checked user registry revision is revoked', async () => {
+    const h = await home()
+    const id = sectionId(await h.saves.save(request(h)))
+    const registry = h.users()
+    const [record] = registry.read().paragraphs
+    if (!record) throw new Error('missing user section')
+    h.now.value++
+    const renew = registry.renew.bind(registry)
+    vi.spyOn(registry, 'renew').mockImplementation((...args) => {
+      registry.update((draft) => {
+        draft.revocations.push({ ...record.source, action: 'memory-withdrawn', at: T0 })
+      }, registry.read().revision)
+      return renew(...args)
+    })
+    await expect(
+      manageUserSections(h.open(), registry, { action: 'renew', paragraphId: id }, () => h.now.value),
+    ).rejects.toMatchObject({ code: 'MEMORY_CONFLICT' })
+    expect(registry.read().paragraphs).toEqual([record])
+  })
+
   it('a lesson that was never seen to hold is not promoted, one seen once is', async () => {
     const h = await home()
     const receipt = await h.saves.save(request(h, { confirmations: 0 }))

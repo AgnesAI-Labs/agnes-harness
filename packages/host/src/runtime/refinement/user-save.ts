@@ -11,7 +11,7 @@ import {
   type SaveReceipt,
   type SaveRefusal,
 } from '@agnes/host-infrastructure/refinement-registry'
-import { paragraphVisibility } from './paragraph-visibility.js'
+import { liveTargetDeadline, paragraphVisibility } from './paragraph-visibility.js'
 import { reconcileParagraphs, WORKSPACE_MEMORY_KEY } from './reconcile.js'
 import { paragraphText, sourceRuleProblem } from './save-rules.js'
 import {
@@ -19,10 +19,9 @@ import {
   commitParagraph,
   fault,
   pendingIntent,
-  putReceipt,
+  recordExisting,
   refusalOf,
   resumeSaves,
-  writeFresh,
 } from './workspace-commit.js'
 import { placement, receiptBase, refuse, type Step, steps, type WorkspaceSave } from './workspace-save.js'
 
@@ -188,15 +187,7 @@ export function createUserSave(deps: UserSaveDeps): UserSave {
       if (typeof local.unreadable === 'function' && local.unreadable()) throw fault('REFINEMENT_SAVE_STALE')
       if (local.revoked(base.source)) throw fault('REFINEMENT_USER_REVOKED')
     }
-    const workspaceRefusal = () => {
-      try {
-        assertWorkspaceAllowed()
-      } catch (error) {
-        return refuse(registry, base, refusalOf(error), { switch: 'pass', revocation: 'fail' })
-      }
-    }
-    const blocked = workspaceRefusal()
-    if (blocked) return blocked
+    assertWorkspaceAllowed()
     if (registry.revoked(base.source)) return refused('user-revoked', 'revocation')
     verdicts.revocation = 'pass'
     // 3. Confirmations: only the automatic promotion needs them; a request skips the count.
@@ -244,32 +235,26 @@ export function createUserSave(deps: UserSaveDeps): UserSave {
     if (placed === 'busy' || placed === 'gone')
       return refuse(registry, read, 'conflict', { ...verdicts, capacity: 'fail' })
     if (placed === 'human-edited') return refuse(registry, read, placed, { ...verdicts, rules: 'fail' })
-    if ('existing' in placed) {
-      const blocked = workspaceRefusal()
-      if (blocked) return blocked
-      const receipt: SaveReceipt = {
-        ...read,
-        outcome: 'saved',
-        steps: steps({ ...verdicts, capacity: 'pass' }),
-        target: {
-          kind: 'memory-paragraph',
-          paragraphId: placed.existing.id,
-          fileHash: placed.existing.fileHash,
-        },
-      }
-      writeFresh(registry, (draft) => putReceipt(draft, receipt))
-      return receipt
-    }
-    const result = await commitParagraph({
+    const decision = {
       registry,
+      decided: { revision: snapshot.revision },
+      clock: deps.clock,
+      switchCurrent: () => switchAt(request.settingsRevision),
+      receipt: { ...read, steps: steps({ ...verdicts, capacity: 'pass' }) },
+      assertAllowed: assertWorkspaceAllowed,
+    }
+    if ('existing' in placed) return recordExisting(decision, placed.existing)
+    const verifyTarget =
+      replaces === undefined
+        ? undefined
+        : liveTargetDeadline(memory, 'user', port, registry, replaces, deps.clock)
+
+    const result = await commitParagraph({
+      ...decision,
+      ...placed,
       memory,
       port,
-      ...placed,
-      receipt: { ...read, steps: steps({ ...verdicts, capacity: 'pass' }) },
-      switchCurrent: () => switchAt(request.settingsRevision),
-      assertAllowed: assertWorkspaceAllowed,
-      clock: deps.clock,
-      decided: { revision: snapshot.revision },
+      ...(verifyTarget ? { verifyTarget } : {}),
       inFlight,
     })
     if ('stale' in result) return refuse(registry, read, 'conflict', { ...verdicts, capacity: 'fail' })
@@ -292,6 +277,15 @@ export function createUserSave(deps: UserSaveDeps): UserSave {
               return await judge(request, base, registry, memory)
             } catch (error) {
               const failure = code(error)
+              if (failure === 'REFINEMENT_SWITCH_CHANGED')
+                return {
+                  ...base,
+                  outcome: 'refused',
+                  reason: 'refinement-off',
+                  steps: steps({ switch: 'fail' }),
+                }
+              if (failure === 'REFINEMENT_USER_REVOKED' || failure === 'REFINEMENT_SAVE_STALE')
+                return refuse(registry, base, refusalOf(error), { switch: 'pass', revocation: 'fail' })
               if (failure === 'REGISTRY_REVISION_CONFLICT' && attempt === 0) continue
               const reason: SaveRefusal =
                 failure === 'REGISTRY_REVISION_CONFLICT' ? 'conflict' : refusalOf(error)

@@ -59,10 +59,18 @@ export function settings(input: Partial<MemorySettings>): MemorySettings {
 }
 
 /** Conservative rejection of common credentials; not a universal secret detector. */
-export function validateContent(value: MemoryFile, limits: MemorySettings, index: boolean): void {
+export function validateContent(
+  value: MemoryFile,
+  limits: MemorySettings,
+  index: boolean,
+  shrinkingFrom?: MemoryFile,
+): void {
+  const shrinkingIndex =
+    index && shrinkingFrom && value.bytes < shrinkingFrom.bytes && value.lines < shrinkingFrom.lines
   if (
-    value.bytes > (index ? limits.indexMaxBytes : limits.topicMaxBytes) ||
-    (index && value.lines > limits.indexMaxLines)
+    !shrinkingIndex &&
+    (value.bytes > (index ? limits.indexMaxBytes : limits.topicMaxBytes) ||
+      (index && value.lines > limits.indexMaxLines))
   )
     throw fault('MEMORY_CONSOLIDATION_REQUIRED')
   if (
@@ -71,6 +79,15 @@ export function validateContent(value: MemoryFile, limits: MemorySettings, index
     )
   )
     throw fault('MEMORY_SECRET_LIKE_CONTENT')
+}
+
+export function indexContentValid(entry: MemoryFile, config: MemorySettings): boolean {
+  try {
+    validateContent(entry, config, true)
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function diff(before: string, after: string): string {

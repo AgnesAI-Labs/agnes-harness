@@ -117,13 +117,19 @@ export function attributedBlocks(
 }
 
 /** A legacy managed paragraph can be claimed by a Host put that verifies its exact prior body. */
-export function verifiedLegacyPut(block: AttributedBlock, intent: CommitIntent, ctx: ViewContext): boolean {
+export function verifiedLegacyPut(
+  block: AttributedBlock,
+  intent: CommitIntent,
+  ctx: ViewContext,
+  records = readProvenance(ctx.meta).files[intent.path]?.blocks ?? [],
+): boolean {
   return (
     ctx.layer === 'workspace' &&
     intent.origin === 'host' &&
     intent.via === 'paragraph' &&
     block.recorded === false &&
     block.id !== undefined &&
+    !records.some((record) => record.id === block.id) &&
     block.textHash !== undefined &&
     intent.changes?.some(
       (change) => change.op === 'put' && change.id === block.id && change.expectTextHash === block.textHash,
@@ -138,10 +144,13 @@ function nextProvenance(intent: CommitIntent, candidateFile: MemoryFile, ctx: Vi
     if (!present.has(path)) delete data.files[path]
   }
   const candidate = memoryBlocks(candidateFile.content)
-  const before = attributedBlocks(intent.before, ctx, data.files[intent.path]?.blocks ?? [])
+  const records = data.files[intent.path]?.blocks ?? []
+  const before = attributedBlocks(intent.before, ctx, records)
   const prior = matchRecords(
     before.map((block) =>
-      verifiedLegacyPut(block, intent, ctx) ? { ...block, origin: 'host' as const, at: ctx.now } : block,
+      verifiedLegacyPut(block, intent, ctx, records)
+        ? { ...block, origin: 'host' as const, at: ctx.now }
+        : block,
     ),
     candidate,
   )

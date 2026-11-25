@@ -1,9 +1,16 @@
 import type { CommitGuard } from './pipeline.js'
-import { attributedBlocks, blockVersion, memoryBlocks, verifiedLegacyPut } from './provenance.js'
+import {
+  attributedBlocks,
+  blockVersion,
+  memoryBlocks,
+  readProvenance,
+  verifiedLegacyPut,
+} from './provenance.js'
 
 export const humanGuard: CommitGuard = (intent, ctx) => {
   if (intent.origin === 'human') return { kind: 'allow' }
-  const before = attributedBlocks(intent.before, ctx)
+  const records = ctx.layer === 'workspace' ? (readProvenance(ctx.meta).files[intent.path]?.blocks ?? []) : []
+  const before = attributedBlocks(intent.before, ctx, records)
   const remaining = new Map<string, number>()
   for (const block of memoryBlocks(intent.candidate.content)) {
     const key = blockVersion(block)
@@ -14,7 +21,7 @@ export const humanGuard: CommitGuard = (intent, ctx) => {
     const key = blockVersion(block)
     const count = remaining.get(key) ?? 0
     if (!count) {
-      if (verifiedLegacyPut(block, intent, ctx)) continue
+      if (verifiedLegacyPut(block, intent, ctx, records)) continue
       return {
         kind: 'refuse',
         code: intent.origin === 'agent' && !block.id ? 'MEMORY_HUMAN_EDITED' : 'MEMORY_PARAGRAPH_EDITED',

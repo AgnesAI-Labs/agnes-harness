@@ -4,15 +4,16 @@ import type {
   MemoryParagraphValidity,
   MemorySession,
 } from '@agnes/extension-api'
-import type {
-  RefinementRegistry,
-  RegistryRecords,
-  Revocation,
-  SaveSource,
+import {
+  dependencyDeadline,
+  type RefinementRegistry,
+  type RegistryRecords,
+  type Revocation,
+  revocationMatches,
+  type SaveSource,
 } from '@agnes/host-infrastructure/refinement-registry'
-import { paragraphMarkers, paragraphVisibility } from './paragraph-visibility.js'
+import { type Projection, paragraphMarkers, paragraphVisibility } from './paragraph-visibility.js'
 import { paragraphPortOf } from './reconcile.js'
-import { registryView } from './registry-view.js'
 
 /** What a person asks of the saved paragraphs on the memory page. */
 export type SavedParagraphRequest = Readonly<{
@@ -29,6 +30,7 @@ export type SavedParagraph = {
   id: string
   text: string
   validity: MemoryParagraphValidity
+  renewable: boolean
   hidden?: true
   nextExpiry?: number
   reviewAfter?: number
@@ -64,6 +66,30 @@ function withoutMarkers(text: string, { open, close }: { open: Line; close: Line
   return text.slice(0, open.start) + text.slice(open.end, close.start) + text.slice(close.end)
 }
 
+function renewalStatus(
+  records: RegistryRecords,
+  paragraph: MemoryParagraphList['paragraphs'][number],
+  projection: Projection,
+  now: number,
+) {
+  const record = records.paragraphs.find((p) => p.id === paragraph.id && p.state === 'active')
+  const validity: SavedParagraph['validity'] =
+    !record ||
+    records.revocations.some((r) => revocationMatches(r, record.source)) ||
+    paragraph.validity === 'unknown'
+      ? 'unknown'
+      : now >= record.reviewAfter || paragraph.validity === 'expired'
+        ? 'expired'
+        : projection
+          ? 'valid'
+          : 'unknown'
+  const renewable =
+    validity !== 'unknown' &&
+    !!projection?.visibleText &&
+    now < Math.min(projection.nextExpiry ?? Infinity, dependencyDeadline(records, projection.refs))
+  return { record, validity, renewable }
+}
+
 /** Both memory layers expose the stored text and its effective visibility to the editor. */
 export async function describeParagraphs(
   listed: MemoryParagraphList,
@@ -75,26 +101,17 @@ export async function describeParagraphs(
   const { paragraphs } = listed
   if (!paragraphs.length) return []
   const paragraphText = await paragraphVisibility(memory, layer, listed, registry, clock)
-  const records = registry.read().paragraphs
-  const hostValidity = registryView(registry, clock).validity
+  const records = registry.read()
+  const now = clock()
   return paragraphs.map((paragraph) => {
     const projection = paragraphText(paragraph)
-    const { id, text, validity } = paragraph
-    const record = records.find((entry) => entry.id === id && entry.state === 'active')
-    const providerStatus = validity === 'delivered' ? 'valid' : validity
-    const hostStatus = hostValidity(id)
-    const status: MemoryParagraphValidity =
-      providerStatus === 'unknown' || hostStatus === 'unknown'
-        ? 'unknown'
-        : providerStatus === 'expired' || hostStatus === 'expired'
-          ? 'expired'
-          : projection
-            ? 'valid'
-            : 'unknown'
+    const { id, text } = paragraph
+    const { record, validity: status, renewable } = renewalStatus(records, paragraph, projection, now)
     return {
       id,
       text,
       validity: status,
+      renewable,
       ...(status === 'valid' && projection?.visibleText === null ? { hidden: true as const } : {}),
       ...(projection?.nextExpiry !== undefined ? { nextExpiry: projection.nextExpiry } : {}),
       ...(record
@@ -113,20 +130,33 @@ export async function verifyRenewal(
   clock: () => number,
   id: string,
 ) {
+  const snap = registry.read()
   const listed = await port?.list()
   const paragraph = listed?.paragraphs.find((p) => p.id === id)
-  const hostStatus = registryView(registry, clock).validity(id)
-  if (
-    listed &&
-    paragraph &&
-    paragraph.validity !== 'unknown' &&
-    (hostStatus === 'valid' || hostStatus === 'expired')
-  ) {
-    const visible = await paragraphVisibility(memory, layer, listed, registry, clock)
-    const projection = visible(paragraph)
-    if (projection?.visibleText && clock() < (projection.nextExpiry ?? Infinity)) return
+  if (!listed || !paragraph) throw fault('MEMORY_PARAGRAPH_NOT_RENEWABLE')
+  const projection = (await paragraphVisibility(memory, layer, listed, registry, clock))(paragraph)
+  if (!projection || !renewalStatus(snap, paragraph, projection, clock()).renewable)
+    throw fault('MEMORY_PARAGRAPH_NOT_RENEWABLE')
+  return {
+    expectedRevision: snap.revision,
+    ...(projection.nextExpiry === undefined ? {} : { before: projection.nextExpiry }),
+    requireUnrevoked: true,
+    dependencyIds: projection.refs,
   }
-  throw fault('MEMORY_PARAGRAPH_NOT_RENEWABLE')
+}
+
+export function renewVerifiedParagraph(
+  registry: RefinementRegistry,
+  id: string,
+  proof: Awaited<ReturnType<typeof verifyRenewal>>,
+) {
+  try {
+    registry.renew({ paragraphId: id }, proof)
+  } catch (error) {
+    if (code(error) === 'REGISTRY_REVISION_CONFLICT') throw fault('MEMORY_CONFLICT')
+    if (code(error) === 'REGISTRY_ENTRY_NOT_RENEWABLE') throw fault('MEMORY_PARAGRAPH_NOT_RENEWABLE')
+    throw fault('MEMORY_REGISTRY_UNAVAILABLE')
+  }
 }
 
 /**
@@ -174,16 +204,8 @@ export function savedParagraphs(deps: {
     const id = request.paragraphId
     if (typeof id !== 'string') throw fault('MEMORY_INVALID_REQUEST')
     if (request.action === 'renew') {
-      await verifyRenewal(editorPort(memory), memory, 'workspace', registry, deps.clock, id)
-      try {
-        registry.renew({ paragraphId: id })
-      } catch (error) {
-        throw fault(
-          code(error) === 'REGISTRY_ENTRY_NOT_RENEWABLE'
-            ? 'MEMORY_PARAGRAPH_NOT_RENEWABLE'
-            : 'MEMORY_REGISTRY_UNAVAILABLE',
-        )
-      }
+      const proof = await verifyRenewal(editorPort(memory), memory, 'workspace', registry, deps.clock, id)
+      renewVerifiedParagraph(registry, id, proof)
       return { paragraphs: (await list(memory, registry))?.paragraphs ?? [] }
     }
     const before = await list(memory, registry)

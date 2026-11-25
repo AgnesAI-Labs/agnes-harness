@@ -141,7 +141,7 @@ What you take back wins over automatic and model saves:
 
 ### Paragraphs a person edited
 
-When you edit a saved workspace paragraph in place, later saves preserve your text, including changes to spacing or letter case. This also applies to a save you request or approve. Use the Memory page to change or withdraw the paragraph. In user memory, a promotion can replace a saved section whose only changes are spacing or letter case.
+When you edit a saved paragraph in place in workspace or user memory, later saves and promotions preserve your text, including changes to spacing or letter case. This also applies to a save you request or approve. Use the Memory page to change or withdraw the paragraph.
 
 If a save that updated a paragraph in place was cut off by a crash and the file changed before it was settled, later automatic and model versions of that entry are refused `conflict` too, until you save the entry yourself or withdraw the paragraph.
 
