@@ -90,20 +90,55 @@ test('human controls queue, interrupt, persist pause and stop/continue a child',
   await page.screenshot({ path: info.outputPath('subagent-tray-and-report.png'), animations: 'disabled' })
   await page.getByTestId('workbench-right-toggle').click()
   await child.getByTestId('child-stop').click()
+  await child.getByTestId('child-steer-toggle').click()
   await expect(child.getByTestId('child-continue-message')).toBeEnabled()
   await child.getByTestId('child-continue-message').fill('Finish with a synthetic answer')
   await child.getByTestId('child-continue').click()
   await expect.poll(async () => (await session.controls()).children?.[0]?.status).toBe('idle')
   await child.getByTestId('child-open').click()
   const job = (await session.jobsRead(`child:${await child.getAttribute('data-child-id')}`)).job
-  expect(job?.kind).toBe('child')
+  expect(job).toMatchObject({ kind: 'child', status: 'completed' })
   expect(job?.stdout).toContain('Calling e2e_wait_for_cancel with example arguments.')
   await expect(report.locator('.workbench-child-report-body')).toHaveText(job?.stdout?.trim() ?? '')
   await expect(report.locator('.xterm')).toHaveCount(0)
   await page.screenshot({ path: info.outputPath('subagent-idle-report.png'), animations: 'disabled' })
   await page.getByTestId('workbench-right-toggle').click()
+  await page.setViewportSize({ width: 390, height: 844 })
+  const runtimeNotice = page.getByRole('button', { name: 'Dismiss runtime notice' })
+  if (await runtimeNotice.isVisible()) await runtimeNotice.click()
+  await expect(child.getByTestId('child-open')).toBeVisible()
+  await expect(child.getByTestId('child-pause')).toBeVisible()
+  const layout = await child.evaluate((row) => {
+    const title = row.querySelector('.composer-child-title')
+    const head = row.querySelector('.composer-child-head')
+    return {
+      titleWidth: title?.getBoundingClientRect().width ?? 0,
+      overflow: (head?.scrollWidth ?? 0) - (head?.clientWidth ?? 0),
+    }
+  })
+  expect(layout.titleWidth).toBeGreaterThan(0)
+  expect(layout.overflow).toBe(0)
+  await info.attach('subagent-layout-390.json', {
+    body: JSON.stringify(layout),
+    contentType: 'application/json',
+  })
+  await child.getByTestId('child-pause').click()
+  await expect(child).toHaveAttribute('data-status', 'paused')
+  await child.getByTestId('child-resume').click()
+  await expect(child).toHaveAttribute('data-status', 'idle')
+  await child.getByTestId('child-close').click()
+  await expect(child).toHaveAttribute('data-status', 'completed')
+  await expect(child.getByTestId('child-recap')).toBeEnabled()
   const facts = (await session.controls({ afterSeq: 0 })).facts ?? []
-  for (const action of ['interrupt', 'resume', 'child-stop', 'child-continue'])
+  for (const action of [
+    'interrupt',
+    'resume',
+    'child-stop',
+    'child-continue',
+    'child-pause',
+    'child-resume',
+    'child-close',
+  ])
     expect(facts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -114,6 +149,7 @@ test('human controls queue, interrupt, persist pause and stop/continue a child',
         }),
       ]),
     )
+  await page.setViewportSize({ width: 1280, height: 900 })
   await page.locator('#view-trace').click()
   // Control facts now participate in the unified trace rows, with localized action names.
   const evidence = page.locator('.trace-row').filter({ has: page.locator('.kind-control') })

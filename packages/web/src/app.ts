@@ -917,9 +917,9 @@ const clientModules = await startClientModules({
     onAttachmentsChange: renderControls,
     prepareUploadSession: prepareAttachmentSession,
     onCancel: handleComposerCancel,
-    onChildControl: handleChildControl,
-    onPauseResume: handlePauseResume,
-    onEditQueued: handleEditQueued,
+    onChildControl: commandController.handleChildControl,
+    onPauseResume: commandController.handlePauseResume,
+    onEditQueued: commandController.handleEditQueued,
     onDraftChange: handleComposerDraftChange,
     onError: showError,
     onModelSelect: selectModel,
@@ -2163,16 +2163,6 @@ function refreshSessionControls(session: Session): Promise<void> {
 function readSessionControls(session: Session): Promise<ApplySessionControls> {
   return commandController.readSessionControls(session)
 }
-function handleChildControl(id: string, action: 'stop' | 'continue', text?: string): Promise<void> {
-  return commandController.handleChildControl(id, action, text)
-}
-function handlePauseResume(): void {
-  commandController.handlePauseResume()
-}
-function handleEditQueued(itemId: string, text: string): Promise<void> {
-  return commandController.handleEditQueued(itemId, text)
-}
-
 function handleComposerDraftChange(value: string): void {
   composerDrafts.setReferences(composerRuntime.getDraftReferences())
   composerController.handleComposerDraftChange(value)

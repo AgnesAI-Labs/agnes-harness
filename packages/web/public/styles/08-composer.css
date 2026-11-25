@@ -407,7 +407,7 @@
   }
   .composer-child-head {
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--s8);
     min-width: 0;
@@ -416,7 +416,7 @@
   /* Left-aligned clickable title; overrides Button's inline-flex centering so the leading words never clip. */
   .composer-child-name.agnes-ui-button,
   .composer-child-name {
-    flex: 1 1 0;
+    flex: 1 1 8rem;
     min-width: 0;
     max-width: 100%;
     height: auto;
@@ -444,7 +444,7 @@
   }
   .composer-child-name:is(:hover, :focus-visible) {
     background: none;
-    color: var(--agnes-accent-primary);
+    color: var(--agnes-brand-primary);
     text-decoration: underline;
   }
   .composer-child-id {
@@ -494,14 +494,11 @@
     white-space: nowrap;
   }
   .composer-child-actions {
-    display: inline-flex;
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--s2);
-    flex: none;
-  }
-  .composer-child-stop.agh-btn,
-  .composer-child-steer.agh-btn {
-    flex: none;
+    max-width: 100%;
   }
   .composer-child-reply {
     display: flex;
@@ -519,10 +516,12 @@
   }
   /* A narrow card stacks the numbers under the name instead of squeezing the row. */
   @media (max-width: 540px) {
-    .composer-child-metrics {
+    .composer-child-metrics,
+    .composer-child-actions {
       flex-basis: 100%;
-      order: 1;
-      text-align: start;
+    }
+    .composer-child-id {
+      display: none;
     }
     .composer-children-sublist {
       margin-inline-start: var(--s4);

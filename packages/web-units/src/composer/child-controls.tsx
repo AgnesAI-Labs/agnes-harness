@@ -10,7 +10,7 @@ import {
   type StatusDotTone,
 } from '@agnes/web-ui'
 import { type ChangeEvent, type ReactNode, useState } from 'react'
-import type { ComposerDependencies } from './contracts.js'
+import type { ComposerChildAction, ComposerDependencies } from './contracts.js'
 
 type ChildStatus = SessionControlledChild['status']
 /** The status mark a child takes. Words in the row stay the signal; colour only backs them. */
@@ -64,7 +64,7 @@ export function ChildControlTree({
 }: {
   nodes: readonly SessionControlledChild[]
   disabled?: boolean
-  control: (id: string, action: 'stop' | 'continue', text?: string) => Promise<void>
+  control: (id: string, action: ComposerChildAction, text?: string) => Promise<void>
   t: ComposerDependencies['translate']
 }) {
   const ids = new Set(nodes.map((child) => child.id))
@@ -133,7 +133,7 @@ export function ChildControlRow({
 }: {
   child: SessionControlledChild
   disabled?: boolean
-  control: (id: string, action: 'stop' | 'continue', text?: string) => Promise<void>
+  control: (id: string, action: ComposerChildAction, text?: string) => Promise<void>
   t: ComposerDependencies['translate']
 }) {
   const [text, setText] = useState('')
@@ -143,7 +143,7 @@ export function ChildControlRow({
   const mark = CHILD_MARK[child.status]
   const working = WORKING.has(child.status)
   const showReply = child.controls.continue && replyOpen
-  const submit = (action: 'stop' | 'continue') => {
+  const submit = (action: ComposerChildAction) => {
     if (pending) return
     setPending(true)
     setError('')
@@ -205,20 +205,28 @@ export function ChildControlRow({
               {t(working ? 'composer.child.steer' : 'composer.child.continue')}
             </Button>
           ) : null}
-          {child.controls.stop ? (
-            <Button
-              htmlType="button"
-              size="small"
-              appearance="ghost"
-              className="composer-child-stop"
-              data-testid="child-stop"
-              disabled={disabled || pending}
-              title={t('composer.child.stop')}
-              onClick={() => submit('stop')}
-            >
-              {t('composer.child.stop')}
-            </Button>
-          ) : null}
+          {(['stop', 'pause', 'resume', 'close', 'retain', 'recap'] as const).map((action) => {
+            const available =
+              action === 'recap'
+                ? child.providerId === 'in-process'
+                : action === 'resume'
+                  ? child.status === 'paused' && child.controls.resume
+                  : child.controls[action]
+            if (!available) return null
+            return (
+              <Button
+                key={action}
+                htmlType="button"
+                size="small"
+                appearance="ghost"
+                data-testid={`child-${action}`}
+                disabled={disabled || pending}
+                onClick={() => submit(action)}
+              >
+                {t(`composer.child.${action}`)}
+              </Button>
+            )
+          })}
         </div>
       </div>
       {showReply ? (

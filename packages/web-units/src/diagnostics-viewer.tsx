@@ -1,5 +1,13 @@
 import type { UINode, UISpan } from '@agnes/protocol'
-import { Button, SettingsList, SettingsRow, SettingsState, Tabs } from '@agnes/web-ui'
+import {
+  Button,
+  SettingsList,
+  SettingsRow,
+  SettingsState,
+  systemInputText,
+  Tabs,
+  webUiLocaleCatalog,
+} from '@agnes/web-ui'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
   type DiagnosticsLocale,
@@ -138,23 +146,37 @@ type Labels = ReturnType<typeof diagnosticsViewerLabels>
 function fill(template: string, vars: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (match, name: string) => String(vars[name] ?? match))
 }
-function nodeText(node: UINode, labels: Labels): string {
+function technicalPreview(text: string) {
+  return text
+    .replace(/\[Batch State(?::[^\]]*)?\][^\r\n]*/gi, '')
+    .replace(/\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{6}([0-9a-f]{6})\b/gi, '…$1')
+    .trim()
+}
+function nodeText(node: UINode, labels: Labels, locale: DiagnosticsLocale): string {
   switch (node.kind) {
     case 'user':
+      if (node.system)
+        return technicalPreview(
+          systemInputText(node.system, (key, vars) =>
+            fill(webUiLocaleCatalog[locale][key] ?? key, vars ?? {}),
+          ) ?? '',
+        )
       return node.content.map((block) => (block.type === 'text' ? block.text : '')).join(' ')
     case 'assistant':
       return node.text || node.thinking || ''
     case 'tool':
-      return node.summary ? fill(labels.toolSummary, { name: node.name, summary: node.summary }) : node.name
+      return node.summary
+        ? technicalPreview(fill(labels.toolSummary, { name: node.name, summary: node.summary }))
+        : node.name
     case 'approval':
     case 'compaction':
-      return node.summary || ''
+      return technicalPreview(node.summary ?? '')
     case 'cost':
       return node.model || node.purpose || ''
     case 'artifact':
       return node.name || ''
     case 'context':
-      return node.text || ''
+      return technicalPreview(node.text ?? '')
     default:
       return ''
   }
@@ -260,7 +282,7 @@ function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: Diagnos
         <section id="tab-conversation" role="tabpanel" aria-labelledby="agh-tab-conversation" hidden>
           {bundle.trace?.nodes.length
             ? bundle.trace.nodes.map((node) => {
-                const body = nodeText(node, labels)
+                const body = nodeText(node, labels, locale)
                 return (
                   <div key={node.id} className="agh-node" data-kind={node.kind}>
                     <div className="agh-node-head">

@@ -15,6 +15,8 @@ import type { Translate } from '../locales/index.js'
 import type { ComposerReferences } from '../reference-picker.js'
 import type { ComposerSkill, ComposerSkills } from '../skill-picker.js'
 
+export type ComposerChildAction = 'stop' | 'continue' | 'pause' | 'resume' | 'close' | 'retain' | 'recap'
+
 export type ModelPickerOption = {
   id: string
   route: string
@@ -228,7 +230,7 @@ export interface ComposerRegionOptions {
   onPermissionSelect(mode: PermissionMode): Promise<boolean>
   /** `steer` is true for the guidance shortcut (⌘/Ctrl+Enter): while the agent runs it joins at the next step. */
   onSubmit(options?: { steer?: boolean }): void
-  onChildControl?(id: string, action: 'stop' | 'continue', text?: string): Promise<void>
+  onChildControl?(id: string, action: ComposerChildAction, text?: string): Promise<void>
   onPauseResume?(): void
   onEditQueued?(itemId: string, text: string): Promise<void>
   onSendNow?(itemId: string): void

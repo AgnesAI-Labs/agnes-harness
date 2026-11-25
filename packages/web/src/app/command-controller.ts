@@ -238,13 +238,17 @@ export function createCommandController(
     await showCommandFeedback(context, session)
   }
 
-  async function handleChildControl(id: string, action: 'stop' | 'continue', text?: string): Promise<void> {
+  async function handleChildControl(
+    id: string,
+    action: 'stop' | 'continue' | 'pause' | 'resume' | 'close' | 'retain' | 'recap',
+    text?: string,
+  ): Promise<void> {
     const session = context.current
     if (!session || context.sessionPending || !context.connected) return
-    if (action === 'stop') await session.stopChild(id)
-    else await session.continueChild(id, text ?? '')
+    if (action === 'recap') await session.followUp(context.t('composer.child.recapPrompt', { id }))
+    else await session.control(`child-${action}`, { childId: id, ...(text === undefined ? {} : { text }) })
     await refreshSessionControls(session)
-    context.live?.refresh()
+    if (context.current === session) context.live?.refresh()
   }
 
   function handlePauseResume(): void {

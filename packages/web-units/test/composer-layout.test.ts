@@ -872,3 +872,39 @@ it('asks the terminal panel for the child job when its name is clicked', () => {
     document.removeEventListener('agnes:open-terminal-job', listener)
   }
 })
+
+it.each([
+  ['idle', 'pause'],
+  ['paused', 'resume'],
+  ['paused', 'close'],
+  ['completed', 'recap'],
+] as const)('routes %s child row action %s', async (status, action) => {
+  const onChildControl = vi.fn(async () => {})
+  const { host } = mount(
+    { onChildControl },
+    {
+      ...idle,
+      children: [
+        {
+          id: 'controlled-child',
+          parentId: 'parent',
+          providerId: 'in-process',
+          status,
+          controls: {
+            stop: false,
+            continue: false,
+            pause: status === 'idle',
+            resume: status === 'paused',
+            close: status === 'paused',
+          },
+          totalTokens: 10,
+          durationMs: 1200,
+        },
+      ],
+    },
+  )
+  const button = host.querySelector<HTMLButtonElement>(`[data-testid="child-${action}"]`)
+  expect(button).not.toBeNull()
+  await act(async () => button?.click())
+  expect(onChildControl).toHaveBeenCalledWith('controlled-child', action, undefined)
+})

@@ -203,6 +203,8 @@ Right-click a tab or press Shift+F10 to interrupt, inspect its session/job/worki
 
 The legacy `/?settings=terminal` link opens the terminal in an available session workbench. If no session is open, it closes settings and asks you to open a session to use the terminal.
 
+Open **Subagents** above the composer to see delegated work, including nested tasks. Each row shows the controls available in its current state. Pause saves a checkpoint and Resume continues from it. Close ends the child and preserves its workspace files. Recap queues a request for the verified results and current state, which you can read in the conversation. Clicking the task name opens its output in the Terminal panel.
+
 The background jobs settings page selects sessions by title, workspace and relative date, defaults to the current session and updates automatically. It shows shell commands, persistent interpreters, PTYs and subagent status and output. A running human-owned job can be stopped from its row menu after confirmation. Agent-owned jobs are read only here; ask the agent to stop them in their session. Every operation remains constrained by that session’s sandbox preset.
 
 The shared terminal and background-job views use the session's pinned service binding for `jobs.read` and `jobs.control`. A replacement provider can serve that contract after the official provider is disabled in the session composition, or contribute its own client UI. Multiple providers for the same contract are refused. The platform still enforces process policy, session ownership, service grants and durable control receipts. Background-job management is also available under **Settings → Advanced → Jobs**.

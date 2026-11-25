@@ -154,6 +154,44 @@ describe('renderDiagnosticsViewer', () => {
     expect(document.querySelector('script[src], link[rel="stylesheet"]')).toBeNull()
   })
 
+  it('shows localized child notices and keeps full UUIDs in the collapsed raw record', () => {
+    const id = '6b9f51a4-aef5-4733-a4f3-9592acc7d26a'
+    const trace = twoLevelTimeline()
+    trace.nodes = [
+      {
+        kind: 'user',
+        id: 'child-notice',
+        seq: 2,
+        content: [{ type: 'text', text: `Child ${id} cancelled. [Batch State: completed=2/6]` }],
+        system: {
+          source: 'agnes/child',
+          type: 'child-completed',
+          summary: `Cancelled ${id}`,
+          data: { childKey: id },
+          presentation: { kind: 'child-completed', status: 'cancelled', label: 'Audit' },
+        },
+      },
+      {
+        kind: 'context',
+        id: 'internal',
+        seq: 3,
+        text: `Reference ${id} [Batch State: completed=2/6] Finish correctly`,
+      },
+    ]
+    const doc = new DOMParser().parseFromString(
+      renderDiagnosticsViewer(makeBundle({ trace }), 'zh-CN'),
+      'text/html',
+    )
+    const preview = [...doc.querySelectorAll('.agh-node-body')].map((node) => node.textContent).join(' ')
+    expect(preview).toContain('Audit')
+    expect(preview).toContain('取消')
+    expect(preview).toContain('…c7d26a')
+    expect(preview).not.toMatch(/Batch State|6b9f51a4/)
+    const raw = doc.querySelector('#agh-raw-child-notice')
+    expect(raw?.hasAttribute('hidden')).toBe(true)
+    expect(raw?.textContent).toContain(id)
+  })
+
   it('lists artifacts metadata', () => {
     const bundle = makeBundle({
       artifacts: [

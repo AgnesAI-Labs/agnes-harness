@@ -62,7 +62,9 @@ cell 结束后才获批的调用已经执行完毕，
 
 默认子 Agent 和工作流通过 `@agnes/git-worktree-contract` 的工作区作用域 `gitWorktreeKind` 使用 Git worktree。Host 注册唯一提供者，内置子 Agent 在工具调用期间用 `providers.bindOwn` 绑定它。请先在仓库忽略规则中加入 `.worktrees/`。服务生成分支，仅列出自己登记的 worktree，并在不强制删除的前提下清理干净的工作树；脏工作树和未合并分支保留供审查，所有权及清理阶段在重启后继续有效。创建、列举、删除和清理拒绝以 `worktree-*` 事实呈现在 trace 中。Agent 工具仍不能读取或修改 `.git`。非 Git 仓库、缺少 Git 和远程沙箱分别报告 `not-git`、`git-error`、`remote-sandbox`；省略隔离方式时，仅 `not-git` 会自动改用共享目录，工具结果会说明原因；显式 `isolation: "worktree"` 及其他 worktree 创建失败仍明确拒绝。如确实需要共享工作目录，请显式选择 `isolation: "shared"`。
 
-`ctx.subagent.collect()` 可返回可选的 `receipt`：工作区隔离信息、最多 32 条近期工具结果（名称、账本序号和错误状态），以及 `truncated` 标记。旧版本或外部子代理 provider 可省略该字段；缺失的证据不能视为执行成功回执。
+冷态续接会核对父会话与保存的子代理绑定，并验证工具过滤器。旧版保留记录或暂停检查点如果缺少可验证的绑定，需要重新派发才能继续，已经记录的输出仍可查看。
+
+对于已保存检查点的子代理，`ctx.subagent.collect()` 返回 `paused`。后端能标识完成结果时，还会返回 `completionId` 和 `completionSeq`。Collect 也可返回 `receipt`：工作区隔离信息、最多 32 条近期工具结果（名称、账本序号和错误状态），以及 `truncated` 标记。旧版本或外部子代理 provider 可省略该字段。收到回执时，可据此核查执行情况。
 
 Workflow 回执区分后端工具结果和子代理自行撰写的报告。父代理及后续阶段通过上下文 section 收到当前执行事实，包含工作区隔离方式，以及工具证据是否不完整或不可用。worktree 产物仍留在子工作区，Workflow 不会将子分支合并到主工作区，Web 卡片会明确标注。另行验证集成操作后才能声称文件已进入主工作区；子代理说“已经合并”不构成集成回执。
 
