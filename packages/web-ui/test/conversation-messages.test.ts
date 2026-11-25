@@ -430,12 +430,14 @@ describe('W3b projected message DOM', () => {
       save('g', { reason: 'conflict', initiator: 'auto' }),
       save('h', { reason: 'unavailable' }),
       save('i', { reason: 'some-later-reason' as never }),
+      save('j', { reason: 'human-edited' }),
+      save('k', { reason: 'preference-conflict' }),
     ]
     await act(async () => root.render(createElement(ConversationMessages, { t, nodes })))
     const lines = [...host.querySelectorAll('[data-testid="refinement-save-notice"]')].map(
       (line) => line.textContent ?? '',
     )
-    expect(lines).toHaveLength(9)
+    expect(lines).toHaveLength(11)
     const reason = (key: string) =>
       t('timeline.refinement.reason', { reason: t(`timeline.refinementSave.reason.${key}`) })
     expect(lines[0]).toBe(
@@ -455,6 +457,8 @@ describe('W3b projected message DOM', () => {
     expect(lines[6]).toContain(reason('conflict'))
     expect(lines[7]).toContain(reason('unavailable'))
     expect(lines[8]).toContain(t('timeline.refinement.reason', { reason: 'some-later-reason' }))
+    expect(lines[9]).toMatch(/原文已保留.*记忆文件/)
+    expect(lines[10]).toMatch(/原有偏好已保留.*记忆文件/)
     expect(lines.join(' ')).not.toContain('timeline.refinement')
   })
 

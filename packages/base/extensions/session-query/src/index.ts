@@ -117,7 +117,7 @@ export function createSessionQueryExtension(options: { dataDir?: string } = {}) 
               id: 'session-query',
               order: 168,
               content:
-                'Use session_search and session_event_search to find earlier sessions and events in this workspace. Use session_trace, session_event_trace, and session_event_read to inspect an authorized session. These tools are read-only and cannot run SQL.',
+                'Start with session_recall to find relevant events from earlier workspace sessions using English or Chinese keywords or questions. Use session_event_read on a hit for surrounding context. For exact literal phrases, use session_search or session_event_search. Use session_trace and session_event_trace to inspect an authorized session. These tools are read-only and cannot run SQL.',
             },
           ],
         })),

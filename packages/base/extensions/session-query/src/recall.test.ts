@@ -3,9 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { ToolContext, ToolResult } from '@agnes/extension-api'
-import { expect, it } from 'vitest'
-import { sessionEventReadTool, sessionRecallTool } from './index.js'
-import { bindSessionQuery, closeSessionQuery } from './runtime.js'
+import type { ExtensionAPI } from '@agnes/extension-api/host'
+import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
+import { expect, it, vi } from 'vitest'
+import { createSessionQueryExtension, sessionEventReadTool, sessionRecallTool } from './index.js'
+import { closeSessionQuery } from './runtime.js'
 
 function text(result: ToolResult): string {
   expect(result.isError).toBeUndefined()
@@ -33,11 +35,35 @@ it('uses an authorized recalled event as the center of an evidence window', asyn
       side
         .prepare('INSERT INTO session_principal_ownership VALUES(?,?)')
         .run(key, key === 'private' ? 'other' : 'owner')
-      for (const [i, body] of ['Site visit', '山地植被调查', 'Follow-up visit'].entries())
+      for (const [i, body] of [
+        'Site visit',
+        'Mountain vegetation survey 山地植被调查',
+        'Follow-up visit',
+      ].entries())
         event.run(key, i + 1, key + i, JSON.stringify({ text: body }))
     }
-    bindSessionQuery(dir)
+    const registerHook = vi.fn((_event: string, _handler: () => unknown) => () => {})
+    extensionFactoryOf(createSessionQueryExtension({ dataDir: dir }))({
+      registerTool: () => () => {},
+      registerHook,
+      ctx: { log: {} },
+    } as unknown as ExtensionAPI)
+    const context = registerHook.mock.calls.find(([event]) => event === 'context')?.[1]
+    expect(await context?.()).toMatchObject({
+      sections: [
+        {
+          content: expect.stringMatching(
+            /session_recall.*English or Chinese.*session_event_read.*exact literal phrases.*session_search.*session_event_search/,
+          ),
+        },
+      ],
+    })
     const ctx = { session: { key: 'caller', workspaceRoot: '/same' } } as ToolContext
+    const english = text(
+      await sessionRecallTool.execute({ query: 'What did we learn about vegetation?', limit: 4 }, ctx),
+    )
+    expect(english).toMatch(/session peer #2/)
+    expect(english).not.toMatch(/session (?:caller|private|away)/)
     const found = text(await sessionRecallTool.execute({ query: '植被', limit: 4 }, ctx))
     expect(found).not.toMatch(/session (?:caller|private|away)/)
     const hit = /session (\S+) #(\d+)/.exec(found)

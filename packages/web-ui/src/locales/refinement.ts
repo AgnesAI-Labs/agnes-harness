@@ -75,6 +75,10 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinementSave.reason.user-revoked':
       'you removed or withdrew this before; only your own save brings it back',
     'timeline.refinementSave.reason.unconfirmed': 'it has not been seen to hold yet',
+    'timeline.refinementSave.reason.human-edited':
+      'you wrote or edited this paragraph, so your text was preserved. To change it, open Memory files in the memory settings',
+    'timeline.refinementSave.reason.preference-conflict':
+      'this conflicts with a preference you set, so your preference was preserved. To change it, open Memory files in the memory settings',
     'timeline.refinementSave.reason.source-rules':
       'only session-level entries backed by this session’s own evidence are saved',
     'timeline.refinementSave.reason.static-check':
@@ -192,6 +196,10 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinementSave.reason.refinement-off': '任务经验已关闭',
     'timeline.refinementSave.reason.user-revoked': '你之前删除或撤回过它；只有你自己保存才会恢复',
     'timeline.refinementSave.reason.unconfirmed': '它还没有被确认有效',
+    'timeline.refinementSave.reason.human-edited':
+      '这段内容由你编写或修改，原文已保留。如需改动，请前往记忆设置（记忆文件）修改',
+    'timeline.refinementSave.reason.preference-conflict':
+      '与你设置的偏好冲突，原有偏好已保留。如需更改，请前往记忆设置（记忆文件）编辑',
     'timeline.refinementSave.reason.source-rules': '只保存有本会话证据支持的会话级条目',
     'timeline.refinementSave.reason.static-check': '没有通过内容检查（例如看起来像密钥）',
     'timeline.refinementSave.reason.memory-off': '工作区记忆已关闭',

@@ -107,7 +107,7 @@ describe('the validity view the Host gives memory', () => {
     await nextBurst()
     const one = view.revision()
     expect(one).not.toBe(empty)
-    // A receipt, a revocation or a converted record changes no answer for an active id.
+    // A receipt, an unrelated revocation or a removed record changes no answer for an active id.
     registry.update((draft) => {
       draft.receipts.push({
         receiptId: 'r1',
@@ -119,7 +119,13 @@ describe('the validity view the Host gives memory', () => {
         steps: [],
         at: T0,
       })
-      draft.revocations.push({ ...source, action: 'memory-withdrawn', at: T0 })
+      draft.revocations.push({
+        ...source,
+        entryId: 'other',
+        contentHash: 'other',
+        action: 'memory-withdrawn',
+        at: T0,
+      })
       draft.paragraphs.push(paragraph('rb000000001', T0, 'removed'))
     }, registry.read().revision)
     await nextBurst()

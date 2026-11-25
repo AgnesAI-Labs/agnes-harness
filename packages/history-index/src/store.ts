@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, realpathSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { backfillCjk, ensureCjk } from './cjk-backfill.js'
-import { HistoryIndexError } from './errors.js'
+import { HistoryIndexError, searchError } from './errors.js'
 import { sourceStamp } from './ledger.js'
 import { recallEvents } from './recall.js'
 import { syncLedger, TITLE_SEQ } from './sync.js'
@@ -424,9 +424,7 @@ export class HistoryIndex {
     try {
       rows = this.db.prepare(sql).all(...params) as HitRow[]
     } catch (error) {
-      const message = error instanceof Error ? error.message : ''
-      if (/fts5|malformed MATCH/i.test(message)) throw new HistoryIndexError('INVALID_QUERY')
-      throw new HistoryIndexError('FAILED')
+      throw searchError(error)
     }
     let truncated = rows.length > HISTORY_FETCH_CAP
     // unicode61 treats a CJK title as one token. Also match literal title substrings, through

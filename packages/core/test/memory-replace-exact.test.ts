@@ -9,13 +9,16 @@ import { actor, openSession } from './helpers/open-session.js'
 const parameters = Type.Object({})
 const MEMORY = '/w/memory/MEMORY.md'
 
-function memoryTool(execute: ToolDef<typeof parameters>['execute']): ToolDef<typeof parameters> {
+function memoryTool(
+  execute: ToolDef<typeof parameters>['execute'],
+  isReadOnly = false,
+): ToolDef<typeof parameters> {
   return {
     name: 'memory_editor',
     description: 'synthetic memory editor',
     parameters,
     meta: {
-      isReadOnly: false,
+      isReadOnly,
       isDestructive: false,
       isConcurrencySafe: false,
       isOpenWorld: false,
@@ -101,8 +104,14 @@ async function runTool(memory: MemorySession | undefined, approved: boolean) {
   }
 }
 
-async function runWriteOrRecall(options: { writeErrorCode?: string; withRecall?: boolean; query?: string }) {
-  const seen: { hasMemory?: boolean; recallResult?: unknown } = {}
+async function runWriteOrRecall(options: {
+  writeErrorCode?: string
+  withRecall?: boolean
+  query?: string
+  writesOff?: boolean
+  isReadOnly?: boolean
+}) {
+  const seen: { hasMemory?: boolean; hasReplace?: boolean; recallResult?: unknown } = {}
   const memory: MemorySession = {
     root: '/w/memory',
     snapshot: async () => undefined,
@@ -112,6 +121,9 @@ async function runWriteOrRecall(options: { writeErrorCode?: string; withRecall?:
         if (options.writeErrorCode) {
           throw Object.assign(new Error(options.writeErrorCode), { code: options.writeErrorCode })
         }
+      },
+      replaceExact: async () => {
+        throw new Error('provider replace called')
       },
       ...(options.withRecall
         ? {
@@ -149,12 +161,13 @@ async function runWriteOrRecall(options: { writeErrorCode?: string; withRecall?:
   registry.add(
     memoryTool(async (_args, ctx) => {
       seen.hasMemory = ctx.memory !== undefined
+      seen.hasReplace = ctx.fs.replaceExact !== undefined
       if (options.query !== undefined && ctx.memory) {
         seen.recallResult = await ctx.memory.recall({ query: options.query })
       }
       if (options.writeErrorCode) await ctx.fs.write(MEMORY, 'next')
       return { content: [{ type: 'text', text: 'done' }] }
-    }),
+    }, options.isReadOnly),
     { source: 'fixture/memory-editor', trust: 'builtin' },
   )
   const opened = await openSession({
@@ -164,7 +177,10 @@ async function runWriteOrRecall(options: { writeErrorCode?: string; withRecall?:
     provider: fakeProvider([toolTurn('memory_editor', {}), textTurn('ok')]),
   })
   try {
-    await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
+    await opened.session.enqueue('next-turn', {
+      actor: options.writesOff ? { ...actor, attrs: { memoryWrites: 'off' } } : actor,
+      content: [{ type: 'text', text: 'go' }],
+    })
     await opened.session.run({ until: 'turn-end', signal: new AbortController().signal })
     const rows = await opened.log.scan({ fromSeq: 1, toSeq: opened.log.lastSeq })
     return {
@@ -216,6 +232,26 @@ describe('ToolContext.fs.replaceExact', () => {
       expect(runState).not.toBe('parked')
     },
   )
+
+  it('allows recall in a writes-off session while protecting the provider from writes', async () => {
+    const options = { writesOff: true, withRecall: true, query: 'pnpm' }
+    const read = await runWriteOrRecall({ ...options, isReadOnly: true })
+    expect(read.seen.recallResult).toMatchObject({ hits: [{ text: 'hit:pnpm' }] })
+    expect(read.seen.hasReplace).toBe(false)
+    expect(read.result).not.toMatchObject({ isError: true })
+    const write = await runWriteOrRecall(options)
+    expect(write.seen.hasMemory).toBe(false)
+    const refused = await runWriteOrRecall({
+      ...options,
+      isReadOnly: true,
+      writeErrorCode: 'PROVIDER_CALLED',
+    })
+    expect(refused.result).toMatchObject({
+      isError: true,
+      code: 'TOOL_REJECTED_BEFORE_EFFECT',
+      structured: { effect: 'none', code: 'MEMORY_DISABLED' },
+    })
+  })
 
   it('exposes ToolContext.memory only when the provider file port supplies recall', async () => {
     const without = await runWriteOrRecall({ withRecall: false })

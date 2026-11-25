@@ -12,6 +12,8 @@ const REASONS = new Set([
   'user-revoked',
   'unconfirmed',
   'source-rules',
+  'human-edited',
+  'preference-conflict',
   'static-check',
   'memory-off',
   'memory-full',

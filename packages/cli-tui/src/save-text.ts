@@ -20,6 +20,10 @@ const REASON: Record<string, string> = {
   'refinement-off': 'task experience is off',
   'user-revoked': 'you removed or withdrew this before; only your own save brings it back',
   unconfirmed: 'it has not been seen to hold yet',
+  'human-edited':
+    'you wrote or edited this paragraph, so your text was preserved. To change it, open Memory files in the memory settings',
+  'preference-conflict':
+    'this conflicts with a preference you set, so your preference was preserved. To change it, open Memory files in the memory settings',
   'source-rules': "only session-level entries backed by this session's own evidence are saved",
   'static-check': 'it did not pass the content checks (for example, it looks like a secret)',
   'memory-off': 'workspace memory is off',

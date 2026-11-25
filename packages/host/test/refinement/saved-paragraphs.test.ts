@@ -172,7 +172,10 @@ describe('saved paragraphs on the memory page', () => {
     expect(saved).toMatchObject({ validity: 'valid', initiator: 'model' })
 
     const editor = ws.open()
-    const editFile = vi.fn(editor.editFile)
+    const editFile = vi.fn<typeof editor.editFile>(async (...args) => {
+      await editor.editFile(...args)
+      throw Object.assign(new Error('metadata write failed'), { code: 'MEMORY_COMMITTED_METADATA_FAILED' })
+    })
     const actor = 'workspace-owner'
     const { hash } = await editor.readFile('MEMORY.md')
     const { paragraphs } = await savedParagraphs({ registry: ws.registry, clock: ws.clock })(

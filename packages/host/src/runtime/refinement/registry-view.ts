@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { MemoryParagraphValidity, MemoryValidityView } from '@agnes/extension-api'
-import type { RefinementRegistry } from '@agnes/host-infrastructure/refinement-registry'
+import { type RefinementRegistry, revocationMatches } from '@agnes/host-infrastructure/refinement-registry'
 
 type Answers = Readonly<{ byId: ReadonlyMap<string, 'valid' | 'expired'>; revision: string }>
 
@@ -11,13 +11,13 @@ export type ViewChange = Readonly<{ inForce: number; expired: number }>
  * The read-only validity view memory is opened with: whether each saved paragraph of a workspace may be
  * shown to the agent, by the registry and the Host's clock.
  *
- * Only an active paragraph can be `valid` (before its `reviewAfter`) or `expired` (from then on); any
+ * Only an active, unrevoked paragraph can be `valid` (before its `reviewAfter`) or `expired` (from then on); any
  * other id is `unknown`. A registry file that cannot be believed reads as empty, so nothing in it is ever
  * valid.
  *
  * `revision()` is a hash of exactly those answers, so it moves when an answer can change (a paragraph
- * saved, removed or converted, or the clock passing a `reviewAfter`) and stays put otherwise (a receipt,
- * a revocation, a renewal of a paragraph that is still valid). A provider prints its revision into the
+ * saved, removed, converted or revoked, or the clock passing a `reviewAfter`) and stays put otherwise
+ * (a receipt or a renewal of a paragraph that is still valid). A provider prints its revision into the
  * memory note, so a revision that moved without cause would rewrite the note for nothing.
  *
  * The answers are read once per synchronous burst (a provider builds its snapshot in one go) and dropped
@@ -43,8 +43,13 @@ export function registryView(
     if (held) return held
     const now = clock()
     const byId = new Map<string, 'valid' | 'expired'>()
-    for (const paragraph of registry.read().paragraphs)
-      if (paragraph.state === 'active' && !byId.has(paragraph.id))
+    const { paragraphs, revocations } = registry.read()
+    for (const paragraph of paragraphs)
+      if (
+        paragraph.state === 'active' &&
+        !byId.has(paragraph.id) &&
+        !revocations.some((record) => revocationMatches(record, paragraph.source))
+      )
         byId.set(paragraph.id, now < paragraph.reviewAfter ? 'valid' : 'expired')
     const sorted = [...byId].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     const revision = createHash('sha256').update(JSON.stringify(sorted)).digest('hex')

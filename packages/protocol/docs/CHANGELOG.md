@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Refinement save receipts and timeline nodes distinguish a protected paragraph (`human-edited`) from a conflict with a person's preference (`preference-conflict`). Both outcomes preserve the person's text. Older clients that validate the closed timeline reason enum need an update to read nodes carrying these reasons.
+
 - Task experience gateways. `RefinementSettings` accepts an optional `baseUrl` and `RefinementSettingsSnapshot` carries the available `endpoints` in default-first order. Saves require an exact match to a gateway on the daemon's list and default to its first address when omitted. Settings with a retired address read at the default with learning off. Discovery and review inference use the selected gateway, and changing the address invalidates queued reviews.
 
 - Task experience model selection. `RefinementSettings` accepts a review model ID and requires both `model` and `credentialRef` to enable learning. Older files missing a binding read with learning off and retain the saved mode and binding. The local admin method `_agnes/v1/refinement.models` (`{}` → `{ models: RefinementModelOption[] }`) reads the dedicated company's catalogue using the saved credential. Each option contains `id`, `name`, `contextWindow` and `maxTokens`. Discovery distinguishes `REFINEMENT_KEY_MISSING`, `REFINEMENT_KEY_INVALID` and `REFINEMENT_MODELS_UNAVAILABLE` as `SEMANTIC_REJECTED` reasons. Saving a selection absent from the catalogue rejects with `REFINEMENT_MODEL_UNAVAILABLE`. A model change invalidates queued work through the settings revision. Upgrade the client and daemon together to use the new setting.

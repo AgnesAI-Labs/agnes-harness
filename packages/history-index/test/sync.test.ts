@@ -272,6 +272,10 @@ describe('incremental history sync', () => {
     ).toBeLessThanOrEqual(2000)
     for (let i = 0; i < 20 && index.query(request).partial; i++) index.sync(dir)
     expect(index.query(request).partial).toBeUndefined()
+    expect(db.prepare('SELECT rowid FROM docs WHERE seq<1').all().length).toBeGreaterThan(0)
+    expect(
+      db.prepare('SELECT rowid FROM docs_cjk WHERE rowid IN (SELECT rowid FROM docs WHERE seq<1)').all(),
+    ).toEqual([])
     expect(index.query({ ...request, query: '高原' }).items).toMatchObject([{ seq: 2012 }])
     expect(index.query({ ...request, kind: 'search', sessionId: 'a', query: '高原' }).items).toEqual([])
     expect(dump(path).docs.slice(0, -1)).toEqual(before.docs)

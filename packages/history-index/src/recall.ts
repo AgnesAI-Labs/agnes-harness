@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { buildQuery, fuse, tokenize } from '@agnes/lexical-search'
 import { cjkPartial } from './cjk-backfill.js'
-import { HistoryIndexError } from './errors.js'
+import { HistoryIndexError, searchError } from './errors.js'
 import type { HistoryItem, HistoryPage, HistoryQuery } from './store.js'
 import { HISTORY_FETCH_CAP } from './text.js'
 
@@ -82,7 +82,12 @@ export function recallEvents(
       FROM ${table} JOIN docs e ON e.rowid=${table}.rowid JOIN sessions s ON s.session_id=e.session_id
       WHERE ${table} MATCH ? AND e.seq>=1 AND ${where}
       ORDER BY rank,e.session_id,e.seq LIMIT ?`
-    const rows = db.prepare(sql).all(match, ...params, HISTORY_FETCH_CAP + 1) as Row[]
+    let rows: Row[]
+    try {
+      rows = db.prepare(sql).all(match, ...params, HISTORY_FETCH_CAP + 1) as Row[]
+    } catch (error) {
+      throw searchError(error)
+    }
     if (table === 'docs_cjk') {
       for (const row of rows) row.snippet = excerpt(row.snippet, terms)
     }

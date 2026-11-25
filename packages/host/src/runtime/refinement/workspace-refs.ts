@@ -1,5 +1,5 @@
 import type { RefinementWorkspaceRefs, SavedEntry, WorkspaceReference } from '@agnes/core'
-import type { MemorySession } from '@agnes/extension-api'
+import type { MemoryParagraphValidity, MemorySession } from '@agnes/extension-api'
 import {
   normalizedContentHash,
   REVIEW_AFTER_MS,
@@ -39,20 +39,54 @@ function inForce(registry: RefinementRegistry, now: number): RegistryParagraph[]
     .paragraphs.filter((p) => p.state === 'active' && now < p.reviewAfter && !registry.revoked(p.source))
 }
 
-/**
- * The managed paragraphs of the stored memory index by id, or undefined when they cannot be read for
- * the agent: no memory, a provider without paragraph access, memory switched off, or a failed read.
- */
-async function storedParagraphs(memory: MemorySession | undefined, sessionKey: string) {
-  if (!memory || typeof memory.paragraphs !== 'function') return undefined
-  try {
-    if ((await memory.inspect()).settings.mode === 'off') return undefined
-    const port = memory.paragraphs({ sessionKey, turn: 0 }, new AbortController().signal)
-    const { paragraphs } = await port.list()
-    return new Map(paragraphs.map((p) => [p.id, p.text]))
-  } catch {
-    return undefined
+const reference = /<!--\s*ref:(r[0-9a-z]{10})\s*-->|\bref:[ \t]+(r[0-9a-z]{10})\b/gu
+const annotation = /^<!--\s*expires_at:/u
+const iso = /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(Z|[+-]\d{2}:?\d{2})?)?$/u
+
+function annotationExpiry(line: string): number | undefined {
+  const marker = annotation.exec(line)
+  if (!marker || line.indexOf('-->') !== line.length - 3) return undefined
+  const parsed = iso.exec(line.slice(marker[0].length, -3).trim())
+  if (!parsed) return NaN
+  const [, date, time, zone] = parsed
+  const midnight = new Date(`${date}T00:00:00Z`)
+  if (!Number.isFinite(midnight.getTime()) || !midnight.toISOString().startsWith(`${date}T`)) return NaN
+  return time ? Date.parse(`${date}T${time}${zone ?? 'Z'}`) : midnight.getTime()
+}
+
+/** The paragraph port lists stored text, including blocks hidden from file reads and recall. */
+function visibleParagraphText(
+  text: string,
+  validity: (id: string) => MemoryParagraphValidity,
+  now: number,
+  futureExpiry?: (at: number) => void,
+): string | undefined {
+  if (!text.trim()) return undefined
+  if (!text.includes('ref:') && !text.includes('expires_at:')) return text
+  const visible: string[] = []
+  let changed = false
+  for (const block of text.split(/\n(?:[^\S\n]*\n)+/u)) {
+    const withdrawn = Array.from(block.matchAll(reference)).some((match) => {
+      const state = validity(match[1] ?? match[2] ?? '')
+      return state !== 'valid' && state !== 'delivered'
+    })
+    if (withdrawn) {
+      changed = true
+      continue
+    }
+    const lines = block.split('\n')
+    const expired = lines.findIndex((line) => {
+      const at = annotationExpiry(line.trim())
+      if (at === undefined) return false
+      if (!Number.isFinite(at) || at <= now) return true
+      futureExpiry?.(at)
+      return false
+    })
+    if (expired >= 0) changed = true
+    const kept = expired < 0 ? block : lines.slice(0, expired).join('\n')
+    if (kept.trim()) visible.push(kept)
   }
+  return changed ? visible.join('\n\n') || undefined : text
 }
 
 /**
@@ -74,10 +108,10 @@ async function layerParagraphs(
   return new Map(paragraphs.map((p) => [p.id, p.text]))
 }
 
-/** `layerParagraphs` for the planner's confirmation list, where a failed read lists nothing. */
-async function storedSections(memory: MemorySession | undefined, sessionKey: string) {
+/** A read failure lists nothing for confirmation, but propagates when building the delivery snapshot. */
+async function storedParagraphs(...args: Parameters<typeof layerParagraphs>) {
   try {
-    return (await layerParagraphs(memory, sessionKey, 'user')) ?? undefined
+    return await layerParagraphs(...args)
   } catch {
     return undefined
   }
@@ -88,15 +122,18 @@ function savedEntries(
   prefix: 'ws.' | 'user.',
   live: readonly RegistryParagraph[],
   stored: ReadonlyMap<string, string> | null,
+  visible: (text: string) => string | undefined = (text) => text,
 ): SavedEntry[] {
   if (!stored) return []
   const out: SavedEntry[] = []
   for (const p of live) {
     const kind = p.source.kind
     if (kind !== 'prompt' && kind !== 'memory') continue
-    const text = stored.get(p.id)
-    // A paragraph a person has since turned into something that looks like a secret is not delivered.
-    if (text === undefined || SECRET_LIKE.test(text)) continue
+    const raw = stored.get(p.id)
+    if (raw === undefined || SECRET_LIKE.test(raw)) continue
+    const text = visible(raw)
+    if (text === undefined) continue
+    const version = normalizedContentHash(text)
     const { title, summary } = titled(text)
     const { sessionKey, entryId } = p.source
     out.push({
@@ -104,9 +141,9 @@ function savedEntries(
       kind,
       title,
       content: summary,
-      version: normalizedContentHash(text),
+      version,
       savedAt: p.reviewAfter - REVIEW_AFTER_MS,
-      untouched: normalizedContentHash(text) === p.contentHash,
+      untouched: text === raw && version === p.contentHash,
       source: { sessionKey, kind, entryId },
     })
   }
@@ -178,12 +215,23 @@ function titled(text: string): { title: string; summary: string } {
 export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspaceRefs {
   const registryOf = (workspaceRoot: string) =>
     new RefinementRegistry(deps.dataDir, workspaceRoot, deps.clock)
+  // Core caches deliveries by revision. Crossing a file annotation's deadline invalidates that cache.
+  const expiries = new WeakMap<MemorySession, { last: number; next: number }>()
+  const expiryRevision = (memory: MemorySession | undefined) => {
+    const range = memory && expiries.get(memory)
+    if (!range) return 0
+    return deps.clock() >= range.next ? range.next : range.last
+  }
+  const visibility = (registry: RefinementRegistry, futureExpiry?: (at: number) => void) => {
+    const { validity } = registryView(registry, deps.clock)
+    return (text: string) => visibleParagraphText(text, validity, deps.clock(), futureExpiry)
+  }
   /** Sections saved to user memory in force, for a plan to confirm (`user-memory/<id>`). */
   const userRefs = async (at: { key: string }, memory: MemorySession | undefined) => {
     const registry = deps.userRegistry?.()
     const live = registry ? inForce(registry, deps.clock()) : []
     if (live.length === 0) return []
-    const stored = await storedSections(memory, at.key)
+    const stored = await storedParagraphs(memory, at.key, 'user')
     if (!stored) return []
     const out: WorkspaceReference[] = []
     for (const p of live) {
@@ -209,11 +257,12 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
       const user = await userRefs(at, where.memory)
       const live = inForce(registry, deps.clock())
       if (live.length === 0) return [...user, ...skills]
-      const stored = await storedParagraphs(where.memory, at.key)
+      const stored = await storedParagraphs(where.memory, at.key, 'workspace')
       if (!stored) return [...user, ...skills]
+      const visible = visibility(registry)
       const out: WorkspaceReference[] = []
       for (const p of live) {
-        const text = stored.get(p.id)
+        const text = visible(stored.get(p.id) ?? '')
         if (text === undefined) continue
         const { sessionKey, kind, entryId } = p.source
         out.push({
@@ -230,15 +279,22 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
       const where = deps.session(at)
       if (!where) return []
       const now = deps.clock()
-      const live = inForce(registryOf(where.workspaceRoot), now)
+      const registry = registryOf(where.workspaceRoot)
+      const live = inForce(registry, now)
+      let next = Infinity
+      const visible = visibility(registry, (at) => {
+        next = Math.min(next, at)
+      })
       const workspace = live.length
-        ? savedEntries('ws.', live, await layerParagraphs(where.memory, at.key, 'workspace'))
+        ? savedEntries('ws.', live, await layerParagraphs(where.memory, at.key, 'workspace'), visible)
         : []
       const userRegistry = deps.userRegistry?.()
       const userLive = userRegistry ? inForce(userRegistry, now) : []
       const user = userLive.length
         ? savedEntries('user.', userLive, await layerParagraphs(where.memory, at.key, 'user'))
         : []
+
+      if (where.memory) expiries.set(where.memory, { last: expiryRevision(where.memory), next })
       return [...workspace, ...user]
     },
     revision(at) {
@@ -248,6 +304,7 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
       return [
         registryView(registryOf(where.workspaceRoot), deps.clock).revision(),
         userRegistry ? registryView(userRegistry, deps.clock).revision() : '',
+        expiryRevision(where.memory),
       ].join(':')
     },
     async renew(at, ref, version) {
@@ -267,8 +324,10 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
           p.id === id && p.state === 'active' && deps.clock() < p.reviewAfter && !registry.revoked(p.source),
       )
       if (!found) return false
-      // The version is the text as it is stored now: text edited since the planner saw it is not renewed.
-      const text = (await (user ? storedSections : storedParagraphs)(where.memory, at.key))?.get(id)
+      // Recheck the exact visible version the planner confirmed.
+      const stored = await storedParagraphs(where.memory, at.key, user ? 'user' : 'workspace')
+      const raw = stored?.get(id)
+      const text = raw === undefined || user ? raw : visibility(registry)(raw)
       if (text === undefined || normalizedContentHash(text) !== version) return false
       try {
         registry.update((draft) => {

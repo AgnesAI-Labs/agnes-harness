@@ -27,6 +27,7 @@ import { normalizedWorkflowHash, workflowTextProblem } from './workflow-runs.js'
 import {
   code,
   commitParagraph,
+  failedRules,
   holdsContent,
   INTENT_SETTLE_MS,
   type ParagraphCommit,
@@ -436,7 +437,7 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
       const reason = refusalOf(error)
       return refuse(registry, base, reason, {
         ...verdicts,
-        ...(reason === 'source-rules' ? { rules: 'fail' } : {}),
+        ...(failedRules(reason) ? { rules: 'fail' } : {}),
         capacity: reason === 'memory-full' ? 'fail' : 'skip',
       })
     }

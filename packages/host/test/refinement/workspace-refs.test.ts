@@ -137,6 +137,68 @@ describe('entries saved to the workspace, for the planner', () => {
     expect(await t.refs.list(AT)).toEqual([])
   })
 
+  it.each(['<!-- ref:r0000000001 -->', 'ref: r0000000001'])(
+    'lists, delivers and renews a dependent paragraph only while its source is in force (%s)',
+    async (ref) => {
+      const source = paragraph()
+      const id = 'r0000000002'
+      const text = `Follow-up\n${ref}`
+      const dependent = paragraph({
+        id,
+        source: { ...source.source, entryId: 'follow-up', contentHash: 'h2' },
+      })
+      const ws = setup({ paragraphs: [source, dependent], memory: memory({ [id]: text }).session })
+      const version = normalizedContentHash(text)
+      expect(await ws.refs.entries?.(AT)).toMatchObject([{ ref: `ws.${id}`, version }])
+      expect(await ws.refs.list(AT)).toMatchObject([{ ref: `workspace-memory/${id}`, version }])
+      expect(await ws.refs.renew(AT, `workspace-memory/${id}`, version)).toBe(true)
+      ws.clock.mockReturnValue(source.reviewAfter)
+      const hidden = async () => {
+        expect(await ws.refs.entries?.(AT)).toEqual([])
+        expect(await ws.refs.list(AT)).toEqual([])
+        expect(await ws.refs.renew(AT, `workspace-memory/${id}`, version)).toBe(false)
+      }
+      await hidden()
+      ws.clock.mockReturnValue(T0)
+      ws.registry.update((draft) => {
+        draft.revocations.push({ ...source.source, action: 'memory-withdrawn', at: T0 })
+      }, ws.registry.read().revision)
+      await hidden()
+      ws.registry.update((draft) => {
+        draft.revocations = []
+        draft.paragraphs.splice(0, 1, { ...source, state: 'removed' })
+      }, ws.registry.read().revision)
+      await hidden()
+    },
+  )
+
+  it('hides expired and invalid blocks and versions the remaining visible text', async () => {
+    const id = 'r0000000001'
+    const text = { [id]: '<!-- expires_at: 2027-02-30 -->\nInvalid' }
+    const ws = setup({ paragraphs: [paragraph()], memory: memory(text).session })
+    expect(await ws.refs.entries?.(AT)).toEqual([])
+    expect(await ws.refs.list(AT)).toEqual([])
+    expect(await ws.refs.renew(AT, `workspace-memory/${id}`, normalizedContentHash(text[id]))).toBe(false)
+    const expired = new Date(T0 + 1).toISOString()
+    text[id] = `<!-- expires_at: ${expired} -->\nStill visible`
+    expect(await ws.refs.entries?.(AT)).toMatchObject([{ version: normalizedContentHash(text[id]) }])
+    // A cached delivery cannot outlive the deadline, even when the registry stays unchanged.
+    const revision = ws.refs.revision?.(AT)
+    ws.clock.mockReturnValue(T0 + 1)
+    expect(ws.refs.revision?.(AT)).not.toBe(revision)
+    expect(await ws.refs.entries?.(AT)).toEqual([])
+    const kept = 'Keep this title\n\nKeep these details'
+    text[id] = `Keep this title\n<!-- expires_at: ${expired} -->\nExpired details\n\nKeep these details`
+    const version = normalizedContentHash(kept)
+    expect(await ws.refs.entries?.(AT)).toMatchObject([
+      { title: 'Keep this title', content: 'Keep these details', version },
+    ])
+    expect(await ws.refs.list(AT)).toMatchObject([
+      { title: 'Keep this title', summary: 'Keep these details', version },
+    ])
+    expect(await ws.refs.renew(AT, `workspace-memory/${id}`, version)).toBe(true)
+  })
+
   it('memory off or a provider without paragraphs lists nothing', async () => {
     expect(
       await setup({ paragraphs: [paragraph()], memory: memory({}, 'off').session }).refs.list(AT),

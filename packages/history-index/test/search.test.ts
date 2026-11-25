@@ -180,7 +180,7 @@ describe('history index', () => {
     }
   })
   it('recalls events across terms with the same workspace, owner, omitSelf and beforeSeq filters as search', () => {
-    const { index, access } = openSeed()
+    const { dir, index, access } = openSeed()
     const request = { access, title: '', workspace: '', sessionId: '', omitSelf: true, query: 'repair alpha' }
     expect(index.query({ ...request, kind: 'search' }).items).toEqual([])
     const hits = index.query({ ...request, kind: 'recall' }).items
@@ -194,6 +194,9 @@ describe('history index', () => {
     ).toEqual([])
     const local = index.query({ ...request, kind: 'recall', access: { kind: 'local', principal: 'owner-b' } })
     expect(local.items.map((item) => item.sessionId).sort()).toEqual(['other-owner', 'readerless'])
+    using db = new DatabaseSync(join(dir, 'history-index.db'))
+    db.exec('DROP TABLE docs_cjk')
+    expect(() => index.query({ ...request, kind: 'recall' })).toThrowError(new HistoryIndexError('FAILED'))
   })
 
   it('matches regular English inflections and ignores stopwords in recall while search stays literal', () => {

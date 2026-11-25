@@ -1,23 +1,43 @@
 import { sha256Hex } from '@agnes/core-common/request/hash'
 import { isApprovalReason } from '@agnes/core-effects/effects/approval-answer'
-import type { MemoryApprovalResult, MemoryProposal, ToolMeta } from '@agnes/extension-api'
+import type { MemoryApprovalResult, MemoryProposal, MemorySession, ToolMeta } from '@agnes/extension-api'
 import { domainDecisionSource, requestDomainDecision } from '../../step/domain-decision.js'
 import { memoryWritesOff } from '../../step/opening-input.js'
 import type { SessionImpl } from '../../step/session.js'
 import { memoryAdmission } from './memory-admission.js'
 
-/** A file candidate has its own one-shot binding; session grants cannot approve it; the central full-access rule can. */
-/**
- * The memory port a tool call gets, or none. A provider in `auto` mode writes without asking, so a
- * session whose opening input turned memory writes off gets no port at all, not only refused approvals.
- */
+/** Expose only the file capabilities available to a read-only tool in a writes-off session. */
+function readOnlyMemorySession(memory: MemorySession): Pick<MemorySession, 'files'> {
+  return {
+    files(...args) {
+      const files = memory.files(...args)
+      return {
+        read: files.read.bind(files),
+        stat: files.stat.bind(files),
+        list: files.list.bind(files),
+        ...(files.revision ? { revision: files.revision.bind(files) } : {}),
+        ...(files.recall ? { recall: files.recall.bind(files) } : {}),
+        async write() {
+          throw Object.assign(new Error('Memory writes are disabled'), { code: 'MEMORY_DISABLED' })
+        },
+      }
+    },
+  }
+}
 export async function toolMemoryPort(
   session: SessionImpl,
   tool: { name: string; meta: ToolMeta },
   step: number,
   signal: AbortSignal,
 ) {
-  if (!session.d.memory || (await memoryWritesOff(session))) return undefined
+  if (!session.d.memory) return undefined
+  if (await memoryWritesOff(session)) {
+    if (!tool.meta.isReadOnly) return undefined
+    return {
+      session: readOnlyMemorySession(session.d.memory),
+      approve: async () => ({ status: 'rejected' as const }),
+    }
+  }
   return {
     session: session.d.memory,
     approve: (proposal: MemoryProposal) => approveMemoryFile(session, proposal, tool, step, signal),

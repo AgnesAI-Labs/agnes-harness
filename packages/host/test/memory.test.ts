@@ -555,7 +555,7 @@ it('i01: turning full access off in a workspace session prevents a fresh automat
   }
 })
 
-it('a session opened by an input that turned memory writes off cannot write memory in auto mode', async () => {
+it('a session opened with memory writes off can recall a preference and cannot overwrite it in auto mode', async () => {
   const home = await mkdtemp(join(tmpdir(), 'agh-memory-writes-off-'))
   homes.push(home)
   const workspace = join(home, 'workspace')
@@ -572,20 +572,32 @@ it('a session opened by an input that turned memory writes off cannot write memo
       verdict: 'allowed-once',
       answeredBy: { id: 'reviewer', org: 'local', role: 'user', deptPath: [], attrs: {} },
     }),
-    script: [() => call('write', { path: target, content: 'WRITES_OFF_MEMORY' }), () => done],
+    script: [
+      // The first call discloses the deferred tool for the next request.
+      () => call('memory_recall', { query: 'alpine' }),
+      () => call('memory_recall', { query: 'alpine' }),
+      () => call('write', { path: target, content: 'WRITES_OFF_MEMORY' }),
+      () => done,
+    ],
   })
   try {
     const inspection = host.memory(workspace, 'human')
     if (!inspection) throw new Error('Memory unavailable')
     await inspection.configure({ mode: 'auto' })
+    const saved = 'Use alpine for the build.'
+    await inspection.editFile('MEMORY.md', saved, (await inspection.readFile('MEMORY.md')).hash)
     const session = await host.createSession({ cwd: workspace, preset: 'standard' })
     await session.enqueue('next-turn', {
       actor: { ...session.d.actor, attrs: { ...session.d.actor.attrs, memoryWrites: 'off' } },
-      content: [{ type: 'text', text: 'Write the preference' }],
+      content: [{ type: 'text', text: 'Recall the build preference and try changing it.' }],
       origin: 'system',
     })
     await session.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
-    expect((await inspection.readFile('MEMORY.md')).content).toBe('')
+    const results = await session.scan({ type: 'tool/result', limit: 10 })
+    expect(results).toHaveLength(3)
+    expect(JSON.stringify(results[1]?.data)).toContain(saved)
+    expect(results[2]?.data).toMatchObject({ isError: true })
+    expect((await inspection.readFile('MEMORY.md')).content).toBe(saved)
   } finally {
     await host.close()
   }

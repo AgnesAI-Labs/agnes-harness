@@ -166,7 +166,12 @@ export function savedParagraphs(deps: {
       ? withoutParagraph(stored.content, markers)
       : withoutMarkers(stored.content, markers)
     const actor = request.actor?.trim() || 'human'
-    await memory.editFile(INDEX, content, stored.hash, { actor })
+    try {
+      await memory.editFile(INDEX, content, stored.hash, { actor })
+    } catch (error) {
+      // The provider already committed the Markdown when only its metadata update failed.
+      if (code(error) !== 'MEMORY_COMMITTED_METADATA_FAILED') throw error
+    }
     const now = deps.clock()
     record(registry, (draft) => {
       const entry = draft.paragraphs.find((paragraph) => paragraph.id === id && paragraph.state === 'active')

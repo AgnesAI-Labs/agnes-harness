@@ -40,6 +40,8 @@ export type SaveRefusal =
   | 'user-revoked'
   | 'unconfirmed'
   | 'source-rules'
+  | 'human-edited'
+  | 'preference-conflict'
   | 'static-check'
   | 'memory-off'
   | 'memory-full'
@@ -97,6 +99,8 @@ export const SAVE_REFUSALS: readonly SaveRefusal[] = [
   'user-revoked',
   'unconfirmed',
   'source-rules',
+  'human-edited',
+  'preference-conflict',
   'static-check',
   'memory-off',
   'memory-full',

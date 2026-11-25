@@ -44,14 +44,15 @@ export function backfillCjk(db: DatabaseSync): void {
     const insert = cjkWriter(db)
     // Page by rowid so the batch doesn't materialize 2,000 potentially large bodies.
     const rows = db.prepare(
-      'SELECT rowid,text FROM docs WHERE rowid>? AND rowid<=? ORDER BY rowid LIMIT 2000',
+      'SELECT rowid,text FROM docs WHERE seq>=1 AND rowid>? AND rowid<=? ORDER BY rowid LIMIT 2000',
     )
     for (const row of rows.iterate(cursor, end)) {
       cursor = Number(row.rowid)
       insert(cursor, String(row.text))
       if (performance.now() >= deadline) break
     }
-    if (!db.prepare('SELECT 1 FROM docs WHERE rowid>? AND rowid<=? LIMIT 1').get(cursor, end)) cursor = end
+    if (!db.prepare('SELECT 1 FROM docs WHERE seq>=1 AND rowid>? AND rowid<=? LIMIT 1').get(cursor, end))
+      cursor = end
     put(db, cursorKey, cursor)
   })
 }

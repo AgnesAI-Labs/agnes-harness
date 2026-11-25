@@ -527,29 +527,30 @@ describe('the save-to-workspace decision order', () => {
 })
 
 describe('crash safety', () => {
-  it.each(['MEMORY_PARAGRAPH_EDITED', 'MEMORY_PREFERENCE_CONFLICT'])(
-    'settles %s from propose or commit as a source-rules refusal on the first attempt',
-    async (code) => {
-      for (const stage of ['propose', 'commit'] as const) {
-        const ws = await workspace()
-        const refuse = vi.fn(async () => {
-          throw Object.assign(new Error(code), { code })
-        })
-        ws.setWrap(portWrap(() => ({ [stage]: refuse })))
-        const save = ws.service()
-        const req = request(ws)
-        const receipt = await save.save(req)
-        expect(receipt).toMatchObject({ outcome: 'refused', reason: 'source-rules' })
-        expect(verdicts(receipt)).toMatchObject({ rules: 'fail', capacity: 'skip' })
-        expect(receipt.target).toBeUndefined()
-        await save.resume(ws.root)
-        expect(await save.save(req)).toEqual(receipt)
-        expect(refuse).toHaveBeenCalledTimes(1)
-        expect(ws.registry().read().receipts).toEqual([receipt])
-        expect(await ws.file()).toBe('')
-      }
-    },
-  )
+  it.each([
+    ['MEMORY_PARAGRAPH_EDITED', 'human-edited'],
+    ['MEMORY_HUMAN_EDITED', 'human-edited'],
+    ['MEMORY_PREFERENCE_CONFLICT', 'preference-conflict'],
+  ] as const)('settles %s from propose or commit as %s on the first attempt', async (code, reason) => {
+    for (const stage of ['propose', 'commit'] as const) {
+      const ws = await workspace()
+      const refuse = vi.fn(async () => {
+        throw Object.assign(new Error(code), { code })
+      })
+      ws.setWrap(portWrap(() => ({ [stage]: refuse })))
+      const save = ws.service()
+      const req = request(ws)
+      const receipt = await save.save(req)
+      expect(receipt).toMatchObject({ outcome: 'refused', reason })
+      expect(verdicts(receipt)).toMatchObject({ rules: 'fail', capacity: 'skip' })
+      expect(receipt.target).toBeUndefined()
+      await save.resume(ws.root)
+      expect(await save.save(req)).toEqual(receipt)
+      expect(refuse).toHaveBeenCalledTimes(1)
+      expect(ws.registry().read().receipts).toEqual([receipt])
+      expect(await ws.file()).toBe('')
+    }
+  })
   /** Saves with a crash injected at one point; the error escapes as the process would die. */
   async function crashAt(
     point: 'before-commit' | 'after-commit' | 'before-record',
@@ -1039,7 +1040,7 @@ describe('hand-written text and the rules', () => {
     // human edit through the paragraph port; edits happen directly on the Memory page.
     expect(await save.save(request(ws, { initiator: 'user', ...entry({ content: NEW }) }))).toMatchObject({
       outcome: 'refused',
-      reason: 'source-rules',
+      reason: 'human-edited',
     })
     expect(await ws.file()).toBe(edited)
     expect(markedIds(await ws.file())).toHaveLength(1)

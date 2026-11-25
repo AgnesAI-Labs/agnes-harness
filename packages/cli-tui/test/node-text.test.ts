@@ -100,6 +100,8 @@ it('save rows render initiator, outcome and reason without text', () => {
   expect(save({ reason: 'approval-expired' })).toMatch(/not answered within 7 days/)
   expect(save({ reason: 'user-revoked' })).toMatch(/removed or withdrew this before/)
   expect(save({ reason: 'conflict' })).toMatch(/nothing was overwritten/)
+  expect(save({ reason: 'human-edited' })).toMatch(/your text was preserved.*Memory files/)
+  expect(save({ reason: 'preference-conflict' })).toMatch(/your preference was preserved.*Memory files/)
   expect(save({ reason: 'unavailable' })).toMatch(/not available right now/)
   expect(save({ reason: 'a-later-reason' })).toContain('Reason: a-later-reason.')
   // A promotion to user memory: what it reaches, where to withdraw it, and whether this workspace reads it.

@@ -33,6 +33,12 @@ const MESSAGES: Record<HistoryCode, string> = {
   FAILED: HISTORY_FAILED,
 }
 
+/** Translate FTS query failures at the SQLite boundary. */
+export function searchError(error: unknown): HistoryIndexError {
+  const message = error instanceof Error ? error.message : ''
+  return new HistoryIndexError(/fts5|malformed MATCH/i.test(message) ? 'INVALID_QUERY' : 'FAILED')
+}
+
 export class HistoryIndexError extends Error {
   readonly code: HistoryCode
 

@@ -49,10 +49,13 @@ const NOT_WRITTEN: Readonly<Record<string, SaveRefusal>> = {
   MEMORY_MARKER_CHANGED: 'source-rules',
   MEMORY_PARAGRAPH_INVALID: 'source-rules',
   MEMORY_MISSING_TOPIC: 'source-rules',
-  MEMORY_HUMAN_EDITED: 'source-rules',
-  MEMORY_PARAGRAPH_EDITED: 'source-rules',
-  MEMORY_PREFERENCE_CONFLICT: 'source-rules',
+  MEMORY_HUMAN_EDITED: 'human-edited',
+  MEMORY_PARAGRAPH_EDITED: 'human-edited',
+  MEMORY_PREFERENCE_CONFLICT: 'preference-conflict',
 }
+export const failedRules = (reason: SaveRefusal) =>
+  reason === 'source-rules' || reason === 'human-edited' || reason === 'preference-conflict'
+
 /** The refusal a memory error stands for when it came before any write; `unavailable` for the rest. */
 export const refusalOf = (error: unknown): SaveRefusal => NOT_WRITTEN[code(error) ?? ''] ?? 'unavailable'
 
@@ -249,7 +252,7 @@ export async function commitParagraph(input: ParagraphCommit): Promise<CommitRes
 /** The receipt refused for `reason`, recorded in place of the intent if there is one (best effort). */
 function settle(input: ParagraphCommit, reason: SaveRefusal): SaveReceipt {
   const refused: SaveReceipt = { ...input.receipt, outcome: 'refused', reason }
-  if (reason === 'source-rules')
+  if (failedRules(reason))
     refused.steps = refused.steps.map((entry) => {
       if (entry.step === 'rules') return { ...entry, verdict: 'fail' }
       if (entry.step === 'capacity') return { ...entry, verdict: 'skip' }

@@ -28,6 +28,7 @@ import type { RejectedBeforeEffectError } from './tool-dispatch.js'
 import type { SeamRuntime } from './wrap.js'
 
 const MEMORY_PRE_EFFECT_REFUSALS: Readonly<Record<string, string>> = {
+  MEMORY_DISABLED: 'Memory writes are disabled',
   MEMORY_HIDDEN_PARAGRAPHS: 'Memory file hides managed paragraphs from whole-file writes',
   MEMORY_PARAGRAPH_TEXT_CHANGED: 'Whole-file write would alter a managed paragraph',
   MEMORY_HUMAN_EDITED: 'Human-authored memory content cannot be modified or deleted by the agent',
@@ -157,7 +158,7 @@ export type ToolContextDeps = {
   fsOps: FsOps
   /** Private preference files have their own approval/CAS owner, outside workspace rewind. */
   memory?: {
-    session: import('@agnes/extension-api').MemorySession
+    session: Pick<import('@agnes/extension-api').MemorySession, 'files'>
     approve(
       proposal: import('@agnes/extension-api').MemoryProposal,
     ): Promise<import('@agnes/extension-api').MemoryApprovalResult>
