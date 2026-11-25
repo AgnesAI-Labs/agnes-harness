@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import type { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, posix, win32 } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, expect, it, vi } from 'vitest'
 import { runAuthoringTests } from '../src/packages/authoring-tests.js'
@@ -77,20 +77,56 @@ it('retains redacted assertion details, package-relative locations and bounded c
   expect(timedOut.output).toContain('./test/fail.test.mjs:4:1')
   expect(timedOut.output).toContain('command timed out')
   expect(timedOut.output).not.toContain(privateHome)
-  exec.mockRejectedValue(
-    Object.assign(new Error('command exited with status 1'), {
-      stdout: '',
-      stderr: `bwrap: failed to mount ${privateHome}/private/runtime: No such file or directory`,
-    }),
-  )
-  const launchFailed = await runAuthoringTests(directory, files, new AbortController().signal)
-  expect(launchFailed).toMatchObject({ state: 'failed', count: 0 })
-  expect(launchFailed.output).toContain('bwrap: failed to mount [REDACTED:path] No such file or directory')
-  expect(launchFailed.output).not.toContain(privateHome)
   const ac = new AbortController()
   build.mockImplementation(async () => {
     ac.abort(new Error('stopped'))
     throw ac.signal.reason
   })
   await expect(runAuthoringTests(directory, files, ac.signal)).rejects.toThrow('stopped')
+})
+
+const posixPrivatePath = posix.join('/', 'Users', 'Alice Secret', 'private', 'token')
+const windowsPrivatePath = win32.join('C:/', 'Users', 'Alice Secret', 'AppData', 'Local', 'secret')
+
+it.each([
+  {
+    name: 'sandbox refusal',
+    error: new Error('command exited with status 1'),
+    prefix: 'bwrap: failed to mount',
+    output: 'The OS sandbox refused to launch candidate tests.',
+  },
+  {
+    name: 'denied executable',
+    error: Object.assign(new Error(`spawn ${windowsPrivatePath} EACCES`), {
+      code: 'EACCES',
+    }),
+    prefix: 'Windows launcher failed:',
+    output: 'Candidate test launcher executable was denied.',
+  },
+  {
+    name: 'unclassified exit',
+    error: new Error('command exited with status 1'),
+    prefix: 'Unrecognized launcher message:',
+    output: 'Candidate test command exited unsuccessfully.',
+  },
+])('stores only a fixed summary for a $name', async ({ error, prefix, output }) => {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'agh-author-output-')))
+  roots.push(directory)
+  build.mockResolvedValue({})
+  exec.mockRejectedValue(
+    Object.assign(error, {
+      stdout: '',
+      stderr: `${prefix} ${posixPrivatePath}\n${windowsPrivatePath}`,
+    }),
+  )
+  const files = [
+    { path: 'package.json', content: '{"name":"test"}' },
+    { path: 'test/launch.test.mjs', content: '' },
+  ]
+  expect(await runAuthoringTests(directory, files, new AbortController().signal)).toEqual({
+    state: 'failed',
+    count: 0,
+    runner: 'node-test',
+    output,
+  })
 })

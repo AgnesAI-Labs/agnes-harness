@@ -252,7 +252,7 @@
     "groups": [
       {
         "id": "batch-1",
-        "batches": ["main-9", "main-24"]
+        "batches": ["main-9", "main-3"]
       },
       {
         "id": "batch-2",
@@ -264,7 +264,7 @@
       },
       {
         "id": "batch-4",
-        "batches": ["main-12", "main-3"]
+        "batches": ["main-12", "main-24"]
       },
       {
         "id": "batch-5",
