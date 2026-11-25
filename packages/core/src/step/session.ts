@@ -32,7 +32,7 @@ import { ToolPolicyRegistry, ToolRuntimeRegistry } from '@agnes/core-effects/eff
 import type { SeamRuntime } from '@agnes/core-effects/effects/wrap'
 import type { InvariantRegistry } from '@agnes/core-ledger/invariants/registry'
 import { scanAll, scanPages } from '@agnes/core-ledger/log/scan-pages'
-import type { SessionLogImpl, Timers } from '@agnes/core-ledger/log/session-log'
+import type { AppendOptions, SessionLogImpl, Timers } from '@agnes/core-ledger/log/session-log'
 import { SCAN_PAGE_MAX, type ScanQuery } from '@agnes/core-ledger/log/storage'
 import {
   type ChildTrace,
@@ -1274,7 +1274,7 @@ export class SessionImpl {
   transition(
     events: EventInput[] | ((nextSeq: Seq) => EventInput[]),
     next: OpStateObj | null | ((cur: OpStateObj | null, nextSeq: Seq) => OpStateObj | null),
-    opts: { refineCaller?: boolean; commitCheck?: () => void } = {},
+    opts: Pick<AppendOptions, 'refineCaller' | 'beforeCommit' | 'commitCheck'> = {},
   ): Promise<Seq[]> {
     const expected = this.opSeq()
     const step: ChainStep = {

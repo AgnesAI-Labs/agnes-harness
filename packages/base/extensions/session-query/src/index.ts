@@ -47,7 +47,7 @@ export const sessionRecallTool = defineTool({
     { query, limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 })) },
     { additionalProperties: false },
   ),
-  meta: READ_ONLY,
+  meta: { ...READ_ONLY, isOpenWorld: true },
   async execute(args, ctx) {
     return runSessionRecall(args.query, args.limit, ctx)
   },

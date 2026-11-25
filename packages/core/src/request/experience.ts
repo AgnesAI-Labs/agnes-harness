@@ -372,10 +372,11 @@ const legacyLooked = new WeakSet<SessionImpl>()
 /** The saved entries last listed for a session, at the host revision they were listed at. */
 const savedCache = new WeakMap<SessionImpl, { revision: string; entries: readonly SavedEntry[] }>()
 
+const cacheableRevision = (revision: string) => revision !== '' && !revision.startsWith('uncached:')
+
 /**
- * The entries saved in earlier sessions that are in force for this session, listed again only when the
- * host's revision moved. `failed` when the host could not answer and nothing was listed before: then no
- * saved entry the model was given may be withdrawn on that account.
+ * Cold snapshots and unversioned providers always list afresh. A failed read preserves previous
+ * deliveries on a warm surface and leaves a cold snapshot owing a new listing.
  */
 async function savedFor(
   s: SessionImpl,
@@ -384,11 +385,15 @@ async function savedFor(
   const revision = savedRevisionOf(s)
   const cached = savedCache.get(s)
   // A new snapshot always reads afresh.
-  if (!fresh && cached && revision && cached.revision === revision)
+  if (!fresh && cached && cacheableRevision(revision) && cached.revision === revision)
     return { entries: cached.entries, failed: false }
   const listed = await savedEntriesOf(s)
-  if (!listed) return { entries: cached?.entries ?? [], failed: !cached }
-  savedCache.set(s, { revision, entries: listed })
+  if (!listed) {
+    savedCache.delete(s)
+    return { entries: [], failed: true }
+  }
+  if (cacheableRevision(revision)) savedCache.set(s, { revision, entries: listed })
+  else savedCache.delete(s)
   return { entries: listed, failed: false }
 }
 
@@ -472,48 +477,52 @@ function switchedOn(s: SessionImpl): boolean {
   }
 }
 
-/** What a request's task-experience notes were derived from; see `experienceChanged`. */
+/** What this particular request's task-experience notes were derived from. */
 export type ExperienceStamp = Readonly<{
   on: boolean
   saved: string
   entries: unknown
   meta: unknown
   tombstones: unknown
-}>
-type Stamp = ExperienceStamp
-const stamps = new WeakMap<SessionImpl, Stamp>()
+}> & { savedView?: { digest?: string; required: boolean } }
 /** The state task-experience notes derived now would be derived from. */
-export const experienceStamp = (s: SessionImpl): Stamp => ({
-  on: switchedOn(s),
-  saved: savedRevisionOf(s),
-  entries: s.state.registers.harnessEntries,
-  meta: s.state.refinementEntryMeta,
-  tombstones: s.state.refinementTombstones,
-})
-
-/**
- * Whether what the last prepared request's task-experience notes were derived from has changed since:
- * the switch, or any entry, its metadata or a removal. Such a request is not sent; it is prepared
- * again, so the model never gets an entry withdrawn (or experience switched off) after the request
- * was derived. The ledger tables are replaced, never changed in place, when a row writes them, so
- * comparing them by identity is exact and costs nothing.
- */
-export function experienceChanged(s: SessionImpl): boolean {
-  const was = stamps.get(s)
-  if (!was) return false
-  return stampChanged(was, s)
+export function experienceStamp(s: SessionImpl): ExperienceStamp {
+  const on = switchedOn(s)
+  return {
+    on,
+    saved: on ? savedRevisionOf(s) : '',
+    entries: s.state.registers.harnessEntries,
+    meta: s.state.refinementEntryMeta,
+    tombstones: s.state.refinementTombstones,
+  }
 }
 
 /** Whether the switch, the host's saved revision or any session entry state changed since `was`. */
-export function stampChanged(was: Stamp, s: SessionImpl): boolean {
+export function stampChanged(was: ExperienceStamp, s: SessionImpl): boolean {
   const now = experienceStamp(s)
   return (
     was.on !== now.on ||
-    was.saved !== now.saved ||
-    was.entries !== now.entries ||
-    was.meta !== now.meta ||
-    was.tombstones !== now.tombstones
+    (was.on &&
+      (was.saved !== now.saved ||
+        was.entries !== now.entries ||
+        was.meta !== now.meta ||
+        was.tombstones !== now.tombstones))
   )
+}
+
+// savedEntriesOf has already validated and normalized each entry. Include ranking and source
+// metadata because both can change the bodies selected for a snapshot.
+const savedDigest = (entries: readonly SavedEntry[]) => sha256Hex(JSON.stringify(entries))
+
+export async function savedViewChange(
+  s: SessionImpl,
+  stamp: ExperienceStamp,
+): Promise<'changed' | 'unavailable' | undefined> {
+  const view = stamp.savedView
+  if (!view) return
+  const current = await savedEntriesOf(s)
+  if (!current) return view.required ? 'unavailable' : undefined
+  return savedDigest(current) !== view.digest ? 'changed' : undefined
 }
 
 const controlNote = (text: string): ExperienceNote => ({
@@ -537,23 +546,14 @@ export const isControlNote = (note: Pick<ExperienceNote, 'text'>): boolean =>
  * newest visible snapshot or update note (and entries owed from before it), else nothing. Control
  * notes come first and have their own budget; a list that does not fit becomes the reset notice.
  */
-export async function experienceNotes(
-  s: SessionImpl,
-  surface: readonly SurfaceNode[],
-): Promise<ExperienceNote[]> {
-  if (isChildSession(s)) return []
-  stamps.set(s, experienceStamp(s))
-  return deriveExperienceNotes(s, surface)
-}
-
-/** `experienceNotes` without recording what they were derived from. */
 export async function deriveExperienceNotes(
   s: SessionImpl,
   surface: readonly SurfaceNode[],
+  stamp?: ExperienceStamp,
 ): Promise<ExperienceNote[]> {
   if (isChildSession(s)) return []
   const refs = surfaceRefs(surface)
-  if (!switchedOn(s)) {
+  if (!(stamp?.on ?? switchedOn(s))) {
     // Nothing visible to void (a session that never had experience, or after the notice): nothing.
     if (refs.off || (refs.delivered.size === 0 && !visibleExperience(surface).snapshot)) return []
     return [controlNote(EXPERIENCE_OFF_NOTICE)]
@@ -574,10 +574,17 @@ export async function deriveExperienceNotes(
   const legacy = seen.snapshot && seen.legacy && !seen.saved && !legacyLooked.has(s)
   const owedBefore = seen.snapshot && savedOwed.has(s)
   const cold = !seen.snapshot || legacy || savedOwed.has(s)
+  const verifyListing = stamp && !cacheableRevision(stamp.saved) && s.d.refinement?.workspaceRefs?.entries
   const saved =
-    cold || givenSaved.length || withdrawnSaved.length
+    cold || givenSaved.length || withdrawnSaved.length || verifyListing
       ? await savedFor(s, cold)
       : { entries: [], failed: false }
+  if (verifyListing) {
+    stamp.savedView = {
+      ...(saved.failed ? {} : { digest: savedDigest(saved.entries) }),
+      required: givenSaved.length > 0 || withdrawnSaved.length > 0 || owedBefore || saved.entries.length > 0,
+    }
+  }
   const replacements = new Set<string>()
   for (const e of saved.entries) {
     const ref = `${e.kind}/${e.ref}`
@@ -643,7 +650,7 @@ export async function deriveExperienceNotes(
   }
   // Entries set after the newest visible snapshot or update note. This cut-off holds because a request
   // whose notes were derived before an entry changed is not sent but prepared again
-  // (`experienceChanged`). An update that does not fit its budget is counted in its own text and not
+  // (the dispatch stamp). An update that does not fit its budget is counted in its own text and not
   // re-sent until the next cold boundary: the next request sees the update note and treats everything
   // before it as delivered.
   const notes: ExperienceNote[] = []
@@ -689,6 +696,8 @@ export async function deriveExperienceNotes(
   }
   return notes
 }
+
+export { deriveExperienceNotes as experienceNotes }
 
 /**
  * The rows task experience adds to a request's written rows -- the dispatch transaction that also

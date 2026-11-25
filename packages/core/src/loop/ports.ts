@@ -23,20 +23,28 @@ import { approveAndExecute } from '../execution/turn/tools.js'
 import { unrecordedParkEvents } from '../execution/turn/unknown-outcome.js'
 import { hasCompleteToolPolicyEnvelope } from '../registry/tool-policy.js'
 import type { DeriveOutput } from '../request/derive.js'
-import { type ExperienceStamp, experienceStamp } from '../request/experience.js'
-import { loopRequestStale } from '../request/experience-dispatch.js'
+import type { ExperienceStamp } from '../request/experience.js'
+import {
+  ExperienceChangedSinceDerive,
+  experienceCommitCheck,
+  loopRequestStale,
+} from '../request/experience-dispatch.js'
 import { toProviderRequest } from '../request/to-provider.js'
 import { runCompaction } from '../step/compaction.js'
 import { finishAborted } from '../step/control.js'
 import { appendExtensionEvent, prepareLoopEvent } from '../step/ext-events.js'
 import { beforeStepGate, builtinBudgetPreflight, checkpointRoutine, stopGate } from '../step/gate.js'
-import { admitInferenceRequest, prepareInferenceRequest } from '../step/inference.js'
+import {
+  admitInferenceRequest,
+  type PreparedInferenceRequest,
+  prepareInferenceRequest,
+} from '../step/inference.js'
 import type { SessionImpl } from '../step/session.js'
 import { announcedTools } from './announce.js'
 import { loopChildStarts } from './child-starts.js'
 import { estimateLoopRequest } from './estimates.js'
 import { dispatchLoopEvent } from './events.js'
-import { LoopInvocations } from './invocations.js'
+import { LoopInvocations, ReplayedModelInvocation } from './invocations.js'
 import { loopJobs } from './jobs.js'
 import { publicOutcome } from './outcome.js'
 import { scopeLoopContext, sessionForLoop } from './scope.js'
@@ -136,7 +144,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
   }
   const prepared = new WeakMap<
     LoopRequest,
-    { output: DeriveOutput; turnId: number; invocationId: string; stamp?: ExperienceStamp }
+    { output: PreparedInferenceRequest; turnId: number; invocationId: string }
   >()
   const invocations = new LoopInvocations(s, () => checkpoint)
   const resumingTools = new Set<string>()
@@ -147,8 +155,6 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       const op = requireOp()
       if (!s.turn) await s.rehydrateTurn(op)
       await announced.answerStranded()
-      // Taken before deriving: a change meanwhile refuses the request rather than letting it pass.
-      const stamp = options.messages ? undefined : experienceStamp(s)
       const output = await prepareInferenceRequest(s, options)
       if ('phase' in output)
         throw new CoreError('E_BUDGET', 'Request preparation stopped the turn', { reason: output.reason })
@@ -159,7 +165,6 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         output,
         turnId: op.meta.turn,
         invocationId: options.invocationId ?? s.d.ids.effectId(),
-        ...(stamp ? { stamp } : {}),
       })
       return request
     } finally {
@@ -178,17 +183,9 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         throw new CoreError('E_REQUEST_FROZEN', 'Model request must be prepared by this turn')
       signal = AbortSignal.any([signal, s.ac.signal])
       signal.throwIfAborted()
-      const cached = await invocations.status(binding.invocationId)
-      if (cached.status !== 'not-sent') {
-        const result = await invocations.claim(binding.invocationId, request)
-        if (!Array.isArray(result))
-          throw new CoreError('E_RELATION', 'Invocation result is not a model response')
-        for (const event of result) yield event
-        return
-      }
+      await invocations.checkModelReplay(binding.invocationId, request)
       // Prepared before task experience changed (an entry withdrawn, the switch off): never sent.
-      if (await loopRequestStale(s, binding.stamp, binding.output.notes))
-        throw new CoreError('E_REQUEST_FROZEN', 'Task experience changed; prepare the request again')
+      if (await loopRequestStale(s, binding.output.stamp)) throw new ExperienceChangedSinceDerive()
       await ensureStep(true, false)
       const admitted = await admitInferenceRequest(s, binding.output, true)
       if ('phase' in admitted)
@@ -196,17 +193,18 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       if (admitted.calibration.event && !admitted.calibration.deny)
         await s.d.log.append([admitted.calibration.event])
       await ensureStep(true)
-      const result = await invocations.claim(binding.invocationId, request)
       // Another stream can settle this invocation while request admission is awaiting.
-      if (result !== undefined) {
-        if (!Array.isArray(result))
-          throw new CoreError('E_RELATION', 'Invocation result is not a model response')
-        for (const event of result) yield event
-        return
-      }
+      await invocations.checkModelReplay(binding.invocationId, request)
       const events: InferenceEvent[] = []
       let settled = false
-      for await (const event of streamWire(admitted.wire, admitted.output, signal, binding.invocationId)) {
+      for await (const event of streamWire(
+        admitted.wire,
+        admitted.output,
+        signal,
+        binding.invocationId,
+        request,
+        binding.output.stamp,
+      )) {
         events.push(event)
         if (event.type === 'done' || event.type === 'error') {
           await invocations.settle(binding.invocationId, request, events)
@@ -215,6 +213,9 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         yield event
       }
       if (!settled) await invocations.settle(binding.invocationId, request, events)
+    } catch (error) {
+      if (!(error instanceof ReplayedModelInvocation)) throw error
+      yield* error.events
     } finally {
       await releaseTreeReservation(s)
       done()
@@ -226,6 +227,8 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     output: DeriveOutput,
     signal: AbortSignal,
     invocationId: string,
+    preparedRequest: LoopRequest,
+    stamp?: ExperienceStamp,
   ): AsyncIterable<InferenceEvent> {
     await recordRequestComposition(s, output, request, requireOp().step)
     const effect = s.effects.start({ kind: 'inference', replay: 'never', slot: request.slot })
@@ -237,15 +240,28 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     ]
     const op = requireOp()
     const memory = s.turn
+    const freshness = experienceCommitCheck(s, stamp)
     const seqs = await s.transition(
-      pre,
+      () => [invocations.claimEvent(invocationId, preparedRequest), ...pre],
       withPhase(op, {
         kind: 'inference',
         gen: { status: 'effect_pending', attempt: 0, effectId: effect.effectId, slot: request.slot },
       }),
+      {
+        beforeCommit: async () => {
+          await invocations.checkModelReplay(invocationId, preparedRequest)
+          await freshness.beforeCommit?.()
+        },
+        commitCheck: () => {
+          signal.throwIfAborted()
+          freshness.commitCheck()
+        },
+      },
     )
-    const headerSeq = seqs[pre.length - 2]!
-    const intentSeq = seqs[pre.length - 1]!
+    const headerSeq = seqs.at(-2)
+    const intentSeq = seqs.at(-1)
+    if (headerSeq === undefined || intentSeq === undefined)
+      throw new CoreError('E_RELATION', 'inference dispatch lacks durable header/effect sources')
     // The note this request sent renders under this nonce on later turns; the epoch map must know it.
     s.recordEnvelopeHeader(headerSeq, output.header.envelopeNonce)
     if (memory) {

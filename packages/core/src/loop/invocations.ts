@@ -7,6 +7,12 @@ import type { SessionImpl } from '../step/session.js'
 import { lateToolResponse } from './late-receipt.js'
 
 const EVENT = 'x/core/loop-invocation'
+/** Abort a competing dispatch transaction and give its caller the first invocation's response. */
+export class ReplayedModelInvocation extends Error {
+  constructor(readonly events: readonly InferenceEvent[]) {
+    super('Model invocation already responded')
+  }
+}
 type Record = {
   loop: { id: string; version: string }
   invocationId: string
@@ -203,39 +209,46 @@ export class LoopInvocations {
     )
   }
 
+  private async replay(
+    id: string,
+    input: unknown,
+  ): Promise<ToolResult | readonly InferenceEvent[] | undefined> {
+    if (!(await this.claimedFor(id, input))) return undefined
+    const recovered = await this.status(id)
+    if (recovered.status !== 'responded')
+      throw new CoreError('E_RELATION', 'Invocation may have been sent; reconcile its effect before replay', {
+        invocationId: id,
+      })
+    return recovered.result
+  }
+
+  async checkModelReplay(id: string, input: unknown): Promise<void> {
+    const result = await this.replay(id, input)
+    if (result === undefined) return
+    if (!Array.isArray(result)) throw new CoreError('E_RELATION', 'Invocation result is not a model response')
+    throw new ReplayedModelInvocation(result)
+  }
+
+  claimEvent(id: string, input: unknown) {
+    return this.s.ev(
+      EVENT,
+      {
+        loop: this.s.loop,
+        invocationId: id,
+        fingerprint: sha256Hex(canonicalJson(input)),
+        status: 'may-have-sent',
+        checkpoint: this.checkpoint(),
+      },
+      { ignorable: true },
+    )
+  }
+
   async claim(id: string, input: unknown): Promise<ToolResult | readonly InferenceEvent[] | undefined> {
-    const fingerprint = sha256Hex(canonicalJson(input))
-    let cached: ToolResult | readonly InferenceEvent[] | undefined
-    await this.s.locked(async () => {
-      const previous = await this.record(id)
-      if (previous) {
-        if (previous.fingerprint !== fingerprint)
-          throw new CoreError('E_RELATION', 'invocationId was reused for a different operation')
-        const recovered = await this.status(id)
-        if (recovered.status !== 'responded')
-          throw new CoreError(
-            'E_RELATION',
-            'Invocation may have been sent; reconcile its effect before replay',
-            { invocationId: id },
-          )
-        cached = structuredClone(recovered.result)
-        return
-      }
-      await this.s.d.log.append([
-        this.s.ev(
-          EVENT,
-          {
-            loop: this.s.loop,
-            invocationId: id,
-            fingerprint,
-            status: 'may-have-sent',
-            checkpoint: this.checkpoint(),
-          },
-          { ignorable: true },
-        ),
-      ])
+    return this.s.locked(async () => {
+      const cached = await this.replay(id, input)
+      if (cached === undefined) await this.s.d.log.append([this.claimEvent(id, input)])
+      return cached
     })
-    return cached
   }
   async settle(id: string, input: unknown, result: ToolResult | readonly InferenceEvent[]): Promise<void> {
     await this.s.d.log.append([

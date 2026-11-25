@@ -4,7 +4,7 @@ import { estimateTokens } from '../execution/model-tokens.js'
 import { compactionSettingsFor, compactionTriggerTokens, contextWindowFor } from '../execution/turn/gate.js'
 import { resolveModel } from '../execution/turn/inference.js'
 import type { SessionImpl, StepOutcome, TurnMemory } from '../step/session.js'
-import { type ExperienceNote, experienceNotes, isControlNote } from './experience.js'
+import { type ExperienceNote, type ExperienceStamp, experienceNotes, isControlNote } from './experience.js'
 import { CONTROL_FORMAT_LINE, EXPERIENCE_OFF_NOTICE, EXPERIENCE_RESET_NOTICE } from './experience-control.js'
 
 /**
@@ -63,8 +63,9 @@ export async function experienceForRequest(
   s: SessionImpl,
   surface: readonly SurfaceNode[],
   primary: boolean,
+  stamp?: ExperienceStamp,
 ): Promise<ExperienceNote[] | StepOutcome> {
-  const notes = await experienceNotes(s, surface)
+  const notes = await experienceNotes(s, surface, stamp)
   const control = notes.filter(isControlNote)
   if (control.length === 0) return notes
   const left = room(s)

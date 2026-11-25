@@ -9,8 +9,9 @@ type SelectionFacts = Readonly<{ imageInput: boolean; defaultSelection: boolean 
 const selections = new WeakMap<object, SelectionFacts>()
 
 /** Facts captured where the request's model and schema selection are resolved, before hooks. */
-export function prepareToolAvailability(request: object, facts: SelectionFacts): void {
+export function prepareToolAvailability<T extends object>(request: T, facts: SelectionFacts): T {
   selections.set(request, Object.freeze({ ...facts }))
+  return request
 }
 
 /** Budget reminting may replace the request object, but never its schema-selection facts. */

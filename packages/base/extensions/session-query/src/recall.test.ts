@@ -2,6 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { ToolRegistry } from '@agnes/core'
+import { actor, fakeProvider, fakeSeams, openSession, textTurn, toolTurn } from '@agnes/core/testkit'
 import type { ToolContext, ToolResult } from '@agnes/extension-api'
 import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
@@ -77,6 +79,41 @@ it('uses an authorized recalled event as the center of an evidence window', asyn
     )
     for (const phrase of ['植被', '#1 user/message Site visit', '#3 user/message Follow-up visit'])
       expect(evidence).toContain(phrase)
+
+    const registry = new ToolRegistry()
+    // Make the installed tool available on the first turn of this fixture.
+    registry.add(
+      { ...sessionRecallTool, meta: { ...sessionRecallTool.meta, deferLoading: false } },
+      {
+        source: '@agnes/session-query',
+        trust: 'builtin',
+      },
+    )
+    const provider = fakeProvider([toolTurn('session_recall', { query: '植被' }), textTurn('done')])
+    const seams = fakeSeams()
+    const approval = vi.spyOn(seams.approval, 'ask')
+    const { session, log } = await openSession({ provider, seams, registry, key: 'caller', cwd: '/same' })
+    try {
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'Recall vegetation' }], actor })
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+      expect(approval).not.toHaveBeenCalled()
+      expect(await log.scan({ type: 'tool/result', toSeq: session.lastSeq })).toMatchObject([
+        { trust: 'untrusted' },
+      ])
+      const result = provider.requests[1]?.messages.find((message) => message.role === 'tool_result')
+      expect(result?.content).toMatchObject([
+        {
+          type: 'text',
+          text: expect.stringMatching(
+            /^<untrusted id="([^"]+)" bytes="\d+">[\s\S]*Mountain vegetation survey[\s\S]*<\/untrusted id="\1">$/,
+          ),
+        },
+      ])
+    } finally {
+      await session.close()
+    }
   } finally {
     closeSessionQuery()
     rmSync(dir, { recursive: true, force: true })

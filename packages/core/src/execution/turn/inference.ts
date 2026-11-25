@@ -55,7 +55,12 @@ import {
   SKILL_LOADED_PREFIX,
   TURN_TIME_PREFIX,
 } from '../../request/derive.js'
-import { experienceChanged, messageText, withExperienceRows } from '../../request/experience.js'
+import {
+  type ExperienceStamp,
+  experienceStamp,
+  messageText,
+  withExperienceRows,
+} from '../../request/experience.js'
 import { experienceCommitCheck } from '../../request/experience-dispatch.js'
 import { experienceForRequest } from '../../request/experience-room.js'
 import { inlineImageMediaSurface } from '../../request/inline-images.js'
@@ -67,6 +72,7 @@ import {
   type ProviderCountAttempt,
   quoteBudget,
 } from '../../step/calibrate.js'
+import { isChildSession } from '../../step/child-session.js'
 import {
   modelVisibleTool,
   requestModelInput,
@@ -530,10 +536,12 @@ async function historyFacts(
 /** The options of the primary turn's own request, told apart from a loop's by identity. */
 const PRIMARY: import('@agnes/extension-api').LoopRequestOptions = Object.freeze({})
 
+export type PreparedInferenceRequest = DeriveOutput & { stamp: ExperienceStamp | undefined }
+
 export async function prepareInferenceRequest(
   s: SessionImpl,
   options: import('@agnes/extension-api').LoopRequestOptions = PRIMARY,
-): Promise<DeriveOutput | StepOutcome> {
+): Promise<PreparedInferenceRequest | StepOutcome> {
   const op = s.op()
   const t = s.turn
   if (!op || !t) throw new CoreError('E_RELATION', 'Request preparation requires an accepted input')
@@ -696,7 +704,8 @@ export async function prepareInferenceRequest(
   const progressCheck = await progressCheckNote(s, t, op, language)
   // A loop that brings its own message list (`options.messages`) gets no task experience: that list
   // is not the surface, so the frozen-snapshot check could never see a note it had sent.
-  const experience = options.messages ? [] : await experienceForRequest(s, surface, options === PRIMARY)
+  const stamp = options.messages || isChildSession(s) ? undefined : experienceStamp(s)
+  const experience = stamp ? await experienceForRequest(s, surface, options === PRIMARY, stamp) : []
   if (!Array.isArray(experience)) return experience
   let out = deriveRequest({
     ...(memoryRevision === undefined ? {} : { memoryRevision }),
@@ -750,11 +759,10 @@ export async function prepareInferenceRequest(
     out = { ...out, request, header: { ...out.header, derived_hash: derivedHash } }
   }
   out = await beforeLoopModelRequest(s, withLoopSampling(out, options), slot, attempt)
-  prepareToolAvailability(out, {
-    imageInput: computerUseAllowed,
-    defaultSelection: options.tools === undefined,
-  })
-  return out
+  return prepareToolAvailability(
+    { ...out, stamp },
+    { imageInput: computerUseAllowed, defaultSelection: options.tools === undefined },
+  )
 }
 
 /** Shared request admission, including image bounds, tree reservations and overage disposition. */
@@ -988,12 +996,6 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   out = admitted.output
   const wire = admitted.wire
   const cal = admitted.calibration
-  // Prepared before task experience changed (an entry withdrawn, the switch turned off): not sent.
-  // A fast path; the dispatch commit checks again under the lock (`experienceCommitCheck`).
-  if (experienceChanged(s)) {
-    await releaseTreeReservation(s)
-    return { phase: 'inference' }
-  }
   await releaseTreeReservationOnError(s, () => recordRequestComposition(s, out, wire, step))
   const offered = new Set(wire.tools.map((tool) => tool.name))
   const { effect, header, effectIntentSeq, headerSeq } = await releaseTreeReservationOnError(s, async () => {
@@ -1022,7 +1024,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         },
         { step },
       ),
-      experienceCommitCheck(s),
+      experienceCommitCheck(s, preparedOutput.stamp),
     )
     // Update the in-memory dedup key only after the atomic transition committed the header. A retry
     // that derives the same request reuses that durable header; each actual dispatch still gets its

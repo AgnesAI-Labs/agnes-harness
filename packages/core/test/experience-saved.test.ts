@@ -1,7 +1,8 @@
 import type { Event } from '@agnes/core-common/types'
 import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { createLoopContext } from '../src/loop/ports.js'
 import { applyRefine } from '../src/refine/apply.js'
 import { refinementFacade } from '../src/refinement/facade.js'
 import type { RefinementWorkspaceRefs, SavedEntry } from '../src/refinement/workspace-refs.js'
@@ -9,7 +10,6 @@ import {
   deriveExperienceNotes,
   EXPERIENCE_PREFIX,
   type ExperienceNote,
-  experienceChanged,
   experienceNotes,
   experienceStamp,
   stampChanged,
@@ -64,6 +64,23 @@ async function open(refs: RefinementWorkspaceRefs, over: { refinementEnabled?: (
     refinementEnabled: over.refinementEnabled ?? (() => true),
     refinement: { settings: () => ({}) as never, planner: () => undefined, workspaceRefs: refs },
   })
+}
+
+async function withdrawDuringCount(revision: string) {
+  const p = port([saved(1)])
+  if (revision !== 'r1') p.refs.revision = () => revision
+  const provider = fakeProvider([textTurn('ok')])
+  provider.count = async (request) => {
+    if (JSON.stringify(request.messages).includes('lesson number 1')) p.set([])
+    return { tokens: 10, source: 'provider', boundHash: request.derivedHash }
+  }
+  const opened = await openSession({
+    provider,
+    refinementEnabled: () => true,
+    refinement: { settings: () => ({}) as never, planner: () => undefined, workspaceRefs: p.refs },
+  })
+  opened.session.preset.budget.preflight = 'count'
+  return { ...opened, provider }
 }
 
 let seq = 0
@@ -149,14 +166,132 @@ describe('entries saved in earlier sessions reach the model through the snapshot
     await session.run({ until: 'turn-end', signal: new AbortController().signal })
     const stamp = experienceStamp(session)
     expect(await experienceNotes(session, session.surface())).toEqual([])
-    expect(await loopRequestStale(session, stamp, [])).toBe(false)
+    expect(await loopRequestStale(session, stamp)).toBe(false)
     p.set([])
     expect(stampChanged(stamp, session)).toBe(true)
-    expect(experienceChanged(session)).toBe(true)
-    expect(await loopRequestStale(session, stamp, [])).toBe(true)
+    expect(await loopRequestStale(session, stamp)).toBe(true)
     expect(textOf(await experienceNotes(session, session.surface()))).toContain(
       '[memory/ws.r0000000001 v1] withdrawn',
     )
+  })
+
+  it.each(['', 'uncached:workspace'])('rechecks warm deliveries at revision %j', async (revision) => {
+    const p = port([saved(1)])
+    p.refs.revision = () => revision
+    const { session } = await open(p.refs)
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    const ctx = await createLoopContext(session)
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'next' }], actor })
+    expect(await session.acceptInput()).toBe(true)
+    const stale = await ctx.prepareRequest({})
+    p.set([])
+    const fresh = await ctx.prepareRequest({})
+    expect(JSON.stringify(fresh.messages)).toContain('[memory/ws.r0000000001 v1] withdrawn')
+    await expect(ctx.model.complete(stale, new AbortController().signal)).rejects.toMatchObject({
+      code: 'E_REQUEST_FROZEN',
+    })
+    await ctx.model.complete(fresh, new AbortController().signal)
+  })
+
+  it.each(['', 'uncached:workspace'])(
+    're-prepares inference after a withdrawal at revision %j',
+    async (revision) => {
+      const { session, log, provider } = await withdrawDuringCount(revision)
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+      expect(provider.requests).toHaveLength(1)
+      expect(JSON.stringify(provider.requests)).not.toContain('lesson number 1')
+      expect(JSON.stringify(await log.scan({ type: 'user/message', toSeq: session.lastSeq }))).not.toContain(
+        'lesson number 1',
+      )
+    },
+  )
+
+  it.each(['r1', '', 'uncached:workspace'])(
+    'refuses a loop withdrawal during admission at revision %j without claiming the invocation',
+    async (revision) => {
+      const { session, log, provider } = await withdrawDuringCount(revision)
+      const ctx = await createLoopContext(session)
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
+      expect(await session.acceptInput()).toBe(true)
+      const invocationId = 'withdrawn'
+      const request = await ctx.prepareRequest({ invocationId })
+      expect(JSON.stringify(request.messages)).toContain('lesson number 1')
+      await expect(ctx.model.complete(request, new AbortController().signal)).rejects.toMatchObject({
+        code: 'E_REQUEST_FROZEN',
+      })
+      expect(provider.requests).toHaveLength(0)
+      expect(await ctx.effects.status(invocationId)).toMatchObject({ status: 'not-sent' })
+      expect(
+        await log.scan({
+          type: ['request/header', 'effect/intent', 'x/core/loop-invocation'],
+          toSeq: session.lastSeq,
+        }),
+      ).toEqual([])
+      expect(JSON.stringify(await log.scan({ type: 'user/message', toSeq: session.lastSeq }))).not.toContain(
+        'lesson number 1',
+      )
+      await ctx.model.complete(await ctx.prepareRequest({ invocationId }), new AbortController().signal)
+      expect(provider.requests).toHaveLength(1)
+      expect(JSON.stringify(provider.requests)).not.toContain('lesson number 1')
+    },
+  )
+
+  it('holds a warm unversioned delivery when the listing remains unavailable through re-preparation', async () => {
+    const outage = { fail: false }
+    const p = port([saved(1)], outage)
+    p.refs.revision = () => ''
+    const provider = fakeProvider([textTurn('ok')])
+    const { session } = await openSession({
+      provider,
+      refinementEnabled: () => true,
+      refinement: { settings: () => ({}) as never, planner: () => undefined, workspaceRefs: p.refs },
+    })
+    const turn = async () => {
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'next' }], actor })
+      return session.run({ until: 'turn-end', signal: new AbortController().signal })
+    }
+    expect((await turn()).reason).toBe('completed')
+    session.preset.budget.preflight = 'count'
+    provider.count = async (request) => {
+      outage.fail = true
+      return { tokens: 10, source: 'provider', boundHash: request.derivedHash }
+    }
+    expect((await turn()).reason).toBe('error')
+    expect(provider.requests).toHaveLength(1)
+    delete provider.count
+    outage.fail = false
+    p.set([])
+    expect((await turn()).reason).toBe('completed')
+    expect(JSON.stringify(provider.requests[1]?.messages)).toContain('[memory/ws.r0000000001 v1] withdrawn')
+  })
+
+  it('rechecks the switch at writer admission before committing a loop invocation', async () => {
+    let on = true
+    const { session, log } = await open(port([saved(1)]).refs, { refinementEnabled: () => on })
+    const ctx = await createLoopContext(session)
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
+    expect(await session.acceptInput()).toBe(true)
+    const invocationId = 'writer-fence'
+    const request = await ctx.prepareRequest({ invocationId })
+    const append = log.append.bind(log)
+    vi.spyOn(log, 'append').mockImplementation((rows, options) =>
+      append(rows, {
+        ...options,
+        beforeCommit: async () => {
+          await options?.beforeCommit?.()
+          if (rows.some((row) => row.type === 'request/header')) on = false
+        },
+      }),
+    )
+    await expect(ctx.model.complete(request, new AbortController().signal)).rejects.toMatchObject({
+      code: 'E_REQUEST_FROZEN',
+    })
+    expect(await ctx.effects.status(invocationId)).toMatchObject({ status: 'not-sent' })
+    expect(await log.scan({ type: ['request/header', 'effect/intent'], toSeq: session.lastSeq })).toEqual([])
   })
 
   it('keeps a saved entry containing a quoted delivery stable on a warm turn', async () => {
@@ -353,13 +488,16 @@ describe('entries saved in earlier sessions reach the model through the snapshot
 
   it('a listing that fails at the cold boundary is tried again on the next request', async () => {
     const p = port([saved(1)])
-    let fail = true
+    let fail = false
     const entries = p.refs.entries
     p.refs.entries = async (at) => {
       if (fail) throw new Error('busy')
       return entries?.(at) ?? []
     }
     const { session } = await open(p.refs)
+    p.set([saved(1)])
+    expect(textOf(await deriveExperienceNotes(session, [ask('first')]))).toContain('(saved) Saved 1')
+    fail = true
     const first = await deriveExperienceNotes(session, [ask('Saved 1')])
     expect(textOf(first)).not.toContain('(saved)')
     fail = false
@@ -422,8 +560,13 @@ describe('entries saved in earlier sessions reach the model through the snapshot
 
   it('sends no saved entries while refinement is off', async () => {
     const p = port([saved(1)])
+    const revision = vi.spyOn(p.refs, 'revision')
     const { session } = await open(p.refs, { refinementEnabled: () => false })
-    expect(await deriveExperienceNotes(session, [ask('Saved 1')])).toEqual([])
+    const stamp = experienceStamp(session)
+    expect(await experienceNotes(session, [ask('Saved 1')])).toEqual([])
+    p.set([])
+    expect(stampChanged(stamp, session)).toBe(false)
+    expect(revision).not.toHaveBeenCalled()
     expect(p.calls()).toBe(0)
   })
 
