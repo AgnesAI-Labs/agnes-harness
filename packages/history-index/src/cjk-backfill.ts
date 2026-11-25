@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { cjkTokens, tokenizerVersion, transaction } from '@agnes/lexical-search'
 
 const versionKey = 'cjk_tokenizer_version'
+const historyTokenizerVersion = `${tokenizerVersion}/mixed-v2`
 const cursorKey = 'cjk_backfill_rowid'
 const endKey = 'cjk_backfill_end'
 const read = (db: DatabaseSync, key: string) =>
@@ -10,14 +11,14 @@ const put = (db: DatabaseSync, key: string, value: string | number) =>
   db.prepare('INSERT OR REPLACE INTO meta(key,value) VALUES(?,?)').run(key, String(value))
 
 export function ensureCjk(db: DatabaseSync): void {
-  if (read(db, versionKey) === tokenizerVersion) return
+  if (read(db, versionKey) === historyTokenizerVersion) return
   transaction(db, () => {
-    if (read(db, versionKey) === tokenizerVersion) return
+    if (read(db, versionKey) === historyTokenizerVersion) return
     db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS docs_cjk USING fts5(tokens, tokenize='unicode61')")
     db.exec('DELETE FROM docs_cjk')
     put(db, cursorKey, 0)
     put(db, endKey, Number(db.prepare('SELECT max(rowid) AS top FROM docs').get()?.top ?? 0))
-    put(db, versionKey, tokenizerVersion)
+    put(db, versionKey, historyTokenizerVersion)
   })
 }
 

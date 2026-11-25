@@ -6,9 +6,10 @@ import type { HistoryItem, HistoryPage, HistoryQuery } from './store.js'
 import { HISTORY_FETCH_CAP } from './text.js'
 
 function excerpt(text: string, words: string[]) {
+  const lower = text.toLowerCase()
   let at = -1
   for (const term of words) {
-    at = text.indexOf(term)
+    at = lower.indexOf(term)
     if (at >= 0) break
   }
   const start = Math.max(0, at - 50)
@@ -71,8 +72,8 @@ export function recallEvents(
   if (request.cursor) throw new HistoryIndexError('INVALID_CURSOR')
   if (!request.query.trim() || request.query.length > 256) throw new HistoryIndexError('INVALID_QUERY')
   const query = buildQuery(request.query)
-  const { words, bigrams } = tokenize(request.query)
-  const terms = [...words, ...bigrams]
+  const { words, bigrams, english } = tokenize(request.query)
+  const terms = [...words, ...bigrams, ...english]
   type Row = HistoryItem & { id: number; seq: number }
   const channel = (table: 'docs_fts' | 'docs_cjk', match: string): Row[] => {
     if (!match) return []
@@ -87,8 +88,9 @@ export function recallEvents(
     }
     return rows
   }
+  const en = expandEnglishInflections(query.en)
   const ranked = fuse(
-    [channel('docs_fts', expandEnglishInflections(query.en)), channel('docs_cjk', query.cjk)],
+    [channel('docs_fts', en), channel('docs_cjk', [query.cjk, en].filter(Boolean).join(' OR '))],
     (row) => row.id,
   )
   return {

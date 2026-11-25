@@ -10,17 +10,22 @@ export function normalize(text: string): string {
   return text.normalize('NFKC').toLowerCase()
 }
 
-export function tokenize(text: string) {
-  const normalized = normalize(text)
+function tokensOf(normalized: string, adjoining?: string[]) {
   const words: string[] = []
   const bigrams: string[] = []
   const english: string[] = []
   // Only segment CJK runs. This also separates adjacent identifiers and Han characters.
-  for (const run of normalized.split(
-    /([\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+)/u,
-  )) {
+  const runs = normalized.split(/([\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+)/u)
+  for (const [index, run] of runs.entries()) {
     if (!cjk.test(run)) {
-      for (const word of run.matchAll(/[\p{L}\p{M}\p{N}]+/gu)) english.push(word[0])
+      for (const word of run.matchAll(/[\p{L}\p{M}\p{N}]+/gu)) {
+        english.push(word[0])
+        if (
+          (index > 0 && word.index === 0) ||
+          (index < runs.length - 1 && word.index + word[0].length === run.length)
+        )
+          adjoining?.push(word[0])
+      }
       continue
     }
     for (const part of segmenter.segment(run)) {
@@ -37,8 +42,15 @@ export function tokenize(text: string) {
   return { english, words, bigrams }
 }
 
+export function tokenize(text: string) {
+  return tokensOf(normalize(text))
+}
+
 export function cjkTokens(text: string): string {
-  if (!cjk.test(text.normalize('NFKC'))) return ''
-  const { words, bigrams } = tokenize(text)
-  return [...words, ...bigrams].join(' ')
+  const normalized = normalize(text)
+  if (!cjk.test(normalized)) return ''
+  // unicode61 already indexes standalone identifiers, but joins adjoining scripts into one token.
+  const adjoining: string[] = []
+  const { words, bigrams } = tokensOf(normalized, adjoining)
+  return [...words, ...bigrams, ...adjoining].join(' ')
 }

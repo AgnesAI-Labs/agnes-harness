@@ -212,7 +212,7 @@ describe('history index', () => {
           JSON.stringify({ content: [{ type: 'text', text }] }),
         )
       put('readerless', 2, 'follow-up appointment confirmed')
-      put('peer', 2, 'schedule solar upgrade')
+      put('peer', 2, `schedule solar upgrade ${'细节。'.repeat(70)}我们使用Kubernetes部署应用`)
       ledger.close()
     })
     const base = { access, title: '', workspace: '', sessionId: '', omitSelf: true }
@@ -228,6 +228,9 @@ describe('history index', () => {
         .items.map((item) => [item.sessionId, item.seq]),
     ).toEqual([['readerless', 2]])
     expect(index.query({ ...base, kind: 'search', query: 'upgrading' }).items).toEqual([])
+    expect(index.query({ ...base, kind: 'recall', query: 'Kubernetes' }).items).toMatchObject([
+      { sessionId: 'peer', seq: 2, snippet: expect.stringContaining('Kubernetes') },
+    ])
     expect(
       index
         .query({ ...base, kind: 'recall', query: 'upgrading' })
