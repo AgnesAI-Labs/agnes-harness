@@ -24,20 +24,16 @@ const title = (text: string) => {
  * `layer: 'user'`, the same for the lessons promoted to user memory, read in every workspace that turns
  * user memory on: renew and withdraw only (withdrawing stops the same content being written again).
  */
-export function SavedParagraphsBlock(props: {
-  cwd: string
-  canSave: boolean
-  locale: string
-  t: Text
-  /** MEMORY.md changed (withdraw or convert): the open file should be read again. */
-  onFileChanged(): void
-  /**
-   * The task experience promoted to user memory instead of the workspace's: renew and withdraw only, and
-   * whether this workspace reads user memory (`readsUser`).
-   */
-  layer?: 'user'
-  readsUser?: boolean
-}) {
+export function SavedParagraphsBlock(
+  props: {
+    cwd: string
+    canSave: boolean
+    locale: string
+    t: Text
+    /** MEMORY.md changed (withdraw or convert): the open file should be read again. */
+    onFileChanged(): void
+  } & ({ layer?: 'workspace'; memoryOff: boolean } | { layer: 'user'; readsUser: boolean }),
+) {
   const { cwd, canSave, locale, t } = props
   const user = props.layer === 'user'
   const [paragraphs, setParagraphs] = useState<SavedParagraph[]>([])
@@ -81,8 +77,13 @@ export function SavedParagraphsBlock(props: {
   const date = new Intl.DateTimeFormat(locale, { dateStyle: 'medium' })
   const status = (paragraph: SavedParagraph) => {
     const when = paragraph.reviewAfter === undefined ? '' : date.format(paragraph.reviewAfter)
+    let key = `saved.${paragraph.validity}`
+    if (paragraph.validity === 'valid') {
+      if (user && !props.readsUser) key = 'saved.user.validUnread'
+      if (!user && props.memoryOff) key = 'saved.validOff'
+    }
     return [
-      t(`saved.${paragraph.validity}`, { date: when }),
+      t(key, { date: when }),
       paragraph.initiator ? t('saved.by', { who: t(`saved.initiator.${paragraph.initiator}`) }) : '',
     ]
       .filter(Boolean)
@@ -94,6 +95,11 @@ export function SavedParagraphsBlock(props: {
       data-testid={user ? 'memory-user-saved' : 'memory-saved'}
     >
       <p className="agnes-settings-note">{t(user ? 'saved.user.help' : 'saved.help')}</p>
+      {!user && props.memoryOff && (
+        <p className="agnes-settings-note" data-testid="memory-saved-off">
+          {t('saved.off')}
+        </p>
+      )}
       {user && (
         <p className="agnes-settings-note" data-testid="memory-user-read">
           {t(props.readsUser ? 'saved.user.read' : 'saved.user.unread')}

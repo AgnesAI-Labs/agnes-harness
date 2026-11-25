@@ -28,6 +28,12 @@ export const memoryCatalog: LocaleCatalog = {
     location: 'Memory directory',
     writer: 'Last recorded writer / turn',
     editor: 'Memory file contents',
+    'expiry.expired': 'Paragraphs past expiry ({count}).',
+    'expiry.invalid': 'Paragraphs hidden immediately because the expiry date is invalid ({count}).',
+    'expiry.restore':
+      'These paragraphs are hidden from agent reads and memory_recall. To restore one from the next turn, change its expires_at date to a future date or remove the comment, then save the file.',
+    'expiry.future': 'Upcoming expiries ({count}). The earliest is {date}.',
+    'expiry.off': 'Workspace memory is off. These expiry rules apply when you turn it on.',
     conflict: 'If the file changed elsewhere, saving reports a conflict; reload it first.',
     save: 'Save',
     reload: 'Reload',
@@ -36,9 +42,14 @@ export const memoryCatalog: LocaleCatalog = {
     usedShort: '{used} / {limit} KB used',
     'saved.title': 'Saved task experience',
     'saved.help':
-      'Paragraphs saved to MEMORY.md from task experience. Each has a 30-day review date; past it the agent no longer sees the paragraph until it is renewed. Withdrawing one removes it and stops automatic and model saves of the same content; making it ordinary keeps the text without a review date. When workspace memory is full, saves stop and nothing is merged automatically: free space here or in the file.',
+      'Paragraphs saved to MEMORY.md from task experience. Each has a 30-day review date. With workspace memory on, renewing an expired paragraph makes it visible again from the next turn. Withdrawing one removes it and stops automatic and model saves of the same content. Making it ordinary keeps the text without a review date. When workspace memory is full, saves stop and nothing is merged automatically. To free space, remove paragraphs here or in the file.',
+    'saved.off':
+      'Workspace memory is off. None of these paragraphs are sent to the agent or available for it to read. Turning memory on takes effect on the next turn.',
     'saved.valid': 'The agent sees it. Review by {date}.',
-    'saved.expired': 'Past its review date ({date}): the agent no longer sees it. Renew it to bring it back.',
+    'saved.validOff':
+      'Workspace memory is off. Hidden from the agent until you turn it on. Review by {date}.',
+    'saved.expired':
+      'Past its review date ({date}). The agent no longer sees it. Renew it to make it visible from the next turn wherever this memory is read.',
     'saved.unknown':
       'Not confirmed: the agent does not see it until you make it ordinary memory or withdraw it.',
     'saved.by': 'Saved by: {who}.',
@@ -50,7 +61,9 @@ export const memoryCatalog: LocaleCatalog = {
     'saved.withdraw': 'Withdraw',
     'saved.user.title': 'Task experience in user memory',
     'saved.user.help':
-      'Lessons that hold in every workspace, written to user memory automatically. Every workspace that reads user memory sees them, after your own text. Each has a 30-day review date; past it the agent no longer sees it until it is renewed. Withdrawing one removes it and stops the same content being written again.',
+      'Lessons that hold in every workspace, written to user memory automatically. Workspaces that read user memory see current lessons after your own text. Each has a 30-day review date. Renewing an expired lesson makes it visible in those workspaces from the next turn. Withdrawing one removes it and stops the same content being written again.',
+    'saved.user.validUnread':
+      'Current in other workspaces that read user memory. This workspace does not read it. Review by {date}.',
     'saved.user.read': 'This workspace reads user memory.',
     'saved.user.unread':
       'This workspace does not read user memory (memory off, or user memory not turned on here); other workspaces that read it do.',
@@ -80,6 +93,12 @@ export const memoryCatalog: LocaleCatalog = {
     location: '记忆目录',
     writer: '最后记录的写入会话 / 轮次',
     editor: '记忆文件内容',
+    'expiry.expired': '已过期的段落有 {count} 段。',
+    'expiry.invalid': '日期无效的段落有 {count} 段，会被立即隐藏。',
+    'expiry.restore':
+      '智能体无法读取这些段落，也无法通过 memory_recall 找回它们。要恢复某段，请将其 expires_at 日期改为未来的日期，或删除该注释。保存后将在下一轮生效。',
+    'expiry.future': '尚未到期的标注有 {count} 处，最早将于 {date} 到期。',
+    'expiry.off': '工作区记忆已关闭。开启后将按这些到期日期读取记忆。',
     conflict: '文件在别处被改动时，保存会提示冲突，请重新读取后再改。',
     save: '保存',
     reload: '重新读取',
@@ -88,9 +107,12 @@ export const memoryCatalog: LocaleCatalog = {
     usedShort: '已用 {used} / {limit} KB',
     'saved.title': '已保存的任务经验',
     'saved.help':
-      '从任务经验保存到 MEMORY.md 的段落。每段有一个 30 天的复核日期，过期后智能体就看不到它，直到续期。撤回会删除这一段，并阻止自动和模型再次保存同样的内容；转为普通记忆会保留文字、不再有复核日期。工作区记忆写满时保存会停止，不会自动合并：请在这里或文件里腾出空间。',
+      '从任务经验保存到 MEMORY.md 的段落。每段的复核期限为 30 天。工作区记忆开启时，为过期段落续期将在下一轮生效，智能体就能再次看到它。撤回会删除这一段，并阻止自动和模型再次保存同样的内容。转为普通记忆会保留文字、不再有复核日期。工作区记忆写满时保存会停止，不会自动合并。请在这里或文件里腾出空间。',
+    'saved.off': '工作区记忆已关闭。这些段落都不会发送给智能体，智能体也无法读取。开启记忆将在下一轮生效。',
     'saved.valid': '智能体能看到它。复核日期：{date}。',
-    'saved.expired': '已过复核日期（{date}）：智能体不再看到它。续期后恢复。',
+    'saved.validOff': '工作区记忆已关闭，开启前智能体看不到这一段。请在 {date} 前复核。',
+    'saved.expired':
+      '已过复核日期（{date}），智能体看不到这一段。续期将在下一轮生效，读取这份记忆的工作区就能再次看到它。',
     'saved.unknown': '未确认：在你把它转为普通记忆或撤回之前，智能体看不到它。',
     'saved.by': '保存方：{who}。',
     'saved.initiator.auto': '自动',
@@ -101,7 +123,8 @@ export const memoryCatalog: LocaleCatalog = {
     'saved.withdraw': '撤回',
     'saved.user.title': '用户记忆中的任务经验',
     'saved.user.help':
-      '适用于所有工作区的经验，会自动写入用户记忆。所有读取用户记忆的工作区都会看到它们，排在你自己写的内容之后。每条有 30 天的复核日期，过期后智能体看不到，直到续期。撤回后会删除它，并且相同内容不会再被写入。',
+      '适用于所有工作区的经验，会自动写入用户记忆。读取用户记忆的工作区能看到有效的经验，排在你自己写的内容之后。每条的复核期限为 30 天。为过期经验续期将在下一轮生效，这些工作区就能再次看到它。撤回后会删除它，并且相同内容不会再被写入。',
+    'saved.user.validUnread': '读取用户记忆的其他工作区可见，当前工作区不可见。请在 {date} 前复核。',
     'saved.user.read': '本工作区读取用户记忆。',
     'saved.user.unread':
       '本工作区不读取用户记忆（记忆已关闭，或这里没有开启用户记忆）；读取它的其他工作区会看到。',

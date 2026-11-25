@@ -1,5 +1,5 @@
 /** @vitest-environment happy-dom */
-import { SettingsSubpageFrame } from '@agnes/web-ui'
+import { createDocumentLocaleSource, SettingsSubpageFrame, UiLocaleProvider } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -22,7 +22,7 @@ const context = (workspaces: { path: string; available: boolean }[]) => ({
   },
   workspaces,
 })
-const inspection = (mode: 'off' | 'ask' | 'auto') => ({
+const inspection = (mode: 'off' | 'ask' | 'auto', userEnabled = true) => ({
   root: '/data/agh/memory/WorkLLM',
   settings: {
     mode,
@@ -32,7 +32,7 @@ const inspection = (mode: 'off' | 'ask' | 'auto') => ({
     totalMaxBytes: 65_536,
     tokenBudget: 2048,
     userTokenBudget: 1024,
-    userEnabled: true,
+    userEnabled,
   },
   files: [{ path: 'MEMORY.md', hash: hash('a'), bytes: 1024, lines: 3 }],
   bytes: 1024,
@@ -42,6 +42,7 @@ const inspection = (mode: 'off' | 'ask' | 'auto') => ({
 afterEach(() => {
   vi.unstubAllGlobals()
   document.body.replaceChildren()
+  document.documentElement.lang = 'en'
   saved = []
   userSaved = []
 })
@@ -51,7 +52,7 @@ let saved: Saved[] = []
 /** Task experience promoted to user memory. */
 let userSaved: Saved[] = []
 
-function server(fail: (body: Record<string, unknown>) => boolean = () => false) {
+function server(fail: (body: Record<string, unknown>) => boolean = () => false, userEnabled = true) {
   const memory: Record<string, unknown>[] = []
   let mode: 'off' | 'ask' | 'auto' = 'off'
   vi.stubGlobal(
@@ -87,7 +88,7 @@ function server(fail: (body: Record<string, unknown>) => boolean = () => false) 
       else saved = list
       return Response.json({
         workspaces: [{ path: '/work/WorkLLM', available: true }],
-        inspection: inspection(mode),
+        inspection: inspection(mode, userEnabled),
         ...(file ? { file } : {}),
         ...(asked ? { saved: { paragraphs: list } } : {}),
       })
@@ -100,16 +101,138 @@ async function render() {
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
+  const locale = createDocumentLocaleSource({})
   await act(async () =>
     root.render(
-      createElement(SettingsSubpageFrame, { header: null }, createElement(MemoryPanel, { canSave: true })),
+      <UiLocaleProvider source={locale.source}>
+        <SettingsSubpageFrame header={null}>
+          <MemoryPanel canSave />
+        </SettingsSubpageFrame>
+      </UiLocaleProvider>,
     ),
   )
   await act(async () => {})
-  return { host, unmount: () => act(async () => root.unmount()) }
+  return {
+    host,
+    unmount: async () => {
+      await act(async () => root.unmount())
+      locale.dispose()
+    },
+  }
 }
 const radio = (host: HTMLElement, value: string) =>
   host.querySelector<HTMLInputElement>(`[data-testid="memory-mode-${value}"]`)
+
+async function editContent(host: HTMLElement, text: string) {
+  const editor = host.querySelector<HTMLTextAreaElement>('[data-testid="memory-content"]')
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(editor, text)
+    editor?.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+
+const visibilityCases = [
+  ['en', 'off', true],
+  ['en', 'auto', true],
+  ['zh-CN', 'off', true],
+  ['zh-CN', 'auto', true],
+  ['en', 'auto', false],
+] as const
+
+it.each(visibilityCases)(
+  'explains saved visibility in %s with memory %s and user memory %s',
+  async (locale, mode, userEnabled) => {
+    server(undefined, userEnabled)
+    const valid = { id: 'ra000000001', text: 'Valid', validity: 'valid', reviewAfter: Date.UTC(2027, 0, 1) }
+    saved = [valid, { ...valid, id: 'rb000000001', text: 'Expired', validity: 'expired' }]
+    userSaved = [valid]
+    document.documentElement.lang = locale
+    const { host, unmount } = await render()
+    const text = (id: string) => host.querySelector(`[data-testid="${id}"]`)?.textContent
+    const zh = locale === 'zh-CN'
+    const visible = zh ? '智能体能看到它' : 'The agent sees it'
+    const nextTurn = zh ? '下一轮' : 'next turn'
+    try {
+      if (mode === 'auto') await act(async () => radio(host, mode)?.click())
+      await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="memory-open"]')?.click())
+      if (mode === 'off') {
+        expect(text('memory-saved-off')).toContain(nextTurn)
+        expect(text('memory-saved-paragraph')).toContain(zh ? '工作区记忆已关闭' : 'Workspace memory is off')
+        expect(text('memory-saved-paragraph')).not.toContain(visible)
+      } else {
+        expect(text('memory-saved-off')).toBeUndefined()
+        expect(text('memory-saved-paragraph')).toContain(visible)
+      }
+      if (mode === 'off' || !userEnabled) {
+        expect(text('memory-user-saved-paragraph')).toContain(zh ? '其他工作区' : 'other workspaces')
+        expect(text('memory-user-saved-paragraph')).not.toContain(visible)
+      } else expect(text('memory-user-saved-paragraph')).toContain(visible)
+      for (const id of ['memory-saved', 'memory-user-saved']) {
+        expect(host.querySelector(`[data-testid="${id}"] p`)?.textContent).toContain(nextTurn)
+      }
+      expect(host.querySelectorAll('[data-testid="memory-saved-paragraph"]')[1]?.textContent).toContain(
+        nextTurn,
+      )
+    } finally {
+      await unmount()
+    }
+  },
+)
+
+it.each([
+  ['en', 'off'],
+  ['zh-CN', 'auto'],
+] as const)('previews expiry in the %s editor with memory %s', async (locale, mode) => {
+  server()
+  document.documentElement.lang = locale
+  const { host, unmount } = await render()
+  const status = () =>
+    host.querySelector('[data-testid="memory-actions"] [data-testid="memory-expiry-status"]')?.textContent
+  const zh = locale === 'zh-CN'
+  try {
+    if (mode === 'auto') await act(async () => radio(host, mode)?.click())
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="memory-open"]')?.click())
+    expect(status()).toBeUndefined()
+    vi.useFakeTimers({ now: Date.UTC(2027, 0, 1), toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    await editContent(
+      host,
+      [
+        '<!-- expires_at: 2027-01-01T01:00+0100 -->\nAt the cutoff.\nSame paragraph.',
+        '<!-- expires_at: tomorrow -->\nImmediately hidden.',
+        ' <!-- expires_at: 2027-02-30 --> \nImpossible date.',
+        '<!-- expires_at: 2029-01-01 -->\nLater.',
+        'Inline <!-- expires_at: tomorrow -->',
+        '<!-- expires_at: tomorrow --> trailing text',
+        '<!-- expires_at: bad --> <!-- another comment -->',
+        '<!-- expires_at: 2027-01-01T00:00:01 -->\nNext to expire.',
+      ]
+        .join('\n\n')
+        .replaceAll('\n', '\r\n'),
+    )
+    expect(status()).toContain(zh ? '已过期的段落有 1 段' : 'Paragraphs past expiry (1)')
+    expect(status()).toContain(zh ? '日期无效的段落有 2 段' : 'expiry date is invalid (2)')
+    expect(status()).toContain(zh ? '尚未到期的标注有 2 处' : 'Upcoming expiries (2)')
+    const firstDate = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
+      Date.now() + 1000,
+    )
+    expect(status()).toContain(firstDate)
+    expect(status()).not.toContain('2029')
+    expect(status()).toContain('memory_recall')
+    expect(status()).toContain('expires_at')
+    expect(status()).toContain(zh ? '下一轮' : 'next turn')
+    expect(status()?.includes(zh ? '工作区记忆已关闭' : 'Workspace memory is off')).toBe(mode === 'off')
+    await act(async () => {
+      vi.advanceTimersByTime(1000)
+    })
+    expect(status()).toContain(zh ? '已过期的段落有 2 段' : 'Paragraphs past expiry (2)')
+    expect(status()).toContain(zh ? '尚未到期的标注有 1 处' : 'Upcoming expiries (1)')
+    await editContent(host, 'No expiry.')
+    expect(status()).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+    await unmount()
+  }
+})
 
 it('picks the workspace, changes the mode with one click, and reports a failed change at the label', async () => {
   let failing = false
@@ -159,13 +282,7 @@ it('opens the memory files subpage with MEMORY.md, saves with the version it rea
     expect(editor?.value).toBe('- prefers tables')
     const save = host.querySelector<HTMLButtonElement>('[data-testid="memory-save"]')
     expect(save?.disabled).toBe(true)
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(
-        editor,
-        '- prefers lists',
-      )
-      editor?.dispatchEvent(new Event('input', { bubbles: true }))
-    })
+    await editContent(host, '- prefers lists')
     await act(async () => save?.click())
     expect(memory.at(-1)).toEqual({
       cwd: '/work/WorkLLM',
@@ -387,9 +504,9 @@ it('lists saved task experience with review dates and renews, withdraws or conve
       'Short answers',
       'Unconfirmed',
     ])
-    expect(rows()[0]?.textContent).toMatch(/agent sees it.*review by/i)
+    expect(rows()[0]?.textContent).toMatch(/hidden.*review by/i)
     expect(rows()[0]?.textContent).toContain('2026')
-    expect(rows()[1]?.textContent).toMatch(/past its review date/i)
+    expect(rows()[1]?.textContent).toMatch(/past its review date.*next turn/i)
     expect(rows()[2]?.textContent).toMatch(/does not see it until you/i)
     // No review date to renew for a paragraph nothing vouches for.
     expect(rows()[2]?.querySelector('[data-testid="memory-saved-renew"]')).toBeNull()
@@ -400,7 +517,7 @@ it('lists saved task experience with review dates and renews, withdraws or conve
       cwd: '/work/WorkLLM',
       saved: { action: 'renew', paragraphId: 'rb000000001' },
     })
-    expect(rows()[1]?.textContent).toMatch(/agent sees it/i)
+    expect(rows()[1]?.textContent).toMatch(/hidden.*review by/i)
     // Withdrawing changes MEMORY.md: the open, unedited file is read again.
     await act(async () =>
       rows()[0]?.querySelector<HTMLButtonElement>('[data-testid="memory-saved-withdraw"]')?.click(),
@@ -466,7 +583,7 @@ it('user-layer RSI sections show validity and can be renewed or withdrawn', asyn
       cwd: '/work/WorkLLM',
       saved: { action: 'renew', paragraphId: 'rd000000001', layer: 'user' },
     })
-    expect(rows()[0]?.textContent).toMatch(/agent sees it/i)
+    expect(rows()[0]?.textContent).toMatch(/other workspaces.*review by/i)
     await act(async () =>
       rows()[1]?.querySelector<HTMLButtonElement>('[data-testid="memory-saved-withdraw"]')?.click(),
     )

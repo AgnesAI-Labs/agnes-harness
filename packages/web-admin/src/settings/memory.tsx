@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from 'react'
 import { captureRequest } from './async-request.js'
 import { contextRequest } from './context.js'
 import { memoryRequest } from './memory-api.js'
+import { MemoryExpiryStatus } from './memory-expiry.js'
 import { memoryCatalog } from './memory-locale.js'
 import { SavedParagraphsBlock } from './memory-saved.js'
 
@@ -249,11 +250,13 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
                 disabled={!canSave || busy}
                 onChange={(event) => setContent(event.target.value)}
               />
+              <MemoryExpiryStatus content={content} memoryOff={inspection.settings.mode === 'off'} />
             </SettingsBlock>
           )}
           {file && cwd && (
             <SavedParagraphsBlock
               key={cwd}
+              memoryOff={inspection.settings.mode === 'off'}
               cwd={cwd}
               canSave={canSave}
               locale={locale}
