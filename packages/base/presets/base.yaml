@@ -22,7 +22,7 @@ loop: { repeat_threshold: 3, no_progress_steps: 4 }
 repair: { max_rounds: 5, escalate_after: 3, timeout_ms: 10000 }
 verifier: { timeout_ms: 30000, default_tier: 0 }
 completion_gate: { enabled: true, min_items: 3, allow_override: true }
-subagent: { max_depth: 1, max_fan_out: 4, isolation: worktree, budget_inherit: aggregate }
+subagent: { max_depth: 1, max_fan_out: 8, isolation: worktree, budget_inherit: aggregate }
 harness:
   max_entries: { prompt: 10, memory: 50, skill: 30, subagent: 10 }
   max_chars_per_entry: 2000

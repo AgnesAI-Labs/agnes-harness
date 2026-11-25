@@ -232,7 +232,7 @@ const forkDefinition: ToolDef<typeof forkParameters> = {
 // Preserve the standalone tool's shared-cwd default. Official assembly supplies resolved
 // isolation and worktree preparation through subagentForkToolWithDeps.
 const standaloneForkDeps: SubagentDeps = {
-  limits: { maxDepth: 1, maxFanOut: 4, isolation: 'shared' },
+  limits: { maxDepth: 1, maxFanOut: 8, isolation: 'shared' },
   worktrees: {
     async create() {
       throw new Error('worktree isolation requires the assembled subagent extension')
@@ -317,8 +317,22 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
         }
       }
       if (active(state) >= deps.limits.maxFanOut) {
+        const activeCount = active(state)
+        const activeChildKeys = [...state.children.entries()]
+          .filter(([, rec]) => rec.running)
+          .map(([key]) => key)
         prune(runtime, sessionKey, state)
-        return fail(`fan-out limit ${deps.limits.maxFanOut} reached`)
+        return {
+          ...fail(
+            `fan-out limit ${deps.limits.maxFanOut} reached (${activeCount} active). Collect or wait for an active child with subagent_collect, or pause/cancel one, before spawning the next batch.`,
+          ),
+          details: {
+            code: 'E_CHILD_LIMIT',
+            limit: deps.limits.maxFanOut,
+            active: activeCount,
+            activeChildKeys,
+          },
+        }
       }
 
       // Reserve capacity before preparing the workspace; start only after isolation is resolved.
@@ -406,8 +420,12 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
         // Core's admission limit refuses creation; failures after a child handle remain uncertain.
         const budget = !childKey && formatSpawnBudgetRefusal(error)
         if (budget) return budget
-        if (!childKey && error instanceof CoreError && error.code === 'E_CHILD_LIMIT')
-          return { ...fail(error.message), details: { code: error.code } }
+        if (!childKey && error instanceof CoreError && error.code === 'E_CHILD_LIMIT') {
+          const hint = error.message.includes('fan-out limit')
+            ? ' Collect or wait for an active child with subagent_collect, or pause/cancel one, before spawning the next batch.'
+            : ''
+          return { ...fail(`${error.message}${hint}`), details: { code: error.code } }
+        }
         // Core refuses an unusable model before it creates anything.
         const refusedModel = childKey ? undefined : modelRefusal(error, ctx)
         if (refusedModel) return refusedModel
@@ -658,15 +676,20 @@ async function deliverMessage(
   text: string,
 ): Promise<{ messageId: string }> {
   ctx.signal.throwIfAborted()
+  let localError: unknown
   if (ctx.subagent.sendMessage) {
     try {
       return await ctx.subagent.sendMessage(childKey, text, ctx.signal)
     } catch (error) {
       if (!missedChild(error)) throw error
+      localError = error
     }
   }
   const external = externalChild(ctx.session.key, childKey)
-  if (!external) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+  if (!external) {
+    if (localError instanceof CoreError && localError.code === 'E_UNSUPPORTED') throw localError
+    throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+  }
   if (!external.sendMessage)
     throw new CoreError('E_UNSUPPORTED', `child ${childKey} is not continuable`, { childKey })
   return external.sendMessage(text, ctx.signal)
@@ -693,15 +716,20 @@ export const subagentSendMessageTool = defineTool({
 })
 
 async function interruptChild(ctx: ToolContext, childKey: string): Promise<{ accepted: boolean }> {
+  let localError: unknown
   if (ctx.subagent.interrupt) {
     try {
       return await ctx.subagent.interrupt(childKey)
     } catch (error) {
       if (!missedChild(error)) throw error
+      localError = error
     }
   }
   const external = externalChild(ctx.session.key, childKey)
-  if (!external) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+  if (!external) {
+    if (localError instanceof CoreError && localError.code === 'E_UNSUPPORTED') throw localError
+    throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+  }
   if (!external.interrupt) return { accepted: false }
   return external.interrupt()
 }

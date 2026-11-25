@@ -240,7 +240,7 @@ describe('standard.yaml', () => {
     expect(doc.approval).toBeUndefined()
     // Spend ceiling for one request. Widening it costs money silently; nothing else asserts it.
     expect(doc.budget).toEqual({ per_request_cap: 4000, max_steps: null })
-    expect(doc.subagent).toEqual({ max_depth: 1, max_fan_out: 4 })
+    expect(doc.subagent).toEqual({ max_depth: 1, max_fan_out: 8 })
     expect(doc.ext_ui).toEqual({ input: 'prompt', unattended: 'decline' })
     expect(doc.hooks).toEqual(['session_start', 'tool_call', 'tool_result', 'format_deviation'])
   })
@@ -442,7 +442,7 @@ describe('claw', () => {
 
   it('removes the step ceiling and raises subagent depth for unattended runs', () => {
     expect(doc.budget).toEqual({ per_request_cap: 4000, max_steps: null })
-    expect(doc.subagent).toEqual({ max_depth: 2, max_fan_out: 4 })
+    expect(doc.subagent).toEqual({ max_depth: 2, max_fan_out: 8 })
     expect(doc.surfaces).toEqual(['daemon', 'sdk'])
     // No cli and no acp: both are somebody sitting in front of the run, which is what this recipe
     // is defined by the absence of.

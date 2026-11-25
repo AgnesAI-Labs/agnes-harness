@@ -118,7 +118,7 @@ export function presetDefaults(): PresetView {
     deferred: { pollMs: 2000 },
     depthLimit: 2,
     generationLimit: 1,
-    maxFanOut: 4,
+    maxFanOut: 8,
     budgetInherit: 'aggregate',
     treeBudgetCredits: null,
     isolation: 'shared',

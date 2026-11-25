@@ -882,4 +882,35 @@ describe('child allowlist and continuable controls', () => {
       expect(decision).toMatchObject({ effect: 'allow' })
     }
   })
+
+  it('includes structured details and recovery guidance when fan-out limit is reached', async () => {
+    const d = deps({ maxFanOut: 1, isolation: 'shared' })
+    const { ctx } = context({
+      collect: async (childKey) => ({ childKey, status: 'running' }),
+    })
+    const spawn = subagentSpawnTool(d)
+    const first = await spawn.execute({ task: 'lane-1' }, ctx)
+    expect(first.isError).toBeUndefined()
+    const second = await spawn.execute({ task: 'lane-2' }, ctx)
+    expect(second.isError).toBe(true)
+    expect(second.details).toMatchObject({
+      code: 'E_CHILD_LIMIT',
+      limit: 1,
+      active: 1,
+      activeChildKeys: ['child-1'],
+    })
+    expect(JSON.stringify(second.content)).toContain('fan-out limit 1 reached')
+    expect(JSON.stringify(second.content)).toContain('subagent_collect')
+  })
+
+  it('preserves local E_UNSUPPORTED instead of masking it as E_CHILD_NOT_FOUND when no external child exists', async () => {
+    const { ctx } = context()
+    ctx.subagent.sendMessage = async () => {
+      throw new CoreError('E_UNSUPPORTED', 'child c1 is cancelled and not continuable', { childKey: 'c1' })
+    }
+    const result = await subagentSendMessageTool.execute({ childKey: 'c1', text: 'hello' }, ctx)
+    expect(result.isError).toBe(true)
+    expect(result.details).toMatchObject({ code: 'E_UNSUPPORTED' })
+    expect(JSON.stringify(result.content)).toContain('cancelled and not continuable')
+  })
 })
