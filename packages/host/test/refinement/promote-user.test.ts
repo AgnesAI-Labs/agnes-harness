@@ -85,7 +85,12 @@ async function home(o: { mode?: 'off' | 'ask' | 'auto'; userEnabled?: boolean } 
     createWorkspaceSave({ registry: () => local(), settings, memory, clock }),
     createUserSave({ registry: users, workspaceRegistry: () => local(), settings, memory, clock }),
   )
-  await open().configure({ mode: o.mode ?? 'auto', userEnabled: o.userEnabled ?? true })
+  const session = openSession()
+  try {
+    await session.configure({ mode: o.mode ?? 'auto', userEnabled: o.userEnabled ?? true })
+  } finally {
+    await session.close?.()
+  }
   const userFile = join(dir, 'memory', 'user', 'MEMORY.md')
   mkdirSync(join(dir, 'memory', 'user'), { recursive: true })
   writeFileSync(userFile, HAND)
@@ -105,8 +110,14 @@ async function home(o: { mode?: 'off' | 'ask' | 'auto'; userEnabled?: boolean } 
     setWrap(next: Wrap) {
       wrap = next
     },
-    manage: (request: Parameters<typeof manageUserSections>[2]) =>
-      manageUserSections(open('human-editor'), users(), request, clock),
+    async manage(request: Parameters<typeof manageUserSections>[2]) {
+      const editor = openSession('human-editor')
+      try {
+        return await manageUserSections(editor, users(), request, clock)
+      } finally {
+        await editor.close?.()
+      }
+    },
   }
 }
 type Home = Awaited<ReturnType<typeof home>>
@@ -183,6 +194,64 @@ describe('promoting a confirmed lesson to user memory', () => {
     expect((await h.open('reader').snapshot(1))?.content).toContain(`- Prefer pnpm over npm.\n\n${TEXT}`)
     // The same command again is answered with the first receipt; nothing is written twice.
     expect(await h.saves.save({ ...request(h), commandId: receipt.commandId })).toEqual(receipt)
+  })
+
+  it('requires a current user file revision before recording a duplicate', async () => {
+    const h = await home()
+    expect(await h.saves.save(request(h))).toMatchObject({ outcome: 'saved' })
+    h.setWrap(({ stateRevision: _revision, ...session }) => session)
+    expect(await h.saves.save(request(h))).toMatchObject({ outcome: 'refused', reason: 'conflict' })
+    const edited = h.user().replace(BODY, 'A human edit.')
+    h.setWrap(
+      wrapUserPort((port, source) => ({
+        async list() {
+          const listed = await port.list()
+          if (source.sessionKey === 'session-1') writeFileSync(h.userFile, edited)
+          return listed
+        },
+      })),
+    )
+    expect(await h.saves.save(request(h))).toMatchObject({ outcome: 'refused', reason: 'human-edited' })
+    expect(h.user()).toBe(edited)
+  })
+
+  it('declines human renewal when the listed user section was deleted', async () => {
+    const h = await home()
+    const id = sectionId(await h.saves.save(request(h)))
+    const before = h.users().read()
+    h.now.value++
+    const session = h.open()
+    try {
+      const memory = wrapUserPort((port) => ({
+        async list() {
+          const listed = await port.list()
+          writeFileSync(h.userFile, HAND)
+          return listed
+        },
+      }))(session)
+      await expect(
+        manageUserSections(memory, h.users(), { action: 'renew', paragraphId: id }, () => h.now.value),
+      ).rejects.toMatchObject({ code: 'MEMORY_CONFLICT' })
+      expect(h.users().read()).toEqual(before)
+    } finally {
+      await session.close?.()
+    }
+  })
+
+  it('withdraws a user section when an unrelated line contains a credential', async () => {
+    const h = await home()
+    const id = sectionId(await h.saves.save(request(h)))
+    const invalid = 'password=synthetic-example\r\n'
+    writeFileSync(h.userFile, invalid + h.user())
+    expect((await h.manage({ action: 'list' })).paragraphs).toMatchObject([
+      { id, hidden: true, renewable: false },
+    ])
+    expect((await h.manage({ action: 'withdraw', paragraphId: id })).paragraphs).toEqual([])
+    expect(h.user()).toBe(invalid + HAND)
+    expect(h.users().read()).toMatchObject({
+      paragraphs: [{ id, state: 'removed' }],
+      revocations: [{ action: 'memory-withdrawn' }],
+    })
   })
 
   it('refuses a duplicate when its user section is withdrawn during placement', async () => {

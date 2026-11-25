@@ -129,7 +129,7 @@ When the workspace memory has no room for the paragraph, the save ends with **me
 Every saved paragraph has a **review date 30 days** after it was saved. From that date it is no longer given to the model: if the model was given it, the next request withdraws it, while the system prompt stays the same. The text stays in the file.
 
 - A later review in any session of the workspace that confirms the paragraph with new evidence renews it for another 30 days, before the date passes. The evidence that led to the save does not count again.
-- On the memory page you can **Renew** a paragraph at any time, also after its date has passed.
+- On the memory page you can **Renew** an eligible paragraph even after its date has passed. Renewal and duplicate-save receipts require a memory provider that can verify the file revision when recording the decision.
 
 ### Taking it back
 

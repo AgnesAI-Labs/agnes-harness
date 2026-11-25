@@ -132,6 +132,59 @@ describe('parseParagraphs', () => {
 })
 
 describe('file memory managed paragraphs', () => {
+  it('preserves only pre-existing invalid spans during managed removals', async () => {
+    const f = await fixture()
+    try {
+      await f.session.configure({ mode: 'auto' })
+      const port = f.paragraphs()
+      const remove = async () =>
+        port.commit(
+          await port.propose([
+            { op: 'remove', id: B },
+            { op: 'remove', id: A },
+          ]),
+        )
+      const mid = block(A, 'First') + block(B, 'Second')
+      for (const [before, after, code] of [
+        ['password\n', ': synthetic-example\n', 'MEMORY_SECRET_LIKE_CONTENT'],
+        ['[broken]:\n', 'missing.md\n', 'MEMORY_MISSING_TOPIC'],
+      ] as const) {
+        const stored = before + block(A, 'First') + after
+        await writeFile(f.index, stored)
+        await expect(f.session.editFile('MEMORY.md', before + after, sha(stored))).rejects.toMatchObject({
+          code,
+        })
+        expect(await f.raw()).toBe(stored)
+      }
+      const invalidUtf8 = Buffer.concat([Buffer.from([0xff, 0x0a]), Buffer.from(block(A, 'First'))])
+      await writeFile(f.index, invalidUtf8)
+      const decoded = await f.session.readFile('MEMORY.md')
+      await expect(f.session.editFile('MEMORY.md', '\uFFFD\n', decoded.hash)).rejects.toMatchObject({
+        code: 'MEMORY_CONFLICT',
+      })
+      expect(await readFile(f.index)).toEqual(invalidUtf8)
+      await writeFile(f.index, '')
+      await port.commit(
+        await port.propose([
+          { op: 'put', id: A, text: 'First' },
+          { op: 'put', id: B, text: 'Second' },
+        ]),
+      )
+      const before = 'password=synthetic-example\r\n\n'
+      const after = '\n[broken](missing.md)\n'
+      await writeFile(f.index, before + mid + after)
+      await remove()
+      expect(await f.raw()).toBe(before.slice(0, -1) + after)
+      const files = f.files(1)
+      await expect(files.write(f.index, before)).rejects.toMatchObject({ code: 'MEMORY_SECRET_LIKE_CONTENT' })
+      await expect(files.replaceExact!(f.index, 'broken', 'edited')).rejects.toMatchObject({
+        code: 'MEMORY_SECRET_LIKE_CONTENT',
+      })
+    } finally {
+      await f.session.close?.()
+    }
+  })
+
   it('a file without markers gives the same snapshot bytes and revision as before', async () => {
     const plain = await fixture()
     await plain.session.configure({ mode: 'auto' })

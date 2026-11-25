@@ -11,7 +11,7 @@ import {
   type SaveReceipt,
   type SaveRefusal,
 } from '@agnes/host-infrastructure/refinement-registry'
-import { liveTargetDeadline, paragraphVisibility } from './paragraph-visibility.js'
+import { fileRevisionGuard, liveTargetDeadline, paragraphVisibility } from './paragraph-visibility.js'
 import { reconcileParagraphs, WORKSPACE_MEMORY_KEY } from './reconcile.js'
 import { paragraphText, sourceRuleProblem } from './save-rules.js'
 import {
@@ -221,8 +221,10 @@ export function createUserSave(deps: UserSaveDeps): UserSave {
     verdicts['memory-mode'] = 'pass'
     // 6. Capacity, known once the change is proposed.
     let listed: MemoryParagraphList
+    let assertFileCurrent: ReturnType<typeof fileRevisionGuard>
     let visible: Awaited<ReturnType<typeof paragraphVisibility>>
     try {
+      assertFileCurrent = fileRevisionGuard(memory, 'REFINEMENT_SAVE_STALE')
       listed = await port.list()
       visible = await paragraphVisibility(memory, 'user', listed, registry, deps.clock)
     } catch {
@@ -243,7 +245,10 @@ export function createUserSave(deps: UserSaveDeps): UserSave {
       receipt: { ...read, steps: steps({ ...verdicts, capacity: 'pass' }) },
       assertAllowed: assertWorkspaceAllowed,
     }
-    if ('existing' in placed) return recordExisting(decision, placed.existing)
+    if ('existing' in placed) {
+      if (!assertFileCurrent) return refuse(registry, read, 'conflict', { ...verdicts, capacity: 'fail' })
+      return recordExisting({ ...decision, assertFileCurrent }, placed.existing)
+    }
     const verifyTarget =
       replaces === undefined
         ? undefined

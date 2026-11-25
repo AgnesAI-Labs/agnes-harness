@@ -10,12 +10,17 @@ import type {
 } from '@agnes/extension-api'
 import { checkProposalGuards, commitHooks } from './commit-hooks.js'
 import { buildIndexView, nonManaged } from './consistency.js'
-import { diff, fault, file, indexContentValid, validateContent } from './content.js'
+import { diff, fault, file, indexContentValid, validateContent, validateRemovalContent } from './content.js'
 import { annotations } from './expiry-annotation.js'
 import type { MetaStore } from './meta.js'
-import { applyParagraphChanges, parseParagraphs, validityOf } from './paragraphs.js'
+import {
+  applyParagraphChanges,
+  applyParagraphRemovalsWithSlices,
+  parseParagraphs,
+  validityOf,
+} from './paragraphs.js'
 import type { CommitIntent, MemoryClock, MemoryPipeline, ViewContext } from './pipeline.js'
-import type { MemoryStore } from './store.js'
+import { FileCountLimit, type MemoryStore } from './store.js'
 
 const INDEX = 'MEMORY.md'
 
@@ -28,13 +33,30 @@ export type ParagraphPortHooks = Readonly<{
 }>
 
 /** Project only raw body segments. Notices synthesized for reads never become saved experience. */
-export function listParagraphs(pipeline: MemoryPipeline, context: ViewContext, config: MemorySettings) {
-  const stored = context.files.find((entry) => entry.path === INDEX) ?? file(INDEX, '')
-  const valid = indexContentValid(stored, config)
-  const view = valid
-    ? buildIndexView(stored, pipeline.collectHideRanges(stored, context).filter(nonManaged))
+export function listParagraphs(
+  pipeline: MemoryPipeline,
+  readContext: () => ViewContext,
+  config: MemorySettings,
+  store: MemoryStore,
+  validity: ViewContext['validity'],
+) {
+  let context: ViewContext | undefined
+  try {
+    context = readContext()
+  } catch (error) {
+    if (!(error instanceof FileCountLimit)) throw error
+  }
+  // The editor can still withdraw a paragraph from an over-count directory. Nothing there is projected.
+  const stored = context
+    ? (context.files.find((entry) => entry.path === INDEX) ?? file(INDEX, ''))
+    : store.read(INDEX)
+  const visibleContext = context && indexContentValid(stored, config) ? context : undefined
+  const view = visibleContext
+    ? buildIndexView(stored, pipeline.collectHideRanges(stored, visibleContext).filter(nonManaged))
     : undefined
-  const deadlines = valid ? [...annotations(stored.content)].filter((a) => a.expiresAt > context.now) : []
+  const deadlines = visibleContext
+    ? [...annotations(stored.content)].filter((a) => a.expiresAt > visibleContext.now)
+    : []
   const paragraphs = parseParagraphs(stored.content).paragraphs.map(({ id, text, start }) => {
     const from = stored.content.indexOf('\n', start) + 1
     const to = from + text.length
@@ -52,12 +74,30 @@ export function listParagraphs(pipeline: MemoryPipeline, context: ViewContext, c
     return Object.freeze({
       id,
       text,
-      validity: context.validity(id),
+      validity: validity(id),
       visibleText: body.trim() ? body : null,
       ...(nextExpiry !== undefined ? { nextExpiry } : {}),
     })
   })
   return Object.freeze({ hash: stored.hash, content: stored.content, paragraphs: Object.freeze(paragraphs) })
+}
+
+/** The same removal proof and validation apply to both managed layers. */
+export function paragraphCandidate(
+  before: MemoryFile,
+  changes: readonly MemoryParagraphChange[],
+  config: MemorySettings,
+) {
+  if (changes.every((change) => change?.op === 'remove')) {
+    const removalIds = changes.map((change) => change.id)
+    const { content, slices } = applyParagraphRemovalsWithSlices(before.content, removalIds)
+    const candidate = file(INDEX, content)
+    validateRemovalContent(candidate, before, slices)
+    return { candidate, removalIds }
+  }
+  const candidate = file(INDEX, applyParagraphChanges(before.content, changes))
+  validateContent(candidate, config, true)
+  return { candidate }
 }
 
 function actorOf(source: MemorySource): string {
@@ -89,16 +129,16 @@ export function paragraphPort(
   const answer = validityOf(validity)
   const made = new WeakMap<
     MemoryProposal,
-    { candidate: MemoryFile; mode: 'ask' | 'auto'; intent: CommitIntent }
+    { candidate: MemoryFile; mode: 'ask' | 'auto'; intent: CommitIntent; removalIds?: readonly string[] }
   >()
   const enabled = (): MemorySettings & { mode: 'ask' | 'auto' } => {
     const config = store.configuration()
     if (config.mode === 'off') throw fault('MEMORY_DISABLED')
     return config as MemorySettings & { mode: 'ask' | 'auto' }
   }
-  const makeContext = (config: MemorySettings, now: number): ViewContext => ({
+  const makeContext = (config: MemorySettings, now: number, allowOverCount = false): ViewContext => ({
     layer: 'workspace',
-    files: store.files(),
+    files: store.files('view', allowOverCount),
     ...(config.userEnabled ? { userFiles: hooks.user.files() } : {}),
     userEnabled: config.userEnabled,
     now,
@@ -109,7 +149,7 @@ export function paragraphPort(
     async list() {
       signal.throwIfAborted()
       const config = store.configuration()
-      return listParagraphs(hooks.pipeline, makeContext(config, hooks.clock()), config)
+      return listParagraphs(hooks.pipeline, () => makeContext(config, hooks.clock()), config, store, answer)
     },
     async propose(changes, baseHash) {
       signal.throwIfAborted()
@@ -119,8 +159,8 @@ export function paragraphPort(
       const list: readonly MemoryParagraphChange[] = Array.isArray(changes)
         ? changes
         : [changes as MemoryParagraphChange]
-      const candidate = file(INDEX, applyParagraphChanges(before.content, list))
-      validateContent(candidate, config, true)
+      const change = paragraphCandidate(before, list, config)
+      const { candidate } = change
       const intent: CommitIntent = {
         origin: 'host',
         actor: actorOf(source),
@@ -132,7 +172,12 @@ export function paragraphPort(
         source,
         changes: list,
       }
-      await checkProposalGuards(hooks.pipeline, intent, makeContext(config, hooks.clock()), signal)
+      await checkProposalGuards(
+        hooks.pipeline,
+        intent,
+        makeContext(config, hooks.clock(), !!change.removalIds),
+        signal,
+      )
       const proposal: MemoryProposal = Object.freeze({
         path: join(root, INDEX),
         baseHash: before.hash,
@@ -140,7 +185,7 @@ export function paragraphPort(
         diff: diff(before.content, candidate.content),
         source,
       })
-      made.set(proposal, { candidate, mode: config.mode, intent })
+      made.set(proposal, { ...change, mode: config.mode, intent })
       return proposal
     },
     async commit(proposal, admission) {
@@ -158,9 +203,11 @@ export function paragraphPort(
         commitHooks(
           hooks.pipeline,
           entry.intent,
-          (now) => makeContext(store.configuration(), now),
+          (now) => makeContext(store.configuration(), now, !!entry.removalIds),
           hooks.clock,
         ),
+        undefined,
+        entry.removalIds,
       )
       return { hash: committed.hash }
     },

@@ -28,7 +28,12 @@ import {
   type SaveSource,
 } from '@agnes/host-infrastructure/refinement-registry'
 import { sha256Hex } from '@agnes/protocol'
-import { liveTargetDeadline, paragraphVisibility, targetDeadline } from './paragraph-visibility.js'
+import {
+  fileRevisionGuard,
+  liveTargetDeadline,
+  paragraphVisibility,
+  targetDeadline,
+} from './paragraph-visibility.js'
 import { paragraphPortOf, reconcileWorkspace, recordedTextHash } from './reconcile.js'
 import { paragraphText, sourceRuleProblem } from './save-rules.js'
 import { reconcileSkillDeletions, saveSkillChange, type WorkspaceSkills } from './skill-update.js'
@@ -379,8 +384,10 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     verdicts['memory-mode'] = 'pass'
     const text = paragraphText(request.entry)
     let listed: MemoryParagraphList
+    let assertFileCurrent: ReturnType<typeof fileRevisionGuard>
     let visible: Awaited<ReturnType<typeof paragraphVisibility>>
     try {
+      assertFileCurrent = fileRevisionGuard(memory, 'REFINEMENT_SAVE_STALE')
       listed = await port.list()
       visible = await paragraphVisibility(memory, 'workspace', listed, registry, deps.clock)
     } catch {
@@ -409,7 +416,10 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
       receipt: { ...base, steps: steps({ ...verdicts, capacity: 'pass' }) },
       ...(override ? { onSaved: override } : {}),
     }
-    if ('existing' in placed) return recordExisting(decision, placed.existing)
+    if ('existing' in placed) {
+      if (!assertFileCurrent) return refused('conflict', 'capacity')
+      return recordExisting({ ...decision, assertFileCurrent }, placed.existing)
+    }
     const verifyTarget =
       replaces === undefined
         ? undefined

@@ -1,3 +1,4 @@
+import { isUtf8 } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
 import {
   chmodSync,
@@ -19,11 +20,64 @@ import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { MemoryEffectAdmission, MemoryFile, MemorySettings, MemorySource } from '@agnes/extension-api'
 import { openCanonicalFileSync, renameWriteThroughSync } from '@agnes/system-node'
-import { defaults, fault, file, settings, storedSettings, validateContent } from './content.js'
+import {
+  defaults,
+  fault,
+  file,
+  isPreExistingMatch,
+  MemoryFault,
+  type PreservedSlice,
+  settings,
+  storedSettings,
+  validateContent,
+  validateRemovalContent,
+} from './content.js'
+import { applyParagraphRemovalsWithSlices, verifiedSingleParagraphRemoval } from './paragraphs.js'
 import { isMemoryName, missing, name, safe } from './paths.js'
 
 const MAX_FILE_BYTES = 1024 * 1024
 const MAX_FILES = 128
+export class FileCountLimit extends MemoryFault {
+  constructor() {
+    super('MEMORY_CONSOLIDATION_REQUIRED')
+  }
+}
+const topicLinks =
+  /\]\(([^)\s]+\.md)(?:#[^)\s]*)?(?:\s+"[^"]*")?\)|\[\[([^\]#]+\.md)(?:#[^\]]*)?\]\]|^\[[^\]]+\]:\s*(\S+\.md)(?:#\S*)?/gm
+
+function removalSlices(
+  before: MemoryFile,
+  candidate: MemoryFile,
+  verifiedRemoval?: boolean | readonly string[],
+) {
+  if (candidate.path !== 'MEMORY.md') return undefined
+  if (verifiedRemoval === true) return verifiedSingleParagraphRemoval(before.content, candidate.content)
+  if (Array.isArray(verifiedRemoval)) {
+    const { content, slices } = applyParagraphRemovalsWithSlices(before.content, verifiedRemoval)
+    if (content === candidate.content) return slices
+  }
+  return undefined
+}
+
+function validateTopicLinks(
+  before: MemoryFile,
+  candidate: MemoryFile,
+  files: readonly MemoryFile[],
+  slices?: readonly PreservedSlice[],
+) {
+  const prior = slices
+    ? Array.from(before.content.matchAll(topicLinks), (match) => ({
+        start: match.index,
+        end: match.index + match[0].length,
+      }))
+    : []
+  for (const match of candidate.content.matchAll(topicLinks)) {
+    const target = name(match[1] ?? match[2] ?? match[3] ?? '')
+    if (target !== candidate.path && files.some((entry) => entry.path === target)) continue
+    if (slices && isPreExistingMatch(match.index, match.index + match[0].length, slices, prior)) continue
+    throw fault('MEMORY_MISSING_TOPIC')
+  }
+}
 
 export class MemoryStore {
   constructor(
@@ -36,7 +90,7 @@ export class MemoryStore {
     safe(this.protectedRoot, this.root)
     mkdirSync(this.root, { recursive: true, mode: 0o700 })
   }
-  private readText(path: string, limit: number, limitCode: string): string | undefined {
+  private readText(path: string, limit: number, limitCode: string, requireUtf8 = false): string | undefined {
     const absolute = join(this.root, path)
     safe(this.protectedRoot, absolute)
     let fd: number | undefined
@@ -52,7 +106,7 @@ export class MemoryStore {
         if (!count) break
         used += count
       }
-      if (used !== size) throw fault('MEMORY_CONFLICT')
+      if (used !== size || (requireUtf8 && !isUtf8(bytes.subarray(0, used)))) throw fault('MEMORY_CONFLICT')
       return bytes.toString('utf8', 0, used)
     } catch (error) {
       if (!missing(error)) throw error
@@ -61,8 +115,11 @@ export class MemoryStore {
       if (fd !== undefined) closeSync(fd)
     }
   }
-  read(path: string): MemoryFile {
-    return file(path, this.readText(name(path), MAX_FILE_BYTES, 'MEMORY_CONSOLIDATION_REQUIRED') ?? '')
+  read(path: string, requireUtf8 = false): MemoryFile {
+    return file(
+      path,
+      this.readText(name(path), MAX_FILE_BYTES, 'MEMORY_CONSOLIDATION_REQUIRED', requireUtf8) ?? '',
+    )
   }
   fileSize(path: string): number | undefined {
     name(path)
@@ -75,7 +132,7 @@ export class MemoryStore {
       throw error
     }
   }
-  files(purpose: 'view' | 'commit' = 'view'): MemoryFile[] {
+  files(purpose: 'view' | 'commit' = 'view', allowOverCount = false): MemoryFile[] {
     safe(this.protectedRoot, this.root)
     if (!existsSync(this.root)) return []
     const userView = this.layer === 'user' && purpose === 'view'
@@ -87,8 +144,16 @@ export class MemoryStore {
       )
       .map((entry) => entry.name)
       .sort()
-    if (paths.length > MAX_FILES) throw fault('MEMORY_CONSOLIDATION_REQUIRED')
-    return paths.map((path) => this.read(path))
+    if (paths.length <= MAX_FILES) return paths.map((path) => this.read(path))
+    if (!allowOverCount) throw new FileCountLimit()
+    // Management can shrink an over-count store. Keep the ordinary enumeration's hard read bound.
+    let bytes = 0
+    return paths.map((path) => {
+      const entry = this.read(path)
+      bytes += entry.bytes
+      if (bytes > MAX_FILES * MAX_FILE_BYTES) throw fault('MEMORY_CONSOLIDATION_REQUIRED')
+      return entry
+    })
   }
   settingsText(): string | undefined {
     try {
@@ -200,7 +265,11 @@ export class MemoryStore {
     }
   }
   /** SQLite owns the lock across processes and releases it on crash; no stale PID markers. */
-  async locked<T>(action: () => T | Promise<T>, signal?: AbortSignal): Promise<T> {
+  async locked<T>(
+    action: () => T | Promise<T>,
+    signal?: AbortSignal,
+    onLockRefusal?: (error: unknown) => never,
+  ): Promise<T> {
     signal?.throwIfAborted()
     this.ensure()
     const path = join(this.root, 'commit.sqlite')
@@ -216,8 +285,13 @@ export class MemoryStore {
           db.exec('BEGIN EXCLUSIVE')
           break
         } catch (error) {
-          if (![5, 6].includes((error as { errcode?: number }).errcode ?? 0) || performance.now() >= deadline)
-            throw fault('MEMORY_BUSY')
+          if (![5, 6].includes((error as { errcode?: number }).errcode ?? 0)) throw fault('MEMORY_BUSY')
+          if (performance.now() >= deadline) {
+            signal?.throwIfAborted()
+            const busy = fault('MEMORY_BUSY')
+            if (onLockRefusal) onLockRefusal(busy)
+            throw busy
+          }
           await delay(10, undefined, { signal })
         }
       }
@@ -251,9 +325,10 @@ export class MemoryStore {
     admission?: MemoryEffectAdmission,
     prepare?: (before: MemoryFile, candidate: MemoryFile) => () => void,
     onPreCommitRefusal?: (error: unknown) => never,
+    verifiedRemoval?: boolean | readonly string[],
   ): Promise<MemoryFile> {
-    // Only provider validation can attest a refusal. Locking, admission, publication and metadata
-    // run outside this boundary, including failures in the final rename itself.
+    // Lock acquisition and provider validation precede the file effect and can attest refusals.
+    // External admission, publication (including rename), and post-write metadata keep their own failure semantics.
     const checked = <T>(validate: () => T): T => {
       try {
         return validate()
@@ -267,35 +342,36 @@ export class MemoryStore {
       if (agentMode && config.mode === 'off') throw fault('MEMORY_DISABLED')
       if (agentMode && config.mode !== agentMode) throw fault('MEMORY_POLICY_CHANGED')
       const current = this.read(candidate.path)
-      validateContent(candidate, config, candidate.path === 'MEMORY.md', agentMode ? undefined : current)
       if (current.hash !== baseHash) throw fault('MEMORY_CONFLICT')
-      const all = this.files('commit')
-      if (!all.some((entry) => entry.path === candidate.path) && all.length + 1 > MAX_FILES)
-        throw fault('MEMORY_CONSOLIDATION_REQUIRED')
-      const bytes =
-        all.filter((entry) => entry.path !== candidate.path).reduce((n, entry) => n + entry.bytes, 0) +
-        candidate.bytes
-      if (bytes > config.totalMaxBytes) throw fault('MEMORY_CONSOLIDATION_REQUIRED')
-      if (candidate.path === 'MEMORY.md') {
-        for (const match of candidate.content.matchAll(
-          /\]\(([^)\s]+\.md)(?:#[^)\s]*)?(?:\s+"[^"]*")?\)|\[\[([^\]#]+\.md)(?:#[^\]]*)?\]\]|^\[[^\]]+\]:\s*(\S+\.md)(?:#\S*)?/gm,
-        )) {
-          const target = name(match[1] ?? match[2] ?? match[3] ?? '')
-          if (target === candidate.path || !all.some((entry) => entry.path === target))
-            throw fault('MEMORY_MISSING_TOPIC')
-        }
+      const slices = removalSlices(
+        current,
+        candidate,
+        verifiedRemoval === true && agentMode ? false : verifiedRemoval,
+      )
+      if (slices) validateRemovalContent(candidate, current, slices)
+      else validateContent(candidate, config, candidate.path === 'MEMORY.md')
+      const all = this.files('commit', !!slices)
+      if (!slices) {
+        if (!all.some((entry) => entry.path === candidate.path) && all.length + 1 > MAX_FILES)
+          throw fault('MEMORY_CONSOLIDATION_REQUIRED')
+        const bytes = all
+          .filter((entry) => entry.path !== candidate.path)
+          .reduce((n, entry) => n + entry.bytes, candidate.bytes)
+        if (bytes > config.totalMaxBytes) throw fault('MEMORY_CONSOLIDATION_REQUIRED')
       }
-      return { current, all }
+      if (candidate.path === 'MEMORY.md') validateTopicLinks(current, candidate, all, slices)
+      return { current, all, removal: !!slices }
     }
     const commit = () => {
       admission?.assertActive()
-      const { current, all } = checked(validateCandidate)
+      const { current, all, removal } = checked(validateCandidate)
       signal?.throwIfAborted()
       let onCommitted: (() => void) | undefined
       this.atomic(join(this.root, candidate.path), candidate.content, () => {
         onCommitted = checked(() => {
           const observe = prepare?.(current, candidate)
-          if (this.read(candidate.path).hash !== baseHash) throw fault('MEMORY_CONFLICT')
+          // A string cut cannot preserve malformed UTF-8 that was decoded with replacement characters.
+          if (this.read(candidate.path, removal).hash !== baseHash) throw fault('MEMORY_CONFLICT')
           return observe
         })
         signal?.throwIfAborted()
@@ -333,6 +409,7 @@ export class MemoryStore {
           }
         : commit,
       signal,
+      onPreCommitRefusal,
     )
   }
 }

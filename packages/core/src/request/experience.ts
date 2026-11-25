@@ -373,8 +373,6 @@ function currentRequestText(surface: readonly SurfaceNode[]): string {
 
 /** Sessions whose last snapshot went without saved entries because the host could not list them. */
 const savedOwed = new WeakSet<SessionImpl>()
-/** A recovered empty listing needs no replacement snapshot. Remember which marker was resolved. */
-const savedResolvedSeq = new WeakMap<SessionImpl, Seq>()
 /** Sessions that already looked for saved entries for a format 1 snapshot. */
 const legacyLooked = new WeakSet<SessionImpl>()
 
@@ -499,7 +497,7 @@ export type ExperienceStamp = Readonly<{
   tombstones: unknown
 }> & {
   savedView?: { digest?: string; required: boolean }
-  delivery?: { legacyLooked: boolean; savedOwed: boolean; resolvedPendingSeq?: Seq }
+  delivery?: { legacyLooked: boolean; savedOwed: boolean }
 }
 
 /** Consume a cold or legacy listing only once the request carrying its notes is durable. */
@@ -508,8 +506,6 @@ export function markExperienceCommitted(s: SessionImpl, stamp?: Pick<ExperienceS
   if (stamp.delivery.legacyLooked) legacyLooked.add(s)
   if (stamp.delivery.savedOwed) savedOwed.add(s)
   else savedOwed.delete(s)
-  if (stamp.delivery.resolvedPendingSeq !== undefined)
-    savedResolvedSeq.set(s, stamp.delivery.resolvedPendingSeq)
 }
 
 /** The state task-experience notes derived now would be derived from. */
@@ -600,9 +596,7 @@ export async function deriveExperienceNotes(
   // A format 1 snapshot never carried saved entries: they are looked for once. A snapshot sent while the
   // host could not list them owes them until a listing succeeds.
   const legacy = seen.snapshot && seen.legacy && !seen.saved && !legacyLooked.has(s)
-  const owedBefore =
-    seen.snapshot &&
-    (savedOwed.has(s) || (seen.savedPending && savedResolvedSeq.get(s) !== seen.savedPendingSeq))
+  const owedBefore = seen.snapshot && (savedOwed.has(s) || seen.savedPending)
   const cold = !seen.snapshot || legacy || owedBefore
   const needsListing = givenSaved.length > 0 || withdrawnSaved.length > 0 || owedBefore
   const verifyListing = stamp && !cacheableRevision(stamp.saved) && s.d.refinement?.workspaceRefs?.entries
@@ -648,12 +642,14 @@ export async function deriveExperienceNotes(
     const delivery = {
       legacyLooked: legacy,
       savedOwed: saved.failed,
-      ...(!saved.failed && seen.savedPending && { resolvedPendingSeq: seen.savedPendingSeq }),
     }
     if (stamp) stamp.delivery = delivery
     else markExperienceCommitted(s, { delivery })
   }
-  if (!seen.snapshot || ((legacy || owedBefore) && !saved.failed && saved.entries.length > 0)) {
+  if (
+    !seen.snapshot ||
+    ((legacy || owedBefore) && !saved.failed && (saved.entries.length > 0 || seen.savedPending))
+  ) {
     const all = [...entries, ...savedAsEntries(s, saved.entries, entries, version)]
     const out = renderExperience(
       { entries: all, control },

@@ -354,9 +354,9 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
       ...(writer ? { lastWriter: writer } : {}),
     }
   }
-  const viewCtx = (now: number, config = store.configuration()): ViewContext => ({
+  const viewCtx = (now: number, config = store.configuration(), allowOverCount = false): ViewContext => ({
     layer: 'workspace',
-    files: store.files(),
+    files: store.files('view', allowOverCount),
     ...(config.userEnabled ? { userFiles: user.files() } : {}),
     userEnabled: config.userEnabled,
     now,
@@ -458,9 +458,11 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
         commitHooks(
           pipeline,
           { origin: 'human', actor, path: leaf, via: 'edit', layer: 'workspace', source: editSource },
-          viewCtx,
+          (now) => viewCtx(now, store.configuration(), leaf === 'MEMORY.md'),
           clock,
         ),
+        undefined,
+        leaf === 'MEMORY.md',
       )
     },
   })

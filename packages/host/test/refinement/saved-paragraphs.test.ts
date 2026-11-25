@@ -207,6 +207,60 @@ describe('saved paragraphs on the memory page', () => {
     expect(registry.read().paragraphs).toEqual([target])
   })
 
+  it('declines human renewal when the editor removed the listed paragraph', async () => {
+    const ws = await workspace()
+    ws.seed(paragraph(A, LESSON_A, T0 + DAY))
+    await ws.write(marked(A, LESSON_A))
+    const before = ws.registry().read()
+    await ws.withSession(async (memory) => {
+      const manage = savedParagraphs(ws)
+      const { stateRevision: _revision, ...legacy } = memory
+      expect((await manage(legacy, ws.root, { action: 'list' })).paragraphs).toMatchObject([
+        { renewable: false },
+      ])
+      await expect(manage(legacy, ws.root, { action: 'renew', paragraphId: A })).rejects.toMatchObject({
+        code: 'MEMORY_PARAGRAPH_NOT_RENEWABLE',
+      })
+      const port = memory.paragraphs!({ sessionKey: 'human-editor', turn: 0 }, new AbortController().signal)
+      const session = {
+        ...memory,
+        paragraphs: () => ({
+          ...port,
+          async list() {
+            const listed = await port.list()
+            await memory.editFile('MEMORY.md', '', listed.hash)
+            return listed
+          },
+        }),
+      }
+      await expect(manage(session, ws.root, { action: 'renew', paragraphId: A })).rejects.toMatchObject({
+        code: 'MEMORY_CONFLICT',
+      })
+    })
+    expect(ws.registry().read()).toEqual(before)
+  })
+
+  it('withdraws a workspace paragraph while preserving an unrelated credential verbatim', async () => {
+    const ws = await workspace()
+    ws.seed(paragraph(A, LESSON_A, T0 + DAY))
+    const invalid = 'password=synthetic-example\r\n'
+    const stored = `${invalid}\n${marked(A, LESSON_A)}\n`
+    await ws.withSession(async (memory) => {
+      writeFileSync(join(memory.root, 'MEMORY.md'), stored)
+    })
+    expect((await ws.run('list')).paragraphs).toMatchObject([{ id: A, hidden: true, renewable: false }])
+    await expect(ws.run('convert', A)).rejects.toMatchObject({ code: 'MEMORY_SECRET_LIKE_CONTENT' })
+    await expect(ws.write(stored.replace(LESSON_A, 'edited'))).rejects.toMatchObject({
+      code: 'MEMORY_SECRET_LIKE_CONTENT',
+    })
+    expect((await ws.run('withdraw', A)).paragraphs).toEqual([])
+    expect(await ws.file()).toBe(invalid)
+    expect(ws.registry().read()).toMatchObject({
+      paragraphs: [{ id: A, state: 'removed' }],
+      revocations: [{ action: 'memory-withdrawn' }],
+    })
+  })
+
   it('keeps an oversized index manageable after lowering the line limit', async () => {
     const ws = await workspace()
     ws.seed(paragraph(A, LESSON_A, T0 + DAY))
@@ -217,6 +271,10 @@ describe('saved paragraphs on the memory page', () => {
     await expect(ws.write('password=synthetic-example\nsecond')).rejects.toMatchObject({
       code: 'MEMORY_SECRET_LIKE_CONTENT',
     })
+    await ws.withSession(async (memory) => {
+      for (let i = 0; i < 128; i++) writeFileSync(join(memory.root, `topic-${i}.md`), 'Topic')
+    })
+    expect((await ws.run('list')).paragraphs).toMatchObject([{ id: A, hidden: true, renewable: false }])
     expect((await ws.run('withdraw', A)).paragraphs).toEqual([])
     expect(await ws.file()).toBe(hand)
   })

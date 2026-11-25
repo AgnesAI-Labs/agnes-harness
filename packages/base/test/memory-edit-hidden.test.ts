@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { ToolRegistry } from '@agnes/core'
 import { actor, fakeProvider, fakeSeams, openSession, textTurn, toolTurn } from '@agnes/core/testkit'
 import type { MemoryFilePort, MemorySession } from '@agnes/extension-api'
@@ -81,6 +82,7 @@ async function setup(
   async function run(
     args: Parameters<typeof editTool.execute>[0] | Parameters<typeof writeTool.execute>[0],
     memory = session,
+    proof = isMemoryPreEffectRefusal,
   ) {
     const name = 'edits' in args ? 'edit' : 'write'
     const registry = new ToolRegistry()
@@ -98,7 +100,7 @@ async function setup(
       registry,
       memory,
       trustedMemorySession: (candidate) => candidate === session,
-      memoryPreEffectProof: isMemoryPreEffectRefusal,
+      memoryPreEffectProof: proof,
       seams: fakeSeams({
         approval: {
           ask: async (request) => ({
@@ -174,6 +176,64 @@ describe('edit through the memory provider with a hidden paragraph', () => {
       expect(text).not.toContain('HIDDEN-PARAGRAPH-BODY')
       expect(await readFile(index, 'utf8')).toBe(STORED.replace('Use pnpm.', 'Use pnpm 10.'))
     },
+  )
+
+  it.each(['write', 'edit'] as const)(
+    'attests lock contention for the current %s invocation',
+    async (name) => {
+      let db: DatabaseSync | undefined
+      const { run, session, index } = await setup(STORED, (n) => {
+        if (n === (name === 'write' ? 1 : 2)) {
+          db = new DatabaseSync(join(session.root, 'commit.sqlite'))
+          db.exec('BEGIN EXCLUSIVE')
+        }
+        return 'approved'
+      })
+      const topic = join(session.root, 'new-topic.md')
+      try {
+        let proved = false
+        const result = await run(
+          name === 'write'
+            ? { path: topic, content: 'New topic.' }
+            : {
+                path: index,
+                edits: [
+                  { oldText: 'Use pnpm.', newText: 'Use pnpm 10.' },
+                  { oldText: 'Bottom line.', newText: 'Edited bottom.' },
+                ],
+              },
+          session,
+          (error, source) => {
+            if ((error as Error)?.message === 'MEMORY_BUSY') {
+              proved = isMemoryPreEffectRefusal(error, source)
+              expect(
+                isMemoryPreEffectRefusal(error, { ...source, toolUseId: `${source.toolUseId}-other` }),
+              ).toBe(false)
+            }
+            return isMemoryPreEffectRefusal(error, source)
+          },
+        )
+        expect(proved).toBe(true)
+        if (name === 'write') {
+          expect(result).toMatchObject({
+            code: 'TOOL_REJECTED_BEFORE_EFFECT',
+            structured: { effect: 'none', code: 'MEMORY_BUSY' },
+          })
+          await expect(readFile(topic)).rejects.toMatchObject({ code: 'ENOENT' })
+        } else {
+          expect(result).toMatchObject({
+            isError: true,
+            structured: { index: 1, written: true, applied: [0], notApplied: [1] },
+          })
+          expect(JSON.stringify(result)).toContain('MEMORY_BUSY')
+          expect(await readFile(index, 'utf8')).toBe(STORED.replace('Use pnpm.', 'Use pnpm 10.'))
+        }
+      } finally {
+        db?.close()
+        await session.close?.()
+      }
+    },
+    15_000,
   )
 
   it('edits the text of a visible managed paragraph, which a whole-file rewrite may not, with nothing hidden', async () => {

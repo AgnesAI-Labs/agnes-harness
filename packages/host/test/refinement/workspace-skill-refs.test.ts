@@ -1,7 +1,11 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { normalizedContentHash, REVIEW_AFTER_MS } from '@agnes/host-infrastructure/refinement-registry'
-import { afterEach, describe, expect, it } from 'vitest'
+import {
+  normalizedContentHash,
+  REVIEW_AFTER_MS,
+  RefinementRegistry,
+} from '@agnes/host-infrastructure/refinement-registry'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { skillDraftOf } from '../../src/runtime/refinement/skill-drafts.js'
 import { rollbackSkillForUser } from '../../src/runtime/refinement/skill-review.js'
 import { createWorkspaceRefs } from '../../src/runtime/refinement/workspace-refs.js'
@@ -76,8 +80,23 @@ describe('saved skills a plan may confirm', () => {
     expect(t.record()?.reviewAfter).toBe(before)
     expect(await t.refs.renew(AT, listed.ref, listed.version)).toBe(true)
     expect(t.record()?.reviewAfter).toBe(t.now.value + REVIEW_AFTER_MS)
-    // A person's edit makes it another version: not renewed at the old one.
-    writeFileSync(t.file, `${readFileSync(t.file, 'utf8')}Also check the types.\n`)
+    // The installed file changes after the read, while renewal waits to update the registry.
+    const renewed = t.record()?.reviewAfter
+    t.now.value++
+    const update = RefinementRegistry.prototype.update
+    const spy = vi.spyOn(RefinementRegistry.prototype, 'update').mockImplementationOnce(function (
+      this: RefinementRegistry,
+      ...args
+    ) {
+      writeFileSync(t.file, `${readFileSync(t.file, 'utf8')}Also check the types.\n`)
+      return update.call(this, ...args)
+    })
+    try {
+      expect(await t.refs.renew(AT, listed.ref, listed.version)).toBe(false)
+      expect(t.record()?.reviewAfter).toBe(renewed)
+    } finally {
+      spy.mockRestore()
+    }
     expect(await t.refs.renew(AT, listed.ref, listed.version)).toBe(false)
     // Switched off by the review: neither listed nor renewed.
     const edited = (await t.refs.list(AT))[0]

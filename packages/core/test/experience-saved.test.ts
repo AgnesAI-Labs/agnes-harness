@@ -548,7 +548,7 @@ describe('entries saved in earlier sessions reach the model through the snapshot
         expect(JSON.stringify(provider.requests[0]?.messages)).not.toContain('(saved)')
         const rowsBefore = await opened.log.scan({ type: 'user/message', toSeq: opened.session.lastSeq })
         expect(JSON.stringify(rowsBefore)).toContain(SAVED_PENDING_LINE)
-        if (mode.startsWith('reopen')) {
+        if (mode === 'reopen') {
           await opened.session.close()
           opened = await openSession({ ...deps, storage: opened.storage })
         }
@@ -579,11 +579,17 @@ describe('entries saved in earlier sessions reach the model through the snapshot
         const body = `(saved) Saved 1: ${mode === 'stale commit' ? 'revised before dispatch' : 'lesson number 1'}`
         const deliveries = mode === 'reopen empty' ? 0 : 1
         expect(JSON.stringify(provider.requests[1]?.messages).split(body)).toHaveLength(1 + deliveries)
+        if (mode === 'reopen empty') {
+          await session.close()
+          opened = await openSession({ ...deps, storage: opened.storage })
+          outage.fail = true
+        }
         await turn()
+        expect(provider.requests).toHaveLength(3)
         expect(p.calls()).toBe(afterRecovery)
         // Later requests still see the already-delivered note in history, exactly once.
         expect(JSON.stringify(provider.requests[2]?.messages).split(body)).toHaveLength(1 + deliveries)
-        const rows = await log.scan({ type: 'user/message', toSeq: session.lastSeq })
+        const rows = await opened.log.scan({ type: 'user/message', toSeq: opened.session.lastSeq })
         expect(rows.filter((row) => JSON.stringify(row.data).includes('(saved)'))).toHaveLength(deliveries)
       } finally {
         await opened.session.close()

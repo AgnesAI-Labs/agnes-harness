@@ -12,7 +12,12 @@ import {
   revocationMatches,
   type SaveSource,
 } from '@agnes/host-infrastructure/refinement-registry'
-import { type Projection, paragraphMarkers, paragraphVisibility } from './paragraph-visibility.js'
+import {
+  fileRevisionGuard,
+  type Projection,
+  paragraphMarkers,
+  paragraphVisibility,
+} from './paragraph-visibility.js'
 import { paragraphPortOf } from './reconcile.js'
 
 /** What a person asks of the saved paragraphs on the memory page. */
@@ -111,7 +116,7 @@ export async function describeParagraphs(
       id,
       text,
       validity: status,
-      renewable,
+      renewable: renewable && typeof memory.stateRevision === 'function',
       ...(status === 'valid' && projection?.visibleText === null ? { hidden: true as const } : {}),
       ...(projection?.nextExpiry !== undefined ? { nextExpiry: projection.nextExpiry } : {}),
       ...(record
@@ -131,6 +136,13 @@ export async function verifyRenewal(
   id: string,
 ) {
   const snap = registry.read()
+  let assertCurrent: ReturnType<typeof fileRevisionGuard>
+  try {
+    assertCurrent = fileRevisionGuard(memory)
+  } catch {
+    throw fault('MEMORY_PARAGRAPH_NOT_RENEWABLE')
+  }
+  if (!assertCurrent) throw fault('MEMORY_PARAGRAPH_NOT_RENEWABLE')
   const listed = await port?.list()
   const paragraph = listed?.paragraphs.find((p) => p.id === id)
   if (!listed || !paragraph) throw fault('MEMORY_PARAGRAPH_NOT_RENEWABLE')
@@ -138,6 +150,7 @@ export async function verifyRenewal(
   if (!projection || !renewalStatus(snap, paragraph, projection, clock()).renewable)
     throw fault('MEMORY_PARAGRAPH_NOT_RENEWABLE')
   return {
+    assertCurrent,
     expectedRevision: snap.revision,
     ...(projection.nextExpiry === undefined ? {} : { before: projection.nextExpiry }),
     requireUnrevoked: true,

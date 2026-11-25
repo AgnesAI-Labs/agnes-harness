@@ -162,7 +162,7 @@ export type MemoryParagraphPort = Readonly<{
 export interface MemorySession {
   readonly root: string
   /** Optional since 5.24.0. Synchronous fingerprint of workspace and user indexes, referenced topics and settings.
-   * Without it callers must read the provider again on each request. */
+   * Providers without this method are read afresh on each request. Renewal and duplicate-save receipts require this check at registry commit. */
   stateRevision?(): string
   /** Release resources opened lazily by this session; called after in-flight work drains. */
   close?(): void | Promise<void>

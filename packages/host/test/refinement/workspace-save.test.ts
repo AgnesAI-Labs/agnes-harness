@@ -91,7 +91,12 @@ async function workspace(o: { mode?: 'off' | 'ask' | 'auto'; approvals?: Refinem
       ...(approvals ? { approvals } : {}),
       clock,
     })
-  await open().configure({ mode: o.mode ?? 'auto' })
+  const session = openSession()
+  try {
+    await session.configure({ mode: o.mode ?? 'auto' })
+  } finally {
+    await session.close?.()
+  }
   const file = async () => (await open().readFile('MEMORY.md')).content
   const writeStored = async (content: string) => {
     const memory = open()
@@ -224,6 +229,38 @@ describe('the save-to-workspace decision order', () => {
     for (const content of ['Use PNPM', 'Use npm'])
       expect(await put(content)).toMatchObject({ outcome: 'refused', reason: 'human-edited' })
     expect(await ws.file()).toBe(edited)
+  })
+
+  it('requires a current file revision before recording a duplicate', async () => {
+    const ws = await workspace()
+    const save = ws.service()
+    expect(await save.save(request(ws))).toMatchObject({ outcome: 'saved' })
+    ws.setWrap(({ stateRevision: _revision, ...session }) => session)
+    expect(await save.save(request(ws))).toMatchObject({ outcome: 'refused', reason: 'conflict' })
+    const editor = ws.open()
+    try {
+      const stored = await editor.readFile('MEMORY.md')
+      const edited = stored.content.replace(BODY, 'A human edit.')
+      ws.setWrap((session) => ({
+        ...session,
+        paragraphs(source, signal) {
+          const port = session.paragraphs!(source, signal)
+          if (source.sessionKey !== 'session-1') return port
+          return {
+            ...port,
+            async list() {
+              const listed = await port.list()
+              if (listed.hash === stored.hash) await editor.editFile('MEMORY.md', edited, listed.hash)
+              return listed
+            },
+          }
+        },
+      }))
+      expect(await save.save(request(ws))).toMatchObject({ outcome: 'refused', reason: 'human-edited' })
+      expect((await editor.readFile('MEMORY.md')).content).toBe(edited)
+    } finally {
+      await editor.close?.()
+    }
   })
 
   it('refuses a duplicate whose placement read overlaps a withdrawal', async () => {

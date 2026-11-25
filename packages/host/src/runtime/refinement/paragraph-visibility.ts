@@ -13,6 +13,26 @@ import {
 } from '@agnes/host-infrastructure/refinement-registry'
 import { registryView } from './registry-view.js'
 
+/** Capture the provider revision before listing and verify it again inside the registry transaction. */
+export function fileRevisionGuard(
+  memory: MemorySession | undefined,
+  unreadable = 'REGISTRY_REVISION_CONFLICT',
+) {
+  if (typeof memory?.stateRevision !== 'function') return undefined
+  const before = memory.stateRevision()
+  if (typeof before !== 'string') return undefined
+  return () => {
+    let current: string | undefined
+    try {
+      current = memory.stateRevision?.()
+    } catch {
+      throw Object.assign(new Error(unreadable), { code: unreadable })
+    }
+    if (current !== before)
+      throw Object.assign(new Error('REGISTRY_REVISION_CONFLICT'), { code: 'REGISTRY_REVISION_CONFLICT' })
+  }
+}
+
 type Layer = 'workspace' | 'user'
 type Span = { start: number; end: number }
 type Validity = (id: string) => MemoryParagraphValidity

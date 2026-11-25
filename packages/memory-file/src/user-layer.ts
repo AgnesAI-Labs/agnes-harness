@@ -10,16 +10,10 @@ import type {
 } from '@agnes/extension-api'
 import { checkProposalGuards, commitHooks } from './commit-hooks.js'
 import { formatLifecycleOmission } from './consistency.js'
-import { defaults, diff, fault, file, validateContent } from './content.js'
+import { defaults, diff, fault, file } from './content.js'
 import type { MetaStore } from './meta.js'
-import { listParagraphs } from './paragraph-port.js'
-import {
-  applyParagraphChanges,
-  markerLines,
-  omissionLine,
-  parseParagraphs,
-  validityOf,
-} from './paragraphs.js'
+import { listParagraphs, paragraphCandidate } from './paragraph-port.js'
+import { markerLines, omissionLine, parseParagraphs, validityOf } from './paragraphs.js'
 import type { CommitIntent, MemoryClock, MemoryPipeline, ViewContext } from './pipeline.js'
 import type { MemoryStore } from './store.js'
 import { buildView, type HideRange } from './view.js'
@@ -162,19 +156,14 @@ export function userParagraphPort(
   const answer = validityOf(view)
   const made = new WeakMap<
     MemoryProposal,
-    { candidate: MemoryFile; intent: CommitIntent; puts: ReadonlySet<string> }
+    { candidate: MemoryFile; intent: CommitIntent; puts: ReadonlySet<string>; removalIds?: readonly string[] }
   >()
   const userCapacityError = (error: unknown): never => {
     if ((error as { code?: unknown })?.code === 'MEMORY_CONSOLIDATION_REQUIRED')
       throw fault('MEMORY_USER_BUDGET')
     throw error
   }
-  const assertUserBudget = (candidate: MemoryFile, puts: ReadonlySet<string>, before: MemoryFile) => {
-    try {
-      validateContent(candidate, user.configuration(), true, puts.size ? undefined : before)
-    } catch (error) {
-      userCapacityError(error)
-    }
+  const assertUserBudget = (candidate: MemoryFile, puts: ReadonlySet<string>) => {
     // A Host that gives the sections in force to the model itself shows none of them in this layer,
     // so a put takes no room in what the agent is shown.
     if (puts.size && view?.delivers !== true) {
@@ -184,8 +173,8 @@ export function userParagraphPort(
     }
   }
   const actor = source.maintenance ? `host:${source.maintenance}` : `host:${source.sessionKey}`
-  const makeContext = (now: number): ViewContext => {
-    const files = user.files()
+  const makeContext = (now: number, allowOverCount = false): ViewContext => {
+    const files = user.files('view', allowOverCount)
     return {
       layer: 'user',
       files,
@@ -199,7 +188,13 @@ export function userParagraphPort(
   return Object.freeze<MemoryParagraphPort>({
     async list() {
       signal.throwIfAborted()
-      return listParagraphs(hooks.pipeline, makeContext(hooks.clock()), workspace.configuration())
+      return listParagraphs(
+        hooks.pipeline,
+        () => makeContext(hooks.clock()),
+        workspace.configuration(),
+        user,
+        answer,
+      )
     },
     async propose(changes, baseHash) {
       signal.throwIfAborted()
@@ -208,9 +203,15 @@ export function userParagraphPort(
       const list: readonly MemoryParagraphChange[] = Array.isArray(changes)
         ? changes
         : [changes as MemoryParagraphChange]
-      const candidate = file(INDEX, applyParagraphChanges(before.content, list))
+      let change: ReturnType<typeof paragraphCandidate>
+      try {
+        change = paragraphCandidate(before, list, user.configuration())
+      } catch (error) {
+        return userCapacityError(error)
+      }
+      const { candidate } = change
       const puts = new Set(list.flatMap((change) => (change.op === 'put' ? [change.id] : [])))
-      assertUserBudget(candidate, puts, before)
+      assertUserBudget(candidate, puts)
       const intent: CommitIntent = {
         origin: 'host',
         actor,
@@ -222,7 +223,12 @@ export function userParagraphPort(
         source,
         changes: list,
       }
-      await checkProposalGuards(hooks.pipeline, intent, makeContext(hooks.clock()), signal)
+      await checkProposalGuards(
+        hooks.pipeline,
+        intent,
+        makeContext(hooks.clock(), !!change.removalIds),
+        signal,
+      )
       const proposal: MemoryProposal = Object.freeze({
         path: join(user.root, INDEX),
         baseHash: before.hash,
@@ -230,7 +236,7 @@ export function userParagraphPort(
         diff: diff(before.content, candidate.content),
         source,
       })
-      made.set(proposal, { candidate, intent, puts })
+      made.set(proposal, { ...change, intent, puts })
       return proposal
     },
     async commit(proposal, admission) {
@@ -244,10 +250,15 @@ export function userParagraphPort(
         false,
         signal,
         admission,
-        commitHooks(hooks.pipeline, entry.intent, makeContext, hooks.clock, () =>
-          assertUserBudget(entry.candidate, entry.puts, entry.intent.before),
+        commitHooks(
+          hooks.pipeline,
+          entry.intent,
+          (now) => makeContext(now, !!entry.removalIds),
+          hooks.clock,
+          () => assertUserBudget(entry.candidate, entry.puts),
         ),
         userCapacityError,
+        entry.removalIds,
       )
       return { hash: committed.hash }
     },

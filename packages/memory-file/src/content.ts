@@ -58,27 +58,60 @@ export function settings(input: Partial<MemorySettings>): MemorySettings {
   return Object.freeze(result)
 }
 
-/** Conservative rejection of common credentials; not a universal secret detector. */
-export function validateContent(
-  value: MemoryFile,
-  limits: MemorySettings,
-  index: boolean,
-  shrinkingFrom?: MemoryFile,
+const secretPattern =
+  /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----|\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\b|(?:api[_ -]?key|access[_ -]?token|password|secret)\s*[:=]\s*["']?[^\s"']{8,}/i
+const allSecrets = new RegExp(secretPattern.source, `${secretPattern.flags}g`)
+
+/** Offsets in the original and resulting strings use UTF-16 code units, as do RegExp match indices. */
+export type PreservedSlice = { dstStart: number; srcStart: number; length: number }
+type Span = { start: number; end: number }
+
+export function isPreExistingMatch(
+  start: number,
+  end: number,
+  slices: readonly PreservedSlice[],
+  priorSpans: readonly Span[],
+): boolean {
+  const slice = slices.find((s) => s.dstStart <= start && end <= s.dstStart + s.length)
+  if (!slice) return false
+  const offset = slice.srcStart - slice.dstStart
+  // Match spans are ordered by their position in the original file.
+  let lo = 0
+  let hi = priorSpans.length
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2)
+    if (priorSpans[mid]!.start < start + offset) lo = mid + 1
+    else hi = mid
+  }
+  const prior = priorSpans[lo]
+  return prior?.start === start + offset && prior.end === end + offset
+}
+
+export function validateRemovalContent(
+  candidate: MemoryFile,
+  before: MemoryFile,
+  slices: readonly PreservedSlice[],
 ): void {
-  const shrinkingIndex =
-    index && shrinkingFrom && value.bytes < shrinkingFrom.bytes && value.lines < shrinkingFrom.lines
+  if (candidate.bytes >= before.bytes || candidate.lines > before.lines)
+    throw fault('MEMORY_CONSOLIDATION_REQUIRED')
+  const prior = Array.from(before.content.matchAll(allSecrets), (m) => ({
+    start: m.index,
+    end: m.index + m[0].length,
+  }))
+  for (const match of candidate.content.matchAll(allSecrets)) {
+    if (!isPreExistingMatch(match.index, match.index + match[0].length, slices, prior))
+      throw fault('MEMORY_SECRET_LIKE_CONTENT')
+  }
+}
+
+/** Conservative rejection of common credentials; not a universal secret detector. */
+export function validateContent(value: MemoryFile, limits: MemorySettings, index: boolean): void {
+  if (secretPattern.test(value.content)) throw fault('MEMORY_SECRET_LIKE_CONTENT')
   if (
-    !shrinkingIndex &&
-    (value.bytes > (index ? limits.indexMaxBytes : limits.topicMaxBytes) ||
-      (index && value.lines > limits.indexMaxLines))
+    value.bytes > (index ? limits.indexMaxBytes : limits.topicMaxBytes) ||
+    (index && value.lines > limits.indexMaxLines)
   )
     throw fault('MEMORY_CONSOLIDATION_REQUIRED')
-  if (
-    /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----|\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16})\b|(?:api[_ -]?key|access[_ -]?token|password|secret)\s*[:=]\s*["']?[^\s"']{8,}/i.test(
-      value.content,
-    )
-  )
-    throw fault('MEMORY_SECRET_LIKE_CONTENT')
 }
 
 export function indexContentValid(entry: MemoryFile, config: MemorySettings): boolean {

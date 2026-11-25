@@ -43,7 +43,7 @@ Do not start a line of your own with `<!-- refinement:` or `<!-- /refinement:`. 
 **On the memory page.** In **Memory files**, the **Saved task experience** section lists each saved paragraph with whether the agent sees it, its review date and who saved it. The page refreshes at the review date or an earlier expiry annotation, including an annotation above the opening marker. A saved summary of a changed or deleted topic stays hidden until the summary is updated. For each one:
 
 - **Renew** starts a new 30-day review period. The file is not changed.
-- **Withdraw** removes the paragraph from the file and records that you took it back: automatic and model saves of the same content are refused from then on. Only your own save brings it back.
+- **Withdraw** removes the paragraph from the file and records that you took it back: automatic and model saves of the same content are refused from then on. Only your own save brings it back. A withdrawal can preserve an unrelated credential-like line or broken topic link already in the index. It must leave that text intact and introduce no new invalid content.
 - **Make ordinary** takes the marker lines off and keeps the text as ordinary memory, with no review date.
 
 These work in every memory mode, like the editor, and also while task experience is off. Deleting a saved paragraph in the editor, markers and all, counts as taking it back as well; removing only the marker lines makes it ordinary memory. Both are recorded the next time a session opens in the workspace.

@@ -113,7 +113,7 @@ export function recordExisting(
   input: Pick<
     ParagraphCommit,
     'registry' | 'decided' | 'receipt' | 'clock' | 'switchCurrent' | 'assertAllowed' | 'onSaved'
-  >,
+  > & { assertFileCurrent?: () => void },
   existing: ExistingParagraph,
 ): SaveReceipt {
   const receipt: SaveReceipt = {
@@ -134,6 +134,7 @@ export function recordExisting(
       Math.min(existing.nextExpiry ?? Infinity, dependencyDeadline(draft, [existing.id, ...existing.refs]))
     )
       throw fault('REGISTRY_REVISION_CONFLICT')
+    input.assertFileCurrent?.()
     putReceipt(draft, receipt)
   }, input.decided.revision)
   return receipt

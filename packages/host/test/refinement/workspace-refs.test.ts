@@ -406,6 +406,41 @@ describe('renewing a confirmed entry', () => {
     })
   })
 
+  it('refuses automatic renewal when the editor removes the paragraph during listing', async () => {
+    const record = paragraph()
+    const t = setup({ paragraphs: [record] })
+    const session = fileProvider().open({
+      home: scratch(),
+      workspaceRoot: ROOT,
+      sessionKey: AT.key,
+      validity: registryView(t.registry, t.clock),
+    })
+    try {
+      await session.configure({ mode: 'auto' })
+      await session.editFile(
+        'MEMORY.md',
+        indexText({ [record.id]: TEXT }),
+        (await session.readFile('MEMORY.md')).hash,
+      )
+      const port = session.paragraphs!({ sessionKey: AT.key, turn: 0 }, new AbortController().signal)
+      t.where.memory = {
+        ...session,
+        paragraphs: () => ({
+          ...port,
+          async list() {
+            const listed = await port.list()
+            await session.editFile('MEMORY.md', '', listed.hash)
+            return listed
+          },
+        }),
+      }
+      expect(await t.refs.renew(AT, `workspace-memory/${record.id}`, sha256Hex(TEXT))).toBe(false)
+      expect(t.registry.read().paragraphs).toEqual([record])
+    } finally {
+      await session.close?.()
+    }
+  })
+
   it('a paragraph a person deleted from the file is not renewed', async () => {
     const t = setup({ paragraphs: [paragraph()], memory: memory({}).session })
     const before = readFileSync(registryFile(t.dataDir), 'utf8')

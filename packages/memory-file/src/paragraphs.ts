@@ -1,5 +1,5 @@
 import type { MemoryParagraphValidity, MemoryValidityView } from '@agnes/extension-api'
-import { fault, hash, omissionLine } from './content.js'
+import { fault, hash, omissionLine, type PreservedSlice } from './content.js'
 import { buildView, type HideRange, replaceInMemoryView, type Segment } from './view.js'
 
 /**
@@ -300,6 +300,14 @@ const wrap = (id: string, text: string, newline: boolean) =>
  * as the append left it; callers must not rely on an undo restoring an earlier hash.
  */
 export function applyParagraphChanges(stored: string, changes: readonly ParagraphChange[]): string {
+  return changeParagraphs(stored, changes)
+}
+
+function changeParagraphs(
+  stored: string,
+  changes: readonly ParagraphChange[],
+  onRemove?: (start: number, end: number) => void,
+): string {
   if (!changes.length) throw fault('MEMORY_PARAGRAPH_INVALID')
   const ids = new Set<string>()
   for (const change of changes) {
@@ -335,11 +343,60 @@ export function applyParagraphChanges(stored: string, changes: readonly Paragrap
       continue
     }
     if (!found) throw fault('MEMORY_PARAGRAPH_NOT_FOUND')
-    let before = text.slice(0, found.start)
-    const after = text.slice(found.end)
-    if (after === '' && text[found.end - 1] !== '\n' && before.endsWith('\n\n')) before = before.slice(0, -2)
-    else if (before.endsWith('\n\n') && (after === '' || after.startsWith('\n'))) before = before.slice(0, -1)
-    text = before + after
+    const start = removalStart(text, found)
+    onRemove?.(start, found.end)
+    text = text.slice(0, start) + text.slice(found.end)
   }
   return text
+}
+
+function removalStart(text: string, { start, end }: ParsedParagraph): number {
+  if (!text.endsWith('\n\n', start)) return start
+  if (end === text.length && text[end - 1] !== '\n') return start - 2
+  if (end === text.length || text[end] === '\n') return start - 1
+  return start
+}
+
+/** Track which ranges still come from the original file after each successive cut. */
+export function applyParagraphRemovalsWithSlices(stored: string, ids: readonly string[]) {
+  let slices: PreservedSlice[] = [{ dstStart: 0, srcStart: 0, length: stored.length }]
+  const changes = ids.map((id) => ({ op: 'remove' as const, id }))
+  const content = changeParagraphs(stored, changes, (start, end) => {
+    const kept: PreservedSlice[] = []
+    for (const { dstStart, srcStart, length } of slices) {
+      const left = Math.min(dstStart + length, start) - dstStart
+      if (left > 0) kept.push({ dstStart, srcStart, length: left })
+      const right = Math.max(dstStart, end)
+      if (right < dstStart + length)
+        kept.push({
+          dstStart: right - (end - start),
+          srcStart: srcStart + (right - dstStart),
+          length: dstStart + length - right,
+        })
+    }
+    slices = kept
+  })
+  return { content, slices }
+}
+
+export function verifiedSingleParagraphRemoval(
+  stored: string,
+  candidate: string,
+): PreservedSlice[] | undefined {
+  const removed = stored.length - candidate.length
+  if (removed <= 0) return undefined
+  // Compare the common prefix and suffix once, including when many paragraphs have the same length.
+  let prefixEnd = 0
+  while (prefixEnd < candidate.length && stored[prefixEnd] === candidate[prefixEnd]) prefixEnd++
+  let suffixStart = candidate.length
+  while (suffixStart > 0 && stored[suffixStart + removed - 1] === candidate[suffixStart - 1]) suffixStart--
+  for (const paragraph of parseParagraphs(stored).paragraphs) {
+    const start = removalStart(stored, paragraph)
+    if (paragraph.end - start === removed && start <= prefixEnd && start >= suffixStart)
+      return [
+        { dstStart: 0, srcStart: 0, length: start },
+        { dstStart: start, srcStart: paragraph.end, length: stored.length - paragraph.end },
+      ]
+  }
+  return undefined
 }

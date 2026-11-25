@@ -9,7 +9,7 @@ import {
   type RegistrySkill,
 } from '@agnes/host-infrastructure/refinement-registry'
 import { sha256Hex } from '@agnes/protocol'
-import { paragraphVisibility } from './paragraph-visibility.js'
+import { fileRevisionGuard, paragraphVisibility } from './paragraph-visibility.js'
 import { registryView } from './registry-view.js'
 import { SECRET_LIKE } from './save-rules.js'
 import { workspaceSkillText } from './skill-drafts.js'
@@ -298,6 +298,13 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
       const beforeValidity = validity.revision()
       const reviewAfter = dependencyDeadline(snap, [id])
       if (deps.clock() >= reviewAfter) return false
+      let assertCurrent: ReturnType<typeof fileRevisionGuard>
+      try {
+        assertCurrent = fileRevisionGuard(where.memory)
+      } catch {
+        return false
+      }
+      if (!assertCurrent) return false
       // Recheck the exact visible version the planner confirmed.
       const stored = await storedParagraphs(
         where.memory,
@@ -312,6 +319,7 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
         registry.renew(
           { paragraphId: id },
           {
+            assertCurrent,
             expectedRevision: snap.revision,
             before: Math.min(reviewAfter, entry.nextExpiry ?? Infinity),
             requireUnrevoked: true,
@@ -360,14 +368,17 @@ function renewSkill(
   const name = ref.slice(SKILL_REF.length)
   const snap = registry.read()
   const found = snap.skills.find((k) => k.name === name && k.state === 'active' && clock() < k.reviewAfter)
-  if (!found) return false
-  const text = installedText(workspaceRoot, name)
-  if (text === undefined || normalizedContentHash(text) !== version) return false
+  const versionMatches = () => {
+    const text = installedText(workspaceRoot, name)
+    return text !== undefined && normalizedContentHash(text) === version
+  }
+  if (!found || !versionMatches()) return false
   try {
     registry.update((draft) => {
       const skill = draft.skills.find((k) => k.name === name && k.state === 'active')
+      if (!skill || !versionMatches()) throw new Error('not-renewable')
       const now = clock()
-      if (!skill || now >= skill.reviewAfter) throw new Error('not-renewable')
+      if (now >= skill.reviewAfter) throw new Error('not-renewable')
       skill.reviewAfter = now + REVIEW_AFTER_MS
     }, snap.revision)
     return true

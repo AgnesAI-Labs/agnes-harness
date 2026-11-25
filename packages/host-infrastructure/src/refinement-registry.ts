@@ -459,6 +459,7 @@ export class RefinementRegistry {
       before?: number
       requireUnrevoked?: boolean
       dependencyIds?: readonly string[]
+      assertCurrent?: () => void
     },
   ): void {
     this.transact((draft) => {
@@ -476,6 +477,7 @@ export class RefinementRegistry {
         now >= dependencyDeadline(draft, opts?.dependencyIds ?? [])
       )
         throw failure('REGISTRY_ENTRY_NOT_RENEWABLE')
+      opts?.assertCurrent?.()
       record.reviewAfter = now + REVIEW_AFTER_MS
     }, opts?.expectedRevision)
   }
