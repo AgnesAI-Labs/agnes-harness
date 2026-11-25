@@ -1,9 +1,10 @@
+import { projectChildStatus } from '@agnes/core-child-control/child/status-projection'
 import { requireChildControl } from '@agnes/core-child-control/child/store'
 import { isTerminalChildState } from '@agnes/core-child-control/child/types'
 import { sha256Hex } from '@agnes/core-common/request/hash'
 import { CoreError } from '@agnes/core-common/types'
-import type { ChildHandle } from '@agnes/core-effects/effects/tool-context'
-import type { ChildTaskRecord } from '@agnes/extension-api'
+import type { ChildHandle, ChildStatus } from '@agnes/core-effects/effects/tool-context'
+import type { ChildAgentListing, ChildTaskRecord } from '@agnes/extension-api'
 import type { Actor } from '@agnes/protocol'
 import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
@@ -11,7 +12,7 @@ import { noteChildIdle } from './idle-retirement.js'
 import { ChildLifecycleControls, childControls } from './pause-control.js'
 import { recordedChildRole } from './roles.js'
 import { childBackend } from './sessions.js'
-import { type Checkpoint, checkpointOpenOptions } from './status.js'
+import { type Checkpoint, checkpointOpenOptions, humanChildState, requireOpenWorkspace } from './status.js'
 
 type Owner = {
   parent: SessionImpl
@@ -135,6 +136,157 @@ export function retainAttachedChild(child?: SessionImpl) {
   if (child) retainers.get(child)?.()
 }
 
+export async function admitChildContinuation(
+  parent: SessionImpl,
+  childKey: string,
+  owns: (record: ChildTaskRecord) => boolean,
+): Promise<void> {
+  const store = requireChildControl(parent.d.log.storage)
+  const record = await store.lookupByKey(childKey)
+  if (!record || !owns(record)) throw new CoreError('E_CHILD_NOT_FOUND', 'Child is not owned by this parent')
+  if (isTerminalChildState(record.state) || record.state === 'cancelling')
+    throw new CoreError('E_UNSUPPORTED', 'Child admission has terminated')
+  if (record.state !== 'idle' && record.state !== 'interrupted') return
+  if (
+    !(await store.casState(childKey, record.stateRevision, 'ready', { maxFanOut: parent.preset.maxFanOut }))
+  )
+    throw new CoreError('E_CAS', 'Child continuation changed during admission')
+}
+
+export async function readHumanChildState(
+  parent: SessionImpl,
+  childKey: string,
+  owns: (record: ChildTaskRecord) => boolean,
+  child: SessionImpl | undefined,
+  continuable: boolean,
+) {
+  const record = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
+  if (!record || !owns(record)) throw new CoreError('E_CHILD_NOT_FOUND', 'Child is not owned by this parent')
+  return humanChildState(parent, record, child, continuable || record.state === 'idle')
+}
+
+export async function listLocalChildren(
+  parent: SessionImpl,
+  port: {
+    resident(key: string): { idle(): boolean } | undefined
+    humanStopped(key: string): boolean
+    inspect(key: string): Promise<ChildStatus | null>
+  },
+): Promise<readonly ChildAgentListing[]> {
+  const rows = await requireChildControl(parent.d.log.storage).listByParent(parent.key)
+  return Promise.all(
+    rows.map(async (row) => {
+      const resident = port.resident(row.childKey)
+      const text = (await port.inspect(row.childKey))?.text
+      const status = projectChildStatus(row, {
+        humanStopped: port.humanStopped(row.childKey),
+        residentIdle: resident?.idle() === true,
+      }).status
+      return {
+        id: row.childKey,
+        providerId: 'in-process',
+        status,
+        continuable: resident !== undefined || row.state === 'idle',
+        ...(row.inputText.trim() ? { label: row.inputText.trim().split('\n', 1)[0]!.slice(0, 80) } : {}),
+        ...(text ? { text } : {}),
+      }
+    }),
+  )
+}
+
+export async function throwMissingContinuable(
+  parent: SessionImpl,
+  childKey: string,
+  owns: (record: ChildTaskRecord) => boolean,
+): Promise<never> {
+  const record = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
+  if (record && owns(record))
+    throw new CoreError('E_UNSUPPORTED', `child ${childKey} is ${record.state} and not continuable`, {
+      childKey,
+      state: record.state,
+    })
+  throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+}
+
+export async function disposeLocalChildren(
+  parent: SessionImpl,
+  keys: Iterable<string>,
+  port: {
+    isResident(key: string): boolean
+    session(key: string): SessionImpl | undefined
+    drop(key: string, child: SessionImpl): Promise<void>
+    clearHandle(key: string): void
+    cancel(key: string): Promise<void>
+  },
+) {
+  return Promise.allSettled(
+    [...keys].map(async (key) => {
+      if (await preserveOnParentClose(parent, key, port.isResident(key))) {
+        const child = port.session(key)
+        if (child) await port.drop(key, child)
+        else port.clearHandle(key)
+        return
+      }
+      await port.cancel(key)
+    }),
+  )
+}
+
+export async function preserveOnParentClose(
+  parent: SessionImpl,
+  childKey: string,
+  isResident: boolean,
+): Promise<boolean> {
+  const record = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
+  if (!record) return false
+  return record.state === 'paused' || (record.state === 'idle' && isResident)
+}
+
+export async function reopenRetainedResident<T>(
+  parent: SessionImpl,
+  childKey: string,
+  port: {
+    owns(record: ChildTaskRecord): boolean
+    resident(key: string): T | undefined
+    open(
+      record: ChildTaskRecord,
+      options: { parent: string; cwd: string; input: string; resident: true; recovering: true },
+    ): Promise<ChildHandle>
+    resumeRole(key: string): Promise<ChildHandle>
+    markIdle(key: string, idle: boolean): void
+  },
+): Promise<T | undefined> {
+  const record = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
+  if (!record || !port.owns(record)) return undefined
+  if (record.state !== 'idle' && record.state !== 'interrupted') return undefined
+  if (record.state !== 'idle') {
+    const [row] = await parent.d.log.storage.scan(childKey, {
+      type: 'x/core/child-retained',
+      order: 'desc',
+      limit: 1,
+    })
+    const retained =
+      row?.origin === 'system' &&
+      row.trust === 'trusted' &&
+      (row.data as { childKey?: string }).childKey === childKey
+    if (!retained) return undefined
+  }
+  await requireOpenWorkspace(parent, record)
+  if (await recordedChildRole(parent, childKey)) {
+    await port.resumeRole(childKey)
+    return port.resident(childKey)
+  }
+  await port.open(record, {
+    parent: parent.key,
+    cwd: record.cwd,
+    input: record.inputText,
+    resident: true,
+    recovering: true,
+  })
+  port.markIdle(childKey, record.state === 'idle')
+  return port.resident(childKey)
+}
+
 export async function activateCheckpointChild(
   parent: SessionImpl,
   record: ChildTaskRecord,
@@ -143,14 +295,17 @@ export async function activateCheckpointChild(
     cached(): ChildHandle | undefined
     legacyResume(): Promise<ChildHandle>
     open(options: ReturnType<typeof checkpointOpenOptions>): Promise<ChildHandle>
+    markIdle?(): void
     pump(): void
   },
 ) {
   const cached = port.cached()
   if (!cached && checkpoint && !(await recordedChildRole(parent, record.childKey))) {
     const handle = await port.open(checkpointOpenOptions(parent, record, checkpoint))
-    if (record.state === 'idle') port.pump()
-    else void handle.run(record.inputText).catch(bestEffort(parent.d.logger, 'checkpoint-resume'))
+    if (record.state === 'idle') {
+      port.markIdle?.()
+      port.pump()
+    } else void handle.run(record.inputText).catch(bestEffort(parent.d.logger, 'checkpoint-resume'))
   } else if (cached && record.state === 'idle') port.pump()
   else await port.legacyResume()
 }
@@ -162,6 +317,7 @@ export function createFactoryLifecycleControls(
     handle(key: string): ChildHandle | undefined
     resumeUnpaused(key: string): Promise<ChildHandle>
     open(record: ChildTaskRecord, options: ReturnType<typeof checkpointOpenOptions>): Promise<ChildHandle>
+    markIdle(key: string): void
     pump(key: string): void
     release(key: string, outcome: 'completed' | 'cancelled' | 'failed'): Promise<void>
   },
@@ -173,6 +329,7 @@ export function createFactoryLifecycleControls(
         cached: () => port.handle(record.childKey),
         legacyResume: () => port.resumeUnpaused(record.childKey),
         open: (options) => port.open(record, options),
+        markIdle: () => port.markIdle(record.childKey),
         pump: () => port.pump(record.childKey),
       }),
     release: port.release,

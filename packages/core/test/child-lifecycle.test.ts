@@ -428,3 +428,92 @@ it('reopened children cannot recover full access from a copied preset without th
     await second.close()
   }
 })
+
+it('preserves idle resident and paused checkpoint children across parent close and reopens them on resume/sendMessage', async () => {
+  const storage = new MemoryStorage()
+  const provider = Object.assign(
+    fakeProvider([
+      textTurn('idle turn 1'),
+      textTurn('paused turn 1'),
+      textTurn('idle turn 2'),
+      textTurn('paused turn 2'),
+    ]),
+    { models: () => [catalogue()] },
+  )
+  const preset = { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 1, maxFanOut: 8 }
+  const first = kernel({ storage, provider, preset })
+  const parent1 = await first.session('resume-parent', sessionOpts)
+  const idleChild = await parent1.d.children.create({
+    parent: parent1.key,
+    cwd: '/w',
+    input: 'keep idle',
+    resident: true,
+  })
+  await idleChild.run('keep idle')
+  const pausedChild = await parent1.d.children.create({
+    parent: parent1.key,
+    cwd: '/w',
+    input: 'keep paused',
+    resident: true,
+  })
+  await pausedChild.run('keep paused')
+  await parent1.d.children.pause!(pausedChild.key, { reason: 'parent_pause' })
+  // A non-idle ready child must still be cancelled when the parent closes.
+  const readyChild = await parent1.d.children.create({
+    parent: parent1.key,
+    cwd: '/w',
+    input: 'cancel ready',
+  })
+  await first.close()
+
+  expect((await storage.lookupByKey(idleChild.key))?.state).toBe('idle')
+  expect((await storage.lookupByKey(pausedChild.key))?.state).toBe('paused')
+  expect((await storage.lookupByKey(readyChild.key))?.state).toBe('cancelled')
+
+  const second = kernel({ storage, provider, preset })
+  try {
+    const parent2 = await second.session('resume-parent', { ...sessionOpts, writerRunId: 'r2' })
+    const listing = await parent2.d.children.list!()
+    expect(listing).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: idleChild.key, status: 'idle', continuable: true }),
+        expect.objectContaining({ id: pausedChild.key, status: 'paused' }),
+        expect.objectContaining({ id: readyChild.key, status: 'cancelled', continuable: false }),
+      ]),
+    )
+
+    // Turn-2 continuation of the preserved idle resident child succeeds in the fresh Kernel.
+    const sentIdle = await parent2.d.children.sendMessage!(
+      idleChild.key,
+      'follow up idle',
+      new AbortController().signal,
+    )
+    expect(sentIdle.messageId).toBeTruthy()
+    await vi.waitFor(async () => {
+      const snap = await parent2.d.children.inspect!(idleChild.key)
+      expect(snap?.text).toBe('idle turn 2')
+      expect(snap?.idle).toBe(true)
+    })
+
+    // Turn-2 resume + continuation of the preserved paused checkpoint child succeeds in the fresh Kernel.
+    await parent2.d.children.resume!(pausedChild.key)
+    const sentPaused = await parent2.d.children.sendMessage!(
+      pausedChild.key,
+      'follow up paused',
+      new AbortController().signal,
+    )
+    expect(sentPaused.messageId).toBeTruthy()
+    await vi.waitFor(async () => {
+      const snap = await parent2.d.children.inspect!(pausedChild.key)
+      expect(snap?.text).toBe('paused turn 2')
+      expect(snap?.idle).toBe(true)
+    })
+
+    // Terminated child still refuses with E_UNSUPPORTED and its state in the error message.
+    await expect(
+      parent2.d.children.sendMessage!(readyChild.key, 'too late', new AbortController().signal),
+    ).rejects.toMatchObject({ code: 'E_UNSUPPORTED', message: expect.stringContaining('cancelled') })
+  } finally {
+    await second.close()
+  }
+})

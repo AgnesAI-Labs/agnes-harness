@@ -70,9 +70,12 @@ export function revokeChildLifecycle(session: SessionImpl): void {
 }
 
 /** Join the durable stop before releasing the owning writer or admitting a new lifecycle. */
-export function persistChildLifecycleStop(session: SessionImpl): Promise<void> {
+export function persistChildLifecycleStop(
+  session: SessionImpl,
+  options?: { preserveRetained?: boolean },
+): Promise<void> {
   const value = epoch(session)
-  value.stopping ??= stopChildAdmissions(session).then(() => {
+  value.stopping ??= stopChildAdmissions(session, options).then(() => {
     value.stopped = true
   })
   return value.stopping

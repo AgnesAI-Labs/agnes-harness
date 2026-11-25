@@ -2727,7 +2727,7 @@ export class SessionImpl {
         }
       }
       await attempt(() => revocation)
-      await attempt(() => persistChildLifecycleStop(this))
+      await attempt(() => persistChildLifecycleStop(this, { preserveRetained: true }))
       await attempt(() => this.loopDriver?.cancel())
       await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.cancel())))
       await attempt(() => this.loopChildren?.close())

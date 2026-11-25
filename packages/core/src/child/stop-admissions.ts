@@ -17,7 +17,10 @@ async function cancelAdmission(store: ChildControlStore, record: ChildTaskRecord
 }
 
 /** Explicit lifecycle stops cover durable admissions, even children never opened in this process. */
-export async function stopChildAdmissions(session: SessionImpl): Promise<void> {
+export async function stopChildAdmissions(
+  session: SessionImpl,
+  options: { preserveRetained?: boolean } = {},
+): Promise<void> {
   const store = session.d.log.storage
   if (!hasChildControl(store)) return
   const pending = [session.key]
@@ -32,6 +35,7 @@ export async function stopChildAdmissions(session: SessionImpl): Promise<void> {
       requireChildControl(store)
       // Terminal ancestors may still have admitted descendants; do not prune that subtree.
       pending.push(child.childKey)
+      if (options.preserveRetained && (child.state === 'paused' || child.state === 'idle')) continue
       await cancelAdmission(store, child)
     }
   }

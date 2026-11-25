@@ -174,7 +174,7 @@ async function childCompletionDelivered(parent: SessionImpl, commandId: string):
   })) {
     for (const row of rows) {
       if (row.origin !== 'system' || row.trust !== 'trusted') continue
-      for (const item of (row.data as Inbox).items) {
+      for (const item of (row.data as Inbox | null)?.items ?? []) {
         if (item.origin !== 'system' || item.system?.source !== CHILD_COMPLETION_SOURCE) continue
         if (item.commandId === commandId) return true
         if (item.system.type !== 'child-batch-completed') continue
