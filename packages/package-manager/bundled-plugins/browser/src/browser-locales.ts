@@ -18,6 +18,10 @@ const messages: Record<string, [string, string]> = {
     'The built-in browser could not start. Turn it off and back on in Plugins, then try again.',
     '内置浏览器启动失败。请在「插件」页关闭后重新启用内置浏览器，再试一次。',
   ],
+  launchFailed: [
+    'The built-in browser could not start. Try opening the address again.',
+    '内置浏览器启动失败。请重新打开此地址。',
+  ],
   cacheInvalid: [
     'Close AGH instances using this cache, move the revision folder aside, then re-enable the plugin.',
     '退出共用缓存的 AGH 实例，移开该版本目录，再启用插件。',
@@ -123,7 +127,7 @@ const errorKeys: Record<string, string> = {
   UNSUPPORTED_MACOS: 'unsupportedMacOS',
   UNSUPPORTED_PLATFORM: 'unsupportedPlatform',
   VERSION_MISMATCH: 'engineVersionMismatch',
-  LAUNCH_FAILED: 'startupFailed',
+  LAUNCH_FAILED: 'launchFailed',
   CACHE_INVALID: 'cacheInvalid',
   CACHE_UNSAFE: 'cacheUnsafe',
   CLEANUP_UNCONFIRMED: 'cleanupUnconfirmed',

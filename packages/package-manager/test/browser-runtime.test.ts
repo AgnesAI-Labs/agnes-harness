@@ -723,7 +723,7 @@ it('returns known open refusals as terminal results while preserving uncertain o
   expect(runtime.status()).toMatchObject({
     state: 'failed',
     errorCode: 'LAUNCH_FAILED',
-    error: expect.stringContaining('Turn it off and back on in Plugins'),
+    error: expect.stringContaining('Try opening the address again'),
   })
   expect(runtime.status().error).not.toMatch(/browserType\.launch|Browser logs|\/private\/chrome/)
   expect(runtime.list(session)).toEqual([])

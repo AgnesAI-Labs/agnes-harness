@@ -64,8 +64,17 @@ export function apply(ctx: ClientContext) {
         ? t('cleanupUnconfirmed')
         : (lockError ??
           (state.state === 'failed' ? t(browserErrorKey(state.errorCode) ?? 'startupFailed') : ''))
+    // Only a confirmed pre-page launch failure can be submitted again in this session.
+    const canRetryLaunch =
+      state.enabled &&
+      state.state === 'failed' &&
+      state.errorCode === 'LAUNCH_FAILED' &&
+      !state.cleanupRequired &&
+      !page
     const canOpen =
-      !busy && state.state === 'ready' && !state.incompatible && (!state.pagesUnavailable || !!page)
+      !busy &&
+      !state.incompatible &&
+      (canRetryLaunch || (state.state === 'ready' && (!state.pagesUnavailable || !!page)))
     const target = useRef(pageId)
     target.current = pageId
     const taking = useRef(false)

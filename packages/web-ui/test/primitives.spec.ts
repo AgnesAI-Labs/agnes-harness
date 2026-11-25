@@ -127,6 +127,38 @@ test.beforeEach(async ({ page }) => {
   await page.addScriptTag({ content: fixture })
   await expect(page.getByRole('button', { name: 'More', exact: true })).toBeVisible()
 })
+test('the permissions status dot only shows while Permissions is selected', async ({ page }) => {
+  await page.setContent(`<style>${css}</style>
+    <nav class="settings-rail" aria-label="Settings">
+      <button class="settings-nav-item">General</button>
+      <button class="settings-nav-item">Models</button>
+      <button class="settings-nav-item" data-settings-section="security" data-attention="error"
+        aria-current="page">Permissions</button>
+    </nav>
+    <script>
+      const nav = document.querySelector('nav')
+      nav.addEventListener('click', (event) => {
+        if (event.target.tagName !== 'BUTTON') return
+        nav.querySelector('[aria-current]').removeAttribute('aria-current')
+        event.target.setAttribute('aria-current', 'page')
+      })
+    </script>`)
+  const settings = page.getByRole('navigation', { name: 'Settings' })
+  const permissions = settings.getByRole('button', { name: 'Permissions' })
+  const showsDot = () =>
+    permissions.evaluate((button) => {
+      const dot = getComputedStyle(button, '::after')
+      return dot.content === '""' && dot.display !== 'none'
+    })
+  await expect.poll(showsDot).toBe(true)
+  for (const name of ['General', 'Models']) {
+    await settings.getByRole('button', { name }).click()
+    await expect.poll(showsDot).toBe(false)
+    await permissions.click()
+    await expect.poll(showsDot).toBe(true)
+  }
+})
+
 test('native and React buttons converge; keyboard menu restores focus', async ({ page }) => {
   const presentation = (selector: string) =>
     page.locator(selector).evaluate((node) => {

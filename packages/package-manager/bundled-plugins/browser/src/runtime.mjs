@@ -120,7 +120,7 @@ export class BrowserRuntime {
             ? cause
             : failure(
                 'LAUNCH_FAILED',
-                'The built-in browser could not start. Turn it off and back on in Plugins, then try again.',
+                'The built-in browser could not start. Try opening the address again.',
               )
           this.starting = undefined
           if (this.enabled && epoch === this.epoch) {
