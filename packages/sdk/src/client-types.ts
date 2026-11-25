@@ -52,7 +52,15 @@ export type CreateClientOptions = {
   auth?: AuthOption
   clientId?: string
   journal?: JournalStore
-  timeouts?: { request?: number; initialize?: number; claim?: number; loadIdle?: number; loadHard?: number }
+  timeouts?: {
+    request?: number
+    initialize?: number
+    claim?: number
+    /** Time to admit a session and start verification, when supported by the daemon. */
+    loadPreparation?: number
+    loadIdle?: number
+    loadHard?: number
+  }
   locale?: string
   bufferLimit?: number
   claimStrict?: boolean

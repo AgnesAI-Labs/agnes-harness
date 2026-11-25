@@ -80,7 +80,7 @@ const windows = process.platform === 'win32'
  * is the stop request the daemon watches for, and waits until it has exited or the wait ran out. The control runs by
  * path in a process of its own, as the daemon fixture does, so no module of another package is imported here.
  */
-function requestStop(home: string, tsx: string): Promise<void> {
+export function requestStop(home: string, tsx: string): Promise<void> {
   const script = [
     `import { stopDaemon } from ${JSON.stringify(daemonControl)}`,
     `await stopDaemon(${JSON.stringify(home)}, { waitMs: 30_000 })`,
@@ -433,7 +433,7 @@ export async function startDaemon(opts: {
         journal: memoryJournal(clientId),
         auth: { kind: 'local' },
         transport: daemonTransport(owner),
-        timeouts: { request: STEP_MS, loadIdle: STEP_MS },
+        timeouts: { request: STEP_MS },
       })
       await current.initialize()
     } catch (error) {

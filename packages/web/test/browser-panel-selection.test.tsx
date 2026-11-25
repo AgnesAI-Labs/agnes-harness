@@ -170,7 +170,13 @@ it('automatically displays agent pages without a load button or an input connect
     if (!open) throw new Error('Missing browser address submit button')
     const failed = (errorCode: string, cleanupRequired = false) =>
       act(async () =>
-        callbacks.get('browser.pages')?.({ enabled: true, state: 'failed', errorCode, cleanupRequired, pages: [] }),
+        callbacks.get('browser.pages')?.({
+          enabled: true,
+          state: 'failed',
+          errorCode,
+          cleanupRequired,
+          pages: [],
+        }),
       )
     await failed('UNSUPPORTED_MACOS')
     expect(container.querySelector('[role="alert"]')?.textContent).toBe('browser.unsupportedMacOS')

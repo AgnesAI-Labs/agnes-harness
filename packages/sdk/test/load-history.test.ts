@@ -3,7 +3,7 @@ import { loadHistory } from '../src/load-history.js'
 
 afterEach(() => vi.useRealTimers())
 
-it.each(['idle', 'hard', 'done', 'disconnect'] as const)(
+it.each(['idle', 'hard', 'done', 'disconnect', 'preparation', 'prepared', 'preparation-hard'] as const)(
   'bounds a progressing history load at %s and disposes observers',
   async (mode) => {
     vi.useFakeTimers()
@@ -18,6 +18,7 @@ it.each(['idle', 'hard', 'done', 'disconnect'] as const)(
     const onProgress = vi.fn()
     const loading = loadHistory({
       sessionId: 's',
+      ...(mode.startsWith('prepar') ? { preparationMs: mode === 'preparation-hard' ? 60 : 40 } : {}),
       idleMs: 20,
       hardMs: 50,
       subscribe(fn) {
@@ -61,6 +62,22 @@ it.each(['idle', 'hard', 'done', 'disconnect'] as const)(
       progress(1) // Duplicate notices do not count as forward progress.
       finish()
       expect(await result).toBe('ok')
+    } else if (mode === 'preparation' || mode === 'preparation-hard') {
+      await vi.advanceTimersByTimeAsync(25)
+      progress(0, 'other')
+      progress(-1)
+      await vi.advanceTimersByTimeAsync(25)
+      expect(await result).toContain(mode === 'preparation' ? '(preparation)' : '(hard)')
+      expect(onProgress).not.toHaveBeenCalled()
+    } else if (mode === 'prepared') {
+      await vi.advanceTimersByTimeAsync(25)
+      progress(0)
+      expect(onProgress).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(16)
+      progress(0)
+      expect(onProgress).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(4)
+      expect(await result).toContain('(idle)')
     } else {
       drop(new Error('transport closed'))
       expect(await result).toBe('transport closed')

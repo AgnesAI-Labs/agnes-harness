@@ -274,7 +274,7 @@ export async function judgmentDaemon(
     socketDirectory = pipe ? undefined : dirname(owner.socketPath)
     sdk = createClient({
       journal: memoryJournal(),
-      timeouts: { request: WORKER_STARTUP_MS, loadIdle: WORKER_STARTUP_MS },
+      timeouts: { request: WORKER_STARTUP_MS },
       transport: {
         kind: 'unix',
         path: owner.socketPath,

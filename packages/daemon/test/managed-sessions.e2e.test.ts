@@ -18,7 +18,7 @@ import type { PackageOperationReceipt } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
 import { startLoopProvider } from './fixtures/loop-provider.js'
-import { sourceTranspileCache } from './source-transpile-cache.js'
+import { SOURCE_WORKER_STARTUP_MS, sourceTranspileCache } from './source-transpile-cache.js'
 
 const sourceDaemon = fileURLToPath(new URL('./fixtures/source-loop-daemon.ts', import.meta.url))
 const PACKAGE = '@acme/managed-probe'
@@ -186,6 +186,7 @@ function writeProfile(root: string, baseUrl: string) {
     JSON.stringify({
       name: 'local-dev',
       cacheDir: sourceTranspileCache(),
+      limits: { 'worker.startup_ms': SOURCE_WORKER_STARTUP_MS },
       computerUse: { enabled: false },
       adapters: { secrets: { kind: 'file', path: secretDir } },
       provider: {
@@ -249,8 +250,8 @@ it.skipIf(process.platform === 'win32')(
       await client.initialize()
       await client.workspace.add(workspace)
 
-      const operation = async (receipt: PackageOperationReceipt) => {
-        const deadline = Date.now() + STEP_MS
+      const operation = async (receipt: PackageOperationReceipt, ms = STEP_MS) => {
+        const deadline = Date.now() + ms
         while (Date.now() < deadline) {
           const result = await client.packages.operation.get({
             profile: receipt.profile,
@@ -284,7 +285,10 @@ it.skipIf(process.platform === 'win32')(
           capabilityHash: preview.capabilityHash,
         }),
       )
-      await operation(await client.packages.enable({ ...(await command()), id: PACKAGE }))
+      await operation(
+        await client.packages.enable({ ...(await command()), id: PACKAGE }),
+        SOURCE_WORKER_STARTUP_MS,
+      )
       await client.session.new({ cwd: root })
 
       const asPlugin = async (op: string, ...args: unknown[]) => {

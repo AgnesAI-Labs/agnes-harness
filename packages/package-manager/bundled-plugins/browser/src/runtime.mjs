@@ -118,10 +118,7 @@ export class BrowserRuntime {
           // local paths and command-line arguments and must stay out of public results.
           const error = isBrowserRefusal(cause)
             ? cause
-            : failure(
-                'LAUNCH_FAILED',
-                'The built-in browser could not start. Try opening the address again.',
-              )
+            : failure('LAUNCH_FAILED', 'The built-in browser could not start. Try opening the address again.')
           this.starting = undefined
           if (this.enabled && epoch === this.epoch) {
             this.state = 'failed'

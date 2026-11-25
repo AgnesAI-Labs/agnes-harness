@@ -12,6 +12,7 @@ import { expect, it } from 'vitest'
 import { windowsTestHostEnv } from '../../../tools/test-fixtures/windows-host-env.mjs'
 import { stopDaemon } from '../src/supervisor/control.js'
 import { childDaemonTransport } from './child-daemon-transport.js'
+import { configureSourceWorkerProfile } from './source-transpile-cache.js'
 
 async function deadline<T>(promise: Promise<T>, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -34,6 +35,7 @@ it('enables single and multiple client contributions and retains their roster af
   await mkdir(workspace)
   createPrivateDirectorySync(home)
   initializeHome(home, 'local-dev')
+  configureSourceWorkerProfile(home)
   const start = async () => {
     const child = spawn(
       process.execPath,

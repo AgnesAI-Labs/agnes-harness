@@ -16,10 +16,10 @@ import { daemonSocketPaths } from '../src/supervisor/socket-paths.js'
 import { startSupervisor } from '../src/supervisor/supervisor.js'
 import { WorkerPool } from '../src/supervisor/worker-pool.js'
 import { localSdkTransport } from './local-socket-path.js'
-import { sourceTranspileCache } from './source-transpile-cache.js'
+import { SOURCE_WORKER_STARTUP_MS, sourceTranspileCache } from './source-transpile-cache.js'
 
-// These are loader/session contracts; allow the production startup budget and shutdown grace.
-const sourceWorkerTestTimeoutMs = DEFAULT_LIMITS.workerStartupMs + DEFAULT_LIMITS.shutdownGraceMs
+// These loader/session contracts include a cold source worker, its first command, and shutdown.
+const sourceWorkerTestTimeoutMs = SOURCE_WORKER_STARTUP_MS + 60_000 + DEFAULT_LIMITS.shutdownGraceMs
 
 // No testkit, buildHost, package loader or extension loader injection: the executable must load
 // the official plugins through the production jiti graph before it can announce hello.
@@ -39,7 +39,7 @@ it(
         process.platform === 'win32'
           ? `\\\\.\\pipe\\${root.split(/[\\/]/).pop()}-worker`
           : join(root, 'w.sock'),
-      limits: { ...DEFAULT_LIMITS },
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: SOURCE_WORKER_STARTUP_MS },
     }
     let stderr = ''
     const stderrEvidence = workerStderrEvidence()
@@ -242,7 +242,7 @@ it(
           profileName: profile.name,
           dataDir: profile.dataDir,
           ...paths,
-          limits: { ...DEFAULT_LIMITS, jobsTickMs: 60_000 },
+          limits: { ...DEFAULT_LIMITS, workerStartupMs: SOURCE_WORKER_STARTUP_MS, jobsTickMs: 60_000 },
         },
         profile,
         profileFile,
@@ -256,7 +256,11 @@ it(
         workerEntry: fileURLToPath(new URL('../src/worker/main.ts', import.meta.url)),
       })
       phase('supervisor.ready')
-      sdk = createClient({ journal: memoryJournal(), transport: localSdkTransport(supervisor.socketPath) })
+      sdk = createClient({
+        journal: memoryJournal(),
+        transport: localSdkTransport(supervisor.socketPath),
+        timeouts: { request: SOURCE_WORKER_STARTUP_MS },
+      })
       phase('session.new.begin')
       const session = await sdk.session.new({
         cwd: root,

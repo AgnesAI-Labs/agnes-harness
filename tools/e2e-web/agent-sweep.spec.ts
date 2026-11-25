@@ -1,9 +1,9 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
-import { join, resolve, sep } from 'node:path'
+import { join, sep } from 'node:path'
 import type { Page } from '@playwright/test'
 import { assertRunbookBackendRefusal } from './agent-outcome.js'
-import { installDeveloperExample } from './developer-example.js'
+import { installAgentSource } from './developer-example.js'
 import { expect, test } from './fixtures.js'
 import { createSessionEventSnapshot } from './ledger.js'
 import { chooseWorkspace, expand, expandActivityGroups, homePage, preferences, send } from './ui.js'
@@ -190,32 +190,8 @@ test.describe('shipped agent acceptance', () => {
       let runTimer: ReturnType<typeof setTimeout> | undefined
       try {
         if (totalUsd > 5) throw new Error('AGH-recorded $5 budget exhausted')
-        if (agent.ref.startsWith('@acme/')) {
-          await homePage(page, 'plugins')
-          await page.getByTestId('plugin-install-source').click()
-          const source = page.getByRole('dialog', { name: 'Check a plugin source', exact: true })
-          await source.getByRole('combobox', { name: 'Source type', exact: true }).selectOption('file')
-          await source
-            .getByRole('textbox', { name: 'Source reference', exact: true })
-            .fill(`file:${resolve(agent.directory).split(sep).join('/')}`)
-          await source.getByRole('button', { name: 'Check source', exact: true }).click()
-          await page
-            .getByTestId('install-review')
-            .getByRole('button', { name: 'Install and enable', exact: true })
-            .click()
-          await expect(page.getByTestId('install-review')).toBeHidden({ timeout: 90_000 })
-          await expect
-            .poll(
-              async () =>
-                (await client.packages.list({ profile: 'local-dev' })).packages.find(
-                  (row) => row.id === '@acme/operations',
-                )?.actual,
-              { timeout: 90_000 },
-            )
-            .toBe('running')
-        }
-        if (agent.directory.startsWith(join('examples', 'fde') + sep))
-          await installDeveloperExample(page, agent.directory)
+        if (agent.ref.startsWith('@acme/') || agent.directory.startsWith(join('examples', 'fde') + sep))
+          await installAgentSource(page, client, agent.directory, agent.ref)
         const general = agent.ref === 'builtin:general'
         const draft = agent.launch.prompt?.text.en
         if (!draft) throw new Error('Every swept agent must provide its own sample draft')

@@ -18,12 +18,10 @@ import { createClient, JsonRpcError, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
 import { stopDaemon } from '../src/supervisor/control.js'
 import { childDaemonTransport } from './child-daemon-transport.js'
+import { configureSourceWorkerProfile } from './source-transpile-cache.js'
 
 const fixture = fileURLToPath(new URL('./fixtures/source-loop-daemon.ts', import.meta.url))
-// The source-form worker transpiles the whole bundled-plugin graph (~1500 modules, node_modules
-// included) through jiti with forceTranspile, so no cache applies. Measured on a cold home: boot ~9s,
-// first session/new ~35s, reloadLocal ~20s. Every step needs headroom over the SDK's 30s default.
-// Windows CI reached 120s during the first session's cold worker load.
+// The first session and trust reload can each wait for a source worker and workspace admission.
 const STEP_MS = process.platform === 'win32' ? 180_000 : 120_000
 const TEST_MS = process.platform === 'win32' ? 420_000 : 300_000
 
@@ -62,6 +60,7 @@ async function verifyWorkspaceTrust() {
   mkdirSync(source, { recursive: true })
   mkdirSync(localAppData, { recursive: true })
   initializeHome(home, 'local-dev')
+  configureSourceWorkerProfile(home)
   const marker = join(workspace, 'plugin-evaluated')
   const otherMarker = join(workspace, 'other-code-executed')
   const entry = `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'evaluated'); export const main = { apply() {} };`

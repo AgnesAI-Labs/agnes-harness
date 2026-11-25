@@ -603,6 +603,7 @@ export function registerAcp(
             turnMaxSteps: true,
             turnTimeLimit: true,
             sessionOpen: true,
+            sessionLoadPreparation: true,
             ...(cx.sessionPromptTitles ? { sessionPromptTitles: true } : {}),
             ...(cx.workspaces.admitsExtraRoots ? { forkAdditionalDirectories: true } : {}),
           },

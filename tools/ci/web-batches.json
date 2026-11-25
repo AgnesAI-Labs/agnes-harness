@@ -272,7 +272,7 @@
       },
       {
         "id": "batch-6",
-        "batches": ["main-20", "main-2"]
+        "batches": ["main-20", "main-25"]
       },
       {
         "id": "batch-7",
@@ -284,7 +284,7 @@
       },
       {
         "id": "batch-9",
-        "batches": ["main-10", "main-25"]
+        "batches": ["main-10", "main-2"]
       },
       {
         "id": "batch-10",

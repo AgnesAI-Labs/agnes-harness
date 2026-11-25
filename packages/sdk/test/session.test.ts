@@ -111,6 +111,39 @@ it.each([true, false])(
   },
 )
 
+it.each([true, false])('negotiates a preparation deadline (supported=%s)', async (supported) => {
+  vi.useFakeTimers()
+  let finish!: (result: object) => void
+  const f = fakeEndpoint({
+    initialize: () => ({
+      protocolVersion: 1,
+      agentCapabilities: { _meta: { [META_KEY]: supported ? { sessionLoadPreparation: true } : {} } },
+    }),
+    'session/load': () => new Promise<object>((resolve) => (finish = resolve)),
+    '_agnes/v1/session.loadingCancel': () => ({}),
+  })
+  const client = createClient({
+    transport: { kind: 'inproc', endpoint: f.endpoint },
+    journal: memoryJournal(),
+    authProviders: providers,
+    timeouts: { loadIdle: 20, loadPreparation: 50 },
+  })
+  try {
+    await client.initialize()
+    const loaded = client.session.load('cold')
+    const result = supported
+      ? expect(loaded).resolves.toMatchObject({ id: 'cold' })
+      : expect(loaded).rejects.toThrow('session/load (idle) timed out after 20 ms')
+    await flush()
+    await vi.advanceTimersByTimeAsync(25)
+    finish({})
+    await result
+  } finally {
+    await client.close()
+    vi.useRealTimers()
+  }
+})
+
 it('never falls back after admission refusal and cancels just the caller-owned open', async () => {
   let release!: () => void
   const f = fakeEndpoint({

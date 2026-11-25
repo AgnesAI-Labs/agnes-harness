@@ -1,4 +1,4 @@
-import { installDeveloperExample } from './developer-example.js'
+import { installAgentSource } from './developer-example.js'
 import { expect, test } from './fixtures.js'
 import { command, install, prompt, toolResult } from './sdk.js'
 import { chooseWorkspace, expandActivityGroups, preferences, turn } from './ui.js'
@@ -39,7 +39,7 @@ test('fresh gallery hides teaching examples until deliberately installed, then r
   expect((await client.packages.list({ profile: 'local-dev' })).packages.map((row) => row.id)).not.toContain(
     '@agnes-fde/knowledge-qa',
   )
-  await installDeveloperExample(page, 'examples/fde/knowledge-qa')
+  await installAgentSource(page, client, 'examples/fde/knowledge-qa', '@agnes-fde/knowledge-qa#knowledge-qa')
   await page.getByTestId('home-entry-agents').click()
   await expect(card).toContainText('Knowledge answer example')
   await page.screenshot({ path: info.outputPath('gallery-installed-teaching.png'), animations: 'disabled' })

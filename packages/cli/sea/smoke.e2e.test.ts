@@ -1,4 +1,5 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { once } from 'node:events'
 import {
   cpSync,
   existsSync,
@@ -24,11 +25,50 @@ const bin = process.env.AGNES_SEA_BIN
 const harness = process.env.AGNES_SEA_LOADER_HARNESS
 const version = process.env.AGNES_SEA_VERSION?.trim() || PUBLIC_PACKAGE_VERSION
 
-function imageSmokeDiagnostic(run: () => string, tracePath: string): string {
+const IMAGE_SMOKE_OUTPUT = 'sea image smoke ok\n'
+
+async function runImageSmoke(binary: string, workspace: string, env: NodeJS.ProcessEnv, tracePath: string) {
+  const child = spawn(
+    binary,
+    ['-p', 'SEA_IMAGE_SMOKE', '--profile', 'local-dev', '--model', 'primary=faux/faux-1', '--cwd', workspace],
+    {
+      env: { ...env, NODE_PATH: '', NODE_OPTIONS: '', AGH_TIMING: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    },
+  )
+  let stdout = ''
+  let stderr = ''
+  let stage = 'response'
+  let expired: string | undefined
+  const deadline = (ms: number) =>
+    setTimeout(() => {
+      expired = stage
+      child.kill('SIGKILL')
+    }, ms)
+  let timer = deadline(60_000)
+  child.stdout.setEncoding('utf8').on('data', (text: string) => {
+    stdout += text
+    if (stage === 'response' && stdout.includes(IMAGE_SMOKE_OUTPUT)) {
+      stage = 'shutdown'
+      clearTimeout(timer)
+      // The CLI still has to close the local host, release adapters, and flush stdio.
+      timer = deadline(30_000)
+    }
+  })
+  child.stderr.setEncoding('utf8').on('data', (text: string) => {
+    stderr = (stderr + text).slice(-64 * 1024)
+  })
+  let status: number | null | undefined
+  let signal: NodeJS.Signals | null | undefined
   try {
-    return run()
+    const [exitStatus, exitSignal] = await once(child, 'close')
+    status = exitStatus
+    signal = exitSignal
+    if (expired) throw new Error(`SEA image smoke timed out during ${expired}`)
+    if (status !== 0) throw new Error(`SEA image smoke exited with status ${status} and signal ${signal}`)
+    return stdout
   } catch (error) {
-    const failure = error as { code?: unknown; status?: unknown; signal?: unknown; stdout?: unknown }
     let stages: unknown[] = []
     try {
       stages = existsSync(tracePath)
@@ -45,14 +85,17 @@ function imageSmokeDiagnostic(run: () => string, tracePath: string): string {
     console.error(
       'SEA image smoke stages',
       JSON.stringify({
-        code: failure.code === 'ETIMEDOUT' ? 'ETIMEDOUT' : 'other',
-        status: typeof failure.status === 'number' ? failure.status : null,
-        signal: failure.signal === 'SIGTERM' || failure.signal === 'SIGKILL' ? failure.signal : null,
-        expectedStdout: typeof failure.stdout === 'string' && failure.stdout === 'sea image smoke ok\n',
+        expired,
+        status,
+        signal,
+        expectedStdout: stdout === IMAGE_SMOKE_OUTPUT,
+        timing: stderr.split(/\r?\n/).filter((line) => /^agh-timing [a-z][a-z0-9-]* \d+(\.\d+)?$/.test(line)),
         stages,
       }),
     )
     throw error
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -289,30 +332,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
           { encoding: 'utf8', env },
         ),
       ).toBe('sea faux ok\n')
-      expect(
-        imageSmokeDiagnostic(
-          () =>
-            execFileSync(
-              binary,
-              [
-                '-p',
-                'SEA_IMAGE_SMOKE',
-                '--profile',
-                'local-dev',
-                '--model',
-                'primary=faux/faux-1',
-                '--cwd',
-                workspace,
-              ],
-              {
-                encoding: 'utf8',
-                env: { ...env, NODE_PATH: '', NODE_OPTIONS: '', AGH_TIMING: '1' },
-                timeout: 30_000,
-              },
-            ),
-          tracePath,
-        ),
-      ).toBe('sea image smoke ok\n')
+      expect(await runImageSmoke(binary, workspace, env, tracePath)).toBe(IMAGE_SMOKE_OUTPUT)
       const output = execFileSync(loaderHarness, [join(packageDirectory, 'index.ts')], {
         encoding: 'utf8',
         env,
@@ -368,5 +388,5 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       rmSync(temporary, { recursive: true, force: true })
     }
     // Multiple cold SEA launches plus daemon readiness and a real provider round-trip exceed 5s on Windows.
-  }, 60000)
+  }, 150_000)
 })

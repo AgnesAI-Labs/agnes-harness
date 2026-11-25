@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
-import { installDeveloperExample } from './developer-example.js'
+import { installAgentSource } from './developer-example.js'
 import { expect, root as it, test } from './fixtures.js'
 import { describingFirst, prompt, toolResult } from './sdk.js'
 import {
@@ -307,7 +307,8 @@ test('v3 deliberately installed teaching agent creates a reviewed Demo session',
   await fresh(page)
   await homePage(page, 'agents')
   await expect(page.locator('[data-agent-ref="@agnes-fde/knowledge-qa#knowledge-qa"]')).toHaveCount(0)
-  await installDeveloperExample(page, 'examples/fde/knowledge-qa')
+  const client = await runtime.connect()
+  await installAgentSource(page, client, 'examples/fde/knowledge-qa', '@agnes-fde/knowledge-qa#knowledge-qa')
   await homePage(page, 'agents')
   const card = page.locator('[data-agent-ref="@agnes-fde/knowledge-qa#knowledge-qa"]')
   await expect(card).toBeVisible()
@@ -331,7 +332,6 @@ test('v3 deliberately installed teaching agent creates a reviewed Demo session',
   await expect(page.getByTestId('conversation-turn')).toHaveAttribute('data-status', 'completed', {
     timeout: 25_000,
   })
-  const client = await runtime.connect()
   const id = new URL(page.url()).searchParams.get('session')
   if (!id) throw new Error('One-click start must create a session')
   const session = await client.session.load(id, { cwd: runtime.workspace })

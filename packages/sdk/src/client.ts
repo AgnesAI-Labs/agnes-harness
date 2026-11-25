@@ -145,6 +145,7 @@ export class Client {
     request: number
     initialize: number
     claim: number
+    loadPreparation: number
     loadIdle: number
     loadHard: number
   }
@@ -192,6 +193,7 @@ export class Client {
     this.journal = opts.journal ?? memoryJournal(opts.clientId)
     this.timeouts = {
       request: opts.timeouts?.request ?? 30_000,
+      loadPreparation: opts.timeouts?.loadPreparation ?? 180_000,
       loadIdle: opts.timeouts?.loadIdle ?? 30_000,
       loadHard: opts.timeouts?.loadHard ?? 600_000,
       initialize: opts.timeouts?.initialize ?? 10_000,
@@ -683,11 +685,15 @@ export class Client {
   ): Promise<unknown> {
     const info = signal ? await untilAborted(() => this.initialize(), signal) : await this.initialize()
     signal?.throwIfAborted()
-    const meta = info.capabilities._meta as Record<string, { sessionOpen?: boolean }> | undefined
-    const open = admissionOnly && meta?.[META_KEY]?.sessionOpen === true
+    const capabilities = info.capabilities._meta as
+      | Record<string, { sessionOpen?: boolean; sessionLoadPreparation?: boolean }>
+      | undefined
+    const meta = capabilities?.[META_KEY]
+    const open = admissionOnly && meta?.sessionOpen === true
     const requestId = open ? crypto.randomUUID() : undefined
     return loadHistory({
       ...(signal ? { signal } : {}),
+      ...(meta?.sessionLoadPreparation === true ? { preparationMs: this.timeouts.loadPreparation } : {}),
       sessionId: id,
       idleMs: this.timeouts.loadIdle,
       hardMs: this.timeouts.loadHard,

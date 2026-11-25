@@ -111,7 +111,7 @@ function connect(root: string) {
     journal: memoryJournal(CLIENT_ID),
     auth: { kind: 'local' },
     transport: { kind: 'unix', path: owner.socketPath },
-    timeouts: { request: WORKER_STARTUP_MS, loadIdle: WORKER_STARTUP_MS },
+    timeouts: { request: WORKER_STARTUP_MS },
   })
   return { client, socketPath: owner.socketPath }
 }

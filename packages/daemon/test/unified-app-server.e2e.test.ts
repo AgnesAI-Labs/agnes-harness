@@ -10,7 +10,7 @@ import { afterEach, expect, it, onTestFailed, vi } from 'vitest'
 import { buildConfig } from '../src/supervisor/config.js'
 import { startProductionSupervisor } from '../src/supervisor/supervisor.js'
 import { localSdkTransport } from './local-socket-path.js'
-import { sourceTranspileCache } from './source-transpile-cache.js'
+import { SOURCE_WORKER_STARTUP_MS, sourceTranspileCache } from './source-transpile-cache.js'
 
 const processIdentity = async (pid: number) =>
   pid === process.pid
@@ -57,10 +57,9 @@ afterEach(async () => {
 
 // One shared Worker serves every live session; daemon restart starts its replacement. Each one
 // assembles the production package graph from TypeScript source before it says hello, which takes
-// about 30-70 s on a loaded hosted runner. The SDK request and history-load idle budgets must both
-// cover that startup window; allow both generations plus hot replacement and fixture/RPC cleanup.
-const sourceWorkerStartupMs = 90_000
-const integrationTimeoutMs = sourceWorkerStartupMs * 4
+// about 30-70 s on a loaded hosted runner. History load uses the SDK's default preparation and
+// verification budgets. Allow both generations plus hot replacement and fixture/RPC cleanup.
+const integrationTimeoutMs = SOURCE_WORKER_STARTUP_MS * 4
 it(
   'Web saves one profile, CLI executes it, both retain history after daemon restart',
   async () => {
@@ -172,7 +171,7 @@ it(
         ipc: windows ? 'pipe' : 'unix',
       })
       config.localWeb = { addr: '127.0.0.1:0', origin: 'http://127.0.0.1:4180' }
-      config.limits = { ...config.limits, workerStartupMs: sourceWorkerStartupMs }
+      config.limits = { ...config.limits, workerStartupMs: SOURCE_WORKER_STARTUP_MS }
       if (windows) windowsEnsurePrivateDirectorySync(join(data, 'daemon'))
       else await mkdir(join(data, 'daemon'), { recursive: true, mode: 0o700 })
       const profileFile = join(data, 'daemon/profile.json')
@@ -201,7 +200,7 @@ it(
       const web = createClient({
         journal: memoryJournal('web-setup'),
         auth: { kind: 'local' },
-        timeouts: { request: sourceWorkerStartupMs, loadIdle: sourceWorkerStartupMs },
+        timeouts: { request: SOURCE_WORKER_STARTUP_MS },
         transportFactories: {
           ws: (option) =>
             wsTransport({ ...option, url: ws.url, headers: { Origin: 'http://127.0.0.1:4180' } }),
@@ -211,7 +210,7 @@ it(
       const cli = createClient({
         journal: memoryJournal('cli-shared'),
         auth: { kind: 'local' },
-        timeouts: { request: sourceWorkerStartupMs, loadIdle: sourceWorkerStartupMs },
+        timeouts: { request: SOURCE_WORKER_STARTUP_MS },
         transport: localSdkTransport(daemon.socketPath),
       })
       clients.push(web, cli)
@@ -377,10 +376,13 @@ it(
       const restored = createClient({
         journal: memoryJournal(),
         auth: { kind: 'local' },
-        timeouts: { request: sourceWorkerStartupMs, loadIdle: sourceWorkerStartupMs },
+        timeouts: { request: SOURCE_WORKER_STARTUP_MS },
         transport: localSdkTransport(daemon.socketPath),
       })
       clients.push(restored)
+      expect((await restored.initialize()).capabilities._meta).toMatchObject({
+        'ai.agnes.harness': { sessionLoadPreparation: true },
+      })
       expect((await restored.session.list({})).items.some((item) => item.sessionId === session.id)).toBe(true)
       // A Web history reader knows only the durable session id after restart. The daemon must recover
       // its immutable workspace binding instead of treating the required ACP empty cwd as a new root.
