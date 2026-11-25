@@ -1003,7 +1003,7 @@ export class KernelChildren implements ChildrenFactory {
           run,
         })
     }
-    await bindChildRetention(child, makeResident, resident)
+    await bindChildRetention(record, child, makeResident, resident)
     bindIdleChild({
       kernel: this.kernel,
       parent,

@@ -1,10 +1,13 @@
 import { CHILD_CONTROL_FORMAT } from '@agnes/core-child-control/child/types'
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { CoreError } from '@agnes/core-common/types'
+import { buildToolContext } from '@agnes/core-effects/effects/tool-context'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { childSessionToolFilter } from '../src/child/tool-filter.js'
 import { Kernel } from '../src/kernel.js'
+import { applyChildControl, controlledChildTree } from '../src/loop/child-controls.js'
 import type { SessionImpl } from '../src/step/session.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
@@ -513,6 +516,114 @@ it('preserves idle resident and paused checkpoint children across parent close a
     await expect(
       parent2.d.children.sendMessage!(readyChild.key, 'too late', new AbortController().signal),
     ).rejects.toMatchObject({ code: 'E_UNSUPPORTED', message: expect.stringContaining('cancelled') })
+  } finally {
+    await second.close()
+  }
+})
+
+it('preserves child toolFilter, Web controls.continue, and cold collect idle status across reopen, and fails closed without binding', async () => {
+  const storage = new MemoryStorage()
+  const provider = Object.assign(
+    fakeProvider([textTurn('filtered turn 1'), textTurn('filtered turn 2'), textTurn('web turn 3')]),
+    { models: () => [catalogue()] },
+  )
+  const preset = { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 1, maxFanOut: 8 }
+  const first = kernel({ storage, provider, preset })
+  const parent1 = await first.session('filter-parent', sessionOpts)
+  const restricted = await parent1.d.children.create({
+    parent: parent1.key,
+    cwd: '/w',
+    input: 'restricted child',
+    resident: true,
+    toolFilter: { allow: ['only_this'] },
+  })
+  await restricted.run('restricted child')
+  expect(childSessionToolFilter(first.get(restricted.key)!)).toEqual({ allow: ['only_this'], deny: [] })
+
+  // Also create a second idle child and strip its binding to test fail-closed refusal on cold reopen.
+  const unbound = await parent1.d.children.create({
+    parent: parent1.key,
+    cwd: '/w',
+    input: 'unbound child',
+    resident: true,
+  })
+  await unbound.run('unbound child')
+  const unboundSession = first.get(unbound.key)!
+  await unboundSession.append([
+    unboundSession.ev('x/core/child-retained', { childKey: unbound.key }, { ignorable: true }),
+  ])
+  await first.close()
+
+  const second = kernel({ storage, provider, preset })
+  try {
+    const parent2 = await second.session('filter-parent', { ...sessionOpts, writerRunId: 'r2' })
+
+    // 1. Cold collect returns 'idle' immediately (not 'running') with completion identity and text.
+    const ctx = buildToolContext(
+      {
+        sessionKey: parent2.key,
+        lane: parent2.lane,
+        turn: 1,
+        step: 1,
+        depth: 0,
+        generationDepth: 0,
+        actor,
+        cwd: '/w',
+        workspaceRoot: '/w',
+        runtime: parent2.d.runtime,
+        preset: parent2.preset,
+        children: parent2.d.children,
+        fsOps: testFsOps(),
+        netFetch: async () => new Response(''),
+        log: parent2.d.logger,
+        invoke: async () => ({ content: [] }),
+        listTools: () => [],
+        appendPlan: async () => 1,
+        requestCompaction: () => {},
+        progress: () => {},
+        artifactJobEvent: async () => {},
+        lease: { remainingMs: () => 5000 },
+      },
+      {
+        toolUseId: 'collect-cold',
+        name: 'subagent_collect',
+        signal: new AbortController().signal,
+        timeoutMs: 5000,
+        outputMaxBytes: 32768,
+      },
+    )
+    const collected = await ctx.subagent.collect(restricted.key, { wait: true })
+    expect(collected).toMatchObject({
+      childKey: restricted.key,
+      status: 'idle',
+      text: 'filtered turn 1',
+    })
+    const snap = await parent2.d.children.inspect!(restricted.key)
+    expect(snap?.idle).toBe(true)
+    expect(snap?.completionId).toBeTruthy()
+    expect(snap?.completionSeq).toBeGreaterThan(0)
+
+    // 2. Web control tree exposes controls.continue=true for pinned idle child, false for unbound child.
+    const tree = await controlledChildTree(parent2)
+    expect(tree.find((row) => row.id === restricted.key)?.controls.continue).toBe(true)
+    expect(tree.find((row) => row.id === unbound.key)?.controls.continue).toBe(false)
+
+    // 3. Unbound child fails closed on cold sendMessage and Web continue.
+    await expect(
+      parent2.d.children.sendMessage!(unbound.key, 'should fail', new AbortController().signal),
+    ).rejects.toMatchObject({ code: 'E_RELATION' })
+    await expect(
+      applyChildControl(parent2, unbound.key, 'continue', actor, 'adm-unbound', 'should fail'),
+    ).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
+
+    // 4. Cold Web continue reopens the restricted child AND preserves its exact toolFilter.
+    await applyChildControl(parent2, restricted.key, 'continue', actor, 'adm-web-1', 'continue from web')
+    await vi.waitFor(async () => {
+      const s = await parent2.d.children.inspect!(restricted.key)
+      expect(s?.text).toBe('web turn 3')
+      expect(s?.idle).toBe(true)
+    })
+    expect(childSessionToolFilter(second.get(restricted.key)!)).toEqual({ allow: ['only_this'], deny: [] })
   } finally {
     await second.close()
   }

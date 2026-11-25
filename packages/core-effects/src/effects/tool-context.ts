@@ -525,15 +525,17 @@ export function buildToolContext(
             await d.children.collected?.(childKey, snap.completionId, snap.completionSeq ?? 0)
           return {
             childKey,
-            status: (snap.state === 'done'
-              ? 'completed'
-              : snap.state === 'error'
-                ? snap.cancelled
-                  ? 'cancelled'
-                  : 'failed'
-                : 'running') as 'running' | 'completed' | 'failed' | 'cancelled',
+            status: (snap.idle
+              ? 'idle'
+              : snap.state === 'done'
+                ? 'completed'
+                : snap.state === 'error'
+                  ? snap.cancelled
+                    ? 'cancelled'
+                    : 'failed'
+                  : 'running') as 'running' | 'idle' | 'completed' | 'failed' | 'cancelled',
             ...(snap.text !== undefined ? { text: snap.text } : {}),
-            ...failureOf(snap),
+            ...(snap.idle ? {} : failureOf(snap)),
             ...(snap.receipt === undefined ? {} : { receipt: snap.receipt }),
           }
         }

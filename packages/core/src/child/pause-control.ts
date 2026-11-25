@@ -33,6 +33,7 @@ import {
   readChildCheckpoint,
   requireConfirmedColdStop,
   requireOpenWorkspace,
+  retainedBindingOf,
   withChildLog,
   writeChildCheckpoint,
 } from './status.js'
@@ -263,8 +264,15 @@ export class ChildLifecycleControls {
       const record = await this.owned(key)
       if (!projectChildControls(record).controls.retain)
         throw new CoreError('E_RELATION', 'Child cannot be retained')
-      await withChildLog(this.parent(), record, this.port.live(key), (log) =>
-        log.append([this.parent().ev('x/core/child-retained', { childKey: key }, { ignorable: true })]),
+      const live = this.port.live(key)
+      await withChildLog(this.parent(), record, live, (log) =>
+        log.append([
+          this.parent().ev(
+            'x/core/child-retained',
+            { childKey: key, ...(live ? { binding: retainedBindingOf(record, live) } : {}) },
+            { ignorable: true },
+          ),
+        ]),
       )
       this.port.retain(key)
       return result(record)

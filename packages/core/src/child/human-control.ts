@@ -12,7 +12,16 @@ import { noteChildIdle } from './idle-retirement.js'
 import { ChildLifecycleControls, childControls } from './pause-control.js'
 import { recordedChildRole } from './roles.js'
 import { childBackend } from './sessions.js'
-import { type Checkpoint, checkpointOpenOptions, humanChildState, requireOpenWorkspace } from './status.js'
+import {
+  bindingMatchesParent,
+  type Checkpoint,
+  checkpointOpenOptions,
+  humanChildState,
+  type RetainedBinding,
+  requireOpenWorkspace,
+  retainedBindingOf,
+  retainedOpenOptions,
+} from './status.js'
 
 type Owner = {
   parent: SessionImpl
@@ -117,18 +126,56 @@ export async function applyHumanLifecycle(
 
 const retainers = new WeakMap<SessionImpl, () => void>()
 
+type RetainedData = { childKey?: string; binding?: RetainedBinding }
+
+async function readTrustedRetained(parent: SessionImpl, childKey: string): Promise<RetainedData | undefined> {
+  const [row] = await parent.d.log.storage.scan(childKey, {
+    type: 'x/core/child-retained',
+    order: 'desc',
+    limit: 1,
+  })
+  const data = row?.data as RetainedData | undefined
+  if (row?.origin !== 'system' || row.trust !== 'trusted' || data?.childKey !== childKey) return undefined
+  return data
+}
+
+async function canReopenRetained(parent: SessionImpl, record: ChildTaskRecord): Promise<boolean> {
+  if (record.state !== 'idle' && record.state !== 'interrupted') return false
+  if (await recordedChildRole(parent, record.childKey)) return true
+  const retained = await readTrustedRetained(parent, record.childKey)
+  return bindingMatchesParent(parent, record, retained?.binding)
+}
+
 /** Install at attach, before publishing the handle. Reopen also honors an earlier durable retain. */
-export async function bindChildRetention(child: SessionImpl, makeResident: () => void, resident?: boolean) {
+export async function bindChildRetention(
+  record: ChildTaskRecord,
+  child: SessionImpl,
+  makeResident: () => void,
+  resident?: boolean,
+) {
   retainers.set(child, makeResident)
   const [row] = await child.scan({ type: 'x/core/child-retained', order: 'desc', limit: 1 })
-  if (
-    row?.origin === 'system' &&
-    row.trust === 'trusted' &&
-    (row.data as { childKey?: string }).childKey === child.key
-  )
+  const data = row?.data as RetainedData | undefined
+  const trusted = row?.origin === 'system' && row.trust === 'trusted' && data?.childKey === child.key
+  if (trusted) {
+    if (!data?.binding)
+      await child.append([
+        child.ev(
+          'x/core/child-retained',
+          { childKey: child.key, binding: retainedBindingOf(record, child) },
+          { ignorable: true },
+        ),
+      ])
     return makeResident()
+  }
   if (resident) {
-    await child.append([child.ev('x/core/child-retained', { childKey: child.key }, { ignorable: true })])
+    await child.append([
+      child.ev(
+        'x/core/child-retained',
+        { childKey: child.key, binding: retainedBindingOf(record, child) },
+        { ignorable: true },
+      ),
+    ])
     makeResident()
   }
 }
@@ -162,7 +209,8 @@ export async function readHumanChildState(
 ) {
   const record = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
   if (!record || !owns(record)) throw new CoreError('E_CHILD_NOT_FOUND', 'Child is not owned by this parent')
-  return humanChildState(parent, record, child, continuable || record.state === 'idle')
+  const canContinue = continuable || (!child && (await canReopenRetained(parent, record)))
+  return humanChildState(parent, record, child, canContinue)
 }
 
 export async function listLocalChildren(
@@ -182,12 +230,13 @@ export async function listLocalChildren(
         humanStopped: port.humanStopped(row.childKey),
         residentIdle: resident?.idle() === true,
       }).status
+      const label = row.inputText.trim().split('\n', 1)[0]?.slice(0, 80)
       return {
         id: row.childKey,
         providerId: 'in-process',
         status,
-        continuable: resident !== undefined || row.state === 'idle',
-        ...(row.inputText.trim() ? { label: row.inputText.trim().split('\n', 1)[0]!.slice(0, 80) } : {}),
+        continuable: resident !== undefined || (await canReopenRetained(parent, row)),
+        ...(label ? { label } : {}),
         ...(text ? { text } : {}),
       }
     }),
@@ -248,10 +297,7 @@ export async function reopenRetainedResident<T>(
   port: {
     owns(record: ChildTaskRecord): boolean
     resident(key: string): T | undefined
-    open(
-      record: ChildTaskRecord,
-      options: { parent: string; cwd: string; input: string; resident: true; recovering: true },
-    ): Promise<ChildHandle>
+    open(record: ChildTaskRecord, options: ReturnType<typeof retainedOpenOptions>): Promise<ChildHandle>
     resumeRole(key: string): Promise<ChildHandle>
     markIdle(key: string, idle: boolean): void
   },
@@ -259,30 +305,18 @@ export async function reopenRetainedResident<T>(
   const record = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
   if (!record || !port.owns(record)) return undefined
   if (record.state !== 'idle' && record.state !== 'interrupted') return undefined
-  if (record.state !== 'idle') {
-    const [row] = await parent.d.log.storage.scan(childKey, {
-      type: 'x/core/child-retained',
-      order: 'desc',
-      limit: 1,
-    })
-    const retained =
-      row?.origin === 'system' &&
-      row.trust === 'trusted' &&
-      (row.data as { childKey?: string }).childKey === childKey
-    if (!retained) return undefined
-  }
   await requireOpenWorkspace(parent, record)
   if (await recordedChildRole(parent, childKey)) {
     await port.resumeRole(childKey)
     return port.resident(childKey)
   }
-  await port.open(record, {
-    parent: parent.key,
-    cwd: record.cwd,
-    input: record.inputText,
-    resident: true,
-    recovering: true,
-  })
+  const retained = await readTrustedRetained(parent, childKey)
+  if (!retained) {
+    if (record.state === 'idle')
+      throw new CoreError('E_RELATION', 'Cannot restore the pinned retained child binding')
+    return undefined
+  }
+  await port.open(record, retainedOpenOptions(parent, record, retained.binding))
   port.markIdle(childKey, record.state === 'idle')
   return port.resident(childKey)
 }

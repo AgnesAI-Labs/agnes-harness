@@ -17,6 +17,7 @@ import type {
   NonInterruptibleStopReceipt,
 } from '@agnes/extension-api'
 import type { SessionImpl } from '../step/session.js'
+import { NO_TOOL_FILTER } from '../step/tool-filter.js'
 import { childResultSequence } from './collected-result.js'
 import { childCompletionId } from './completion-notice.js'
 import { childControlMetrics } from './control-metrics.js'
@@ -78,6 +79,7 @@ export async function humanChildState(
 ) {
   const projected = projectChildControls(record)
   const capabilities = child?.d.loopFactory.controls
+  const steer = (child ? capabilities?.steer : parent.d.loopFactory.controls?.steer) === true
   const label = record.inputText
     .trim()
     .split('\n', 1)[0]
@@ -95,8 +97,7 @@ export async function humanChildState(
       ...projected.controls,
       pause: projected.controls.pause && (!child || capabilities?.pause === true),
       stop: projected.controls.stop && capabilities?.interrupt === true && !!child?.op(),
-      continue:
-        projected.controls.cancel && record.state !== 'paused' && capabilities?.steer === true && continuable,
+      continue: projected.controls.cancel && record.state !== 'paused' && steer && continuable,
     },
     ...(await childControlMetrics(parent, record, !!child?.op())),
   }
@@ -145,13 +146,15 @@ export async function snapshotFromLedger(
       .filter((block) => block.type === 'text' && typeof block.text === 'string')
       .map((block) => block.text)
       .join('')
-    const completionSeq = base.completionId
-      ? await childResultSequence(parent, record, tail[0]?.seq ?? 0)
-      : undefined
+    const idle = record.state === 'idle'
+    const completionSeq =
+      base.completionId || idle ? await childResultSequence(parent, record, tail[0]?.seq ?? 0) : undefined
     const completionId =
       completionSeq === undefined
         ? undefined
-        : ((await retiredCompletionIdentity(parent, record, completionSeq)) ?? base.completionId)
+        : ((await retiredCompletionIdentity(parent, record, completionSeq)) ??
+          base.completionId ??
+          (idle ? childCompletionId(record.childKey, 'completed', completionSeq) : undefined))
     return {
       ...base,
       ...(await lifecycleFacts(parent, record)),
@@ -247,10 +250,16 @@ export async function withChildLog<T>(
 }
 
 export const CHECKPOINT = 'x/core/child-checkpoint'
+export type RetainedBinding = {
+  authority: string
+  generationDepth: number
+  cwd: string
+  toolFilter?: ChildAgentToolFilter
+}
 export type Checkpoint = ChildCheckpointRecord & {
   previousState: ChildExecutionState
   stateRevision: number
-  binding?: { authority: string; generationDepth: number; cwd: string; toolFilter?: ChildAgentToolFilter }
+  binding?: RetainedBinding
 }
 
 function authority(s: SessionImpl) {
@@ -265,14 +274,52 @@ function authority(s: SessionImpl) {
   )
 }
 
+export function retainedBindingOf(record: ChildTaskRecord, child: SessionImpl): RetainedBinding {
+  const filter = narrowChildToolFilter(
+    childSessionToolFilter(child),
+    child.toolFilter === NO_TOOL_FILTER ? undefined : child.toolFilter,
+  )
+  return {
+    authority: authority(child),
+    generationDepth: record.generationDepth,
+    cwd: record.cwd,
+    ...(filter ? { toolFilter: filter } : {}),
+  }
+}
+
+export function bindingMatchesParent(
+  parent: SessionImpl,
+  record: ChildTaskRecord,
+  binding: RetainedBinding | undefined,
+): binding is RetainedBinding {
+  return (
+    !!binding &&
+    binding.cwd === record.cwd &&
+    binding.generationDepth === record.generationDepth &&
+    binding.authority === authority(parent)
+  )
+}
+
+export function retainedOpenOptions(
+  parent: SessionImpl,
+  record: ChildTaskRecord,
+  binding: RetainedBinding | undefined,
+) {
+  if (!bindingMatchesParent(parent, record, binding))
+    throw new CoreError('E_RELATION', 'Cannot restore the pinned retained child binding')
+  return {
+    parent: parent.key,
+    cwd: record.cwd,
+    input: record.inputText,
+    resident: true as const,
+    recovering: true as const,
+    ...(binding.toolFilter ? { toolFilter: binding.toolFilter } : {}),
+  }
+}
+
 export function checkpointOpenOptions(parent: SessionImpl, record: ChildTaskRecord, checkpoint: Checkpoint) {
   const binding = checkpoint.binding
-  if (
-    !binding ||
-    binding.cwd !== record.cwd ||
-    binding.generationDepth !== record.generationDepth ||
-    binding.authority !== authority(parent)
-  )
+  if (!bindingMatchesParent(parent, record, binding))
     throw new CoreError('E_RELATION', 'Cannot restore the pinned checkpoint authority')
   return {
     parent: parent.key,
