@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { memoryPlugin } from '@agnes/base'
@@ -74,12 +74,20 @@ async function workspace(mode: 'off' | 'ask' | 'auto' = 'auto') {
       // As sessions get it: paragraphs in force are delivered through the experience snapshot.
       validity: registryView(registry(), clock, undefined, 'delivered'),
     })
-  await open().configure({ mode })
-  const file = async () => (await open().readFile('MEMORY.md')).content
-  const write = async (content: string) => {
+  const withSession = async <T>(fn: (memory: ReturnType<typeof open>) => Promise<T>): Promise<T> => {
     const memory = open()
-    await memory.editFile('MEMORY.md', content, (await memory.readFile('MEMORY.md')).hash)
+    try {
+      return await fn(memory)
+    } finally {
+      await memory.close?.()
+    }
   }
+  await withSession((memory) => memory.configure({ mode }))
+  const file = () => withSession(async (memory) => (await memory.readFile('MEMORY.md')).content)
+  const write = (content: string) =>
+    withSession(async (memory) => {
+      await memory.editFile('MEMORY.md', content, (await memory.readFile('MEMORY.md')).hash)
+    })
   const seed = (...paragraphs: RegistryParagraph[]) => {
     const store = registry()
     store.update((draft) => {
@@ -88,7 +96,7 @@ async function workspace(mode: 'off' | 'ask' | 'auto' = 'auto') {
   }
   const manage = savedParagraphs({ registry, clock })
   const run = (action: 'list' | 'renew' | 'withdraw' | 'convert', paragraphId?: string) =>
-    manage(open(), root, { action, ...(paragraphId ? { paragraphId } : {}) })
+    withSession((memory) => manage(memory, root, { action, ...(paragraphId ? { paragraphId } : {}) }))
   return { root, now, clock, registry, open, file, write, seed, run }
 }
 
@@ -264,5 +272,49 @@ describe('saved paragraphs on the memory page', () => {
     expect((await manageMemory(ws.open(), { cwd: ws.root, saved: { action: 'list' } })).saved).toEqual({
       paragraphs: [],
     })
+  })
+
+  it('completes withdrawal and preserves same-turn isolation when real index.sqlite is corrupt', async () => {
+    const ws = await workspace()
+    ws.seed(paragraph(A, LESSON_A, T0 + DAY))
+    await ws.write(`${HUMAN}\n${marked(A, LESSON_A)}\n`)
+    const reader = ws.open('reader')
+    const outside = async (): Promise<never> => {
+      throw new Error('outside')
+    }
+    try {
+      const turn1 = reader.files(
+        { read: outside, write: outside, list: outside, stat: outside },
+        { sessionKey: 'reader', turn: 1 },
+        new AbortController().signal,
+        async () => ({ status: 'approved' }),
+      )
+      expect(Buffer.from(await turn1.read(join(reader.root, 'MEMORY.md'))).toString('utf8')).toContain(
+        'Lint first',
+      )
+      mkdirSync(join(reader.root, 'meta'), { recursive: true })
+      writeFileSync(join(reader.root, 'meta', 'index.sqlite'), 'corrupt')
+
+      const withdrawn = await ws.run('withdraw', A)
+      expect(withdrawn.paragraphs).toEqual([])
+      expect(await ws.file()).toBe(HUMAN)
+      expect(ws.registry().read().paragraphs[0]?.state).toBe('removed')
+      expect(ws.registry().read().revocations).toHaveLength(1)
+      expect(Buffer.from(await turn1.read(join(reader.root, 'MEMORY.md'))).toString('utf8')).not.toContain(
+        'Lint first',
+      )
+      expect((await turn1.recall?.({ query: 'Lint' }))?.hits).toEqual([])
+      const turn2 = reader.files(
+        { read: outside, write: outside, list: outside, stat: outside },
+        { sessionKey: 'reader', turn: 2 },
+        new AbortController().signal,
+        async () => ({ status: 'approved' }),
+      )
+      await expect(turn2.recall?.({ query: 'Lint' })).rejects.toMatchObject({
+        code: 'MEMORY_RECALL_UNAVAILABLE',
+      })
+    } finally {
+      await reader.close?.()
+    }
   })
 })

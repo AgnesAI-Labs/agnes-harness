@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { MemorySession } from '@agnes/extension-api'
+import { memoryPlugin } from '@agnes/base'
+import type { MemoryFilePort, MemoryProvider, MemorySession } from '@agnes/extension-api'
 import {
   normalizedContentHash,
   REVIEW_AFTER_MS,
@@ -11,6 +12,8 @@ import {
   type Revocation,
 } from '@agnes/host-infrastructure/refinement-registry'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { registryView } from '../../src/runtime/refinement/registry-view.js'
+import { savedParagraphs } from '../../src/runtime/refinement/saved-paragraphs.js'
 import { createWorkspaceRefs } from '../../src/runtime/refinement/workspace-refs.js'
 
 const DAY = 86_400_000
@@ -496,5 +499,93 @@ describe('fixes after the branch review', () => {
     expect((await refs.list(AT)).map((r) => r.ref)).toContain('user-memory/r0000000009')
     expect(await refs.renew(AT, 'user-memory/r0000000009', normalizedContentHash(SOME))).toBe(true)
     expect(userRegistry.read().paragraphs[0]?.reviewAfter).toBe(T0 + REVIEW_AFTER_MS)
+  })
+
+  it('excludes paragraphs citing a withdrawn source across read, recall, and Host entries', async () => {
+    const home = scratch()
+    const dataDir = scratch()
+    const now = T0
+    const registry = new RefinementRegistry(dataDir, ROOT, () => now)
+    let found: MemoryProvider | undefined
+    memoryPlugin.apply({
+      providers: {
+        register: (_kind: unknown, value: MemoryProvider) => {
+          found = value
+        },
+      },
+    } as never)
+    if (!found) throw new Error('memory provider not registered')
+    const mem = found.open({
+      home,
+      workspaceRoot: ROOT,
+      sessionKey: 'reader',
+      validity: registryView(registry, () => now),
+    })
+    const outside = async (): Promise<never> => {
+      throw new Error('outside memory')
+    }
+    const fallback: MemoryFilePort = { read: outside, write: outside, list: outside, stat: outside }
+    try {
+      await mem.configure({ mode: 'auto' })
+      const port = mem.paragraphs?.({ sessionKey: 's', turn: 0 }, new AbortController().signal)
+      if (!port) throw new Error('Missing paragraph port')
+      const sourceText = 'Source policy\nAlways run unit tests.'
+      const derivedText = 'Derived rule\nUse vitest here <!-- ref:ra111111111 -->'
+      await port.commit(
+        await port.propose([
+          { op: 'put', id: 'ra111111111', text: sourceText },
+          { op: 'put', id: 'rb222222222', text: derivedText },
+        ]),
+      )
+      const stored = await mem.readFile('MEMORY.md')
+      registry.update((draft) => {
+        draft.paragraphs.push(
+          paragraph({
+            id: 'ra111111111',
+            contentHash: normalizedContentHash(sourceText),
+            fileHash: stored.hash,
+          }),
+          paragraph({
+            id: 'rb222222222',
+            source: { ...paragraph().source, entryId: 'derived', contentHash: 'h2' },
+            contentHash: normalizedContentHash(derivedText),
+            fileHash: stored.hash,
+          }),
+        )
+      }, registry.read().revision)
+
+      const refs = createWorkspaceRefs({
+        dataDir,
+        session: () => ({ workspaceRoot: ROOT, memory: mem }),
+        clock: () => now,
+      })
+      const turn1 = mem.files(
+        fallback,
+        { sessionKey: 'reader', turn: 1 },
+        new AbortController().signal,
+        async () => ({
+          status: 'approved',
+        }),
+      )
+      expect(Buffer.from(await turn1.read(join(mem.root, 'MEMORY.md'))).toString('utf8')).toContain(
+        'Derived rule',
+      )
+      expect((await turn1.recall?.({ query: 'vitest' }))?.hits.map((h) => h.text).join('\n')).toContain(
+        'Derived rule',
+      )
+      expect((await refs.entries?.(AT))?.map((e) => e.ref)).toEqual(['ws.ra111111111', 'ws.rb222222222'])
+
+      await savedParagraphs({ registry: () => registry, clock: () => now })(mem, ROOT, {
+        action: 'withdraw',
+        paragraphId: 'ra111111111',
+      })
+      expect(Buffer.from(await turn1.read(join(mem.root, 'MEMORY.md'))).toString('utf8')).not.toContain(
+        'Derived rule',
+      )
+      expect((await turn1.recall?.({ query: 'vitest' }))?.hits).toEqual([])
+      expect(await refs.entries?.(AT)).toEqual([])
+    } finally {
+      await mem.close?.()
+    }
   })
 })

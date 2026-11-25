@@ -220,10 +220,12 @@ export async function commitParagraph(input: ParagraphCommit): Promise<CommitRes
         else if (failure === 'MEMORY_CONFLICT' && attempt < attempts) {
           expected = revision
           continue
-        } else if (failure !== undefined && failure in NOT_WRITTEN)
-          return { receipt: settle(input, NOT_WRITTEN[failure] as SaveRefusal) }
-        // Whether the file was written is not known: the intent stays for resume to check.
-        return { receipt: intent }
+        } else {
+          if (failure !== undefined && failure in NOT_WRITTEN)
+            return { receipt: settle(input, NOT_WRITTEN[failure] as SaveRefusal) }
+          // Whether the file was written is not known: the intent stays for resume to check.
+          return { receipt: intent }
+        }
       }
       const saved: SaveReceipt = {
         ...intent,

@@ -551,6 +551,22 @@ describe('crash safety', () => {
       expect(await ws.file()).toBe('')
     }
   })
+
+  it('settles MEMORY_COMMITTED_METADATA_FAILED as saved because the file already committed', async () => {
+    const ws = await workspace()
+    ws.setWrap(
+      portWrap((port) => ({
+        async commit(proposal, admission) {
+          await port.commit(proposal, admission)
+          throw Object.assign(new Error('metadata failed'), { code: 'MEMORY_COMMITTED_METADATA_FAILED' })
+        },
+      })),
+    )
+    const receipt = await ws.service().save(request(ws))
+    expect(receipt).toMatchObject({ outcome: 'saved', target: { kind: 'memory-paragraph' } })
+    expect(markedIds(await ws.file())).toHaveLength(1)
+    expect(ws.registry().read().paragraphs).toHaveLength(1)
+  })
   /** Saves with a crash injected at one point; the error escapes as the process would die. */
   async function crashAt(
     point: 'before-commit' | 'after-commit' | 'before-record',
@@ -1210,6 +1226,69 @@ describe('hand-written text and the rules', () => {
     expect(id).not.toBe(hidden)
     // A new, visible copy: the agent sees it.
     expect((await ws.open('reader').snapshot(1))?.content).toContain(BODY)
+  })
+
+  it('upgrades a legacy managed paragraph without provenance.json when fileHash verifies it, while still blocking human edits', async () => {
+    const ws = await workspace()
+    const legacyId = 'rlegacy0001'
+    const legacyContent = `<!-- refinement:${legacyId} -->\n${TEXT}\n<!-- /refinement:${legacyId} -->\n`
+    const legacyHash = createHash('sha256').update(legacyContent).digest('hex')
+    const memRoot = ws.open().root
+    writeFileSync(join(memRoot, 'MEMORY.md'), legacyContent)
+    rmSync(join(memRoot, 'meta', 'provenance.json'), { force: true })
+    const store = ws.registry()
+    store.update((draft) => {
+      draft.paragraphs.push({
+        id: legacyId,
+        source: {
+          sessionKey: 'session-1',
+          kind: 'memory',
+          entryId: 'build',
+          contentHash: 'core-hash',
+          initiator: 'auto',
+        },
+        contentHash: normalizedContentHash(TEXT),
+        reviewAfter: T0 + REVIEW_AFTER_MS,
+        state: 'active',
+        fileHash: legacyHash,
+      })
+    }, store.read().revision)
+
+    const updated = await ws.service().save(
+      request(ws, {
+        session: { key: 'session-2', lane: 'main', workspaceRoot: ws.root, lastSeq: 40, child: false },
+        ...entry({
+          id: `ws.${legacyId}`,
+          content: NEW,
+          replaces: { layer: 'workspace', paragraphId: legacyId },
+        }),
+      }),
+    )
+    expect(updated).toMatchObject({ outcome: 'saved', target: { paragraphId: legacyId } })
+    expect(await ws.file()).toContain(NEW)
+    expect(existsSync(join(memRoot, 'meta', 'provenance.json'))).toBe(true)
+
+    // Without provenance.json, an externally human-edited legacy paragraph is never overwritten.
+    rmSync(join(memRoot, 'meta', 'provenance.json'), { force: true })
+    const edited = legacyContent.replace(BODY, 'Edited manually before upgrade.')
+    writeFileSync(join(memRoot, 'MEMORY.md'), edited)
+    const refused = await ws.service().save(
+      request(ws, {
+        initiator: 'user',
+        session: { key: 'session-2', lane: 'main', workspaceRoot: ws.root, lastSeq: 41, child: false },
+        ...entry({
+          id: `ws.${legacyId}`,
+          content: 'Attempted overwrite after manual edit.',
+          replaces: { layer: 'workspace', paragraphId: legacyId },
+        }),
+      }),
+    )
+    expect(refused).toMatchObject({ outcome: 'refused', reason: 'conflict' })
+    expect(await ws.file()).toBe(edited)
+    const directPort = ws.open().paragraphs?.({ sessionKey: 's', turn: 0 }, new AbortController().signal)
+    await expect(
+      directPort?.propose({ op: 'put', id: legacyId, text: 'Overwrite without hash' }),
+    ).rejects.toMatchObject({ code: 'MEMORY_PARAGRAPH_EDITED' })
   })
 })
 
