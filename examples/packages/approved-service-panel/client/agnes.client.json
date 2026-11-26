@@ -1,0 +1,9 @@
+{
+  "client": {
+    "id": "service-version",
+    "entry": "./index.js",
+    "lifetime": "profile",
+    "homeEntries": [{ "id": "service-version", "placement": "secondary" }],
+    "services": ["approved.panel.version"]
+  }
+}

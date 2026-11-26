@@ -13,13 +13,13 @@
         "runtime": "in-process",
         "metadata": {
           "displayName": "Workbench panel example",
-          "summary": "Demonstrates a workbench panel loaded from a versioned browser plugin.",
-          "description": "Demonstrates a workbench panel loaded from a versioned browser plugin.",
+          "summary": "Native workbench.panel compatibility fixture.",
+          "description": "Tests the legacy workbench.panel slot. The official workbench does not load this native panel.",
           "locales": {
             "zh-CN": {
               "displayName": "工作台面板示例",
-              "summary": "演示从版本化浏览器插件加载工作台面板。",
-              "description": "演示从版本化浏览器插件加载工作台面板。"
+              "summary": "原生 workbench.panel 兼容性测试 fixture。",
+              "description": "用于测试旧版 workbench.panel 槽位。官方工作台不会加载此原生面板。"
             }
           }
         }
@@ -33,13 +33,13 @@
     ],
     "metadata": {
       "displayName": "Workbench panel example",
-      "summary": "Demonstrates a workbench panel loaded from a versioned browser plugin.",
-      "description": "Demonstrates a workbench panel loaded from a versioned browser plugin.",
+      "summary": "Native workbench.panel compatibility fixture.",
+      "description": "Tests the legacy workbench.panel slot. The official workbench does not load this native panel.",
       "locales": {
         "zh-CN": {
           "displayName": "工作台面板示例",
-          "summary": "演示从版本化浏览器插件加载工作台面板。",
-          "description": "演示从版本化浏览器插件加载工作台面板。"
+          "summary": "原生 workbench.panel 兼容性测试 fixture。",
+          "description": "用于测试旧版 workbench.panel 槽位。官方工作台不会加载此原生面板。"
         }
       }
     },

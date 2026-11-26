@@ -1,0 +1,55 @@
+{
+  "name": "@agnes-examples/approved-service-panel",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "license": "Apache-2.0",
+  "exports": "./index.mjs",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:examples/approved-service-panel/runtime",
+        "export": "runtime",
+        "apiRange": "^5.0.0",
+        "runtime": "in-process",
+        "inject": ["services"],
+        "capabilities": { "ui": true }
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:examples/approved-service-panel/runtime",
+        "path": "./client/agnes.client.json"
+      }
+    ],
+    "application": {
+      "id": "approved-service-panel",
+      "workbench": {
+        "tabs": [
+          {
+            "id": "service-version",
+            "title": { "en": "Service version", "zh-CN": "服务版本" },
+            "order": -30,
+            "slot": "workbench.panel",
+            "view": "page",
+            "page": "@agnes-examples/approved-service-panel#service-version",
+            "when": "session"
+          }
+        ]
+      }
+    },
+    "metadata": {
+      "displayName": "Approved service panel example",
+      "summary": "Adds a read-only session service tab after explicit application adoption.",
+      "description": "A local tutorial that reads a synthetic backend version without replacing official interface roles.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "显式采用的服务面板示例",
+          "summary": "显式采用应用后，添加一个读取会话服务的只读页签。",
+          "description": "本地教程示例，读取模拟后端版本，不替换官方界面角色。"
+        }
+      }
+    },
+    "provides": ["ui"]
+  }
+}

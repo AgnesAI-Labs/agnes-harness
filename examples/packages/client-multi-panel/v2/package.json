@@ -13,13 +13,13 @@
         "runtime": "in-process",
         "metadata": {
           "displayName": "Multiple panels example",
-          "summary": "Demonstrates two independently owned workbench panels from one plugin package.",
-          "description": "Demonstrates two independently owned workbench panels from one plugin package.",
+          "summary": "Native workbench.panel fixture row for failure isolation.",
+          "description": "The primary workbench.panel fixture row tests that a failure in the secondary row does not affect it.",
           "locales": {
             "zh-CN": {
               "displayName": "多面板示例",
-              "summary": "演示一个插件包如何提供两个各自归属明确的工作台面板。",
-              "description": "演示一个插件包如何提供两个各自归属明确的工作台面板。"
+              "summary": "用于失败隔离测试的原生 workbench.panel fixture 行。",
+              "description": "第一行声明 workbench.panel，用于验证第二行失败时不会影响第一行。"
             }
           }
         }
@@ -31,13 +31,13 @@
         "runtime": "in-process",
         "metadata": {
           "displayName": "Multiple panels example",
-          "summary": "Demonstrates two independently owned workbench panels from one plugin package.",
-          "description": "Demonstrates two independently owned workbench panels from one plugin package.",
+          "summary": "Native ui:sidebar fixture row that fails on purpose.",
+          "description": "The secondary ui:sidebar fixture row throws during apply to test that the primary row is unaffected.",
           "locales": {
             "zh-CN": {
               "displayName": "多面板示例",
-              "summary": "演示一个插件包如何提供两个各自归属明确的工作台面板。",
-              "description": "演示一个插件包如何提供两个各自归属明确的工作台面板。"
+              "summary": "故意失败的原生 ui:sidebar 测试 fixture 行。",
+              "description": "第二行声明 ui:sidebar，并在应用阶段故意抛出错误，用来验证第一行不受影响。"
             }
           }
         }
@@ -55,13 +55,13 @@
     ],
     "metadata": {
       "displayName": "Multiple panels example",
-      "summary": "Demonstrates two independently owned workbench panels from one plugin package.",
-      "description": "Demonstrates two independently owned workbench panels from one plugin package.",
+      "summary": "Native UI failure isolation fixture. The second row fails on purpose.",
+      "description": "The workbench.panel row tests isolation when the ui:sidebar row throws during apply. The official workbench does not load these native panels.",
       "locales": {
         "zh-CN": {
           "displayName": "多面板示例",
-          "summary": "演示一个插件包如何提供两个各自归属明确的工作台面板。",
-          "description": "演示一个插件包如何提供两个各自归属明确的工作台面板。"
+          "summary": "原生界面失败隔离测试 fixture，第二行故意失败。",
+          "description": "第二行 ui:sidebar 在应用阶段抛出错误，用来验证第一行 workbench.panel 不受影响。官方工作台不会加载这两个原生面板。"
         }
       }
     },
