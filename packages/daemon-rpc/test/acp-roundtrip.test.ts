@@ -433,7 +433,13 @@ describe('local endpoint: ACP round trip', () => {
         _meta: { 'ai.agnes.harness': { preset: 'nope' } },
       },
     })
-    expect(bad).toMatchObject({ error: { code: -32008, data: { reason: 'not in presets.allowed' } } })
+    expect(bad).toMatchObject({
+      error: {
+        code: -32008,
+        data: { code: 'E_PRESET_UNSUPPORTED', reason: 'preset-not-allowed' },
+      },
+    })
+    expect(JSON.stringify((bad as { error: unknown }).error)).not.toContain('nope')
     // With a bundle selected the Host decides, since the bundle may bring that preset itself; a
     // bundle that is not installed, enabled and trusted is the refusal it reports first.
     const missing = await ep.handle({

@@ -91,7 +91,10 @@ export async function createSessionWithAdmission(
   // A selected bundle may bring its own preset, which only the Host can see at admission; it
   // refuses a name outside the session's allowed list there.
   if (preset && !bundles?.length && !cx.host.profile.presets.allowed.includes(preset))
-    throw rpcError('PRESET_SWITCH_REJECTED', { reason: 'not in presets.allowed', preset })
+    throw rpcError('PRESET_SWITCH_REJECTED', {
+      code: 'E_PRESET_UNSUPPORTED',
+      reason: 'preset-not-allowed',
+    })
   // Whether the level is allowed for this preset is the Host's admission; only the name is checked.
   const permission = h.permission
   if (permission !== undefined && (typeof permission !== 'string' || !SESSION_PERMISSIONS.has(permission)))

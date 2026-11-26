@@ -93,7 +93,7 @@ it.each([
     reason: 'preset-not-allowed',
     wire: -32008,
     message: 'PRESET_SWITCH_REJECTED',
-    data: { code: 'PRESET_SWITCH_REJECTED', reason: 'not in presets.allowed' },
+    data: { code: 'E_PRESET_UNSUPPORTED', reason: 'preset-not-allowed' },
   },
   {
     code: 'E_PRESET_UNSUPPORTED',

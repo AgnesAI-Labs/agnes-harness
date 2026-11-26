@@ -200,6 +200,16 @@ const PUBLIC_ERROR_COPY = {
       "action": "请检查配置和兼容性。"
     }
   },
+  "presetRoute": {
+    "en": {
+      "reason": "This preset asks for model slots this process did not assemble.",
+      "action": "Set that preset as the profile default and start again, or choose a preset that uses the assembled routes."
+    },
+    "zh-CN": {
+      "reason": "该预设要求的模型槽位不是这次进程装配的路由表。",
+      "action": "请将该预设设为配置的默认预设后再启动，或改用与已装配路由一致的预设。"
+    }
+  },
   "conflict": {
     "en": {
       "reason": "The resource changed.",
@@ -617,7 +627,7 @@ export const PUBLIC_ERROR_CONTRACT = {
   "SEARCH_ROUTE": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["rejected"], reasons: {  } },
   "SEARCH_TIMEOUT": { rpc: "REQUEST_TIMEOUT", messageKey: "appServer.errors.timeout", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["timeout"], reasons: {  } },
   "E_PRESET_UNSUPPORTED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["preset"], reasons: { "permission-axis": PUBLIC_ERROR_COPY["permissionAxis"], "bundle-unavailable": PUBLIC_ERROR_COPY["unavailable"], "preset-not-allowed": PUBLIC_ERROR_COPY["preset"], "clean-home-required": PUBLIC_ERROR_COPY["cleanHome"] } },
-  "E_PRESET_UNRESOLVED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: { "no-routes": PUBLIC_ERROR_COPY["unavailable"], "no-models": PUBLIC_ERROR_COPY["unavailable"], "pin-without-route": PUBLIC_ERROR_COPY["unavailable"], "unknown-slot": PUBLIC_ERROR_COPY["unavailable"], "unknown-route": PUBLIC_ERROR_COPY["unavailable"], "model-undeclared": PUBLIC_ERROR_COPY["unavailable"], "no-primary": PUBLIC_ERROR_COPY["unavailable"], "route-unserved": PUBLIC_ERROR_COPY["unavailable"], "model-unserved": PUBLIC_ERROR_COPY["unavailable"], "route-not-assembled": PUBLIC_ERROR_COPY["unavailable"], "route-duplicate": PUBLIC_ERROR_COPY["unavailable"], "reserved-route-name": PUBLIC_ERROR_COPY["unavailable"], "bedrock-region-conflict": PUBLIC_ERROR_COPY["unavailable"] } },
+  "E_PRESET_UNRESOLVED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: { "no-routes": PUBLIC_ERROR_COPY["unavailable"], "no-models": PUBLIC_ERROR_COPY["unavailable"], "pin-without-route": PUBLIC_ERROR_COPY["unavailable"], "unknown-slot": PUBLIC_ERROR_COPY["unavailable"], "unknown-route": PUBLIC_ERROR_COPY["unavailable"], "model-undeclared": PUBLIC_ERROR_COPY["unavailable"], "no-primary": PUBLIC_ERROR_COPY["unavailable"], "route-unserved": PUBLIC_ERROR_COPY["unavailable"], "model-unserved": PUBLIC_ERROR_COPY["unavailable"], "route-not-assembled": PUBLIC_ERROR_COPY["presetRoute"], "route-duplicate": PUBLIC_ERROR_COPY["unavailable"], "reserved-route-name": PUBLIC_ERROR_COPY["unavailable"], "bedrock-region-conflict": PUBLIC_ERROR_COPY["unavailable"] } },
   "E_MODEL_UNSUPPORTED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["model"], reasons: { "restart-required": PUBLIC_ERROR_COPY["modelRestart"] } },
   "E_MODEL_UNKNOWN": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["modelUnknown"], reasons: {  } },
   "E_SEAM_INIT": { rpc: "INTERNAL_ERROR", messageKey: "appServer.errors.internal", boot: true, skillInstall: false, localized: PUBLIC_ERROR_COPY["internal"], reasons: { "provider-unknown": PUBLIC_ERROR_COPY["provider"], "provider-invalid": PUBLIC_ERROR_COPY["provider"], "provider-incompatible": PUBLIC_ERROR_COPY["provider"], "provider-unavailable": PUBLIC_ERROR_COPY["provider"], "provider-duplicate": PUBLIC_ERROR_COPY["provider"], "native-glibc-incompatible": PUBLIC_ERROR_COPY["nativeGlibc"] } },

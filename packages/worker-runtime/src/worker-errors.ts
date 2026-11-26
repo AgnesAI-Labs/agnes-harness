@@ -38,8 +38,6 @@ export function workerDomainFailure(error: unknown) {
         code: 'BUNDLE_UNAVAILABLE',
         reason: 'selected bundle is not installed, enabled and trusted',
       })
-    if (reason === 'preset-not-allowed')
-      return rpcError('PRESET_SWITCH_REJECTED', { reason: 'not in presets.allowed' })
   }
   const contract = publicErrorContract(code)
   const rejection = publicRejectionRpc(error)

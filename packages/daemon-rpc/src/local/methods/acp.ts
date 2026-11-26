@@ -460,7 +460,10 @@ export function throwSessionOpenRpcError(error: unknown, sessionId = ''): never 
         reason: 'selected bundle is not installed, enabled and trusted',
       })
     if (reason === 'preset-not-allowed')
-      throw rpcError('PRESET_SWITCH_REJECTED', { reason: 'not in presets.allowed' })
+      throw rpcError('PRESET_SWITCH_REJECTED', {
+        code: 'E_PRESET_UNSUPPORTED',
+        reason: 'preset-not-allowed',
+      })
   }
   if (e?.code === 'E_LOOP_MISSING')
     throw rpcError('SEMANTIC_REJECTED', {

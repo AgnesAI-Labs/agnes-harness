@@ -21,6 +21,7 @@ import { agnesVersion, type MainIO, main } from '../src/bin.js'
 import type { LocalBootDeps } from '../src/boot/local.js'
 import { bootLocal } from '../src/boot/local.js'
 import {
+  reportCommandFailure,
   safeDaemonDisconnectLine,
   safeExpectedResourceRpcFailureLine,
   safeExpectedSessionRpcFailureLine,
@@ -187,6 +188,40 @@ describe('main', () => {
       safeExpectedSessionRpcFailureLine({ code: -32008, data: { code: 'PRESET_SWITCH_REJECTED' } }),
     ).toBeUndefined()
     expect(safeExpectedSessionRpcFailureLine(new Error('PRESET_SWITCH_REJECTED'))).toBeUndefined()
+  })
+
+  it('prints the public preset refusal when the daemon classified the allow-list or the route table', () => {
+    const lines = (error: JsonRpcError): string => {
+      let stderr = ''
+      const sink = new PassThrough()
+      sink.on('data', (chunk: Buffer | string) => {
+        stderr += String(chunk)
+      })
+      expect(reportCommandFailure(error, undefined, { env: {}, stderr: sink })).toBe(1)
+      return stderr
+    }
+    expect(
+      lines(
+        new JsonRpcError({
+          code: -32008,
+          message: 'PRESET_SWITCH_REJECTED',
+          data: { code: 'E_PRESET_UNSUPPORTED', reason: 'preset-not-allowed' },
+        }),
+      ),
+    ).toBe(
+      'E_PRESET_UNSUPPORTED: The preset or permission selection was refused. Choose a supported preset and a compatible permission level.\n',
+    )
+    expect(
+      lines(
+        new JsonRpcError({
+          code: -32008,
+          message: 'PRESET_SWITCH_REJECTED private slot',
+          data: { code: 'E_PRESET_UNRESOLVED', reason: 'route-not-assembled' },
+        }),
+      ),
+    ).toBe(
+      'E_PRESET_UNRESOLVED: This preset asks for model slots this process did not assemble. Set that preset as the profile default and start again, or choose a preset that uses the assembled routes.\n',
+    )
   })
 
   it('renders a daemon disconnect as one safe retry line without transport diagnostics', () => {

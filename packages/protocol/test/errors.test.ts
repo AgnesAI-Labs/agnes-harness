@@ -197,6 +197,24 @@ it('keeps accessor-backed codes closed when their values change during classific
   })
 })
 
+it('names an unassembled preset route without the host diagnostic', () => {
+  const error = normalizeRpcError(
+    rpcError('PRESET_SWITCH_REJECTED', {
+      code: 'E_PRESET_UNRESOLVED',
+      reason: 'route-not-assembled',
+    }),
+  )
+  expect(error.data.publicReason).toBe('This preset asks for model slots this process did not assemble.')
+  expect(error.data.userAction).toBe(
+    'Set that preset as the profile default and start again, or choose a preset that uses the assembled routes.',
+  )
+  expect(publicErrorHelp(error, 'zh-CN')).toMatchObject({
+    code: 'E_PRESET_UNRESOLVED',
+    reason: '该预设要求的模型槽位不是这次进程装配的路由表。',
+  })
+  expect(JSON.stringify(error)).not.toContain('wants a route')
+})
+
 it('describes an unknown model as a catalogue miss, not a preset or permission refusal', () => {
   const error = normalizeRpcError(rpcError('PRESET_SWITCH_REJECTED', { code: 'E_MODEL_UNKNOWN' }))
   expect(error.data.publicReason).toBe(

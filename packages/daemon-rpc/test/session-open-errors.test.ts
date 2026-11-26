@@ -105,9 +105,17 @@ describe('throwSessionOpenRpcError', () => {
         userAction: 'Install, enable and trust the bundle, or choose another agent.',
       })
     }
-    expect(
-      caught({ code: 'E_PRESET_UNSUPPORTED', message: 'omitted', reason: 'preset-not-allowed' }),
-    ).toMatchObject({ code: -32008, message: 'PRESET_SWITCH_REJECTED' })
+    const refused = caught({
+      code: 'E_PRESET_UNSUPPORTED',
+      message: 'omitted',
+      reason: 'preset-not-allowed',
+    })
+    expect(refused).toEqual({
+      code: -32008,
+      message: 'PRESET_SWITCH_REJECTED',
+      data: { code: 'E_PRESET_UNSUPPORTED', reason: 'preset-not-allowed' },
+    })
+    expect(JSON.stringify(refused)).not.toContain('omitted')
     const other = new HostError('E_PRESET_UNSUPPORTED', 'composition: invalid tools')
     expect(caught(other)).toBe(other)
   })
