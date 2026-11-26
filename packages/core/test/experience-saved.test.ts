@@ -597,6 +597,59 @@ describe('entries saved in earlier sessions reach the model through the snapshot
     },
   )
 
+  it('discards a listing that crosses revisions so ABA never reuses a stale cache', async () => {
+    let rev = 'r-present'
+    let entries: SavedEntry[] = [saved(1)]
+    let phase: 'initial' | 'armed' | 'crossed' | 'done' = 'initial'
+    const provider = fakeProvider([textTurn('ok'), textTurn('ok')])
+    const refs: RefinementWorkspaceRefs = {
+      list: async () => [],
+      renew: async () => false,
+      revision: () => {
+        if (phase === 'crossed') {
+          // Return the changed revision to savedFor, then flip back to r-absent before commit/retry (ABA).
+          phase = 'done'
+          const current = rev
+          rev = 'r-absent'
+          return current
+        }
+        return rev
+      },
+      entries: async () => {
+        if (phase === 'armed') {
+          phase = 'crossed'
+          rev = 'r-present'
+          return [saved(1)]
+        }
+        return entries
+      },
+    }
+    const opened = await openSession({
+      provider,
+      refinementEnabled: () => true,
+      refinement: { settings: () => ({}) as never, planner: () => undefined, workspaceRefs: refs },
+    })
+    try {
+      const turn = async () => {
+        await opened.session.enqueue('next-turn', { content: [{ type: 'text', text: 'next' }], actor })
+        expect(
+          (await opened.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason,
+        ).toBe('completed')
+      }
+      await turn()
+      expect(JSON.stringify(provider.requests[0]?.messages)).toContain('[memory/ws.r0000000001 v1] (saved)')
+      entries = []
+      rev = 'r-absent'
+      phase = 'armed'
+      await turn()
+      expect(JSON.stringify(provider.requests[1]?.messages)).toContain(
+        '[memory/ws.r0000000001 v1] withdrawn:',
+      )
+    } finally {
+      await opened.session.close()
+    }
+  })
+
   it.each(['permuted', 'changing'])('bounds preparation for a %s unversioned listing', async (mode) => {
     const p = port([])
     delete p.refs.revision

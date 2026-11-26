@@ -129,12 +129,12 @@ export function recordExisting(
     if (!input.switchCurrent()) throw fault('REFINEMENT_SWITCH_CHANGED')
     input.assertAllowed?.()
     input.onSaved?.(draft)
+    input.assertFileCurrent?.()
     if (
       input.clock() >=
       Math.min(existing.nextExpiry ?? Infinity, dependencyDeadline(draft, [existing.id, ...existing.refs]))
     )
       throw fault('REGISTRY_REVISION_CONFLICT')
-    input.assertFileCurrent?.()
     putReceipt(draft, receipt)
   }, input.decided.revision)
   return receipt

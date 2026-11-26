@@ -973,4 +973,44 @@ describe('fixes after the branch review', () => {
       await mem.close?.()
     }
   })
+
+  it('checks the review deadline after assertCurrent reads provider files', async () => {
+    const dataDir = scratch()
+    let now = T0
+    const registry = new RefinementRegistry(dataDir, ROOT, () => now)
+    const mem = fileProvider().open({
+      home: scratch(),
+      workspaceRoot: ROOT,
+      sessionKey: AT.key,
+      validity: registryView(registry, () => now),
+    })
+    try {
+      await mem.configure({ mode: 'auto' })
+      const p = paragraph({ reviewAfter: T0 + 1000 })
+      const body = `<!-- refinement:${p.id} -->\n${TEXT}\n<!-- /refinement:${p.id} -->`
+      await mem.editFile('MEMORY.md', body, (await mem.readFile('MEMORY.md')).hash)
+      registry.update((draft) => {
+        draft.paragraphs.push(p)
+      }, registry.read().revision)
+      let calls = 0
+      const wrapped = {
+        ...mem,
+        stateRevision() {
+          calls++
+          const rev = mem.stateRevision!()
+          if (calls === 2) now = p.reviewAfter
+          return rev
+        },
+      }
+      const refs = createWorkspaceRefs({
+        dataDir,
+        session: () => ({ workspaceRoot: ROOT, memory: wrapped }),
+        clock: () => now,
+      })
+      expect(await refs.renew(AT, `workspace-memory/${p.id}`, sha256Hex(TEXT))).toBe(false)
+      expect(registry.read().paragraphs[0]?.reviewAfter).toBe(p.reviewAfter)
+    } finally {
+      await mem.close?.()
+    }
+  })
 })

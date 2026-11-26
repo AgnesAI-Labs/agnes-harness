@@ -372,8 +372,10 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     }
     const port = memory ? paragraphPortOf(memory, source, new AbortController().signal) : undefined
     if (!memory || !port) return refused('unsupported-provider', 'memory-mode')
+    let assertFileCurrent: ReturnType<typeof fileRevisionGuard>
     let mode: string
     try {
+      assertFileCurrent = fileRevisionGuard(memory, 'REFINEMENT_SAVE_STALE')
       mode = (await memory.inspect()).settings.mode
     } catch {
       return refused('unavailable', 'memory-mode')
@@ -384,10 +386,8 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     verdicts['memory-mode'] = 'pass'
     const text = paragraphText(request.entry)
     let listed: MemoryParagraphList
-    let assertFileCurrent: ReturnType<typeof fileRevisionGuard>
     let visible: Awaited<ReturnType<typeof paragraphVisibility>>
     try {
-      assertFileCurrent = fileRevisionGuard(memory, 'REFINEMENT_SAVE_STALE')
       listed = await port.list()
       visible = await paragraphVisibility(memory, 'workspace', listed, registry, deps.clock)
     } catch {

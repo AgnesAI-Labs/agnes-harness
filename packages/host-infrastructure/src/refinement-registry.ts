@@ -463,6 +463,7 @@ export class RefinementRegistry {
     },
   ): void {
     this.transact((draft) => {
+      opts?.assertCurrent?.()
       const record =
         'paragraphId' in target
           ? draft.paragraphs.find((p) => p.id === target.paragraphId && p.state === 'active')
@@ -477,7 +478,6 @@ export class RefinementRegistry {
         now >= dependencyDeadline(draft, opts?.dependencyIds ?? [])
       )
         throw failure('REGISTRY_ENTRY_NOT_RENEWABLE')
-      opts?.assertCurrent?.()
       record.reviewAfter = now + REVIEW_AFTER_MS
     }, opts?.expectedRevision)
   }

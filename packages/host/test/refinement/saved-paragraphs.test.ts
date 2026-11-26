@@ -274,8 +274,18 @@ describe('saved paragraphs on the memory page', () => {
     await ws.withSession(async (memory) => {
       for (let i = 0; i < 128; i++) writeFileSync(join(memory.root, `topic-${i}.md`), 'Topic')
     })
-    expect((await ws.run('list')).paragraphs).toMatchObject([{ id: A, hidden: true, renewable: false }])
-    expect((await ws.run('withdraw', A)).paragraphs).toEqual([])
+    const adminManage = savedParagraphs({ registry: ws.registry, clock: ws.clock })
+    const listed = await manageMemory(ws.open(), { cwd: ws.root, saved: { action: 'list' } }, adminManage)
+    expect(listed.inspection.files.length).toBeLessThanOrEqual(128)
+    expect(listed.inspection.files.some((f) => f.path === 'MEMORY.md')).toBe(true)
+    expect(listed.saved?.paragraphs).toMatchObject([{ id: A, hidden: true, renewable: false }])
+    const withdrawn = await manageMemory(
+      ws.open(),
+      { cwd: ws.root, saved: { action: 'withdraw', paragraphId: A } },
+      adminManage,
+    )
+    expect(withdrawn.inspection.files.length).toBeLessThanOrEqual(128)
+    expect(withdrawn.saved?.paragraphs).toEqual([])
     expect(await ws.file()).toBe(hand)
   })
 

@@ -139,7 +139,7 @@ export function paragraphPort(
   const makeContext = (config: MemorySettings, now: number, allowOverCount = false): ViewContext => ({
     layer: 'workspace',
     files: store.files('view', allowOverCount),
-    ...(config.userEnabled ? { userFiles: hooks.user.files() } : {}),
+    ...(config.userEnabled ? { userFiles: hooks.user.files('view', allowOverCount) } : {}),
     userEnabled: config.userEnabled,
     now,
     validity: answer,

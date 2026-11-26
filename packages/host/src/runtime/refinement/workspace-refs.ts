@@ -345,7 +345,7 @@ function listSkills(registry: RefinementRegistry, workspaceRoot: string, now: nu
     out.push({
       ref: `${SKILL_REF}${skill.name}`,
       ...lines,
-      version: normalizedContentHash(text),
+      version: sha256Hex(text),
       source: { sessionKey, kind, entryId },
     })
     if (out.length >= MAX_LISTED) break
@@ -370,7 +370,7 @@ function renewSkill(
   const found = snap.skills.find((k) => k.name === name && k.state === 'active' && clock() < k.reviewAfter)
   const versionMatches = () => {
     const text = installedText(workspaceRoot, name)
-    return text !== undefined && normalizedContentHash(text) === version
+    return text !== undefined && sha256Hex(text) === version
   }
   if (!found || !versionMatches()) return false
   try {

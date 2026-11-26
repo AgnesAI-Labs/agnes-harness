@@ -27,7 +27,7 @@ import {
   retrievalOf,
   type ViewContext,
 } from './pipeline.js'
-import { MemoryStore } from './store.js'
+import { MAX_FILES, MemoryStore } from './store.js'
 import { topicLinksFingerprint } from './topic-links.js'
 import { renderUserLayer, userParagraphPort } from './user-layer.js'
 import { buildView, type HideRange, type MemoryView, rawOffsetToLine } from './view.js'
@@ -344,20 +344,27 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
     return config as MemorySettings & { mode: 'ask' | 'auto' }
   }
   const inspect = async (): Promise<MemoryInspection> => {
-    const files = store.files().map(({ content: _, ...entry }) => entry)
+    const all = store.files('view', true).map(({ content: _, ...entry }) => entry)
+    const index = all.find((entry) => entry.path === 'MEMORY.md')
+    const files =
+      all.length <= MAX_FILES
+        ? all
+        : index
+          ? [index, ...all.filter((entry) => entry.path !== 'MEMORY.md').slice(0, MAX_FILES - 1)]
+          : all.slice(0, MAX_FILES)
     const writer = store.writer()
     return {
       root: paths.root,
       settings: store.configuration(),
       files,
-      bytes: files.reduce((n, entry) => n + entry.bytes, 0),
+      bytes: all.reduce((n, entry) => n + entry.bytes, 0),
       ...(writer ? { lastWriter: writer } : {}),
     }
   }
   const viewCtx = (now: number, config = store.configuration(), allowOverCount = false): ViewContext => ({
     layer: 'workspace',
     files: store.files('view', allowOverCount),
-    ...(config.userEnabled ? { userFiles: user.files() } : {}),
+    ...(config.userEnabled ? { userFiles: user.files('view', allowOverCount) } : {}),
     userEnabled: config.userEnabled,
     now,
     validity,

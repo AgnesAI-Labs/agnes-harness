@@ -388,20 +388,25 @@ const cacheableRevision = (revision: string) => revision !== '' && !revision.sta
 async function savedFor(
   s: SessionImpl,
   fresh: boolean,
-): Promise<{ entries: readonly SavedEntry[]; failed: boolean }> {
-  const revision = savedRevisionOf(s)
+): Promise<{ entries: readonly SavedEntry[]; failed: boolean; crossed: boolean; revision: string }> {
+  const before = savedRevisionOf(s)
   const cached = savedCache.get(s)
   // A new snapshot always reads afresh.
-  if (!fresh && cached && cacheableRevision(revision) && cached.revision === revision)
-    return { entries: cached.entries, failed: false }
+  if (!fresh && cached && cacheableRevision(before) && cached.revision === before)
+    return { entries: cached.entries, failed: false, crossed: false, revision: before }
   const listed = await savedEntriesOf(s)
   if (!listed) {
     savedCache.delete(s)
-    return { entries: [], failed: true }
+    return { entries: [], failed: true, crossed: false, revision: before }
   }
-  if (cacheableRevision(revision)) savedCache.set(s, { revision, entries: listed })
+  const after = savedRevisionOf(s)
+  if (after !== before) {
+    savedCache.delete(s)
+    return { entries: [], failed: false, crossed: true, revision: after }
+  }
+  if (cacheableRevision(after)) savedCache.set(s, { revision: after, entries: listed })
   else savedCache.delete(s)
-  return { entries: listed, failed: false }
+  return { entries: listed, failed: false, crossed: false, revision: after }
 }
 
 const compareText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
@@ -496,6 +501,7 @@ export type ExperienceStamp = Readonly<{
   meta: unknown
   tombstones: unknown
 }> & {
+  stale?: boolean
   savedView?: { digest?: string; required: boolean }
   delivery?: { legacyLooked: boolean; savedOwed: boolean }
 }
@@ -522,6 +528,7 @@ export function experienceStamp(s: SessionImpl): ExperienceStamp {
 
 /** Whether the switch, the host's saved revision or any session entry state changed since `was`. */
 export function stampChanged(was: ExperienceStamp, s: SessionImpl): boolean {
+  if (was.stale) return true
   const now = experienceStamp(s)
   return (
     was.on !== now.on ||
@@ -600,8 +607,18 @@ export async function deriveExperienceNotes(
   const cold = !seen.snapshot || legacy || owedBefore
   const needsListing = givenSaved.length > 0 || withdrawnSaved.length > 0 || owedBefore
   const verifyListing = stamp && !cacheableRevision(stamp.saved) && s.d.refinement?.workspaceRefs?.entries
-  const saved =
-    cold || needsListing || verifyListing ? await savedFor(s, cold) : { entries: [], failed: false }
+  const shouldList = cold || needsListing || Boolean(verifyListing)
+  let saved = shouldList
+    ? await savedFor(s, cold)
+    : { entries: [] as readonly SavedEntry[], failed: false, crossed: false, revision: stamp?.saved ?? '' }
+  if (saved.crossed || (stamp && shouldList && saved.revision !== stamp.saved)) {
+    if (stamp) {
+      stamp.stale = true
+      return []
+    }
+    saved = await savedFor(s, true)
+    if (saved.crossed) return []
+  }
   if (stamp && (verifyListing || (saved.failed && needsListing))) {
     stamp.savedView = {
       ...(saved.failed ? {} : { digest: savedDigest(saved.entries) }),

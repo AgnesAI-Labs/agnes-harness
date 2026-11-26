@@ -36,7 +36,7 @@ import { applyParagraphRemovalsWithSlices, verifiedSingleParagraphRemoval } from
 import { isMemoryName, missing, name, safe } from './paths.js'
 
 const MAX_FILE_BYTES = 1024 * 1024
-const MAX_FILES = 128
+export const MAX_FILES = 128
 export class FileCountLimit extends MemoryFault {
   constructor() {
     super('MEMORY_CONSOLIDATION_REQUIRED')
@@ -72,9 +72,9 @@ function validateTopicLinks(
       }))
     : []
   for (const match of candidate.content.matchAll(topicLinks)) {
+    if (slices && isPreExistingMatch(match.index, match.index + match[0].length, slices, prior)) continue
     const target = name(match[1] ?? match[2] ?? match[3] ?? '')
     if (target !== candidate.path && files.some((entry) => entry.path === target)) continue
-    if (slices && isPreExistingMatch(match.index, match.index + match[0].length, slices, prior)) continue
     throw fault('MEMORY_MISSING_TOPIC')
   }
 }

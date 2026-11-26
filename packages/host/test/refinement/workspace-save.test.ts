@@ -261,6 +261,23 @@ describe('the save-to-workspace decision order', () => {
     } finally {
       await editor.close?.()
     }
+    // Switching memory off while inspect() is returning must retry and refuse with memory-off.
+    const wsOff = await workspace()
+    const saveOff = wsOff.service()
+    expect(await saveOff.save(request(wsOff))).toMatchObject({ outcome: 'saved' })
+    let flipped = false
+    wsOff.setWrap((session) => ({
+      ...session,
+      async inspect() {
+        const result = await session.inspect()
+        if (!flipped) {
+          flipped = true
+          await session.configure({ mode: 'off' })
+        }
+        return result
+      },
+    }))
+    expect(await saveOff.save(request(wsOff))).toMatchObject({ outcome: 'refused', reason: 'memory-off' })
   })
 
   it('refuses a duplicate whose placement read overlaps a withdrawal', async () => {

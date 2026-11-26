@@ -1,10 +1,7 @@
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import {
-  normalizedContentHash,
-  REVIEW_AFTER_MS,
-  RefinementRegistry,
-} from '@agnes/host-infrastructure/refinement-registry'
+import { REVIEW_AFTER_MS, RefinementRegistry } from '@agnes/host-infrastructure/refinement-registry'
+import { sha256Hex } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { skillDraftOf } from '../../src/runtime/refinement/skill-drafts.js'
 import { rollbackSkillForUser } from '../../src/runtime/refinement/skill-review.js'
@@ -63,7 +60,7 @@ describe('saved skills a plan may confirm', () => {
         ref: `workspace-skill/${NAME}`,
         title: expect.stringMatching(/^Fix lint errors before a commit/u),
         summary: 'Run pnpm lint and fix what it reports.',
-        version: normalizedContentHash(readFileSync(t.file, 'utf8')),
+        version: sha256Hex(readFileSync(t.file, 'utf8')),
         source: { sessionKey: 'session-a', kind: 'skill', entryId: NAME },
       },
     ])
@@ -80,6 +77,13 @@ describe('saved skills a plan may confirm', () => {
     expect(t.record()?.reviewAfter).toBe(before)
     expect(await t.refs.renew(AT, listed.ref, listed.version)).toBe(true)
     expect(t.record()?.reviewAfter).toBe(t.now.value + REVIEW_AFTER_MS)
+    // A case-only change in SKILL.md invalidates the old version hash.
+    const caseChanged = readFileSync(t.file, 'utf8').replace('pnpm', 'PNPM')
+    writeFileSync(t.file, caseChanged)
+    expect(await t.refs.renew(AT, listed.ref, listed.version)).toBe(false)
+    const afterCase = (await t.refs.list(AT))[0]
+    expect(afterCase?.version).toBe(sha256Hex(caseChanged))
+    expect(await t.refs.renew(AT, listed.ref, afterCase?.version as string)).toBe(true)
     // The installed file changes after the read, while renewal waits to update the registry.
     const renewed = t.record()?.reviewAfter
     t.now.value++
@@ -92,7 +96,7 @@ describe('saved skills a plan may confirm', () => {
       return update.call(this, ...args)
     })
     try {
-      expect(await t.refs.renew(AT, listed.ref, listed.version)).toBe(false)
+      expect(await t.refs.renew(AT, listed.ref, afterCase?.version as string)).toBe(false)
       expect(t.record()?.reviewAfter).toBe(renewed)
     } finally {
       spy.mockRestore()
@@ -141,7 +145,7 @@ describe('saved skills a plan may confirm', () => {
     const [listed] = await t.refs.list(AT)
     expect(listed).toMatchObject({
       ref: `workspace-skill/${NAME}`,
-      version: normalizedContentHash(readFileSync(t.file, 'utf8')),
+      version: sha256Hex(readFileSync(t.file, 'utf8')),
       summary: 'Run pnpm lint and fix what it reports.',
     })
     t.now.value += 86_400_000

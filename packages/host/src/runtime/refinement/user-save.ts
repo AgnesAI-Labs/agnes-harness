@@ -211,8 +211,10 @@ export function createUserSave(deps: UserSaveDeps): UserSave {
     }
     const port = memory ? userPortOf(memory, source, new AbortController().signal) : undefined
     if (!memory || !port) return refused('unsupported-provider', 'memory-mode')
+    let assertFileCurrent: ReturnType<typeof fileRevisionGuard>
     let read: SaveReceipt
     try {
+      assertFileCurrent = fileRevisionGuard(memory, 'REFINEMENT_SAVE_STALE')
       const { settings } = await memory.inspect()
       read = { ...base, userMemoryRead: settings.mode !== 'off' && settings.userEnabled === true }
     } catch {
@@ -221,10 +223,8 @@ export function createUserSave(deps: UserSaveDeps): UserSave {
     verdicts['memory-mode'] = 'pass'
     // 6. Capacity, known once the change is proposed.
     let listed: MemoryParagraphList
-    let assertFileCurrent: ReturnType<typeof fileRevisionGuard>
     let visible: Awaited<ReturnType<typeof paragraphVisibility>>
     try {
-      assertFileCurrent = fileRevisionGuard(memory, 'REFINEMENT_SAVE_STALE')
       listed = await port.list()
       visible = await paragraphVisibility(memory, 'user', listed, registry, deps.clock)
     } catch {

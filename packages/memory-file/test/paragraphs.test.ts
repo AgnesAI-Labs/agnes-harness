@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type {
@@ -799,5 +799,27 @@ describe('paragraph-level CAS (expectTextHash)', () => {
       code: 'MEMORY_HUMAN_EDITED',
     })
     expect(await f.raw()).toBe('New lesson')
+  })
+
+  it('allows verified workspace withdrawal with pre-existing out-of-scope links or over-count user topics', async () => {
+    const f = await fixture({ validity: view({ [A]: 'valid' }).view })
+    try {
+      await f.session.configure({ mode: 'auto', userEnabled: true })
+      const port = f.paragraphs()
+      await port.commit(await port.propose({ op: 'put', id: A, text: 'Withdraw me' }))
+      const userDir = join(f.home, 'memory', 'user')
+      await mkdir(userDir, { recursive: true })
+      for (let i = 0; i < 129; i++) await writeFile(join(userDir, `topic-${i}.md`), '')
+      const external = 'See [guide](docs/setup.md).\n\n'
+      await writeFile(f.index, `${external}${block(A, 'Withdraw me')}`)
+      await port.commit(await port.propose({ op: 'remove', id: A }))
+      expect(await f.raw()).toBe('See [guide](docs/setup.md).\n')
+      await writeFile(f.index, `${external}${block(A, 'Withdraw me')}`)
+      const before = await f.session.readFile('MEMORY.md')
+      await f.session.editFile('MEMORY.md', 'See [guide](docs/setup.md).\n', before.hash)
+      expect(await f.raw()).toBe('See [guide](docs/setup.md).\n')
+    } finally {
+      await f.session.close?.()
+    }
   })
 })
