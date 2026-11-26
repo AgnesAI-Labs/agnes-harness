@@ -76,10 +76,15 @@ function signalled(signal: AbortSignal) {
   })
 }
 const controllers = new WeakMap<SessionImpl, ChildLifecycleControls>()
+const livePendingPauses = new Map<string, Set<ChildLifecycleControls>>()
 export function childControls(parent: SessionImpl) {
   const controls = controllers.get(parent)
   if (!controls) throw new CoreError('E_UNSUPPORTED', 'Child lifecycle controller is unavailable')
   return controls
+}
+export function hasLivePendingPause(childKey: string): boolean {
+  const owners = livePendingPauses.get(childKey)
+  return Boolean(owners && owners.size > 0)
 }
 
 export async function canSettleColdCancelling(
@@ -179,12 +184,19 @@ export class ChildLifecycleControls {
       throw new CoreError('E_CAS', 'Child state revision changed during control')
     return { ...record, state, stateRevision: record.stateRevision + 1 }
   }
+  private clearPendingPause(key: string) {
+    const owners = livePendingPauses.get(key)
+    if (!owners) return
+    owners.delete(this)
+    if (owners.size === 0) livePendingPauses.delete(key)
+  }
   private wake(key: string, terminal = false) {
     const park = this.parks.get(key)
     const child = this.port.live(key)
     if (child) releaseChildRun(child, terminal)
     park?.onClose?.()
     this.parks.delete(key)
+    this.clearPendingPause(key)
     park?.boundary.abort()
     park?.wake.abort()
   }
@@ -263,7 +275,12 @@ export class ChildLifecycleControls {
             return result(record, 'paused')
           }),
         )
-        .finally(() => off?.())
+        .finally(() => {
+          off?.()
+          const currentPark = this.parks.get(key)
+          if (currentPark && currentPark.done === done) currentPark.pending = false
+          this.clearPendingPause(key)
+        })
       this.parks.set(key, {
         boundary,
         wake,
@@ -271,10 +288,17 @@ export class ChildLifecycleControls {
         pending: !!drain,
         onClose: child?.onClosed(() => this.wake(key, true)),
       })
-      if (drain)
+      if (drain) {
+        let owners = livePendingPauses.get(key)
+        if (!owners) {
+          owners = new Set()
+          livePendingPauses.set(key, owners)
+        }
+        owners.add(this)
         void done.catch((error) =>
           this.parent().d.logger.error('Child checkpoint failed', { error: String(error) }),
         )
+      }
       return {
         done: drain
           ? Promise.resolve({ result: result(record, record.state, true), pending: done })

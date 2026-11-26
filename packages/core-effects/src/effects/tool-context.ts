@@ -534,10 +534,39 @@ export function buildToolContext(
           const status = collectStatus(snap)
           const ackSeq =
             snap.completionSeq !== undefined ? snap.completionSeq : snap.cancelled ? 0 : undefined
-          if (snap.completionId && ackSeq !== undefined)
-            await d.children.collected?.(childKey, snap.completionId, ackSeq)
-          else if (status === 'waiting_approval' && snap.stateRevision !== undefined)
-            await d.children.observedState?.(childKey, 'waiting_approval', snap.stateRevision)
+          if (snap.completionId && ackSeq !== undefined) {
+            try {
+              await d.children.collected?.(childKey, snap.completionId, ackSeq)
+            } catch (error) {
+              const readError = error instanceof Error ? error.message : String(error)
+              throw new CoreError(
+                error instanceof CoreError ? error.code : 'E_STORAGE_FAULT',
+                `Failed to record child collection receipt for ${childKey}: ${readError}`,
+                {
+                  ...(error instanceof CoreError ? error.detail : {}),
+                  childKey,
+                  retryable: true,
+                  readError,
+                },
+              )
+            }
+          } else if (status === 'waiting_approval' && snap.stateRevision !== undefined) {
+            try {
+              await d.children.observedState?.(childKey, 'waiting_approval', snap.stateRevision)
+            } catch (error) {
+              const readError = error instanceof Error ? error.message : String(error)
+              throw new CoreError(
+                error instanceof CoreError ? error.code : 'E_STORAGE_FAULT',
+                `Failed to record child observation receipt for ${childKey}: ${readError}`,
+                {
+                  ...(error instanceof CoreError ? error.detail : {}),
+                  childKey,
+                  retryable: true,
+                  readError,
+                },
+              )
+            }
+          }
           return {
             childKey: child?.key ?? childKey,
             status,

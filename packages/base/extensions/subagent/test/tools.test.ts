@@ -1,8 +1,27 @@
 import { readFileSync } from 'node:fs'
-import { CoreError, resetChildAgentAllowlists, setChildAgentAllowlist, trackExternalChild } from '@agnes/core'
+import {
+  buildToolContext,
+  CoreError,
+  Kernel,
+  MemoryStorage,
+  presetDefaults,
+  resetChildAgentAllowlists,
+  setChildAgentAllowlist,
+  trackExternalChild,
+} from '@agnes/core'
+import {
+  actor,
+  defaultLoops,
+  fakeProvider,
+  fakeSeams,
+  fencedFs,
+  noTimers,
+  testFsPolicy,
+  textTurn,
+} from '@agnes/core/testkit'
 import { checkToolDef, defaultToolPolicy, type ToolContext, type ToolDef } from '@agnes/extension-api'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createSubagentExtension } from '../src/index.js'
 import { subagentCloseTool, subagentPauseTool, subagentResumeTool } from '../src/lifecycle-tools.js'
@@ -656,7 +675,8 @@ describe('subagent_spawn', () => {
       activeChildKeys: ['child-1', 'child-2'],
     })
 
-    // Finishing A frees exactly one slot, allowing child-3 to start; if child-3 fails in collect, its slot frees once.
+    // Finishing A frees exactly one slot, allowing child-3 to start; if child-3 fails in collect after commit,
+    // its handle and active slot are preserved until a retry collects it, and pending never goes negative.
     resolveA({ childKey: 'child-1', status: 'idle', text: 'done A' })
     expect((await runA).content).toEqual([{ type: 'text', text: 'Delegated task idle.\ndone A' }])
 
@@ -664,9 +684,20 @@ describe('subagent_spawn', () => {
     await Promise.resolve()
     expect((await spawn.execute({ task: 'full-again' }, c.ctx)).isError).toBe(true)
     rejectFail(new Error('collect boom'))
-    await expect(failing).rejects.toThrow('collect boom')
-
-    // After child-3 failed, only child-2 remains active so child-4 succeeds and pending never went negative.
+    const failResult = await failing
+    expect(failResult.isError).toBe(true)
+    expect(failResult.details).toMatchObject({
+      childKey: 'child-3',
+      retryable: true,
+      readError: 'collect boom',
+    })
+    expect(d.runtime?.sessions.get(c.ctx.session.key)?.pending).toBe(0)
+    // Child-3 remains active until collected, then freeing it allows child-4.
+    expect((await spawn.execute({ task: 'still-full' }, c.ctx)).isError).toBe(true)
+    c.ctx.subagent.collect = async (childKey) => ({ childKey, status: 'completed', text: 'retried D' })
+    expect((await subagentCollectTool(d).execute({ childKey: 'child-3' }, c.ctx)).content).toEqual([
+      { type: 'text', text: 'retried D' },
+    ])
     expect((await spawn.execute({ task: 'E' }, c.ctx)).details).toMatchObject({ childKey: 'child-4' })
     expect(d.runtime?.sessions.get(c.ctx.session.key)?.pending).toBe(0)
   })
@@ -1066,6 +1097,163 @@ describe('child allowlist and continuable controls', () => {
     expect(retry.content).toEqual([{ type: 'text', text: 'recovered findings' }])
     expect(cancelled).toEqual([])
     expect(wt.calls.finish).toEqual([])
+
+    // Untagged plain collect/receipt error after commit must also never cancel or roll back worktree.
+    const wtPlain = worktrees()
+    const dPlain = deps({ maxFanOut: 1, worktrees: wtPlain.manager })
+    let plainAttempts = 0
+    const plainCancelled: string[] = []
+    const plain = context({
+      spawn: async () => ({ childKey: 'child-plain-error' }),
+      collect: async (childKey) => {
+        plainAttempts += 1
+        if (plainAttempts === 1) throw new Error('temporary receipt append failure')
+        return { childKey, status: 'completed', text: 'plain recovered' }
+      },
+    })
+    plain.ctx.subagent.cancel = async (childKey) => {
+      plainCancelled.push(childKey)
+      return { childKey, status: 'cancelled' }
+    }
+    const plainFirst = await subagentSpawnTool(dPlain).execute({ task: 'plain', wait: true }, plain.ctx)
+    expect(plainFirst.isError).toBe(true)
+    expect(plainFirst.details).toMatchObject({
+      childKey: 'child-plain-error',
+      retryable: true,
+      readError: 'temporary receipt append failure',
+      worktree: '/work/proj/.worktrees/agnes-1234abcd',
+    })
+    expect(plainCancelled).toEqual([])
+    expect(wtPlain.calls.finish).toEqual([])
+    const plainRetry = await subagentCollectTool(dPlain).execute({ childKey: 'child-plain-error' }, plain.ctx)
+    expect(plainRetry.isError).toBeUndefined()
+    expect(plainRetry.content).toEqual([{ type: 'text', text: 'plain recovered' }])
+    expect(plainCancelled).toEqual([])
+    expect(wtPlain.calls.finish).toEqual([])
+
+    // Real Core joint verification: transient parent ledger receipt failure keeps child committed/idle and retryable.
+    const storage = new MemoryStorage()
+    const silentLog = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
+    const realFsOps = fencedFs(
+      {
+        read: async () => new Uint8Array(),
+        write: async () => undefined,
+        list: async () => [],
+        stat: async () => ({ kind: 'file' as const, size: 0, mtimeMs: 0 }),
+      },
+      testFsPolicy('/w'),
+    )
+    const k = Kernel.create({
+      loops: defaultLoops(),
+      storage,
+      seams: fakeSeams(),
+      provider: Object.assign(fakeProvider([textTurn('real core findings')]), {
+        models: () => [
+          {
+            id: 'm1',
+            name: 'm1',
+            api: 'openai-completions' as const,
+            route: 'default',
+            baseUrl: 'https://example.invalid/v1',
+            reasoning: false,
+            input: ['text' as const],
+            cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 8192,
+            maxTokens: 128,
+            toolCallFormats: ['native' as const],
+            thinkingReplay: 'native' as const,
+            contract_id: null,
+          },
+        ],
+      }),
+      contract: { contract_id: null, parser_version: '1' },
+      preset: { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 1, maxFanOut: 2 },
+      fsOps: realFsOps,
+      netFetch: async () => new Response(''),
+      logger: silentLog,
+      timers: noTimers,
+      clock: () => 1_757_203_200_000,
+    })
+    try {
+      const parent = await k.session('p1d-real-core', {
+        actor,
+        resolvedProfileHash: 'h1',
+        cwd: '/w',
+        writerRunId: 'r1',
+      })
+      const realCtx = fakeToolContext({ sessionKey: parent.key })
+      ;(realCtx as unknown as { subagent: ToolContext['subagent'] }).subagent = buildToolContext(
+        {
+          actor: parent.d.actor,
+          lane: parent.lane,
+          cwd: parent.d.cwd,
+          runtime: parent.d.runtime,
+          preset: parent.preset,
+          children: parent.d.children,
+          netFetch: parent.d.netFetch,
+          sessionKey: parent.key,
+          turn: 1,
+          step: 1,
+          depth: 0,
+          generationDepth: 0,
+          workspaceRoot: '/w',
+          log: silentLog,
+          fsOps: realFsOps,
+          invoke: async () => ({ content: [] }),
+          listTools: () => [],
+          appendPlan: async () => 1,
+          requestCompaction() {},
+          progress() {},
+          artifactJobEvent: async () => undefined,
+          lease: { remainingMs: () => 5000 },
+        },
+        {
+          toolUseId: 'spawn-p1d',
+          name: 'subagent_spawn',
+          signal: new AbortController().signal,
+          timeoutMs: 5000,
+          outputMaxBytes: 32768,
+        },
+      ).subagent
+      const origAppend = parent.d.log.append.bind(parent.d.log)
+      let injectedFailure = false
+      vi.spyOn(parent.d.log, 'append').mockImplementation(async (rows, options) => {
+        if (!injectedFailure && rows.some((row) => row.type === 'x/core/child-result-collected')) {
+          injectedFailure = true
+          throw new Error('temporary synthetic parent storage outage')
+        }
+        return origAppend(rows, options)
+      })
+      const realDeps = deps({ maxDepth: 2, maxFanOut: 2, isolation: 'shared' })
+      const realSpawn = await subagentSpawnTool(realDeps).execute(
+        { task: 'complete then collect', wait: true },
+        realCtx,
+      )
+      expect(injectedFailure).toBe(true)
+      expect(realSpawn.isError).toBe(true)
+      const realChildKey = (realSpawn.details as { childKey?: string } | undefined)?.childKey ?? ''
+      expect(realChildKey).toBeTruthy()
+      expect(realSpawn.details).toMatchObject({
+        childKey: realChildKey,
+        code: 'E_STORAGE_FAULT',
+        retryable: true,
+        readError: expect.stringContaining('temporary synthetic parent storage outage'),
+      })
+      const rows = await storage.listByParent(parent.key)
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({
+        childKey: realChildKey,
+        creationPhase: 'committed',
+        state: 'idle',
+      })
+      const realRetry = await subagentCollectTool(realDeps).execute({ childKey: realChildKey }, realCtx)
+      expect(realRetry.isError).toBeUndefined()
+      expect(realRetry.content).toEqual([{ type: 'text', text: 'real core findings' }])
+      expect(await parent.scan({ type: 'x/core/child-result-collected', limit: 10 })).toHaveLength(1)
+    } finally {
+      vi.restoreAllMocks()
+      await k.close()
+    }
   })
 
   it('does not evict a newly spawned child with a stale list() snapshot and counts waiting_approval as active (P1-F)', async () => {
@@ -1158,6 +1346,43 @@ describe('child allowlist and continuable controls', () => {
     const done = await subagentCollectTool(d2).execute({ childKey: 'approval-child' }, c2.ctx)
     expect(done.content).toEqual([{ type: 'text', text: 'approved result' }])
     expect((await subagentSpawnTool(d2).execute({ task: 'now-allowed' }, c2.ctx)).isError).toBeUndefined()
+
+    // Race 3: explicit collect clearing the last old handle during parallel spawn reconciliation must not detach state.
+    const d3 = deps({ maxFanOut: 1, isolation: 'shared' })
+    const c3 = context()
+    const spawn3 = subagentSpawnTool(d3)
+    const collect3 = subagentCollectTool(d3)
+    await spawn3.execute({ task: 'A' }, c3.ctx)
+    let resumeEmptyList!: (rows: []) => void
+    c3.ctx.subagent.list = () =>
+      new Promise((resolve) => {
+        resumeEmptyList = resolve
+      })
+    const secondSpawn = spawn3.execute({ task: 'B' }, c3.ctx)
+    await collect3.execute({ childKey: 'child-1' }, c3.ctx)
+    resumeEmptyList([])
+    const accepted = await secondSpawn
+    expect(accepted.isError).toBeUndefined()
+    expect(accepted.details).toMatchObject({ childKey: 'child-2' })
+    const tracked = [...(d3.runtime?.sessions.get(c3.ctx.session.key)?.children.keys() ?? [])]
+    expect(tracked).toEqual(['child-2'])
+    c3.ctx.subagent.list = async () => [
+      {
+        id: 'child-2',
+        providerId: 'in-process',
+        status: 'running',
+        executionState: 'running',
+        continuable: true,
+      },
+    ]
+    const overLimit = await spawn3.execute({ task: 'C' }, c3.ctx)
+    expect(overLimit.isError).toBe(true)
+    expect(overLimit.structured).toEqual({
+      code: 'E_CHILD_LIMIT',
+      limit: 1,
+      active: 1,
+      activeChildKeys: ['child-2'],
+    })
   })
 
   it('does not output contradictory cancelled wording when cancel remains cancelling (P1-C)', async () => {

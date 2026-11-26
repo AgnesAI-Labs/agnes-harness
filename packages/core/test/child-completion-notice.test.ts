@@ -5,6 +5,7 @@ import { buildToolContext } from '@agnes/core-effects/effects/tool-context'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord, Provider, SystemInput } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { childResultSequence } from '../src/child/collected-result.js'
 import {
   childCompletionId,
   deliverChildCompletion,
@@ -13,7 +14,7 @@ import {
 import { retireIdleChildren } from '../src/child/idle-retirement.js'
 import { deliverCoalescedChildCompletion } from '../src/child/notice-coalescer.js'
 import { childReceiptNarrative } from '../src/child/receipts.js'
-import { withChildLog } from '../src/child/status.js'
+import { snapshotFromLedger, withChildLog } from '../src/child/status.js'
 import { Kernel } from '../src/kernel.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { hangingProvider, slowCommits, until } from './helpers/child-traces.js'
@@ -1104,6 +1105,28 @@ describe('child completion notice', () => {
       expect(collectedTurn2.text).toBe('turn 2 secret')
       expect(collectedTurn2.completionSeq).toBeGreaterThan(turn1Before?.completionSeq ?? 0)
       expect(collectedTurn2.completionId).not.toBe(turn1Before?.completionId)
+
+      // Interleave 2 (P1-E): row read as idle, then storage moves to running and Turn 3 appends only turn/start.
+      const store = requireChildControl(storage)
+      const beforeRunning = { ...(await store.lookupByKey(child.key))! }
+      const turn2EndSeq = collectedTurn2.completionSeq!
+      expect(await store.casState(child.key, beforeRunning.stateRevision, 'running', { maxFanOut: 4 })).toBe(
+        true,
+      )
+      let turn3StartSeq = 0
+      await withChildLog(parent2, beforeRunning, undefined, async (log) => {
+        const res = await log.append([parent2.ev('turn/start', { turn: 3, trigger: 'prompt' })])
+        turn3StartSeq = res.firstSeq
+      })
+      expect(turn3StartSeq).toBeGreaterThan(turn2EndSeq)
+      // Idle completion identity must bind strictly to turn/end, never an unclosed turn/start.
+      expect(await childResultSequence(parent2, beforeRunning)).toBe(turn2EndSeq)
+      // Cold snapshot re-checks durable revision and returns running without a stale idle completion identity.
+      const rechecked = await snapshotFromLedger(parent2, beforeRunning)
+      expect(rechecked.status).toBe('running')
+      expect(rechecked.executionState).toBe('running')
+      expect(rechecked.completionSeq).toBeUndefined()
+      expect(rechecked.completionId).toBeUndefined()
     } finally {
       vi.restoreAllMocks()
       await second.close()

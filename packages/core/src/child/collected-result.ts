@@ -223,7 +223,32 @@ export async function withCancelledChildAck(
   }
 }
 
-/** A new turn start distinguishes an early cancellation from the preceding collected turn. */
+/** Completed turn boundaries for an idle resident turn, anchored strictly on turn/end. */
+export async function childCompletedTurnBounds(
+  parent: SessionImpl,
+  record: ChildTaskRecord,
+  toSeq?: number,
+): Promise<{ startSeq: number; endSeq: number } | undefined> {
+  const fromSeq = record.boundarySeq + 1
+  const [end] = await parent.d.log.storage.scan(record.childKey, {
+    type: 'turn/end',
+    fromSeq,
+    ...(toSeq === undefined ? {} : { toSeq }),
+    order: 'desc',
+    limit: 1,
+  })
+  if (!end || end.seq <= 0) return undefined
+  const [start] = await parent.d.log.storage.scan(record.childKey, {
+    type: 'turn/start',
+    fromSeq,
+    toSeq: end.seq,
+    order: 'desc',
+    limit: 1,
+  })
+  return { startSeq: start?.seq ?? fromSeq, endSeq: end.seq }
+}
+
+/** A new turn start distinguishes an early cancellation from the preceding collected turn; idle binds to turn/end. */
 export async function childResultSequence(
   parent: SessionImpl,
   record: ChildTaskRecord,
@@ -246,5 +271,6 @@ export async function childResultSequence(
       limit: 1,
     }),
   ])
+  if (record.state === 'idle') return ends[0]?.seq ?? 0
   return Math.max(starts[0]?.seq ?? 0, ends[0]?.seq ?? 0)
 }

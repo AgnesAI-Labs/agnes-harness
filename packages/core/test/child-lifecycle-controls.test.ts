@@ -774,6 +774,76 @@ it('records waiting-safepoint control fact instead of premature applied for defe
     } finally {
       await k2.close()
     }
+
+    // Case E (P2-B): orderly parent close right after queued pause reconciles to terminal fact on reopen.
+    const k3 = Kernel.create({
+      loops: defaultLoops(),
+      storage: new MemoryStorage(),
+      seams: fakeSeams(),
+      provider: fakeProvider([textTurn('ok')]),
+      contract: { contract_id: null, parser_version: '1' },
+      preset: { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 1, maxFanOut: 4 },
+      fsOps: testFsOps(),
+      netFetch: async () => new Response(''),
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+      timers: noTimers,
+      clock: () => 1_757_203_200_000,
+    })
+    const closeStorage = k3.o.storage as MemoryStorage
+    try {
+      const parentClose = await k3.session('pause-close-reconcile', {
+        actor,
+        resolvedProfileHash: 'h1',
+        cwd: '/w',
+        writerRunId: 'r1',
+      })
+      const childClose = await parentClose.d.children.create({
+        parent: parentClose.key,
+        cwd: '/w',
+        input: 'pause then close before safepoint',
+        resident: true,
+      })
+      const childCloseSession = k3.get(childClose.key)!
+      const closeRow = (await closeStorage.lookupByKey(childClose.key))!
+      await closeStorage.casState(childClose.key, closeRow.stateRevision, 'running')
+      const toolClose = gate()
+      trackChildDispatch(childCloseSession, 'eff-close', 'write_note', toolClose.promise)
+      await applyChildControl(parentClose, childClose.key, 'pause', actor, 'adm-pause-close')
+      const queuedFacts = (await parentClose.controls.state()).facts.filter(
+        (f) => (f.details as { admissionId?: string }).admissionId === 'adm-pause-close',
+      )
+      expect(queuedFacts.map((f) => f.outcome)).toEqual(['requested', 'queued'])
+      const closing = parentClose.close()
+      toolClose.resolve()
+      await closing
+      await k3.close()
+
+      const k4 = Kernel.create({ ...k3.o, storage: closeStorage })
+      try {
+        const reopenedClose = await k4.session('pause-close-reconcile', {
+          actor,
+          resolvedProfileHash: 'h1',
+          cwd: '/w',
+          writerRunId: 'r2',
+        })
+        await reopenedClose.d.children.recover?.()
+        await reopenedClose.d.children.recover?.()
+        expect((await closeStorage.lookupByKey(childClose.key))?.state).toBe('cancelled')
+        const reconciledFacts = (await reopenedClose.controls.state()).facts.filter(
+          (f) => (f.details as { admissionId?: string }).admissionId === 'adm-pause-close',
+        )
+        expect(reconciledFacts.map((f) => f.outcome)).toEqual(['requested', 'queued', 'withdrawn'])
+        expect(reconciledFacts[2]?.details).toMatchObject({
+          admissionId: 'adm-pause-close',
+          childId: childClose.key,
+          executionState: 'cancelled',
+        })
+      } finally {
+        await k4.close()
+      }
+    } finally {
+      await k3.close()
+    }
   } finally {
     await k.close()
   }

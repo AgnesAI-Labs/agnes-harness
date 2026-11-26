@@ -2,7 +2,7 @@ import {
   projectChildStatus,
   resolveTerminalChildState,
 } from '@agnes/core-child-control/child/status-projection'
-import { requireChildControl } from '@agnes/core-child-control/child/store'
+import { hasChildControl, requireChildControl } from '@agnes/core-child-control/child/store'
 import { type ChildTaskRecord, isTerminalChildState } from '@agnes/core-child-control/child/types'
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { CoreError } from '@agnes/core-common/types'
@@ -19,7 +19,7 @@ import type {
 } from '@agnes/extension-api'
 import type { SessionImpl } from '../step/session.js'
 import { NO_TOOL_FILTER } from '../step/tool-filter.js'
-import { childResultSequence } from './collected-result.js'
+import { childCompletedTurnBounds, childResultSequence } from './collected-result.js'
 import { childCompletionId } from './completion-notice.js'
 import { childControlMetrics } from './control-metrics.js'
 import { childExecutionReceipt } from './execution-receipt.js'
@@ -158,76 +158,104 @@ export async function snapshotFromLedger(
   record: ChildTaskRecord,
   end?: ChildEnd,
 ): Promise<Snapshot> {
-  record = { ...record }
-  const base = snapshotFromRecord(record)
-  const terminal = record.state === 'completed' || record.state === 'failed' || record.state === 'cancelled'
-  try {
-    const fromSeq = (record.boundarySeq + 1) as typeof record.boundarySeq
-    const tail = await parent.d.log.storage.scan(record.childKey, { fromSeq, order: 'desc', limit: 1 })
-    const upperSeq = tail[0]?.seq ?? 0
-    const idle = record.state === 'idle'
-    const completionSeq =
-      terminal || idle ? (upperSeq > 0 ? await childResultSequence(parent, record, upperSeq) : 0) : undefined
-    const boundSeq = upperSeq
-    const msgs =
-      boundSeq > 0
-        ? await parent.d.log.storage.scan(record.childKey, {
-            fromSeq,
-            toSeq: boundSeq,
-            type: 'assistant/message',
-            order: 'desc',
-            limit: 1,
-          })
-        : []
-    const content = (msgs[0]?.data as { content?: Array<{ type?: string; text?: string }> } | undefined)
-      ?.content
-    const text = (content ?? [])
-      .filter((block) => block.type === 'text' && typeof block.text === 'string')
-      .map((block) => block.text)
-      .join('')
-    const failedEnd =
-      record.state === 'failed'
-        ? (end ??
-          (boundSeq > 0
-            ? childEnd(
-                (
-                  await parent.d.log.storage.scan(record.childKey, {
-                    type: 'turn/end',
-                    fromSeq,
-                    toSeq: boundSeq,
-                    order: 'desc',
-                    limit: 1,
-                  })
-                )[0]?.data,
-              )
-            : {}))
-        : undefined
-    const completionId =
-      completionSeq === undefined
-        ? undefined
-        : ((await retiredCompletionIdentity(parent, record, completionSeq)) ??
-          (terminal
-            ? childCompletionId(record.childKey, record.state as 'completed' | 'failed' | 'cancelled')
-            : idle
-              ? childCompletionId(record.childKey, 'completed', completionSeq)
-              : undefined))
-    return {
-      ...base,
-      ...(await lifecycleFacts(parent, record)),
-      ...(failedEnd ?? {}),
-      ...(completionId && completionSeq !== undefined ? { completionId, completionSeq } : {}),
-      lastSeq: upperSeq || base.lastSeq,
-      ...(text ? { text } : {}),
-      receipt: await childExecutionReceipt(parent, record),
-    }
-  } catch (error) {
-    const { completionId: _id, completionSeq: _seq, ...degraded } = base
-    return {
-      ...degraded,
-      ledgerReadFailed: true as const,
-      readError: error instanceof Error ? error.message : String(error),
+  let current = { ...record }
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const base = snapshotFromRecord(current)
+    const terminal =
+      current.state === 'completed' || current.state === 'failed' || current.state === 'cancelled'
+    const idle = current.state === 'idle'
+    try {
+      const fromSeq = (current.boundarySeq + 1) as typeof current.boundarySeq
+      const tail = await parent.d.log.storage.scan(current.childKey, { fromSeq, order: 'desc', limit: 1 })
+      const upperSeq = tail[0]?.seq ?? 0
+      const turnBounds =
+        idle && upperSeq > 0 ? await childCompletedTurnBounds(parent, current, upperSeq) : undefined
+      const completionSeq = idle
+        ? (turnBounds?.endSeq ?? 0)
+        : terminal
+          ? upperSeq > 0
+            ? await childResultSequence(parent, current, upperSeq)
+            : 0
+          : undefined
+      const msgFromSeq = idle && turnBounds ? turnBounds.startSeq : fromSeq
+      const boundSeq = idle && turnBounds ? turnBounds.endSeq : upperSeq
+      const msgs =
+        boundSeq > 0
+          ? await parent.d.log.storage.scan(current.childKey, {
+              fromSeq: msgFromSeq,
+              toSeq: boundSeq,
+              type: 'assistant/message',
+              order: 'desc',
+              limit: 1,
+            })
+          : []
+      const content = (msgs[0]?.data as { content?: Array<{ type?: string; text?: string }> } | undefined)
+        ?.content
+      const text = (content ?? [])
+        .filter((block) => block.type === 'text' && typeof block.text === 'string')
+        .map((block) => block.text)
+        .join('')
+      const failedEnd =
+        current.state === 'failed'
+          ? (end ??
+            (boundSeq > 0
+              ? childEnd(
+                  (
+                    await parent.d.log.storage.scan(current.childKey, {
+                      type: 'turn/end',
+                      fromSeq,
+                      toSeq: boundSeq,
+                      order: 'desc',
+                      limit: 1,
+                    })
+                  )[0]?.data,
+                )
+              : {}))
+          : undefined
+      const completionId =
+        completionSeq === undefined
+          ? undefined
+          : ((await retiredCompletionIdentity(parent, current, completionSeq)) ??
+            (terminal
+              ? childCompletionId(current.childKey, current.state as 'completed' | 'failed' | 'cancelled')
+              : idle
+                ? childCompletionId(current.childKey, 'completed', completionSeq)
+                : undefined))
+      const latest = hasChildControl(parent.d.log.storage)
+        ? await parent.d.log.storage.lookupByKey(current.childKey)
+        : null
+      if (latest && (latest.state !== current.state || latest.stateRevision !== current.stateRevision)) {
+        current = { ...latest }
+        if (attempt < 2) continue
+        const freshBase = snapshotFromRecord(current)
+        const { completionId: _id, completionSeq: _seq, ...unsettled } = freshBase
+        return {
+          ...unsettled,
+          ...(await lifecycleFacts(parent, current)),
+          lastSeq: upperSeq || freshBase.lastSeq,
+          ...(text ? { text } : {}),
+          receipt: await childExecutionReceipt(parent, current),
+        }
+      }
+      return {
+        ...base,
+        ...(await lifecycleFacts(parent, current)),
+        ...(failedEnd ?? {}),
+        ...(completionId && completionSeq !== undefined ? { completionId, completionSeq } : {}),
+        lastSeq: upperSeq || base.lastSeq,
+        ...(text ? { text } : {}),
+        receipt: await childExecutionReceipt(parent, current),
+      }
+    } catch (error) {
+      const { completionId: _id, completionSeq: _seq, ...degraded } = base
+      return {
+        ...degraded,
+        ledgerReadFailed: true as const,
+        readError: error instanceof Error ? error.message : String(error),
+      }
     }
   }
+  return snapshotFromRecord(current)
 }
 
 /** Capture one completed result identity, so collecting it cannot acknowledge a later resident turn. */

@@ -38,6 +38,7 @@ type ChildRecord = {
 
 type SessionState = {
   pending: number
+  reconciling: number
   children: Map<string, ChildRecord>
 }
 
@@ -96,14 +97,20 @@ export function resetSubagentRuntime(deps: SubagentDeps): void {
 function stateOf(runtime: SubagentRuntime, sessionKey: string): SessionState {
   let state = runtime.sessions.get(sessionKey)
   if (!state) {
-    state = { pending: 0, children: new Map() }
+    state = { pending: 0, reconciling: 0, children: new Map() }
     runtime.sessions.set(sessionKey, state)
   }
   return state
 }
 
 function prune(runtime: SubagentRuntime, sessionKey: string, state: SessionState): void {
-  if (state.pending === 0 && state.children.size === 0) runtime.sessions.delete(sessionKey)
+  if (
+    runtime.sessions.get(sessionKey) === state &&
+    state.pending === 0 &&
+    state.reconciling === 0 &&
+    state.children.size === 0
+  )
+    runtime.sessions.delete(sessionKey)
 }
 
 const ACTIVE_STATES = new Set(
@@ -332,8 +339,15 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
 
       const runtime = runtimeOf(deps)
       const sessionKey = ctx.session.key
+      const initialState = stateOf(runtime, sessionKey)
+      initialState.reconciling += 1
+      try {
+        await reconcileActiveChildren(initialState, ctx)
+      } finally {
+        initialState.reconciling -= 1
+        prune(runtime, sessionKey, initialState)
+      }
       const state = stateOf(runtime, sessionKey)
-      await reconcileActiveChildren(state, ctx)
       if (active(state) >= deps.limits.maxFanOut) {
         const activeCount = active(state)
         const activeChildKeys = [...state.children.entries()]
@@ -357,16 +371,12 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
 
       // Reserve one slot before workspace preparation, then promote pending -> running synchronously.
       state.pending += 1
-      let reservation: 'pending' | 'running' | 'released' = 'pending'
+      let pendingHeld = true
       let worktree: string | undefined
       let childKey: string | undefined
       let sharedNonGit = false
-      const release = (kind: 'pending' | 'running') => {
-        if (reservation !== kind) return
-        if (kind === 'pending') state.pending -= 1
-        else if (childKey) state.children.delete(childKey)
-        reservation = 'released'
-      }
+      let spawned: Awaited<ReturnType<ToolContext['subagent']['spawn']>>
+      let committedRecord: ChildRecord | undefined
       try {
         const requested = args.isolation ?? (args.role ? 'shared' : deps.limits.isolation)
         if (requested === 'worktree' && !deps.worktrees.bind)
@@ -391,7 +401,7 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
           toolFilter: narrowFilter(narrowFilter(DEFAULT_CHILD_TOOL_FILTER, deps.toolFilter), args.toolFilter),
           ...(worktree ? { start: false as const } : {}),
         }
-        const spawned = await ctx.subagent.spawn(args.task, options)
+        spawned = await ctx.subagent.spawn(args.task, options)
         childKey = spawned.childKey
         if (worktree) {
           await deps.worktrees.bind?.(spawned.childKey, worktree)
@@ -403,73 +413,11 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
           await rollbackWorktree(deps, ctx, worktree)
           return fail('subagent backend returned an invalid or duplicate child key')
         }
-        state.children.set(spawned.childKey, { running: true, ...(worktree ? { worktree } : {}) })
+        committedRecord = { running: true, ...(worktree ? { worktree } : {}) }
+        state.children.set(spawned.childKey, committedRecord)
         state.pending -= 1
-        reservation = 'running'
-
-        let collected: ChildStatus | undefined
-        if (args.wait) {
-          try {
-            collected = await ctx.subagent.collect(spawned.childKey, { wait: true })
-          } catch (error) {
-            if (error instanceof CoreError && error.detail?.retryable === true) {
-              const readError = error.message
-              const details: Record<string, JsonValue> = {
-                childKey: spawned.childKey,
-                code: error.code,
-                retryable: true,
-                readError,
-                isolation: worktree ? 'worktree' : 'shared',
-                ...(worktree ? { worktree } : {}),
-              }
-              return {
-                ...fail(
-                  `Delegated task ${spawned.childKey} was created, but reading its result failed (${readError}). Retry with subagent_collect.`,
-                ),
-                details,
-                structured: details,
-              }
-            }
-            throw error
-          }
-        }
-        if (collected && collected.childKey !== spawned.childKey)
-          throw new Error('subagent backend returned a mismatched child key')
-        if (collected && !isActiveChild(collected)) release('running')
-        const details: Record<string, JsonValue> = {
-          childKey: spawned.childKey,
-          ...(spawned.role
-            ? {
-                role: spawned.role,
-                task: args.task,
-                status: collected?.status === 'idle' ? 'completed' : (collected?.status ?? 'running'),
-              }
-            : {}),
-          isolation: worktree ? 'worktree' : 'shared',
-        }
-        if (worktree) details.worktree = worktree
-        if (collected) Object.assign(details, failureDetails(collected))
-        const followUp =
-          ctx.tools.availability?.('subagent_list').status === 'offered'
-            ? 'Use subagent_list for the handle if follow-up is needed'
-            : 'Keep the task reference for follow-up'
-        return {
-          content: [
-            {
-              type: 'text',
-              text:
-                (sharedNonGit ? 'Child ran in the shared folder because it is not a git repository.\n' : '') +
-                (collected
-                  ? `Delegated task ${collected.status}${collected.status === 'failed' ? childFailureSuffix(collected) : ''}.\n${collected.text ?? 'No findings returned.'}`
-                  : `Task delegated in the background. A completion notice will carry the findings. ${followUp}; do not repeat internal handles to the user.`),
-            },
-          ],
-          details,
-          ...(spawned.role ? { structured: details } : {}),
-          ...(collected?.status === 'failed' ? { isError: true } : {}),
-        }
+        pendingHeld = false
       } catch (error) {
-        release('running')
         if (childKey) await ctx.subagent.cancel(childKey)
         await rollbackWorktree(deps, ctx, worktree)
         // Core's admission limit refuses creation; failures after a child handle remain uncertain.
@@ -496,8 +444,72 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
         if (args.role && error instanceof Error) return fail(error.message)
         throw error
       } finally {
-        release('pending')
+        if (pendingHeld) state.pending -= 1
         prune(runtime, sessionKey, state)
+      }
+
+      // Strict post-commit boundary: wait/collect/ACK errors never cancel the child or roll back its worktree.
+      let collected: ChildStatus | undefined
+      if (args.wait) {
+        try {
+          collected = await ctx.subagent.collect(spawned.childKey, { wait: true })
+          if (collected.childKey !== spawned.childKey)
+            throw new Error('subagent backend returned a mismatched child key')
+        } catch (error) {
+          const readError = error instanceof Error ? error.message : String(error)
+          const details: Record<string, JsonValue> = {
+            childKey: spawned.childKey,
+            code: error instanceof CoreError ? error.code : 'E_STORAGE_FAULT',
+            retryable: true,
+            readError,
+            isolation: worktree ? 'worktree' : 'shared',
+            ...(worktree ? { worktree } : {}),
+          }
+          return {
+            ...fail(
+              `Delegated task ${spawned.childKey} was created, but reading its result failed (${readError}). Retry with subagent_collect.`,
+            ),
+            details,
+            structured: details,
+          }
+        }
+      }
+      if (collected && !isActiveChild(collected)) {
+        if (committedRecord) committedRecord.running = false
+        if (state.children.get(spawned.childKey) === committedRecord) state.children.delete(spawned.childKey)
+        prune(runtime, sessionKey, state)
+      }
+      const details: Record<string, JsonValue> = {
+        childKey: spawned.childKey,
+        ...(spawned.role
+          ? {
+              role: spawned.role,
+              task: args.task,
+              status: collected?.status === 'idle' ? 'completed' : (collected?.status ?? 'running'),
+            }
+          : {}),
+        isolation: worktree ? 'worktree' : 'shared',
+      }
+      if (worktree) details.worktree = worktree
+      if (collected) Object.assign(details, failureDetails(collected))
+      const followUp =
+        ctx.tools.availability?.('subagent_list').status === 'offered'
+          ? 'Use subagent_list for the handle if follow-up is needed'
+          : 'Keep the task reference for follow-up'
+      return {
+        content: [
+          {
+            type: 'text',
+            text:
+              (sharedNonGit ? 'Child ran in the shared folder because it is not a git repository.\n' : '') +
+              (collected
+                ? `Delegated task ${collected.status}${collected.status === 'failed' ? childFailureSuffix(collected) : ''}.\n${collected.text ?? 'No findings returned.'}`
+                : `Task delegated in the background. A completion notice will carry the findings. ${followUp}; do not repeat internal handles to the user.`),
+          },
+        ],
+        details,
+        ...(spawned.role ? { structured: details } : {}),
+        ...(collected?.status === 'failed' ? { isError: true } : {}),
       }
     },
   }
@@ -603,7 +615,7 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
 
       if (!isActiveChild(result) && record) {
         record.running = false
-        state?.children.delete(args.childKey)
+        if (state?.children.get(args.childKey) === record) state.children.delete(args.childKey)
         if (state) prune(runtime, sessionKey, state)
       }
 
