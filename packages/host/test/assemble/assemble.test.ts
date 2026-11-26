@@ -1412,23 +1412,26 @@ describe('assemble', () => {
       {
         import: async () => {
           imported += 1
-          return { presets: { chtd: { name: 'chtd', disclosure: 'standard' } } }
+          return {
+            presets: { chtd: { name: 'chtd', disclosure: 'standard' } },
+            operations: { sneaky: () => ({ name: 'sneaky', run: async () => {} }) },
+            runtimes: { python: () => ({}) },
+          }
         },
       },
     )
     expect(imported).toBe(1)
     expect(loaded?.module.presets?.chtd).toMatchObject({ name: 'chtd' })
     expect(loaded?.module.plugins).toBeUndefined()
+    expect(loaded?.module.operations).toBeUndefined()
+    expect(loaded?.module.runtimes).toBeUndefined()
   })
 
   it('does not import a snapshot package that declares neither plugins nor a module entry', async () => {
     const vendor = '@acme/static-bundle'
     const directory = mkdtempSync(join(tmpdir(), 'agnes-static-bundle-'))
     dirs.push(directory)
-    writeFileSync(
-      join(directory, 'package.json'),
-      `${JSON.stringify({ name: vendor, version: '1.0.0' })}\n`,
-    )
+    writeFileSync(join(directory, 'package.json'), `${JSON.stringify({ name: vendor, version: '1.0.0' })}\n`)
     const snapshot: RuntimeSnapshot = Object.freeze({
       snapshotId: `sha256-${'c'.repeat(64)}`,
       profile: 'local-dev',
@@ -1452,6 +1455,58 @@ describe('assemble', () => {
     )
     expect(imported).toBe(0)
     expect(loaded).toBeUndefined()
+
+    const bundleWithEntryDir = mkdtempSync(join(tmpdir(), 'agnes-static-bundle-entry-'))
+    dirs.push(bundleWithEntryDir)
+    writeFileSync(
+      join(bundleWithEntryDir, 'package.json'),
+      `${JSON.stringify({
+        name: vendor,
+        version: '1.0.0',
+        exports: './index.js',
+        agnes: { bundles: { base: { profile: { toolPolicy: { readOnly: true } } } } },
+      })}\n`,
+    )
+    writeFileSync(join(bundleWithEntryDir, 'index.js'), 'export const presets = {}\n')
+    const bundleSnapshot: RuntimeSnapshot = Object.freeze({
+      ...snapshot,
+      directory: bundleWithEntryDir,
+      treeIntegrity: hashDirectory(bundleWithEntryDir, { exclude: [] }),
+    })
+    expect(
+      await loadRuntimePackage(
+        { snapshot: bundleSnapshot, generation: 1, trusted: true },
+        {
+          import: async () => {
+            imported += 1
+            return { presets: { hidden: { name: 'hidden' } } }
+          },
+        },
+      ),
+    ).toBeUndefined()
+    expect(imported).toBe(0)
+
+    const badEntryDir = mkdtempSync(join(tmpdir(), 'agnes-preset-bad-entry-'))
+    dirs.push(badEntryDir)
+    writeFileSync(
+      join(badEntryDir, 'package.json'),
+      `${JSON.stringify({
+        name: vendor,
+        version: '1.0.0',
+        exports: { '.': { import: './index.js' } },
+      })}\n`,
+    )
+    const badEntrySnapshot: RuntimeSnapshot = Object.freeze({
+      ...snapshot,
+      directory: badEntryDir,
+      treeIntegrity: hashDirectory(badEntryDir, { exclude: [] }),
+    })
+    await expect(
+      loadRuntimePackage(
+        { snapshot: badEntrySnapshot, generation: 1, trusted: true },
+        { import: async () => ({}) },
+      ),
+    ).rejects.toMatchObject({ code: 'E_EXT_LOAD', detail: { id: vendor, reason: 'bad-package-entry' } })
   })
 
   it('rejects a non-builtin transport without an immutable runtime snapshot before loading it', async () => {

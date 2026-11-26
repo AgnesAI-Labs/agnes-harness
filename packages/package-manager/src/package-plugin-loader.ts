@@ -117,7 +117,24 @@ export function runtimePluginSnapshotsFromInventory(
   return Object.freeze(sources)
 }
 
-/** Verified declarative packages need no artificial executable row or active code pin. */
+/** True when a non-declarative manifest names a root module entry (valid or malformed). */
+export function manifestDeclaresPresetEntry(pkg: Readonly<Record<string, unknown>>): boolean {
+  const agnes = pkg.agnes
+  if (agnes && typeof agnes === 'object' && !Array.isArray(agnes)) {
+    const meta = agnes as Record<string, unknown>
+    if (meta.bundles !== undefined || meta.application !== undefined) return false
+  }
+  if (pkg.exports !== undefined) {
+    if (pkg.exports && typeof pkg.exports === 'object' && !Array.isArray(pkg.exports)) {
+      if (Object.hasOwn(pkg.exports, '.')) return true
+    } else {
+      return true
+    }
+  }
+  return pkg.main !== undefined
+}
+
+/** Verified declarative and preset-only packages need no artificial executable row or active code pin. */
 export function runtimePluginDataSourcesFromInventory(
   inventory: InstalledInventory,
 ): readonly RuntimePluginSnapshot[] {
@@ -129,7 +146,8 @@ export function runtimePluginDataSourcesFromInventory(
     if (parseAgnesPluginEntries(pkg.id, agnes.plugins).length) return false
     return (
       Object.keys(parsePackageBundleContract(pkg.id, agnes.bundles)).length > 0 ||
-      pkg.entry.application !== undefined
+      pkg.entry.application !== undefined ||
+      manifestDeclaresPresetEntry(manifest)
     )
   })
   return runtimePluginSnapshotsFromInventory({ ...inventory, packages })
@@ -246,14 +264,16 @@ function readDeclarations(
 }
 
 /** Static admission only. Loading still verifies again immediately before and after import. */
-export function preflightPackagePlugins(input: Pick<LoadPackagePluginsInput, 'snapshot' | 'generation'>) {
+export function preflightPackagePlugins(
+  input: Pick<LoadPackagePluginsInput, 'snapshot' | 'generation' | 'importDataExports'>,
+) {
   if (!Number.isSafeInteger(input.generation) || input.generation < 1) stateFailure('generation')
   assertSnapshotTree(input.snapshot, 'snapshot-stale')
   return preflightMetadata(input)
 }
 
 export async function preflightPackagePluginsAsync(
-  input: Pick<LoadPackagePluginsInput, 'snapshot' | 'generation'>,
+  input: Pick<LoadPackagePluginsInput, 'snapshot' | 'generation' | 'importDataExports'>,
 ) {
   if (!Number.isSafeInteger(input.generation) || input.generation < 1) stateFailure('generation')
   try {
@@ -268,13 +288,20 @@ export async function preflightPackagePluginsAsync(
   return preflightMetadata(input)
 }
 
-function preflightMetadata(input: Pick<LoadPackagePluginsInput, 'snapshot' | 'generation'>) {
+function preflightMetadata(
+  input: Pick<LoadPackagePluginsInput, 'snapshot' | 'generation' | 'importDataExports'>,
+) {
   const pkg = readStaticJson(join(input.snapshot.directory, 'package.json'))
   const declarations = readDeclarations(input.snapshot, pkg)
   if (declarations.some((declaration) => declaration.runtime === 'isolated'))
     stateFailure('isolated-runtime-unavailable')
+  const importsModule =
+    declarations.length > 0 ||
+    (input.importDataExports === true &&
+      input.snapshot.application === undefined &&
+      manifestDeclaresPresetEntry(pkg))
   const dependencyIds = new Set<string>()
-  if (declarations.length) {
+  if (importsModule) {
     for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
       const dependencies = pkg[field]
       if (dependencies === undefined) continue
@@ -286,7 +313,11 @@ function preflightMetadata(input: Pick<LoadPackagePluginsInput, 'snapshot' | 'ge
       }
     }
   }
-  return Object.freeze({ declarations, dependencyIds: Object.freeze([...dependencyIds]) })
+  return Object.freeze({
+    declarations,
+    dependencyIds: Object.freeze([...dependencyIds]),
+    importsModule,
+  })
 }
 
 function normalizeExport(
@@ -314,10 +345,10 @@ export async function loadPackagePlugins(
   // Static readers can reuse exact bytes within their operation; import is an independent gate.
   if (!Number.isSafeInteger(input.generation) || input.generation < 1) stateFailure('generation')
   await assertSnapshotTreeAsync(input.snapshot, 'snapshot-stale')
-  const { declarations } = preflightMetadata(input)
+  const { declarations, importsModule } = preflightMetadata(input)
   // No plugin row means no executable installation. Data exports are imported only when the caller
-  // asks; a declarative package stays unread.
-  if (!declarations.length && input.importDataExports !== true) return Object.freeze([])
+  // asks and the manifest is not a static bundle/application; declarative packages stay unread.
+  if (!importsModule) return Object.freeze([])
   const declarationSnapshot = canonical(declarations)
 
   let imported: Readonly<Record<string, unknown>> | undefined

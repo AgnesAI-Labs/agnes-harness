@@ -143,6 +143,54 @@ describe('package plugin loader', () => {
     expect(await loadPackagePlugins({ snapshot: sources[0]!.snapshot, generation: 1, importModule })).toEqual(
       [],
     )
+    const bundleWithMainDir = mkdtempSync(join(tmpdir(), 'agnes-bundle-main-'))
+    roots.push(bundleWithMainDir)
+    writeFileSync(
+      join(bundleWithMainDir, 'package.json'),
+      `${JSON.stringify({
+        name: '@acme/bundle-with-main',
+        version: '1.0.0',
+        main: './index.js',
+        agnes: { bundles: { base: { profile: { toolPolicy: { readOnly: true } } } } },
+      })}\n`,
+    )
+    writeFileSync(join(bundleWithMainDir, 'index.js'), 'export const presets = {}\n')
+    const bundleWithMainSnapshot: RuntimeSnapshot = Object.freeze({
+      ...snapshot,
+      packageId: '@acme/bundle-with-main',
+      version: '1.0.0',
+      directory: bundleWithMainDir,
+      treeIntegrity: hashDirectory(bundleWithMainDir, { exclude: [] }),
+    })
+    expect(
+      await loadPackagePlugins({
+        snapshot: bundleWithMainSnapshot,
+        generation: 1,
+        importDataExports: true,
+        importModule,
+      }),
+    ).toEqual([])
+    const presetOnlyDir = mkdtempSync(join(tmpdir(), 'agnes-preset-data-source-'))
+    roots.push(presetOnlyDir)
+    writeFileSync(
+      join(presetOnlyDir, 'package.json'),
+      `${JSON.stringify({ name: '@acme/preset-only', version: '1.0.0', exports: './index.js' })}\n`,
+    )
+    writeFileSync(join(presetOnlyDir, 'index.js'), 'export const presets = {}\n')
+    const presetTree = hashDirectory(presetOnlyDir, { exclude: [] })
+    expect(
+      runtimePluginDataSourcesFromInventory({
+        ...inventory,
+        packages: [
+          {
+            ...pkg,
+            id: '@acme/preset-only',
+            directory: presetOnlyDir,
+            entry: { version: '1.0.0', integrity: snapshot.integrity, treeIntegrity: presetTree },
+          } as InstalledPackage,
+        ],
+      }),
+    ).toMatchObject([{ enabled: true, trusted: true, snapshot: { packageId: '@acme/preset-only' } }])
     for (const changed of [{ enabled: false }, { trusted: false }, { blockers: [{ code: 'dependency' }] }])
       expect(
         runtimePluginDataSourcesFromInventory({

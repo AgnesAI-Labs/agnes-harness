@@ -88,16 +88,19 @@ export type {
 export { RUNTIME_LANGUAGES } from '../contracts/package.js'
 /** Resolve the executable entry and static admission before any selected source is imported. */
 export function preflightRuntimePackage(source: Readonly<RuntimePluginSnapshot>) {
-  return checkRuntimeMetadata(source, preflightPackagePlugins(source))
+  return checkRuntimeMetadata(source, preflightPackagePlugins({ ...source, importDataExports: true }))
 }
 export async function preflightRuntimePackageAsync(source: Readonly<RuntimePluginSnapshot>) {
-  return checkRuntimeMetadata(source, await preflightPackagePluginsAsync(source))
+  return checkRuntimeMetadata(
+    source,
+    await preflightPackagePluginsAsync({ ...source, importDataExports: true }),
+  )
 }
 function checkRuntimeMetadata(
   source: Readonly<RuntimePluginSnapshot>,
   metadata: ReturnType<typeof preflightPackagePlugins>,
 ) {
-  if (metadata.declarations.length) {
+  if (metadata.importsModule) {
     packageEntry(source.snapshot.packageId, source.snapshot.directory)
     const pkg = JSON.parse(readFileSync(join(source.snapshot.directory, 'package.json'), 'utf8'))
     try {
@@ -111,8 +114,8 @@ function checkRuntimeMetadata(
 }
 /**
  * Load plugin rows and named data exports from a PackageManager-owned immutable snapshot.
- * `agnes.plugins` is still the only way to install an executable row. A package that only exports
- * `presets` is imported when its manifest names a module entry.
+ * `agnes.plugins` is still the only way to install an executable row. A non-bundle package that
+ * only exports `presets` is imported when its manifest names a module entry, and only `presets` is read.
  */
 export async function loadRuntimePackage(
   source: Readonly<RuntimePluginSnapshot>,
@@ -124,17 +127,21 @@ export async function loadRuntimePackage(
   const loaded = await loadPackagePlugins({
     snapshot: source.snapshot,
     generation: source.generation,
-    importDataExports: snapshotDeclaresModuleEntry(source.snapshot.directory),
+    importDataExports: true,
     async importModule(snapshot) {
-      entry = packageEntry(snapshot.packageId, snapshot.directory)
       try {
+        entry = packageEntry(snapshot.packageId, snapshot.directory)
         namespace = await loader.import(entry)
       } catch (error) {
         if (
           error instanceof HostError &&
-          ['module-missing', 'external-manifest', 'external-unavailable', 'external-version'].includes(
-            String(error.detail?.reason),
-          )
+          [
+            'bad-package-entry',
+            'module-missing',
+            'external-manifest',
+            'external-unavailable',
+            'external-version',
+          ].includes(String(error.detail?.reason))
         )
           moduleFailure = error
         throw error
@@ -149,39 +156,27 @@ export async function loadRuntimePackage(
     if (!loaded.length) return undefined
     throw new Error('runtime plugin loader did not return a module namespace')
   }
-  const module = readNamedExports(source.snapshot.packageId, entry, namespace as Record<string, unknown>, [])
-  if (loaded.length) {
-    module.plugins = Object.freeze(
-      loaded.map((plugin) =>
-        Object.freeze({
-          declaration: plugin.declaration,
-          entry: plugin.entry,
-          candidate: plugin.candidate,
-          snapshotDigest: source.snapshot.integrity,
-        }),
-      ),
-    )
-  }
-  return Object.freeze({ source, module })
-}
-
-/** True when package.json names an entry. Missing exports/main stays unloaded, so static bundles are not executed. */
-function snapshotDeclaresModuleEntry(directory: string): boolean {
-  let pkg: { exports?: unknown; main?: unknown }
-  try {
-    pkg = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')) as {
-      exports?: unknown
-      main?: unknown
+  if (!loaded.length) {
+    const presets = readPresetsExport(source.snapshot.packageId, namespace as Record<string, unknown>)
+    const module: PackageModule = {
+      id: source.snapshot.packageId,
+      extensionEntry: entry,
+      ...(presets ? { presets } : {}),
     }
-  } catch {
-    return false
+    return Object.freeze({ source, module })
   }
-  if (typeof pkg.exports === 'string') return pkg.exports.length > 0
-  if (pkg.exports && typeof pkg.exports === 'object' && !Array.isArray(pkg.exports)) {
-    const dot = (pkg.exports as Record<string, unknown>)['.']
-    if (typeof dot === 'string' && dot.length > 0) return true
-  }
-  return typeof pkg.main === 'string' && pkg.main.length > 0
+  const module = readNamedExports(source.snapshot.packageId, entry, namespace as Record<string, unknown>, [])
+  module.plugins = Object.freeze(
+    loaded.map((plugin) =>
+      Object.freeze({
+        declaration: plugin.declaration,
+        entry: plugin.entry,
+        candidate: plugin.candidate,
+        snapshotDigest: source.snapshot.integrity,
+      }),
+    ),
+  )
+  return Object.freeze({ source, module })
 }
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
@@ -274,16 +269,8 @@ export function readNamedExports(
     else out.isolatedEcosystem = table as NonNullable<PackageModule['isolatedEcosystem']>
   }
   // presets is data rather than factories, so it is the one export the table above does not cover.
-  if (mod.presets !== undefined) {
-    const bad = (why: string, detail: Record<string, unknown>): never => {
-      throw new HostError('E_EXT_LOAD', `${id}: presets export ${why}`, { detail: { id, ...detail } })
-    }
-    if (!isPlainObject(mod.presets)) bad('must be an object', { reason: 'not-an-object' })
-    for (const [k, v] of Object.entries(mod.presets as Record<string, unknown>))
-      if (!isPlainObject(v) || typeof v.name !== 'string')
-        bad(`.${k} must be a preset document with a name`, { reason: 'no-name', preset: k })
-    out.presets = mod.presets as Record<string, PresetDoc>
-  }
+  const presets = readPresetsExport(id, mod)
+  if (presets) out.presets = presets
   if (mod.sandboxProvider !== undefined) {
     const provider = mod.sandboxProvider as Partial<SandboxProvider> | null
     if (
@@ -410,21 +397,39 @@ export function createJitiPackageLoader(loader: {
   }
 }
 
+function readPresetsExport(id: string, mod: Record<string, unknown>): Record<string, PresetDoc> | undefined {
+  if (mod.presets === undefined) return undefined
+  const bad = (why: string, detail: Record<string, unknown>): never => {
+    throw new HostError('E_EXT_LOAD', `${id}: presets export ${why}`, { detail: { id, ...detail } })
+  }
+  if (!isPlainObject(mod.presets)) bad('must be an object', { reason: 'not-an-object' })
+  for (const [k, v] of Object.entries(mod.presets as Record<string, unknown>))
+    if (!isPlainObject(v) || typeof v.name !== 'string')
+      bad(`.${k} must be a preset document with a name`, { reason: 'no-name', preset: k })
+  return mod.presets as Record<string, PresetDoc>
+}
+
 function packageEntry(id: string, dir: string): string {
   const pkgJson = join(dir, 'package.json')
   if (!existsSync(pkgJson))
     throw new HostError('E_DEP_MISSING', `${id}: package.json not found`, { detail: { id } })
   const pkg = JSON.parse(readFileSync(pkgJson, 'utf8')) as {
     name?: unknown
-    exports?: Record<string, string> | string
-    main?: string
+    exports?: unknown
+    main?: unknown
   }
   if (pkg.name !== id)
     throw new HostError('E_EXT_LOAD', `${id}: package manifest name does not match`, {
       detail: { id, reason: 'package-name' },
     })
-  const rel = typeof pkg.exports === 'string' ? pkg.exports : (pkg.exports?.['.'] ?? pkg.main ?? './index.js')
-  if (typeof rel !== 'string')
+  const hasDotExport = isPlainObject(pkg.exports) && Object.hasOwn(pkg.exports, '.')
+  const rel =
+    pkg.exports !== undefined && !isPlainObject(pkg.exports)
+      ? pkg.exports
+      : hasDotExport
+        ? (pkg.exports as Record<string, unknown>)['.']
+        : (pkg.main ?? './index.js')
+  if (typeof rel !== 'string' || rel.length === 0)
     throw new HostError('E_EXT_LOAD', `${id}: package entry must be a string`, {
       detail: { id, reason: 'bad-package-entry' },
     })
