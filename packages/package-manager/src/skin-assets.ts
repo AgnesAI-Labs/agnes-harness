@@ -1,5 +1,17 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  type Stats,
+  statSync,
+} from 'node:fs'
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ExtensionManifest } from '@agnes/extension-api'
 import { nativeRealpathSync } from '@agnes/system-node/realpath'
@@ -34,6 +46,38 @@ export type ResolvedSkin = {
   /** Absolute, symlink-resolved `assets/` directory beside the stylesheet, when it exists. */
   assetsDir?: string
   tokens: Record<string, { light: string; dark: string }>
+}
+
+export function sameSkinFile(a: Stats, b: Stats): boolean {
+  return (
+    a.isFile() &&
+    b.isFile() &&
+    a.dev === b.dev &&
+    a.ino === b.ino &&
+    a.size === b.size &&
+    a.mtimeMs === b.mtimeMs &&
+    a.ctimeMs === b.ctimeMs
+  )
+}
+
+/** Capture bounded bytes from a verified package skin file; reject links and files changed during the read. */
+export function captureSkinFile(file: string, cap: number): { bytes: Buffer; stat: Stats } {
+  if (nativeRealpathSync(file) !== file) throw new Error('skin path changed')
+  const fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
+  try {
+    const stat = fstatSync(fd)
+    if (!stat.isFile() || stat.size > cap) throw new Error('skin file exceeds its limit')
+    const bytes = Buffer.allocUnsafe(stat.size)
+    for (let offset = 0; offset < bytes.length; ) {
+      const count = readSync(fd, bytes, offset, bytes.length - offset, offset)
+      if (!count) throw new Error('skin file changed during read')
+      offset += count
+    }
+    if (!sameSkinFile(stat, lstatSync(file))) throw new Error('skin file changed during read')
+    return { bytes, stat }
+  } finally {
+    closeSync(fd)
+  }
 }
 
 function fail(file: string, why: string, reason: string): never {

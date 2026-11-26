@@ -1,14 +1,5 @@
 import { createHash } from 'node:crypto'
-import {
-  closeSync,
-  constants,
-  fstatSync,
-  lstatSync,
-  openSync,
-  readdirSync,
-  readSync,
-  type Stats,
-} from 'node:fs'
+import { lstatSync, readdirSync, type Stats } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { packageOfRow } from '@agnes/daemon-foundation/composite-desired'
@@ -17,6 +8,7 @@ import { ConfigurationError, createConfigurationService } from '@agnes/host'
 import {
   activeRuntimePinId,
   applicationConsentSnapshot,
+  captureSkinFile,
   hashDirectoryAsync,
   lockPath,
   type PackageManager,
@@ -27,6 +19,7 @@ import {
   SKIN_MAX_ASSET_BYTES,
   SKIN_MAX_ASSETS_TOTAL_BYTES,
   SKIN_MAX_CSS_BYTES,
+  sameSkinFile,
   withLock,
 } from '@agnes/package-manager'
 import { decodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
@@ -65,44 +58,12 @@ type Candidate = {
   tokens: ResolvedSkin['tokens']
 }
 
-function sameFile(a: Stats, b: Stats): boolean {
-  return (
-    a.isFile() &&
-    b.isFile() &&
-    a.dev === b.dev &&
-    a.ino === b.ino &&
-    a.size === b.size &&
-    a.mtimeMs === b.mtimeMs &&
-    a.ctimeMs === b.ctimeMs
-  )
-}
-
-/** Capture bounded bytes; reject links and files changed during the read. */
-function capture(file: string, cap: number): { bytes: Buffer; stat: Stats } {
-  if (nativeRealpathSync(file) !== file) throw new Error('skin path changed')
-  const fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
-  try {
-    const stat = fstatSync(fd)
-    if (!stat.isFile() || stat.size > cap) throw new Error('skin file exceeds its limit')
-    const bytes = Buffer.allocUnsafe(stat.size)
-    for (let offset = 0; offset < bytes.length; ) {
-      const count = readSync(fd, bytes, offset, bytes.length - offset, offset)
-      if (!count) throw new Error('skin file changed during read')
-      offset += count
-    }
-    if (!sameFile(stat, lstatSync(file))) throw new Error('skin file changed during read')
-    return { bytes, stat }
-  } finally {
-    closeSync(fd)
-  }
-}
-
 function bindCandidate(
   snapshot: RuntimeSnapshot & { source: NonNullable<RuntimeSnapshot['source']> },
   rowId: string,
   skin: ResolvedSkin,
 ): Candidate {
-  const { bytes: css, stat } = capture(skin.cssPath, SKIN_MAX_CSS_BYTES)
+  const { bytes: css, stat } = captureSkinFile(skin.cssPath, SKIN_MAX_CSS_BYTES)
   const cssDigest = sha256(css)
   const files = new Map<string, FileFact>([['skin.css', { file: skin.cssPath, digest: cssDigest, stat }]])
   let total = 0
@@ -115,7 +76,7 @@ function bindCandidate(
       } else {
         if (!entry.isFile() || !SKIN_ASSET_EXTENSIONS.includes(extname(entry.name).slice(1).toLowerCase()))
           throw new Error('skin asset is not allowed')
-        const { bytes, stat } = capture(
+        const { bytes, stat } = captureSkinFile(
           file,
           Math.min(SKIN_MAX_ASSET_BYTES, SKIN_MAX_ASSETS_TOTAL_BYTES - total),
         )
@@ -301,7 +262,7 @@ export class Skins {
           continue
         if (
           packageCandidates.some((candidate) =>
-            [...candidate.files.values()].some(({ file, stat }) => !sameFile(stat, lstatSync(file))),
+            [...candidate.files.values()].some(({ file, stat }) => !sameSkinFile(stat, lstatSync(file))),
           )
         )
           continue
@@ -407,7 +368,7 @@ export class Skins {
       const name = path.slice(base.length)
       const fact = skin.files.get(name)
       if (!fact) return { found: false }
-      const bytes = name === 'skin.css' ? skin.css : capture(fact.file, SKIN_MAX_ASSET_BYTES).bytes
+      const bytes = name === 'skin.css' ? skin.css : captureSkinFile(fact.file, SKIN_MAX_ASSET_BYTES).bytes
       if (sha256(bytes) !== fact.digest || !(await view.current())) return { found: false }
       return { found: true, base64: bytes.toString('base64') }
     } catch {
