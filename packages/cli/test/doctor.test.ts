@@ -1,6 +1,8 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createProvider, NullContractStore } from '@agnes/ai'
+import { FakeAdapter, fakeModel } from '@agnes/ai/testkit'
 import { initializeHome } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -58,6 +60,58 @@ describe('doctor command aggregation', () => {
     expect(json.exitCode).toBe(0)
     expect(JSON.parse(json.text)).toEqual(json.json)
     expect(json.text).not.toContain('minimal_inference')
+
+    const profileDir = join(d.home, 'profiles', 'local-dev')
+    mkdirSync(profileDir, { recursive: true })
+    writeFileSync(
+      join(profileDir, 'profile.yaml'),
+      [
+        'name: local-dev',
+        'provider:',
+        '  package: "@agnes/ai"',
+        '  routes:',
+        '    - route: gw',
+        '      api: openai-completions',
+        '      baseUrl: http://127.0.0.1:1/v1',
+        '      models:',
+        '        - id: m1',
+        '          name: m1',
+        '          api: openai-completions',
+        '          route: gw',
+        '          baseUrl: http://127.0.0.1:1/v1',
+        '          reasoning: false',
+        '          input: [text]',
+        '          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }',
+        '          contextWindow: 200000',
+        '          maxTokens: 8192',
+        '          toolCallFormats: [native]',
+        '          thinkingReplay: native',
+        '          contract_id: null',
+        '',
+      ].join('\n'),
+    )
+    const adapter = new FakeAdapter({
+      id: 'profile-route',
+      routes: [{ route: 'gw', api: 'openai-completions', baseUrl: 'http://127.0.0.1:1/v1' }],
+      models: { gw: [fakeModel({ id: 'm1', route: 'gw' })] },
+    })
+    const registry = createProvider({
+      adapters: [adapter],
+      routes: { primary: { route: 'gw', model: 'm1' } },
+      clock: Date.now,
+      secrets: () => '',
+      contract: new NullContractStore(),
+    }).registry
+    d.createHostImpl = async (profile) =>
+      ({
+        provider: { registry },
+        profile,
+        modelAdapterCatalog: () => [],
+        close: async () => undefined,
+      }) as never
+    const configured = await doctorCommand(parseArgs(['doctor', 'provider']), d)
+    expect(configured.exitCode).toBe(0)
+    expect(configured.text).toContain('configured routes (1): gw')
   })
 
   it.skipIf(process.platform === 'win32')(

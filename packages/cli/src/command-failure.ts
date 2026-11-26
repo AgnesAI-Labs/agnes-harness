@@ -111,7 +111,9 @@ export function reportCommandFailure(
   }
   const help = publicErrorHelp(e, resolveLocale(io.env))
   if (help) {
-    io.stderr.write(`${help.code}: ${help.reason} ${help.action}\n`)
+    io.stderr.write(
+      json ? `${JSON.stringify({ error: help })}\n` : `${help.code}: ${help.reason} ${help.action}\n`,
+    )
     return ExitCode.ERROR
   }
   const safeFailure =

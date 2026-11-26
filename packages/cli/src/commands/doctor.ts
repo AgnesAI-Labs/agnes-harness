@@ -233,7 +233,10 @@ export async function doctorCommand(
               })
             const snapshot = await configuration.get()
             const accounts = snapshot.accounts ?? []
-            if (!accounts.some((account) => account.enabled && account.credentialConfigured)) {
+            if (
+              !accounts.some((account) => account.enabled && account.credentialConfigured) &&
+              !(await resolvedProfile()).provider.routes?.length
+            ) {
               sections.push(
                 await doctorProvider(undefined, {
                   signal: commandDeps.signal ?? new AbortController().signal,

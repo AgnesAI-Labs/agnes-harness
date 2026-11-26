@@ -191,37 +191,46 @@ describe('main', () => {
   })
 
   it('prints the public preset refusal when the daemon classified the allow-list or the route table', () => {
-    const lines = (error: JsonRpcError): string => {
+    const lines = (error: JsonRpcError, json = false): string => {
       let stderr = ''
       const sink = new PassThrough()
       sink.on('data', (chunk: Buffer | string) => {
         stderr += String(chunk)
       })
-      expect(reportCommandFailure(error, undefined, { env: {}, stderr: sink })).toBe(1)
+      expect(reportCommandFailure(error, undefined, { env: {}, stderr: sink }, json)).toBe(1)
       return stderr
     }
-    expect(
-      lines(
-        new JsonRpcError({
-          code: -32008,
-          message: 'PRESET_SWITCH_REJECTED',
-          data: { code: 'E_PRESET_UNSUPPORTED', reason: 'preset-not-allowed' },
-        }),
-      ),
-    ).toBe(
+    const disallowed = new JsonRpcError({
+      code: -32008,
+      message: 'PRESET_SWITCH_REJECTED',
+      data: { code: 'E_PRESET_UNSUPPORTED', reason: 'preset-not-allowed' },
+    })
+    expect(lines(disallowed)).toBe(
       'E_PRESET_UNSUPPORTED: The preset or permission selection was refused. Choose a supported preset and a compatible permission level.\n',
     )
-    expect(
-      lines(
-        new JsonRpcError({
-          code: -32008,
-          message: 'PRESET_SWITCH_REJECTED private slot',
-          data: { code: 'E_PRESET_UNRESOLVED', reason: 'route-not-assembled' },
-        }),
-      ),
-    ).toBe(
+    expect(JSON.parse(lines(disallowed, true))).toEqual({
+      error: {
+        code: 'E_PRESET_UNSUPPORTED',
+        reason: 'The preset or permission selection was refused.',
+        action: 'Choose a supported preset and a compatible permission level.',
+      },
+    })
+    const unassembled = new JsonRpcError({
+      code: -32008,
+      message: 'PRESET_SWITCH_REJECTED private slot',
+      data: { code: 'E_PRESET_UNRESOLVED', reason: 'route-not-assembled' },
+    })
+    expect(lines(unassembled)).toBe(
       'E_PRESET_UNRESOLVED: This preset asks for model slots this process did not assemble. Set that preset as the profile default and start again, or choose a preset that uses the assembled routes.\n',
     )
+    expect(JSON.parse(lines(unassembled, true))).toEqual({
+      error: {
+        code: 'E_PRESET_UNRESOLVED',
+        reason: 'This preset asks for model slots this process did not assemble.',
+        action:
+          'Set that preset as the profile default and start again, or choose a preset that uses the assembled routes.',
+      },
+    })
   })
 
   it('renders a daemon disconnect as one safe retry line without transport diagnostics', () => {

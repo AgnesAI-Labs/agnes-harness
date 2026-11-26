@@ -660,7 +660,12 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         io.stderr.write((await worktreeFlag?.printWorktreeEnd(worktree, resolveLocale(io.env))) ?? '')
     }
   } catch (e) {
-    return (await import('./command-failure.js')).reportCommandFailure(e, p.command, io, p.json)
+    return (await import('./command-failure.js')).reportCommandFailure(
+      e,
+      p.command,
+      io,
+      p.json || p.mode === 'json' || p.mode === 'stream-json',
+    )
   } finally {
     stopDiagnostics?.()
     eph?.release()

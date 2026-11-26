@@ -88,7 +88,7 @@ export async function resolveDoctorProfile(
     flags: { profile: name, park: false, cwd },
     agnesVersion: d.agnesVersion,
     ...(d.lock ? { lock: d.lock } : {}),
-    configuration: await configuration.profileInput(),
+    configuration: await configuration.profileInput?.(),
   })
   const platform = createPlatform()
   await platform.probe({ root: cwd })
