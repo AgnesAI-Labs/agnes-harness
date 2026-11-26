@@ -139,19 +139,26 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
     const poll = async () => {
       try {
         let value: SessionJobsReadResult
+        const targetId = active || requestedJob.current
+        const wantDetail = Boolean(targetId && (restored.current || targetId.startsWith(CHILD_JOB_PREFIX)))
         try {
           // An output response already contains the job list; steady-state polling needs one read.
-          value = await session.jobsRead(restored.current && active ? active : undefined)
+          value = await session.jobsRead(wantDetail ? targetId : undefined)
         } catch (cause) {
           if (!alive || document.visibilityState === 'hidden') return
-          if (!active || !restored.current) throw cause
+          if (!wantDetail) throw cause
           value = await session.jobsRead()
-          if (value.jobs.some((job) => job.id === active)) throw cause
+          if (value.jobs.some((job) => job.id === targetId)) throw cause
           const cached = snapshotRef.current.jobs.find(
-            (row) => row.id === active && row.owner === 'agent' && row.status !== 'running',
+            (row) => row.id === targetId && row.owner === 'agent' && row.status !== 'running',
           )
           if (cached) value = { ...value, job: cached }
-          else if (alive) setActive('') // Only a human terminal without cached output is detached on eviction.
+          else if (targetId.startsWith(CHILD_JOB_PREFIX)) {
+            if (alive) {
+              setActive(targetId)
+              setMissingChild(targetId)
+            }
+          } else if (alive) setActive('') // Only a human terminal without cached output is detached on eviction.
         }
         if (!alive) return
         setSnapshot((previous) => ({
@@ -164,7 +171,10 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
               ...(value.job?.id === row.id ? value.job : {}),
             })),
             ...previous.jobs.filter(
-              (row) => row.owner === 'agent' && !value.jobs.some((next) => next.id === row.id),
+              (row) =>
+                row.owner === 'agent' &&
+                row.status !== 'running' &&
+                !value.jobs.some((next) => next.id === row.id),
             ),
           ],
         }))
@@ -175,6 +185,8 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
             .filter((row) => row.owner === 'agent' && row.kind === 'shell' && row.status !== 'running')
             .map((row) => row.id),
         )
+        const hasJob = (id: string) => value.jobs.some((row) => row.id === id) || value.job?.id === id
+        const wanted = requestedJob.current
         if (!restored.current) {
           restored.current = true
           const stored = attachments(session.id)
@@ -183,16 +195,29 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
               (job) =>
                 !removed.current.has(job.id) &&
                 (job.owner === 'agent'
-                  ? isVisibleTerminalJob(job) || job.id === requestedJob.current
+                  ? isVisibleTerminalJob(job) || job.id === wanted
                   : job.status === 'running' || !wasClosed(session.id) || stored?.includes(job.id)),
             )
             .map((job) => job.id)
           setIds(initial)
-          setActive(
-            initial.find((id) => value.jobs.some((job) => job.id === id && job.owner === 'human')) ??
-              initial[0] ??
-              '',
-          )
+          if (wanted) {
+            if (hasJob(wanted)) {
+              requestedJob.current = ''
+              setMissingChild('')
+              removed.current.delete(wanted)
+              setIds((known) => (known.includes(wanted) ? known : [...known, wanted]))
+              setActive(wanted)
+            } else {
+              setActive(wanted)
+              setMissingChild(wanted)
+            }
+          } else {
+            setActive(
+              initial.find((id) => value.jobs.some((job) => job.id === id && job.owner === 'human')) ??
+                initial[0] ??
+                '',
+            )
+          }
           // No terminal is started for the person until they ask for one: opening the dock to watch
           // the agent's jobs must not leave a shell running that nobody uses.
         } else {
@@ -203,21 +228,31 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
                 (row) =>
                   !known.includes(row.id) &&
                   !removed.current.has(row.id) &&
-                  (row.owner !== 'agent' || isVisibleTerminalJob(row) || row.id === requestedJob.current),
+                  (row.owner !== 'agent' || isVisibleTerminalJob(row) || row.id === wanted),
               )
               .map((row) => row.id),
           ])
-        }
-        // A tab asked for from the composer may arrive with a later jobs read.
-        const wanted = requestedJob.current
-        if (wanted && value.jobs.some((row) => row.id === wanted)) {
-          requestedJob.current = ''
-          setMissingChild('')
-          removed.current.delete(wanted)
-          setIds((known) => (known.includes(wanted) ? known : [...known, wanted]))
-          setActive(wanted)
-        } else if (wanted && restored.current) {
-          setMissingChild(wanted)
+          if (wanted) {
+            if (hasJob(wanted)) {
+              requestedJob.current = ''
+              setMissingChild('')
+              removed.current.delete(wanted)
+              setIds((known) => (known.includes(wanted) ? known : [...known, wanted]))
+              setActive(wanted)
+            } else {
+              setActive(wanted)
+              setMissingChild(wanted)
+            }
+          } else if (active.startsWith(CHILD_JOB_PREFIX)) {
+            if (hasJob(active)) {
+              setMissingChild('')
+            } else {
+              const cached = snapshotRef.current.jobs.find(
+                (row) => row.id === active && row.owner === 'agent' && row.status !== 'running',
+              )
+              if (!cached) setMissingChild(active)
+            }
+          }
         }
       } catch (cause) {
         if (alive)
@@ -239,7 +274,14 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
         /* tabs remain attached in memory */
       }
   }, [sessionId, ids])
+  const selectTab = (id: string) => {
+    requestedJob.current = ''
+    setMissingChild('')
+    setActive(id)
+  }
   const attach = (id: string) => {
+    requestedJob.current = ''
+    setMissingChild('')
     setIds((values) => (values.includes(id) ? values : [...values, id]))
     setActive(id)
   }
@@ -333,14 +375,17 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
   }, [active, sessionId])
   if (!session) return <SettingsState tone="empty">{t('workbench.session')}</SettingsState>
 
-  // A child agent's `command` is its provider id. The built-in provider has no name a person can use,
-  // so the tab names the subagent and the job id keeps two children apart.
+  // A child agent's `command` is its provider id. Prefer the explicit task label when present; the
+  // built-in provider otherwise names the subagent and keeps two children apart with its job id.
   const name = (row: SessionJob) =>
     names[row.id] ??
     (row.owner === 'human'
       ? (row.shell ?? row.command)
-      : row.kind === 'child' && row.command === 'in-process'
-        ? `${t('workbench.terminal.childAgent')} · ${row.id.slice(-6)}`
+      : row.kind === 'child'
+        ? row.childLabel ||
+          (row.command === 'in-process'
+            ? `${t('workbench.terminal.childAgent')} · ${row.id.slice(-6)}`
+            : row.command)
         : row.command)
   const create = (choice: TerminalShell) => {
     setShell(choice)
@@ -389,7 +434,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
             busy={busy}
             t={t}
             name={name}
-            select={setActive}
+            select={selectTab}
             rename={(id, value) => {
               const next = { ...names, [id]: value }
               setNames(next)

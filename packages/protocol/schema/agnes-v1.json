@@ -1434,6 +1434,24 @@
           "minLength": 1,
           "maxLength": 512
         },
+        "childStatus": {
+          "enum": [
+            "starting",
+            "running",
+            "waiting_approval",
+            "paused",
+            "disconnected",
+            "idle",
+            "completed",
+            "failed",
+            "cancelled",
+            "interrupted"
+          ]
+        },
+        "childLabel": {
+          "type": "string",
+          "maxLength": 256
+        },
         "stdout": {
           "type": "string",
           "maxLength": 65536

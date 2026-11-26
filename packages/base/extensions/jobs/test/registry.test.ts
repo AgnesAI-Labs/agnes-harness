@@ -632,13 +632,43 @@ it('preserves child status semantics in syncChildren without per-child collect f
     expect(collect).toHaveBeenCalledTimes(1)
     expect(collect).toHaveBeenCalledWith('c-wait', { wait: false })
     expect(jobs.output(tool, 'child:c-wait').stdout).toContain('body:c-wait')
-    // Closing an idle resident updates its terminal status cleanly.
-    listings = [{ id: 'c-idle', providerId: 'in-process', status: 'cancelled', continuable: false }]
+    // Closing an idle resident settles terminal code (-1), completions and waiters consistently without duplicates.
+    listings = [
+      { id: 'c-idle', providerId: 'in-process', status: 'cancelled', continuable: false },
+      { id: 'c-pause', providerId: 'in-process', status: 'failed', continuable: false },
+    ]
     await jobs.syncChildren({ session: tool.session, cwd: tool.cwd, subagent })
     expect(jobs.list(tool).find((row) => row.id === 'child:c-idle')).toMatchObject({
       status: 'killed',
+      code: -1,
       childStatus: 'cancelled',
     })
+    expect(jobs.completions(tool)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'child:c-idle',
+          status: 'killed',
+          code: -1,
+          childStatus: 'cancelled',
+        }),
+        expect.objectContaining({
+          id: 'child:c-pause',
+          status: 'failed',
+          code: -1,
+          childStatus: 'failed',
+        }),
+      ]),
+    )
+    const completionsCount = jobs.completions(tool).length
+    await jobs.syncChildren({ session: tool.session, cwd: tool.cwd, subagent })
+    expect(jobs.completions(tool)).toHaveLength(completionsCount)
+    expect(await jobs.wait({ session: tool.session, signal: tool.signal }, 'child:c-idle', 10)).toMatchObject(
+      {
+        status: 'killed',
+        code: -1,
+        childStatus: 'cancelled',
+      },
+    )
   } finally {
     await jobs.dispose()
   }

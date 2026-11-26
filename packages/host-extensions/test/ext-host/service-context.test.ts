@@ -1,4 +1,13 @@
-import type { SeamImplementations, WorkspaceInvocationView } from '@agnes/core'
+import {
+  bindChildFactory,
+  type ChildControlStore,
+  type ChildTaskRecord,
+  type KernelChildren,
+  type SeamImplementations,
+  trackExternalChild,
+  unbindChildFactory,
+  type WorkspaceInvocationView,
+} from '@agnes/core'
 import { fakeSeams } from '@agnes/core/testkit'
 import type { ExtensionManifest, ServiceContext } from '@agnes/extension-api'
 import { serviceFixture } from '@agnes/extension-api/testkit'
@@ -227,4 +236,206 @@ it('binds process launch and child cancellation only to journaled effects and Ho
   await expect(denied.sandbox!.openProcess!({ argv: ['bash'], cwd: workspace.root })).rejects.toThrow(
     'preset denied',
   )
+})
+
+function childRecord(
+  childKey: string,
+  parentKey: string,
+  state: ChildTaskRecord['state'] = 'running',
+  stateRevision = 1,
+  inputText = `task ${childKey}`,
+): ChildTaskRecord {
+  return {
+    childKey,
+    creationId: `c:${childKey}`,
+    attemptId: `a:${childKey}`,
+    creationPhase: 'committed',
+    creationRevision: 1,
+    attemptStartedAt: 1,
+    parentKey,
+    rootTaskId: parentKey,
+    runtimeOwnerSessionKey: parentKey,
+    kind: 'spawn',
+    generationDepth: 1,
+    generationLimit: 4,
+    boundarySeq: 1,
+    inputHash: `h:${childKey}`,
+    inputText,
+    cwd: '/workspace',
+    actorId: 'subject',
+    budgetScopeId: `b:${childKey}`,
+    ancestorScopeIds: [],
+    workspaceId: null,
+    isolation: 'shared',
+    state,
+    stateRevision,
+    controlFormat: 4,
+  }
+}
+
+it('distinguishes direct vs read-only descendants, refuses grandchild/ambiguous cancel without touching ports, and reads bodies on demand', async () => {
+  const { build, entry, identity, alive, workspace } = fixture()
+  const { handler: _handler, ...effectCapability } = serviceFixture()
+  const rootKey = 'root-child-jobs-test'
+  const childKey = 'direct-child-1'
+  const grandKey = 'grandchild-1'
+  const dupKey = 'shared-raw-id'
+
+  const records = new Map<string, ChildTaskRecord>([
+    [childKey, childRecord(childKey, rootKey, 'waiting_approval', 2, 'Direct child task')],
+    [dupKey, childRecord(dupKey, rootKey, 'running', 3, 'Local colliding child')],
+    [grandKey, childRecord(grandKey, childKey, 'paused', 7, 'Paused grandchild task')],
+  ])
+  const store = {
+    listByParent: vi.fn(async (parentKey: string) =>
+      [...records.values()].filter((row) => row.parentKey === parentKey),
+    ),
+    lookupByKey: vi.fn(async (key: string) => records.get(key)),
+  } as unknown as ChildControlStore
+
+  const rootCancel = vi.fn(async (id: string) => {
+    const rec = records.get(id)
+    if (rec) records.set(id, { ...rec, state: 'cancelled', stateRevision: rec.stateRevision + 1 })
+  })
+  const childCancel = vi.fn(async (id: string) => {
+    const rec = records.get(id)
+    if (rec) records.set(id, { ...rec, state: 'cancelled', stateRevision: rec.stateRevision + 1 })
+  })
+  const rootInspect = vi.fn(async (id: string) => ({ state: 'running', text: `body:${id}` }))
+  const childInspect = vi.fn(async (id: string) => ({ state: 'paused', text: `grand-body:${id}` }))
+  const rootList = vi.fn(async () => {
+    throw new Error('full backend.list() should not run when ChildControlStore is present')
+  })
+  const externalDupCancel = vi.fn(async () => {})
+  const externalOnlyCancel = vi.fn(async () => {})
+
+  const rootBackend = {
+    childEvents: { store },
+    list: rootList,
+    inspect: rootInspect,
+    cancel: rootCancel,
+  } as unknown as KernelChildren
+  const directChildBackend = {
+    childEvents: { store },
+    list: rootList,
+    inspect: childInspect,
+    cancel: childCancel,
+  } as unknown as KernelChildren
+
+  bindChildFactory(rootKey, rootBackend)
+  bindChildFactory(childKey, directChildBackend)
+  const untrackDup = trackExternalChild(rootKey, {
+    listing: {
+      id: dupKey,
+      providerId: 'acp',
+      status: 'running',
+      continuable: true,
+      text: 'external dup body',
+    },
+    cancel: externalDupCancel,
+  })
+  const untrackExt = trackExternalChild(rootKey, {
+    listing: {
+      id: 'ext-only',
+      providerId: 'acp',
+      status: 'running',
+      continuable: true,
+      text: 'external only body',
+    },
+    cancel: externalOnlyCancel,
+  })
+
+  try {
+    const boundWorkspace = {
+      ...workspace,
+      hookSandbox: () => ({
+        enforcement: () => ({ level: 'none' as const, scope: [] }),
+        exec: async () => ({ code: 0, stdout: '', stderr: '', truncated: false }),
+      }),
+    }
+    const session = { key: rootKey, lane: 'main', workspaceRoot: workspace.root }
+    const effect = build(
+      { ...entry, capability: { ...effectCapability, kind: 'effect' } },
+      { ...identity, session },
+      alive,
+      boundWorkspace,
+    )
+    const port = effect.childJobs as NonNullable<typeof effect.childJobs> & {
+      readDetail(id: string): Promise<Record<string, unknown> | undefined>
+      cancel(id: string, target?: { providerId?: string; ownerSessionId?: string }): Promise<void>
+    }
+
+    // Lightweight list reads metadata only (zero inspect calls, zero text bodies).
+    const listed = (await port.list()) as readonly Record<string, unknown>[]
+    expect(rootInspect).not.toHaveBeenCalled()
+    expect(childInspect).not.toHaveBeenCalled()
+    expect(rootList).not.toHaveBeenCalled()
+    expect(listed.find((row) => row.id === childKey)).toMatchObject({
+      id: childKey,
+      ownerSessionId: rootKey,
+      direct: true,
+      readOnly: false,
+      ambiguous: false,
+      status: 'waiting_approval',
+      label: 'Direct child task',
+    })
+    expect(listed.find((row) => row.id === grandKey)).toMatchObject({
+      id: grandKey,
+      ownerSessionId: childKey,
+      direct: false,
+      readOnly: true,
+      status: 'paused',
+    })
+    expect(listed.find((row) => row.id === dupKey)).toMatchObject({
+      id: dupKey,
+      direct: false,
+      readOnly: true,
+      ambiguous: true,
+    })
+    expect(listed.every((row) => row.text === undefined)).toBe(true)
+
+    // On-demand detail read inspects ONLY the requested child.
+    const grandDetail = await port.readDetail(grandKey)
+    expect(grandDetail).toMatchObject({
+      id: grandKey,
+      ownerSessionId: childKey,
+      readOnly: true,
+      text: `grand-body:${grandKey}`,
+    })
+    expect(childInspect).toHaveBeenCalledTimes(1)
+    expect(childInspect).toHaveBeenCalledWith(grandKey)
+    expect(rootInspect).not.toHaveBeenCalled()
+
+    // Negative contract 1: cancelling a read-only grandchild fails closed without touching any cancel port or revision.
+    await expect(port.cancel(grandKey)).rejects.toThrow('CAPABILITY_DENIED')
+    expect(rootCancel).not.toHaveBeenCalled()
+    expect(childCancel).not.toHaveBeenCalled()
+    expect(records.get(grandKey)?.stateRevision).toBe(7)
+
+    // Negative contract 2: cancelling an ambiguous raw ID fails closed without touching local or external cancel ports.
+    await expect(port.cancel(dupKey)).rejects.toThrow('CAPABILITY_DENIED')
+    expect(rootCancel).not.toHaveBeenCalled()
+    expect(externalDupCancel).not.toHaveBeenCalled()
+    expect(records.get(dupKey)?.stateRevision).toBe(3)
+
+    // Negative contract 3: mismatched owner or provider is refused before touching cancel ports.
+    await expect(port.cancel(childKey, { providerId: 'acp' })).rejects.toThrow('CAPABILITY_DENIED')
+    await expect(port.cancel(childKey, { ownerSessionId: 'foreign-session' })).rejects.toThrow(
+      'CAPABILITY_DENIED',
+    )
+    expect(rootCancel).not.toHaveBeenCalled()
+    expect(records.get(childKey)?.stateRevision).toBe(2)
+
+    // Positive contract: unambiguous direct children with matching identity cancel cleanly.
+    await port.cancel(childKey, { providerId: 'in-process', ownerSessionId: rootKey })
+    expect(rootCancel).toHaveBeenCalledTimes(1)
+    expect(rootCancel).toHaveBeenCalledWith(childKey)
+    await port.cancel('ext-only', { providerId: 'acp', ownerSessionId: rootKey })
+    expect(externalOnlyCancel).toHaveBeenCalledTimes(1)
+  } finally {
+    untrackDup()
+    untrackExt()
+    unbindChildFactory(rootKey, rootBackend)
+    unbindChildFactory(childKey, directChildBackend)
+  }
 })

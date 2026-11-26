@@ -579,3 +579,116 @@ it('shows friendly status labels without Exit -1 for child tabs and explains una
     ),
   )
 })
+
+it('renders finer childStatus states and childLabel without collapsing them into generic running', async () => {
+  const waiting = job({
+    id: 'child:c-wait',
+    kind: 'child',
+    command: 'in-process',
+    status: 'running',
+    childStatus: 'waiting_approval',
+    childLabel: '等待人工审批',
+  })
+  const paused = job({
+    id: 'child:c-pause',
+    kind: 'child',
+    command: 'in-process',
+    status: 'running',
+    childStatus: 'paused',
+    childLabel: '已暂停任务',
+  })
+  const disconnected = job({
+    id: 'child:c-disc',
+    kind: 'child',
+    command: 'in-process',
+    status: 'running',
+    childStatus: 'disconnected',
+  })
+  const { host } = mount([waiting, paused, disconnected], { childId: 'c-wait' })
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(3))
+  const waitTab = host.querySelector('#terminal-tab-child\\:c-wait') as HTMLElement
+  const pauseTab = host.querySelector('#terminal-tab-child\\:c-pause') as HTMLElement
+  const discTab = host.querySelector('#terminal-tab-child\\:c-disc') as HTMLElement
+  expect(waitTab.textContent).toContain('等待人工审批')
+  expect(waitTab.textContent).toContain('等待审批')
+  expect(waitTab.getAttribute('title')).toContain('等待审批')
+  expect(waitTab.querySelector('[data-tone="warning"]')).not.toBeNull()
+  expect(pauseTab.textContent).toContain('已暂停任务')
+  expect(pauseTab.textContent).toContain('已暂停')
+  expect(discTab.textContent).toContain('已断开')
+  expect(discTab.querySelector('[data-tone="danger"]')).not.toBeNull()
+  expect(host.querySelector('.workbench-child-report-foot')?.textContent).toBe('等待审批')
+})
+
+it('keeps missing child notice stable on initial mount, retry and when a selected active child is reclaimed', async () => {
+  const human = job({ id: 'human-1', owner: 'human', shell: 'bash', command: 'bash' })
+  const liveChild = job({
+    id: 'child:live-1',
+    kind: 'child',
+    command: 'in-process',
+    status: 'running',
+    childStatus: 'running',
+    stdout: '实时输出',
+  })
+  let rows = [human, liveChild]
+  let offline = true
+  const session = {
+    id: 's-missing',
+    jobsRead: vi.fn(async (id?: string) => {
+      if (offline) throw new Error('transient network error')
+      if (id && !rows.some((row) => row.id === id)) throw new Error('JOB_NOT_FOUND')
+      return {
+        jobs: rows.map(({ stdout, stderr, ...row }) => row),
+        completions: [],
+        ...(id ? { job: rows.find((row) => row.id === id) } : {}),
+      }
+    }),
+    jobsControl: vi.fn(async () => ({ output: { ok: true } })),
+  } as unknown as Session
+
+  const host = document.createElement('div')
+  document.body.append(host)
+  hosts.push(host)
+  const render = (selection?: unknown) =>
+    renderRegion(
+      host,
+      <TerminalPanel
+        context={{
+          t: createCatalogTranslator(workbenchLocaleCatalog, 'zh-CN'),
+          data: { session, disabled: false },
+          selection,
+        }}
+      />,
+    )
+
+  // Case 1: initial mount requests a missing child while a human terminal exists and initial read transiently fails.
+  render({ childId: 'cold-missing' })
+  await vi.waitFor(() => expect(host.textContent).toContain('面板加载失败'))
+  offline = false
+  window.dispatchEvent(new Event('focus'))
+  await vi.waitFor(() =>
+    expect(host.querySelector('[data-testid="terminal-child-unavailable"]')?.textContent).toContain(
+      '无法在终端抽屉中打开该子智能体报告',
+    ),
+  )
+  // A subsequent poll/retry does not clear the missing child notice or switch to the human terminal.
+  window.dispatchEvent(new Event('focus'))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(host.querySelector('[data-testid="terminal-child-unavailable"]')).not.toBeNull()
+
+  // Case 2: selecting a live child renders it; when reclaimed later, the unavailable notice renders stably.
+  render({ childId: 'live-1' })
+  await vi.waitFor(() =>
+    expect(host.querySelector('.workbench-child-report')?.textContent).toContain('实时输出'),
+  )
+  rows = [human]
+  window.dispatchEvent(new Event('focus'))
+  await vi.waitFor(() =>
+    expect(host.querySelector('[data-testid="terminal-child-unavailable"]')?.textContent).toContain(
+      '无法在终端抽屉中打开该子智能体报告',
+    ),
+  )
+  window.dispatchEvent(new Event('focus'))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(host.querySelector('[data-testid="terminal-child-unavailable"]')).not.toBeNull()
+})

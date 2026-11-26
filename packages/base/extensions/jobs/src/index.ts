@@ -61,7 +61,7 @@ export function createJobTools(jobs: ShellJobs) {
       meta,
       async execute(args, ctx) {
         try {
-          await jobs.syncChildren(ctx)
+          await jobs.syncChildren(ctx, undefined, args.jobId)
           await jobs.wait(
             ctx,
             args.jobId,
