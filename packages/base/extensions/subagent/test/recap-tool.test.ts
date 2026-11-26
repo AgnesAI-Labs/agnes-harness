@@ -183,10 +183,144 @@ describe('subagent_recap tool (#23)', () => {
     expect(markdown).toContain('-> ok.md')
     expect(markdown).toContain('另有 1 项写入无法复核（文件系统检查失败 (EIO)）')
     expect(markdown).toContain('另有 1 项已记录路径为目录或非普通文件')
-    expect(markdown).toContain('另有 1 项已记录写入当前不存在（ENOENT）')
+    expect(markdown).toContain('另有 1 项已记录写入当前不存在')
+    expect(markdown).not.toContain('ENOENT')
     expect(markdown).toContain('| 已暂停 (paused) | 已暂停 (paused) |')
     expect(markdown).toContain('执行已暂停')
     expect(markdown).toContain('可使用 subagent_resume 从检查点恢复。')
     expect(markdown).toContain('可恢复 (resumable: true)')
+  })
+
+  it('fallback scoping preserves missingCodes (ENOTDIR/ENOENT) and uses neutral wording when absent (#21)', async () => {
+    const makeMissingSnapshot = (
+      locale: 'en' | 'zh-CN',
+      verification: Record<string, unknown>,
+      withVerified = false,
+    ) =>
+      ({
+        ...sampleSnapshot(),
+        locale,
+        subtasks: [
+          {
+            taskId: 'root/alpha',
+            ownerKey: 'root',
+            label: 'Alpha task',
+            status: 'completed' as const,
+            executionState: 'completed' as const,
+            summaryText: 'Done',
+            artifacts: withVerified ? [{ path: 'ok.md', kind: 'file' as const, verified: true }] : [],
+            artifactVerification: verification,
+            updatedAt: 1_700_000_000_000,
+          } as RecapFactSnapshot['subtasks'][number],
+          ...sampleSnapshot().subtasks.slice(2),
+        ],
+        allowedArtifactPaths: withVerified ? ['ok.md'] : [],
+      }) as RecapFactSnapshot
+
+    // Standalone ENOTDIR (EN & ZH)
+    const enEnotdir = await subagentRecapTool.execute(
+      { childKey: 'root/alpha' },
+      makeCtx(
+        makeMissingSnapshot('en', {
+          recordedCount: 1,
+          verifiedCount: 0,
+          missingCount: 1,
+          unverifiableCount: 0,
+          missingCodes: ['ENOTDIR'],
+        }),
+      ).ctx,
+    )
+    const enEnotdirMd = (enEnotdir.structured as { markdown: string }).markdown
+    expect(enEnotdirMd).toContain('Recorded artifacts currently missing')
+    expect(enEnotdirMd).toContain('ENOTDIR')
+    expect(enEnotdirMd).not.toContain('ENOENT')
+
+    const zhEnotdir = await subagentRecapTool.execute(
+      { childKey: 'root/alpha' },
+      makeCtx(
+        makeMissingSnapshot('zh-CN', {
+          recordedCount: 1,
+          verifiedCount: 0,
+          missingCount: 1,
+          unverifiableCount: 0,
+          missingCodes: ['ENOTDIR'],
+        }),
+      ).ctx,
+    )
+    const zhEnotdirMd = (zhEnotdir.structured as { markdown: string }).markdown
+    expect(zhEnotdirMd).toContain('产物当前不存在')
+    expect(zhEnotdirMd).toContain('ENOTDIR')
+    expect(zhEnotdirMd).not.toContain('ENOENT')
+
+    // Mixed unverified + ENOTDIR (kinds > 1) and verified + additional ENOTDIR
+    const enMixedEnotdir = await subagentRecapTool.execute(
+      { childKey: 'root/alpha' },
+      makeCtx(
+        makeMissingSnapshot('en', {
+          recordedCount: 2,
+          verifiedCount: 0,
+          missingCount: 1,
+          nonFileCount: 1,
+          unverifiableCount: 0,
+          missingCodes: ['ENOTDIR'],
+        }),
+      ).ctx,
+    )
+    const enMixedMd = (enMixedEnotdir.structured as { markdown: string }).markdown
+    expect(enMixedMd).toContain('1 currently missing (ENOTDIR)')
+    expect(enMixedMd).not.toContain('ENOENT')
+
+    const enAdditionalEnotdir = await subagentRecapTool.execute(
+      { childKey: 'root/alpha' },
+      makeCtx(
+        makeMissingSnapshot(
+          'en',
+          {
+            recordedCount: 2,
+            verifiedCount: 1,
+            missingCount: 1,
+            unverifiableCount: 0,
+            missingCodes: ['ENOTDIR'],
+          },
+          true,
+        ),
+      ).ctx,
+    )
+    const enAddMd = (enAdditionalEnotdir.structured as { markdown: string }).markdown
+    expect(enAddMd).toContain('1 additional recorded write(s) currently missing (ENOTDIR)')
+    expect(enAddMd).not.toContain('ENOENT')
+
+    // Legacy snapshot missing error code omits fabricated ENOENT (EN & ZH)
+    const enLegacy = await subagentRecapTool.execute(
+      { childKey: 'root/alpha' },
+      makeCtx(
+        makeMissingSnapshot('en', {
+          recordedCount: 1,
+          verifiedCount: 0,
+          missingCount: 1,
+          unverifiableCount: 0,
+        }),
+      ).ctx,
+    )
+    const enLegacyMd = (enLegacy.structured as { markdown: string }).markdown
+    expect(enLegacyMd).toContain(
+      'Recorded artifacts currently missing (1 recorded write(s) not found on disk)',
+    )
+    expect(enLegacyMd).not.toContain('ENOENT')
+
+    const zhLegacy = await subagentRecapTool.execute(
+      { childKey: 'root/alpha' },
+      makeCtx(
+        makeMissingSnapshot('zh-CN', {
+          recordedCount: 1,
+          verifiedCount: 0,
+          missingCount: 1,
+          unverifiableCount: 0,
+        }),
+      ).ctx,
+    )
+    const zhLegacyMd = (zhLegacy.structured as { markdown: string }).markdown
+    expect(zhLegacyMd).toContain('产物当前不存在（记录到 1 项写入，未在磁盘找到）')
+    expect(zhLegacyMd).not.toContain('ENOENT')
   })
 })

@@ -31,16 +31,80 @@ const batchRatioBefore =
 const batchRatioBeforeEn =
   /\b(?:(?:(?:sub)?(?:tasks?|agents?)|items?|jobs?|children)\s+(?:completed?|finished|done)|(?:completed?|finished|done(?:\s+with)?)(?:\s+(?:(?:sub)?(?:tasks?|agents?)|items?|jobs?|children))?)(?:\s*[:：—–=-]\s*|\s+)(\d+)\s*(?:\/|of|out of)\s*(\d+)(?:\s+((?:sub)?(?:tasks?|agents?)|items?|jobs?|children|steps?|checks?|tests?|files?))?\b/giu
 const batchCountBeforeEn =
-  /\b(?:(?:(?:sub)?(?:tasks?|agents?)|items?|jobs?|children)\s+(?:completed?|finished|done)\s*[:：—–=-]\s*(\d+)\b|(?:completed?|finished|done(?:\s+with)?)(?:\s*[:：—–=-]\s*|\s+)(?:all\s+)?(\d+)\s+(?:(?:sub)?(?:tasks?|agents?)|items?|jobs?|children)\b|(?:completed?|finished)\s+(?:(?:sub)?(?:tasks?|agents?)|items?|jobs?|children)\s*[:：—–=-]\s*(\d+)\b|(?:completed?|finished)\s*[:：—–=-]\s*(\d+)(?!\s*(?:\/|of\b|out\s+of\b|%|ms\b|s\b|sec|min|steps?|checks?|tests?|files?|tokens?|lines?|bytes?)|[-:/.\d]))/giu
+  /\b(?:(?:(?:sub)?(?:tasks?|agents?)|items?|jobs?|children)\s+(?:completed?|finished|done)\s*[:：—–=-]\s*(\d+)(?!\s*(?:\/|of\b|out\s+of\b|%|ms\b|s\b|sec|min|(?:k|m|g|t)?b\b)|[-:/\d]|\.\d)|(?:completed?|finished|done(?:\s+with)?)(?:\s*[:：—–=-]\s*|\s+)(?:all\s+)?(\d+)\s+(?:(?:sub)?(?:tasks?|agents?)|items?|jobs?|children)\b|(?:completed?|finished)\s+(?:(?:sub)?(?:tasks?|agents?)|items?|jobs?|children)\s*[:：—–=-]\s*(\d+)(?!\s*(?:\/|of\b|out\s+of\b|%|ms\b|s\b|sec|min|(?:k|m|g|t)?b\b)|[-:/\d]|\.\d)|(?:completed?|finished)\s*[:：—–=-]\s*(\d+)(?!\s*(?:\/|of\b|out\s+of\b|%|ms\b|s\b|sec|min|(?:k|m|g|t)?b\b|steps?|checks?|tests?|files?|tokens?|lines?|bytes?)|[-:/\d]|\.\d))/giu
 const batchCountAfterEn =
   /(?<![/\d.])\b(\d+)\s+((?:sub)?(?:tasks?|agents?)|items?|jobs?|children)\s+(?:(?:are|were|have\s+been|now|already|successfully)\s+)*(?:completed?|done|finished|succeeded)\b/giu
 const batchCountBeforeZh =
-  /(?:已(?:经)?|共|总共|一共|累计)?完成(?:了)?(?:\s*(?:子?任务|子代理|工作))?\s*[:：—–=-]?\s*(\d+)\s*(?:个\s*(?:子?任务|子代理|工作)|项(?:\s*(?:子?任务|子代理|工作))?(?!\s*(?:步骤|检查|测试|文件)))|(?:已(?:经)?|共|总共|一共|累计)?完成(?:了)?\s*(?:子?任务|子代理|工作|数量|总数)\s*[:：—–=-]\s*(\d+)(?!\s*[/\d.%个项步骤检查测试文件])/gu
+  /(?:已(?:经)?|共|总共|一共|累计)?完成(?:了)?(?:\s*(?:子?任务|子代理|工作))?\s*[:：—–=-]?\s*(\d+)\s*(?:个\s*(?:子?任务|子代理|工作)|项(?:\s*(?:子?任务|子代理|工作))?(?!\s*(?:步骤|检查|测试|文件)))|(?:已(?:经)?|共|总共|一共|累计)?完成(?:了)?(?:\s*(?:子?任务|子代理|工作|数量|总数))?\s*[:：—–=-]\s*(\d+)(?!\s*(?:[/\d%个项步骤检查测试文件行秒]|分钟|小时|字节|字符|ms\b|s\b|sec|min|(?:k|m|g|t)?b\b)|[-:/\d]|\.\d)/gu
 const batchCountAfterZh =
   /(?<![/\d.])(\d+)\s*(?:个\s*(?:子?任务|子代理|工作)|项(?:\s*(?:子?任务|子代理|工作))?(?!\s*(?:步骤|检查|测试|文件)))\s*(?:已(?:经)?|均已?|都已?|全部|顺利)?(?:完成|结束|搞定)/gu
 const nonBatchUnit = /^(?:steps?|checks?|tests?|files?|(?:项|个)?(?:步骤|检查|测试))$/iu
 const nonBatchUnitBefore = /(?:\b(?:steps?|checks?|tests?|files?)|步骤|检查|测试|文件)\s*$/iu
 const batchHint = /\b(?:all|total|overall|batch)\b|全部|总共|整批/iu
+const tableSeparatorRow = /^\s*\|?\s*:?-{2,}:?(?:\s*\|\s*:?-{2,}:?)+\s*\|?\s*$/u
+const tableStatusColumn = /^(?:status|executionState|状态|执行态)$/iu
+const tableCompletionLabel =
+  /^(?:(?:(?:all|total|overall|batch)\s+)?(?:(?:sub-?)?(?:tasks?|agents?)|items?|jobs?|children)\s+(?:completed?|finished|done)(?:\s+count)?|(?:(?:all|total|overall|batch)\s+)?(?:completed?|finished|done)\s+(?:(?:sub-?)?(?:tasks?|agents?)|items?|jobs?|children)(?:\s+count)?|(?:(?:all|total|overall|batch)\s+)?(?:completed?|finished)|(?:总|总计|共|累计)?(?:已(?:经)?|全部)?完成(?:的)?(?:子?任务|子代理|工作)?(?:数|数量|总数|进度)?|(?:子?任务|子代理|工作)(?:已)?完成(?:数|数量|总数|进度)?)$/iu
+const tableRatioValue =
+  /^(\d+)\s*(?:\/|of|out\s+of)\s*(\d+)(?:\s*((?:sub-?)?(?:tasks?|agents?)|items?|jobs?|children|steps?|checks?|tests?|files?|(?:项|个)?(?:子?任务|子代理|工作|步骤|检查|测试)))?\.?$/iu
+const tableCountValue =
+  /^(\d+)(?:\s*(?:(?:sub-?)?(?:tasks?|agents?)|items?|jobs?|children|(?:个\s*(?:子?任务|子代理|工作)|项(?:\s*(?:子?任务|子代理|工作))?(?!\s*(?:步骤|检查|测试|文件)))))?\.?$/iu
+
+function checkTableCompletionCounts(
+  text: string,
+  snapshot: RecapFactSnapshot,
+  settled: number,
+  total: number,
+  errors: Violation[],
+) {
+  const checkCell = (label: string, value: string) => {
+    const ratio = tableRatioValue.exec(value)
+    if (ratio) {
+      if (ratio[3] && nonBatchUnit.test(ratio[3].trim())) return
+      if (Number(ratio[1]) !== settled || Number(ratio[2]) !== total)
+        errors.push({ code: 'FALSE_COMPLETION_CLAIM', detail: `${label}: ${value}` })
+      return
+    }
+    const count = tableCountValue.exec(value)
+    if (count && Number(count[1]) !== settled)
+      errors.push({ code: 'FALSE_COMPLETION_CLAIM', detail: `${label}: ${value}` })
+  }
+  const lines = text.split('\n')
+  let headers: string[] | undefined
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] as string
+    if (tableSeparatorRow.test(line)) continue
+    const nextSep = tableSeparatorRow.test(lines[i + 1] ?? '')
+    const trimmed = line.trim()
+    if (!trimmed.includes('|') || (!trimmed.startsWith('|') && !headers && !nextSep)) {
+      headers = undefined
+      continue
+    }
+    const stripped = trimmed.replace(/^\||\|$/g, '')
+    const cells = stripped.split('|').map((c) => c.replace(/[*_`]/g, '').trim())
+    if (cells.length < 2) {
+      headers = undefined
+      continue
+    }
+    if (nextSep) {
+      headers = cells
+      continue
+    }
+    if (mentions(line, snapshot.subtasks).length > 0) continue
+    for (let col = 0; col < cells.length; col++) {
+      const header = headers?.[col] ?? ''
+      const cell = cells[col] as string
+      if (header && cell && tableCompletionLabel.test(header)) checkCell(header, cell)
+      if (
+        col < cells.length - 1 &&
+        tableCompletionLabel.test(cell) &&
+        !tableCompletionLabel.test(header) &&
+        !tableStatusColumn.test(header)
+      )
+        checkCell(cell, cells[col + 1] as string)
+    }
+  }
+}
 
 function checkRatioMatches(
   clause: string,
@@ -113,13 +177,12 @@ function completionChecks(text: string, snapshot: RecapFactSnapshot, errors: Vio
     const refs = mentions(clause, snapshot.subtasks)
     checkRatioMatches(clause, refs, settled, total, errors)
   }
+  checkTableCompletionCounts(text, snapshot, settled, total, errors)
 }
 
 const negative =
   /(?:\b(?:not|never|neither|cannot|can't|isn't|aren't|wasn't|weren't|hasn't|haven't|didn't|doesn't|don't)(?:\s+(?:yet|be|say|claim|that|been|all))*\s*|(?:没有|并非|并未|并不|未能|尚未|还没|不是|不能说|未|没)\s*)$/iu
-function negated(before: string) {
-  return negative.test(before)
-}
+const negated = (before: string) => negative.test(before)
 
 const statuses: [ChildAgentStatus, RegExp][] = [
   ['completed', /\b(?:complete[d]?|done|finished|succeeded|successful)\b|(?:已(?:经)?|顺利)?完成/giu],
@@ -137,9 +200,7 @@ const statuses: [ChildAgentStatus, RegExp][] = [
   ['idle', /\bidle\b|空闲/giu],
 ]
 
-function escapePattern(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
+const escapePattern = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 type Mention = { task: SubtaskFactRecord; start: number; end: number }
 function mentions(line: string, tasks: readonly SubtaskFactRecord[]): Mention[] {
   return tasks
@@ -189,71 +250,16 @@ const directModifierBeforeRef = /^\s*(?:的\s*)?(?:(?:sub)?(?:task|agent)|child|
 const metaExplanationCue =
   /\b(?:means?|translates?(?:\s+to|\s+as)?|translation|quoted?|log(?:ged|s)?|printed|output)\b|意思是|含义|翻译|日志/iu
 
-const EN_DIRECT_LINK_TOKENS = new Set([
-  'is',
-  'was',
-  'are',
-  'were',
-  'has',
-  'have',
-  'been',
-  'be',
-  'remains',
-  'remain',
-  'seems',
-  'seem',
-  'to',
-  'now',
-  'already',
-  'currently',
-  'still',
-  'successfully',
-  'fully',
-  'just',
-  'not',
-  'never',
-  'yet',
-  "isn't",
-  "aren't",
-  "wasn't",
-  "weren't",
-  "hasn't",
-  "haven't",
-])
+const EN_DIRECT_LINK_TOKENS = new Set(
+  "is was are were has have been be remains remain seems seem to now already currently still successfully fully just not never yet isn't aren't wasn't weren't hasn't haven't".split(
+    ' ',
+  ),
+)
 
-const ZH_DIRECT_LINK_TOKENS = [
-  '当前状态为',
-  '目前状态为',
-  '当前状态是',
-  '目前状态是',
-  '状态为',
-  '状态是',
-  '当前为',
-  '当前是',
-  '目前为',
-  '目前是',
-  '当前',
-  '目前',
-  '已经',
-  '现已',
-  '正在',
-  '仍在',
-  '还是',
-  '并未',
-  '尚未',
-  '没有',
-  '并非',
-  '不是',
-  '仍',
-  '已',
-  '都',
-  '均',
-  '也',
-  '是',
-  '为',
-  '未',
-  '没',
-] as const
+const ZH_DIRECT_LINK_TOKENS =
+  '当前状态为 目前状态为 当前状态是 目前状态是 状态为 状态是 当前为 当前是 目前为 目前是 当前 目前 已经 现已 正在 仍在 还是 并未 尚未 没有 并非 不是 仍 已 都 均 也 是 为 未 没'.split(
+    ' ',
+  )
 
 const MAX_DIRECT_LINK_CHARS = 80
 const MAX_DIRECT_LINK_TOKENS = 8
@@ -296,14 +302,46 @@ const ordinaryDirectiveZh =
   /^\s*(?:(?:(?:请|麻烦|先|请先|记得|务必|需要|需|要|应该|应当|应|去)\s*)+(?:检查|核查|核实|确认|验证|查看|排查|判断|确保|等待)(?!了)|(?:看看|看下|看一下|问一下|告诉我|(?:检查|核查|核实|确认|验证|查看|排查)一下))/u
 const ordinaryTrailingNonAssertive =
   /^\s*(?:(?:了)?\s*(?:吗|么|呢|的话|之后|以后|后|时|再|才|就)(?:[\s。！？，,.!?]|$)|or\s+not\b)/iu
+const ordinaryMarkdownPrefix =
+  /^(?:\s*(?:>+\s*|(?:[-*+•]|(?:\(\d+\)|\d+[.)]))\s+(?:\[[ xX]\]\s+)?|#{1,6}\s+))+/u
+const ordinaryDeclarativeSubjectEn =
+  /^(?:i|i'm|i've|i'd|i'll|he|she|it|this|that|here|there|confirmed|verified|checked|validated|already|happy|pleased|glad|able|writing|we\s+(?:are|were|have|had|can|could|will|would|did|do|ran|executed|checked|confirmed|verified|validated|just|already)|we're|we've|we'd|we'll)\b/iu
+const ordinaryPurposeTailEn =
+  /\b(?:in\s+order\s+)?to\s+(?:confirm|verify|check|validate|inspect|ensure|see|determine|make\s+sure|find\s+out)(?:\s+(?:that|whether|if))?\s*$/iu
+const ordinaryFillerOnlyEn = /^(?:just|only|also|simply|merely|and|or|then|so)$/iu
+const ordinaryDeclarativeSubjectZh = /^(?:我(?:们(?!应该|应当|应|需要|需|要))?|本人|目前|现已|已经|已|经)/u
+const ordinaryPurposeTailZh =
+  /(?:以|来|以便|为了|用于|用来)\s*(?:检查|核查|核实|确认|验证|查看|排查|判断|确保)(?!了)\s*$/u
 
 function isNonAssertiveOrdinaryClause(clause: string, leading: string, afterMatch: string): boolean {
-  if (/[?？]$/u.test(clause.trimEnd())) return true
-  if (ordinaryTrailingNonAssertive.test(afterMatch)) return true
-  if (ordinaryLeadingQuestionEn.test(leading)) return true
-  if (ordinaryConditionalEn.test(leading) || ordinaryConditionalZh.test(leading)) return true
-  if (ordinaryDirectiveEn.test(leading) || ordinaryDirectiveZh.test(leading)) return true
-  return false
+  if (/[?？]$/u.test(clause.trimEnd()) || ordinaryTrailingNonAssertive.test(afterMatch)) return true
+  const norm = leading
+    .replace(ordinaryMarkdownPrefix, '')
+    .replace(/[*~]+/g, '')
+    .replace(/(?<!\w)_+|_+(?!\w)/g, '')
+    .trimStart()
+  if (
+    ordinaryLeadingQuestionEn.test(norm) ||
+    ordinaryConditionalEn.test(norm) ||
+    ordinaryConditionalZh.test(norm) ||
+    ordinaryDirectiveEn.test(norm) ||
+    ordinaryDirectiveZh.test(norm)
+  )
+    return true
+  const enPurpose = ordinaryPurposeTailEn.exec(norm)
+  if (enPurpose && enPurpose.index > 0) {
+    const head = norm.slice(0, enPurpose.index).trim()
+    if (
+      head &&
+      !ordinaryFillerOnlyEn.test(head) &&
+      !ordinaryDeclarativeSubjectEn.test(head) &&
+      !/\b(?:is|are|was|were|am|has|have|had)\s+(?:happy|pleased|glad|able|ready|writing|confirming)\b/iu.test(
+        head,
+      )
+    )
+      return true
+  }
+  return ordinaryPurposeTailZh.test(norm) && !ordinaryDeclarativeSubjectZh.test(norm)
 }
 
 function stripNonAssertiveSpans(text: string, knownIds: ReadonlySet<string>): string {
@@ -515,17 +553,19 @@ export function guardParentRecapReply(replyText: string, snapshot: RecapFactSnap
   }
 }
 
-const HARD_EXIT_VIOLATIONS = new Set([
-  'FALSE_COMPLETION_CLAIM',
-  'FABRICATED_ARTIFACT',
-  'STATUS_MISMATCH',
-  'AMBIGUOUS_SAME_NAME_ARTIFACT',
-])
+const HARD_EXIT_VIOLATIONS = new Set(
+  'FALSE_COMPLETION_CLAIM FABRICATED_ARTIFACT STATUS_MISMATCH AMBIGUOUS_SAME_NAME_ARTIFACT'.split(' '),
+)
 
 type RecapScope = 'recap' | 'delegation' | 'ordinary'
 
-const metaTopicCue =
-  /\b(?:vocabulary|schema|codebase|docs?|documentation|architecture|implementation|types?|interfaces?|definitions?)\b|代码库|源码|文档|词汇|架构|接口|定义/iu
+const promptClauseSplit = /[\n;；。！？，,]|\s+[—–-]{1,2}\s+|(?<=[.!?])(?:\s+|$)/u
+const fullTreeNegationBefore =
+  /(?:\b(?:do\s+not|don't|does\s+not|doesn't|never|not|avoid|skip|stop|without|instead\s+of|rather\s+than|no\s+need\s+to|should\s+not|shouldn't|must\s+not|mustn't|need\s+not|needn't)(?:\s+(?:please|try\s+to|attempt\s+to|need\s+to|go\s+ahead\s+and|just|actually|really|ever|also|re-?))*\s*|(?:不要|别|请勿|切勿|勿|不必|不用|无需|不需要|不需|不能|不可|跳过|避免|而不是|而非|不是要|并非要|不)(?:再|去|先|要|把)?\s*)$/iu
+const metaLocationBefore =
+  /(?:\bin\s+(?:the\s+|this\s+|our\s+)?(?:codebase|repo|repository|source|docs?|documentation)\b|(?:在)?(?:代码库|源码|文档)(?:里|中|内))/iu
+const metaModifierAfter =
+  /^\s*(?:(?:'s|’s)\s+)?(?:(?:status\s+)?(?:vocabulary|schema|codebase|docs?|documentation|architecture|implementation|types?|interfaces?|definitions?)\b|(?:documented\s+)?in\s+(?:the\s+|this\s+|our\s+)?(?:codebase|repo|repository|source|docs?|documentation)\b|(?:的)?(?:状态)?(?:代码库|源码|文档|词汇|架构|接口|定义|类型|实现))/iu
 
 const requestedChildRecap = [
   /^(?:please\s+)?(?:use\s+subagent_recap\s+(?:to\s+)?)?(?:recap|summari[sz]e|review)\s+(?:(?:all|my|our|the|these|current)\s+)*(?:subtasks?|subagents?)(?:\s+(?:status|results?|outcomes?))?[.?!]?$/iu,
@@ -546,77 +586,110 @@ const zhRecapPromptPrefix = /^请调用\s*subagent_recap\b/u
 const zhChildKeyArg = /childKey\s*[:：=]?\s*(?:(["'`「『“])([^"'`」』”\s]+)["'`」』”]|([^\s"'`，。,)）]+))/u
 const zhSubagentTarget =
   /子代理(?:\s+(?:(["'`「『“])([^"'`」』”\s]+)["'`」』”]|([^\s"'`，。,)）]+))|(["'`「『“])([^"'`」』”\s]+)["'`」』”])/u
-const recapVerbCue = /\b(?:recap|summari[sz]e|review|subagent_recap)\b|回顾|总结|汇总/iu
+const recapVerbCue = /\b(?:recap|summari[sz]e|review|report(?:\s+on)?|subagent_recap)\b|回顾|总结|汇总|汇报/iu
+const recapClauseVerb = /(?:\b(?:recap|summari[sz]e|review|report(?:\s+on)?)\b|回顾|总结|汇总|汇报)/giu
+const directTargetBridge =
+  /^\s*(?:(?:only|just|the|this|that|single|sub-?task|sub-?agent|child|task|status|results?|outcomes?|of|for)\s+|(?:只|仅|单独|专门|一下|当前|子任务|子代理|任务|的|状态|结果|进度)\s*)*["'`「『“]?$/iu
 
-function cleanUnquotedTarget(raw: string | undefined): string | undefined {
-  const cleaned = raw?.replace(/[.,;:!?。，；：！？]+$/u, '').trim()
-  return cleaned || undefined
+const cleanUnquotedTarget = (raw: string | undefined) =>
+  raw?.replace(/[.,;:!?。，；：！？]+$/u, '').trim() || undefined
+const promptClauses = (input: string) =>
+  input
+    .split(promptClauseSplit)
+    .map((c) => c.trim())
+    .filter(Boolean)
+
+function hasAffirmativeFullTreePrompt(input: string): boolean {
+  for (const clause of promptClauses(input)) {
+    for (const pattern of requestedChildRecap) {
+      const m = pattern.exec(clause)
+      if (!m) continue
+      const before = clause.slice(0, m.index)
+      if (
+        !fullTreeNegationBefore.test(before) &&
+        !metaLocationBefore.test(before) &&
+        !metaModifierAfter.test(clause.slice(m.index + m[0].length))
+      )
+        return true
+    }
+  }
+  return false
 }
 
-function singleChildTargetFromPrompt(input: string): string | undefined {
+function naturalSingleTargetFromPrompt(input: string, knownIds: readonly string[]): string | undefined {
+  if (!knownIds.length) return undefined
+  const sorted = [...knownIds].sort((a, b) => b.length - a.length)
+  const matched = new Set<string>()
+  for (const clause of promptClauses(input)) {
+    const hits: Array<{ id: string; start: number; end: number }> = []
+    for (const id of sorted) {
+      const re = new RegExp(`(?<![\\w./-])${escapePattern(id)}(?![\\w/-]|\\.\\w)`, 'gu')
+      for (const m of clause.matchAll(re)) {
+        const end = m.index + m[0].length
+        if (!hits.some((h) => m.index < h.end && end > h.start)) hits.push({ id, start: m.index, end })
+      }
+    }
+    if (!hits.length) continue
+    for (const vm of clause.matchAll(recapClauseVerb)) {
+      const verbEnd = vm.index + vm[0].length
+      if (fullTreeNegationBefore.test(clause.slice(0, vm.index))) continue
+      if (
+        hits.some(
+          (h) =>
+            (h.start >= verbEnd && directTargetBridge.test(clause.slice(verbEnd, h.start))) ||
+            (h.end <= vm.index && /把\s*["'`「『“]?$/u.test(clause.slice(0, h.start))),
+        )
+      )
+        for (const h of hits) matched.add(h.id)
+    }
+  }
+  return matched.size === 1 ? [...matched][0] : undefined
+}
+
+const pickTarget = (m: RegExpExecArray | null) =>
+  m ? (m[2] ?? m[5] ?? cleanUnquotedTarget(m[3])) : undefined
+
+function singleChildTargetFromPrompt(input: string, knownIds: readonly string[] = []): string | undefined {
   const trimmed = input.trim()
-  if (enRecapPromptPrefix.test(trimmed)) {
-    const key = enChildKeyArg.exec(trimmed)
-    if (key) return key[2] ?? cleanUnquotedTarget(key[3])
-    const sub = enSubagentTarget.exec(trimmed)
-    if (sub) return sub[2] ?? cleanUnquotedTarget(sub[3])
-    return undefined
-  }
-  if (zhRecapPromptPrefix.test(trimmed)) {
-    const key = zhChildKeyArg.exec(trimmed)
-    if (key) return key[2] ?? cleanUnquotedTarget(key[3])
-    const sub = zhSubagentTarget.exec(trimmed)
-    if (sub) return sub[2] ?? sub[5] ?? cleanUnquotedTarget(sub[3])
-    return undefined
-  }
-  if (recapVerbCue.test(trimmed)) {
-    const key = zhChildKeyArg.exec(trimmed) ?? enChildKeyArg.exec(trimmed)
-    if (key) return key[2] ?? cleanUnquotedTarget(key[3])
-  }
-  return undefined
+  if (enRecapPromptPrefix.test(trimmed))
+    return pickTarget(enChildKeyArg.exec(trimmed) ?? enSubagentTarget.exec(trimmed))
+  if (zhRecapPromptPrefix.test(trimmed))
+    return pickTarget(zhChildKeyArg.exec(trimmed) ?? zhSubagentTarget.exec(trimmed))
+  if (!recapVerbCue.test(trimmed)) return undefined
+  const key = zhChildKeyArg.exec(trimmed) ?? enChildKeyArg.exec(trimmed)
+  return key ? pickTarget(key) : naturalSingleTargetFromPrompt(trimmed, knownIds)
 }
 
 function renderAmbiguousTargetNotice(
   targetChildKey: string,
   candidates: readonly string[],
-  locale: RecapLocale,
-): string {
-  const list = candidates.map((candidate) => `- \`${candidate}\``)
-  if (locale === 'zh-CN') {
-    return [
-      `无法回顾目标 \`${targetChildKey}\`：该 childKey 存在歧义（E_CHILD_AMBIGUOUS），匹配到多个子任务。`,
-      ...(list.length ? ['', '匹配候选：', ...list] : []),
-      '',
-      '请使用上述精确的 childKey 重新请求。',
-    ].join('\n')
-  }
+  loc: RecapLocale,
+) {
+  const list = candidates.map((c) => `- \`${c}\``)
+  const zh = loc === 'zh-CN'
   return [
-    `Cannot recap target \`${targetChildKey}\`: this childKey is ambiguous (E_CHILD_AMBIGUOUS) and matches multiple subtasks.`,
-    ...(list.length ? ['', 'Matching candidates:', ...list] : []),
+    zh
+      ? `无法回顾目标 \`${targetChildKey}\`：该 childKey 存在歧义（E_CHILD_AMBIGUOUS），匹配到多个子任务。`
+      : `Cannot recap target \`${targetChildKey}\`: this childKey is ambiguous (E_CHILD_AMBIGUOUS) and matches multiple subtasks.`,
+    ...(list.length ? ['', zh ? '匹配候选：' : 'Matching candidates:', ...list] : []),
     '',
-    'Please retry with one of the exact childKey values above.',
+    zh ? '请使用上述精确的 childKey 重新请求。' : 'Please retry with one of the exact childKey values above.',
   ].join('\n')
 }
 
-async function inspectRecapTurn(
-  parent: SessionImpl,
-  turnStartSeq: number,
-): Promise<{
-  scope: RecapScope
-  targetChildKey?: string
-  explicitSingleTarget: boolean
-  triggerText: string
-}> {
+async function inspectRecapTurn(parent: SessionImpl, turnStartSeq: number, knownIdsHint?: readonly string[]) {
   const [trigger] = await parent.scan({ fromSeq: turnStartSeq, toSeq: turnStartSeq, lane: parent.lane })
   const input = messageText((trigger?.data as { content?: AssistantMessage['content'] } | undefined)?.content)
   const trimmedInput = input.trim()
-  const promptTarget = singleChildTargetFromPrompt(trimmedInput)
   const storage = parent.d.log.storage
-  const explicitFullTreePrompt =
-    !promptTarget &&
-    !metaTopicCue.test(trimmedInput) &&
-    hasChildControl(storage) &&
-    requestedChildRecap.some((pattern) => pattern.test(trimmedInput))
+  const affirmativeFullTree = hasChildControl(storage) && hasAffirmativeFullTreePrompt(trimmedInput)
+  const knownIds =
+    knownIdsHint ??
+    (!affirmativeFullTree && hasChildControl(storage) && recapVerbCue.test(trimmedInput)
+      ? await knownChildIds(parent)
+      : [])
+  const promptTarget = singleChildTargetFromPrompt(trimmedInput, affirmativeFullTree ? [] : knownIds)
+  const explicitFullTreePrompt = !promptTarget && affirmativeFullTree
   let scope: RecapScope = promptTarget || explicitFullTreePrompt ? 'recap' : 'ordinary'
 
   let sawRecapTool = false
@@ -641,20 +714,15 @@ async function inspectRecapTurn(
         scope === 'ordinary' &&
         name &&
         /^(?:subagent_(?:fork|spawn|collect|cancel|pause|resume|close|send_message))$/.test(name)
-      ) {
+      )
         scope = 'delegation'
-      }
     }
   }
   // User intent pins the validation scope: an explicit full-tree request is never narrowed by a single-child tool call,
   // and an explicit single-child prompt keeps its requested target even without a subagent_recap tool call.
-  const targetChildKey = explicitFullTreePrompt
-    ? undefined
-    : promptTarget
-      ? promptTarget
-      : sawRecapTool && !sawFullTreeRecap && toolTargets.size === 1
-        ? [...toolTargets][0]
-        : undefined
+  const toolTarget =
+    sawRecapTool && !sawFullTreeRecap && toolTargets.size === 1 ? [...toolTargets][0] : undefined
+  const targetChildKey = explicitFullTreePrompt ? undefined : (promptTarget ?? toolTarget)
   return {
     scope,
     ...(targetChildKey ? { targetChildKey } : {}),
@@ -664,13 +732,11 @@ async function inspectRecapTurn(
 }
 
 /** Restrict recap checks to tool use and assertions about actual delegated work. */
-export async function recapTurnScope(parent: SessionImpl, turnStartSeq: number): Promise<RecapScope> {
-  return (await inspectRecapTurn(parent, turnStartSeq)).scope
-}
+export const recapTurnScope = async (parent: SessionImpl, turnStartSeq: number): Promise<RecapScope> =>
+  (await inspectRecapTurn(parent, turnStartSeq)).scope
 
-function messageText(content?: AssistantMessage['content']) {
-  return (content ?? []).map((block) => (block.type === 'text' ? block.text : '')).join('')
-}
+const messageText = (content?: AssistantMessage['content']) =>
+  (content ?? []).map((block) => (block.type === 'text' ? block.text : '')).join('')
 
 async function knownChildIds(parent: SessionImpl): Promise<string[]> {
   const storage = parent.d.log.storage
@@ -682,10 +748,7 @@ async function knownChildIds(parent: SessionImpl): Promise<string[]> {
   return [...new Set([...localIds, ...externalIds])]
 }
 
-export type GuardRecapOptions = {
-  childKey?: string
-  locale?: RecapLocale
-}
+export type GuardRecapOptions = { childKey?: string; locale?: RecapLocale }
 
 /** Gate the committed reply; ordinary answers are outside recap validation. */
 export async function guardSessionRecapExit(
@@ -698,7 +761,7 @@ export async function guardSessionRecapExit(
   const storage = parent.d.log.storage
   if (!hasChildControl(storage)) return { text: replyText }
   const ids = await knownChildIds(parent)
-  const turn = await inspectRecapTurn(parent, turnStartSeq)
+  const turn = await inspectRecapTurn(parent, turnStartSeq, ids)
   const effectiveScope = scope ?? turn.scope
   const targetChildKey = options.childKey ?? turn.targetChildKey
   const explicitSingleTarget = Boolean(options.childKey || turn.explicitSingleTarget)

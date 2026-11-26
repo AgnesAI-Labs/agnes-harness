@@ -441,6 +441,18 @@ describe('child recap', () => {
       '请检查 root/alpha 是否已完成。',
       '请确认 root/alpha 是否已完成。',
       'root/alpha 完成了吗？',
+      '- Verify that root/alpha is completed.',
+      '* Verify that root/alpha is completed.',
+      '+ Confirm that root/alpha is completed.',
+      '1. Verify that root/alpha is completed.',
+      '- **Verify** that root/alpha is completed.',
+      '> Verify that root/alpha is completed.',
+      'Run the checks to confirm that root/alpha is completed.',
+      'Execute tests to verify that root/alpha is completed.',
+      '- Run the checks to confirm that root/alpha is completed.',
+      '运行检查以确认 root/alpha 是否完成。',
+      '运行检查以确认 root/alpha 已完成。',
+      '- 请核查 root/alpha 是否已完成。',
       `root/alpha ${'is now already currently '.repeat(120)} pending completed`,
     ]
     for (const reply of allowedReplies) {
@@ -453,9 +465,13 @@ describe('child recap', () => {
       '`root/alpha` completed.',
       'root/alpha 已完成。',
       'root/alpha: done',
+      'I confirm that root/alpha is completed.',
       'I can confirm that root/alpha is completed.',
+      'We verified that root/alpha is completed.',
       'We confirmed that root/alpha is completed.',
       'Confirmed that root/alpha is completed.',
+      '- I confirm that root/alpha is completed.',
+      'I am happy to confirm that root/alpha is completed.',
       '我确认 root/alpha 已完成。',
       '我可以确认 root/alpha 已完成。',
       '已确认 root/alpha 已完成。',
@@ -551,14 +567,24 @@ describe('child recap', () => {
       'two paused. Completed - 20/20 tasks.',
       'two paused. Tasks completed: 20 of 20.',
       'two paused. Completed: 20 tasks.',
+      'two paused. Completed: 20.',
+      'two paused. Completed: 20. Next sentence.',
+      'two paused. Tasks completed: 20.',
       'two paused. 2 tasks completed.',
       'two paused. 1 of 3 tasks completed.',
       'two paused. 已完成 3/3',
       'two paused. 已完成：20/20',
       'two paused. 已完成子任务：20/20',
+      'two paused. 已完成：20。',
+      'two paused. 已完成：20.',
       'two paused. 已完成 2 个任务',
       'two paused. 已完成：20 个任务',
       'two paused. 共完成 2 项',
+      'two paused.\n| Metric | Count |\n| --- | --- |\n| Tasks completed | 20/20 |',
+      'two paused.\n| Metric | Count |\n| --- | --- |\n| Completed tasks | 20 of 20 |',
+      'two paused.\n| 指标 | 数值 |\n| --- | --- |\n| 已完成任务 | 20/20 |',
+      'two paused.\n| 指标 | 数值 |\n| --- | --- |\n| 已完成 | 20 |',
+      'two paused.\n| Tasks completed | Pending |\n| --- | --- |\n| 20/20 | 0 |',
     ]) {
       expect(validateRecapOutput(bad, partialSnap).violations.map((v) => v.code)).toContain(
         'FALSE_COMPLETION_CLAIM',
@@ -572,6 +598,21 @@ describe('child recap', () => {
     )
     expect(
       validateRecapOutput('Completed: 1 of 2 tasks. one completed. two paused.', partialSnap).valid,
+    ).toBe(true)
+    expect(validateRecapOutput('one completed. two paused. Completed: 1.', partialSnap).valid).toBe(true)
+    expect(validateRecapOutput('one completed. two paused. Completed: 20.5s.', partialSnap).valid).toBe(true)
+    expect(validateRecapOutput('one completed. two paused. Completed: 1.5 MB.', partialSnap).valid).toBe(true)
+    expect(
+      validateRecapOutput(
+        'one completed. two paused.\n| Metric | Count |\n| --- | --- |\n| Tasks completed | 1/2 |\n| Completed tasks | 1 of 2 |\n| Tests passed | 20/20 |\n| Completed | 20.5s |\n| Completed | 1.5 MB |',
+        partialSnap,
+      ).valid,
+    ).toBe(true)
+    expect(
+      validateRecapOutput(
+        'one 已完成，two 已暂停。\n| 指标 | 数值 |\n| --- | --- |\n| 已完成任务 | 1/2 |\n| 已完成 | 1 |\n| 测试通过 | 20/20 |',
+        partialSnap,
+      ).valid,
     ).toBe(true)
     expect(validateRecapOutput('1 task completed. one completed. two paused.', partialSnap).valid).toBe(true)
     expect(validateRecapOutput('共完成 1 项。one 已完成，two 已暂停。', partialSnap).valid).toBe(true)
@@ -780,10 +821,19 @@ describe('child recap', () => {
     expect(fullTreeGuarded.text).toContain('root/beta')
     expect(fullTreeGuarded.text).toContain('Partially completed')
 
-    // Full-tree user prompts with extra output instructions still pin full-tree scope against single-child tool narrowing.
+    // Same single-child tool sequence across 3 prompt groups (EN & ZH):
+    // 1. Pure full-tree, 2. Full-tree + documentation/links/blockers, 3. Negated full-tree + explicit single target.
     for (const [prompt, reply, expectedHeading] of [
+      ['Summarize all subtasks.', 'All subtasks completed.', 'Partially completed'],
+      ['汇总所有子任务', '全部完成。', '部分完成'],
       ['Please summarize all subtasks and list blockers.', 'All subtasks completed.', 'Partially completed'],
       ['汇总所有子任务并列出阻塞项', '全部完成。', '部分完成'],
+      [
+        'Summarize all subtasks and include links to their documentation.',
+        'All subtasks completed.',
+        'Partially completed',
+      ],
+      ['汇总所有子任务并附上文档链接', '全部完成。', '部分完成'],
     ] as const) {
       const seq = await b.append(
         b.parent.key,
@@ -802,6 +852,46 @@ describe('child recap', () => {
       expect(guarded.text).toContain('root/beta')
       expect(guarded.text).toContain(expectedHeading)
     }
+
+    for (const [prompt, reply, withTool] of [
+      ['Do not summarize all subtasks. Only recap root/alpha.', 'root/alpha is completed.', true],
+      ["Don't summarize all subtasks; only recap root/alpha.", 'root/alpha is completed.', true],
+      ['Never recap all subtasks. Only recap root/alpha.', 'root/alpha is completed.', false],
+      ['不要总结所有子任务，只回顾 root/alpha', 'root/alpha 已完成。', true],
+      ['别汇总全部子任务，仅回顾 root/alpha', 'root/alpha 已完成。', true],
+      ['勿回顾所有子任务，只总结 root/alpha', 'root/alpha 已完成。', false],
+    ] as const) {
+      const seq = await b.append(
+        b.parent.key,
+        'user/message',
+        { content: [{ type: 'text', text: prompt }] },
+        { origin: 'user' },
+      )
+      if (withTool) {
+        await b.append(
+          b.parent.key,
+          'tool/call',
+          { name: 'subagent_recap', toolUseId: `recap-neg-${seq}`, args: { childKey: 'root/alpha' } },
+          { origin: 'model' },
+        )
+      }
+      const guarded = await guardSessionRecapExit(b.parent, reply, seq)
+      expect(guarded.event).toBeUndefined()
+      expect(guarded.text).toBe(reply)
+      expect(guarded.text).not.toContain('root/beta')
+    }
+
+    // Pure codebase/documentation meta question remains ordinary scope.
+    const metaDocSeq = await b.append(
+      b.parent.key,
+      'user/message',
+      { content: [{ type: 'text', text: 'Summarize all subtasks documentation in this codebase.' }] },
+      { origin: 'user' },
+    )
+    const metaReply = 'All subtasks are documented in README.md.'
+    const metaGuarded = await guardSessionRecapExit(b.parent, metaReply, metaDocSeq)
+    expect(metaGuarded.event).toBeUndefined()
+    expect(metaGuarded.text).toBe(metaReply)
 
     // Explicit ambiguous single-child target never falls back to a full-tree recap or leaks unrelated siblings.
     const releaseAmbiguous = [
