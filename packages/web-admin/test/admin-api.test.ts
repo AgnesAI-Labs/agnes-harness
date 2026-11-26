@@ -104,6 +104,79 @@ it('sends the generated install DTO through the fixed BFF route', async () => {
   expect(body).not.toHaveProperty('pluginId')
 })
 
+it('reads only the installed Docs DTO and binds the reply to the requested connection', async () => {
+  const docsConnectionEpoch = 'docs.browser-connection'
+  const fetcher = vi.fn<typeof fetch>()
+  const activeContext = {
+    ...context,
+    features: [...context.features, 'packages.docs.v1'],
+    docsConnectionEpoch,
+  }
+  const api = new PluginAdminApi(activeContext, fetcher)
+  const input = {
+    id: '@acme/plugin',
+    expectedIntegrity: `sha256-${'a'.repeat(64)}`,
+    locale: 'zh-CN',
+  } as const
+  const signal = new AbortController().signal
+  const markdown = '中'.repeat(21_845) + 'a'
+  fetcher.mockResolvedValueOnce(Response.json({ found: true, locale: 'en', markdown, docsConnectionEpoch }))
+  await expect(api.docsGet(input, signal)).resolves.toEqual({ found: true, locale: 'en', markdown })
+  expect(fetcher).toHaveBeenCalledWith(
+    '/admin/plugins/api/docs/get',
+    expect.objectContaining({
+      method: 'POST',
+      credentials: 'same-origin',
+      redirect: 'error',
+      signal,
+    }),
+  )
+  expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+    profile: 'local-dev',
+    ...input,
+    docsConnectionEpoch,
+  })
+
+  for (const body of [
+    { found: true, locale: 'en', markdown },
+    { found: true, locale: 'en', markdown, docsConnectionEpoch: 'another-connection' },
+    { found: true, locale: 'en', markdown: `${markdown}b`, docsConnectionEpoch },
+    { found: true, locale: 'en', markdown: '# Article', docsConnectionEpoch, path: 'README.md' },
+    { found: false, docsConnectionEpoch, markdown: 'Never return content on a miss' },
+    { found: true, locale: 'en', markdown: ' \n ', docsConnectionEpoch },
+    { found: true, locale: 'en', markdown: 'Text\u0000', docsConnectionEpoch },
+  ]) {
+    fetcher.mockResolvedValueOnce(Response.json(body))
+    await expect(api.docsGet(input, signal)).rejects.toMatchObject({
+      details: { code: 'ADMIN_RESPONSE_INVALID' },
+    })
+  }
+  fetcher.mockResolvedValueOnce(Response.json({ found: false, docsConnectionEpoch }))
+  await expect(api.docsGet(input, signal)).resolves.toEqual({ found: false })
+  fetcher.mockResolvedValueOnce(new Response(null, { status: 404 }))
+  await expect(api.docsGet(input, signal)).resolves.toBeUndefined()
+  fetcher.mockImplementationOnce(async () => {
+    activeContext.authScope = 'auth.reconnected'
+    return Response.json({ found: true, locale: 'en', markdown, docsConnectionEpoch })
+  })
+  await expect(api.docsGet(input, signal)).resolves.toBeUndefined()
+})
+
+it('does not request Docs without both negotiated support and packages.read', async () => {
+  const fetcher = vi.fn<typeof fetch>()
+  const docs = { features: ['packages.docs.v1'], docsConnectionEpoch: 'connection' }
+  const input = { id: '@acme/plugin', expectedIntegrity: `sha256-${'a'.repeat(64)}`, locale: 'en' } as const
+  for (const adminContext of [
+    context,
+    { ...context, features: docs.features },
+    { ...context, docsConnectionEpoch: docs.docsConnectionEpoch },
+    { ...context, ...docs, permissions: [] },
+  ]) {
+    await expect(new PluginAdminApi(adminContext, fetcher).docsGet(input)).resolves.toBeUndefined()
+  }
+  expect(fetcher).not.toHaveBeenCalled()
+})
+
 it('sends a revocation DTO through the fixed BFF route with its immutable CAS baselines', async () => {
   const fetcher = vi
     .fn<typeof fetch>()
@@ -190,7 +263,7 @@ it('keeps a read-only recovery context available when inventory reads need separ
   expect(fetcher).toHaveBeenCalledWith('/admin/plugins/api/context', {
     method: 'GET',
     credentials: 'same-origin',
-    headers: { Accept: 'application/json' },
+    headers: { Accept: 'application/json', 'X-Agnes-Package-Docs': '1' },
   })
 })
 
@@ -220,6 +293,11 @@ it('coalesces overlapping overview reads without caching authority and rejects i
   expect(first).toEqual(second)
   expect(first).not.toBe(second)
   expect(fetcher).toHaveBeenCalledTimes(1)
+  expect(fetcher).toHaveBeenCalledWith('/admin/plugins/api/overview', {
+    method: 'GET',
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json', 'X-Agnes-Package-Docs': '1' },
+  })
   await PluginAdminApi.overview(fetcher)
   expect(fetcher).toHaveBeenCalledTimes(2)
   fetcher.mockImplementation(async () =>

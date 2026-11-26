@@ -54,6 +54,7 @@ export type ClientServiceCaller = (
   sessionId: string,
   name: string,
   input: Record<string, unknown>,
+  signal: AbortSignal,
 ) => Promise<unknown>
 
 export type ClientEffectCaller = (

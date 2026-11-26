@@ -14,7 +14,6 @@ import {
   type ChildEnginesState,
   type ClientModuleEffectCallParams,
   type ClientModuleListResult,
-  type ClientModuleReadResult,
   type ClientModuleRosterRow,
   type ClientModuleServiceCallParams,
   type ConfigAccountInput,
@@ -44,18 +43,12 @@ import {
   type SessionListParams,
   type SessionPreferences,
   type SessionRuntimeDescriptor,
-  type SkinListResult,
-  type SkinReadResult,
   type SurfacesMountsResult,
   validateAgainst,
   validateMethod,
   type WorkspaceAddResult,
   type WorkspaceListResult,
 } from '@agnes/protocol'
-import type {
-  ClientModuleEffectCallResult,
-  ClientModuleServiceCallResult,
-} from '@agnes/protocol/gen/package-admin'
 import { type AuthOption, type AuthProvider, jwtAuth, localAuth, portalIdentityAuth } from './auth.js'
 import { BrandingCache } from './branding.js'
 import { type Claim, makeClaim } from './claim.js'
@@ -419,13 +412,13 @@ export class Client {
    * accepts exactly that one — and `cssUrl` is same-origin, so the client fetches it directly.
    */
   readonly skins = {
-    list: (profile: string): Promise<SkinListResult> => this.call('_agnes/v1/skins.list', { profile }),
+    list: (profile: string) => this.request('_agnes/v1/skins.list', { profile }),
     /**
      * Bytes for one `/skins/...` path. The launcher's asset proxy needs the file contents, and the
      * path never leaves the URL space: the daemon resolves it against its own roster (design §22).
      */
-    read: (profile: string, path: string): Promise<SkinReadResult> =>
-      this.call('_agnes/v1/skins.read', { profile, path }),
+    read: (profile: string, path: string) =>
+      this.request('_agnes/v1/skins.read', { profile, path, format: 'selected-v1' }),
   }
 
   /**
@@ -446,14 +439,17 @@ export class Client {
       projectClientModuleRows(
         await this.call('_agnes/v1/clientModules.list', { profile, ...(sessionId ? { sessionId } : {}) }),
       ) as ClientModuleListResult & { rows: ClientModuleRosterRow[] },
-    read: (profile: string, path: string): Promise<ClientModuleReadResult> =>
-      this.call('_agnes/v1/clientModules.read', { profile, path }),
+    read: (
+      profile: string,
+      path: string,
+      purpose: AppServerParams<'_agnes/v1/clientModules.read'>['purpose'],
+    ) => this.request('_agnes/v1/clientModules.read', { profile, path, purpose }),
     /** Private launcher BFF only; it is not exposed by the browser SDK surface. */
-    callService: (input: ClientModuleServiceCallParams): Promise<ClientModuleServiceCallResult> =>
-      this.call('_agnes/v1/clientModules.callService', input),
+    callService: (input: ClientModuleServiceCallParams) =>
+      this.request('_agnes/v1/clientModules.callService', input),
     /** Private launcher BFF only; browser builds reject this method. */
-    callEffect: (input: ClientModuleEffectCallParams): Promise<ClientModuleEffectCallResult> =>
-      this.call('_agnes/v1/clientModules.callEffect', input),
+    callEffect: (input: ClientModuleEffectCallParams) =>
+      this.request('_agnes/v1/clientModules.callEffect', input),
   }
 
   createSession(options: NewSessionOptions): Promise<Session> {

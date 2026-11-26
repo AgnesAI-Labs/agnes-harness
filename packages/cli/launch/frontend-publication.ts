@@ -1,4 +1,9 @@
-import { type FrontendPublication, frontendPublication, REMOTE_FRONTEND_SERVICE } from '@agnes/protocol'
+import {
+  type AppServerResult,
+  type FrontendPublication,
+  frontendPublication,
+  REMOTE_FRONTEND_SERVICE,
+} from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { createPublishedFrontend } from '@agnes/web/server'
 import { localPipeFactories } from '../src/boot/pipe-factory.js'
@@ -6,32 +11,26 @@ import type { LocalBackend } from './backend.js'
 
 export type PublicationLease = { identity: string; publication: FrontendPublication }
 
-/** The current installed roster, not a pinned session or the presence of a package on disk. */
+/** Publication is a backend service. The launcher's private connection discovers its current owner. */
 export async function readFrontendPublication(
-  client: Pick<ReturnType<typeof createClient>, 'clientModules' | 'call'>,
+  client: Pick<ReturnType<typeof createClient>, 'call'>,
   profile: string,
 ): Promise<PublicationLease | undefined> {
-  const roster = await client.clientModules.list(profile)
-  const rows = roster.rows.filter(
-    (row) =>
-      row.enabled &&
-      row.phase === 'ready' &&
-      row.services?.includes(REMOTE_FRONTEND_SERVICE) &&
-      row.extIds?.includes(row.moduleName),
-  )
-  if (rows.length === 0) return undefined
-  if (rows.length !== 1) throw new Error('only one frontend publication may be active')
-  const row = rows[0]
-  if (!row) throw new Error('missing publication owner')
+  const method = '_agnes/v1/clientModules.frontendPublication'
+  const { owner } = await client.call<AppServerResult<typeof method>>(method, { profile })
+  if (!owner) return undefined
   const result = await client.call<{ output: unknown }>('_agnes/v1/extension.callScoped', {
-    extension: row.moduleName,
+    extension: owner.extension,
     service: REMOTE_FRONTEND_SERVICE,
     input: {},
   })
+  const { owner: current } = await client.call<AppServerResult<typeof method>>(method, { profile })
+  if (!current || current.extension !== owner.extension || current.identity !== owner.identity)
+    return undefined
   const publication = frontendPublication(result.output)
   if (!publication.enabled) return undefined
   return {
-    identity: JSON.stringify([row.rowId, row.revision, row.contentDigest, row.binding, publication]),
+    identity: JSON.stringify([owner.identity, publication]),
     publication,
   }
 }

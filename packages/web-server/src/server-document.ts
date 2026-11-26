@@ -111,6 +111,7 @@ export function createWebDocumentResponder(options: {
         .replace("script-src 'self'", `script-src 'self' ${remote}`)
         .replace("style-src 'self'", `style-src 'self' ${remote}`)
         .replace("img-src 'self'", `img-src 'self' ${remote}`)
+      documentCsp += `; font-src 'self' ${remote}`
     }
     const responseCsp = documentNonce
       ? documentCsp.replace("style-src 'self'", `style-src 'self' 'nonce-${documentNonce}'`)

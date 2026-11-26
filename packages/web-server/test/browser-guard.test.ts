@@ -266,6 +266,7 @@ it('exposes delegated sandbox traffic only on the isolated origin, preserving lo
     const csp = child.headers.get('content-security-policy') ?? ''
     expect(csp).toContain(`connect-src 'self' ${isolated.replace('http:', 'ws:')} ${remote}`)
     expect(csp).toContain(`frame-ancestors ${web.url}`)
+    expect(csp).toContain(`font-src 'self' ${remote}`)
     expect((await fetch(isolated + prefix + '/plugins/test/client.js')).status).toBe(200)
     expect(
       (

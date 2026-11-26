@@ -131,11 +131,18 @@ export function bundledPluginSource(ref: string): { root: string; path: string }
   if (!pkg) return undefined
   const moduleDir = dirname(fileURLToPath(import.meta.url))
   const sea = process.getBuiltinModule('node:sea').isSea()
-  const packaged = sea || (typeof AGNES_PACKAGED_BUILTINS !== 'undefined' && AGNES_PACKAGED_BUILTINS)
+  const packaged = bundledPluginsRequireDigest()
   return {
     root: sea ? dirname(process.execPath) : packaged ? moduleDir : dirname(dirname(moduleDir)),
     path: packaged ? `bundled-plugins/${pkg.name}` : pkg.sourcePath,
   }
+}
+
+export function bundledPluginsRequireDigest(): boolean {
+  return (
+    process.getBuiltinModule('node:sea').isSea() ||
+    (typeof AGNES_PACKAGED_BUILTINS !== 'undefined' && AGNES_PACKAGED_BUILTINS)
+  )
 }
 
 /** Written beside the shipped payloads at build time: `{ [source.path]: hashDirectory(payload) }`. */

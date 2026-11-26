@@ -684,7 +684,7 @@ it.each(['failed', 'unavailable'] as const)(
   },
 )
 
-it('keeps backend actual and browser UI runtime failure visible as separate states', async () => {
+it('keeps backend actual, browser admission, and browser runtime failures separate', async () => {
   await renderPluginHost()
   history.replaceState(null, '', '/admin/plugins#runtime-status-token')
   const installed: PackageInstalledDescriptor = {
@@ -776,6 +776,15 @@ it('keeps backend actual and browser UI runtime failure visible as separate stat
   await vi.waitFor(() =>
     expect(document.getElementById('plugin-list')?.textContent).not.toContain('插件 UI 入口加载失败，可重试'),
   )
+  runtime = { packageId: installed.id, revision: 'r1', phase: 'idle', reason: 'native-ui-not-admitted' }
+  for (const listener of listeners) listener(runtime)
+  document.querySelector<HTMLElement>('.plugin-row')?.click()
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid="plugin-native-ui-not-admitted"]')?.textContent).toContain(
+      pluginAdminLocaleCatalog.en['status.nativeUiNotAdmitted'],
+    ),
+  )
+  expect(document.getElementById('plugin-detail')?.textContent).not.toContain('Retry UI')
 })
 
 it('does not confirm enable while the browser runtime is still running the old revision', async () => {

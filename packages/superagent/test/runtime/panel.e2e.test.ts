@@ -296,7 +296,7 @@ it('the panel module is rostered and its services answer a seeded GitHub ticket 
       binding: { lifetime: 'profile' },
     })
     if (!row?.entryUrl) throw new Error('installed browser entry unavailable')
-    const asset = await client.clientModules.read(PROFILE, row.entryUrl)
+    const asset = await client.clientModules.read(PROFILE, row.entryUrl, 'document')
     if (!asset.found) throw new Error('installed browser bytes unavailable')
     expect(Buffer.from(asset.base64, 'base64').toString()).toBe(
       readFileSync(join(payloadDirectory, 'src', 'client.js'), 'utf8'),
@@ -305,7 +305,7 @@ it('the panel module is rostered and its services answer a seeded GitHub ticket 
     const [styleUrl, ...extra] = row.styleUrls ?? []
     expect({ styleUrl: !!styleUrl, extra }).toEqual({ styleUrl: true, extra: [] })
     if (!styleUrl) throw new Error('panel stylesheet not rostered')
-    const sheet = await client.clientModules.read(PROFILE, styleUrl)
+    const sheet = await client.clientModules.read(PROFILE, styleUrl, 'document')
     if (!sheet.found) throw new Error('installed panel stylesheet unavailable')
     expect(Buffer.from(sheet.base64, 'base64').toString()).toBe(
       readFileSync(new URL('../../../superagent-ui/src/superagent.css', import.meta.url), 'utf8'),

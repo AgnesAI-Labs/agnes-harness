@@ -4,6 +4,7 @@ import {
   attachmentLink,
   canAccessResourceControl,
   fromAcpPrompt,
+  METHOD_TIERS,
   METHODS,
   toAcpPrompt,
   UI_PROJECTION_MAX_BYTES,
@@ -219,6 +220,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/auth.claim',
         '_agnes/v1/clientModules.callEffect',
         '_agnes/v1/clientModules.callService',
+        '_agnes/v1/clientModules.frontendPublication',
         '_agnes/v1/clientModules.list',
         '_agnes/v1/clientModules.read',
         '_agnes/v1/computerUse.doctor',
@@ -280,6 +282,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/plugins.candidates.reject',
         '_agnes/v1/packages.catalog.list',
         '_agnes/v1/packages.disable',
+        '_agnes/v1/packages.docs.get',
         '_agnes/v1/packages.enable',
         '_agnes/v1/packages.inspect',
         '_agnes/v1/packages.install',
@@ -379,6 +382,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/skills.trust.set',
         '_agnes/v1/skins.list',
         '_agnes/v1/skins.read',
+        '_agnes/v1/skins.select',
         '_agnes/v1/submit',
         '_agnes/v1/submit.ack',
         '_agnes/v1/pluginRuntime.status',
@@ -407,7 +411,12 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(253)
+    expect(METHODS['_agnes/v1/packages.docs.get']).toMatchObject({
+      kind: 'request',
+      direction: 'c2s',
+      administration: { execution: 'read', permission: 'packages.read', identity: 'none' },
+    })
+    expect(METHOD_TIERS['_agnes/v1/packages.docs.get']).toBe('admin')
     expect(METHODS['_agnes/v1/session.integrity']).toMatchObject({ kind: 'request', direction: 'c2s' })
     expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
     expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({

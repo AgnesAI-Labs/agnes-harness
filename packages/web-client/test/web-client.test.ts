@@ -11,10 +11,12 @@ import {
   AgnesClientService,
   ClientResourceReclaimedError,
   ClientResourceService,
+  type ClientServiceCaller,
   CommandService,
   clientModule,
   DSH_SLOT_CATALOG_VERSION,
   LocaleService,
+  revokeContributionOwner,
   SessionService,
   SlotOutlet,
   SlotRegistry,
@@ -191,7 +193,14 @@ describe('clientModule fiber 绑定', () => {
       compact: async () => undefined,
       cancel: async () => undefined,
     }
-    const caller = vi.fn(async () => ({ answer: 42 }))
+    const caller = vi.fn<ClientServiceCaller>(async (_module, _id, _name, input, signal) => {
+      if (input.wait) {
+        return new Promise((_, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+        })
+      }
+      return { answer: 42 }
+    })
     const { ctx } = await makeRegistry(
       { sessions: { get: (id: string) => (id === 'session-a' ? handle : undefined) } } as never,
       caller,
@@ -205,7 +214,13 @@ describe('clientModule fiber 绑定', () => {
           service = cctx.agnes.services
         },
       }),
-      { packageId: 'acme/panel', rowId: 'web:acme/panel', revision: 'r1', services: ['panel.search'] },
+      {
+        binding: { ...profileBinding('web:acme/panel'), packageId: 'acme/panel' },
+        packageId: 'acme/panel',
+        rowId: 'web:acme/panel',
+        revision: 'r1',
+        services: ['panel.search'],
+      },
     )
     await fiber
     await expect(service?.call('panel.search', { text: 'hello' })).resolves.toEqual({ answer: 42 })
@@ -218,8 +233,14 @@ describe('clientModule fiber 绑定', () => {
       'session-a',
       'panel.search',
       { text: 'hello' },
+      expect.any(AbortSignal),
     )
     await expect(service?.call('other.read', {})).rejects.toThrow('unavailable')
+    const read = service?.call('panel.search', { wait: true })
+    const canceled = expect(read).rejects.toMatchObject({ name: 'AbortError' })
+    revokeContributionOwner('web:acme/panel')
+    await canceled
+    await expect(service?.call('panel.search', {})).rejects.toThrow('unavailable')
     await fiber.dispose()
   })
 
@@ -296,7 +317,12 @@ describe('clientModule fiber 绑定', () => {
           service = cctx.agnes.services
         },
       }),
-      { packageId: 'acme/panel', revision: 'r1', services: ['panel.search'] },
+      {
+        binding: { ...profileBinding('web:acme/panel'), packageId: 'acme/panel' },
+        packageId: 'acme/panel',
+        revision: 'r1',
+        services: ['panel.search'],
+      },
     )
     await fiber
     await expect(service?.call('panel.search', {})).rejects.toThrow('active session')
@@ -633,14 +659,26 @@ describe('SessionService plugin boundary', () => {
           services = plugin.agnes.services
         },
       }),
-      { packageId: 'acme/panel', rowId: 'web:acme/panel', revision: 'r1', services: ['panel.query'] },
+      {
+        binding: { ...profileBinding('web:acme/panel'), packageId: 'acme/panel' },
+        packageId: 'acme/panel',
+        rowId: 'web:acme/panel',
+        revision: 'r1',
+        services: ['panel.query'],
+      },
     )
     await fiber
     const changed = vi.fn()
     const stop = session.projection.subscribe(changed)
 
     await services?.call('panel.query', {})
-    expect(caller).toHaveBeenLastCalledWith(expect.anything(), 'session-a', 'panel.query', {})
+    expect(caller).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'session-a',
+      'panel.query',
+      {},
+      expect.any(AbortSignal),
+    )
     first.listeners.forEach((listener) => {
       listener()
     })
@@ -652,7 +690,13 @@ describe('SessionService plugin boundary', () => {
     })
     expect(changed).toHaveBeenCalledTimes(2)
     await services?.call('panel.query', {})
-    expect(caller).toHaveBeenLastCalledWith(expect.anything(), 'session-b', 'panel.query', {})
+    expect(caller).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'session-b',
+      'panel.query',
+      {},
+      expect.any(AbortSignal),
+    )
     await expect(session.projection.read()).resolves.toMatchObject({ value: { session: 'session-b' } })
     await expect(session.commands.prompt({ text: 'new session only' })).resolves.toBe('session-b')
     expect(first.prompt).not.toHaveBeenCalled()

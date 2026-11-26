@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer, request as requestHttp } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { AdminSurfaceOptions } from '@agnes/daemon/packages'
 import {
   CLOUD_AUTHORIZATION_PATH,
   type PackageCatalogPage,
@@ -116,6 +117,8 @@ vi.mock('@agnes/sdk', () => ({
   unixTransport: vi.fn(),
   memoryJournal: vi.fn(() => ({})),
   createClient: vi.fn(() => ({
+    connectionState: 'connected',
+    isClosed: false,
     request: mocks.request,
     call: mocks.request,
     initialize: mocks.initialize,
@@ -161,6 +164,14 @@ vi.mock('@agnes/daemon/packages', async (original) => ({
 }))
 
 import { localPackageAdmin } from './package-admin.js'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
 
 let daemonDir: string
 beforeEach(() => {
@@ -322,6 +333,60 @@ it('closes the dedicated daemon connection when the browser abandons cloud autho
     const stopped = new Promise<void>((resolve) => server.close(() => resolve()))
     server.closeAllConnections()
     await stopped
+  }
+})
+
+it('binds Docs to the initialized link rather than to the static launcher features', async () => {
+  const origin = 'http://127.0.0.1:4180'
+  const backend = {
+    scope: { daemonDir, home: daemonDir, profile: 'local-dev', scopeID: 'scope-1' },
+    socketPath: join(daemonDir, 'daemon.sock'),
+    web: { origin },
+  } as LocalBackend
+  const admin = localPackageAdmin(backend, origin)
+  const docs = mocks.createAdminSurface.mock.calls[0]?.[0].docs as AdminSurfaceOptions['docs']
+  if (!docs) throw new Error('missing Docs bridge')
+  const available = { features: ['packages.docs.v1'] }
+  const params = {
+    profile: 'local-dev',
+    id: 'acme/plugin',
+    expectedIntegrity: `sha256-${'a'.repeat(64)}`,
+    locale: 'en',
+  } as const
+  const controller = new AbortController()
+  const started = deferred<AbortSignal>()
+  const answer = deferred<unknown>()
+  try {
+    await expect(docs.epoch()).resolves.toBeUndefined()
+    mocks.initialize.mockResolvedValueOnce(available)
+    const first = await docs.epoch()
+    if (!first) throw new Error('missing supported epoch')
+    mocks.initialize.mockResolvedValueOnce(available).mockResolvedValueOnce({})
+    await expect(docs.get(params, first, controller.signal)).resolves.toBeUndefined()
+    expect(mocks.request).not.toHaveBeenCalled()
+    mocks.initialize.mockResolvedValueOnce(available).mockResolvedValueOnce(available)
+    mocks.request.mockImplementationOnce((_method, _params, options) => {
+      if (!options?.signal) throw new Error('missing request signal')
+      started.resolve(options.signal)
+      return answer.promise
+    })
+    const pending = docs.get(params, first, controller.signal)
+    const signal = await started.promise
+    expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/packages.docs.get', params, { signal })
+    for (const listener of mocks.listeners.get('connectionStateChanged') ?? []) listener('reconnecting')
+    expect(signal.aborted).toBe(true)
+    answer.resolve({ found: true, locale: 'en', markdown: 'old' })
+    await expect(pending).resolves.toBeUndefined()
+    mocks.initialize.mockResolvedValueOnce(available)
+    const second = await docs.epoch()
+    expect(second).toBeTypeOf('string')
+    expect(second).not.toBe(first)
+    expect(docs.isCurrent(first)).toBe(false)
+    await expect(docs.get(params, first, controller.signal)).resolves.toBeUndefined()
+  } finally {
+    controller.abort()
+    answer.resolve(undefined)
+    await admin.close()
   }
 })
 

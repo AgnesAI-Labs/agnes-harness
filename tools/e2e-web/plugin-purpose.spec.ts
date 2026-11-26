@@ -1,8 +1,123 @@
-import { mkdir, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
+import type { NodeClient } from '@agnes/sdk'
 import { expect, test } from './fixtures.js'
-import { install } from './sdk.js'
+import { command, complete, install } from './sdk.js'
 import { chooseWorkspace, pluginTab, preferences, section, settings } from './ui.js'
+
+const docsFixture = 'tools/e2e-web/fixtures/plugin-config'
+const docsOrigin = 'https://queue-docs.example.test'
+
+async function installWithoutActivation(client: NodeClient, directory: string) {
+  const source = { type: 'file' as const, ref: `file:${resolve(directory).replaceAll('\\', '/')}` }
+  const { preview } = await complete(
+    client,
+    await client.packages.inspect({ ...(await command(client)), source }),
+  )
+  if (!preview) throw new Error('Docs fixture inspection did not return a package')
+  await complete(
+    client,
+    await client.packages.install({
+      ...(await command(client)),
+      source,
+      expectedIntegrity: preview.integrity,
+    }),
+  )
+  return preview.id
+}
+
+for (const locale of ['en', 'zh-CN'] as const) {
+  test(`opens installed plugin documentation offline and activates only explicit links (${locale})`, async ({
+    context,
+    page,
+    runtime,
+  }) => {
+    const client = await runtime.connect()
+    const id = await installWithoutActivation(client, docsFixture)
+    // A second installed package omits the declared files. Its metadata link remains available.
+    const fallbackDir = join(runtime.workspace, 'docs-not-packaged')
+    await mkdir(fallbackDir)
+    const [manifest, entry] = await Promise.all([
+      readFile(join(docsFixture, 'package.json'), 'utf8'),
+      readFile(join(docsFixture, 'index.js'), 'utf8'),
+    ])
+    await writeFile(join(fallbackDir, 'index.js'), entry.replaceAll('e2eConfigAgent', 'e2eConfigAgentNoDocs'))
+    await writeFile(
+      join(fallbackDir, 'package.json'),
+      manifest
+        .replace('@agnes-e2e/plugin-config', '@agnes-e2e/plugin-config-no-docs')
+        .replace('ext:e2e/config-agent', 'ext:e2e/config-agent-no-docs')
+        .replace('e2eConfigAgent', 'e2eConfigAgentNoDocs'),
+    )
+    const fallbackId = await installWithoutActivation(client, fallbackDir)
+
+    const visited: { path: string; referrer?: string }[] = []
+    await context.route(`${docsOrigin}/**`, async (route) => {
+      const request = route.request()
+      const referrer = (await request.allHeaders()).referer
+      visited.push({ path: new URL(request.url()).pathname, ...(referrer ? { referrer } : {}) })
+      await route.fulfill({ contentType: 'text/plain', body: 'Synthetic documentation destination' })
+    })
+    const docsReads: string[] = []
+    const packageAssets: string[] = []
+    page.on('request', (request) => {
+      const { pathname } = new URL(request.url())
+      if (pathname === '/admin/plugins/api/docs/get') docsReads.push(request.method())
+      if (pathname.startsWith('/plugins/') && pathname.includes('plugin-config')) packageAssets.push(pathname)
+    })
+    await preferences(page, locale)
+    await page.goto(runtime.url)
+    await chooseWorkspace(page, runtime, locale)
+    await settings(page, locale)
+    await section(page, 'plugins')
+    const openDetail = (packageId: string) =>
+      page.locator(`.plugin-row[data-plugin-id="${packageId}"] .plugin-details-button`).click()
+    await openDetail(id)
+    expect(docsReads).toEqual([])
+    await pluginTab(page, 'docs').press('Enter')
+
+    const docs = page.getByTestId('plugin-docs-detail')
+    const article = docs.getByTestId('plugin-docs-markdown')
+    await expect(article).toHaveAttribute('lang', locale)
+    await expect(
+      article.getByRole('heading', { name: locale === 'en' ? 'Queue setup' : '队列设置' }),
+    ).toBeVisible()
+    await expect(docs.locator(':scope > p').first()).toContainText(
+      locale === 'en' ? '**Description stays plain.**' : '**说明是纯文本。**',
+    )
+    await expect(article.locator('pre code')).toContainText('queue --list')
+    await expect(article.locator('table')).toBeVisible()
+    await expect(article).toContainText(locale === 'en' ? 'Queue diagram' : '队列示意图')
+    await expect(article).toContainText('<b>Literal tag</b>')
+    await expect(article.locator('img, iframe, script, style, svg, b, [href], [src]')).toHaveCount(0)
+    expect(docsReads).toEqual(['POST'])
+    expect(visited).toEqual([])
+    const link = article.getByRole('link', { name: locale === 'en' ? /Open guide/ : /打开指南/ })
+    await expect(article.getByRole('link')).toHaveCount(1)
+    await expect(link).toContainText(`${docsOrigin}/guide`)
+    await link.focus()
+    const [popup] = await Promise.all([context.waitForEvent('page'), page.keyboard.press('Enter')])
+    await expect(popup).toHaveURL(`${docsOrigin}/guide`)
+    await popup.waitForLoadState('domcontentloaded')
+    expect(await popup.evaluate(() => window.opener === null && document.referrer === '')).toBe(true)
+    await popup.close()
+
+    await page.locator('.agh-push-crumbs .agh-push-back:visible').click()
+    await expect(docs).toHaveCount(0)
+    await openDetail(fallbackId)
+    await pluginTab(page, 'docs').click()
+    const fallback = docs.getByRole('link', { name: locale === 'en' ? 'Open documentation' : '打开文档' })
+    await expect(fallback).toHaveAttribute('href', `${docsOrigin}/fallback`)
+    await expect(article).toHaveCount(0)
+    expect(visited).toEqual([{ path: '/guide' }])
+    const [external] = await Promise.all([context.waitForEvent('page'), fallback.click()])
+    await expect(external).toHaveURL(`${docsOrigin}/fallback`)
+    await external.close()
+    expect(visited).toEqual([{ path: '/guide' }, { path: '/fallback' }])
+    expect(docsReads).toEqual(['POST', 'POST'])
+    expect(packageAssets).toEqual([])
+  })
+}
 
 for (const locale of ['en', 'zh-CN'] as const) {
   test(`plugin purpose, provides, registered settings and details (${locale})`, async ({ page, runtime }) => {

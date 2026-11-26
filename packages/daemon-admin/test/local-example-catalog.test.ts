@@ -104,7 +104,18 @@ it('serves real local examples through daemon catalog and source inspection', as
     clock: () => now,
   })
 
-  expect(service.features).toEqual(['packages.community-discovery.v2', 'packages.community-discovery.v3'])
+  expect(service.features).toEqual([
+    'packages.docs.v1',
+    'packages.community-discovery.v2',
+    'packages.community-discovery.v3',
+  ])
+  await expect(
+    service.call(
+      '_agnes/v1/packages.docs.get',
+      { profile, id: '@agnes/skill-helper', expectedIntegrity: `sha256-${'a'.repeat(64)}`, locale: 'en' },
+      authority,
+    ),
+  ).resolves.toEqual({ found: false })
   const legacy = await service.call(
     '_agnes/v1/packages.catalog.list',
     { profile, includeCommunity: true },

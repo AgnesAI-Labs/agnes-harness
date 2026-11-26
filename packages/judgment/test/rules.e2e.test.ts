@@ -64,7 +64,7 @@ it('installs one package, reminds, projects audited cost, renders and withdraws 
     binding: { lifetime: 'profile' },
   })
   if (!row?.entryUrl) throw new Error('installed browser entry unavailable')
-  const asset = await fixture.sdk.clientModules.read(PROFILE, row.entryUrl)
+  const asset = await fixture.sdk.clientModules.read(PROFILE, row.entryUrl, 'document')
   expect(asset.found).toBe(true)
   if (!asset.found) throw new Error('installed browser bytes unavailable')
   expect(Buffer.from(asset.base64, 'base64').toString()).toBe(

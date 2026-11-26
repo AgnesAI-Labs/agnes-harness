@@ -18,7 +18,6 @@ import {
   createPluginStreamGateway,
   type StreamPrincipal,
 } from '../../plugin-streams/src/index.js'
-import { uiComponentFrame } from '../../web-server/src/ui-component-frame.js'
 
 const fixture = vi.hoisted(() => ({ origin: '' }))
 vi.mock('node:https', async () => ({
@@ -42,7 +41,6 @@ it('admits streams across the real cloud/publication/proxy chain without trustin
   const peers = new Set<Duplex>()
   const ownerOrigin = 'http://127.0.0.1:4177'
   const gateway = createCloudGateway(ownerOrigin)
-  let expectedFrameCsp = ''
   let proxy: ReturnType<typeof pluginStreamProxy> | undefined
   let streams: ReturnType<typeof createPluginStreamGateway> | undefined
   let publication: Awaited<ReturnType<typeof createPublishedFrontend>> | undefined
@@ -130,19 +128,16 @@ it('admits streams across the real cloud/publication/proxy chain without trustin
       }
       if (
         request.url ===
-        '/plugins/generations/11111111-1111-1111-1111-111111111111/sample/ui.mjs?agnes_ui_frame=1'
+        '/plugins/generations/11111111-1111-1111-1111-111111111111/sample/ui.mjs?agnes_ui_source=1'
       ) {
-        const frame = uiComponentFrame('export const renderers = {}')
-        expectedFrameCsp = frame.csp
         response
           .writeHead(200, {
-            'content-type': 'text/html; charset=utf-8',
+            'content-type': 'application/json',
             'cache-control': 'no-store',
-            'content-security-policy': frame.csp,
             'referrer-policy': 'no-referrer',
             'x-content-type-options': 'nosniff',
           })
-          .end(frame.body)
+          .end(JSON.stringify({ source: 'export const renderers = {}' }))
         return
       }
       response.writeHead(404).end()
@@ -256,15 +251,14 @@ it('admits streams across the real cloud/publication/proxy chain without trustin
       ).status,
     ).toBe(401)
     const componentPath =
-      '/plugins/generations/11111111-1111-1111-1111-111111111111/sample/ui.mjs?agnes_ui_frame=1'
-    const componentFrame = await fetch(local + prefix + componentPath)
-    expect(componentFrame.status).toBe(200)
-    expect(expectedFrameCsp).toContain("default-src 'none'")
-    expect(expectedFrameCsp).toContain("connect-src 'none'")
-    expect(componentFrame.headers.get('content-security-policy')).toBe(expectedFrameCsp)
-    expect(componentFrame.headers.get('referrer-policy')).toBe('no-referrer')
-    expect(componentFrame.headers.get('x-content-type-options')).toBe('nosniff')
-    expect(componentFrame.headers.get('cache-control')).toBe('no-store')
+      '/plugins/generations/11111111-1111-1111-1111-111111111111/sample/ui.mjs?agnes_ui_source=1'
+    const componentSource = await fetch(local + prefix + componentPath)
+    expect(componentSource.status).toBe(200)
+    expect(componentSource.headers.get('content-type')).toBe('application/json')
+    expect(await componentSource.json()).toEqual({ source: 'export const renderers = {}' })
+    expect(componentSource.headers.get('referrer-policy')).toBe('no-referrer')
+    expect(componentSource.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(componentSource.headers.get('cache-control')).toBe('no-store')
     const main = new WebSocket(local.replace('http:', 'ws:') + prefix + REMOTE_FRONTEND_WS)
     const next = (socket: WebSocket) =>
       new Promise<string>((resolve, reject) => {
@@ -473,6 +467,10 @@ it.each([200, 502, 503])(
         auth: undefined,
         path: prefix + '/plugins/fixture/client.js',
       })
+      const probe = requestHttp(new URL(local), { path: `${prefix}/skins/fixture/./skin.css` })
+      const [noncanonical] = await once(probe.end(), 'response')
+      noncanonical.resume()
+      expect(noncanonical.statusCode).toBe(404)
       const forwarded = await new Promise<string[]>((resolve, reject) => {
         const probe = requestHttp(local + prefix + '/plugins/fixture/client.js', (reply) => {
           reply.resume()

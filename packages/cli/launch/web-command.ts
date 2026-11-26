@@ -280,7 +280,7 @@ export async function runWebCommand(
       // `/plugins/*` client module bytes follow the same rule: the daemon resolves
       // from its immutable snapshots over the same private connection; the launcher never touches
       // the package store itself.
-      clientModuleAsset: (pathname: string) => adminHandler.readClientModule(pathname),
+      clientModuleAsset: (pathname, purpose) => adminHandler.readClientModule(pathname, purpose),
       // The daemon's roster invalidation is bridged to a separate same-origin SSE stream. This only
       // reloads browser modules; it never restarts the daemon/worker runtime.
       subscribePluginEvents: (listener) => adminHandler.subscribeClientModuleEvents(listener),

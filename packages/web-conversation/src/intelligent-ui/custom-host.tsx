@@ -31,22 +31,37 @@ async function readModuleSource(url: string, signal: AbortSignal): Promise<strin
     redirect: 'error',
     referrerPolicy: 'no-referrer',
   })
-  if (!response.ok || !response.body) {
+  if (
+    !response.ok ||
+    !response.body ||
+    response.headers.get('content-type')?.split(';')[0] !== 'application/json'
+  ) {
     await response.body?.cancel()
     throw new Error('UI component module unavailable')
   }
   const reader = response.body.getReader()
-  const decoder = new TextDecoder()
+  const decoder = new TextDecoder('utf-8', { fatal: true })
   let bytes = 0
   let source = ''
   try {
     while (true) {
       const { done, value } = await reader.read()
-      if (done) return source + decoder.decode()
+      if (done) break
       bytes += value.byteLength
-      if (bytes > UI_COMPONENT_MODULE_BYTES) throw new Error('UI component module too large')
+      if (bytes > 6 * UI_COMPONENT_MODULE_BYTES + 32) throw new Error('UI component response too large')
       source += decoder.decode(value, { stream: true })
     }
+    const value: unknown = JSON.parse(source + decoder.decode())
+    if (
+      typeof value !== 'object' ||
+      value === null ||
+      !('source' in value) ||
+      Object.keys(value).length !== 1 ||
+      typeof value.source !== 'string' ||
+      new TextEncoder().encode(value.source).byteLength > UI_COMPONENT_MODULE_BYTES
+    )
+      throw new Error('UI component response invalid')
+    return value.source
   } finally {
     await reader.cancel().catch(() => undefined)
     reader.releaseLock()
@@ -56,7 +71,7 @@ async function readModuleSource(url: string, signal: AbortSignal): Promise<strin
 export function selectCustomUiModule(
   rows: readonly ClientModuleRosterRow[],
   props: Pick<CustomUiRenderProps, 'surface' | 'component'>,
-): ClientModuleRosterRow | undefined {
+): (ClientModuleRosterRow & { rendererDataUrl: string }) | undefined {
   const matches = rows.filter(
     (row) =>
       row.enabled &&
@@ -64,13 +79,33 @@ export function selectCustomUiModule(
       row.intelligentComponents?.some((item) => item.kind === props.component.kind),
   )
   if (matches.length !== 1) return undefined
-  const row = matches[0]!
+  const [row] = matches
+  if (!row) return undefined
   // Never substitute a current installation for a historical session's reviewed module.
   if (
     !row.revision ||
+    !row.packageId ||
     !row.contentDigest ||
-    !row.entryUrl ||
-    !/^\/plugins\/generations\/[a-f0-9-]{36}\//.test(row.entryUrl)
+    !/^sha256-[a-f0-9]{64}$/.test(row.contentDigest) ||
+    row.entryUrl !== undefined ||
+    row.styleUrls !== undefined ||
+    row.documentAdmission !== undefined ||
+    row.binding?.owner !== row.rowId ||
+    row.binding.packageId !== row.packageId ||
+    row.binding.integrity !== row.revision ||
+    row.binding.lifetime !== 'session' ||
+    !row.rendererDataUrl
+  )
+    return undefined
+  const rendererDataUrl = row.rendererDataUrl
+  const pinned = /^\/plugins\/generations\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\/(.*)$/u.exec(
+    rendererDataUrl,
+  )
+  const entry = pinned?.[1]
+  if (
+    !entry?.startsWith(`${row.packageId}/${encodeURIComponent(row.revision)}/`) ||
+    !/^[^?#\\]+\.(?:m?js)\?agnes_ui_source=1$/u.test(entry) ||
+    new URL(rendererDataUrl, 'http://localhost').pathname !== rendererDataUrl.split('?')[0]
   )
     return undefined
   const declarations = row.intelligentComponents!.filter((item) => item.kind === props.component.kind)
@@ -83,7 +118,7 @@ export function selectCustomUiModule(
     validIntelligentSurfaceProjection({ ...props.surface, components: [props.component] }) &&
     declaration.fallback === props.component.fallback &&
     boundedUiJson(props.surface.data[props.component.dataKey], declaration.maxPropsBytes)
-    ? row
+    ? { ...row, rendererDataUrl }
     : undefined
 }
 
@@ -100,7 +135,14 @@ export function CustomUiHost(
   const version = useRef(0)
   const latest = useRef(props)
   latest.current = props
-  useEffect(() => props.source.subscribe(() => setEpoch((value) => value + 1)), [props.source])
+  useEffect(
+    () =>
+      props.source.subscribe(() => {
+        version.current++
+        setEpoch((value) => value + 1)
+      }),
+    [props.source],
+  )
   // biome-ignore lint/correctness/useExhaustiveDependencies: epoch is the subscription version; reload the roster after invalidation.
   useEffect(() => {
     const nextVersion = ++version.current
@@ -120,6 +162,7 @@ export function CustomUiHost(
       const currentFrame = frame.current
       if (
         controller.signal.aborted ||
+        nextVersion !== version.current ||
         currentFrame?.version !== nextVersion ||
         event.origin !== 'null' ||
         event.source !== currentFrame.element.contentWindow ||
@@ -165,15 +208,17 @@ export function CustomUiHost(
       try {
         const rows = await props.source.list(props.sessionId)
         controller.signal.throwIfAborted()
+        if (nextVersion !== version.current) return
         const module = selectCustomUiModule(rows, props)
         const declaration = module?.intelligentComponents?.find((item) => item.kind === props.component.kind)
-        if (!module?.entryUrl || !declaration) {
+        if (!module || !declaration) {
           clearTimeout(timer)
           return
         }
-        const url = props.source.resolveUrl?.(module.entryUrl) ?? module.entryUrl
+        const url = props.source.resolveUrl?.(module.rendererDataUrl) ?? module.rendererDataUrl
         source = await readModuleSource(url, controller.signal)
         controller.signal.throwIfAborted()
+        if (nextVersion !== version.current) return
         setLoaded({ version: nextVersion, label: declaration.accessibility.label })
       } catch {
         if (!controller.signal.aborted) fail()

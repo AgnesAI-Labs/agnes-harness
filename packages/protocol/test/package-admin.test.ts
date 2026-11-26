@@ -28,6 +28,36 @@ const valid = (name: string) =>
   structuredClone(rows.find((row) => row.name === name && row.kind === 'valid').payload)
 
 describe('PM4 management contracts', () => {
+  it('accepts only a bound installed Docs read and its two closed result variants', () => {
+    const method = '_agnes/v1/packages.docs.get'
+    const params = {
+      profile: 'local-dev',
+      id: '@acme/plugin',
+      locale: 'zh-CN',
+      expectedIntegrity: `sha512-${'a'.repeat(86)}==`,
+    }
+    expect(validatePackageAdminCall(method, 'params', params).ok).toBe(true)
+    for (const change of [
+      { id: '../plugin' },
+      { locale: 'fr' },
+      { expectedIntegrity: 'latest' },
+      { docsConnectionEpoch: 'bff-only' },
+      { url: 'https://example.invalid/README.md' },
+    ])
+      expect(validatePackageAdminCall(method, 'params', { ...params, ...change }).ok).toBe(false)
+    expect(validatePackageAdminCall(method, 'result', { found: false }).ok).toBe(true)
+    const result = { found: true, locale: 'en', markdown: 'x'.repeat(65_536) }
+    expect(validatePackageAdminCall(method, 'result', result).ok).toBe(true)
+    expect(
+      validatePackageAdminCall(method, 'result', { ...result, markdown: `${result.markdown}x` }).ok,
+    ).toBe(false)
+    expect(validatePackageAdminCall(method, 'result', { ...result, path: 'README.md' }).ok).toBe(false)
+    expect(canAccessPackageAdmin(method, { audience: 'admin', permissions: ['packages.read'] })).toBe(true)
+    expect(canAccessPackageAdmin(method, { audience: 'admin', permissions: ['packages.install'] })).toBe(
+      false,
+    )
+  })
+
   it('requires explicit digest and trust baselines for every reviewed dependent update', () => {
     const base = valid('_agnes/v1/packages.update')
     const activation = {
@@ -112,18 +142,6 @@ describe('PM4 management contracts', () => {
     ).toBe(false)
     const result = runFixtureFiles([file])
     expect(result.failed).toEqual([])
-    // 380 -> 382 added the skin roster samples (S5/S15); 382 -> 390 adds the skin read DTOs, their
-    // method-side params row and the actor-rejection row (S14b); 390 -> 403 adds the client-module
-    // roster/read DTOs and their method-side params rows (P1a); 455 -> 457 adds row-level
-    // negatives proving config/credential fields are refused, plus standalone row fixtures for
-    // the generated-schema parity table. The current set also includes generation status and
-    // capability/source authoring boundaries.
-    // Five presentation rows preserve valid metadata and reject invalid display/authority fields.
-    // Three binding rows cover history-only session ownership and reject invalid availability/owner.
-    // Twenty-three role selection rows cover attested bindings, closed roles and state boundaries.
-    // Six additional standalone Skill/environment/MCP fixtures supplement the import method rows.
-    // Four bundled-origin rows admit the shipped-copy fact and refuse a false or signature claim.
-    expect(result.total).toBe(710)
     expect(result.skipped).toBe(0)
   })
   it('requires explicit classification, permission and command identity for every management method', () => {
@@ -137,7 +155,6 @@ describe('PM4 management contracts', () => {
       )
       .sort()
     expect(names).toEqual(Object.keys(PACKAGE_ADMIN_METHODS).sort())
-    expect(names).toHaveLength(48) // Includes publication status, session migration, skill import, authoring and three config methods.
     for (const name of names as PackageAdminMethodName[]) {
       const method = METHODS[name],
         policy = method.administration

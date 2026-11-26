@@ -5,13 +5,15 @@ import type { Translate } from '@agnes/web-conversation/presentation'
 export function clientSessionServices(t: Translate) {
   const call = async (
     request: { rowId: string; sessionId: string; service: string; input: Record<string, unknown> },
-    commandId?: string,
+    options: { commandId: string } | { signal: AbortSignal },
   ) => {
+    const commandId = 'commandId' in options ? options.commandId : undefined
     const effect = commandId !== undefined
     const response = await fetch(effect ? '/api/client-modules/effect' : '/api/client-modules/service', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      ...('signal' in options ? { signal: options.signal } : {}),
       body: JSON.stringify(effect ? { ...request, commandId } : request),
     })
     const body: unknown = await response.json().catch(() => undefined)
@@ -31,9 +33,9 @@ export function clientSessionServices(t: Translate) {
       throw new Error(t(effect ? 'app.plugin.effectInvalid' : 'app.plugin.serviceInvalid'))
     return body.output
   }
-  const clientServiceCaller: ClientServiceCaller = (module, sessionId, service, input) =>
-    call({ rowId: module.rowId ?? module.packageId, sessionId, service, input })
+  const clientServiceCaller: ClientServiceCaller = (module, sessionId, service, input, signal) =>
+    call({ rowId: module.rowId ?? module.packageId, sessionId, service, input }, { signal })
   const clientEffectCaller: ClientEffectCaller = (module, sessionId, service, commandId, input) =>
-    call({ rowId: module.rowId ?? module.packageId, sessionId, service, input }, commandId)
+    call({ rowId: module.rowId ?? module.packageId, sessionId, service, input }, { commandId })
   return { clientServiceCaller, clientEffectCaller }
 }

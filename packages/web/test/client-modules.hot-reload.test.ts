@@ -19,10 +19,6 @@ it('serializes finite reload requests, retries failed packages, resets missed hi
       })
     },
     reconciler: {
-      reconcileNow: async () => undefined,
-      invalidate: async () => undefined,
-      subscribe: () => () => undefined,
-      snapshot: () => new Map(),
       reload: async (id, rev) => {
         seen.push(`${id}@${rev}`)
         if (rev === 'one') throw new Error('temporary')

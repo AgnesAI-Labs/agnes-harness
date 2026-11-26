@@ -65,6 +65,12 @@ it('rejects raw admin and Extension Service calls from the browser client before
       input: {},
     }),
   ).rejects.toMatchObject({ kind: 'unsupported' })
+  await expect(
+    client.clientModules.read('local-dev', '/plugins/fixture/rev/index.js', 'document'),
+  ).rejects.toMatchObject({ kind: 'unsupported' })
+  await expect(
+    client.request('_agnes/v1/clientModules.frontendPublication', { profile: 'local-dev' }),
+  ).rejects.toMatchObject({ kind: 'unsupported' })
 })
 
 it('leaves session reads such as deliverables to the browser client', async () => {

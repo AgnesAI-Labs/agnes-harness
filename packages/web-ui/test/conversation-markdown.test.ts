@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 
-import { ConversationMarkdown } from '@agnes/web-ui/conversation'
+import { ConversationMarkdown, StaticPluginMarkdown } from '@agnes/web-ui/conversation'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -33,6 +33,62 @@ async function render(
     root.render(createElement(ConversationMarkdown, { source, part, theme, onCopy, t: zhT })),
   )
 }
+
+it('renders native installed documentation without addresses the browser could fetch', async () => {
+  const open = vi.spyOn(window, 'open').mockReturnValue(null)
+  const source = [
+    '# Queue notes',
+    '',
+    '- Use the **primary** queue.',
+    '',
+    '> An example',
+    '',
+    '| Queue | Mode |',
+    '| --- | --- |',
+    '| General | Local |',
+    '',
+    '`<img src="https://docs.example.test/code">`',
+    '',
+    '```txt',
+    '<iframe src="https://docs.example.test/code"></iframe>',
+    '```',
+    '',
+    '<img src="https://docs.example.test/html">',
+    '',
+    '![queue diagram](https://docs.example.test/image) https://docs.example.test/bare <https://docs.example.test/angle>',
+    '',
+    '[relative](../guide) [network](//docs.example.test/network) [fragment](#notes) [http](http://docs.example.test/plain)',
+    '[account](https://reader@docs.example.test/private) [control](https://docs.example.test/%0A) [scheme](mailto:guide@example.test)',
+    '[Guide](https://docs.example.test/guide?q=one&amp;page=two)',
+  ].join('\n')
+  await act(async () => root.render(createElement(StaticPluginMarkdown, { source, locale: 'en' })))
+  expect(host.querySelector('[lang="en"] h1')?.textContent).toBe('Queue notes')
+  expect(host.querySelector('li strong')?.textContent).toBe('primary')
+  expect(host.querySelector('blockquote')?.textContent).toContain('An example')
+  expect(host.querySelector('tbody td:last-child')?.textContent).toBe('Local')
+  expect(host.querySelector('p code')?.textContent).toBe('<img src="https://docs.example.test/code">')
+  expect(host.querySelector('pre code')?.textContent).toContain(
+    '<iframe src="https://docs.example.test/code">',
+  )
+  expect(host.querySelector('iframe, img, svg, a, [href], [src], [srcset], [style]')).toBeNull()
+  expect(host.textContent).toContain('<img src="https://docs.example.test/html">')
+  expect(host.textContent).toContain('queue diagram')
+  expect(host.textContent).toContain('https://docs.example.test/bare')
+  expect(host.textContent).toContain('<https://docs.example.test/angle>')
+  expect(host.textContent).toContain('relative network fragment http')
+  const links = host.querySelectorAll<HTMLButtonElement>('button[role="link"]')
+  expect(links).toHaveLength(1)
+  const link = links[0]
+  expect(link?.textContent).toContain('Guide')
+  expect(link?.textContent).toContain('https://docs.example.test/guide?q=one&page=two')
+  expect(open).not.toHaveBeenCalled()
+  await act(async () => link?.click())
+  expect(open).toHaveBeenCalledExactlyOnceWith(
+    'https://docs.example.test/guide?q=one&page=two',
+    '_blank',
+    'noopener,noreferrer',
+  )
+})
 
 it('renders GFM blocks in body and thinking without interpreting user HTML', async () => {
   await render(

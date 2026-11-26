@@ -1,7 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFileSync, statSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { packageOfRow } from '@agnes/daemon-foundation/composite-desired'
 import type { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { CompositeTargetStore } from '@agnes/daemon-foundation/storage/composite-target-store'
 import { safeAuthoringDiagnostics } from '@agnes/error-sanitization'
@@ -14,18 +12,7 @@ import type {
   PackageManager,
   PackageSource,
 } from '@agnes/package-manager'
-import {
-  AuthoringCandidates,
-  activeRuntimePinId,
-  collectSkinRoster,
-  parseSource,
-  publicPluginFailureReason,
-  resolveSkinAsset,
-  rewriteSkinAssetUrls,
-  SKIN_MAX_ASSET_BYTES,
-  SKIN_MAX_CSS_BYTES,
-  skinCssUrl,
-} from '@agnes/package-manager'
+import { AuthoringCandidates, parseSource, publicPluginFailureReason } from '@agnes/package-manager'
 import { decodeRuntimeTargetArtifact, type RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import {
   type AuthoringCandidate,
@@ -34,16 +21,20 @@ import {
   automaticPermissionDecision,
   type ClientModuleEffectCallParams,
   type ClientModuleListResult,
+  type ClientModuleReadParams,
   type ClientModuleReadResult,
   type ClientModuleServiceCallParams,
   type ExtensionCallResult,
+  type FrontendPublicationOwnerResult,
   jcs,
   PACKAGE_ADMIN_METHODS,
+  PACKAGE_DOCS_FEATURE,
   type PackageAdminError,
   type PackageAdminMethodName,
   type PackageCatalogDescriptor,
   type PackageCatalogListParams,
   type PackageCatalogPage,
+  type PackageDocsGetParams,
   type PackageInstalledDescriptor,
   type PackageListResult,
   type PackageOperation,
@@ -55,8 +46,8 @@ import {
   type RuntimePinDescriptor,
   type RuntimePinReleaseResult,
   rpcError,
-  type SkinListResult,
-  type SkinReadResult,
+  type SkinReadParams,
+  type SkinSelectParams,
   validatePackageAdminCall,
   validatePackageAdminData,
 } from '@agnes/protocol'
@@ -78,6 +69,7 @@ import {
   dependentUpdatesApplied,
   reviewedUpdateOptions,
 } from './dependent-updates.js'
+import { frontendPublicationOwner } from './frontend-publication-owner.js'
 import { metadataView } from './metadata-view.js'
 import { failureHelp, operationError, removalRefusal } from './operation-error.js'
 import {
@@ -99,7 +91,8 @@ import { PluginConfiguration } from './plugin-config.js'
 import { projectPluginPrimaryStatus, projectPluginReadStatus } from './primary-status.js'
 import type { PackageProfileDirectory } from './project.js'
 import { publicationAdmission, publicationMetadata } from './publication-admission.js'
-import { packageReadOperation } from './read-operation.js'
+import { packageReadOperation, readPackageDocs } from './read-operation.js'
+import { Skins } from './skins.js'
 import { packageSourceFailure } from './source-failure.js'
 import { type TrustParams, trustAndRefresh } from './trust-workspace.js'
 
@@ -180,6 +173,7 @@ export type PackageAdminService = Readonly<{
     method: PackageAdminMethodName,
     params: unknown,
     authority: PackageAdminAuthority | undefined,
+    signal?: AbortSignal,
   ): Promise<unknown>
   recover(): Promise<void>
   rebuildClientModules(profile: string): Promise<void>
@@ -486,6 +480,7 @@ type PackageAdminServiceOptions = {
 class Service implements PackageAdminService {
   get features(): readonly string[] {
     return [
+      PACKAGE_DOCS_FEATURE,
       ...(this.options.community
         ? ['packages.community-discovery.v2', 'packages.community-discovery.v3']
         : []),
@@ -493,6 +488,8 @@ class Service implements PackageAdminService {
     ]
   }
   private readonly applications: Applications
+  private readonly skins: Skins
+  private readonly presentationListeners = new Set<(event: ClientModulesChanged) => void>()
   private readonly configuration: PluginConfiguration
   private readonly candidates: AuthoringCandidates
   private readonly tails = new Map<string, Promise<void>>()
@@ -508,6 +505,14 @@ class Service implements PackageAdminService {
     this.daemonVersion =
       version && version === version.trim() && version !== '0.0.0' ? parseSemver(version) : null
     this.applications = createApplications(options)
+    this.skins = new Skins({
+      manager: options.manager,
+      home: options.authoringHome,
+      profileDirectory: options.profileDirectory,
+      store: () => this.pluginTreeStore(),
+      workerGeneration: () => options.workerGeneration?.(),
+      application: (profile) => this.applications.get(profile),
+    })
     this.configuration = new PluginConfiguration({
       manager: options.manager,
       profileDirectory: options.profileDirectory,
@@ -546,11 +551,17 @@ class Service implements PackageAdminService {
   }
 
   subscribeClientModules(listener: (event: ClientModulesChanged) => void): () => void {
-    return this.clientModules.subscribe(listener)
+    this.presentationListeners.add(listener)
+    const stop = this.clientModules.subscribe(listener)
+    return () => {
+      this.presentationListeners.delete(listener)
+      stop()
+    }
   }
 
   closeClientModules(): void {
     this.clientModules.close()
+    this.presentationListeners.clear()
   }
 
   async recover(): Promise<void> {
@@ -611,6 +622,7 @@ class Service implements PackageAdminService {
     method: PackageAdminMethodName,
     params: unknown,
     authority: PackageAdminAuthority | undefined,
+    signal?: AbortSignal,
   ): Promise<unknown> {
     return packageReadOperation(method, async () => {
       const granted = requirePackageAdmin(method, authority)
@@ -638,7 +650,12 @@ class Service implements PackageAdminService {
           await this.boot
           if (this.recoveryError) operationError(this.recoveryError)
         }
-        return this.applications.call(method, data, granted)
+        const result = await this.applications.call(method, data, granted)
+        if (method === '_agnes/v1/applications.adopt' || method === '_agnes/v1/applications.clear') {
+          const profile = data.profile as string
+          await this.refreshClientModules(profile, await this.options.profileDirectory(profile), 'inventory')
+        }
+        return result
       }
       await this.boot
       // `recoveryError` is set only when recoverPending() -- reading the *operations store*'s pending
@@ -647,15 +664,18 @@ class Service implements PackageAdminService {
       // through `options.runtimePins`. Deliberately NOT gating pins.* on `this.recoveryError` here: a
       // corrupt operations ledger does not make the pin set untrustworthy, and gating on it would refuse
       // a separately-verified read/effect for an unrelated failure.
+      if (this.recoveryError && method === '_agnes/v1/clientModules.read') return { found: false }
       if (
         this.recoveryError &&
         (method === '_agnes/v1/packages.list' ||
+          method === '_agnes/v1/packages.docs.get' ||
           // skins.list reads the same profile lockfile packages.list does, so a corrupt operations
           // ledger makes its answer equally untrustworthy.
           method === '_agnes/v1/skins.list' ||
           method === '_agnes/v1/skins.read' ||
+          method === '_agnes/v1/skins.select' ||
           method === '_agnes/v1/clientModules.list' ||
-          method === '_agnes/v1/clientModules.read' ||
+          method === '_agnes/v1/clientModules.frontendPublication' ||
           // callService/callEffect rebuild the identical roster via clientModules.list(...) before
           // dispatching into extension backend code, so they share its exact untrustworthy-during-
           // recovery risk.
@@ -764,6 +784,8 @@ class Service implements PackageAdminService {
             throw new Error('E_PACKAGE_STATE: invalid generation status')
           return status
         }
+        if (method === '_agnes/v1/packages.docs.get')
+          return await readPackageDocs(this.options, data as PackageDocsGetParams, signal)
         if (method === '_agnes/v1/packages.provenance')
           return await this.options.manager.provenance(
             await this.options.profileDirectory(data.profile as string),
@@ -781,13 +803,34 @@ class Service implements PackageAdminService {
         if (method === '_agnes/v1/plugins.tree.apply')
           return this.pluginTreeApplyCall(data as { artifact: RuntimeTargetArtifact })
         if (method === '_agnes/v1/plugins.tree.rollback') return this.pluginTreeRollbackCall()
-        if (method === '_agnes/v1/skins.list') return await this.skinsList(data as { profile: string })
-        if (method === '_agnes/v1/skins.read')
-          return await this.skinsRead(data as { profile: string; path: string })
+        if (method === '_agnes/v1/skins.list') return await this.skins.list(data.profile as string)
+        if (method === '_agnes/v1/skins.read') {
+          const { profile, path } = data as SkinReadParams
+          return await this.skins.read(profile, path)
+        }
+        if (method === '_agnes/v1/skins.select') {
+          if (granted.installer === 'agent' || data.clientId !== granted.clientId)
+            throw rpcError('CAPABILITY_DENIED')
+          const result = await this.skins.select(data as SkinSelectParams)
+          for (const listener of this.presentationListeners) {
+            try {
+              listener({
+                profile: data.profile as string,
+                revision: String(result.revision),
+                reason: 'resources',
+              })
+            } catch {
+              // Notification failure cannot change the result of a committed selection.
+            }
+          }
+          return result
+        }
         if (method === '_agnes/v1/clientModules.list')
           return await this.clientModulesList(data as { profile: string; sessionId?: string })
         if (method === '_agnes/v1/clientModules.read')
-          return await this.clientModulesRead(data as { profile: string; path: string })
+          return await this.clientModulesRead(data as ClientModuleReadParams)
+        if (method === '_agnes/v1/clientModules.frontendPublication')
+          return await this.frontendPublicationOwner(data.profile as string)
         if (method === '_agnes/v1/clientModules.callService')
           return await this.clientModulesCallService(data as ClientModuleServiceCallParams)
         if (method === '_agnes/v1/clientModules.callEffect')
@@ -951,59 +994,6 @@ class Service implements PackageAdminService {
     return typeof tree === 'function' ? tree() : tree
   }
 
-  private async skinRosterInput(
-    profileDirectory: string,
-    inventory: InstalledInventory,
-  ): Promise<Readonly<{ inventory: InstalledInventory; activeRows: ReadonlySet<string> }>> {
-    const store = this.pluginTreeStore()
-    const actual = store && pluginTreeList(store, inventory.profile, this.options.workerGeneration?.()).actual
-    const artifact = store?.desired()
-    const report = store?.report()
-    // The Host report hashes its ordinary tree, which excludes browser-only web: rows. `actual`
-    // already qualifies that report against the complete desired artifact and worker generation.
-    if (!actual?.actual || !artifact || !report?.ok) return { inventory, activeRows: new Set() }
-    try {
-      const pins = await this.options.manager.listRuntimePins(profileDirectory)
-      const activePins = new Map(
-        pins
-          .filter((pin) => pin.purpose === 'active' && pin.pinId === activeRuntimePinId(pin.snapshot))
-          .map((pin) => [`${pin.snapshot.packageId}\0${pin.snapshot.integrity}`, pin.snapshot]),
-      )
-      const activeIds = new Set(report.rows.filter((row) => row.state === 'active').map((row) => row.id))
-      const activeRows = new Set<string>()
-      const packageRevisions = new Map<string, string>()
-      for (const row of decodeRuntimeTargetArtifact(artifact).tree.rows) {
-        if (row.disabled || !activeIds.has(row.id) || row.id.startsWith('web:')) continue
-        const packageId = packageOfRow(row.plugin)
-        if (packageId && activePins.has(`${packageId}\0${row.entryRevision}`)) {
-          activeRows.add(`${row.id}\0${packageId}\0${row.entryRevision}`)
-          const prior = packageRevisions.get(packageId)
-          packageRevisions.set(packageId, prior && prior !== row.entryRevision ? '' : row.entryRevision)
-        }
-      }
-      return {
-        inventory: {
-          ...inventory,
-          packages: inventory.packages.map((pkg) => {
-            const revision = packageRevisions.get(pkg.id)
-            const snapshot = revision ? activePins.get(`${pkg.id}\0${revision}`) : undefined
-            return snapshot
-              ? {
-                  ...pkg,
-                  entry: { ...pkg.entry, integrity: snapshot.integrity },
-                  directory: snapshot.directory,
-                  contributions: snapshot.contributions,
-                }
-              : { ...pkg, directory: null, contributions: [] }
-          }),
-        },
-        activeRows,
-      }
-    } catch {
-      return { inventory, activeRows: new Set() }
-    }
-  }
-
   private pluginTreeView(params: { profile: string }, includeDesired: boolean) {
     const store = this.pluginTreeStore()
     if (!store) return { actual: false, pending: false }
@@ -1090,66 +1080,6 @@ class Service implements PackageAdminService {
     }
   }
 
-  /**
-   * Selectable skins for one profile. Skin ids are unique across the roster, so `cssUrl` addresses a
-   * skin by id alone and the stylesheet's relative `url(...)` references land under `assetBase`.
-   */
-  private async skinsList(params: { profile: string }): Promise<SkinListResult> {
-    const directory = await this.options.profileDirectory(params.profile)
-    const inventory = await this.options.manager.inventory(directory)
-    const skins = await this.skinRosterInput(directory, inventory)
-    const roster = collectSkinRoster(skins.inventory, [], skins.activeRows)
-    return {
-      revision: roster.revision,
-      skins: roster.skins.map((skin) => {
-        // The stylesheet rides the roster: it is small text, and sending it here means a skin that
-        // ships no assets needs no second request at all. Over the inline cap it is dropped and the
-        // client falls back to cssUrl, which does require the asset route.
-        // A packaged distribution carries builtin skins in the build; a source checkout reads
-        // them from disk. Prefer whatever the roster actually resolved.
-        const css = inlineSkinCss(skin)
-        return {
-          id: skin.id,
-          name: skin.name,
-          packageName: skin.packageName,
-          cssUrl: skinCssUrl(skin.id),
-          ...(css === undefined ? {} : { css }),
-          ...(skin.assetsDir === undefined ? {} : { assetBase: `/skins/${skin.id}/assets/` }),
-          ...(Object.keys(skin.tokens).length === 0 ? {} : { tokens: skin.tokens }),
-        }
-      }),
-      shadowed: roster.shadowed,
-    }
-  }
-
-  /**
-   * Bytes for one skin route path, for the launcher's same-origin asset proxy.
-   *
-   * The path authority is `resolveSkinAsset` — the very function the in-process HTTP route used
-   * before this channel existed — so there is exactly one place that decides which files a skin
-   * route may reach. It only answers for ids the enabled+trusted roster claims, and a miss and a
-   * refusal are deliberately the same answer, so the response cannot be used to probe the package
-   * directory layout (design §22.3).
-   */
-  private async skinsRead(params: { profile: string; path: string }): Promise<SkinReadResult> {
-    const directory = await this.options.profileDirectory(params.profile)
-    const inventory = await this.options.manager.inventory(directory)
-    const skins = await this.skinRosterInput(directory, inventory)
-    const resolved = resolveSkinAsset(collectSkinRoster(skins.inventory, [], skins.activeRows), params.path)
-    if (resolved === null) return { found: false }
-    // A file that grew after install must not be streamed: the install-time cap for its class is
-    // also the ceiling on what this channel will hand out (design §22.3). `resolveSkinAsset` only
-    // ever accepts `<id>/skin.css` or `<id>/assets/...`, so the suffix identifies the class.
-    const cap = params.path.endsWith('/skin.css') ? SKIN_MAX_CSS_BYTES : SKIN_MAX_ASSET_BYTES
-    try {
-      if (statSync(resolved).size > cap) return { found: false }
-      return { found: true, base64: readFileSync(resolved).toString('base64') }
-    } catch {
-      // Vanished between resolution and read: the same negative answer as any other miss.
-      return { found: false }
-    }
-  }
-
   private async clientModulesList(params: {
     profile: string
     sessionId?: string
@@ -1169,26 +1099,40 @@ class Service implements PackageAdminService {
         return normalizeObservation(await this.options.activation.actual(params.profile, packageId))
       },
       refreshInventory: () => this.options.manager.inventory(directory, { fresh: true }),
+      presentation: (current) => this.applications.observePresentation(params.profile, current),
     })
     return projectClientModuleRows(result)
   }
 
-  private async clientModulesRead(params: {
-    profile: string
-    path: string
-  }): Promise<ClientModuleReadResult> {
-    const directory = await this.options.profileDirectory(params.profile)
-    const inventory = await this.options.manager.inventory(directory, { settled: true })
-    return await this.clientModules.read({
-      profile: params.profile,
-      profileDirectory: directory,
-      inventory,
-      path: params.path,
-      actual: async (packageId) => {
-        if (!this.options.activation) return undefined
-        return normalizeObservation(await this.options.activation.actual(params.profile, packageId))
-      },
-      refreshInventory: () => this.options.manager.inventory(directory, { fresh: true }),
+  private async clientModulesRead(params: ClientModuleReadParams): Promise<ClientModuleReadResult> {
+    try {
+      const directory = await this.options.profileDirectory(params.profile)
+      const inventory = await this.options.manager.inventory(directory, { settled: true })
+      return await this.clientModules.read({
+        ...params,
+        profileDirectory: directory,
+        inventory,
+        actual: async (packageId) => {
+          if (!this.options.activation) return undefined
+          return normalizeObservation(await this.options.activation.actual(params.profile, packageId))
+        },
+        refreshInventory: () => this.options.manager.inventory(directory, { fresh: true }),
+        presentation: (current) => this.applications.observePresentation(params.profile, current),
+      })
+    } catch {
+      return { found: false }
+    }
+  }
+
+  private async frontendPublicationOwner(profile: string): Promise<FrontendPublicationOwnerResult> {
+    const activation = this.options.activation
+    if (!activation) return {}
+    const directory = await this.options.profileDirectory(profile)
+    return frontendPublicationOwner({
+      profile,
+      inventory: () => this.options.manager.inventory(directory, { fresh: true }),
+      actual: async (packageId) => normalizeObservation(await activation.actual(profile, packageId)),
+      workerGeneration: () => this.options.workerGeneration?.(),
     })
   }
 
@@ -1214,12 +1158,14 @@ class Service implements PackageAdminService {
         return normalizeObservation(await this.options.activation.actual(params.profile, packageId))
       },
       refreshInventory: () => this.options.manager.inventory(directory, { fresh: true }),
+      presentation: (current) => this.applications.observePresentation(params.profile, current),
     })
     const row = roster.rows?.find(
       (candidate) =>
         candidate.rowId === params.rowId &&
         candidate.enabled &&
         candidate.phase === 'ready' &&
+        candidate.documentAdmission !== undefined &&
         candidate.services?.includes(params.service),
     )
     // A service belongs to the client extension itself, not merely another backend extension in the
@@ -1252,12 +1198,14 @@ class Service implements PackageAdminService {
         return normalizeObservation(await this.options.activation.actual(params.profile, packageId))
       },
       refreshInventory: () => this.options.manager.inventory(directory, { fresh: true }),
+      presentation: (current) => this.applications.observePresentation(params.profile, current),
     })
     const row = roster.rows?.find(
       (candidate) =>
         candidate.rowId === params.rowId &&
         candidate.enabled &&
         candidate.phase === 'ready' &&
+        candidate.documentAdmission !== undefined &&
         candidate.services?.includes(params.service),
     )
     if (!row?.packageId || !row.extIds?.includes(row.moduleName) || !this.options.clientEffectCall)
@@ -1291,6 +1239,7 @@ class Service implements PackageAdminService {
             return normalizeObservation(await this.options.activation.actual(profile, id))
           },
           refreshInventory: () => this.options.manager.inventory(directory, { fresh: true }),
+          presentation: (current) => this.applications.observePresentation(profile, current),
         },
         reason,
         packageId,
@@ -2126,37 +2075,6 @@ export function createPackageAdminService(options: PackageAdminServiceOptions): 
 }
 
 /** Register the same handler on in-process, Unix and supervisor endpoints. */
-/** Stylesheet text for the roster, or `undefined` when it is missing or over the contract cap. */
-function readSkinCss(path: string | undefined): string | undefined {
-  if (path === undefined) return undefined
-  try {
-    const text = readFileSync(path, 'utf8')
-    return text.length > SKIN_CSS_INLINE_MAX ? undefined : text
-  } catch {
-    // A stylesheet that vanished between roster assembly and this read is simply not inlined.
-    return undefined
-  }
-}
-
-/**
- * Stylesheet text ready to inline, or `undefined` when it must not be inlined.
- *
- * Relative `url()` references are rewritten to the skin's own route before the cap check: the client
- * applies this text with `replaceSync`, whose base URL is the document rather than the stylesheet, so
- * an author's `url('assets/x.png')` would otherwise resolve against the page root (design §21).
- * Rewriting can lengthen the text, so the cap is checked *after* it, not before — over the cap the
- * text is dropped entirely and the client falls back to `cssUrl`, whose relative references the
- * browser resolves correctly on its own.
- */
-function inlineSkinCss(skin: { id: string; css?: string; cssPath?: string }): string | undefined {
-  const raw = skin.css ?? readSkinCss(skin.cssPath)
-  if (raw === undefined) return undefined
-  const rewritten = rewriteSkinAssetUrls(raw, skin.id)
-  return rewritten.length > SKIN_CSS_INLINE_MAX ? undefined : rewritten
-}
-
-const SKIN_CSS_INLINE_MAX = 131072
-
 export function registerPackageAdmin(
   endpoint: LocalEndpoint,
   service: PackageAdminService,
@@ -2164,7 +2082,11 @@ export function registerPackageAdmin(
 ): void {
   for (const method of Object.keys(PACKAGE_ADMIN_METHODS) as PackageAdminMethodName[])
     endpoint.register(method, async (params, context) => {
-      const result = await service.call(method, params, authority(context))
+      const granted = authority(context)
+      const result =
+        method === '_agnes/v1/packages.docs.get'
+          ? await service.call(method, params, granted, context.signal)
+          : await service.call(method, params, granted)
       // Successful roster authorization enrolls this exact connection for profile-scoped invalidation
       // notices. Transport/auth kind alone is insufficient: Unix launchers and denied remote clients
       // can share the same profile but must not receive browser roster events.

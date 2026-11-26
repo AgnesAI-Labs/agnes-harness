@@ -33,8 +33,13 @@ const assets = new Map([
 ])
 const server = createServer(async (request, response) => {
   if (serveUiComponentFrame(request, response)) return
-  const path = new URL(request.url ?? '/', 'http://127.0.0.1').pathname
+  const assetUrl = new URL(request.url ?? '/', 'http://127.0.0.1')
+  const path = assetUrl.pathname
   if (path === '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/reviewed/diff.mjs') {
+    if (assetUrl.search !== '?agnes_ui_source=1') {
+      response.writeHead(404, { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }).end()
+      return
+    }
     const source = `const nonceVisible = [...document.querySelectorAll('script,style')].some(node => node.nonce);
     export const renderers = {
       'finance/reconcile/diff@1'(mount, props, api) {
@@ -58,12 +63,12 @@ const server = createServer(async (request, response) => {
     };`
     response
       .writeHead(200, {
-        'Content-Type': 'text/javascript',
+        'Content-Type': 'application/json',
         'Cache-Control': 'no-store',
         'Referrer-Policy': 'no-referrer',
         'X-Content-Type-Options': 'nosniff',
       })
-      .end(source)
+      .end(request.method === 'HEAD' ? undefined : JSON.stringify({ source }))
     return
   }
   if (path === '/') {

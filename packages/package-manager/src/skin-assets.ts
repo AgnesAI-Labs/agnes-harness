@@ -60,7 +60,7 @@ function collectFiles(dir: string, prefix = ''): string[] {
  * @param manifest - Manifest that already passed `checkManifest`.
  * @returns One entry per declared skin, in declaration order.
  */
-export function resolveSkins(dir: string, manifest: ExtensionManifest): ResolvedSkin[] {
+export function resolveSkins(dir: string, manifest: Pick<ExtensionManifest, 'contributes'>): ResolvedSkin[] {
   const skins = manifest.contributes?.skins ?? []
   if (skins.length === 0) return []
   const file = join(dir, 'package.json')
@@ -249,7 +249,7 @@ export function collectSkinRoster(
         )
           continue
         const directory = resolve(pkg.directory, descriptor.path.slice(2), '..')
-        const manifest = { contributes: { skins: descriptor.skins } } as ExtensionManifest
+        const manifest = { contributes: { skins: descriptor.skins } }
         for (const skin of resolveSkins(directory, manifest)) {
           fromDisk += 1
           claim(pkg.id, { ...skin, packageName: pkg.id })

@@ -159,6 +159,12 @@ describe('home entry names', () => {
         packageId: 'acme/console',
         rowId: 'web:acme/console',
         revision: 'v1',
+        documentAdmission: {
+          kind: 'approved-presentation',
+          bindingDigest: 'd'.repeat(64),
+          presentationRevision: 1,
+        },
+        contentDigest: `sha256-${'c'.repeat(64)}`,
         entryUrl: '/console.js',
         styleUrls: [],
         slots: [],

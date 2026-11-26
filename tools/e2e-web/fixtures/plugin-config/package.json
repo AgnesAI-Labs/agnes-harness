@@ -6,6 +6,10 @@
     ".": "./index.js"
   },
   "license": "Apache-2.0",
+  "agnesDocs": {
+    "en": "README.md",
+    "zh-CN": "README.zh-CN.md"
+  },
   "agnes": {
     "plugins": [
       {
@@ -64,12 +68,12 @@
         "metadata": {
           "displayName": "Queue coordinator",
           "summary": "Coordinates sample work queues for a team.",
-          "description": "Demonstrates configurable work queues using a local service.",
+          "description": "Demonstrates configurable work queues using a local service. **Description stays plain.**",
           "locales": {
             "zh-CN": {
               "displayName": "队列协作助手",
               "summary": "协调团队的样例任务队列。",
-              "description": "通过本地服务演示可配置的任务队列。"
+              "description": "通过本地服务演示可配置的任务队列。**说明是纯文本。**"
             }
           }
         }
@@ -78,12 +82,13 @@
     "metadata": {
       "displayName": "Queue coordinator",
       "summary": "Coordinates sample work queues for a team.",
-      "description": "Demonstrates configurable work queues using a local service.",
+      "description": "Demonstrates configurable work queues using a local service. **Description stays plain.**",
+      "docsUrl": "https://queue-docs.example.test/fallback",
       "locales": {
         "zh-CN": {
           "displayName": "队列协作助手",
           "summary": "协调团队的样例任务队列。",
-          "description": "通过本地服务演示可配置的任务队列。"
+          "description": "通过本地服务演示可配置的任务队列。**说明是纯文本。**"
         }
       }
     },

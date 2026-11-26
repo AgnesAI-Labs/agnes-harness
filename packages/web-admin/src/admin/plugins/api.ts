@@ -4,6 +4,8 @@ import type {
   PackageActivationRequest,
   PackageCatalogDescriptor,
   PackageCatalogPage,
+  PackageDocsGetParams,
+  PackageDocsGetResult,
   PackageListResult,
   PackageOperation,
   PackageOperationReceipt,
@@ -17,6 +19,8 @@ import type {
   PluginTreeView,
   SessionDefaultsSnapshot,
   SessionGenerationMigrationResult,
+  SkinChoice,
+  SkinConfigSnapshot,
 } from '@agnes/protocol'
 import {
   ChildEnginesSaveParams,
@@ -25,6 +29,7 @@ import {
   isAdminLoop,
   isAdminModelAdapter,
   isSessionDefaultsSnapshot,
+  PACKAGE_DOCS_CONTEXT_HEADER,
   type PackageAdminMethodName,
   RuntimeAdminSnapshot,
   validateAgainst,
@@ -32,8 +37,11 @@ import {
   validatePackageAdminData,
   validatePackageCatalogSnapshotVersion,
 } from '@agnes/protocol'
-import { appServerErrorMessage } from '@agnes/web-ui'
-import type { AdminContext, AdminError, AdminSurfaceLinksResult } from './types.js'
+import { AdminApiError, invalidSelection, json, safeError } from './api-response.js'
+import { docsConnectionEpochFor, readPackageDocs } from './docs-api.js'
+import type { AdminContext, AdminSurfaceLinksResult } from './types.js'
+
+export { AdminApiError } from './api-response.js'
 
 export const ADMIN_API_ROOT = '/admin/plugins/api'
 
@@ -43,6 +51,7 @@ export type AdminCatalogPage = Pick<PackageCatalogPage, 'items' | 'nextCursor'> 
 }
 
 type FetchLike = typeof fetch
+const DOCS_CONTEXT_HEADERS = { Accept: 'application/json', [PACKAGE_DOCS_CONTEXT_HEADER]: '1' }
 const pendingContexts = new WeakMap<FetchLike, Promise<AdminContext>>()
 type AdminOverview = { context: AdminContext; inventory?: PackageListResult }
 const pendingOverviews = new WeakMap<FetchLike, Promise<AdminOverview>>()
@@ -82,6 +91,7 @@ const METHOD_BY_PATH = {
   'application/preview': '_agnes/v1/applications.preview',
   'application/adopt': '_agnes/v1/applications.adopt',
   'application/clear': '_agnes/v1/applications.clear',
+  'skins/select': '_agnes/v1/skins.select',
   'config/get': '_agnes/v1/plugins.config.get',
   'config/validate': '_agnes/v1/plugins.config.validate',
   'config/save': '_agnes/v1/plugins.config.save',
@@ -91,45 +101,6 @@ const METHOD_BY_PATH = {
   'tree/rollback': '_agnes/v1/plugins.tree.rollback',
 } as const satisfies Record<string, PackageAdminMethodName>
 type AdminPath = keyof typeof METHOD_BY_PATH
-
-type ErrorResponse = {
-  error?: {
-    code?: unknown
-    message?: unknown
-    blockers?: unknown
-    data?: { code?: unknown; messageKey?: unknown }
-  }
-}
-
-export class AdminApiError extends Error {
-  readonly details: AdminError
-
-  constructor(details: AdminError) {
-    super(details.message)
-    this.name = 'AdminApiError'
-    this.details = details
-  }
-}
-
-function safeError(
-  value: unknown,
-  fallback = 'The admin backend is temporarily unavailable. Try again later.',
-): AdminError {
-  if (!value || typeof value !== 'object') return { code: 'ADMIN_UNAVAILABLE', message: fallback }
-  const error = value as ErrorResponse
-  const code =
-    typeof error.error?.data?.code === 'string'
-      ? error.error.data.code
-      : typeof error.error?.code === 'string'
-        ? error.error.code
-        : 'ADMIN_UNAVAILABLE'
-  const message =
-    appServerErrorMessage(
-      error.error,
-      typeof document === 'undefined' ? 'en' : document.documentElement.lang,
-    ) ?? (typeof error.error?.message === 'string' ? error.error.message : fallback)
-  return { code, message }
-}
 
 function commandId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
@@ -220,7 +191,7 @@ export class PluginAdminApi {
     const response = await fetcher(`${ADMIN_API_ROOT}/context`, {
       method: 'GET',
       credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
+      headers: DOCS_CONTEXT_HEADERS,
     })
     const body = await json(response)
     if (!response.ok)
@@ -243,7 +214,7 @@ export class PluginAdminApi {
         const response = await fetcher(`${ADMIN_API_ROOT}/overview`, {
           method: 'GET',
           credentials: 'same-origin',
-          headers: { Accept: 'application/json' },
+          headers: DOCS_CONTEXT_HEADERS,
         })
         const body = await json(response)
         if (!response.ok) throw new AdminApiError(safeError(body))
@@ -293,6 +264,9 @@ export class PluginAdminApi {
   }
   clearApplication(expectedRevision: number): Promise<import('@agnes/protocol').ApplicationState> {
     return this.#effect('application/clear', { expectedRevision })
+  }
+  selectSkin(expectedRevision: number, choice: SkinChoice): Promise<SkinConfigSnapshot> {
+    return this.#effect('skins/select', { expectedRevision, choice })
   }
   previewRole(
     role: import('@agnes/protocol').PresentationRole,
@@ -577,6 +551,25 @@ export class PluginAdminApi {
     })
   }
 
+  /** The inventory view and this facade must agree while the controller replaces its connection. */
+  docsConnectionEpochFor(context: AdminContext = this.#context): string | undefined {
+    return docsConnectionEpochFor(this.#context, context)
+  }
+
+  /** A 404 means this connection no longer offers Docs, rather than an installed document miss. */
+  docsGet(
+    input: Omit<PackageDocsGetParams, 'profile'>,
+    signal?: AbortSignal,
+  ): Promise<PackageDocsGetResult | undefined> {
+    return readPackageDocs({
+      url: `${ADMIN_API_ROOT}/docs/get`,
+      fetcher: this.#fetch,
+      context: this.#context,
+      input,
+      signal,
+    })
+  }
+
   async inspect(source: PackageSource): Promise<PackageOperationReceipt> {
     return this.#effect('inspect', { source })
   }
@@ -752,14 +745,6 @@ export class PluginAdminApi {
   }
 }
 
-async function json(response: Response): Promise<unknown> {
-  try {
-    return await response.json()
-  } catch {
-    return undefined
-  }
-}
-
 function isContext(value: unknown): value is AdminContext {
   return validatePackageAdminData('PackageAdminContext', value).ok
 }
@@ -790,12 +775,6 @@ function pickDefaults(value: unknown): unknown {
   if (!value || typeof value !== 'object') return undefined
   const { revision, defaults } = value as SessionDefaultsSnapshot
   return { revision, defaults }
-}
-function invalidSelection(): AdminApiError {
-  return new AdminApiError({
-    code: 'ADMIN_RESPONSE_INVALID',
-    message: 'The backend returned data that cannot be verified.',
-  })
 }
 
 export type BundleSnapshot = {

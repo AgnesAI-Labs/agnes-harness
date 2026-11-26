@@ -27,6 +27,27 @@ When metadata is present, `displayName`, `summary`, and `description` are requir
 
 Rows may carry their own metadata for their settings descriptions. Source labels come from verified provenance, never from a package name or author label. The static presentation summary can count explicitly declared tools, skill files, Bundles and UI contributions; absent counts mean unknown. Static declarations and runtime registration remain distinct evidence.
 
+## Documentation in the installed package
+
+Add `agnesDocs` at the root of `package.json`, next to `agnes`, to show Markdown in the installed plugin's **Docs** tab.
+
+```json
+{
+  "agnesDocs": {
+    "en": "README.md",
+    "zh-CN": "docs/README.zh-CN.md"
+  }
+}
+```
+
+`en` is required. `zh-CN` is optional. No other locale keys are accepted. Use exact, case-sensitive paths relative to the package root. Each path can contain up to 240 ASCII characters. Separate directories with `/`. Each segment must start with a letter or digit and may also contain `.`, `_`, and `-`. The file name must end in `.md`. Paths cannot contain a `node_modules` directory.
+
+Include the declared files in the archive you publish. Check the `files` list and ignore rules before packing. Each file must contain nonblank UTF-8 text without NUL characters and fit within 65,536 bytes. A UTF-8 byte order mark is allowed.
+
+The Chinese interface tries `zh-CN` first and falls back to `en` if the translation is missing or invalid. The English interface only reads `en`. If no local Markdown is available, the **Docs** tab can still show the existing `docsUrl` link.
+
+AGH only reads the current verified installed copy. It does not fetch repository files or look for an undeclared README. Markdown does not load plugin code, grant permissions, or require that the package be trusted or enabled.
+
 ## Agents are Bundles with launch information
 
 ```json

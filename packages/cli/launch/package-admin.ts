@@ -26,6 +26,7 @@ import type {
   PluginTreeApplyParams,
   PluginTreeRollbackParams,
   SessionGenerationMigrationParams,
+  SkinSelectParams,
 } from '@agnes/protocol'
 import {
   CLOUD_AUTHORIZATION_TIMEOUT_MS,
@@ -52,6 +53,7 @@ import { createCloudGateway } from './cloud-gateway.js'
 import { contextAdmin } from './context-admin.js'
 import { doctorAdmin } from './doctor-admin.js'
 import { launchFailure } from './launch-failure.js'
+import { createPackageDocsBridge } from './package-docs.js'
 import { pluginStreamProxy } from './plugin-stream-proxy.js'
 import { profileServiceRelay } from './profile-service-relay.js'
 
@@ -129,14 +131,16 @@ export function localPackageAdmin(
       auth: { kind: 'local' },
       journal: memoryJournal(clientId),
     })
+  const docsBridge = createPackageDocsBridge(open)
+  const openAdmin = () => docsBridge.bind(open())
   // A replaced daemon connection is a new connection: the daemon enrolls roster subscribers per
   // connection, so a live subscription has to prove itself again on the new one.
   let rosterSubscribed = false
   const client = backend.link
-    ? backend.link.client(open, (next) => {
+    ? backend.link.client(openAdmin, (next) => {
         if (rosterSubscribed) void next.clientModules.list(backend.scope.profile).catch(() => undefined)
       })
-    : open()
+    : openAdmin()
   let ready: Promise<unknown> | undefined
   const initialize = () =>
     (ready ??= client.initialize().catch((error: unknown) => {
@@ -194,7 +198,10 @@ export function localPackageAdmin(
       cloudGateway.revokeAll()
     }) ?? (() => {})
   // createAdminSurface validates each schema before dispatching this fixed typed mapping.
-  const invoke = async (action: AdminSurfaceAction, params: unknown): Promise<unknown> => {
+  const invoke = async (
+    action: Exclude<AdminSurfaceAction, 'docs/get'>,
+    params: unknown,
+  ): Promise<unknown> => {
     await initialize()
     switch (action) {
       case 'application/get':
@@ -217,6 +224,8 @@ export function localPackageAdmin(
           '_agnes/v1/applications.clear',
           params as import('@agnes/protocol').ApplicationClearParams,
         )
+      case 'skins/select':
+        return client.request('_agnes/v1/skins.select', params as SkinSelectParams)
       case 'candidates/list':
         return client.request(
           '_agnes/v1/plugins.candidates.list',
@@ -343,6 +352,7 @@ export function localPackageAdmin(
     }
   }
   const surface = createAdminSurface({
+    docs: docsBridge.docs,
     backendFeatures: async () => (await client.initialize()).features ?? [],
     credentials: {
       async call(action, input) {
@@ -541,8 +551,8 @@ export function localPackageAdmin(
      * Bytes for one `/skins/...` path, for the Web launcher's same-origin asset route.
      *
      * It rides the launcher's existing private package-admin connection rather than opening a second
-     * one. The daemon owns path authority and answers only for its enabled+trusted roster; a miss and
-     * a refusal are the same `null` here, which the HTTP layer turns into a 404 (design §22).
+     * one. The daemon serves only the current selection. A miss and a refusal
+     * both become `null` here, which the HTTP layer turns into a 404.
      */
     async readSkin(pathname: string): Promise<Uint8Array | null> {
       try {
@@ -554,19 +564,14 @@ export function localPackageAdmin(
         return null
       }
     },
-    /**
-     * Bytes for one `/plugins/...` path, for the Web launcher's same-origin asset route.
-     *
-     * Same shape as `readSkin`: it rides the same private package-admin connection, the daemon owns
-     * path authority and answers only for its enabled+trusted roster snapshots, and a miss, a
-     * refusal and an unreachable daemon are the one same `null`, which the HTTP layer turns into a
-     * 404.
-     */
-    async readClientModule(pathname: string): Promise<Uint8Array | null> {
+    async readClientModule(
+      pathname: string,
+      purpose: Parameters<typeof client.clientModules.read>[2],
+    ): Promise<Uint8Array | null> {
       try {
         await initialize()
-        const result = await client.clientModules.read(backend.scope.profile, pathname)
-        return result.found ? new Uint8Array(Buffer.from(result.base64, 'base64')) : null
+        const result = await client.clientModules.read(backend.scope.profile, pathname, purpose)
+        return result.found ? Buffer.from(result.base64, 'base64') : null
       } catch {
         // An unreachable or refusing daemon is an unavailable asset, not a launcher failure.
         return null
@@ -756,6 +761,7 @@ export function localPackageAdmin(
       return true
     },
     async close(): Promise<void> {
+      docsBridge.close()
       stopCloudConnection()
       stopCloudNotices()
       cloudLifetime.abort()

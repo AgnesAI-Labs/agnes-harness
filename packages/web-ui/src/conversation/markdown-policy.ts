@@ -14,11 +14,13 @@ export function decodeMarkdownEntities(text: string): string {
   return new DOMParser().parseFromString(escapedTags, 'text/html').documentElement.textContent ?? text
 }
 
-function hasControl(text: string): boolean {
-  return [...text].some((character) => {
-    const code = character.charCodeAt(0)
-    return code <= 0x20 || (code >= 0x7f && code <= 0x9f)
-  })
+function hasControl(text: string, includeSpace = true): boolean {
+  const min = includeSpace ? 0x20 : 0x1f
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index)
+    if (code <= min || (code >= 0x7f && code <= 0x9f)) return true
+  }
+  return false
 }
 
 /** The old renderer accepts only absolute HTTP(S) destinations and safe heading fragments. */
@@ -35,6 +37,24 @@ export function safeMarkdownHref(raw: string): string | undefined {
   try {
     const url = new URL(decoded)
     return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function safePluginDocsHref(raw: string): string | undefined {
+  if (hasControl(raw)) return undefined
+  const decoded = decodeMarkdownEntities(raw)
+  const authority = /^https:\/\/([^/?#\\]+)/i.exec(decoded)?.[1]
+  if (!authority || authority.includes('@') || decoded.includes('\\') || decoded.includes('#'))
+    return undefined
+  try {
+    if (
+      (decoded !== raw && hasControl(decoded)) ||
+      (decoded.includes('%') && hasControl(decodeURIComponent(decoded), false))
+    )
+      return undefined
+    return new URL(decoded).href
   } catch {
     return undefined
   }

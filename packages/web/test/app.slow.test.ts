@@ -2582,6 +2582,8 @@ describe('web session selection', () => {
                 revision: 'r1',
                 enabled: true,
                 phase: 'ready',
+                documentAdmission: { kind: 'release', bindingDigest: 'd'.repeat(64) },
+                contentDigest: `sha256-${'c'.repeat(64)}`,
                 entryUrl: '/plugins/cloud-fixture/r1/index.js',
                 styleUrls: [],
                 slots: ['conversation.input.model.catalog'],
@@ -2591,7 +2593,7 @@ describe('web session selection', () => {
                 binding: {
                   owner: 'web:cloud-fixture',
                   packageId: 'cloud-fixture',
-                  integrity: `sha256-${'a'.repeat(64)}`,
+                  integrity: 'r1',
                   profileId: 'cloud-fixture',
                   activationId: 'r1',
                   lifetime: 'profile',
