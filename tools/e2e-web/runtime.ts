@@ -16,8 +16,6 @@ import {
   wsTransport,
 } from '@agnes/sdk'
 
-const requestedEntry = process.env.AGH_WEB_TEST_ENTRY
-const entry = resolve(requestedEntry ?? 'packages/cli/dist/local/agnes.mjs')
 const loopback = '127.0.0.1'
 const workbenchWebSocket = /data-ws="([^"]+)"/u
 
@@ -50,6 +48,7 @@ export async function isolatedRuntime(
   launcher: 'root' | 'installed' = 'root',
   options: {
     localExamples?: boolean
+    startEntry?: string
     realModel?: boolean
     browserArchive?: string
     /** Extra variables for the runtime and its CLI, beyond the fixed minimum. */
@@ -124,6 +123,8 @@ export async function isolatedRuntime(
       installer.cancel()
     }
   }
+  let requestedEntry = options.startEntry ?? process.env.AGH_WEB_TEST_ENTRY
+  let entry = resolve(requestedEntry ?? 'packages/cli/dist/local/agnes.mjs')
   let web: ChildProcess | undefined
   const starts: { start: number; ready: number }[] = []
   let log = ''
@@ -346,8 +347,12 @@ export async function isolatedRuntime(
       }
       return client
     },
-    restart: async () => {
+    restart: async (nextEntry?: string) => {
       await stop()
+      if (nextEntry) {
+        requestedEntry = nextEntry
+        entry = resolve(nextEntry)
+      }
       const stopped = new Date().toISOString()
       await start()
       // The page is served before the daemon has booted its Host; a page opened then waits for that

@@ -16,6 +16,7 @@ export function packageReadOperation<T>(method: PackageAdminMethodName, call: ()
     '_agnes/v1/applications.preview',
     '_agnes/v1/packages.list',
     '_agnes/v1/clientModules.list',
+    '_agnes/v1/clientModules.uiEntries',
     '_agnes/v1/clientModules.read',
     '_agnes/v1/clientModules.frontendPublication',
     '_agnes/v1/skins.list',

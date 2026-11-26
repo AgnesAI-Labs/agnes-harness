@@ -58,10 +58,36 @@ export function contained(root: string, candidate: string): boolean {
  * verification refusal clears this store (`forgetDirectoryDigests`). A cache hit still walks the
  * tree and refuses links and special entries, but skips the per-file real-path containment check.
  */
-type KnownTree = Readonly<{ dev: number; ino: number; signature: string; digest: string }>
+type KnownTree = Readonly<{ dev: number; ino: number; signature: string; digest: string; manifest?: Buffer }>
 const knownTrees = new Map<string, KnownTree>()
 const KNOWN_TREE_LIMIT = 512
 const RECENT_WRITE_MS = 2_000
+// The tree digest fixes the manifest leaf regardless of the tree's path.
+const manifestDigests = new Map<string, Buffer>()
+
+function rememberManifest(digest: string, manifest: Buffer | undefined): string {
+  if (manifest && !manifestDigests.has(digest)) {
+    const oldest = manifestDigests.keys().next().value
+    if (manifestDigests.size >= KNOWN_TREE_LIMIT && oldest !== undefined) manifestDigests.delete(oldest)
+    manifestDigests.set(digest, manifest)
+  }
+  return digest
+}
+
+/** Compare the inspected manifest to the exact leaf observed when the verifier hashed this tree. */
+export function isVerifiedPackageManifest(
+  directory: string,
+  treeIntegrity: string,
+  manifest: Buffer,
+): boolean {
+  let observed = manifestDigests.get(treeIntegrity)
+  if (!observed) {
+    // A runtime read can reuse a settled tree digest after its leaf proof has been evicted.
+    if (hashDirectory(directory, { exclude: [] }) !== treeIntegrity) return false
+    observed = manifestDigests.get(treeIntegrity)
+  }
+  return observed?.equals(leafHash('package.json').update(manifest).digest()) === true
+}
 
 export function forgetDirectoryDigests(): void {
   knownTrees.clear()
@@ -96,7 +122,7 @@ function knownDigest(key: string, root: Readonly<{ dev: number; ino: number }>, 
   if (freshDigests.getStore()) return undefined
   const known = knownTrees.get(key)
   return known && known.dev === root.dev && known.ino === root.ino && known.signature === signature
-    ? known.digest
+    ? rememberManifest(known.digest, known.manifest)
     : undefined
 }
 
@@ -107,12 +133,13 @@ function rememberDigest(
   digest: string,
   started: number,
   mtimes: Iterable<number>,
+  manifest: Buffer | undefined,
 ): void {
   for (const mtime of mtimes) if (mtime > started - RECENT_WRITE_MS) return
   knownTrees.delete(key)
   const oldest = knownTrees.keys().next().value
   if (knownTrees.size >= KNOWN_TREE_LIMIT && oldest !== undefined) knownTrees.delete(oldest)
-  knownTrees.set(key, { dev: root.dev, ino: root.ino, signature, digest })
+  knownTrees.set(key, { dev: root.dev, ino: root.ino, signature, digest, ...(manifest ? { manifest } : {}) })
 }
 
 export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: AbortSignal } = {}): string {
@@ -162,6 +189,7 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
   // Unlike the async walk this read does not refuse a file that changes under it; it only declines
   // to store a digest that may mix two versions of a file.
   let unchanged = true
+  let manifest: Buffer | undefined
   for (const { rel, file, stat } of files) {
     checkCancelled(opts.signal)
     let actual: string
@@ -171,7 +199,8 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
       throw sourceError('package file changed while hashing', 'tree-changed')
     }
     if (!contained(root, actual)) throw sourceError('package file escapes its source tree', 'path-escape')
-    const inner = createHash('sha256').update(rel).update('\0').update(readFileSync(file)).digest()
+    const inner = leafHash(rel).update(readFileSync(file)).digest()
+    if (rel === 'package.json') manifest = inner
     outer.update(inner)
     const after = lstatSync(file)
     if (!sameFileObservation(after, stat)) unchanged = false
@@ -185,8 +214,9 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
       digest,
       started,
       files.map(({ stat }) => stat.mtimeMs),
+      manifest,
     )
-  return digest
+  return rememberManifest(digest, manifest)
 }
 
 type DigestOptions = {
@@ -446,7 +476,12 @@ async function hashDirectoryOnce(
     throw sourceError('package directory changed while hashing', 'tree-changed')
   checkCancelled(opts.signal)
   const outer = createHash('sha256')
-  for (const digest of digests) outer.update(digest)
+  let manifest: Buffer | undefined
+  let index = 0
+  for (const digest of digests) {
+    outer.update(digest)
+    if (files[index++]?.rel === 'package.json') manifest = digest
+  }
   const digest = `sha256-${outer.digest('hex')}`
   if (cache)
     rememberDigest(
@@ -456,8 +491,9 @@ async function hashDirectoryOnce(
       digest,
       started,
       files.map(({ observed }) => observed.mtimeMs),
+      manifest,
     )
-  return digest
+  return rememberManifest(digest, manifest)
 }
 
 async function verifyDirectory(directory: string, observed: Stats | undefined): Promise<void> {

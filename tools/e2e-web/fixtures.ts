@@ -46,9 +46,9 @@ export const root = base.extend<{
           if (args[0] === 'daemon' && args[1] === 'stop') info.setTimeout(Math.max(info.timeout, 120_000))
           return runtime.cli(args)
         },
-        restart: async () => {
+        restart: async (entry) => {
           info.setTimeout(Math.max(info.timeout, 120_000))
-          await runtime.restart()
+          await runtime.restart(entry)
         },
       })
     } finally {

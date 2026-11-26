@@ -4,7 +4,6 @@ import {
   homeNavigation,
   type LocaleService,
   resolveHomeEntry,
-  type UiExtensionContext,
   withoutOwnerOnly,
 } from '@agnes/web-client'
 import {
@@ -21,6 +20,8 @@ import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { backendFrame } from '../backends/frame-context.js'
 import { isDraftRoute, skillsWorkspaceId } from '../backends/local-route.js'
 import { localLocationUrl } from '../backends/local-workbench-bus.js'
+import { pluginUiEntries } from '../declarative-ui/entries.js'
+import { PluginUiContent, returnPluginUiFocus } from '../declarative-ui/presentation.js'
 import { ChannelDialogHost } from './channel-dialog.js'
 import { isBuiltinHomeEntry } from './entries.js'
 import { useWorkLaunchQuiet, workLaunch } from './work-launch.js'
@@ -101,26 +102,53 @@ export function HomePageHost({
 }) {
   useSyncExternalStore(homeEntries.subscribe, homeEntries.getSnapshot)
   const requested = useSyncExternalStore(homeNavigation.subscribe, homeNavigation.getSnapshot)
+  const { sidebar } = useSyncExternalStore(pluginUiEntries.subscribe, pluginUiEntries.getSnapshot)
+  const priorSidebar = useRef(sidebar)
+  useEffect(() => {
+    const closed = priorSidebar.current
+    priorSidebar.current = sidebar
+    if (
+      closed &&
+      !sidebar &&
+      !pluginUiEntries.isCurrent(closed.entry) &&
+      document.activeElement === document.body
+    )
+      returnPluginUiFocus(closed.trigger, document.getElementById('sidebar-toggle'))
+  }, [sidebar])
   const entry = requestedHomeEntry()
   // A synchronous unload/reload can be batched into one render. A new registration owns a new
   // component lifetime even when it reuses the same ID and component function.
   const mounted = useRef({ entry, version: 0 })
   if (mounted.current.entry !== entry) mounted.current = { entry, version: mounted.current.version + 1 }
   const quiet = useWorkLaunchQuiet()
-  const active = quiet ? undefined : entry?.id
+  const active = sidebar ? 'declarative:sidebar' : quiet ? undefined : entry?.id
   useEffect(() => onActive(active), [active, onActive])
-  if (!entry) return null
-  const Page = entry.component
-  const context: UiExtensionContext = {
-    t: (key, vars) => locale.t(key, vars),
-    data: isBuiltinHomeEntry(entry) ? data : pluginPageData(data),
-    ...(requested?.selection === undefined ? {} : { selection: requested.selection }),
-  }
+  const Page = entry?.component
   return (
     <UiLocaleProvider source={source}>
-      <RegionErrorBoundary key={`${entry.id}:${mounted.current.version}`} region={`home-page-${entry.id}`}>
-        <Page context={context} />
-      </RegionErrorBoundary>
+      {entry && Page && (
+        <RegionErrorBoundary key={`${entry.id}:${mounted.current.version}`} region={`home-page-${entry.id}`}>
+          <Page
+            context={{
+              t: (key, vars) => locale.t(key, vars),
+              data: isBuiltinHomeEntry(entry) ? data : pluginPageData(data),
+              ...(requested?.selection === undefined ? {} : { selection: requested.selection }),
+            }}
+          />
+        </RegionErrorBoundary>
+      )}
+      {sidebar && (
+        <article className="home-page declarative-ui-sidebar-page">
+          <PluginUiContent
+            key={sidebar.entry.key}
+            entry={sidebar.entry}
+            onBack={() => {
+              pluginUiEntries.close('sidebar')
+              returnPluginUiFocus(sidebar.trigger, document.getElementById('sidebar-toggle'))
+            }}
+          />
+        </article>
+      )}
     </UiLocaleProvider>
   )
 }
@@ -190,6 +218,7 @@ export function bindHomeRouting(): () => void {
   const readLocation = () => {
     const params = new URLSearchParams(location.search)
     if (!backendFrame() && params.has('remote')) return
+    pluginUiEntries.close('sidebar')
     const page = params.get('page')
     restoring = true
     try {
@@ -215,6 +244,7 @@ export function bindHomeRouting(): () => void {
     const requested = homeNavigation.getSnapshot()
     // App defaults are transient presentation, not explicit URL/user choices.
     if ((requested?.selection as { applicationDefault?: string } | undefined)?.applicationDefault) return
+    pluginUiEntries.close('sidebar')
     const url = localLocationUrl()
     const before = url.href
     const scopedSkills = skillsWorkspaceId(url.searchParams)

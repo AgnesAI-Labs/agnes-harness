@@ -63,6 +63,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/skins.select': 'admin',
   '_agnes/v1/clientModules.list': 'admin',
   '_agnes/v1/clientModules.read': 'admin',
+  '_agnes/v1/clientModules.uiEntries': 'admin',
   '_agnes/v1/clientModules.frontendPublication': 'admin',
   '_agnes/v1/clientModules.callService': 'admin',
   '_agnes/v1/clientModules.callEffect': 'admin',

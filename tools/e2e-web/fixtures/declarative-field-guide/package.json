@@ -1,0 +1,64 @@
+{
+  "name": "@agnes-e2e/declarative-field-guide",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "private": true,
+  "exports": "./index.mjs",
+  "agnes": {
+    "metadata": {
+      "displayName": "Field guide",
+      "summary": "Offline guides for workspace handoffs.",
+      "description": "Read handoff guides in settings, the sidebar and the workbench."
+    },
+    "plugins": [
+      {
+        "export": "guide",
+        "id": "ext:e2e/field-guide",
+        "apiRange": "^5.0.0",
+        "uiEntries": [
+          {
+            "id": "overview",
+            "placement": "settings",
+            "title": {
+              "en": "Field guide settings"
+            },
+            "markdown": {
+              "en": "## Handoff checklist\n\nRead the **field notes** before signing off.\n\n[Printable map](https://declarative-entry.invalid/print)\n\n![Route diagram](https://declarative-entry.invalid/map.png)"
+            }
+          },
+          {
+            "id": "start",
+            "placement": "sidebar",
+            "title": {
+              "en": "Field guide start"
+            },
+            "markdown": {
+              "en": "Start with the site inventory."
+            }
+          },
+          {
+            "id": "reference",
+            "placement": "workbench.right",
+            "title": {
+              "en": "Field guide reference"
+            },
+            "markdown": {
+              "en": "Compare the map with the field notes."
+            }
+          },
+          {
+            "id": "checklist",
+            "placement": "workbench.bottom",
+            "title": {
+              "en": "Field guide pre-departure checklist for overnight workspace handoffs"
+            },
+            "markdown": {
+              "en": "Confirm that the next shift has a copy."
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

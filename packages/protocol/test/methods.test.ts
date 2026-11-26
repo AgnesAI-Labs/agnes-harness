@@ -223,6 +223,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/clientModules.frontendPublication',
         '_agnes/v1/clientModules.list',
         '_agnes/v1/clientModules.read',
+        '_agnes/v1/clientModules.uiEntries',
         '_agnes/v1/computerUse.doctor',
         '_agnes/v1/doctor.run',
         '_agnes/v1/computerUse.operation.cancel',

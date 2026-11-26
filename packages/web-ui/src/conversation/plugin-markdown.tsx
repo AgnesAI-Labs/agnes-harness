@@ -26,6 +26,15 @@ const config: NonNullable<XMarkdownProps['config']> = {
   },
 }
 
+const inertConfig: NonNullable<XMarkdownProps['config']> = {
+  renderer: {
+    ...config.renderer,
+    link(token) {
+      return token.raw.startsWith('[') ? this.parser.parseInline(token.tokens) : escapeMarkdownHtml(token.raw)
+    },
+  },
+}
+
 const dompurifyConfig = {
   ALLOWED_TAGS: [
     'blockquote',
@@ -58,6 +67,8 @@ const dompurifyConfig = {
   ALLOW_DATA_ATTR: false,
 }
 
+const inertDompurifyConfig = { ...dompurifyConfig, ALLOWED_ATTR: ['align', 'scope', 'start'] }
+
 const components: NonNullable<XMarkdownProps['components']> = {
   span: function DocsLink({ children, 'data-docs-destination': destination }: ComponentProps) {
     if (typeof destination !== 'string') return <>{children}</>
@@ -76,15 +87,23 @@ const components: NonNullable<XMarkdownProps['components']> = {
 }
 
 /** Installed package Markdown is static data. A link has no browser destination until activated. */
-export function StaticPluginMarkdown({ source, locale }: { source: string; locale: UiLocale }) {
+export function StaticPluginMarkdown({
+  source,
+  locale,
+  inertLinks = false,
+}: {
+  source: string
+  locale: UiLocale
+  inertLinks?: boolean
+}) {
   return (
     <div lang={locale} data-testid="plugin-docs-markdown">
       <XMarkdown
         content={source}
         rootClassName="plugin-docs-markdown"
-        config={config}
-        components={components}
-        dompurifyConfig={dompurifyConfig}
+        config={inertLinks ? inertConfig : config}
+        {...(inertLinks ? {} : { components })}
+        dompurifyConfig={inertLinks ? inertDompurifyConfig : dompurifyConfig}
         escapeRawHtml
       />
     </div>

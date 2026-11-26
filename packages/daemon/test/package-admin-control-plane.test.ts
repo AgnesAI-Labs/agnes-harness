@@ -1619,12 +1619,20 @@ it('gives localWeb only browser rosters, enrolls client-module notices, and bind
     localWeb.conn.initialized = true
     localWeb.conn.authKind = 'local'
     localWeb.conn.credentialKind = 'local'
-    // The workbench needs the roster to render its skin picker, and the loopback Web credential is
-    // the only one it has. It is granted that single read (design §23.3) ...
+    // These reads are the exact loopback Web grant, not general package administration.
     expect(
       await localWeb.handle({ jsonrpc: '2.0', id: 1, method: '_agnes/v1/skins.list', params: { profile } }),
     ).toMatchObject({ result: { skins: [] } })
     expect(localWeb.conn.clientModuleNotices).toBe(false)
+    expect(
+      await localWeb.handle({
+        jsonrpc: '2.0',
+        id: 11,
+        method: '_agnes/v1/clientModules.uiEntries',
+        params: { profile },
+      }),
+    ).toMatchObject({ result: { entries: [] } })
+    expect(localWeb.conn.clientModuleNotices).toBe(true)
     expect(
       await localWeb.handle({
         jsonrpc: '2.0',
@@ -1673,6 +1681,24 @@ it('gives localWeb only browser rosters, enrolls client-module notices, and bind
       }),
     ).toMatchObject({ error: { data: { code: 'CAPABILITY_DENIED' } } })
     await localWeb.close()
+
+    const remote = host.endpoint({
+      auth: { config: { transport: 'ws' }, nonces: { consume: () => true }, clock: () => 0 },
+      packageAdmin: { service: admin },
+    })
+    remote.conn.initialized = true
+    remote.conn.authKind = 'jwt'
+    remote.conn.credentialKind = 'jwt'
+    expect(
+      await remote.handle({
+        jsonrpc: '2.0',
+        id: 12,
+        method: '_agnes/v1/clientModules.uiEntries',
+        params: { profile },
+      }),
+    ).toMatchObject({ error: { data: { code: 'CAPABILITY_DENIED' } } })
+    expect(remote.conn.clientModuleNotices).toBe(false)
+    await remote.close()
 
     const unix = host.endpoint({ packageAdmin: { service: admin } })
     const initialized = await unix.handle({

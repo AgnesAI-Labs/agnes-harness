@@ -3800,6 +3800,97 @@
       },
       "required": ["profile"]
     },
+    "PluginUiEntryDeclaration": {
+      "description": "Host-rendered static content declared by an ordinary plugin row. It does not grant runtime or native UI authority.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "placement", "title"],
+      "not": {
+        "type": "object",
+        "properties": {
+          "markdown": { "not": { "type": "object" } },
+          "configure": { "not": { "const": true } }
+        }
+      },
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9.-]{0,63}(?![\\s\\S])" },
+        "placement": { "enum": ["settings", "sidebar", "workbench.right", "workbench.bottom"] },
+        "title": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["en"],
+          "properties": {
+            "en": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "zh-CN": { "type": "string", "minLength": 1, "maxLength": 80 }
+          }
+        },
+        "icon": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}(?![\\s\\S])" },
+        "markdown": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["en"],
+          "properties": {
+            "en": { "type": "string", "maxLength": 2048 },
+            "zh-CN": { "type": "string", "maxLength": 2048 }
+          }
+        },
+        "configure": { "const": true }
+      }
+    },
+    "PluginUiEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "placement", "title", "packageId", "rowId", "integrity"],
+      "not": {
+        "type": "object",
+        "properties": {
+          "markdown": { "not": { "type": "object" } },
+          "configure": { "not": { "const": true } }
+        }
+      },
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9.-]{0,63}(?![\\s\\S])" },
+        "placement": { "enum": ["settings", "sidebar", "workbench.right", "workbench.bottom"] },
+        "title": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["en"],
+          "properties": {
+            "en": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "zh-CN": { "type": "string", "minLength": 1, "maxLength": 80 }
+          }
+        },
+        "icon": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}(?![\\s\\S])" },
+        "markdown": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["en"],
+          "properties": {
+            "en": { "type": "string", "maxLength": 2048 },
+            "zh-CN": { "type": "string", "maxLength": 2048 }
+          }
+        },
+        "configure": { "const": true },
+        "packageId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "rowId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "integrity": {
+          "type": "string",
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)(?![\\s\\S])"
+        }
+      }
+    },
+    "PluginUiEntriesResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entries"],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/PluginUiEntry" }
+        }
+      }
+    },
     "ClientModuleReadParams": {
       "description": "One same-origin client-module route path to read bytes for. The path is a URL path, never a filesystem path.",
       "type": "object",

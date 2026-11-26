@@ -84,6 +84,8 @@ import { bindJobsClient } from './client-modules/jobs.js'
 import { clientSessionServices } from './client-modules/session-services.js'
 import { readWebComposerMemory, rememberWebComposer, selectionFromMemory } from './composer-memory.js'
 import { composerReferences, composerSkills } from './composer-references.js'
+import { bindPluginUiConfiguration } from './declarative-ui/configuration.js'
+import { PLUGIN_UI_ENTRIES_METHOD, pluginUiEntries } from './declarative-ui/entries.js'
 import { createDiagnosticsDialog } from './diagnostics-dialog.js'
 import {
   type LoopSelection,
@@ -99,6 +101,7 @@ import { businessAgentSuggestions } from './pages/business-agents.js'
 import { callChannel } from './pages/channel-api.js'
 import { registerBuiltinHomeEntries } from './pages/entries.js'
 import { activeHomeEntry, bindHomeRouting, mountHomePages, watchActiveHomeEntry } from './pages/host.js'
+import { openPlugins } from './pages/plugins/route.js'
 import { createReconnectController, type ReconnectPhase } from './reconnect.js'
 import { coalesceBurst, createRefreshCoordinator } from './refresh-coordinator.js'
 import { SESSION_SEARCH_EVENT } from './regions/session-tools.js'
@@ -721,6 +724,16 @@ function renderReconnect(phase: ReconnectPhase): void {
   if (phase !== 'idle') setConnection(phase === 'stalled' ? 'closed' : 'reconnecting')
 }
 let profileName = ''
+let uiProfile = ''
+let uiConnectionEpoch = 0
+const refreshPluginUiEntries = () =>
+  pluginUiEntries.refresh((profile) => client.call(PLUGIN_UI_ENTRIES_METHOD, { profile }))
+function observePluginUiProfile(profile: string, ticket: number): void {
+  if (!connected || ticket !== uiConnectionEpoch || profile === uiProfile) return
+  uiProfile = profile
+  pluginUiEntries.setScope(true, profile)
+  void refreshPluginUiEntries()
+}
 let skinConnectionChanged: ((connected: boolean) => void) | undefined
 let moduleSessionId: string | undefined
 const clientRoster = createBrowserClientRoster(client, () => ({
@@ -789,6 +802,7 @@ const clientModules = await startClientModules({
       },
       openSession: (id) =>
         run(async () => {
+          pluginUiEntries.close('sidebar')
           homeNavigation.close()
           // The session already showing behind a page needs no second open.
           if (id !== sessionBinding.session?.id || draftingNew) await open(id)
@@ -1233,7 +1247,7 @@ function updateSidebar(): void {
     labels: sessionLabels,
     locale: clientModules.locale.getSnapshot(),
     // While a home page shows, the page's entry is the selected item, not the session behind it.
-    ...(activeHomeEntry()
+    ...(activeHomeEntry() || pluginUiEntries.getSnapshot().sidebar
       ? {}
       : sessionBinding.session
         ? { currentId: sessionBinding.session.id }
@@ -1246,7 +1260,17 @@ function updateSidebar(): void {
 }
 
 // Opening or leaving a home page, or losing its entry, moves the sidebar's selection.
-const stopHomeSelection = [watchActiveHomeEntry(updateSidebar), homeEntries.subscribe(updateSidebar)]
+let shownSidebarExtension = pluginUiEntries.getSnapshot().sidebar
+const stopHomeSelection = [
+  watchActiveHomeEntry(updateSidebar),
+  homeEntries.subscribe(updateSidebar),
+  pluginUiEntries.subscribe(() => {
+    const next = pluginUiEntries.getSnapshot().sidebar
+    if (next === shownSidebarExtension) return
+    shownSidebarExtension = next
+    updateSidebar()
+  }),
+]
 
 const SESSION_WATCH_STOP_TIMEOUT_MS: number = 3000
 function stopWithTimeout(stop: (() => Promise<void>) | undefined): Promise<boolean> {
@@ -1262,10 +1286,16 @@ const settings = createSettingsController({
       history.pushState(null, '', address.href([settingsRegion.form()?.dataset.settingsSection ?? 'model']))
   },
   onClose: () => {
+    pluginUiEntries.close('settings')
     if (isDeferredCloudSettings()) return
     startupSettingsDismissed = true
     clearSettingsLink()
   },
+})
+const stopPluginUiConfiguration = bindPluginUiConfiguration(() => {
+  if (settings.isOpen()) settings.close()
+  pluginUiEntries.close('sidebar')
+  openPlugins('plugins')
 })
 const restoreSettingsLocation = () => {
   if (isDeferredCloudSettings()) return
@@ -1418,6 +1448,7 @@ const sessionSearch = mountSessionSearch({
   titleOf: (id) => sessionRows.find((row) => row.sessionId === id)?.title || sessionLabels.get(id),
   open: (id) =>
     run(async () => {
+      pluginUiEntries.close('sidebar')
       homeNavigation.close()
       // A live session opened from search has to be visible in the list behind it.
       const row = sessionRows.find((item) => item.sessionId === id)
@@ -1558,6 +1589,11 @@ function clearSessionRecovery(nextSessionId?: string): void {
 }
 function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'closed'): void {
   connected = value === 'connected'
+  if (!connected) {
+    uiConnectionEpoch++
+    uiProfile = ''
+    pluginUiEntries.setScope(false, '')
+  }
   skinConnectionChanged?.(connected)
   if (clientRoster.setOnline(connected) && !connected) scheduleClientRosterRead()
   const currentSessionId = clientModules.session.sessionId
@@ -1677,9 +1713,11 @@ function open(
     initialModel?: KnownSessionModel
   } = {},
 ): Promise<void> {
+  pluginUiEntries.close('sidebar')
   return sessionController.open(id, options)
 }
 function forkSidebar(id: string, title: string): Promise<void> {
+  pluginUiEntries.close('sidebar')
   homeNavigation.close()
   return sessionController.forkSidebar(id, title)
 }
@@ -1710,6 +1748,7 @@ async function beginNewDraft(
   supersedeSessionLoad = false,
 ): Promise<void> {
   if (submissions.sending || (sessionPending && !(supersedeSessionLoad && sessionBinding.targetId))) return
+  pluginUiEntries.close('sidebar')
   // A new draft the current filter would hide reads as a lost session: show the live list first.
   if (sessionInventory.getSnapshot().mode === 'archived') sessionInventory.setMode('active')
   sessionInventory.invalidate()
@@ -2171,6 +2210,7 @@ const packageNotices = coalesceBurst(() => {
   broadcast('agnes:plugins-invalidated')
   void modelRefresh.request().catch(showError)
 }, 100)
+const uiPackageNotices = coalesceBurst(() => void refreshPluginUiEntries(), 100)
 // Roster invalidation push: packages_changed is only a hint; reread the roster on receipt.
 client.on('notice', (payload) => {
   const incoming = payload as { kind?: unknown; detail?: unknown }
@@ -2187,8 +2227,17 @@ client.on('notice', (payload) => {
   if (incoming.kind !== 'packages_changed' && incoming.kind !== 'tree_changed') return
   const detail =
     typeof incoming.detail === 'object' && incoming.detail !== null
-      ? (incoming.detail as { profile?: unknown })
+      ? (incoming.detail as { profile?: unknown; packageId?: unknown; reason?: unknown })
       : undefined
+  if (
+    incoming.kind === 'packages_changed' &&
+    detail?.reason !== 'resources' &&
+    uiProfile &&
+    detail?.profile === uiProfile
+  ) {
+    pluginUiEntries.packageChanged(typeof detail.packageId === 'string' ? detail.packageId : undefined)
+    uiPackageNotices.request()
+  }
   if (profileName && detail?.profile === profileName) {
     clientModules.reconciler.retirePending()
     skinGroup.invalidate()
@@ -2224,7 +2273,9 @@ onHistoryNavigation(() => {
   })
 })
 async function refreshModelConfiguration(): Promise<void> {
+  const uiTicket = uiConnectionEpoch
   const snapshot = await client.config.get()
+  observePluginUiProfile(snapshot.profile, uiTicket)
   accountProvider = snapshot.provider
   configuredAccounts = snapshot.accounts
   const catalogReady = refreshSessionCatalog()
@@ -2281,6 +2332,9 @@ onPageHide(() => {
   unmountAppShell()
   modelRefresh.stop()
   packageNotices.stop()
+  uiPackageNotices.stop()
+  stopPluginUiConfiguration()
+  pluginUiEntries.setScope(false, '')
   stopSessionConfiguration()
   reconnect.cancel()
   titleRefresh.close()
@@ -2302,9 +2356,11 @@ const startup = backendFrameStartup(async () => {
   setConnection('connected')
   reconnect.reset()
   void workspaceController.refreshPicker()
+  const uiTicket = uiConnectionEpoch
   const snapshot = await client.config.get()
   accountProvider = snapshot.provider
   profileName = snapshot.profile
+  observePluginUiProfile(snapshot.profile, uiTicket)
   void skinGroup.refresh()
   // A session selection reads its own roster. Defer the profile-only read until we know there
   // is no session to open, so startup never verifies and imports the same modules twice.

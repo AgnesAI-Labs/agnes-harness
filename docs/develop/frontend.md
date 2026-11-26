@@ -11,6 +11,31 @@ Use the [client-panel/v1](../../examples/packages/client-panel/v1/package.json) 
 
 The official workbench loads native JavaScript and CSS only from verified clients shipped with the current AGH release or an exact client approved through [application adoption or a presentation role](../extend/applications.md). The shipped navigation, conversation and composer, goals, interactions, and deliverables clients do not need separate approval. Installing, trusting, and enabling a third-party plugin does not approve its native UI. Tools, backend services, configuration, and readable session history keep their existing permissions. Intelligent UI renderers run in a separate sandboxed frame.
 
+## Add a host-rendered plugin entry
+
+An installed, trusted and enabled plugin can declare `uiEntries` on one of its `agnes.plugins` rows in `package.json`. Use this for a short feature guide or a link to that row's configuration. The workbench renders both the entry and its content without loading a browser module or stylesheet.
+
+```json
+{
+  "export": "archive",
+  "uiEntries": [
+    {
+      "id": "archive-settings",
+      "placement": "settings",
+      "title": { "en": "Session archive", "zh-CN": "会话归档" },
+      "markdown": { "en": "Choose **Configure** to set archive options." },
+      "configure": true
+    }
+  ]
+}
+```
+
+This excerpt shows only the fields relevant to the entry. Use `settings` for Settings → Extensions, `sidebar` for the sidebar's extension menu, or `workbench.right` or `workbench.bottom` for the corresponding workbench dock. The host decides order and overflow. You can omit `icon` or use a shared icon name. Supply `title.en`; other locales fall back to English if no translation is provided. Provide at least one of `markdown` and `configure: true`. Entry Markdown shows link labels and image alt text but cannot open links or load images. Configure opens only the declaring row and follows normal configuration permissions.
+
+You can declare up to eight entries per row and 32 per package. IDs must be unique per row, start with a lowercase letter, and contain at most 64 lowercase letters, digits, periods or hyphens. Each localized title is limited to 80 characters and each localized Markdown string to 2,048. Old packages need no changes. Existing native entry points do not migrate automatically or receive new approval. For live session content and actions, use [Intelligent UI](intelligent-ui-web.md).
+
+Use a managed installed package to try declaration entries. Editable `workspace:` and `local:` packages keep their existing behavior, but do not publish these entries.
+
 <a id="声明和代码"></a>
 
 ## Declaration and code

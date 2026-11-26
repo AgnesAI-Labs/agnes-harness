@@ -2122,6 +2122,9 @@ describe('client module immutable snapshots', () => {
     await expect(
       service.call('_agnes/v1/clientModules.list', { profile: 'local-dev' }, authority),
     ).rejects.toMatchObject({ data: { reason: 'E_PACKAGE_INTEGRITY' } })
+    await expect(
+      service.call('_agnes/v1/clientModules.uiEntries', { profile: 'local-dev' }, authority),
+    ).rejects.toMatchObject({ data: { reason: 'E_PACKAGE_INTEGRITY' } })
     // callService/callEffect rebuild the identical roster via clientModules.list(...) before
     // dispatching into extension backend code, so they must refuse the same way -- before ever
     // reaching the backend dispatch.

@@ -22,6 +22,8 @@ import {
 } from '@agnes/web-units/shell'
 import { flushSync } from 'react-dom'
 import { requestDiagnosticBackend, requestLocalManagement } from '../backends/frame-context.js'
+import { pluginUiEntries } from '../declarative-ui/entries.js'
+import { PluginUiSettingsNavigation, PluginUiSettingsPage } from '../declarative-ui/settings.js'
 import {
   type EmptyStateRegionMount,
   SETTINGS_DSH_GLOBAL_SLOT_NAMES,
@@ -68,8 +70,12 @@ export function mountSettingsPaneRegion(
   const sectionPages = <SettingsPages {...(locale ? { hostText: (key, vars) => locale.t(key, vars) } : {})} />
   const shellOptions = {
     ...options,
-    beforeNavigate: (section: string) =>
-      requestDiagnosticBackend(section) || requestLocalManagement({ kind: 'settings', section }),
+    beforeNavigate: (section: string) => {
+      pluginUiEntries.close('settings')
+      return requestDiagnosticBackend(section) || requestLocalManagement({ kind: 'settings', section })
+    },
+    extensionNavigation: <PluginUiSettingsNavigation />,
+    extensionPage: <PluginUiSettingsPage />,
     sectionPages,
     ...(locale ? { translate: (key: string) => locale.t(key) } : {}),
   }
@@ -151,12 +157,14 @@ export function mountSettingsPaneRegion(
   let disposed = false
   return {
     open(pane: SettingsPane) {
+      pluginUiEntries.close('settings')
       handle.current?.open(pane)
     },
     active() {
       return handle.current?.active() ?? 'model'
     },
     route(section: string) {
+      pluginUiEntries.close('settings')
       // The settings shell listens for route requests on its own form.
       handle.current?.form()?.dispatchEvent(settingsRegionRoute(section))
     },

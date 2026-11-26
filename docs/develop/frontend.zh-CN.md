@@ -9,6 +9,31 @@
 
 官方工作台只会载入两类原生 JavaScript 和 CSS：当前 AGH 版本随包发布并验证过的客户端，以及通过[应用采用或呈现角色选择](../extend/applications.zh-CN.md)单独批准的确切客户端。随包发布的导航、对话及输入框、目标、交互和交付物客户端无需另行批准。安装、信任并启用第三方插件不会批准其原生界面。工具、后端服务、配置和可读的会话历史仍遵循各自原有的权限。Intelligent UI 渲染器继续在隔离的 iframe 中运行。
 
+## 声明由宿主渲染的插件入口
+
+已安装、受信任且启用的插件可以在 `package.json` 的 `agnes.plugins` 条目上声明 `uiEntries`。用它展示简短的功能说明，或打开该条目的配置。AGH 渲染入口和内容，不加载插件的浏览器模块或样式表。
+
+```json
+{
+  "export": "archive",
+  "uiEntries": [
+    {
+      "id": "archive-settings",
+      "placement": "settings",
+      "title": { "en": "Session archive", "zh-CN": "会话归档" },
+      "markdown": { "en": "Choose **Configure** to set archive options." },
+      "configure": true
+    }
+  ]
+}
+```
+
+示例只列出与入口相关的字段。`settings` 对应「设置 → 扩展」；`sidebar` 对应左侧扩展菜单；`workbench.right` 和 `workbench.bottom` 分别对应工作台右侧和底部停靠区。由宿主决定排序和折叠。`icon` 可以省略，或使用共享图标名。提供 `title.en`；其他语言没有译文时使用英文。至少提供 `markdown` 或 `configure: true`。入口 Markdown 显示链接标签和图片替代文本，不打开链接或加载图片。「配置」只打开声明所在的插件条目，仍遵循原有配置权限。
+
+每条插件声明最多包含 8 个入口，每包最多 32 个。入口 ID 在同一插件条目内唯一，以小写字母开头，最多 64 字符，只接受小写字母、数字、点和短横线。每种语言的标题最多 80 字符，Markdown 最多 2,048 字符。旧插件不必修改，其原生入口不会自动迁移或获准执行。要展示实时会话内容或提供会话操作，请使用 [Intelligent UI](intelligent-ui-web.zh-CN.md)。
+
+调试声明式入口时，请先把插件装成受管包。可编辑的 `workspace:` 和 `local:` 插件保持原有行为，不发布这类入口。
+
 ## 声明和代码
 
 该包用 `agnes.plugins` 声明后端 Cordis 行，再用 `agnes.clientDescriptors` 将浏览器描述文件绑定到同一个 row ID。浏览器描述文件中的 `client` 部分为：
