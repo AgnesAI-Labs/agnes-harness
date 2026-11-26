@@ -63,10 +63,16 @@ const objectInput = (input: JsonValue): Record<string, JsonValue> => {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('object input required')
   return input
 }
+function clipUtf16(value: string, max: number): string {
+  if (max <= 0) return ''
+  if (value.length <= max) return value
+  const last = value.charCodeAt(max - 1)
+  return value.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 1 : max)
+}
 // Registry views also carry cleanup receipts and legacy shell selectors. Only this allowlist
 // crosses the service boundary, so internal additions cannot invalidate strict RPC results.
 function publicJob(job: ShellJobView, includeOutput = false): SessionJob {
-  const childLabel = job.childLabel ? job.childLabel.slice(0, 256) : undefined
+  const childLabel = job.childLabel ? clipUtf16(job.childLabel, 256) : undefined
   return {
     id: job.id,
     owner: job.owner,

@@ -104,11 +104,21 @@ it('refuses grandchild and ambiguous child kills without touching cancel, isolat
     direct: false,
     readOnly: true,
   }))
-  const directRows = [
+  const directRows: Array<{
+    id: string
+    providerId: string
+    status: import('@agnes/extension-api').ChildAgentStatus
+    continuable: boolean
+    label: string
+    ownerSessionId: string
+    direct: boolean
+    readOnly: boolean
+    ambiguous?: boolean
+  }> = [
     {
       id: 'direct-1',
       providerId: 'in-process',
-      status: 'waiting_approval' as const,
+      status: 'waiting_approval',
       continuable: true,
       label: 'Direct approval task',
       ownerSessionId: 'root-session',
@@ -118,7 +128,7 @@ it('refuses grandchild and ambiguous child kills without touching cancel, isolat
     {
       id: 'dup-1',
       providerId: 'in-process',
-      status: 'running' as const,
+      status: 'running',
       continuable: true,
       label: 'Ambiguous child',
       ownerSessionId: 'root-session',
@@ -134,7 +144,10 @@ it('refuses grandchild and ambiguous child kills without touching cancel, isolat
     return found ? { ...found, text: `detail-body:${id}` } : undefined
   })
   const readDirectSpy = vi.fn(async (id: string) => directRows.find((row) => row.id === id))
-  const cancelSpy = vi.fn(async () => {})
+  const cancelSpy = vi.fn(async (id: string) => {
+    const row = directRows.find((entry) => entry.id === id)
+    if (row) row.status = 'cancelled'
+  })
   const childJobs = {
     list: listSpy,
     readDetail: readDetailSpy,
@@ -227,6 +240,292 @@ it('refuses grandchild and ambiguous child kills without touching cancel, isolat
       ownerSessionId: 'root-session',
     })
     expect(listSpy.mock.calls.length).toBe(listsBeforeControl)
+  } finally {
+    await jobs.dispose()
+  }
+})
+
+it('does not finish or publish completion on unconfirmed cancelling stop and preserves race-winning terminal outcomes (P1-C)', async () => {
+  const jobs = new ShellJobs()
+  const [read, control] = createJobsServices(jobs)
+  if (!read || !control) throw new Error('jobs services missing')
+  type Row = {
+    id: string
+    providerId: string
+    status: import('@agnes/extension-api').ChildAgentStatus
+    executionState?: import('@agnes/extension-api').ChildExecutionState
+    continuable: boolean
+    text?: string
+  }
+  const rows = new Map<string, Row>([
+    [
+      'owned',
+      {
+        id: 'owned',
+        providerId: 'in-process',
+        status: 'running',
+        executionState: 'running',
+        continuable: true,
+      },
+    ],
+    [
+      'race-completed',
+      {
+        id: 'race-completed',
+        providerId: 'in-process',
+        status: 'running',
+        executionState: 'running',
+        continuable: true,
+      },
+    ],
+    [
+      'race-failed',
+      {
+        id: 'race-failed',
+        providerId: 'in-process',
+        status: 'running',
+        executionState: 'running',
+        continuable: true,
+      },
+    ],
+  ])
+  const tool = fakeToolContext({ cwd: resolve('/work/proj'), sessionKey: 'root' })
+  const ctx = {
+    ...tool,
+    source: 'test',
+    requestId: 'r',
+    timeoutMs: 1000,
+    childJobs: {
+      list: async () => [...rows.values()],
+      readDirect: async (id: string) => rows.get(id),
+      cancel: async (id: string) => {
+        const cur = rows.get(id)
+        if (!cur) return
+        if (id === 'owned') rows.set(id, { ...cur, status: 'running', executionState: 'cancelling' })
+        else if (id === 'race-completed')
+          rows.set(id, { ...cur, status: 'completed', executionState: 'completed', text: 'finished output' })
+        else if (id === 'race-failed') rows.set(id, { ...cur, status: 'failed', executionState: 'failed' })
+      },
+    },
+  } as unknown as ServiceContext
+  try {
+    // 1. Unconfirmed stop (executionState='cancelling'): remains running/running/null with 0 completions.
+    const receipt = (await control.handler({ operation: 'kill', jobId: 'child:owned' }, ctx)) as Record<
+      string,
+      unknown
+    >
+    expect(validateMethod('_agnes/v1/session.jobs.control', 'result', { output: receipt })).toMatchObject({
+      ok: true,
+    })
+    expect(receipt).toMatchObject({
+      id: 'child:owned',
+      status: 'running',
+      childStatus: 'running',
+      code: null,
+    })
+    const pendingRead = (await read.handler({ jobId: 'child:owned' }, ctx)) as {
+      job: Record<string, unknown>
+      completions: Array<Record<string, unknown>>
+    }
+    expect(validateMethod('_agnes/v1/session.jobs.read', 'result', pendingRead)).toMatchObject({ ok: true })
+    expect(pendingRead.job).toMatchObject({
+      id: 'child:owned',
+      status: 'running',
+      childStatus: 'running',
+      code: null,
+    })
+    expect(pendingRead.completions).toHaveLength(0)
+
+    // Once durable cancellation actually settles, finish once and ignore stale non-terminal refreshes.
+    rows.set('owned', {
+      id: 'owned',
+      providerId: 'in-process',
+      status: 'cancelled',
+      executionState: 'cancelled',
+      continuable: false,
+    })
+    const settled = (await read.handler({ jobId: 'child:owned' }, ctx)) as {
+      job: Record<string, unknown>
+      completions: Array<Record<string, unknown>>
+    }
+    expect(settled.job).toMatchObject({
+      id: 'child:owned',
+      status: 'killed',
+      childStatus: 'cancelled',
+      code: -1,
+    })
+    expect(settled.completions).toHaveLength(1)
+    expect(settled.completions[0]).toMatchObject({
+      id: 'child:owned',
+      status: 'killed',
+      childStatus: 'cancelled',
+      code: -1,
+    })
+    rows.set('owned', {
+      id: 'owned',
+      providerId: 'in-process',
+      status: 'running',
+      executionState: 'running',
+      continuable: false,
+    })
+    const afterStale = (await read.handler({ jobId: 'child:owned' }, ctx)) as {
+      job: Record<string, unknown>
+      completions: Array<Record<string, unknown>>
+    }
+    expect(afterStale.job).toMatchObject({ status: 'killed', childStatus: 'cancelled', code: -1 })
+    expect(afterStale.completions).toHaveLength(1)
+
+    // 2. Race-winning completed and failed outcomes are preserved rather than overwritten as killed/cancelled.
+    const wonCompleted = (await control.handler(
+      { operation: 'kill', jobId: 'child:race-completed' },
+      ctx,
+    )) as Record<string, unknown>
+    expect(wonCompleted).toMatchObject({
+      id: 'child:race-completed',
+      status: 'completed',
+      childStatus: 'completed',
+      code: 0,
+    })
+    const wonFailed = (await control.handler(
+      { operation: 'kill', jobId: 'child:race-failed' },
+      ctx,
+    )) as Record<string, unknown>
+    expect(wonFailed).toMatchObject({
+      id: 'child:race-failed',
+      status: 'failed',
+      childStatus: 'failed',
+      code: -1,
+    })
+    const afterRaces = (await read.handler({}, ctx)) as { completions: Array<Record<string, unknown>> }
+    expect(afterRaces.completions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'child:race-completed',
+          status: 'completed',
+          childStatus: 'completed',
+          code: 0,
+        }),
+        expect.objectContaining({
+          id: 'child:race-failed',
+          status: 'failed',
+          childStatus: 'failed',
+          code: -1,
+        }),
+      ]),
+    )
+  } finally {
+    await jobs.dispose()
+  }
+})
+
+it('removes reclaimed active external children while preserving truncated descendants and terminal history (P2-#26)', async () => {
+  const jobs = new ShellJobs()
+  const [read] = createJobsServices(jobs)
+  if (!read) throw new Error('jobs.read service missing')
+  const tool = fakeToolContext({ cwd: resolve('/work/proj'), sessionKey: 'root' })
+  const activeRow = {
+    id: 'e1',
+    ownerSessionId: 'root',
+    direct: true,
+    providerId: 'ext',
+    status: 'running' as const,
+    continuable: true,
+    label: 'Example',
+    text: 'old body',
+  }
+  const doneRow = {
+    id: 'e-done',
+    ownerSessionId: 'root',
+    direct: true,
+    providerId: 'ext',
+    status: 'completed' as const,
+    continuable: false,
+    label: 'Completed child',
+    text: 'final report',
+  }
+  let activeVisible = true
+  let doneVisible = true
+  const readDetail = vi.fn(async (id: string) => {
+    if (id === 'e1') return activeVisible ? activeRow : undefined
+    if (id === 'e-done') return doneVisible ? doneRow : undefined
+    return undefined
+  })
+  const ctx = {
+    ...tool,
+    source: 'test',
+    requestId: 'r',
+    timeoutMs: 1000,
+    childJobs: {
+      list: async () => [...(activeVisible ? [activeRow] : []), ...(doneVisible ? [doneRow] : [])],
+      readDetail,
+    },
+  } as unknown as ServiceContext
+  try {
+    const initial = (await read.handler({ jobId: 'child:e1' }, ctx)) as { job: Record<string, unknown> }
+    expect(initial.job).toMatchObject({ id: 'child:e1', stdout: 'old body', status: 'running' })
+
+    // Reclaim both from the source: active child disappears (JOB_NOT_FOUND + absent from jobs),
+    // while already-terminal history stays inspectable.
+    activeVisible = false
+    doneVisible = false
+    await expect(read.handler({ jobId: 'child:e1' }, ctx)).rejects.toThrow('JOB_NOT_FOUND')
+    const listed = (await read.handler({}, ctx)) as { jobs: Array<Record<string, unknown>> }
+    expect(listed.jobs.map((job) => job.id)).toEqual(['child:e-done'])
+    expect(listed.jobs[0]).toMatchObject({ status: 'completed', childStatus: 'completed', code: 0 })
+
+    // Reclaimed active child is also removed during a plain list read (without jobId) once readDetail confirms absence.
+    activeVisible = true
+    await read.handler({}, ctx)
+    activeVisible = false
+    const afterPlainList = (await read.handler({}, ctx)) as { jobs: Array<Record<string, unknown>> }
+    expect(afterPlainList.jobs.some((job) => job.id === 'child:e1')).toBe(false)
+
+    // When descendant list is truncated (>=128 descendants), a previously loaded descendant past slot 128
+    // is NOT dropped by list() alone, and IS dropped once readDetail explicitly returns undefined.
+    const truncatedDescendants = Array.from({ length: 128 }, (_, idx) => ({
+      id: `d-${idx}`,
+      ownerSessionId: 'p',
+      direct: false,
+      readOnly: true,
+      providerId: 'in-process',
+      status: 'paused' as const,
+      continuable: true,
+    }))
+    let extraVisible = true
+    const extraRow = {
+      id: 'd-129',
+      ownerSessionId: 'p',
+      direct: false,
+      readOnly: true,
+      providerId: 'in-process',
+      status: 'paused' as const,
+      continuable: true,
+      text: 'descendant 129',
+    }
+    const truncatedCtx = {
+      ...tool,
+      source: 'test',
+      requestId: 'r',
+      timeoutMs: 1000,
+      childJobs: {
+        list: async () => truncatedDescendants,
+        readDetail: async (id: string) =>
+          id === 'd-129'
+            ? extraVisible
+              ? extraRow
+              : undefined
+            : truncatedDescendants.find((r) => r.id === id),
+      },
+    } as unknown as ServiceContext
+    const loadedExtra = (await read.handler({ jobId: 'child:d-129' }, truncatedCtx)) as {
+      job: Record<string, unknown>
+    }
+    expect(loadedExtra.job).toMatchObject({ id: 'child:d-129', stdout: 'descendant 129' })
+    await read.handler({}, truncatedCtx)
+    expect(jobs.list(tool).some((job) => job.id === 'child:d-129')).toBe(true)
+    extraVisible = false
+    await expect(read.handler({ jobId: 'child:d-129' }, truncatedCtx)).rejects.toThrow('JOB_NOT_FOUND')
+    expect(jobs.list(tool).some((job) => job.id === 'child:d-129')).toBe(false)
   } finally {
     await jobs.dispose()
   }

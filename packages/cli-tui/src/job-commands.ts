@@ -22,6 +22,32 @@ const ZH_STATUS: Record<SessionJob['status'], string> = {
   killed: '已终止',
 }
 
+const ZH_CHILD_STATUS: Record<NonNullable<SessionJob['childStatus']>, string> = {
+  starting: '启动中',
+  running: '运行中',
+  waiting_approval: '待审批',
+  paused: '已暂停',
+  disconnected: '已断开',
+  idle: '空闲',
+  completed: '已完成',
+  failed: '失败',
+  cancelled: '已取消',
+  interrupted: '已中断',
+}
+
+const EN_CHILD_STATUS: Record<NonNullable<SessionJob['childStatus']>, string> = {
+  starting: 'starting',
+  running: 'running',
+  waiting_approval: 'waiting approval',
+  paused: 'paused',
+  disconnected: 'disconnected',
+  idle: 'idle',
+  completed: 'completed',
+  failed: 'failed',
+  cancelled: 'cancelled',
+  interrupted: 'interrupted',
+}
+
 const ZH_KIND: Record<SessionJob['kind'], string> = {
   shell: '命令',
   'shell-session': '终端会话',
@@ -49,14 +75,21 @@ export function clipToColumns(text: string, maxColumns: number): string {
 }
 
 function localizedJobMeta(job: SessionJob, locale: string) {
+  const childStatus = job.kind === 'child' ? job.childStatus : undefined
   if (locale === 'zh-CN') {
     return {
-      status: ZH_STATUS[job.status] ?? job.status,
+      status: childStatus
+        ? (ZH_CHILD_STATUS[childStatus] ?? childStatus)
+        : (ZH_STATUS[job.status] ?? job.status),
       kind: ZH_KIND[job.kind] ?? job.kind,
       owner: ZH_OWNER[job.owner] ?? job.owner,
     }
   }
-  return { status: job.status, kind: job.kind, owner: job.owner }
+  return {
+    status: childStatus ? (EN_CHILD_STATUS[childStatus] ?? childStatus) : job.status,
+    kind: job.kind,
+    owner: job.owner,
+  }
 }
 
 /** One inert line per job: the command line is whatever the shell was given, never trusted. */
@@ -68,7 +101,8 @@ export function jobLine(job: SessionJob, n: number, locale: string, terminalColu
     terminalColumns !== undefined && terminalColumns > 0
       ? Math.max(MIN_COMMAND_COLUMNS, Math.min(COMMAND_COLUMNS, terminalColumns - chromeWidth))
       : COMMAND_COLUMNS
-  const command = clipToColumns(oneLine(job.command), commandBudget)
+  const displayTitle = job.kind === 'child' && job.childLabel?.trim() ? job.childLabel : job.command
+  const command = clipToColumns(oneLine(displayTitle), commandBudget)
   return tt('jobs.row', locale, { n, command, status, kind, owner, exit })
 }
 

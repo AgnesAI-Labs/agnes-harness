@@ -7,8 +7,10 @@ import {
   collectBoundedJobs,
   type ExtendedChildJobsPort,
   isReadOnlyChildListing,
+  pruneReclaimedChildren,
   resolveChildJobsPort,
   type ShellJobView,
+  stopChildJob,
   upsertChildProjection,
 } from './child-jobs.js'
 import { legacyProcess } from './legacy-process.js'
@@ -38,6 +40,7 @@ interface Job {
   finish(code: number | null): void
   endForeground(code: number): void
   stop(): Promise<void>
+  refreshChild?: () => Promise<ChildJobListing | undefined>
   /** The child's newest message as last read; a child reports one message, never a stream. */
   childText?: string
 }
@@ -540,11 +543,30 @@ export class ShellJobs {
   ): Promise<void> {
     const controls = resolveChildJobsPort(ctx.subagent, port, selectedJobId)
     if (!controls) return
-    for (const child of await controls.list()) this.upsertChild(ctx, child, controls)
+    const present = new Set<string>()
+    let listedDirect = 0
+    let listedDescendants = 0
+    for (const child of await controls.list()) {
+      const job = this.upsertChild(ctx, child, controls)
+      present.add(job.view.id)
+      if (job.readOnly) listedDescendants++
+      else listedDirect++
+    }
+    const selectedConfirmedMissing = new Set<string>()
     if (selectedJobId?.startsWith('child:') && controls.readDetail) {
       const detail = await controls.readDetail(selectedJobId.slice('child:'.length))
-      if (detail) this.upsertChild(ctx, detail, controls)
+      if (detail) present.add(this.upsertChild(ctx, detail, controls).view.id)
+      else if (!present.has(selectedJobId)) selectedConfirmedMissing.add(selectedJobId)
     }
+    await pruneReclaimedChildren(
+      controls,
+      {
+        direct: this.directChildren.get(owner(ctx)),
+        descendants: this.descendants.get(owner(ctx)),
+        upsert: (child) => this.upsertChild(ctx, child, controls),
+      },
+      { present, selectedConfirmedMissing, listedDirect, listedDescendants },
+    )
   }
   /** Resolve and sync one direct child for kill without materializing the full descendant tree. */
   async syncDirectChild(
@@ -633,23 +655,20 @@ export class ShellJobs {
     if (job.readOnly)
       throw new Error('CAPABILITY_DENIED: read-only child job cannot be stopped from this session')
     if (job.view.status === 'running' || job.cleanupPending || job.childIdle) {
-      const { status, code, childStatus } = job.view
+      if (job.view.kind === 'child') {
+        await stopChildJob(job)
+        return copy(job)
+      }
+      const { status, code } = job.view
       job.view.code = null
       job.view.status = 'killed'
       try {
         await job.stop()
         job.cleanupPending = false
-        job.childIdle = false
-        if (job.view.kind === 'child') {
-          job.childTerminal = true
-          job.view.childStatus = 'cancelled'
-        }
         job.finish(-1)
       } catch (error) {
         job.view.status = status
         job.view.code = code
-        if (childStatus === undefined) delete job.view.childStatus
-        else job.view.childStatus = childStatus
         throw error
       }
     }

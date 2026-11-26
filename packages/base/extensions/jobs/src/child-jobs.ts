@@ -29,6 +29,7 @@ export interface ShellJobView {
 
 /** One child pane keeps what a person can still read; the jobs read slices output to the same size. */
 export const CHILD_OUTPUT_LIMIT = 65536
+export const MAX_DESCENDANT_LIST = 128
 
 export function collectBoundedJobs<J extends { view: ShellJobView }>(
   stores: readonly (Map<string, J> | undefined)[],
@@ -91,13 +92,28 @@ export interface ChildJobTarget {
     childLabel?: string
   }
   startedAt: number
+  cleanupPending?: boolean
   childIdle?: boolean
   childTerminal?: boolean
   readOnly?: boolean
   childText?: string
   position: OutputPosition
   stop(): Promise<void>
+  refreshChild?: () => Promise<ChildJobListing | undefined>
   finish(code: number | null): void
+}
+
+export function effectiveChildStatus(
+  child: Pick<ChildJobListing, 'status' | 'executionState'>,
+): ChildAgentStatus {
+  if (child.executionState === 'cancelling') return 'running'
+  if (
+    child.executionState === 'completed' ||
+    child.executionState === 'failed' ||
+    child.executionState === 'cancelled'
+  )
+    return child.executionState
+  return child.status
 }
 
 export function isReadOnlyChildListing(child: ChildJobListing, sessionKey: string): boolean {
@@ -161,6 +177,14 @@ export function upsertChildProjection<J extends ChildJobTarget>(
     if (!controls.cancel) throw new Error('child cancellation needs an effect service')
     await controls.cancel(child.id, { providerId: child.providerId, ownerSessionId })
   }
+  const refreshDirect = async (): Promise<ChildJobListing | undefined> => {
+    if (controls.readDirect) {
+      const direct = await controls.readDirect(child.id)
+      if (direct || !controls.readDetail) return direct
+    }
+    if (controls.readDetail) return controls.readDetail(child.id)
+    return (await controls.list()).find((row) => row.id === child.id)
+  }
   let job = targetMap.get(id)
   if (!job) {
     job = maps.create(id, ownerSessionId, readOnly, readOnly ? denyReadOnly : cancelDirect)
@@ -177,10 +201,77 @@ export function upsertChildProjection<J extends ChildJobTarget>(
     job.view.command = child.providerId.slice(0, 2048)
     job.stop = readOnly ? denyReadOnly : controls.cancel ? cancelDirect : job.stop
   }
+  if (readOnly) delete job.refreshChild
+  else job.refreshChild = refreshDirect
   if (child.label !== undefined) job.view.childLabel = child.label
   if (child.text !== undefined) appendChildText(job, child.text)
-  syncChildOutcome(job, child.status)
+  syncChildOutcome(job, effectiveChildStatus(child))
   return job
+}
+
+/**
+ * Stop a direct child job and reconcile with its authoritative post-stop state.
+ * Only transitions to a terminal job outcome (`finish(...)` and completion notice) once the source
+ * confirms a durable terminal state (`completed`, `failed`, `cancelled`) or synchronously reclaims it.
+ */
+export async function stopChildJob(job: ChildJobTarget): Promise<void> {
+  await job.stop()
+  job.cleanupPending = false
+  if (!job.refreshChild) return
+  let latest: ChildJobListing | undefined
+  try {
+    latest = await job.refreshChild()
+  } catch {
+    return
+  }
+  if (!latest) {
+    syncChildOutcome(job, 'cancelled')
+    return
+  }
+  if (latest.label !== undefined) job.view.childLabel = latest.label
+  if (latest.text !== undefined) appendChildText(job, latest.text)
+  syncChildOutcome(job, effectiveChildStatus(latest))
+}
+
+/**
+ * Remove active (non-terminal) child projections that are no longer reported by the source, while
+ * preserving bounded-list truncation safety and already-terminal history entries.
+ */
+export async function pruneReclaimedChildren<J extends ChildJobTarget>(
+  controls: ExtendedChildJobsPort,
+  stores: {
+    direct: Map<string, J> | undefined
+    descendants: Map<string, J> | undefined
+    upsert: (child: ChildJobListing) => J
+  },
+  sync: {
+    present: ReadonlySet<string>
+    selectedConfirmedMissing: ReadonlySet<string>
+    listedDirect: number
+    listedDescendants: number
+  },
+): Promise<void> {
+  const reconcile = async (map: Map<string, J> | undefined, truncated: boolean) => {
+    if (!map?.size) return
+    for (const [id, job] of [...map]) {
+      if (sync.present.has(id) || job.childTerminal) continue
+      if (sync.selectedConfirmedMissing.has(id)) {
+        map.delete(id)
+        continue
+      }
+      if (truncated) continue
+      if (controls.readDetail) {
+        const detail = await controls.readDetail(id.slice('child:'.length))
+        if (detail) {
+          stores.upsert(detail)
+          continue
+        }
+      }
+      map.delete(id)
+    }
+  }
+  await reconcile(stores.direct, sync.listedDirect >= MAX_DESCENDANT_LIST)
+  await reconcile(stores.descendants, sync.listedDescendants >= MAX_DESCENDANT_LIST)
 }
 
 /**
@@ -211,9 +302,9 @@ export function appendChildText(job: ChildJobTarget, text: string): void {
  * `idle` or `interrupted` projection first so `code`, waiters and completions stay consistent.
  */
 export function syncChildOutcome(job: ChildJobTarget, status: ChildAgentStatus): void {
+  if (job.childTerminal) return
   job.view.childStatus = status
   if (status === 'idle') {
-    if (job.childTerminal) return
     // The resident's last turn is done. Keep the job open for its next turn.
     job.childIdle = true
     job.view.status = 'completed'
@@ -221,7 +312,6 @@ export function syncChildOutcome(job: ChildJobTarget, status: ChildAgentStatus):
     return
   }
   if (status === 'interrupted') {
-    if (job.childTerminal) return
     // Stopped mid-turn; no longer running, yet continuable on a later turn.
     job.childIdle = true
     job.view.status = 'killed'
@@ -229,7 +319,6 @@ export function syncChildOutcome(job: ChildJobTarget, status: ChildAgentStatus):
     return
   }
   if (status === 'completed' || status === 'failed' || status === 'cancelled') {
-    if (job.childTerminal) return
     job.childTerminal = true
     job.childIdle = false
     job.view.code = null
@@ -241,7 +330,7 @@ export function syncChildOutcome(job: ChildJobTarget, status: ChildAgentStatus):
   if (job.childIdle) {
     job.childIdle = false
     job.startedAt = Date.now()
-    job.view.status = 'running'
-    job.view.code = null
   }
+  job.view.status = 'running'
+  job.view.code = null
 }

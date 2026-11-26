@@ -620,6 +620,39 @@ describe('session slash commands', () => {
     expect(zhOut).toContain('用户')
     expect(zhOut).toContain('…')
     expect(displayWidth(zhOut)).toBeLessThanOrEqual(60)
+
+    // Child jobs render childLabel and localized childStatus instead of raw provider command and generic [运行中] (#15)
+    const childJob = (
+      id: string,
+      childStatus: import('@agnes/protocol').SessionJob['childStatus'],
+      childLabel?: string,
+    ) => ({
+      id,
+      owner: 'agent' as const,
+      ownerSessionId: 'cur',
+      kind: 'child' as const,
+      command: 'ext',
+      cwd: '/w/a',
+      status: 'running' as const,
+      code: null,
+      truncated: false,
+      ...(childStatus ? { childStatus } : {}),
+      ...(childLabel ? { childLabel } : {}),
+    })
+    list = [
+      childJob('child:wait', 'waiting_approval', 'Approval task'),
+      childJob('child:pause', 'paused', 'Paused review'),
+      childJob('child:disc', 'disconnected'),
+    ] as unknown as typeof list
+    const zhChildren = (await runSlash(zhApp, '/jobs')).text ?? ''
+    expect(zhChildren).toContain('1. Approval task [待审批] · 子任务 · 智能体')
+    expect(zhChildren).toContain('2. Paused review [已暂停] · 子任务 · 智能体')
+    expect(zhChildren).toContain('3. ext [已断开] · 子任务 · 智能体')
+    expect(zhChildren).not.toContain('[运行中]')
+    const enChildren = (await runSlash(app, '/jobs')).text ?? ''
+    expect(enChildren).toContain('1. Approval task [waiting approval] · child · agent')
+    expect(enChildren).toContain('2. Paused review [paused] · child · agent')
+    expect(enChildren).toContain('3. ext [disconnected] · child · agent')
   })
 
   it('/images hands its arguments to the inline image switch', async () => {

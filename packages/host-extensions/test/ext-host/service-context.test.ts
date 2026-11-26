@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   bindChildFactory,
   type ChildControlStore,
@@ -11,6 +14,7 @@ import {
 import { fakeSeams } from '@agnes/core/testkit'
 import type { ExtensionManifest, ServiceContext } from '@agnes/extension-api'
 import { serviceFixture } from '@agnes/extension-api/testkit'
+import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import { afterEach, expect, it, vi } from 'vitest'
 import { leaseFor } from '../../src/ext-host/lease.js'
 import { serviceContext } from '../../src/ext-host/service-context.js'
@@ -244,6 +248,7 @@ function childRecord(
   state: ChildTaskRecord['state'] = 'running',
   stateRevision = 1,
   inputText = `task ${childKey}`,
+  runtimeOwnerSessionKey = parentKey,
 ): ChildTaskRecord {
   return {
     childKey,
@@ -253,10 +258,10 @@ function childRecord(
     creationRevision: 1,
     attemptStartedAt: 1,
     parentKey,
-    rootTaskId: parentKey,
-    runtimeOwnerSessionKey: parentKey,
+    rootTaskId: runtimeOwnerSessionKey,
+    runtimeOwnerSessionKey,
     kind: 'spawn',
-    generationDepth: 1,
+    generationDepth: runtimeOwnerSessionKey === parentKey ? 1 : 2,
     generationLimit: 4,
     boundarySeq: 1,
     inputHash: `h:${childKey}`,
@@ -280,11 +285,16 @@ it('distinguishes direct vs read-only descendants, refuses grandchild/ambiguous 
   const childKey = 'direct-child-1'
   const grandKey = 'grandchild-1'
   const dupKey = 'shared-raw-id'
+  const emojiSplitKey = 'emoji-split-child'
+  const emojiFitKey = 'emoji-fit-child'
 
   const records = new Map<string, ChildTaskRecord>([
     [childKey, childRecord(childKey, rootKey, 'waiting_approval', 2, 'Direct child task')],
     [dupKey, childRecord(dupKey, rootKey, 'running', 3, 'Local colliding child')],
-    [grandKey, childRecord(grandKey, childKey, 'paused', 7, 'Paused grandchild task')],
+    // Real SQLite grandchildren persist parentKey=direct-child-1 and runtimeOwnerSessionKey=rootKey.
+    [grandKey, childRecord(grandKey, childKey, 'paused', 7, 'Paused grandchild task', rootKey)],
+    [emojiSplitKey, childRecord(emojiSplitKey, rootKey, 'running', 1, `${'a'.repeat(79)}🚀tail`)],
+    [emojiFitKey, childRecord(emojiFitKey, rootKey, 'running', 1, `${'a'.repeat(78)}🚀tail`)],
   ])
   const store = {
     listByParent: vi.fn(async (parentKey: string) =>
@@ -392,13 +402,17 @@ it('distinguishes direct vs read-only descendants, refuses grandchild/ambiguous 
       readOnly: true,
       ambiguous: true,
     })
+    // UTF-16 surrogate-pair safe label truncation (#31): never splits an emoji at index 80.
+    expect(listed.find((row) => row.id === emojiSplitKey)?.label).toBe('a'.repeat(79))
+    expect(listed.find((row) => row.id === emojiFitKey)?.label).toBe(`${'a'.repeat(78)}🚀`)
     expect(listed.every((row) => row.text === undefined)).toBe(true)
 
-    // On-demand detail read inspects ONLY the requested child.
+    // On-demand detail read inspects ONLY the requested child and agrees with list() on owner/readOnly.
     const grandDetail = await port.readDetail(grandKey)
     expect(grandDetail).toMatchObject({
       id: grandKey,
       ownerSessionId: childKey,
+      direct: false,
       readOnly: true,
       text: `grand-body:${grandKey}`,
     })
@@ -406,7 +420,8 @@ it('distinguishes direct vs read-only descendants, refuses grandchild/ambiguous 
     expect(childInspect).toHaveBeenCalledWith(grandKey)
     expect(rootInspect).not.toHaveBeenCalled()
 
-    // Negative contract 1: cancelling a read-only grandchild fails closed without touching any cancel port or revision.
+    // Negative contract 1: cancelling a read-only grandchild (even when runtimeOwnerSessionKey === rootKey)
+    // fails closed without touching any cancel port or revision.
     await expect(port.cancel(grandKey)).rejects.toThrow('CAPABILITY_DENIED')
     expect(rootCancel).not.toHaveBeenCalled()
     expect(childCancel).not.toHaveBeenCalled()
@@ -437,5 +452,145 @@ it('distinguishes direct vs read-only descendants, refuses grandchild/ambiguous 
     untrackExt()
     unbindChildFactory(rootKey, rootBackend)
     unbindChildFactory(childKey, directChildBackend)
+  }
+})
+
+it('uses durable parentKey rather than runtimeOwnerSessionKey after real SQLite reopen for grandchild jobs access (P1-A)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agh-service-context-sqlite-'))
+  const storageArgs = { file: join(dir, 'records.db'), tablesDir: join(dir, 'tables') }
+  const rootKey = 'sqlite-root-session'
+  const parentKey = 'sqlite-parent-child'
+  const grandKey = 'sqlite-grand-child'
+
+  const initial = createSqliteStorage(storageArgs)
+  try {
+    await initial.open(rootKey, { writerRunId: 'root-writer', ttlMs: 60_000 })
+    await initial.ensureRootScope(rootKey, 10_000_000n)
+    for (const [ownerKey, key, depth] of [
+      [rootKey, parentKey, 1],
+      [parentKey, grandKey, 2],
+    ] as const) {
+      const created = await initial.createDelegatedChild({
+        childKey: key,
+        parentKey: ownerKey,
+        runtimeOwnerSessionKey: ownerKey,
+        rootTaskId: rootKey,
+        generationDepth: depth,
+        generationLimit: 3,
+        boundarySeq: 0,
+        creationId: key,
+        kind: 'spawn',
+        maxFanOut: 4,
+        inputHash: key,
+        inputText: `task ${key}`,
+        cwd: '/workspace',
+        actorId: 'subject',
+        isolation: 'shared',
+        workspaceId: key,
+        treeCapMicro: 10_000_000n,
+        childCapMicro: null,
+        writerRunId: key,
+      })
+      expect(created.status).toBe('created')
+    }
+  } finally {
+    await initial.close()
+  }
+
+  const reopened = createSqliteStorage(storageArgs)
+  const { build, entry, identity, alive, workspace } = fixture()
+  const { handler: _handler, ...effectCapability } = serviceFixture()
+  const rootCancel = vi.fn(async () => {})
+  const parentCancel = vi.fn(async () => {})
+  const parentInspect = vi.fn(async (id: string) => ({ state: 'running', text: `sqlite-body:${id}` }))
+  const rootBackend = {
+    childEvents: { store: reopened },
+    list: vi.fn(async () => []),
+    inspect: vi.fn(async () => undefined),
+    cancel: rootCancel,
+  } as unknown as KernelChildren
+  const parentBackend = {
+    childEvents: { store: reopened },
+    list: vi.fn(async () => []),
+    inspect: parentInspect,
+    cancel: parentCancel,
+  } as unknown as KernelChildren
+
+  bindChildFactory(rootKey, rootBackend)
+  bindChildFactory(parentKey, parentBackend)
+
+  try {
+    const persisted = await reopened.lookupByKey(grandKey)
+    expect(persisted).toMatchObject({ parentKey, runtimeOwnerSessionKey: rootKey })
+    const initialRevision = persisted?.stateRevision
+
+    const boundWorkspace = {
+      ...workspace,
+      hookSandbox: () => ({
+        enforcement: () => ({ level: 'none' as const, scope: [] }),
+        exec: async () => ({ code: 0, stdout: '', stderr: '', truncated: false }),
+      }),
+    }
+    const portFor = (sessionKey: string) =>
+      build(
+        { ...entry, capability: { ...effectCapability, kind: 'effect' } },
+        { ...identity, session: { key: sessionKey, lane: 'main', workspaceRoot: workspace.root } },
+        alive,
+        boundWorkspace,
+      ).childJobs as NonNullable<ServiceContext['childJobs']> & {
+        readDirect(id: string): Promise<Record<string, unknown> | undefined>
+        readDetail(id: string): Promise<Record<string, unknown> | undefined>
+        cancel(id: string, target?: { providerId?: string; ownerSessionId?: string }): Promise<void>
+      }
+
+    const rootPort = portFor(rootKey)
+    const rootList = (await rootPort.list()) as readonly Record<string, unknown>[]
+    const listedGrand = rootList.find((row) => row.id === grandKey)
+    const detailGrand = await rootPort.readDetail(grandKey)
+    expect(listedGrand).toMatchObject({
+      id: grandKey,
+      ownerSessionId: parentKey,
+      direct: false,
+      readOnly: true,
+      ambiguous: false,
+    })
+    expect(detailGrand).toMatchObject({
+      id: grandKey,
+      ownerSessionId: parentKey,
+      direct: false,
+      readOnly: true,
+      ambiguous: false,
+      text: `sqlite-body:${grandKey}`,
+    })
+    expect(await rootPort.readDirect(grandKey)).toBeUndefined()
+    await expect(rootPort.cancel(grandKey)).rejects.toThrow('CAPABILITY_DENIED')
+    expect(rootCancel).not.toHaveBeenCalled()
+    expect(parentCancel).not.toHaveBeenCalled()
+    expect((await reopened.lookupByKey(grandKey))?.stateRevision).toBe(initialRevision)
+
+    // Direct parent retains full direct ownership and cancellation rights.
+    const parentPort = portFor(parentKey)
+    expect(await parentPort.readDirect(grandKey)).toMatchObject({
+      id: grandKey,
+      ownerSessionId: parentKey,
+      direct: true,
+      readOnly: false,
+      ambiguous: false,
+    })
+    expect(await parentPort.readDetail(grandKey)).toMatchObject({
+      id: grandKey,
+      ownerSessionId: parentKey,
+      direct: true,
+      readOnly: false,
+      text: `sqlite-body:${grandKey}`,
+    })
+    await parentPort.cancel(grandKey, { providerId: 'in-process', ownerSessionId: parentKey })
+    expect(parentCancel).toHaveBeenCalledTimes(1)
+    expect(parentCancel).toHaveBeenCalledWith(grandKey)
+  } finally {
+    unbindChildFactory(rootKey, rootBackend)
+    unbindChildFactory(parentKey, parentBackend)
+    await reopened.close()
+    rmSync(dir, { recursive: true, force: true })
   }
 })

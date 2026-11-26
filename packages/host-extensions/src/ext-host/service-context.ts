@@ -40,6 +40,13 @@ type SessionChildJobsPort = SessionChildJobs &
     cancel?(id: string, target?: ChildCancelTarget): Promise<void>
   }>
 
+function clipUtf16(value: string, max: number): string {
+  if (max <= 0) return ''
+  if (value.length <= max) return value
+  const last = value.charCodeAt(max - 1)
+  return value.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 1 : max)
+}
+
 function cleanChildLabel(inputText: string): string {
   const firstLine = inputText.trim().split(/\r?\n/, 1)[0] ?? ''
   const cleaned = firstLine
@@ -50,11 +57,11 @@ function cleanChildLabel(inputText: string): string {
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/\s+/g, ' ')
     .trim()
-  return cleaned.length > 80 ? cleaned.slice(0, 80) : cleaned
+  return clipUtf16(cleaned, 80)
 }
 
 function ownsDirectRecord(record: ChildTaskRecord, ownerKey: string): boolean {
-  return record.parentKey === ownerKey || record.runtimeOwnerSessionKey === ownerKey
+  return record.parentKey === ownerKey
 }
 
 function listingFromRecord(record: ChildTaskRecord): ChildAgentListing {
@@ -194,7 +201,7 @@ async function readChildDetail(rootKey: string, id: string): Promise<ChildJobLis
         ownerSessionId: record.parentKey,
         direct: false,
         readOnly: true,
-        ambiguous: false,
+        ambiguous: Boolean(externalChild(record.parentKey, id)),
         source: 'local',
       }
     }
