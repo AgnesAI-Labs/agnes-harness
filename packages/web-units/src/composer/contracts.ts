@@ -18,6 +18,7 @@ import type { ComposerSkill, ComposerSkills } from '../skill-picker.js'
 export type ComposerChildAction = 'stop' | 'continue' | 'pause' | 'resume' | 'close' | 'retain' | 'recap'
 
 export type ComposerChildControlOptions = {
+  /** Stable idempotency key for an unconfirmed child write; session controllers reuse pending keys across UI remounts. */
   readonly commandId?: string
 }
 

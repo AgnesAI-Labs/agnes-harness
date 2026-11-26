@@ -171,7 +171,7 @@ it('reuses the exact same commandId when retrying a child write after a lost rec
     id,
     cancel: async () => undefined,
     control,
-    followUp: vi.fn(async () => 1),
+    followUp: vi.fn(async (_text: string, _opts?: { commandId?: string }) => 1),
     controls: vi.fn(async () => ({ facts: [], factsThrough: 1, children: [] })),
     pendingCommands: async () => [],
   })
@@ -217,6 +217,43 @@ it('reuses the exact same commandId when retrying a child write after a lost rec
   await f.controller.handleChildControl('child-1', 'continue', 'switch draft')
   const afterSwitchId = (control.mock.calls[6]?.[1] as { commandId?: string } | undefined)?.commandId
   expect(afterSwitchId).not.toBe(beforeSwitchId)
+
+  // Even when a remounted UI passes a fresh commandId for the same unconfirmed intent, the session-bound
+  // controller reuses the original pending commandId for both recap and continue until confirmed.
+  let failFollowUpOnce = true
+  sessionB.followUp.mockImplementation(async () => {
+    if (failFollowUpOnce) {
+      failFollowUpOnce = false
+      throw new Error('recap receipt lost')
+    }
+    return 1
+  })
+  await expect(
+    f.controller.handleChildControl('child-1', 'recap', undefined, { commandId: 'ui-recap-1' }),
+  ).rejects.toThrow('recap receipt lost')
+  await f.controller.handleChildControl('child-1', 'recap', undefined, { commandId: 'ui-recap-remounted-2' })
+  expect((sessionB.followUp.mock.calls[0]?.[1] as { commandId?: string } | undefined)?.commandId).toBe(
+    'ui-recap-1',
+  )
+  expect((sessionB.followUp.mock.calls[1]?.[1] as { commandId?: string } | undefined)?.commandId).toBe(
+    'ui-recap-1',
+  )
+  await f.controller.handleChildControl('child-1', 'recap', undefined, { commandId: 'ui-recap-3' })
+  expect((sessionB.followUp.mock.calls[2]?.[1] as { commandId?: string } | undefined)?.commandId).toBe(
+    'ui-recap-3',
+  )
+
+  failOnce = true
+  await expect(
+    f.controller.handleChildControl('child-1', 'continue', 'remount draft', { commandId: 'ui-cont-1' }),
+  ).rejects.toThrow('receipt lost')
+  await f.controller.handleChildControl('child-1', 'continue', 'remount draft', {
+    commandId: 'ui-cont-remounted-2',
+  })
+  const remountFirst = (control.mock.calls[7]?.[1] as { commandId?: string } | undefined)?.commandId
+  const remountRetry = (control.mock.calls[8]?.[1] as { commandId?: string } | undefined)?.commandId
+  expect(remountFirst).toBe('ui-cont-1')
+  expect(remountRetry).toBe('ui-cont-1')
 })
 
 it('settles stale trailing refreshes on session switch and isolates per-session refresh state and polling', async () => {

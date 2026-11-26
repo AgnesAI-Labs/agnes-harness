@@ -1167,3 +1167,106 @@ it('pins continuable interrupted grandchildren in active tree, disambiguates dup
   expect(nextCmdId).toBeTruthy()
   expect(nextCmdId).not.toBe(editedCmdId)
 })
+
+it('preserves pending commandId for recap and continue when a row remounts between active and folded history groups', async () => {
+  const onChildControl = vi
+    .fn()
+    .mockRejectedValueOnce(new Error('recap receipt lost'))
+    .mockResolvedValueOnce(undefined)
+    .mockRejectedValueOnce(new Error('continue receipt lost'))
+    .mockResolvedValueOnce(undefined)
+    .mockResolvedValueOnce(undefined)
+  const oldChild = {
+    id: 'root/old',
+    parentId: 'root',
+    providerId: 'in-process',
+    label: 'Old task',
+    status: 'idle' as const,
+    controls: { stop: false, continue: true },
+    totalTokens: 0,
+    durationMs: 100,
+  }
+  const runningSibling = {
+    ...oldChild,
+    id: 'root/sibling',
+    label: 'Active sibling',
+    status: 'running' as const,
+    controls: { stop: true, continue: true },
+  }
+  const view: ComposerView = { ...idle, children: [oldChild] }
+  const { host, handle } = mount({ onChildControl }, view)
+
+  // 1. Recap fails in top active group, row moves into folded history when a running sibling arrives,
+  //    then user retries Recap in history: both calls carry the exact same commandId.
+  const recapBtn = () =>
+    host.querySelector<HTMLButtonElement>('[data-child-id="root/old"] [data-testid="child-recap"]')!
+  expect(host.querySelector('.composer-children-list [data-child-id="root/old"]')).not.toBeNull()
+  expect(host.querySelector('[data-testid="child-control-history"]')).toBeNull()
+  await act(async () => recapBtn().click())
+  await act(async () => handle.render({ ...view, children: [oldChild, runningSibling] }))
+  const history = host.querySelector('[data-testid="child-control-history"]')
+  expect(history).not.toBeNull()
+  expect(history?.querySelector('[data-child-id="root/old"]')).not.toBeNull()
+  expect(
+    host.querySelector('.composer-children-list')?.querySelector('[data-child-id="root/old"]'),
+  ).toBeNull()
+  await act(async () => recapBtn().click())
+  const recapFirstId = (onChildControl.mock.calls[0]?.[3] as { commandId?: string } | undefined)?.commandId
+  const recapRetryId = (onChildControl.mock.calls[1]?.[3] as { commandId?: string } | undefined)?.commandId
+  expect(recapFirstId).toBeTruthy()
+  expect(recapRetryId).toBe(recapFirstId)
+
+  // 2. Continue fails while row is in folded history, sibling finishes so row remounts back into the
+  //    top active group, then user retries the exact same draft: both calls carry the exact same commandId.
+  const row = () => host.querySelector<HTMLElement>('[data-child-id="root/old"]')!
+  const setValue = (input: HTMLInputElement, value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  act(() => row().querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')?.click())
+  act(() =>
+    setValue(
+      row().querySelector<HTMLInputElement>('[data-testid="child-continue-message"]')!,
+      'same follow-up',
+    ),
+  )
+  await act(async () => row().querySelector<HTMLButtonElement>('[data-testid="child-continue"]')?.click())
+
+  await act(async () =>
+    handle.render({
+      ...view,
+      children: [
+        oldChild,
+        { ...runningSibling, status: 'completed', controls: { stop: false, continue: false } },
+      ],
+    }),
+  )
+  expect(host.querySelector('[data-testid="child-control-history"]')).toBeNull()
+  expect(host.querySelector('.composer-children-list > [data-child-id="root/old"]')).not.toBeNull()
+  act(() => row().querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')?.click())
+  act(() =>
+    setValue(
+      row().querySelector<HTMLInputElement>('[data-testid="child-continue-message"]')!,
+      'same follow-up',
+    ),
+  )
+  await act(async () => row().querySelector<HTMLButtonElement>('[data-testid="child-continue"]')?.click())
+  const contFirstId = (onChildControl.mock.calls[2]?.[3] as { commandId?: string } | undefined)?.commandId
+  const contRetryId = (onChildControl.mock.calls[3]?.[3] as { commandId?: string } | undefined)?.commandId
+  expect(contFirstId).toBeTruthy()
+  expect(contRetryId).toBe(contFirstId)
+
+  // 3. After confirmation succeeds, sending the same draft again allocates a new commandId.
+  act(() => row().querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')?.click())
+  act(() =>
+    setValue(
+      row().querySelector<HTMLInputElement>('[data-testid="child-continue-message"]')!,
+      'same follow-up',
+    ),
+  )
+  await act(async () => row().querySelector<HTMLButtonElement>('[data-testid="child-continue"]')?.click())
+  const contFreshId = (onChildControl.mock.calls[4]?.[3] as { commandId?: string } | undefined)?.commandId
+  expect(contFreshId).toBeTruthy()
+  expect(contFreshId).not.toBe(contFirstId)
+})

@@ -260,11 +260,6 @@ function errorCodeOf(error: unknown): string | undefined {
   return undefined
 }
 
-function isMissingError(error: unknown): boolean {
-  const code = errorCodeOf(error)
-  return code === 'ENOENT' || code === 'ENOTDIR'
-}
-
 async function verifyArtifacts(
   paths: Map<string, SubtaskArtifactRef>,
   stat: SnapshotOptions['stat'],
@@ -300,17 +295,20 @@ async function verifyArtifacts(
   let nonFileCount = 0
   let unverifiableCount = 0
   const codes = new Set<string>()
+  const missingCodes = new Set<string>()
   for (const [abs, ref] of paths) {
     try {
       const entry = await stat(abs)
       if (entry?.kind === 'file') artifacts.push(ref)
       else nonFileCount++
     } catch (error) {
-      if (isMissingError(error)) {
+      const code = errorCodeOf(error)
+      if (code === 'ENOENT' || code === 'ENOTDIR') {
         missingCount++
+        missingCodes.add(code)
       } else {
         unverifiableCount++
-        codes.add(errorCodeOf(error) ?? 'STAT_FAILED')
+        codes.add(code ?? 'STAT_FAILED')
       }
     }
   }
@@ -322,6 +320,7 @@ async function verifyArtifacts(
       missingCount,
       nonFileCount,
       unverifiableCount,
+      ...(missingCodes.size > 0 ? { missingCodes: [...missingCodes].sort() } : {}),
       ...(codes.size > 0 ? { errorCodes: [...codes].sort() } : {}),
     },
   }

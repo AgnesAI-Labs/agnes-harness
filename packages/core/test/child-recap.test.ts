@@ -427,11 +427,19 @@ describe('child recap', () => {
       "In root/alpha's output, the HTTP parser failed to decode the response.",
       'If root/alpha is completed, we can merge the branch.',
       'When root/alpha is completed, run the release checks.',
+      'Assume root/alpha is completed for this exercise.',
+      'Assuming root/alpha is completed, estimate the remaining work.',
+      'Suppose root/alpha is completed.',
       'Check whether root/alpha is completed before deploying.',
       'Verify if root/alpha is completed.',
+      'Confirm whether root/alpha is completed.',
+      'Please confirm if root/alpha is completed.',
       'Is root/alpha completed?',
       '如果 root/alpha 已完成，请继续下一步。',
+      '假设 root/alpha 已完成，下一步如何处理。',
+      '假定 root/alpha 已完成。',
       '请检查 root/alpha 是否已完成。',
+      '请确认 root/alpha 是否已完成。',
       'root/alpha 完成了吗？',
       `root/alpha ${'is now already currently '.repeat(120)} pending completed`,
     ]
@@ -445,6 +453,12 @@ describe('child recap', () => {
       '`root/alpha` completed.',
       'root/alpha 已完成。',
       'root/alpha: done',
+      'I can confirm that root/alpha is completed.',
+      'We confirmed that root/alpha is completed.',
+      'Confirmed that root/alpha is completed.',
+      '我确认 root/alpha 已完成。',
+      '我可以确认 root/alpha 已完成。',
+      '已确认 root/alpha 已完成。',
     ]) {
       const guarded = await guardSessionRecapExit(b.parent, badReply, triggerSeq, 'ordinary')
       expect(guarded.event).toBeDefined()
@@ -532,10 +546,18 @@ describe('child recap', () => {
     for (const bad of [
       'two paused. 2 of 2 tasks completed.',
       'two paused. Completed 2 of 2 tasks.',
+      'two paused. Completed: 20 of 20 tasks.',
+      'two paused. **Completed**: 20 of 20 tasks.',
+      'two paused. Completed - 20/20 tasks.',
+      'two paused. Tasks completed: 20 of 20.',
+      'two paused. Completed: 20 tasks.',
       'two paused. 2 tasks completed.',
       'two paused. 1 of 3 tasks completed.',
       'two paused. 已完成 3/3',
+      'two paused. 已完成：20/20',
+      'two paused. 已完成子任务：20/20',
       'two paused. 已完成 2 个任务',
+      'two paused. 已完成：20 个任务',
       'two paused. 共完成 2 项',
     ]) {
       expect(validateRecapOutput(bad, partialSnap).violations.map((v) => v.code)).toContain(
@@ -548,10 +570,23 @@ describe('child recap', () => {
     expect(validateRecapOutput('Completed 1 of 2 tasks. one completed. two paused.', partialSnap).valid).toBe(
       true,
     )
+    expect(
+      validateRecapOutput('Completed: 1 of 2 tasks. one completed. two paused.', partialSnap).valid,
+    ).toBe(true)
     expect(validateRecapOutput('1 task completed. one completed. two paused.', partialSnap).valid).toBe(true)
     expect(validateRecapOutput('共完成 1 项。one 已完成，two 已暂停。', partialSnap).valid).toBe(true)
+    expect(validateRecapOutput('已完成：1/2 项子任务。one 已完成，two 已暂停。', partialSnap).valid).toBe(
+      true,
+    )
     expect(validateRecapOutput('one completed 3/3 tests. two paused.', partialSnap).valid).toBe(true)
+    expect(
+      validateRecapOutput('Completed: 20 of 20 tests. one completed. two paused.', partialSnap).valid,
+    ).toBe(true)
+    expect(
+      validateRecapOutput('Tests completed: 20 of 20. one completed. two paused.', partialSnap).valid,
+    ).toBe(true)
     expect(validateRecapOutput('已完成 3 项测试。one 已完成，two 已暂停。', partialSnap).valid).toBe(true)
+    expect(validateRecapOutput('已完成：20 项测试。one 已完成，two 已暂停。', partialSnap).valid).toBe(true)
   })
 
   it('includes external grandchildren under verified local owners and disambiguates ID collisions (#13)', async () => {
@@ -615,6 +650,8 @@ describe('child recap', () => {
     await b.write('dir-task', 'out-dir')
     await b.task('missing-task', 'completed')
     await b.write('missing-task', 'gone.txt')
+    await b.task('enotdir-task', 'completed')
+    await b.write('enotdir-task', 'not-a-dir/out.txt')
     await b.task('eio-task', 'completed')
     await b.write('eio-task', 'ready.txt')
     await b.task('eacces-task', 'completed')
@@ -626,6 +663,8 @@ describe('child recap', () => {
         if (abs === '/w/ok.txt') return { kind: 'file' }
         if (abs === '/w/out-dir') return { kind: 'directory' }
         if (abs === '/w/gone.txt') throw Object.assign(new Error('not found'), { code: 'ENOENT' })
+        if (abs === '/w/not-a-dir/out.txt')
+          throw Object.assign(new Error('not a directory'), { code: 'ENOTDIR' })
         if (abs === '/w/ready.txt') throw Object.assign(new Error('io error'), { code: 'EIO' })
         if (abs === '/w/secret.txt') throw Object.assign(new Error('denied'), { code: 'EACCES' })
         throw new Error('ENOENT')
@@ -640,6 +679,11 @@ describe('child recap', () => {
     expect(enTruth).toContain('[dir-task] (—) Recorded artifact path(s) are directories or non-regular files')
     expect(enTruth).not.toContain('[dir-task] (—) Recorded artifacts currently missing')
     expect(enTruth).toContain('[missing-task] (—) Recorded artifacts currently missing')
+    expect(enTruth.split('\n').find((line) => line.includes('[missing-task]'))).toContain('ENOENT')
+    const enEnotdirLine = enTruth.split('\n').find((line) => line.includes('[enotdir-task]'))
+    expect(enEnotdirLine).toContain('Recorded artifacts currently missing')
+    expect(enEnotdirLine).toContain('ENOTDIR')
+    expect(enEnotdirLine).not.toContain('ENOENT')
     expect(enTruth).toContain('[eio-task] (—) Artifacts could not be verified')
     expect(enTruth).toContain('EIO')
     expect(enTruth).toContain('[eacces-task] (—) Artifacts could not be verified')
@@ -649,6 +693,10 @@ describe('child recap', () => {
     const zhTruth = renderTruthBase(snapshot, 'zh-CN')
     expect(zhTruth).toContain('[dir-task] (—) 已记录路径为目录或非普通文件')
     expect(zhTruth).toContain('[missing-task] (—) 产物当前不存在')
+    const zhEnotdirLine = zhTruth.split('\n').find((line) => line.includes('[enotdir-task]'))
+    expect(zhEnotdirLine).toContain('产物当前不存在')
+    expect(zhEnotdirLine).toContain('ENOTDIR')
+    expect(zhEnotdirLine).not.toContain('ENOENT')
     expect(zhTruth).toContain('[eio-task] (—) 无法复核产物')
     expect(zhTruth).toContain('[empty-task] (—) 没有写入记录')
 
@@ -731,6 +779,101 @@ describe('child recap', () => {
     expect(fullTreeGuarded.event).toBeDefined()
     expect(fullTreeGuarded.text).toContain('root/beta')
     expect(fullTreeGuarded.text).toContain('Partially completed')
+
+    // Full-tree user prompts with extra output instructions still pin full-tree scope against single-child tool narrowing.
+    for (const [prompt, reply, expectedHeading] of [
+      ['Please summarize all subtasks and list blockers.', 'All subtasks completed.', 'Partially completed'],
+      ['汇总所有子任务并列出阻塞项', '全部完成。', '部分完成'],
+    ] as const) {
+      const seq = await b.append(
+        b.parent.key,
+        'user/message',
+        { content: [{ type: 'text', text: prompt }] },
+        { origin: 'user' },
+      )
+      await b.append(
+        b.parent.key,
+        'tool/call',
+        { name: 'subagent_recap', toolUseId: `recap-${seq}`, args: { childKey: 'root/alpha' } },
+        { origin: 'model' },
+      )
+      const guarded = await guardSessionRecapExit(b.parent, reply, seq)
+      expect(guarded.event).toBeDefined()
+      expect(guarded.text).toContain('root/beta')
+      expect(guarded.text).toContain(expectedHeading)
+    }
+
+    // Explicit ambiguous single-child target never falls back to a full-tree recap or leaks unrelated siblings.
+    const releaseAmbiguous = [
+      trackExternalChild(b.parent.key, {
+        listing: { id: 'x', providerId: 'p', status: 'completed', continuable: false },
+      }),
+      trackExternalChild('root/beta', {
+        listing: { id: 'x', providerId: 'q', status: 'paused', continuable: false },
+      }),
+      trackExternalChild(b.parent.key, {
+        listing: { id: 'p:x', providerId: 'z', status: 'running', continuable: false },
+      }),
+    ]
+    try {
+      const enAmbigSeq = await b.append(
+        b.parent.key,
+        'user/message',
+        {
+          content: [
+            {
+              type: 'text',
+              text: 'Use subagent_recap with childKey "p:x" to summarize the verified results and current status of this subagent.',
+            },
+          ],
+        },
+        { origin: 'user' },
+      )
+      const enAmbig = await guardSessionRecapExit(b.parent, 'All subtasks completed.', enAmbigSeq)
+      expect(enAmbig.event).toBeDefined()
+      expect(enAmbig.text).toContain('E_CHILD_AMBIGUOUS')
+      expect(enAmbig.text).toContain('p:x')
+      expect(enAmbig.text).toContain(`${b.parent.key}::p:x`)
+      expect(enAmbig.text).toContain('z:p:x')
+      expect(enAmbig.text).not.toContain('root/alpha')
+      expect(enAmbig.text).not.toContain('root/beta')
+
+      const zhAmbigSeq = await b.append(
+        b.parent.key,
+        'user/message',
+        {
+          content: [
+            {
+              type: 'text',
+              text: '请调用 subagent_recap（参数 childKey: "p:x"），回顾该子代理的当前状态和已核实的结果。',
+            },
+          ],
+        },
+        { origin: 'user' },
+      )
+      const zhAmbig = await guardSessionRecapExit(b.parent, '全部完成。', zhAmbigSeq)
+      expect(zhAmbig.event).toBeDefined()
+      expect(zhAmbig.text).toContain('E_CHILD_AMBIGUOUS')
+      expect(zhAmbig.text).toContain('存在歧义')
+      expect(zhAmbig.text).not.toContain('root/alpha')
+      expect(zhAmbig.text).not.toContain('root/beta')
+
+      const optAmbig = await guardSessionRecapExit(
+        b.parent,
+        'All subtasks completed.',
+        fullTreeTrigger,
+        'recap',
+        {
+          childKey: 'p:x',
+        },
+      )
+      expect(optAmbig.event).toBeDefined()
+      expect(optAmbig.text).toContain('E_CHILD_AMBIGUOUS')
+      expect(optAmbig.text).not.toContain('root/alpha')
+      expect(optAmbig.text).not.toContain('root/beta')
+    } finally {
+      for (const release of releaseAmbiguous) release()
+    }
 
     // Real English dictionary single-row prompt with quoted childKey & NO tool call
     const enQuotedBetaTrigger = await b.append(

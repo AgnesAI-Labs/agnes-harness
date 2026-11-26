@@ -83,7 +83,14 @@ export function createCommandController(
   const refreshSlots = new Map<SessionBinding, RefreshSlot>()
   const pendingChildCommands = new Map<
     string,
-    { binding: SessionBinding; text: string | undefined; commandId: string }
+    {
+      binding: SessionBinding
+      sessionId: string
+      childId: string
+      action: ChildControlAction
+      text: string | undefined
+      commandId: string
+    }
   >()
   let armChildPoller: ((session?: Session) => void) | undefined
 
@@ -334,17 +341,12 @@ export function createCommandController(
   function pruneResolvedChildCommands(session: Session, value: SessionControlStateResult): void {
     if (!value.children) return
     const children = new Map(value.children.map((child) => [child.id, child]))
-    const prefix = `${session.id}\0`
     for (const [key, entry] of pendingChildCommands) {
-      if (!key.startsWith(prefix)) continue
-      const parts = key.split('\0')
-      const childId = parts[1] ?? ''
-      const action = parts[2] as ChildControlAction | undefined
-      const child = children.get(childId)
+      if (entry.sessionId !== session.id) continue
+      const child = children.get(entry.childId)
       if (
-        !action ||
         !child ||
-        !childActionAvailable(child, action) ||
+        !childActionAvailable(child, entry.action) ||
         !context.sessionBinding.isCurrent(entry.binding, session)
       )
         pendingChildCommands.delete(key)
@@ -491,14 +493,19 @@ export function createCommandController(
     pruneStaleChildCommands(binding)
     const key = `${session.id}\0${id}\0${action}`
     const existing = pendingChildCommands.get(key)
-    let commandId = options?.commandId
-    if (!commandId) {
-      if (existing && existing.binding === binding && existing.text === text) {
-        commandId = existing.commandId
-      } else {
-        commandId = createChildCommandId()
-        pendingChildCommands.set(key, { binding, text, commandId })
-      }
+    let commandId: string
+    if (existing && existing.binding === binding && existing.text === text) {
+      commandId = existing.commandId
+    } else {
+      commandId = options?.commandId ?? createChildCommandId()
+      pendingChildCommands.set(key, {
+        binding,
+        sessionId: session.id,
+        childId: id,
+        action,
+        text,
+        commandId,
+      })
     }
     try {
       if (action === 'recap')

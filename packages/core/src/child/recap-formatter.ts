@@ -13,6 +13,7 @@ export type ArtifactVerificationSummary = Readonly<{
   missingCount: number
   nonFileCount?: number
   unverifiableCount: number
+  missingCodes?: readonly string[]
   errorCodes?: readonly string[]
 }>
 
@@ -162,6 +163,10 @@ function localizedBlockerReason(reason: string | undefined, locale: RecapLocale)
   return reason
 }
 
+function formatMissingCodes(verification?: ArtifactVerificationSummary): string {
+  return verification?.missingCodes?.length ? verification.missingCodes.map(literal).join(', ') : ''
+}
+
 function formatUnverifiedSummary(
   owner: string,
   verification: ArtifactVerificationSummary,
@@ -171,6 +176,7 @@ function formatUnverifiedSummary(
   const unverifiable = verification.unverifiableCount
   const nonFile = verification.nonFileCount ?? 0
   const missing = verification.missingCount
+  const missingCodes = formatMissingCodes(verification)
   const kinds = Number(unverifiable > 0) + Number(nonFile > 0) + Number(missing > 0)
   if (kinds === 0) return undefined
   if (kinds > 1) {
@@ -187,8 +193,8 @@ function formatUnverifiedSummary(
         : '',
       missing > 0
         ? locale === 'zh-CN'
-          ? `${missing} 项当前不存在（ENOENT）`
-          : `${missing} currently missing (ENOENT)`
+          ? `${missing} 项当前不存在${missingCodes ? `（${missingCodes}）` : ''}`
+          : `${missing} currently missing${missingCodes ? ` (${missingCodes})` : ''}`
         : '',
     ].filter(Boolean)
     return locale === 'zh-CN'
@@ -206,8 +212,8 @@ function formatUnverifiedSummary(
       : `${owner} Recorded artifact path(s) are directories or non-regular files (${nonFile} non-file entry/entries, not verified as regular files)`
   }
   return locale === 'zh-CN'
-    ? `${owner} 产物当前不存在（记录到 ${missing} 项写入，文件检查返回 ENOENT）`
-    : `${owner} Recorded artifacts currently missing (${missing} recorded write(s) not found on disk / ENOENT)`
+    ? `${owner} 产物当前不存在（记录到 ${missing} 项写入，${missingCodes ? `文件检查返回 ${missingCodes}` : '未在磁盘找到'}）`
+    : `${owner} Recorded artifacts currently missing (${missing} recorded write(s) not found on disk${missingCodes ? ` / ${missingCodes}` : ''})`
 }
 
 function artifactRows(snapshot: RecapFactSnapshot, locale: RecapLocale): string[] {
@@ -218,6 +224,7 @@ function artifactRows(snapshot: RecapFactSnapshot, locale: RecapLocale): string[
     const codes = verification?.errorCodes?.length
       ? ` (${verification.errorCodes.map(literal).join(', ')})`
       : ''
+    const missingCodes = formatMissingCodes(verification)
 
     if (verifiedLines.length > 0) {
       const notes: string[] = []
@@ -238,8 +245,8 @@ function artifactRows(snapshot: RecapFactSnapshot, locale: RecapLocale): string[
       if (verification?.missingCount) {
         notes.push(
           locale === 'zh-CN'
-            ? `${owner} 另有 ${verification.missingCount} 项已记录写入当前不存在（ENOENT）`
-            : `${owner} ${verification.missingCount} additional recorded write(s) currently missing (ENOENT)`,
+            ? `${owner} 另有 ${verification.missingCount} 项已记录写入当前不存在${missingCodes ? `（${missingCodes}）` : ''}`
+            : `${owner} ${verification.missingCount} additional recorded write(s) currently missing${missingCodes ? ` (${missingCodes})` : ''}`,
         )
       }
       return [...verifiedLines, ...notes]

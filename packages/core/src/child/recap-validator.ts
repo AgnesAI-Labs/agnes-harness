@@ -27,18 +27,19 @@ const universalCompletion = [
 const batchRatioAfter =
   /(\d+)\s*(?:\/|of|out of)\s*(\d+)\s*(?:((?:sub)?(?:tasks?|agents?)|items?|jobs?|children|steps?|checks?|tests?|files?|(?:项|个)?(?:子?任务|子代理|工作|步骤|检查|测试))\s*)?(?:(?:are|were|have\s+been)\s+)?(?:completed?|done|finished|succeeded|已完成|完成)/giu
 const batchRatioBefore =
-  /(?:已(?:经)?|共|总共|一共|累计)?完成(?:了)?\s*(\d+)\s*\/\s*(\d+)(?:\s*((?:项|个)?(?:子?任务|子代理|任务|步骤|检查|测试)))?/giu
+  /(?:已(?:经)?|共|总共|一共|累计)?完成(?:了)?(?:\s*(?:子?任务|子代理|工作|数量|总数))?\s*[:：—–=-]?\s*(\d+)\s*\/\s*(\d+)(?:\s*((?:项|个)?(?:子?任务|子代理|任务|步骤|检查|测试)))?/giu
 const batchRatioBeforeEn =
-  /\b(?:completed?|finished|done(?:\s+with)?)\s+(\d+)\s*(?:\/|of|out of)\s*(\d+)(?:\s+((?:sub)?(?:tasks?|agents?)|items?|jobs?|children|steps?|checks?|tests?|files?))?\b/giu
+  /\b(?:(?:(?:sub)?(?:tasks?|agents?)|items?|jobs?|children)\s+(?:completed?|finished|done)|(?:completed?|finished|done(?:\s+with)?)(?:\s+(?:(?:sub)?(?:tasks?|agents?)|items?|jobs?|children))?)(?:\s*[:：—–=-]\s*|\s+)(\d+)\s*(?:\/|of|out of)\s*(\d+)(?:\s+((?:sub)?(?:tasks?|agents?)|items?|jobs?|children|steps?|checks?|tests?|files?))?\b/giu
 const batchCountBeforeEn =
-  /\b(?:completed?|finished)\s+(?:all\s+)?(\d+)\s+((?:sub)?(?:tasks?|agents?)|items?|jobs?|children)\b/giu
+  /\b(?:(?:(?:sub)?(?:tasks?|agents?)|items?|jobs?|children)\s+(?:completed?|finished|done)\s*[:：—–=-]\s*(\d+)\b|(?:completed?|finished|done(?:\s+with)?)(?:\s*[:：—–=-]\s*|\s+)(?:all\s+)?(\d+)\s+(?:(?:sub)?(?:tasks?|agents?)|items?|jobs?|children)\b|(?:completed?|finished)\s+(?:(?:sub)?(?:tasks?|agents?)|items?|jobs?|children)\s*[:：—–=-]\s*(\d+)\b|(?:completed?|finished)\s*[:：—–=-]\s*(\d+)(?!\s*(?:\/|of\b|out\s+of\b|%|ms\b|s\b|sec|min|steps?|checks?|tests?|files?|tokens?|lines?|bytes?)|[-:/.\d]))/giu
 const batchCountAfterEn =
   /(?<![/\d.])\b(\d+)\s+((?:sub)?(?:tasks?|agents?)|items?|jobs?|children)\s+(?:(?:are|were|have\s+been|now|already|successfully)\s+)*(?:completed?|done|finished|succeeded)\b/giu
 const batchCountBeforeZh =
-  /(?:已(?:经)?|共|总共|一共|累计)?完成(?:了)?\s*(\d+)\s*(?:个\s*(?:子?任务|子代理|工作)|项(?:\s*(?:子?任务|子代理|工作))?(?!\s*(?:步骤|检查|测试|文件)))/gu
+  /(?:已(?:经)?|共|总共|一共|累计)?完成(?:了)?(?:\s*(?:子?任务|子代理|工作))?\s*[:：—–=-]?\s*(\d+)\s*(?:个\s*(?:子?任务|子代理|工作)|项(?:\s*(?:子?任务|子代理|工作))?(?!\s*(?:步骤|检查|测试|文件)))|(?:已(?:经)?|共|总共|一共|累计)?完成(?:了)?\s*(?:子?任务|子代理|工作|数量|总数)\s*[:：—–=-]\s*(\d+)(?!\s*[/\d.%个项步骤检查测试文件])/gu
 const batchCountAfterZh =
   /(?<![/\d.])(\d+)\s*(?:个\s*(?:子?任务|子代理|工作)|项(?:\s*(?:子?任务|子代理|工作))?(?!\s*(?:步骤|检查|测试|文件)))\s*(?:已(?:经)?|均已?|都已?|全部|顺利)?(?:完成|结束|搞定)/gu
 const nonBatchUnit = /^(?:steps?|checks?|tests?|files?|(?:项|个)?(?:步骤|检查|测试))$/iu
+const nonBatchUnitBefore = /(?:\b(?:steps?|checks?|tests?|files?)|步骤|检查|测试|文件)\s*$/iu
 const batchHint = /\b(?:all|total|overall|batch)\b|全部|总共|整批/iu
 
 function checkRatioMatches(
@@ -54,18 +55,21 @@ function checkRatioMatches(
   const ratioSpans: Array<[number, number]> = []
   const checkRatio = (match: RegExpExecArray, numRaw: string, denRaw: string, unit: string | undefined) => {
     ratioSpans.push([match.index, match.index + match[0].length])
-    if (negated(prose.slice(0, match.index))) return
+    const before = prose.slice(0, match.index)
+    if (negated(before)) return
+    const nonBatch =
+      (unit ? nonBatchUnit.test(unit.trim()) : false) || (!unit && nonBatchUnitBefore.test(before))
     const num = Number(numRaw)
     const den = Number(denRaw)
     if (uniqueTasks.length > 0 && !hasBatchHint) {
-      if (unit && nonBatchUnit.test(unit.trim())) return
+      if (nonBatch) return
       const subTotal = uniqueTasks.length
       const subSettled = uniqueTasks.filter((t) => t.status === 'completed' || t.status === 'idle').length
       if ((num === subSettled && den === subTotal) || (num === settled && den === total)) return
       errors.push({ code: 'FALSE_COMPLETION_CLAIM', detail: match[0] })
       return
     }
-    if (unit && nonBatchUnit.test(unit.trim()) && !hasBatchHint && total > 0 && !snapshotHasUnit(unit)) return
+    if (nonBatch && !hasBatchHint && total > 0) return
     if (num !== settled || den !== total) errors.push({ code: 'FALSE_COMPLETION_CLAIM', detail: match[0] })
   }
   for (const m of prose.matchAll(batchRatioAfter)) checkRatio(m, m[1] as string, m[2] as string, m[3])
@@ -77,7 +81,8 @@ function checkRatioMatches(
     const start = match.index
     const end = start + match[0].length
     if (overlapsRatio(start, end)) return
-    if (negated(prose.slice(0, start))) return
+    const before = prose.slice(0, start)
+    if (negated(before) || nonBatchUnitBefore.test(before)) return
     const num = Number(numRaw)
     if (uniqueTasks.length > 0 && !hasBatchHint) {
       const subSettled = uniqueTasks.filter((t) => t.status === 'completed' || t.status === 'idle').length
@@ -87,14 +92,11 @@ function checkRatioMatches(
     }
     if (num !== settled) errors.push({ code: 'FALSE_COMPLETION_CLAIM', detail: match[0] })
   }
-  for (const m of prose.matchAll(batchCountBeforeEn)) checkCountOnly(m, m[1] as string)
+  for (const m of prose.matchAll(batchCountBeforeEn))
+    checkCountOnly(m, (m[1] ?? m[2] ?? m[3] ?? m[4]) as string)
   for (const m of prose.matchAll(batchCountAfterEn)) checkCountOnly(m, m[1] as string)
-  for (const m of prose.matchAll(batchCountBeforeZh)) checkCountOnly(m, m[1] as string)
+  for (const m of prose.matchAll(batchCountBeforeZh)) checkCountOnly(m, (m[1] ?? m[2]) as string)
   for (const m of prose.matchAll(batchCountAfterZh)) checkCountOnly(m, m[1] as string)
-}
-
-function snapshotHasUnit(unit: string) {
-  return !nonBatchUnit.test(unit.trim())
 }
 
 function completionChecks(text: string, snapshot: RecapFactSnapshot, errors: Violation[]) {
@@ -282,12 +284,16 @@ function isDirectAfterRef(between: string): boolean {
   return pos >= rest.length
 }
 
-const ordinaryLeadingNonAssertiveEn =
-  /(?:^|\s)(?:if|whether|when|whenever|once|unless|until|before|after|while|assuming|suppose|supposing|provided|should|in\s+case(?:\s+that)?|check|verify|confirm|validate|inspect|ensure|make\s+sure|see|determine|test|ask|find\s+out|wait\s+for|tell\s+me|let\s+me\s+know)\b/iu
+const ordinaryConditionalEn =
+  /(?:^|[\s(])(?:if|whether|when|whenever|once|unless|until|before|after|while|assume|assuming|suppose|supposing|pretend|imagine|given(?:\s+that)?|provided(?:\s+that)?|in\s+case(?:\s+that)?|on\s+the\s+assumption(?:\s+that)?|wait(?:ing)?\s+for)\b/iu
+const ordinaryDirectiveEn =
+  /^\s*(?:(?:and|or|then|next|first|also|just|always|please|kindly)\s+)*(?:(?:please|kindly|let's|let\s+us|try\s+to|remember\s+to|be\s+sure\s+to|make\s+sure\s+to|to|don't\s+forget\s+to)\s+|(?:you|we|they|one)\s+(?:should|must|need\s+to|have\s+to|ought\s+to|may\s+want\s+to|might\s+want\s+to)\s+|(?:need|needs|needed|have|has|had|want|wants|going)\s+to\s+)?(?:check|verify|confirm|validate|inspect|ensure|make\s+sure|see|determine|test|ask|find\s+out|tell\s+me|let\s+me\s+know)\b/iu
 const ordinaryLeadingQuestionEn =
   /^\s*(?:is|are|was|were|has|have|did|does|do|can|could|will|would|should)\s+$/iu
-const ordinaryLeadingNonAssertiveZh =
-  /(?:如果|若|假如|假设|要是|一旦|除非|只要|当|等到|等|待|直到|是否|有没有|检查|核查|核实|确认|验证|查看|排查|判断|看看|看下|看一下|确保|等待|问一下|告诉我|请先)/u
+const ordinaryConditionalZh =
+  /(?:如果|若|假如|假设|假定|设想|要是|一旦|除非|只要|当|等到|等|待|直到|是否|有没有)/u
+const ordinaryDirectiveZh =
+  /^\s*(?:(?:(?:请|麻烦|先|请先|记得|务必|需要|需|要|应该|应当|应|去)\s*)+(?:检查|核查|核实|确认|验证|查看|排查|判断|确保|等待)(?!了)|(?:看看|看下|看一下|问一下|告诉我|(?:检查|核查|核实|确认|验证|查看|排查)一下))/u
 const ordinaryTrailingNonAssertive =
   /^\s*(?:(?:了)?\s*(?:吗|么|呢|的话|之后|以后|后|时|再|才|就)(?:[\s。！？，,.!?]|$)|or\s+not\b)/iu
 
@@ -295,7 +301,8 @@ function isNonAssertiveOrdinaryClause(clause: string, leading: string, afterMatc
   if (/[?？]$/u.test(clause.trimEnd())) return true
   if (ordinaryTrailingNonAssertive.test(afterMatch)) return true
   if (ordinaryLeadingQuestionEn.test(leading)) return true
-  if (ordinaryLeadingNonAssertiveEn.test(leading) || ordinaryLeadingNonAssertiveZh.test(leading)) return true
+  if (ordinaryConditionalEn.test(leading) || ordinaryConditionalZh.test(leading)) return true
+  if (ordinaryDirectiveEn.test(leading) || ordinaryDirectiveZh.test(leading)) return true
   return false
 }
 
@@ -517,11 +524,19 @@ const HARD_EXIT_VIOLATIONS = new Set([
 
 type RecapScope = 'recap' | 'delegation' | 'ordinary'
 
+const metaTopicCue =
+  /\b(?:vocabulary|schema|codebase|docs?|documentation|architecture|implementation|types?|interfaces?|definitions?)\b|代码库|源码|文档|词汇|架构|接口|定义/iu
+
 const requestedChildRecap = [
   /^(?:please\s+)?(?:use\s+subagent_recap\s+(?:to\s+)?)?(?:recap|summari[sz]e|review)\s+(?:(?:all|my|our|the|these|current)\s+)*(?:subtasks?|subagents?)(?:\s+(?:status|results?|outcomes?))?[.?!]?$/iu,
   /^(?:are|have|did)\s+(?:(?:all|both|my|our|the|these)\s+)+(?:subtasks?|subagents?)\s+(?:been\s+)?(?:complete[d]?|done|finished|succeed(?:ed)?)[.?!]?$/iu,
+  /\b(?:recap|summari[sz]e|review|report(?:\s+on)?|check(?:\s+on)?|list|show(?:\s+me)?|give\s+(?:me\s+)?(?:a\s+)?(?:recap|summary|status|update)\s+(?:of|on)|status\s+of)\s+(?:all|both|every|each)(?:\s+of)?(?:\s+(?:my|our|the|these|current|running|delegated))*\s+(?:sub-?tasks?|sub-?agents?|child(?:ren|\s+(?:tasks?|agents?))|delegated\s+(?:tasks?|work))\b/iu,
+  /\b(?:are|have|did)\s+(?:all|both|every)(?:\s+of)?(?:\s+(?:my|our|the|these|current|delegated))*\s+(?:sub-?tasks?|sub-?agents?|child(?:ren|\s+(?:tasks?|agents?)))\s+(?:been\s+)?(?:complete[d]?|done|finished|succeed(?:ed)?)\b/iu,
   /^(?:请|帮我)?(?:调用\s*subagent_recap\s*(?:来|以)?\s*)?(?:回顾|总结|汇总)(?:一下|当前|所有|全部|这些)*(?:子任务|子代理)(?:的)?(?:状态|结果|进度)?[。？！]?$/u,
   /^(?:现在)?(?:所有|全部)?(?:子任务|子代理)(?:都|均|已经|已)*(?:完成|结束)(?:了)?(?:吗|没有)?[。？！?]?$/u,
+  /(?:回顾|总结|汇总|汇报|核查|查看|列出)(?:一下|当前|目前)*(?:所有|全部|各个|每个)(?:的)?(?:子任务|子代理|委派任务)/u,
+  /把(?:所有|全部)(?:的)?(?:子任务|子代理|委派任务)(?:的(?:状态|结果|进度|情况))?(?:都)?(?:回顾|总结|汇总|汇报)/u,
+  /(?:所有|全部)(?:的)?(?:子任务|子代理|委派任务)(?:都|均|已经|已)*(?:完成|结束)(?:了)?(?:吗|没有)/u,
 ]
 
 const enRecapPromptPrefix = /^Use\s+subagent_recap\b/iu
@@ -531,6 +546,7 @@ const zhRecapPromptPrefix = /^请调用\s*subagent_recap\b/u
 const zhChildKeyArg = /childKey\s*[:：=]?\s*(?:(["'`「『“])([^"'`」』”\s]+)["'`」』”]|([^\s"'`，。,)）]+))/u
 const zhSubagentTarget =
   /子代理(?:\s+(?:(["'`「『“])([^"'`」』”\s]+)["'`」』”]|([^\s"'`，。,)）]+))|(["'`「『“])([^"'`」』”\s]+)["'`」』”])/u
+const recapVerbCue = /\b(?:recap|summari[sz]e|review|subagent_recap)\b|回顾|总结|汇总/iu
 
 function cleanUnquotedTarget(raw: string | undefined): string | undefined {
   const cleaned = raw?.replace(/[.,;:!?。，；：！？]+$/u, '').trim()
@@ -553,13 +569,44 @@ function singleChildTargetFromPrompt(input: string): string | undefined {
     if (sub) return sub[2] ?? sub[5] ?? cleanUnquotedTarget(sub[3])
     return undefined
   }
+  if (recapVerbCue.test(trimmed)) {
+    const key = zhChildKeyArg.exec(trimmed) ?? enChildKeyArg.exec(trimmed)
+    if (key) return key[2] ?? cleanUnquotedTarget(key[3])
+  }
   return undefined
+}
+
+function renderAmbiguousTargetNotice(
+  targetChildKey: string,
+  candidates: readonly string[],
+  locale: RecapLocale,
+): string {
+  const list = candidates.map((candidate) => `- \`${candidate}\``)
+  if (locale === 'zh-CN') {
+    return [
+      `无法回顾目标 \`${targetChildKey}\`：该 childKey 存在歧义（E_CHILD_AMBIGUOUS），匹配到多个子任务。`,
+      ...(list.length ? ['', '匹配候选：', ...list] : []),
+      '',
+      '请使用上述精确的 childKey 重新请求。',
+    ].join('\n')
+  }
+  return [
+    `Cannot recap target \`${targetChildKey}\`: this childKey is ambiguous (E_CHILD_AMBIGUOUS) and matches multiple subtasks.`,
+    ...(list.length ? ['', 'Matching candidates:', ...list] : []),
+    '',
+    'Please retry with one of the exact childKey values above.',
+  ].join('\n')
 }
 
 async function inspectRecapTurn(
   parent: SessionImpl,
   turnStartSeq: number,
-): Promise<{ scope: RecapScope; targetChildKey?: string; triggerText: string }> {
+): Promise<{
+  scope: RecapScope
+  targetChildKey?: string
+  explicitSingleTarget: boolean
+  triggerText: string
+}> {
   const [trigger] = await parent.scan({ fromSeq: turnStartSeq, toSeq: turnStartSeq, lane: parent.lane })
   const input = messageText((trigger?.data as { content?: AssistantMessage['content'] } | undefined)?.content)
   const trimmedInput = input.trim()
@@ -567,6 +614,7 @@ async function inspectRecapTurn(
   const storage = parent.d.log.storage
   const explicitFullTreePrompt =
     !promptTarget &&
+    !metaTopicCue.test(trimmedInput) &&
     hasChildControl(storage) &&
     requestedChildRecap.some((pattern) => pattern.test(trimmedInput))
   let scope: RecapScope = promptTarget || explicitFullTreePrompt ? 'recap' : 'ordinary'
@@ -607,7 +655,12 @@ async function inspectRecapTurn(
       : sawRecapTool && !sawFullTreeRecap && toolTargets.size === 1
         ? [...toolTargets][0]
         : undefined
-  return { scope, ...(targetChildKey ? { targetChildKey } : {}), triggerText: input }
+  return {
+    scope,
+    ...(targetChildKey ? { targetChildKey } : {}),
+    explicitSingleTarget: Boolean(promptTarget),
+    triggerText: input,
+  }
 }
 
 /** Restrict recap checks to tool use and assertions about actual delegated work. */
@@ -648,6 +701,7 @@ export async function guardSessionRecapExit(
   const turn = await inspectRecapTurn(parent, turnStartSeq)
   const effectiveScope = scope ?? turn.scope
   const targetChildKey = options.childKey ?? turn.targetChildKey
+  const explicitSingleTarget = Boolean(options.childKey || turn.explicitSingleTarget)
   const locale =
     options.locale ?? normalizeRecapLocale(promptLanguage(turn.triggerText) ?? promptLanguage(replyText))
   const knownChild = ids.some((id) => replyText.includes(id))
@@ -665,13 +719,19 @@ export async function guardSessionRecapExit(
       locale,
     })
   } catch (error) {
-    if (
-      !options.childKey &&
-      error &&
-      typeof error === 'object' &&
-      'code' in error &&
-      error.code === 'E_CHILD_AMBIGUOUS'
-    ) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'E_CHILD_AMBIGUOUS') {
+      if (explicitSingleTarget && targetChildKey) {
+        const rawCandidates = 'candidates' in error && Array.isArray(error.candidates) ? error.candidates : []
+        const candidates = rawCandidates.filter((item): item is string => typeof item === 'string')
+        return {
+          text: renderAmbiguousTargetNotice(targetChildKey, candidates, locale),
+          event: parent.ev(
+            'x/core/recap-exit-guard',
+            { violations: [{ code: 'AMBIGUOUS_TARGET_CHILD', detail: targetChildKey }] },
+            { ignorable: true },
+          ),
+        }
+      }
       snapshot = await buildRecapFactSnapshot(parent, { locale })
     } else {
       throw error

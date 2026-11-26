@@ -140,6 +140,40 @@ function openChildJob(target: EventTarget, childId: string): void {
   target.dispatchEvent(new CustomEvent('agnes:open-terminal-job', { bubbles: true, detail: { childId } }))
 }
 
+type PendingChildIntent = {
+  parentId: string
+  childId: string
+  action: ComposerChildAction
+  text: string | undefined
+  commandId: string
+}
+
+type ChildIntentStore = {
+  acquire: (child: SessionControlledChild, action: ComposerChildAction, text: string | undefined) => string
+  clear: (childId: string, action: ComposerChildAction, commandId?: string) => void
+}
+
+function intentKey(childId: string, action: ComposerChildAction): string {
+  return `${childId}\0${action}`
+}
+
+function createIntentStore(map: Map<string, PendingChildIntent>): ChildIntentStore {
+  return {
+    acquire(child, action, text) {
+      const key = intentKey(child.id, action)
+      const saved = map.get(key)
+      if (saved && saved.parentId === child.parentId && saved.text === text) return saved.commandId
+      const commandId = nextIntentCommandId()
+      map.set(key, { parentId: child.parentId, childId: child.id, action, text, commandId })
+      return commandId
+    },
+    clear(childId, action, commandId) {
+      const key = intentKey(childId, action)
+      if (commandId === undefined || map.get(key)?.commandId === commandId) map.delete(key)
+    },
+  }
+}
+
 /**
  * The children a session started, above the composer: one row per workflow or subagent session,
  * nested under its parent. Any subtree containing a live or attention-needed descendant stays
@@ -161,7 +195,17 @@ export function ChildControlTree({
   ) => Promise<void | ComposerChildControlOutcome>
   t: ComposerDependencies['translate']
 }) {
+  // Hold unconfirmed write intents at the tree level so rows moving between active and folded
+  // history groups keep reusing the same commandId until confirmed, edited or invalidated.
+  const pendingIntentsRef = useRef(new Map<string, PendingChildIntent>())
+  const intentStoreRef = useRef<ChildIntentStore | null>(null)
+  if (!intentStoreRef.current) intentStoreRef.current = createIntentStore(pendingIntentsRef.current)
   const byId = new Map(nodes.map((child) => [child.id, child]))
+  for (const [key, saved] of pendingIntentsRef.current) {
+    const node = byId.get(saved.childId)
+    if (!node || node.parentId !== saved.parentId || !isChildActionAvailable(node, saved.action))
+      pendingIntentsRef.current.delete(key)
+  }
   const childrenByParent = new Map<string, SessionControlledChild[]>()
   for (const node of nodes) {
     const siblings = childrenByParent.get(node.parentId)
@@ -199,7 +243,13 @@ export function ChildControlTree({
         data-child-id={child.id}
         data-status={child.status}
       >
-        <ChildControlRow child={child} disabled={disabled} control={control} t={t} />
+        <ChildControlRow
+          child={child}
+          disabled={disabled}
+          control={control}
+          t={t}
+          intentStore={intentStoreRef.current!}
+        />
         {children.length ? (
           <ul className="composer-children-sublist">{children.map((row) => renderChild(row, next))}</ul>
         ) : null}
@@ -237,6 +287,7 @@ export function ChildControlRow({
   disabled = false,
   control,
   t,
+  intentStore,
 }: {
   child: SessionControlledChild
   disabled?: boolean
@@ -247,6 +298,7 @@ export function ChildControlRow({
     options?: ComposerChildControlOptions,
   ) => Promise<void | ComposerChildControlOutcome>
   t: ComposerDependencies['translate']
+  intentStore?: ChildIntentStore
 }) {
   const [text, setText] = useState('')
   const [replyOpen, setReplyOpen] = useState(false)
@@ -257,17 +309,20 @@ export function ChildControlRow({
     message: string
     retry?: () => Promise<void>
   } | null>(null)
-  const intentCommandIds = useRef(
-    new Map<ComposerChildAction, { childId: string; text: string | undefined; commandId: string }>(),
-  )
-  for (const [savedAction, saved] of intentCommandIds.current) {
-    if (
-      saved.childId !== child.id ||
-      !isChildActionAvailable(child, savedAction) ||
-      (savedAction === 'continue' && saved.text !== text)
-    )
-      intentCommandIds.current.delete(savedAction)
+  const fallbackMapRef = useRef(new Map<string, PendingChildIntent>())
+  const fallbackStoreRef = useRef<ChildIntentStore | null>(null)
+  if (!intentStore) {
+    if (!fallbackStoreRef.current) fallbackStoreRef.current = createIntentStore(fallbackMapRef.current)
+    for (const [key, saved] of fallbackMapRef.current) {
+      if (
+        saved.childId !== child.id ||
+        saved.parentId !== child.parentId ||
+        !isChildActionAvailable(child, saved.action)
+      )
+        fallbackMapRef.current.delete(key)
+    }
   }
+  const intents = intentStore ?? fallbackStoreRef.current!
   const pending = pendingAction !== null
   const mark = CHILD_MARK[child.status]
   const working = WORKING.has(child.status)
@@ -287,19 +342,13 @@ export function ChildControlRow({
   const submit = (action: ComposerChildAction) => {
     if (pending) return
     const payloadText = action === 'continue' ? text : undefined
-    const saved = intentCommandIds.current.get(action)
-    const commandId =
-      saved && saved.childId === child.id && saved.text === payloadText
-        ? saved.commandId
-        : nextIntentCommandId()
-    intentCommandIds.current.set(action, { childId: child.id, text: payloadText, commandId })
+    const commandId = intents.acquire(child, action, payloadText)
     setPendingAction(action)
     setError('')
     setRefreshWarning(null)
     void control(child.id, action, payloadText, { commandId })
       .then((outcome) => {
-        if (intentCommandIds.current.get(action)?.commandId === commandId)
-          intentCommandIds.current.delete(action)
+        intents.clear(child.id, action, commandId)
         if (action === 'continue') {
           setText('')
           setReplyOpen(false)
@@ -418,9 +467,7 @@ export function ChildControlRow({
             value={text}
             disabled={disabled || pending}
             onChange={(event: ChangeEvent<HTMLInputElement>) => {
-              const next = event.currentTarget.value
-              if (next !== text) intentCommandIds.current.delete('continue')
-              setText(next)
+              setText(event.currentTarget.value)
             }}
             onKeyDown={(event) => {
               if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
