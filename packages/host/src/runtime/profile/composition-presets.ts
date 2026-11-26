@@ -11,9 +11,20 @@ export async function compositionPresets(
   options: HostOptions,
 ): Promise<Record<string, PresetDoc>> {
   if (!options.loader) throw new HostError('E_DEP_MISSING', 'createHost needs a package loader')
+  const sources =
+    (await options.runtimePluginSources?.()) ??
+    options.runtimePluginSnapshots ??
+    options.runtimePluginCatalogue ??
+    []
   const presets: Record<string, PresetDoc> = {}
   for (const pkg of profile.packages.filter((pkg) => pkg.enabled)) {
-    const source = options.runtimePluginSnapshots?.find((source) => source.snapshot.packageId === pkg.id)
+    const source = sources.find(
+      (candidate) =>
+        candidate.trusted &&
+        candidate.enabled !== false &&
+        candidate.snapshot.packageId === pkg.id &&
+        (!pkg.integrity || candidate.snapshot.integrity === pkg.integrity),
+    )
     const module =
       pkg.trust === 'builtin'
         ? await options.loader.importPackage(pkg.id, options.packageDirs?.get(pkg.id) ?? options.dataDir)

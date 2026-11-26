@@ -56,11 +56,11 @@ export async function assertGenerationTrust(
   }
 }
 
-/** The catalogue a runtime target selects its plugin snapshots from: provided sources and development reloads. */
-export async function generationSourceCatalogue(
+/** Deduplicated snapshot candidates visible to a generation: provided sources and development reloads. */
+export async function generationSources(
   options: Pick<HostOptions, 'runtimePluginSources' | 'runtimePluginCatalogue' | 'runtimePluginSnapshots'>,
   development: ReadonlyMap<string, RuntimePluginSnapshot>,
-): Promise<RuntimePluginCatalogue> {
+): Promise<readonly RuntimePluginSnapshot[]> {
   const sources =
     (await options.runtimePluginSources?.()) ??
     options.runtimePluginSnapshots ??
@@ -72,7 +72,15 @@ export async function generationSourceCatalogue(
       source,
     ]),
   )
-  return new RuntimePluginCatalogue([...catalogue.values()])
+  return [...catalogue.values()]
+}
+
+/** The catalogue a runtime target selects its plugin snapshots from: provided sources and development reloads. */
+export async function generationSourceCatalogue(
+  options: Pick<HostOptions, 'runtimePluginSources' | 'runtimePluginCatalogue' | 'runtimePluginSnapshots'>,
+  development: ReadonlyMap<string, RuntimePluginSnapshot>,
+): Promise<RuntimePluginCatalogue> {
+  return new RuntimePluginCatalogue(await generationSources(options, development))
 }
 
 /** Let each publisher resolve explicit development reloads as well as installed source identities. */

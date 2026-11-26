@@ -50,7 +50,7 @@ import { type ChangeResult, type ContainerHandle, changeResult, sessionBindingOf
 import { type GenerationFailure, generationError, generationFailure } from './failure.js'
 import { assertMigrationSettled } from './migration-state.js'
 import { createOpenedSessionsRelay } from './opened-sessions.js'
-import { generationGrants, sameCodeAuthorityChanged } from './packages.js'
+import { generationGrants, sameCodeAuthorityChanged, selectGenerationSources } from './packages.js'
 import { GenerationReuseMode, openGenerationStore, trackRunningGenerations } from './process-liveness.js'
 import { createGenerationSkills, restoreGenerationRows } from './resources.js'
 import { describeColdSession, describeHostSession, readGenerationStatusAsync } from './runtime-descriptor.js'
@@ -72,7 +72,7 @@ import {
   registryCodeRevision,
   targetRows,
 } from './target-code.js'
-import { generationAuthoringAuthority, generationSourceCatalogue, generationSourceReader } from './trust.js'
+import { generationAuthoringAuthority, generationSourceReader, generationSources } from './trust.js'
 
 export type { PluginGenerationStatus } from './status.js'
 
@@ -152,7 +152,7 @@ export async function createRuntimeGenerationHost(
   const compatibilityFor = (profile: ResolvedProfile) => runPlanFor(profile).processFacets.digest
 
   const sourcesFor = async (target: RuntimeTarget) =>
-    (await generationSourceCatalogue(options, developmentSources)).select(target)
+    selectGenerationSources(await generationSources(options, developmentSources), target, profile.packages)
   const bindGeneration = (key: string, id: string, host: Host): void => {
     const existing = store.session(key)
     const bound = pinnedBindings(host.seamBindings())

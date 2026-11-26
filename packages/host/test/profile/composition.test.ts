@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { mcpStablePrefix } from '@agnes/extension-api/mcp-naming'
 import { agentSelection } from '@agnes/host-common/profile/agent'
 import {
@@ -16,7 +17,9 @@ import {
   validateComposition,
 } from '@agnes/host-common/profile/composition'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
+import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import { createPluginRow } from '@agnes/plugin-runtime/host'
 import {
   SessionCapabilitySet,
@@ -26,6 +29,7 @@ import {
   validateResolvedProfile,
 } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
+import { selectGenerationSources } from '../../src/runtime/generation/packages.js'
 import { createCompositionAdmin, readBundleSelection } from '../../src/runtime/profile/bundle-selection.js'
 import {
   compositionAllowsTool,
@@ -37,7 +41,14 @@ import {
   capabilityEnabled,
   resolveSessionCapabilities,
 } from '../../src/runtime/profile/session-capabilities.js'
-import { pluginHost, pluginRow, pluginSource, targetOf } from '../assemble/plugin-extension-fixture.js'
+import { createTestHost } from '../../testkit/index.js'
+import {
+  pluginHost,
+  pluginRow,
+  pluginSource,
+  scratch,
+  targetOf,
+} from '../assemble/plugin-extension-fixture.js'
 
 const env = {
   platform: { os: 'linux' as const, arch: 'x64', capabilities: {} },
@@ -730,3 +741,108 @@ it.each(['trust', 'capability binding', 'source removal'] as const)(
     }
   },
 )
+
+it('retains enabled preset-only snapshot packages when opening a separate preset composition container', async () => {
+  const vendor = '@acme/preset-only-composition'
+  const directory = scratch()
+  writeFileSync(
+    join(directory, 'package.json'),
+    `${JSON.stringify({ name: vendor, version: '1.0.0', type: 'module', exports: './index.js' })}\n`,
+  )
+  writeFileSync(
+    join(directory, 'index.js'),
+    "export const presets = { chtd: { name: 'chtd', extends: 'standard', composition: { toolPolicy: { readOnly: true } } } }\n",
+  )
+  const integrity = `sha256-${'9'.repeat(64)}`
+  const presetSource: Readonly<RuntimePluginSnapshot> = Object.freeze({
+    snapshot: Object.freeze({
+      snapshotId: integrity,
+      profile: 'local-dev',
+      packageId: vendor,
+      version: '1.0.0',
+      integrity,
+      treeIntegrity: hashDirectory(directory, { exclude: [] }),
+      capabilityHash: 'capability',
+      directory,
+      contributions: Object.freeze([]),
+    }),
+    generation: 1,
+    trusted: true,
+  })
+  const ordinary = pluginSource("ctx.tools.register(tool('ordinary_tool'))")
+  const disabledRow = pluginRow('ext:acme/plugin-tools', 'plugin', true)
+  expect(
+    selectGenerationSources([ordinary, presetSource], targetOf([disabledRow]), [
+      {
+        id: ordinary.snapshot.packageId,
+        version: '2.3.4',
+        integrity: ordinary.snapshot.integrity,
+        source: 'test',
+        trust: 'trusted',
+        enabled: true,
+      },
+      { id: vendor, version: '1.0.0', integrity, source: 'test', trust: 'trusted', enabled: true },
+    ]).map((item) => item.snapshot.packageId),
+  ).toEqual([vendor])
+  expect(
+    selectGenerationSources([{ ...presetSource, trusted: false }], targetOf([]), [
+      { id: vendor, version: '1.0.0', integrity, source: 'test', trust: 'trusted', enabled: true },
+    ]),
+  ).toEqual([])
+
+  const builtinEntry = {
+    version: '0.1.0',
+    source: { type: 'builtin', ref: 'builtin' },
+    integrity: 'builtin:0.1.0',
+    trust: 'builtin' as const,
+    enabled: true,
+  }
+  const realPlatform = createPlatform()
+  const dataDir = scratch()
+  const f = await createTestHost({
+    dataDir,
+    platform: {
+      ...realPlatform,
+      os: realPlatform.os,
+      matches: () => false,
+      shell: realPlatform.shell,
+      terminal: () => ({ color: false }),
+      async probe() {},
+      recordSandboxBackend() {},
+      sandboxProbed: () => true,
+      killTree() {},
+      capability: () => ({ level: 'full', scope: [] }),
+      snapshot: () => ({ os: realPlatform.os, arch: 'x64', capabilities: {} }),
+    },
+    runtimePluginSnapshots: [ordinary, presetSource],
+    runtimePluginCatalogue: [ordinary, presetSource],
+    extensionLoader: {
+      import: async (file) => (await import(pathToFileURL(file).href)) as Record<string, unknown>,
+    },
+    lock: {
+      packages: {
+        '@agnes/ai': builtinEntry,
+        '@agnes/base': builtinEntry,
+        '@agnes/code': builtinEntry,
+        [vendor]: { version: '1.0.0', integrity, trust: 'trusted', enabled: true },
+      },
+    },
+    profileInputs: {
+      user: {
+        name: 'local-dev',
+        computerUse: { enabled: false },
+        composition: {},
+        packages: [{ id: vendor, source: 'test' }],
+        presets: { default: 'standard', allowed: ['standard', 'chtd'] },
+      },
+    },
+  })
+  try {
+    expect(await f.host.applyRuntimeTarget(targetOf([pluginRow()]))).toMatchObject({ ok: true })
+    const session = await f.host.createSession({ cwd: dataDir, preset: 'chtd' })
+    expect(session.preset.name).toBe('chtd')
+    await session.close()
+  } finally {
+    await f.host.close()
+  }
+})

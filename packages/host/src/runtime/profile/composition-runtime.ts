@@ -16,10 +16,7 @@ import {
   CompositionSessionStore,
   createLiveCompositionWriter,
 } from '@agnes/host-providers/profile/composition-state'
-import {
-  pluginSnapshotIdentity,
-  RuntimePluginCatalogue,
-} from '@agnes/host-providers/runtime-plugin-catalogue'
+import { pluginSnapshotIdentity } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import {
   RuntimeGenerationSnapshotStore,
@@ -28,7 +25,7 @@ import {
 } from '@agnes/package-manager'
 import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
-import { generationPackages } from '../generation/packages.js'
+import { generationPackages, selectGenerationSources } from '../generation/packages.js'
 import { projectGenerationStatus } from '../generation/runtime-descriptor.js'
 import { translateSessionFailure } from '../generation/seam-pins.js'
 import { liveResourceRow, pluginWorkspaceLayers, targetRows } from '../generation/target-code.js'
@@ -208,17 +205,22 @@ export async function createCompositionHost(
       const pinned = generations.session(binding.sessionKey)
       attemptedGeneration = pinned?.generationId
       const skills = currentSkills
+      const targetPackages = (
+        binding.legacy ? binding.profile : profileForComposition(binding.profile, binding.tree)
+      ).packages
       // A newly opened composition must not import boot-time pins retired by a later update.
       // Existing sessions bootstrap from their own durable code snapshot instead.
       const sources = pinned
         ? (await generations.readAsync(pinned.generationId)).sources
         : target
-          ? new RuntimePluginCatalogue(
+          ? selectGenerationSources(
               (await options.runtimePluginSources?.()) ??
                 options.runtimePluginCatalogue ??
                 options.runtimePluginSnapshots ??
                 [],
-            ).select(project(target, binding.tree))
+              project(target, binding.tree),
+              targetPackages,
+            )
           : options.runtimePluginSnapshots
       if (sources)
         await assertGenerationTrust(
@@ -317,7 +319,7 @@ export async function createCompositionHost(
           if (!pinned)
             applied = {
               target: effectiveCompositionTarget(projected),
-              sources: structuredClone(new RuntimePluginCatalogue(sources ?? []).select(projected)),
+              sources: structuredClone(selectGenerationSources(sources ?? [], projected, targetPackages)),
             }
         }
         const selectedRows = latestRows ?? (prepared.size ? [...rows.values()] : undefined)
@@ -677,6 +679,7 @@ export async function createCompositionHost(
         const publication = await broadcast('runtime-target', async (container) => {
           const projected = project(target, container.tree, container.host)
           const effective = effectiveCompositionTarget(projected)
+          const nextSources = selectGenerationSources(sources, projected, container.host.profile.packages)
           container.draining = draining(target.tree.rows, container.tree, container.host)
           // A composition the change does not reach (say a plugin its sessions never enabled) runs the
           // same rows and resources as before; rebuilding its generation would change nothing.
@@ -691,21 +694,11 @@ export async function createCompositionHost(
               options.runtimePluginSources,
             )
             // The same code under a relocated source still needs a fresh authority assembly.
-            if (
-              sameGenerationSourceIdentity(
-                container.applied.sources,
-                new RuntimePluginCatalogue(sources).select(projected),
-              )
-            )
-              return undefined
+            if (sameGenerationSourceIdentity(container.applied.sources, nextSources)) return undefined
           }
           delete container.applied
           const report = await container.host.applyRuntimeTarget(projected)
-          if (report.ok)
-            container.applied = {
-              target: effective,
-              sources: structuredClone(new RuntimePluginCatalogue(sources).select(projected)),
-            }
+          if (report.ok) container.applied = { target: effective, sources: structuredClone(nextSources) }
           return report
         })
         if (publication.ok) {

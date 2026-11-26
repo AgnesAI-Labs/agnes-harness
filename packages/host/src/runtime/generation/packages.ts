@@ -1,9 +1,15 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { ResolvedPackage, ResolvedProfile } from '@agnes/host-common/profile/types'
+import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-catalogue'
 import {
+  manifestDeclaresPresetEntry,
   type PluginGenerationSnapshot,
+  parseAgnesPluginEntries,
   type RuntimePluginSnapshot,
   sameGenerationSourceIdentity,
 } from '@agnes/package-manager'
+import type { RuntimeTarget } from '@agnes/plugin-runtime/host'
 import type { Host } from '../lifecycle/host.js'
 
 type Served = ReadonlyMap<string, Readonly<{ snapshot: PluginGenerationSnapshot; host: Host }>>
@@ -124,4 +130,51 @@ export function generationPackages(profile: ResolvedProfile, sources: readonly R
     })
   }
   return packages
+}
+
+function isPresetOnlySource(source: Readonly<RuntimePluginSnapshot>): boolean {
+  const file = join(source.snapshot.directory, 'package.json')
+  if (!existsSync(file)) return false
+  const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'))
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false
+  const manifest = parsed as Record<string, unknown>
+  const agnes = manifest.agnes
+  const plugins =
+    agnes && typeof agnes === 'object' && !Array.isArray(agnes)
+      ? (agnes as Record<string, unknown>).plugins
+      : undefined
+  return (
+    parseAgnesPluginEntries(source.snapshot.packageId, plugins).length === 0 &&
+    manifestDeclaresPresetEntry(manifest)
+  )
+}
+
+/**
+ * Target rows name every snapshot that mounts a plugin row; enabled preset-only snapshots declare
+ * no plugin rows, so retain them from the profile's enabled package set alongside row selections.
+ */
+export function selectGenerationSources(
+  available: readonly Readonly<RuntimePluginSnapshot>[],
+  target: RuntimeTarget,
+  packages: ResolvedProfile['packages'],
+): readonly Readonly<RuntimePluginSnapshot>[] {
+  const selected = new Map(
+    new RuntimePluginCatalogue(available).select(target).map((source) => [source.snapshot.packageId, source]),
+  )
+  for (const pkg of packages) {
+    if (!pkg.enabled || pkg.trust === 'builtin' || selected.has(pkg.id)) continue
+    const source = available.find(
+      (candidate) =>
+        candidate.trusted &&
+        candidate.enabled !== false &&
+        candidate.snapshot.packageId === pkg.id &&
+        (!pkg.integrity || candidate.snapshot.integrity === pkg.integrity),
+    )
+    if (source && isPresetOnlySource(source)) selected.set(pkg.id, source)
+  }
+  return Object.freeze(
+    [...selected.values()].sort((left, right) =>
+      left.snapshot.packageId.localeCompare(right.snapshot.packageId),
+    ),
+  )
 }

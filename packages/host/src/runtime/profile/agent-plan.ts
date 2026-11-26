@@ -11,7 +11,7 @@ import { materializeRoutes, pinPresetModelDefaults } from '@agnes/host-providers
 import { readRuntimeBundles } from '@agnes/host-providers/profile/bundles-reader'
 import type { CompositionBinding } from '@agnes/host-providers/profile/composition-state'
 import { pluginSnapshotIdentity } from '@agnes/host-providers/runtime-plugin-catalogue'
-import type { RuntimePluginSnapshot } from '@agnes/package-manager'
+import { parseAgnesPluginEntries, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { AgentPlan, LoopSelection, SessionCapabilitySet } from '@agnes/protocol'
 import type { Host, HostOptions } from '../lifecycle/host.js'
 import { profileForComposition } from './composition-selection.js'
@@ -87,6 +87,19 @@ export function assertAgentPin(
     throw new HostError('E_PRESET_UNSUPPORTED', 'agent final pin differs from reviewed selection')
 }
 
+function isPluginlessSource(source: Readonly<RuntimePluginSnapshot>): boolean {
+  const file = join(source.snapshot.directory, 'package.json')
+  if (!existsSync(file)) return false
+  const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'))
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false
+  const agnes = (parsed as Record<string, unknown>).agnes
+  const plugins =
+    agnes && typeof agnes === 'object' && !Array.isArray(agnes)
+      ? (agnes as Record<string, unknown>).plugins
+      : undefined
+  return parseAgnesPluginEntries(source.snapshot.packageId, plugins).length === 0
+}
+
 export async function sessionAdmission(
   profile: ResolvedProfile,
   modelProfile: ResolvedProfile,
@@ -104,7 +117,16 @@ export async function sessionAdmission(
       source.enabled !== false &&
       (!activePackages ||
         activePackages.get(source.snapshot.packageId) === source.snapshot.snapshotId ||
-        (!activePackages.has(source.snapshot.packageId) && source.enabled === true)),
+        (!activePackages.has(source.snapshot.packageId) &&
+          (source.enabled === true ||
+            (source.enabled === undefined &&
+              profile.packages.some(
+                (pkg) =>
+                  pkg.id === source.snapshot.packageId &&
+                  pkg.enabled &&
+                  (!pkg.integrity || pkg.integrity === source.snapshot.integrity),
+              ) &&
+              isPluginlessSource(source))))),
   )
   const sourceIds = new Set(sources.map((source) => source.snapshot.packageId))
   if (sourceIds.size !== sources.length)
