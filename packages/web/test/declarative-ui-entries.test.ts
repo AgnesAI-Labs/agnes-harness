@@ -13,6 +13,14 @@ const entry = (packageId: string, id = 'same'): PluginUiEntry => ({
   configure: true,
 })
 
+function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
 it('drops reads that predate a package notice, a profile change, or a reconnect', async () => {
   const ui = createPluginUiEntries()
   ui.setScope(true, 'local')
@@ -24,7 +32,7 @@ it('drops reads that predate a package notice, a profile change, or a reconnect'
       ui.setScope(true, 'other')
     },
   ]) {
-    const { promise, resolve } = Promise.withResolvers<unknown>()
+    const { promise, resolve } = deferred<unknown>()
     const request = ui.refresh(() => promise)
     invalidate()
     resolve({ entries: [entry('obsolete')] })
@@ -42,7 +50,7 @@ it('drops reads that predate a package notice, a profile change, or a reconnect'
 it('does not replace a newer observation with a slower read on the same connection', async () => {
   const ui = createPluginUiEntries()
   ui.setScope(true, 'local')
-  const earlier = Promise.withResolvers<unknown>()
+  const earlier = deferred<unknown>()
   const oldRead = ui.refresh(() => earlier.promise)
   await ui.refresh(async () => ({ entries: [entry('newer')] }))
   earlier.resolve({ entries: [entry('older')] })
