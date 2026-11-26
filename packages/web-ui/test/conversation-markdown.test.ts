@@ -90,6 +90,22 @@ it('renders native installed documentation without addresses the browser could f
   )
 })
 
+it('renders declaration links as inert labels and images as alt text', async () => {
+  await act(async () =>
+    root.render(
+      createElement(StaticPluginMarkdown, {
+        source: '[Open **guide**](https://example.test/secret)\n\n![Diagram](https://example.test/image)',
+        locale: 'en',
+        inertLinks: true,
+      }),
+    ),
+  )
+  expect(host.querySelector('strong')?.textContent).toBe('guide')
+  expect(host.textContent).toContain('Diagram')
+  expect(host.textContent).not.toContain('example.test')
+  expect(host.querySelector('a, button, img, [data-docs-destination], [href], [src]')).toBeNull()
+})
+
 it('renders GFM blocks in body and thinking without interpreting user HTML', async () => {
   await render(
     '# 标题\n\n正文 **重点** 和 `inline()`\n\n- 第一项\n  - 子项\n\n> 引用\n\n| 名称 | 数值 |\n| :--- | ---: |\n| Agnes | 1 |\n\n<script>window.pwned = true</script>',

@@ -56,6 +56,9 @@ export interface SettingsRegionOptions {
   translate?: (key: string) => string
   /** What the dialog's own page host shows: the pages of sections without a native pane. */
   sectionPages?: ReactNode
+  /** Host-rendered extensions stay outside registry navigation and DSH slots. */
+  extensionNavigation?: ReactNode
+  extensionPage?: ReactNode
 }
 
 export interface SettingsRegionHandle {
@@ -450,6 +453,8 @@ function SettingsBuiltinImpl(
           store={options.sections ? navigation : undefined}
           translate={options.translate}
           sectionPages={options.sectionPages}
+          extensionNavigation={options.extensionNavigation}
+          extensionPage={options.extensionPage}
         />
       </div>
       <SettingsAccountDialog {...(options.translate ? { t: options.translate } : {})} />

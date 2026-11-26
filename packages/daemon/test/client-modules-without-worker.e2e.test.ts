@@ -19,6 +19,7 @@ import {
   writeLock,
 } from '@agnes/package-manager'
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
+import type { ApplicationPreview, ApplicationState } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import {
   createClientModuleRegistry,
@@ -106,6 +107,7 @@ async function installClientPackage(dataDir: string, profileDir: string) {
           },
         ],
         clientDescriptors: [{ rowId: 'ext:fixture/panel', path: './agnes.client.json' }],
+        application: { id: 'fixture-panel', presentation: { home: `${id}#panel` } },
       },
     }),
   )
@@ -113,7 +115,14 @@ async function installClientPackage(dataDir: string, profileDir: string) {
   writeFileSync(join(dir, 'client.js'), 'export default { apply() {} }\n')
   writeFileSync(
     join(dir, 'agnes.client.json'),
-    JSON.stringify({ client: { entry: './client.js', slots: ['workbench.panel'], services: [] } }),
+    JSON.stringify({
+      client: {
+        id: 'panel',
+        entry: './client.js',
+        lifetime: 'profile',
+        homeEntries: [{ id: 'panel', placement: 'primary' }],
+      },
+    }),
   )
   const source = parseSource('file:./source-panel')
   const preview = await manager.inspect(profileDir, source)
@@ -202,35 +211,69 @@ it('answers the roster and the application state while no worker has booted, eve
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${label} waited`)), 4000)),
     ])
   try {
+    const clientId = 'client-modules-test'
+    const scope = { profile: 'local-dev' }
     await rpc.call(1, 'initialize', {
       protocolVersion: 1,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+      _meta: { 'ai.agnes.harness': { clientId } },
     })
-    const roster = (await within(
-      'list',
-      rpc.call(2, '_agnes/v1/clientModules.list', { profile: 'local-dev' }),
-    )) as { rows: Array<{ packageId: string; phase: string }> }
-    expect(roster.rows.map((row) => [row.packageId, row.phase])).toEqual([[id, 'ready']])
+    const blocked = {
+      rows: [],
+      modules: [],
+      statuses: [{ packageId: id, state: 'blocked', reason: 'native-ui-not-admitted' }],
+    }
     expect(
-      await within('get', rpc.call(3, '_agnes/v1/applications.get', { profile: 'local-dev' })),
-    ).toMatchObject({
-      status: 'host',
-    })
-    // Another package operation holds the package lock: display reads do not queue behind it.
+      await within('list before adoption', rpc.call(2, '_agnes/v1/clientModules.list', scope)),
+    ).toMatchObject(blocked)
+    const initial = (await within(
+      'get before adoption',
+      rpc.call(3, '_agnes/v1/applications.get', scope),
+    )) as ApplicationState
+    expect(initial.status).toBe('host')
+
+    // The unapproved roster and application display reads do not queue behind a package operation.
     writeFileSync(join(profileDir, '.agnes-lock.lock'), String(process.pid))
     try {
       expect(
-        await within(
-          'list under lock',
-          rpc.call(4, '_agnes/v1/clientModules.list', { profile: 'local-dev' }),
-        ),
-      ).toMatchObject({ rows: roster.rows })
-      expect(
-        await within('get under lock', rpc.call(5, '_agnes/v1/applications.get', { profile: 'local-dev' })),
-      ).toMatchObject({ status: 'host' })
+        await within('list under lock', rpc.call(4, '_agnes/v1/clientModules.list', scope)),
+      ).toMatchObject(blocked)
+      expect(await within('get under lock', rpc.call(5, '_agnes/v1/applications.get', scope))).toMatchObject({
+        status: 'host',
+        revision: initial.revision,
+      })
     } finally {
       rmSync(join(profileDir, '.agnes-lock.lock'), { force: true })
     }
+
+    const preview = (await within(
+      'preview',
+      rpc.call(6, '_agnes/v1/applications.preview', { ...scope, packageId: id }),
+    )) as ApplicationPreview
+    const adopted = (await within(
+      'adopt',
+      rpc.call(7, '_agnes/v1/applications.adopt', {
+        ...scope,
+        clientId,
+        commandId: 'adopt-fixture-panel',
+        packageId: id,
+        expectedRevision: initial.revision,
+        consentDigest: preview.consentDigest,
+      }),
+    )) as ApplicationState
+    expect(adopted).toMatchObject({ status: 'active', selection: { packageId: id } })
+    expect(
+      await within('list after adoption', rpc.call(8, '_agnes/v1/clientModules.list', scope)),
+    ).toMatchObject({
+      rows: [
+        {
+          packageId: id,
+          phase: 'ready',
+          homeEntries: [{ id: 'panel', placement: 'primary' }],
+          documentAdmission: { kind: 'approved-presentation', presentationRevision: adopted.revision },
+        },
+      ],
+    })
   } finally {
     rpc.close()
     await supervisor.close()

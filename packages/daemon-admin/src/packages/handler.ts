@@ -88,6 +88,7 @@ import {
   requirePackageAdminPermissions,
 } from './permissions.js'
 import { PluginConfiguration } from './plugin-config.js'
+import { projectPluginUiEntries } from './plugin-ui-entries.js'
 import { projectPluginPrimaryStatus, projectPluginReadStatus } from './primary-status.js'
 import type { PackageProfileDirectory } from './project.js'
 import { publicationAdmission, publicationMetadata } from './publication-admission.js'
@@ -675,6 +676,7 @@ class Service implements PackageAdminService {
           method === '_agnes/v1/skins.read' ||
           method === '_agnes/v1/skins.select' ||
           method === '_agnes/v1/clientModules.list' ||
+          method === '_agnes/v1/clientModules.uiEntries' ||
           method === '_agnes/v1/clientModules.frontendPublication' ||
           // callService/callEffect rebuild the identical roster via clientModules.list(...) before
           // dispatching into extension backend code, so they share its exact untrustworthy-during-
@@ -827,6 +829,14 @@ class Service implements PackageAdminService {
         }
         if (method === '_agnes/v1/clientModules.list')
           return await this.clientModulesList(data as { profile: string; sessionId?: string })
+        if (method === '_agnes/v1/clientModules.uiEntries') {
+          const profile = data.profile as string
+          const directory = await this.options.profileDirectory(profile)
+          return projectPluginUiEntries(
+            profile,
+            await this.options.manager.inventory(directory, { settled: true }),
+          )
+        }
         if (method === '_agnes/v1/clientModules.read')
           return await this.clientModulesRead(data as ClientModuleReadParams)
         if (method === '_agnes/v1/clientModules.frontendPublication')
@@ -2090,7 +2100,8 @@ export function registerPackageAdmin(
       // Successful roster authorization enrolls this exact connection for profile-scoped invalidation
       // notices. Transport/auth kind alone is insufficient: Unix launchers and denied remote clients
       // can share the same profile but must not receive browser roster events.
-      if (method === '_agnes/v1/clientModules.list') context.conn.clientModuleNotices = true
+      if (method === '_agnes/v1/clientModules.list' || method === '_agnes/v1/clientModules.uiEntries')
+        context.conn.clientModuleNotices = true
       return result
     })
 }

@@ -1022,17 +1022,10 @@ describe('client module immutable snapshots', () => {
   it.each([16, 17])('keeps %i client rows of one package readable across lists', async (count) => {
     const files = fixture()
     const names = Array.from({ length: count }, (_, index) => `c${String(index).padStart(2, '0')}`)
-    for (const name of names)
-      writeFileSync(join(files.packageDirectory, 'dist', `${name}.js`), `export const value = "${name}"\n`)
-    const base = installed({ directory: files.packageDirectory, styles: [] })
-    const primary = base.contributions[0]
-    if (primary?.kind !== 'extension' || !primary.client) throw new Error('missing fixture extension')
-    const contributions = names.map((name) => ({
-      ...primary,
-      id: `acme/${name}`,
-      client: { ...primary.client, entry: `dist/${name}.js`, styles: [] },
-    }))
-    const row = { ...base, contributions } as unknown as InstalledPackage
+    const row = await archivedFixture(
+      files,
+      names.map((id) => ({ id, entry: './dist/index.js', slots: ['workbench.panel'] })),
+    )
     const registry = createClientModuleRegistry({ snapshotDirectory: () => files.snapshots })
     const reasons: string[] = []
     registry.subscribe((event) => reasons.push(event.reason))
@@ -1045,14 +1038,19 @@ describe('client module immutable snapshots', () => {
     }
     try {
       const first = await registry.list(input)
-      expect(first.rows?.filter((item) => item.phase === 'ready')).toHaveLength(count)
+      const rowIds = names.map((id) => `web:${row.id}:${id}`)
+      expect(first.rows?.map((item) => [item.rowId, item.phase, item.documentAdmission?.kind])).toEqual(
+        rowIds.map((id) => [id, 'ready', 'release']),
+      )
+      expect(first.modules.map((item) => item.rowId)).toEqual(rowIds)
       const announced = reasons.length
       const second = await registry.list(input)
       expect(second.revision).toBe(first.revision)
       expect(reasons.slice(announced)).not.toContain('resources')
-      expect(await registry.read({ ...input, path: first.rows?.[0]?.entryUrl ?? '' })).toMatchObject({
-        found: true,
-      })
+      for (const item of [first.rows?.at(0), first.rows?.at(-1)]) {
+        if (!item?.entryUrl) throw new Error('Missing release fixture entry')
+        expect(await registry.read({ ...input, path: item.entryUrl })).toMatchObject({ found: true })
+      }
     } finally {
       registry.close()
     }
@@ -2121,6 +2119,9 @@ describe('client module immutable snapshots', () => {
     // Contract reference point: clientModules.list already refuses this way.
     await expect(
       service.call('_agnes/v1/clientModules.list', { profile: 'local-dev' }, authority),
+    ).rejects.toMatchObject({ data: { reason: 'E_PACKAGE_INTEGRITY' } })
+    await expect(
+      service.call('_agnes/v1/clientModules.uiEntries', { profile: 'local-dev' }, authority),
     ).rejects.toMatchObject({ data: { reason: 'E_PACKAGE_INTEGRITY' } })
     // callService/callEffect rebuild the identical roster via clientModules.list(...) before
     // dispatching into extension backend code, so they must refuse the same way -- before ever

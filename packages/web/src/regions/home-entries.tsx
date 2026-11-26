@@ -11,6 +11,8 @@ import {
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { Button, Icon, type IconName, icons, Menu, Tooltip } from '@agnes/web-ui'
 import { type ReactNode, useSyncExternalStore } from 'react'
+import { type PluginUiCard, pluginUiEntries } from '../declarative-ui/entries.js'
+import { PluginUiMenu, pluginUiLabels, pluginUiMenuItems } from '../declarative-ui/presentation.js'
 import { useWorkLaunchQuiet } from '../pages/work-launch.js'
 
 /** A bare count, or with `spelled` the whole label (「2 项待审阅」) when it says what the count is. */
@@ -52,6 +54,15 @@ export function HomeEntriesNav({
 }) {
   useSyncExternalStore(homeEntries.subscribe, homeEntries.getSnapshot)
   const requested = useSyncExternalStore(homeNavigation.subscribe, homeNavigation.getSnapshot)
+  const ui = useSyncExternalStore(pluginUiEntries.subscribe, pluginUiEntries.getSnapshot)
+  const sidebarExtensions = ui.entries.filter((entry) => entry.placement === 'sidebar')
+  const extensionLabel = pluginUiLabels().extensions
+  const openExtension = (entry: PluginUiCard) => {
+    if (!pluginUiEntries.isCurrent(entry)) return
+    const trigger = document.activeElement
+    pluginUiEntries.open('sidebar', entry, trigger instanceof HTMLElement ? trigger : undefined)
+    onSelect?.()
+  }
   const quiet = useWorkLaunchQuiet()
   useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
   const application = applicationIdentity.getSnapshot()
@@ -81,69 +92,89 @@ export function HomeEntriesNav({
   const { inline, more } = homeEntryGroups(entries)
   const isCurrent = (entry: HomeEntry) =>
     !quiet &&
+    !ui.sidebar &&
     requested?.id === entry.id &&
     (!requested.pageRef || resolveHomeEntry(requested.pageRef) === homeEntries.get(entry.id))
   const open = (entry: HomeEntry) => {
+    pluginUiEntries.close('sidebar')
     const ref = references.get(entry.id)
     if (ref) homeNavigation.openRef(ref)
     else homeNavigation.open(entry.id)
     onSelect?.()
   }
-  if (!entries.length && !children) return null
+  if (!entries.length && !children && !sidebarExtensions.length) return null
+  const navigation =
+    entries.length > 0 || children ? (
+      <nav className="home-entries" aria-label={t('home.entries.nav')} data-testid="home-entries">
+        {inline.map((entry) => (
+          <Tooltip key={entry.id} title={entryLabel(entry, t)}>
+            <Button
+              appearance="ghost"
+              className="home-entry"
+              data-testid={`home-entry-${entry.id}`}
+              aria-label={entryLabel(entry, t)}
+              aria-current={isCurrent(entry) ? 'page' : undefined}
+              onClick={() => open(entry)}
+            >
+              <Icon name={entryIcon(entry)} />
+              <span className="home-entry-label">
+                {t(entry.titleKey)}
+                {entry.subtitleKey && <span className="home-entry-sub">{t(entry.subtitleKey)}</span>}
+              </span>
+              {entry.badge && (
+                <EntryBadge
+                  badge={entry.badge}
+                  spelled={entry.id === 'plugins'}
+                  label={(count) =>
+                    entry.id === 'plugins' ? t('home.entry.plugins.pending', { count }) : String(count)
+                  }
+                />
+              )}
+            </Button>
+          </Tooltip>
+        ))}
+        {more.length > 0 && (
+          <Tooltip title={t('home.entry.more')}>
+            <Menu
+              label={t('home.entry.more')}
+              trigger={
+                <Button
+                  appearance="ghost"
+                  className="home-entry"
+                  data-testid="home-entry-more"
+                  aria-label={t('home.entry.more')}
+                  aria-current={ui.sidebar || more.some(isCurrent) ? 'page' : undefined}
+                >
+                  <Icon name="ellipsis" />
+                  <span className="home-entry-label">{t('home.entry.more')}</span>
+                </Button>
+              }
+              items={[
+                ...more.map((entry) => ({
+                  id: entry.id,
+                  label: t(entry.titleKey),
+                  onSelect: () => open(entry),
+                })),
+                ...pluginUiMenuItems(sidebarExtensions, openExtension, extensionLabel),
+              ]}
+            />
+          </Tooltip>
+        )}
+        {children}
+      </nav>
+    ) : null
   return (
-    <nav className="home-entries" aria-label={t('home.entries.nav')} data-testid="home-entries">
-      {inline.map((entry) => (
-        <Tooltip key={entry.id} title={entryLabel(entry, t)}>
-          <Button
-            appearance="ghost"
-            className="home-entry"
-            data-testid={`home-entry-${entry.id}`}
-            aria-label={entryLabel(entry, t)}
-            aria-current={isCurrent(entry) ? 'page' : undefined}
-            onClick={() => open(entry)}
-          >
-            <Icon name={entryIcon(entry)} />
-            <span className="home-entry-label">
-              {t(entry.titleKey)}
-              {entry.subtitleKey && <span className="home-entry-sub">{t(entry.subtitleKey)}</span>}
-            </span>
-            {entry.badge && (
-              <EntryBadge
-                badge={entry.badge}
-                spelled={entry.id === 'plugins'}
-                label={(count) =>
-                  entry.id === 'plugins' ? t('home.entry.plugins.pending', { count }) : String(count)
-                }
-              />
-            )}
-          </Button>
-        </Tooltip>
-      ))}
-      {more.length > 0 && (
-        <Tooltip title={t('home.entry.more')}>
-          <Menu
-            label={t('home.entry.more')}
-            trigger={
-              <Button
-                appearance="ghost"
-                className="home-entry"
-                data-testid="home-entry-more"
-                aria-label={t('home.entry.more')}
-                aria-current={more.some(isCurrent) ? 'page' : undefined}
-              >
-                <Icon name="ellipsis" />
-                <span className="home-entry-label">{t('home.entry.more')}</span>
-              </Button>
-            }
-            items={more.map((entry) => ({
-              id: entry.id,
-              label: t(entry.titleKey),
-              onSelect: () => open(entry),
-            }))}
+    <>
+      {navigation}
+      {!more.length && sidebarExtensions.length > 0 && (
+        <div className="declarative-ui-sidebar-fallback">
+          <PluginUiMenu
+            label={extensionLabel}
+            items={pluginUiMenuItems(sidebarExtensions, openExtension)}
+            sidebar
           />
-        </Tooltip>
+        </div>
       )}
-      {children}
-    </nav>
+    </>
   )
 }

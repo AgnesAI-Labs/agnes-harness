@@ -2,6 +2,7 @@ import * as P from '../gen/ts/package-admin.js'
 import { adminPayloadBudget, checkAdminData as check, contract } from './admin-contract.js'
 import type { ValidationResult } from './validate.js'
 
+export { PLUGIN_UI_ENTRIES_MAX_BYTES } from './admin-contract.js'
 export { type PackageAdminDataName, validatePackageAdminData } from './package-admin-data.js'
 export { validatePackageCatalogSnapshotVersion } from './package-catalog.js'
 
@@ -476,6 +477,12 @@ export const PACKAGE_ADMIN_METHODS = Object.freeze({
   '_agnes/v1/clientModules.list': contract(
     P.ClientModuleListParams,
     P.ClientModuleListResult,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/clientModules.uiEntries': contract(
+    P.PackageListParams,
+    P.PluginUiEntriesResult,
     'read',
     'packages.read',
   ),

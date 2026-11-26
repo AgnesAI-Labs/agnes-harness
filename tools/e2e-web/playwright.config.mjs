@@ -27,6 +27,7 @@ export default defineConfig({
     'fact-chain.spec.ts',
     'runtime.spec.ts',
     'plugin-config.spec.ts',
+    'plugin-ui-entries.spec.ts',
     'plugin-purpose.spec.ts',
     'community-market-metadata.spec.ts',
     'ui-gate.spec.ts',

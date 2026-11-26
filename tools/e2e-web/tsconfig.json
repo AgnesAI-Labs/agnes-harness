@@ -57,6 +57,7 @@
     "webhooks.spec.ts",
     "fact-chain.spec.ts",
     "plugin-config.spec.ts",
+    "plugin-ui-entries.spec.ts",
     "plugin-purpose.spec.ts",
     "community-market-metadata.spec.ts",
     "v3-navigation.spec.ts",

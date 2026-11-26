@@ -110,6 +110,9 @@ export type PackageAdminDataName =
   | 'PluginTreeRollbackResult'
   | 'ClientModuleRosterRow'
   | 'ClientModuleEffectCallParams'
+  | 'PluginUiEntryDeclaration'
+  | 'PluginUiEntry'
+  | 'PluginUiEntriesResult'
 const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
   PresentationRoleSelection: P.PresentationRoleSelection,
   PresentationRoleSelections: P.PresentationRoleSelections,
@@ -216,6 +219,9 @@ const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
   PluginTreeRollbackResult: P.PluginTreeRollbackResult,
   ClientModuleRosterRow: P.ClientModuleRosterRow,
   ClientModuleEffectCallParams: P.ClientModuleEffectCallParams,
+  PluginUiEntryDeclaration: P.PluginUiEntryDeclaration,
+  PluginUiEntry: P.PluginUiEntry,
+  PluginUiEntriesResult: P.PluginUiEntriesResult,
 }
 export function validatePackageAdminData(
   name: PackageAdminDataName,

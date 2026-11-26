@@ -19,6 +19,7 @@ const MODEL = `${fixtures}model/model.jsonl`
 const MIGRATE = `${fixtures}migrate/example-x-core.jsonl`
 const SEQUENCES = `${fixtures}sequences/meta-quiescence.jsonl`
 const WORKER_RUNTIME_TARGET = `${fixtures}worker/runtime-target.jsonl`
+const PACKAGE_ADMIN = `${fixtures}package-admin/package-admin.jsonl`
 
 // Counts are pinned to their measured values rather than a lower bound. The fixtures are now also the
 // data source for the ajv comparison (ajv-parity.test.ts reads these three jsonl files directly), and
@@ -42,10 +43,11 @@ const COUNTS = {
   migrate: 1,
   sequences: 4,
   workerRuntimeTarget: 8,
+  packageAdmin: 745,
 } as const
 // Includes generation status, capability/source authoring, permission-profile, six MCP import fixtures
 // and four bundled-origin rows.
-const ALL_FIXTURE_COUNT = 1626
+const ALL_FIXTURE_COUNT = 1661
 
 describe('conformance fixtures', () => {
   it('all checked-in fixtures across the complete fixture tree pass', () => {
@@ -74,6 +76,9 @@ describe('conformance fixtures', () => {
     expect(runFixtureFiles([SEQUENCES]).total, 'sequences/meta-quiescence.jsonl').toBe(COUNTS.sequences)
     expect(runFixtureFiles([WORKER_RUNTIME_TARGET]).total, 'worker/runtime-target.jsonl').toBe(
       COUNTS.workerRuntimeTarget,
+    )
+    expect(runFixtureFiles([PACKAGE_ADMIN]).total, 'package-admin/package-admin.jsonl').toBe(
+      COUNTS.packageAdmin,
     )
   })
   it('a wrong expectation fails', () => {

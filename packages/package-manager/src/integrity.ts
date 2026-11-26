@@ -6,13 +6,15 @@ import { syncDirectorySync } from '@agnes/system-node'
 import { PackageError } from './errors.js'
 import { assertCurrentPackageFormat } from './package-format.js'
 
-export function readStaticJson(file: string): Record<string, unknown> {
+export function readStaticJson(file: string, observed?: (bytes: Buffer) => void): Record<string, unknown> {
   try {
     if (statSync(file).size > 1048576) throw new Error('size')
-    const text = readFileSync(file, 'utf8')
+    const bytes = readFileSync(file)
+    const text = bytes.toString('utf8')
     if (Buffer.byteLength(text) > 1048576) throw new Error('size')
     const data: unknown = JSON.parse(text)
     if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('object')
+    observed?.(bytes)
     return data as Record<string, unknown>
   } catch {
     throw new PackageError('E_EXT_LOAD', 'package static JSON is invalid or too large', {

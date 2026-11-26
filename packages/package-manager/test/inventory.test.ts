@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,17 +11,22 @@ import {
   packageDir,
   parseSource,
   readInventory,
+  stableInventoryRows,
   writeLock,
 } from '../src/index.js'
 import { inspectStaged } from '../src/inspect.js'
 import { capabilityHash } from '../src/integrity.js'
-import { isRuntimePackageEligible, isSnapshotPackageEligible } from '../src/inventory.js'
+import {
+  isRuntimePackageEligible,
+  isSnapshotPackageEligible,
+  verifyHashedPackageDirectory,
+} from '../src/inventory.js'
 import { previousPackageDir } from '../src/store.js'
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 const roots: string[] = []
 
-async function currentFixture() {
+async function currentFixture(withUiEntries = false) {
   const root = mkdtempSync(join(tmpdir(), 'agnes-inventory-round-'))
   roots.push(root)
   const profileDir = join(root, 'profiles', 'local-dev')
@@ -43,6 +48,13 @@ async function currentFixture() {
             export: 'main',
             apiRange: '^5.0.0',
             runtime: 'in-process',
+            ...(withUiEntries
+              ? {
+                  uiEntries: [
+                    { id: 'help', placement: 'sidebar', title: { en: 'Start here' }, configure: true },
+                  ],
+                }
+              : {}),
             capabilities: {
               ui: true,
               streams: [
@@ -153,6 +165,46 @@ it('shares an ordinary in-flight read, then verifies bytes again even without a 
   expect(failures.every((result) => result.status === 'rejected')).toBe(true)
   writeFileSync(join(f.directory, 'index.mjs'), 'export const main = () => {}\n')
   expect((await f.manager.inventory(f.profileDir)).packages[0]?.enabled).toBe(true)
+})
+
+it('carries only the verified installed annotation and leaves the lock-derived identity unchanged', async () => {
+  const f = await currentFixture(true)
+  const first = await f.manager.inventory(f.profileDir)
+  const [row] = first.packages
+  expect(row?.uiEntries).toEqual([
+    {
+      id: 'help',
+      placement: 'sidebar',
+      title: { en: 'Start here' },
+      configure: true,
+      rowId: 'ext:acme/round',
+    },
+  ])
+  expect(row?.entry).not.toHaveProperty('uiEntries')
+  expect(stableInventoryRows(first.packages)[0]).not.toHaveProperty('uiEntries')
+  expect(row?.contributions[0]).not.toHaveProperty('uiEntries')
+  const treeIntegrity = row?.entry.treeIntegrity
+  if (!row || !treeIntegrity) throw new Error('fixture has no verified tree')
+  const manifestPath = join(f.directory, 'package.json')
+  writeFileSync(manifestPath, readFileSync(manifestPath, 'utf8').replace('Start here', 'Other text'))
+  expect(() =>
+    verifyHashedPackageDirectory(
+      f.id,
+      row.entry,
+      f.directory,
+      f.lock.policySnapshot.capabilityCeiling,
+      treeIntegrity,
+    ),
+  ).toThrow(/UI entries differ from the verified package manifest/)
+  expect((await f.manager.inventory(f.profileDir, { settled: true })).packages[0]?.uiEntries).toEqual(
+    row?.uiEntries,
+  )
+  await expect(f.manager.inventory(f.profileDir, { fresh: true })).rejects.toMatchObject({
+    code: 'E_PACKAGE_INTEGRITY',
+  })
+  await expect(f.manager.inventory(f.profileDir, { settled: true })).rejects.toMatchObject({
+    code: 'E_PACKAGE_INTEGRITY',
+  })
 })
 
 it('cuts read boundaries on mutations, fresh verification and administrator policy changes', async () => {

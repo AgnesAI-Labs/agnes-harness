@@ -1,0 +1,8 @@
+{
+  "client": {
+    "entry": "./unapproved-dispatch-client.mjs",
+    "styles": ["./unapproved-dispatch-client.css"],
+    "slots": ["workbench.panel"],
+    "lifetime": "profile"
+  }
+}
