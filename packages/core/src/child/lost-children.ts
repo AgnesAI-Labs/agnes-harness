@@ -5,6 +5,7 @@ import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
 import { deliverChildCompletion, recoverChildCompletions } from './completion-notice.js'
 import { protectChildLeases } from './heartbeat.js'
+import { canSettleColdCancelling } from './pause-control.js'
 import { recoverRoleChildren } from './resume-role.js'
 import { type ChildRolePort, recordedChildRole } from './roles.js'
 
@@ -39,15 +40,12 @@ export async function recoverChildren(
   },
 ): Promise<void> {
   const store = parent.d.log.storage
-  const liveBefore = hasChildControl(store)
-    ? new Set(
-        (await store.listByParent(parent.key).catch(() => []))
-          .map((row) => row.childKey)
-          .filter((key) => here.handle(key) || here.opening(key)),
-      )
-    : new Set<string>()
+  const parentRows = hasChildControl(store) ? await store.listByParent(parent.key).catch(() => []) : []
+  const liveBefore = new Set(
+    parentRows.map((row) => row.childKey).filter((key) => here.handle(key) || here.opening(key)),
+  )
   await recoverRoleChildren(parent, roles, here.handle, here.resume)
-  await recoverChildCompletions(parent, (key) => liveBefore.has(key)).catch(
+  await recoverChildCompletions(parent, (key) => liveBefore.has(key), parentRows).catch(
     bestEffort(parent.d.logger, 'child-completion-recovery'),
   )
   const lostKeys = new Set(
@@ -79,7 +77,7 @@ async function settleLostChildren(parent: SessionImpl, attached: (childKey: stri
       (await recordedChildRole(parent, record.childKey))
     )
       continue
-    const outcome = await settleSubtree(store as Settling, record, attached)
+    const outcome = await settleSubtree(parent, store as Settling, record, attached)
     if (!outcome) continue
     await deliverChildCompletion(
       parent,
@@ -96,13 +94,16 @@ async function settleLostChildren(parent: SessionImpl, attached: (childKey: stri
  * kernel, the whole subtree is left for a later run and the child stays a candidate until then.
  */
 async function settleSubtree(
+  parent: SessionImpl,
   store: Settling,
   record: ChildTaskRecord,
   attached: (childKey: string) => boolean,
 ): Promise<'failed' | 'cancelled' | null> {
+  if (record.state === 'cancelling' && !(await canSettleColdCancelling(parent, record))) return null
   for (const descendant of await store.listByParent(record.childKey)) {
     if (descendant.creationPhase !== 'committed' || !CANDIDATE.has(descendant.state)) continue
-    if (attached(descendant.childKey) || !(await settleSubtree(store, descendant, attached))) return null
+    if (attached(descendant.childKey) || !(await settleSubtree(parent, store, descendant, attached)))
+      return null
   }
   return store.settleLostChild(record.childKey, record.stateRevision)
 }

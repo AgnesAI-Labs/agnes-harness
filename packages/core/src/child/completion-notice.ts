@@ -260,19 +260,106 @@ export async function deliverChildStateNotice(
   )
 }
 
-async function recoverIdleChildCompletion(parent: SessionImpl, record: ChildTaskRecord): Promise<void> {
+type ParentCompletionIndex = {
+  deliveredIds: Set<string>
+  collectedByChild: Map<string, { commandIds: Set<string>; resultSeqs: Set<number> }>
+}
+
+/** Single-pass index of parent delivery & collection receipts, avoiding O(N^2) work during recovery. */
+async function parentCompletionIndex(parent: SessionImpl): Promise<ParentCompletionIndex> {
+  const deliveredIds = new Set<string>()
+  const collectedByChild = new Map<string, { commandIds: Set<string>; resultSeqs: Set<number> }>()
+  for await (const rows of scanPages((query) => parent.scan(query), {
+    type: ['x/core/child-result-collected', 'inbox'],
+    lane: parent.lane,
+    toSeq: parent.lastSeq,
+  })) {
+    for (const row of rows) {
+      if (row.origin !== 'system' || row.trust !== 'trusted') continue
+      if (row.type === 'x/core/child-result-collected') {
+        const value = row.data as { childKey?: string; commandId?: string; resultSeq?: number } | undefined
+        if (!value?.childKey) continue
+        let entry = collectedByChild.get(value.childKey)
+        if (!entry) {
+          entry = { commandIds: new Set(), resultSeqs: new Set() }
+          collectedByChild.set(value.childKey, entry)
+        }
+        if (typeof value.commandId === 'string' && value.commandId) entry.commandIds.add(value.commandId)
+        if (typeof value.resultSeq === 'number' && value.resultSeq > 0) entry.resultSeqs.add(value.resultSeq)
+        continue
+      }
+      for (const item of (row.data as Inbox | null)?.items ?? []) {
+        if (item.origin !== 'system' || item.system?.source !== CHILD_COMPLETION_SOURCE) continue
+        if (typeof item.commandId === 'string' && item.commandId) deliveredIds.add(item.commandId)
+        if (item.system.type !== 'child-batch-completed') continue
+        const children = (item.system.data as { children?: { commandId?: string }[] } | null)?.children
+        for (const child of children ?? []) {
+          if (typeof child.commandId === 'string' && child.commandId) deliveredIds.add(child.commandId)
+        }
+      }
+    }
+  }
+  return { deliveredIds, collectedByChild }
+}
+
+function indexedSettled(
+  index: ParentCompletionIndex,
+  childKey: string,
+  commandId: string,
+  resultSeq = 0,
+): boolean {
+  if (index.deliveredIds.has(commandId)) return true
+  const collected = index.collectedByChild.get(childKey)
+  if (!collected) return false
+  return collected.commandIds.has(commandId) || (resultSeq > 0 && collected.resultSeqs.has(resultSeq))
+}
+
+async function isTerminalRecoverySettled(
+  parent: SessionImpl,
+  record: ChildTaskRecord,
+  outcome: ChildOutcome,
+  index: ParentCompletionIndex,
+): Promise<boolean> {
+  const terminalId = childCompletionId(record.childKey, outcome)
+  if (indexedSettled(index, record.childKey, terminalId)) return true
+  const collected = index.collectedByChild.get(record.childKey)
+  const mayHaveRetiredId = outcome === 'completed' && (collected !== undefined || index.deliveredIds.size > 0)
+  const mayMatchSeq = (collected?.resultSeqs.size ?? 0) > 0
+  if (!mayHaveRetiredId && !mayMatchSeq) return false
+  const resultSeq = await childResultSequence(parent, record)
+  if (resultSeq > 0 && collected?.resultSeqs.has(resultSeq)) return true
+  if (!mayHaveRetiredId) return false
+  const retiredId = await retiredCompletionIdentity(parent, record, resultSeq)
+  return retiredId !== undefined && indexedSettled(index, record.childKey, retiredId, resultSeq)
+}
+
+async function recoverIdleChildCompletion(
+  parent: SessionImpl,
+  record: ChildTaskRecord,
+  index: ParentCompletionIndex,
+): Promise<void> {
   if (parent.closingOrClosed || !isBackgroundChild(parent, record)) return
   const fromSeq = (record.boundarySeq + 1) as typeof record.boundarySeq
-  const [end] = await parent.d.log.storage.scan(record.childKey, {
-    type: 'turn/end',
-    fromSeq,
-    order: 'desc',
-    limit: 1,
-  })
+  const [[end], [start]] = await Promise.all([
+    parent.d.log.storage.scan(record.childKey, {
+      type: 'turn/end',
+      fromSeq,
+      order: 'desc',
+      limit: 1,
+    }),
+    parent.d.log.storage.scan(record.childKey, {
+      type: 'turn/start',
+      fromSeq,
+      order: 'desc',
+      limit: 1,
+    }),
+  ])
   const endReason = (end?.data as { reason?: string } | undefined)?.reason
   if (!end || end.seq <= 0 || endReason !== 'completed') return
-  const resultSeq = await childResultSequence(parent, record)
+  const resultSeq = Math.max(start?.seq ?? 0, end.seq)
   if (resultSeq !== end.seq) return
+  const commandId = childCompletionId(record.childKey, 'completed', end.seq)
+  if (indexedSettled(index, record.childKey, commandId, resultSeq)) return
   await deliverChildCompletion(parent, record, 'completed', { continuable: true })
 }
 
@@ -280,20 +367,32 @@ async function recoverIdleChildCompletion(parent: SessionImpl, record: ChildTask
 export async function recoverChildCompletions(
   parent: SessionImpl,
   skip?: (childKey: string) => boolean,
+  knownRows?: readonly ChildTaskRecord[],
 ): Promise<void> {
+  if (parent.closingOrClosed) return
   const storage = parent.d.log.storage
   if (!hasChildControl(storage)) return
-  const rows = await storage.listByParent(parent.key).catch(() => [])
-  for (const row of rows) {
-    if (row.creationPhase !== 'committed' || skip?.(row.childKey)) continue
+  const rows = knownRows ?? (await storage.listByParent(parent.key).catch(() => []))
+  const candidates = rows.filter(
+    (row) =>
+      row.creationPhase === 'committed' &&
+      !skip?.(row.childKey) &&
+      isBackgroundChild(parent, row) &&
+      (isTerminalChildState(row.state) || row.state === 'idle'),
+  )
+  if (candidates.length === 0) return
+  const index = await parentCompletionIndex(parent)
+  for (const row of candidates) {
     if (isTerminalChildState(row.state)) {
-      await deliverChildCompletion(parent, row, row.state as ChildOutcome).catch(
+      const outcome = row.state as ChildOutcome
+      if (await isTerminalRecoverySettled(parent, row, outcome, index).catch(() => false)) continue
+      await deliverChildCompletion(parent, row, outcome).catch(
         bestEffort(parent.d.logger, 'child-completion-recovery'),
       )
       continue
     }
     if (row.state === 'idle') {
-      await recoverIdleChildCompletion(parent, row).catch(
+      await recoverIdleChildCompletion(parent, row, index).catch(
         bestEffort(parent.d.logger, 'child-completion-recovery'),
       )
     }

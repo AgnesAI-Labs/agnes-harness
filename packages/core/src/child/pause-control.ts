@@ -82,6 +82,13 @@ export function childControls(parent: SessionImpl) {
   return controls
 }
 
+export async function canSettleColdCancelling(
+  parent: SessionImpl,
+  record: ChildTaskRecord,
+): Promise<boolean> {
+  return !(await hasUnconfirmedColdStop(parent, record))
+}
+
 export async function settleColdCancelling(
   parent: SessionImpl,
   store: ReturnType<typeof requireChildControl>,
@@ -101,11 +108,11 @@ export async function settleColdCancelling(
   if (!live) return 'cancelled'
   if (isTerminalChildState(live.state)) return live.state as 'completed' | 'failed' | 'cancelled'
   if (live.state !== 'cancelling') return 'cancelling'
-  if (await hasUnconfirmedColdStop(parent, live)) return 'cancelling'
   for (let attempt = 0; attempt < 4; attempt += 1) {
     if (!live) return 'cancelled'
     if (isTerminalChildState(live.state)) return live.state as 'completed' | 'failed' | 'cancelled'
     if (live.state !== 'cancelling') return 'cancelling'
+    if (!(await canSettleColdCancelling(parent, live))) return 'cancelling'
     if (live.creationPhase === 'committed' && store.settleLostChild) {
       const settled = await store.settleLostChild(childKey, live.stateRevision)
       if (settled) return settled
@@ -189,6 +196,13 @@ export class ChildLifecycleControls {
     })
   }
   async pauseChild(key: string, reason: Reason = 'parent_pause') {
+    return (await this.pauseChildAdmitted(key, reason)).result
+  }
+
+  async pauseChildAdmitted(
+    key: string,
+    reason: Reason = 'parent_pause',
+  ): Promise<{ result: Result; pending?: Promise<Result> }> {
     const request = await this.lock.run(key, async () => {
       const cap =
         this.port.capabilities?.(key) ??
@@ -196,9 +210,14 @@ export class ChildLifecycleControls {
       if (cap.pause !== true)
         throw new CoreError('E_UNSUPPORTED', 'Provider cannot checkpoint; use interrupt or cancel')
       const record = await this.owned(key)
-      if (record.state === 'paused') return { done: result(record) }
+      if (record.state === 'paused') return { done: Promise.resolve({ result: result(record) }) }
       const current = this.parks.get(key)
-      if (current) return { done: current.pending ? result(record, record.state, true) : current.done }
+      if (current)
+        return {
+          done: current.pending
+            ? Promise.resolve({ result: result(record, record.state, true), pending: current.done })
+            : current.done.then((settled) => ({ result: settled })),
+        }
       if (!projectChildControls(record).controls.pause)
         throw new CoreError('E_RELATION', 'Child cannot pause in its current state')
       const child = this.port.live(key)
@@ -256,14 +275,13 @@ export class ChildLifecycleControls {
         void done.catch((error) =>
           this.parent().d.logger.error('Child checkpoint failed', { error: String(error) }),
         )
-      return { done: drain ? result(record, record.state, true) : done }
+      return {
+        done: drain
+          ? Promise.resolve({ result: result(record, record.state, true), pending: done })
+          : done.then((settled) => ({ result: settled })),
+      }
     })
     return request.done
-  }
-
-  pendingPause(key: string): Promise<Result> | undefined {
-    const park = this.parks.get(key)
-    return park?.pending ? park.done : undefined
   }
 
   resumeChild(key: string): Promise<Result> {

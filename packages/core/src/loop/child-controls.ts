@@ -196,12 +196,18 @@ export async function applyChildControl(
       if (!backend) throw new CoreError('E_CHILD_NOT_FOUND', 'Child backend is not bound', { childId: id })
       if (!directBackendWasLive) {
         const verified = await backend.humanControlState(id)
-        if (!verified.controls[action])
+        if (!verified.controls[action]) {
+          if (action === 'continue' && (verified.controls.pause || verified.controls.retain))
+            throw new CoreError('E_UNSUPPORTED', 'Child does not support this control', {
+              control: action,
+              reason: 'LOOP_CONTROL_UNSUPPORTED',
+            })
           throw new CoreError(
             'E_RELATION',
             'Child binding cannot be verified under its direct parent authority',
             { control: action, reason: 'BINDING_AUTHORITY_MISMATCH' },
           )
+        }
       }
       await backend.humanControl(id, action, actor, admissionId, text, (pending) => {
         pendingPause = pending

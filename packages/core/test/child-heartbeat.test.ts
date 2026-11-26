@@ -399,6 +399,30 @@ describe('reconnect_catchup', () => {
     ])
     await liveReader.return?.()
   })
+
+  it('skips an unorderable same-tick handover frame without permanently retiring the new writer (#16)', async () => {
+    const bus = new ChildEventBus({ snapshot: async () => [], scan: async () => [] })
+    const reader = bus.subscribe()[Symbol.asyncIterator]()
+    const received = take(reader, 3)
+
+    // Old writer emits at ts=20_000, seq=5.
+    bus.notify({ type: 'heartbeat', ts: 20_000, leaseUntil: 35_000, eventId: 'hb:c1:w1:5' })
+    // New writer resets seq=1 at the exact same ts and leaseUntil: unorderable, skipped without retiring w2.
+    bus.notify({ type: 'heartbeat', ts: 20_000, leaseUntil: 35_000, eventId: 'hb:c1:w2:1' })
+    // Next frame from w2 advances ts/leaseUntil -> accepted and retires w1.
+    bus.notify({ type: 'heartbeat', ts: 25_000, leaseUntil: 40_000, eventId: 'hb:c1:w2:2' })
+    // Delayed frame from retired w1 is dropped even if its ts is newer.
+    bus.notify({ type: 'heartbeat', ts: 30_000, leaseUntil: 45_000, eventId: 'hb:c1:w1:6' })
+    // Subsequent frame from w2 continues normally.
+    bus.notify({ type: 'heartbeat', ts: 30_000, leaseUntil: 45_000, eventId: 'hb:c1:w2:3' })
+
+    expect(await received).toEqual([
+      { type: 'heartbeat', ts: 20_000, leaseUntil: 35_000, eventId: 'hb:c1:w1:5' },
+      { type: 'heartbeat', ts: 25_000, leaseUntil: 40_000, eventId: 'hb:c1:w2:2' },
+      { type: 'heartbeat', ts: 30_000, leaseUntil: 45_000, eventId: 'hb:c1:w2:3' },
+    ])
+    await reader.return?.()
+  })
 })
 
 describe('duplicate_delivery', () => {

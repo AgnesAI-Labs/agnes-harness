@@ -13,6 +13,7 @@ import {
 import { retireIdleChildren } from '../src/child/idle-retirement.js'
 import { deliverCoalescedChildCompletion } from '../src/child/notice-coalescer.js'
 import { childReceiptNarrative } from '../src/child/receipts.js'
+import { withChildLog } from '../src/child/status.js'
 import { Kernel } from '../src/kernel.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { hangingProvider, slowCommits, until } from './helpers/child-traces.js'
@@ -997,8 +998,173 @@ describe('child completion notice', () => {
       expect(await childReceiptNarrative(parent)).toContain(
         `- ${child.key} [waiting_approval] resident turns`,
       )
+
+      // P2-#17: explicit collect records a revision-scoped observation receipt suppressing the same revision.
+      const approvalCollect = await collectContext(parent).collect(child.key, { wait: false })
+      expect(approvalCollect).toMatchObject({ childKey: child.key, status: 'waiting_approval' })
+      expect(approvalCollect).not.toHaveProperty('completionId')
+      expect(await childReceiptNarrative(parent)).not.toContain('Uncollected ready children')
+
+      // A newer waiting_approval revision must remind again, and untrusted observation cannot suppress it.
+      const waitRow1 = (await store.lookupByKey(child.key))!
+      expect(await store.casState(child.key, waitRow1.stateRevision, 'running', { maxFanOut: 4 })).toBe(true)
+      const runningRow2 = (await store.lookupByKey(child.key))!
+      expect(await store.casState(child.key, runningRow2.stateRevision, 'waiting_approval')).toBe(true)
+      const waitRow2 = (await store.lookupByKey(child.key))!
+      await parent.append([
+        parent.ev(
+          'x/core/child-state-observed',
+          { childKey: child.key, state: 'waiting_approval', stateRevision: waitRow2.stateRevision },
+          { origin: 'ext:fixture', trust: 'untrusted', ignorable: true },
+        ),
+      ])
+      expect(await childReceiptNarrative(parent)).toContain(
+        `- ${child.key} [waiting_approval] resident turns`,
+      )
+      await collectContext(parent).collect(child.key, { wait: false })
+      expect(await childReceiptNarrative(parent)).not.toContain('Uncollected ready children')
+
+      // Observation receipt must never acknowledge a future completion turn.
+      expect(await store.casState(child.key, waitRow2.stateRevision, 'running', { maxFanOut: 4 })).toBe(true)
+      const runningRow3 = (await store.lookupByKey(child.key))!
+      expect(await store.casState(child.key, runningRow3.stateRevision, 'idle')).toBe(true)
+      const childSession = k.get(child.key)!
+      await childSession.append([
+        childSession.ev('turn/start', { turn: 3, trigger: 'prompt' }),
+        childSession.ev('assistant/message', {
+          content: [{ type: 'text', text: 'turn 3' }],
+          stopReason: 'end_turn',
+        }),
+        childSession.ev('turn/end', { reason: 'completed', lastAssistantSeq: null }),
+      ])
+      expect(await childReceiptNarrative(parent)).toContain(`- ${child.key} [idle] resident turns`)
     } finally {
       await k.close()
+    }
+  })
+
+  it('pins one upper sequence bound in cold snapshotFromLedger so Turn 2 text cannot pair with Turn 1 completionSeq (P1-E)', async () => {
+    const storage = new MemoryStorage()
+    const first = kernel(storage)
+    const parent1 = await first.session('parent-p1e', sessionOpts)
+    const child = await parent1.d.children.createWithKind!('spawn', {
+      parent: parent1.key,
+      cwd: '/w',
+      input: 'turn 1 work',
+      parentEffectId: 'p1e',
+      resident: true,
+    })
+    await child.run('turn 1 work')
+    const turn1Before = await parent1.d.children.inspect?.(child.key)
+    await first.close()
+
+    const second = kernel(storage)
+    try {
+      const parent2 = await second.session('parent-p1e', { ...sessionOpts, writerRunId: 'r2' })
+      const origScan = storage.scan.bind(storage)
+      let injected = false
+      vi.spyOn(storage, 'scan').mockImplementation(async (sessionKey, query) => {
+        const rows = await origScan(sessionKey, query)
+        if (
+          !injected &&
+          sessionKey === child.key &&
+          query.order === 'desc' &&
+          query.limit === 1 &&
+          query.type === undefined
+        ) {
+          injected = true
+          // Simulate Turn 2 landing between the tail scan and the assistant/message scan.
+          const record = (await requireChildControl(storage).lookupByKey(child.key))!
+          await withChildLog(parent2, record, undefined, (log) =>
+            log.append([
+              parent2.ev('turn/start', { turn: 2, trigger: 'prompt' }),
+              parent2.ev('assistant/message', {
+                content: [{ type: 'text', text: 'turn 2 secret' }],
+                stopReason: 'end_turn',
+              }),
+              parent2.ev('turn/end', { reason: 'completed', lastAssistantSeq: null }),
+            ]),
+          )
+        }
+        return rows
+      })
+
+      const collectedTurn1 = await collectContext(parent2).collect(child.key, { wait: false })
+      expect(injected).toBe(true)
+      expect(collectedTurn1).toMatchObject({
+        childKey: child.key,
+        status: 'idle',
+        text: 'child says hi',
+        completionId: turn1Before?.completionId,
+        completionSeq: turn1Before?.completionSeq,
+      })
+
+      // A subsequent collect now reads Turn 2 cleanly with Turn 2's own completionSeq.
+      const collectedTurn2 = await collectContext(parent2).collect(child.key, { wait: false })
+      expect(collectedTurn2.text).toBe('turn 2 secret')
+      expect(collectedTurn2.completionSeq).toBeGreaterThan(turn1Before?.completionSeq ?? 0)
+      expect(collectedTurn2.completionId).not.toBe(turn1Before?.completionId)
+    } finally {
+      vi.restoreAllMocks()
+      await second.close()
+    }
+  })
+
+  it('skips already-collected and already-delivered historical children in recover() without O(N^2) scans', async () => {
+    const storage = new MemoryStorage()
+    const provider = Object.assign(
+      fakeProvider(Array.from({ length: 8 }, (_, i) => textTurn(`answer-${i}`))),
+      { models: () => [catalogue()] },
+    )
+    const first = kernel(storage, provider)
+    const parent1 = await first.session('parent-perf', sessionOpts)
+    const store = requireChildControl(storage)
+    const collectedKeys: string[] = []
+    for (let i = 0; i < 6; i += 1) {
+      const c = await parent1.d.children.createWithKind!('spawn', {
+        parent: parent1.key,
+        cwd: '/w',
+        input: `done-${i}`,
+        parentEffectId: `done-${i}`,
+      })
+      await c.run(`done-${i}`)
+      await collectContext(parent1).collect(c.key)
+      collectedKeys.push(c.key)
+    }
+    // One undelivered terminal child (crash before delivery) must still be recovered.
+    const undelivered = await parent1.d.children.createWithKind!('spawn', {
+      parent: parent1.key,
+      cwd: '/w',
+      input: 'missed-child',
+      parentEffectId: 'missed-child',
+    })
+    const liveMissed = (await store.lookupByKey(undelivered.key))!
+    await store.casState(undelivered.key, liveMissed.stateRevision, 'cancelled')
+    await first.close()
+
+    const second = kernel(storage, provider)
+    try {
+      const parent2 = await second.session('parent-perf', { ...sessionOpts, writerRunId: 'r2' })
+      // Session open already ran initial recovery and delivered the missed child.
+      expect(notices(parent2)).toMatchObject([{ data: { childKey: undelivered.key, status: 'cancelled' } }])
+
+      const childScans: Array<{ key: string; type: unknown }> = []
+      const listByParentSpy = vi.spyOn(storage, 'listByParent')
+      const scanSpy = vi.spyOn(storage, 'scan')
+      scanSpy.mockImplementation(async (sessionKey, query) => {
+        if (sessionKey !== parent2.key) childScans.push({ key: sessionKey, type: query.type })
+        return MemoryStorage.prototype.scan.call(storage, sessionKey, query)
+      })
+
+      await parent2.d.children.recover?.()
+      expect(listByParentSpy).toHaveBeenCalledTimes(1)
+      // Already-collected and already-delivered historical terminal children must NOT be scanned.
+      expect(childScans.filter((entry) => collectedKeys.includes(entry.key))).toEqual([])
+      expect(childScans.filter((entry) => entry.key === undelivered.key)).toEqual([])
+      expect(notices(parent2)).toHaveLength(1)
+    } finally {
+      vi.restoreAllMocks()
+      await second.close()
     }
   })
 })

@@ -1018,4 +1018,163 @@ describe('child allowlist and continuable controls', () => {
     expect(result.details).toMatchObject({ code: 'E_UNSUPPORTED' })
     expect(JSON.stringify(result.content)).toContain('cancelled and not continuable')
   })
+
+  it('preserves handle, worktree and active slot when wait:true hits a retryable read error so collect can retry (P1-D)', async () => {
+    const wt = worktrees()
+    const d = deps({ maxFanOut: 1, worktrees: wt.manager })
+    let collectAttempts = 0
+    const cancelled: string[] = []
+    const { ctx } = context({
+      spawn: async () => ({ childKey: 'child-retry' }),
+      collect: async (childKey) => {
+        collectAttempts += 1
+        if (collectAttempts === 1) {
+          throw new CoreError(
+            'E_STORAGE_FAULT',
+            'Failed to read child ledger for child-retry: transient IO',
+            {
+              childKey,
+              retryable: true,
+              readError: 'transient IO',
+            },
+          )
+        }
+        return { childKey, status: 'completed', text: 'recovered findings' }
+      },
+    })
+    ctx.subagent.cancel = async (childKey) => {
+      cancelled.push(childKey)
+      return { childKey, status: 'cancelled' }
+    }
+
+    const first = await subagentSpawnTool(d).execute({ task: 'work', wait: true }, ctx)
+    expect(first.isError).toBe(true)
+    expect(first.details).toMatchObject({
+      childKey: 'child-retry',
+      code: 'E_STORAGE_FAULT',
+      retryable: true,
+      readError: expect.stringContaining('transient IO'),
+      worktree: '/work/proj/.worktrees/agnes-1234abcd',
+    })
+    expect(cancelled).toEqual([])
+    expect(wt.calls.finish).toEqual([])
+    // Child remains active until collected.
+    expect((await subagentSpawnTool(d).execute({ task: 'blocked' }, ctx)).isError).toBe(true)
+
+    const retry = await subagentCollectTool(d).execute({ childKey: 'child-retry' }, ctx)
+    expect(retry.isError).toBeUndefined()
+    expect(retry.content).toEqual([{ type: 'text', text: 'recovered findings' }])
+    expect(cancelled).toEqual([])
+    expect(wt.calls.finish).toEqual([])
+  })
+
+  it('does not evict a newly spawned child with a stale list() snapshot and counts waiting_approval as active (P1-F)', async () => {
+    // Race 1: stale list() from concurrent reconcile must not delete newly spawned child B.
+    let next = 0
+    let resolveStaleList!: (
+      value: Array<{
+        id: string
+        providerId: string
+        status: 'running'
+        executionState: 'running'
+        continuable: boolean
+      }>,
+    ) => void
+    const staleList = new Promise<
+      Array<{
+        id: string
+        providerId: string
+        status: 'running'
+        executionState: 'running'
+        continuable: boolean
+      }>
+    >((resolve) => {
+      resolveStaleList = resolve
+    })
+    let listCalls = 0
+    const d1 = deps({ maxFanOut: 2, isolation: 'shared' })
+    const c1 = context({ spawn: async () => ({ childKey: `c-${++next}` }) })
+    c1.ctx.subagent.list = async () => {
+      listCalls += 1
+      if (listCalls === 1) return staleList
+      return [
+        {
+          id: 'c-1',
+          providerId: 'in-process',
+          status: 'running',
+          executionState: 'running',
+          continuable: true,
+        },
+      ]
+    }
+    const spawn1 = subagentSpawnTool(d1)
+    expect((await spawn1.execute({ task: 'A' }, c1.ctx)).details).toMatchObject({ childKey: 'c-1' })
+
+    // Start C (suspends on list() taken before B exists), then spawn B to completion.
+    const spawnC = spawn1.execute({ task: 'C' }, c1.ctx)
+    await Promise.resolve()
+    const spawnB = await spawn1.execute({ task: 'B' }, c1.ctx)
+    expect(spawnB.isError).toBeUndefined()
+    expect(spawnB.details).toMatchObject({ childKey: 'c-2' })
+
+    // Resolve C's stale list() containing only c-1: c-2 must stay tracked, so C hits maxFanOut=2.
+    resolveStaleList([
+      {
+        id: 'c-1',
+        providerId: 'in-process',
+        status: 'running',
+        executionState: 'running',
+        continuable: true,
+      },
+    ])
+    const resC = await spawnC
+    expect(resC.isError).toBe(true)
+    expect(resC.structured).toMatchObject({
+      code: 'E_CHILD_LIMIT',
+      limit: 2,
+      active: 2,
+      activeChildKeys: ['c-1', 'c-2'],
+    })
+
+    // Race 2: waiting_approval stays active across both wait:true spawn and explicit collect.
+    let approvalDone = false
+    const d2 = deps({ maxFanOut: 1, isolation: 'shared' })
+    const c2 = context({
+      spawn: async () => ({ childKey: 'approval-child' }),
+      collect: async (childKey) =>
+        approvalDone
+          ? { childKey, status: 'idle', executionState: 'idle', text: 'approved result' }
+          : { childKey, status: 'waiting_approval', executionState: 'waiting_approval' },
+    })
+    const waited = await subagentSpawnTool(d2).execute({ task: 'needs approval', wait: true }, c2.ctx)
+    expect(waited.isError).toBeUndefined()
+    expect((await subagentSpawnTool(d2).execute({ task: 'over-limit-1' }, c2.ctx)).isError).toBe(true)
+
+    const polled = await subagentCollectTool(d2).execute({ childKey: 'approval-child', wait: false }, c2.ctx)
+    expect(polled.details).toMatchObject({ status: 'waiting_approval' })
+    expect((await subagentSpawnTool(d2).execute({ task: 'over-limit-2' }, c2.ctx)).isError).toBe(true)
+
+    approvalDone = true
+    const done = await subagentCollectTool(d2).execute({ childKey: 'approval-child' }, c2.ctx)
+    expect(done.content).toEqual([{ type: 'text', text: 'approved result' }])
+    expect((await subagentSpawnTool(d2).execute({ task: 'now-allowed' }, c2.ctx)).isError).toBeUndefined()
+  })
+
+  it('does not output contradictory cancelled wording when cancel remains cancelling (P1-C)', async () => {
+    const { ctx } = context()
+    ctx.subagent.cancel = async (childKey) => ({
+      childKey,
+      status: 'running',
+      executionState: 'cancelling',
+    })
+    const result = await subagentCancelTool(deps()).execute({ childKey: 'c-unconfirmed' }, ctx)
+    expect(result.isError).toBeUndefined()
+    expect(JSON.stringify(result.content)).not.toContain('cancelled c-unconfirmed: running')
+    expect(JSON.stringify(result.content)).toContain('cancelling c-unconfirmed')
+    expect(result.details).toMatchObject({
+      childKey: 'c-unconfirmed',
+      status: 'running',
+      executionState: 'cancelling',
+    })
+  })
 })

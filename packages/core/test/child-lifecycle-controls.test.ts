@@ -644,6 +644,136 @@ it('records waiting-safepoint control fact instead of premature applied for defe
       expect(afterFail.map((f) => f.outcome)).toEqual(['requested', 'queued', 'uncertain'])
     })
     expect((await storage.lookupByKey(childHandle2.key))?.state).toBe('running')
+
+    // Case C (P1-B race): delayed parent append while checkpoint fails & removes park -> NEVER emits applied.
+    const childHandle3 = await parent.d.children.create({
+      parent: parent.key,
+      cwd: '/w',
+      input: 'delayed parent append fail',
+      resident: true,
+    })
+    const childSession3 = k.get(childHandle3.key)!
+    const row3 = (await storage.lookupByKey(childHandle3.key))!
+    await storage.casState(childHandle3.key, row3.stateRevision, 'running')
+    const tool3 = gate()
+    trackChildDispatch(childSession3, 'eff-3', 'write_note', tool3.promise)
+    const cpFailed = gate()
+    const origChild3Append = childSession3.d.log.append.bind(childSession3.d.log)
+    vi.spyOn(childSession3.d.log, 'append').mockImplementation(async (rows, opts) => {
+      if (rows.some((e) => e.type === 'x/core/child-checkpoint')) {
+        cpFailed.resolve()
+        throw new Error('disk full during delayed parent append')
+      }
+      return origChild3Append(rows, opts)
+    })
+    const parentResultEntered = gate()
+    const releaseParentResult = gate()
+    const origParentAppend = parent.d.log.append.bind(parent.d.log)
+    vi.spyOn(parent.d.log, 'append').mockImplementation(async (rows, opts) => {
+      if (
+        rows.some(
+          (e) =>
+            e.type === 'x/core/child-control-result' &&
+            (e.data as { admissionId?: string }).admissionId === 'adm-pause-race-fail' &&
+            (e.data as { pausePending?: boolean }).pausePending === true,
+        )
+      ) {
+        parentResultEntered.resolve()
+        await releaseParentResult.promise
+      }
+      return origParentAppend(rows, opts)
+    })
+    const raceCall = applyChildControl(parent, childHandle3.key, 'pause', actor, 'adm-pause-race-fail')
+    await parentResultEntered.promise
+    // Complete tool & fail checkpoint BEFORE the parent's initial child-control-result append resolves!
+    tool3.resolve()
+    await cpFailed.promise
+    await new Promise((r) => setTimeout(r, 10))
+    releaseParentResult.resolve()
+    await raceCall
+    await vi.waitFor(async () => {
+      const facts = (await parent.controls.state()).facts.filter(
+        (f) => (f.details as { admissionId?: string }).admissionId === 'adm-pause-race-fail',
+      )
+      expect(facts.map((f) => f.outcome)).toEqual(['requested', 'queued', 'uncertain'])
+    })
+    expect((await storage.lookupByKey(childHandle3.key))?.state).toBe('running')
+    expect(await storage.scan(childHandle3.key, { type: 'x/core/child-checkpoint', limit: 1 })).toEqual([])
+
+    // Case D (P1-B success under delayed parent append + close/reopen reconciliation): exactly one applied.
+    const childHandle4 = await parent.d.children.create({
+      parent: parent.key,
+      cwd: '/w',
+      input: 'delayed parent append ok',
+      resident: true,
+    })
+    const childSession4 = k.get(childHandle4.key)!
+    const row4 = (await storage.lookupByKey(childHandle4.key))!
+    await storage.casState(childHandle4.key, row4.stateRevision, 'running')
+    const tool4 = gate()
+    trackChildDispatch(childSession4, 'eff-4', 'write_note', tool4.promise)
+    const parentResult4Entered = gate()
+    const releaseParentResult4 = gate()
+    vi.spyOn(parent.d.log, 'append').mockImplementation(async (rows, opts) => {
+      if (
+        rows.some(
+          (e) =>
+            e.type === 'x/core/child-control-result' &&
+            (e.data as { admissionId?: string }).admissionId === 'adm-pause-race-ok' &&
+            (e.data as { pausePending?: boolean }).pausePending === true,
+        )
+      ) {
+        parentResult4Entered.resolve()
+        await releaseParentResult4.promise
+      }
+      return origParentAppend(rows, opts)
+    })
+    const raceOkCall = applyChildControl(parent, childHandle4.key, 'pause', actor, 'adm-pause-race-ok')
+    await parentResult4Entered.promise
+    tool4.resolve()
+    await vi.waitFor(async () => expect((await storage.lookupByKey(childHandle4.key))?.state).toBe('paused'))
+    releaseParentResult4.resolve()
+    await raceOkCall
+    await vi.waitFor(async () => {
+      const facts = (await parent.controls.state()).facts.filter(
+        (f) => (f.details as { admissionId?: string }).admissionId === 'adm-pause-race-ok',
+      )
+      expect(facts.map((f) => f.outcome)).toEqual(['requested', 'queued', 'applied'])
+    })
+    await k.close()
+
+    const k2 = Kernel.create({
+      loops: defaultLoops(),
+      storage,
+      seams: fakeSeams(),
+      provider,
+      contract: { contract_id: null, parser_version: '1' },
+      preset: { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 1, maxFanOut: 4 },
+      fsOps: testFsOps(),
+      netFetch: async () => new Response(''),
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+      timers: noTimers,
+      clock: () => 1_757_203_200_000,
+    })
+    try {
+      const reopened = await k2.session('pause-facts-parent', {
+        actor,
+        resolvedProfileHash: 'h1',
+        cwd: '/w',
+        writerRunId: 'r2',
+      })
+      const factsFail = (await reopened.controls.state()).facts.filter(
+        (f) => (f.details as { admissionId?: string }).admissionId === 'adm-pause-race-fail',
+      )
+      expect(factsFail.map((f) => f.outcome)).toEqual(['requested', 'queued', 'uncertain'])
+      const factsOk = (await reopened.controls.state()).facts.filter(
+        (f) => (f.details as { admissionId?: string }).admissionId === 'adm-pause-race-ok',
+      )
+      expect(factsOk.map((f) => f.outcome)).toEqual(['requested', 'queued', 'applied'])
+      expect((await storage.lookupByKey(childHandle4.key))?.state).toBe('paused')
+    } finally {
+      await k2.close()
+    }
   } finally {
     await k.close()
   }

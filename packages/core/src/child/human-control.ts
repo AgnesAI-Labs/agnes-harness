@@ -120,22 +120,27 @@ export async function applyHumanLifecycle(
     action === 'close' ? 'interrupt' : action === 'retain' ? 'steer' : 'pause',
     actor,
   )
-  const result =
-    action === 'pause'
-      ? await controls.pauseChild(key, 'user_pause')
-      : action === 'resume'
+  let pending: PendingPauseSettlement | undefined
+  let result: Awaited<ReturnType<ChildLifecycleControls['pauseChild']>>
+  if (action === 'pause') {
+    const admitted = await controls.pauseChildAdmitted(key, 'user_pause')
+    result = admitted.result
+    pending = admitted.pending
+  } else {
+    result =
+      action === 'resume'
         ? await controls.resumeChild(key)
         : action === 'close'
           ? await controls.closeChild(key)
           : await controls.retainChild(key)
+  }
   const committed = await parent.d.log.append([
     parent.ev('x/core/child-control-result', { action, admissionId, ...result }, { actor, ignorable: true }),
   ])
-  if (action === 'pause' && result.pausePending) {
-    const pending = controls.pendingPause(key)
-    if (pending) {
-      void pending
-        .then(async (settled) => {
+  if (action === 'pause' && pending) {
+    void pending
+      .then(
+        async (settled) => {
           if (parent.closingOrClosed) return
           await parent.d.log.append([
             parent.ev(
@@ -144,10 +149,30 @@ export async function applyHumanLifecycle(
               { actor, ignorable: true },
             ),
           ])
-        })
-        .catch(bestEffort(parent.d.logger, 'child-pause-control-result'))
-      onPending?.(pending)
-    }
+        },
+        async (error) => {
+          if (parent.closingOrClosed) return
+          await parent.d.log.append([
+            parent.ev(
+              'x/core/child-control-result',
+              {
+                action,
+                admissionId,
+                childKey: key,
+                previousStatus: result.previousStatus,
+                status: result.status,
+                executionState: result.executionState,
+                failed: true,
+                reason:
+                  error instanceof CoreError ? (error.detail?.reason ?? error.code) : 'CHECKPOINT_FAILED',
+              },
+              { actor, ignorable: true },
+            ),
+          ])
+        },
+      )
+      .catch(bestEffort(parent.d.logger, 'child-pause-control-result'))
+    onPending?.(pending)
   }
   return committed.firstSeq
 }

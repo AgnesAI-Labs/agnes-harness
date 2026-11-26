@@ -1,9 +1,11 @@
 import { CHILD_CONTROL_FORMAT } from '@agnes/core-child-control/child/types'
+import { LoopRegistry } from '@agnes/core-common/loop/registry'
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { CoreError } from '@agnes/core-common/types'
 import { buildToolContext } from '@agnes/core-effects/effects/tool-context'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { defaultLoopFactory } from '@agnes/loop-default'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { childControls } from '../src/child/pause-control.js'
@@ -1409,5 +1411,138 @@ it('hides pause and retain for legacy cold idle children missing a pinned bindin
     })
   } finally {
     await k.close()
+  }
+})
+
+it('does not prematurely reject continuing a cold grandchild using root steer capability when direct parent differs (#18)', async () => {
+  const storage = new MemoryStorage()
+  const loopsWithSteer = (steer: boolean) => {
+    const loops = new LoopRegistry()
+    loops.register('@agnes/loop-default', {
+      ...defaultLoopFactory,
+      controls: { ...defaultLoopFactory.controls, steer },
+    })
+    return loops
+  }
+  const noSteerLoops = loopsWithSteer(false)
+  const steerLoops = loopsWithSteer(true)
+  const rootPreset = { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 2, maxFanOut: 8 }
+  const rolePreset = {
+    ...presetDefaults(),
+    name: 'role-steer',
+    treeBudgetCredits: 100,
+    generationLimit: 2,
+    maxFanOut: 8,
+  }
+  const roleRef = { ref: '@test/app#steer-role' as const, title: { en: 'SteerRole' } }
+  const provider = Object.assign(
+    fakeProvider([textTurn('role turn 1'), textTurn('grand turn 1'), textTurn('grand turn 2')]),
+    { models: () => [catalogue()] },
+  )
+  const makeRoles = (hostKernel: Kernel) => ({
+    list: async () => [roleRef],
+    resolve: async (parent: SessionImpl) => ({
+      role: roleRef,
+      open: async (key: string, options: Parameters<Kernel['session']>[1]) => {
+        const s = await hostKernel.session(key, { ...options, preset: rolePreset, policyDigest: 'p-steer' })
+        await s.append([
+          s.ev(
+            ROLE_DELEGATION,
+            {
+              role: roleRef,
+              parentKey: parent.key,
+              actor,
+              tools: [],
+              generationLimit: 2,
+              maxFanOut: 8,
+              permission: 'read-only',
+              approvalPolicy: 'never',
+              parentPolicy: 'default',
+              sandboxRequired: false,
+              filesystem: fakeSeams().sandbox.fsPolicy(),
+            },
+            { ignorable: true },
+          ),
+        ])
+        return s
+      },
+    }),
+    reopen: async (key: string, options: Parameters<Kernel['session']>[1]) =>
+      hostKernel.session(key, { ...options, preset: rolePreset, policyDigest: 'p-steer' }),
+  })
+
+  // Setup: root has NO steer, direct role parent HAS steer.
+  const rk1 = kernel({ storage, provider, preset: rolePreset, loops: steerLoops })
+  const k1 = kernel({
+    storage,
+    provider,
+    preset: rootPreset,
+    loops: noSteerLoops,
+    childRoles: makeRoles(rk1),
+  })
+  const root1 = await k1.session('het-steer-root', sessionOpts)
+  const role = await root1.d.children.createWithKind!('spawn', {
+    parent: root1.key,
+    cwd: '/w',
+    input: 'role parent',
+    role: roleRef.ref,
+    resident: true,
+  })
+  await role.run('role parent')
+  const roleSession = rk1.get(role.key)!
+  const grand = await roleSession.d.children.create({
+    parent: roleSession.key,
+    cwd: '/w',
+    input: 'grandchild work',
+    resident: true,
+  })
+  await grand.run('grandchild work')
+  await k1.close()
+  await rk1.close()
+
+  // Positive case: root lacks steer, reopened direct role parent HAS steer -> continue succeeds!
+  const rk2 = kernel({ storage, provider, preset: rolePreset, loops: steerLoops })
+  const k2 = kernel({
+    storage,
+    provider,
+    preset: rootPreset,
+    loops: noSteerLoops,
+    childRoles: makeRoles(rk2),
+  })
+  try {
+    const root2 = await k2.session('het-steer-root', { ...sessionOpts, writerRunId: 'r2' })
+    const tree = await controlledChildTree(root2)
+    expect(tree.find((row) => row.id === grand.key)?.controls.continue).toBe(true)
+    await applyChildControl(root2, grand.key, 'continue', actor, 'adm-het-ok', 'turn 2 under role')
+    await vi.waitFor(async () => {
+      const snap = await rk2.get(role.key)!.d.children.inspect!(grand.key)
+      expect(snap?.text).toBe('grand turn 2')
+      expect(snap?.idle).toBe(true)
+    })
+  } finally {
+    await k2.close()
+    await rk2.close()
+  }
+
+  // Negative case: reopened direct role parent ALSO lacks steer -> refused with LOOP_CONTROL_UNSUPPORTED.
+  const rk3 = kernel({ storage, provider, preset: rolePreset, loops: noSteerLoops })
+  const k3 = kernel({
+    storage,
+    provider,
+    preset: rootPreset,
+    loops: noSteerLoops,
+    childRoles: makeRoles(rk3),
+  })
+  try {
+    const root3 = await k3.session('het-steer-root', { ...sessionOpts, writerRunId: 'r3' })
+    await expect(
+      applyChildControl(root3, grand.key, 'continue', actor, 'adm-het-no', 'should refuse'),
+    ).rejects.toMatchObject({
+      code: 'E_UNSUPPORTED',
+      detail: expect.objectContaining({ reason: 'LOOP_CONTROL_UNSUPPORTED' }),
+    })
+  } finally {
+    await k3.close()
+    await rk3.close()
   }
 })

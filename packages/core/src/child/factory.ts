@@ -52,6 +52,7 @@ import { openDelegatedSession } from './open-session.js'
 import type { ChildLifecycleControls } from './pause-control.js'
 import type { ResidentStart, ResidentTurn } from './provider.js'
 import { buildChildRecap } from './recap-snapshot.js'
+import { recordChildStateObserved } from './receipts.js'
 import { resumeRoleChild } from './resume-role.js'
 import type { ResolvedChildRole } from './roles.js'
 import { bindChildFactory } from './sessions.js'
@@ -133,7 +134,9 @@ export class KernelChildren implements ChildrenFactory {
   pause = (key: string, opts?: { reason?: 'user_pause' | 'parent_pause' | 'budget_pause' }) =>
     this.controls().pauseChild(key, opts?.reason ?? 'parent_pause')
   close = (key: string) => this.controls().closeChild(key)
-  recap = () => buildChildRecap(this.parent())
+  recap = (opts?: { childKey?: string }) => buildChildRecap(this.parent(), opts)
+  observedState = (key: string, state: 'waiting_approval', rev: number) =>
+    recordChildStateObserved(this.parent(), key, state, rev)
 
   async create(opts: Parameters<ChildrenFactory['create']>[0]): Promise<ChildHandle> {
     return this.createWithKind(opts.role === undefined ? 'fork' : 'spawn', opts)

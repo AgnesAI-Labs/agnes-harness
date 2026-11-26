@@ -111,19 +111,23 @@ const ACTIVE_STATES = new Set(
 )
 const ACTIVE_STATUSES = new Set(['starting', 'running', 'waiting_approval'])
 
+function isActiveChild(item: { status: string; executionState?: string }): boolean {
+  return item.executionState !== undefined
+    ? ACTIVE_STATES.has(item.executionState)
+    : ACTIVE_STATUSES.has(item.status)
+}
+
 async function reconcileActiveChildren(state: SessionState, ctx: ToolContext): Promise<void> {
   if (state.children.size === 0 || !ctx.subagent.list) return
+  const candidates = [...state.children.entries()].filter(([, rec]) => rec.running)
+  if (candidates.length === 0) return
   const listed = await ctx.subagent.list().catch(() => undefined)
   if (!listed) return
   const byId = new Map(listed.map((child) => [child.id, child]))
-  for (const [key, rec] of state.children) {
-    if (!rec.running) continue
+  for (const [key, rec] of candidates) {
+    if (state.children.get(key) !== rec || !rec.running) continue
     const item = byId.get(key)
-    const isActive = item
-      ? item.executionState !== undefined
-        ? ACTIVE_STATES.has(item.executionState)
-        : ACTIVE_STATUSES.has(item.status)
-      : false
+    const isActive = item ? isActiveChild(item) : false
     if (!isActive) {
       rec.running = false
       state.children.delete(key)
@@ -403,10 +407,35 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
         state.pending -= 1
         reservation = 'running'
 
-        const collected = args.wait ? await ctx.subagent.collect(spawned.childKey, { wait: true }) : undefined
+        let collected: ChildStatus | undefined
+        if (args.wait) {
+          try {
+            collected = await ctx.subagent.collect(spawned.childKey, { wait: true })
+          } catch (error) {
+            if (error instanceof CoreError && error.detail?.retryable === true) {
+              const readError = error.message
+              const details: Record<string, JsonValue> = {
+                childKey: spawned.childKey,
+                code: error.code,
+                retryable: true,
+                readError,
+                isolation: worktree ? 'worktree' : 'shared',
+                ...(worktree ? { worktree } : {}),
+              }
+              return {
+                ...fail(
+                  `Delegated task ${spawned.childKey} was created, but reading its result failed (${readError}). Retry with subagent_collect.`,
+                ),
+                details,
+                structured: details,
+              }
+            }
+            throw error
+          }
+        }
         if (collected && collected.childKey !== spawned.childKey)
           throw new Error('subagent backend returned a mismatched child key')
-        if (collected && collected.status !== 'running') release('running')
+        if (collected && !isActiveChild(collected)) release('running')
         const details: Record<string, JsonValue> = {
           childKey: spawned.childKey,
           ...(spawned.role
@@ -572,7 +601,7 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
         if (record) record.polls = polls + 1
       } else if (record) delete record.polls
 
-      if (result.status !== 'running' && record) {
+      if (!isActiveChild(result) && record) {
         record.running = false
         state?.children.delete(args.childKey)
         if (state) prune(runtime, sessionKey, state)
@@ -621,9 +650,17 @@ export function subagentCancelTool(deps: SubagentDeps): ToolDef<typeof cancelPar
       if (args.childKey.length === 0) return fail('childKey must not be empty')
       try {
         const result = await ctx.subagent.cancel(args.childKey)
+        const cancelling = result.executionState === 'cancelling' || result.status === 'running'
+        const text = cancelling
+          ? `cancelling ${result.childKey}: stop not yet confirmed; child remains cancelling`
+          : `cancelled ${result.childKey}: ${result.status}`
         return {
-          content: [{ type: 'text', text: `cancelled ${result.childKey}: ${result.status}` }],
-          details: { childKey: result.childKey, status: result.status },
+          content: [{ type: 'text', text }],
+          details: {
+            childKey: result.childKey,
+            status: result.status,
+            ...(result.executionState ? { executionState: result.executionState } : {}),
+          },
         }
       } catch (error) {
         return controlFailure(error)

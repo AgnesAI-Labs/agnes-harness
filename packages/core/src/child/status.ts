@@ -23,7 +23,7 @@ import { childResultSequence } from './collected-result.js'
 import { childCompletionId } from './completion-notice.js'
 import { childControlMetrics } from './control-metrics.js'
 import { childExecutionReceipt } from './execution-receipt.js'
-import { type ChildEnd, lastChildEnd } from './failure.js'
+import { type ChildEnd, childEnd } from './failure.js'
 import { retiredCompletionIdentity } from './idle-retirement-fact.js'
 import { ROLE_DELEGATION, recordedChildRole } from './roles.js'
 import { childSessionToolFilter, narrowChildToolFilter } from './tool-filter.js'
@@ -102,14 +102,19 @@ export async function humanChildState(
   continuable: boolean,
 ) {
   const projected = projectChildControls(record)
+  const directParent = record.parentKey === parent.key
   const capabilities = child?.d.loopFactory.controls
-  const steer = (child ? capabilities?.steer : parent.d.loopFactory.controls?.steer) === true
+  const steer = child
+    ? capabilities?.steer === true
+    : directParent
+      ? parent.d.loopFactory.controls?.steer === true
+      : true
   const label = cleanChildLabel(record.inputText)
   const canBindCold = Boolean(child) || continuable
   const canRetain = child
     ? projected.controls.retain
     : record.state === 'paused'
-      ? await hasColdCheckpointBinding(parent, record, record.parentKey === parent.key)
+      ? await hasColdCheckpointBinding(parent, record, directParent)
       : projected.controls.retain && continuable
   return {
     id: record.childKey,
@@ -132,6 +137,7 @@ export function snapshotFromRecord(record: ChildTaskRecord): Snapshot {
   const terminal = record.state === 'completed' || record.state === 'failed' || record.state === 'cancelled'
   return {
     ...projectChildControls(record),
+    stateRevision: record.stateRevision,
     state:
       record.state === 'failed' || record.state === 'cancelled' ? 'error' : terminal ? 'done' : 'running',
     lastSeq: 0,
@@ -158,21 +164,44 @@ export async function snapshotFromLedger(
   try {
     const fromSeq = (record.boundarySeq + 1) as typeof record.boundarySeq
     const tail = await parent.d.log.storage.scan(record.childKey, { fromSeq, order: 'desc', limit: 1 })
-    const msgs = await parent.d.log.storage.scan(record.childKey, {
-      fromSeq,
-      type: 'assistant/message',
-      order: 'desc',
-      limit: 1,
-    })
+    const upperSeq = tail[0]?.seq ?? 0
+    const idle = record.state === 'idle'
+    const completionSeq =
+      terminal || idle ? (upperSeq > 0 ? await childResultSequence(parent, record, upperSeq) : 0) : undefined
+    const boundSeq = upperSeq
+    const msgs =
+      boundSeq > 0
+        ? await parent.d.log.storage.scan(record.childKey, {
+            fromSeq,
+            toSeq: boundSeq,
+            type: 'assistant/message',
+            order: 'desc',
+            limit: 1,
+          })
+        : []
     const content = (msgs[0]?.data as { content?: Array<{ type?: string; text?: string }> } | undefined)
       ?.content
     const text = (content ?? [])
       .filter((block) => block.type === 'text' && typeof block.text === 'string')
       .map((block) => block.text)
       .join('')
-    const idle = record.state === 'idle'
-    const completionSeq =
-      terminal || idle ? await childResultSequence(parent, record, tail[0]?.seq ?? 0) : undefined
+    const failedEnd =
+      record.state === 'failed'
+        ? (end ??
+          (boundSeq > 0
+            ? childEnd(
+                (
+                  await parent.d.log.storage.scan(record.childKey, {
+                    type: 'turn/end',
+                    fromSeq,
+                    toSeq: boundSeq,
+                    order: 'desc',
+                    limit: 1,
+                  })
+                )[0]?.data,
+              )
+            : {}))
+        : undefined
     const completionId =
       completionSeq === undefined
         ? undefined
@@ -185,9 +214,9 @@ export async function snapshotFromLedger(
     return {
       ...base,
       ...(await lifecycleFacts(parent, record)),
-      ...(record.state === 'failed' ? (end ?? (await lastChildEnd(parent, record))) : {}),
+      ...(failedEnd ?? {}),
       ...(completionId && completionSeq !== undefined ? { completionId, completionSeq } : {}),
-      lastSeq: tail[0]?.seq ?? base.lastSeq,
+      lastSeq: upperSeq || base.lastSeq,
       ...(text ? { text } : {}),
       receipt: await childExecutionReceipt(parent, record),
     }
@@ -213,44 +242,54 @@ export async function snapshotFromLive(
     end?: ChildEnd | undefined
   },
 ): Promise<Snapshot> {
-  record = { ...((await requireChildControl(parent.d.log.storage).lookupByKey(record.childKey)) ?? record) }
-  const { lastSeq } = snapshot
-  const state = record.state
-  const idle = record.state === 'idle'
-  const terminal = state === 'completed' || state === 'failed' || state === 'cancelled'
-  const query = { fromSeq: record.boundarySeq + 1, toSeq: lastSeq, order: 'desc' as const, limit: 1 }
-  const [messages, completionSeq] = await Promise.all([
-    parent.d.log.storage.scan(record.childKey, { ...query, type: 'assistant/message', limit: 1 }),
-    terminal || idle ? childResultSequence(parent, record, lastSeq) : 0,
-  ])
-  const content = (messages[0]?.data as { content?: Array<{ type?: string; text?: string }> } | undefined)
-    ?.content
-  const text = (content ?? [])
-    .filter((block) => block.type === 'text')
-    .map((block) => block.text ?? '')
-    .join('')
-  const retiredId =
-    state === 'completed' ? await retiredCompletionIdentity(parent, record, completionSeq) : undefined
-  return {
-    ...snapshotFromRecord(record),
-    ...(await lifecycleFacts(parent, record)),
-    lastSeq,
-    ...(state === 'failed' ? snapshot.end : state === 'cancelled' ? { cancelled: true as const } : {}),
-    ...(idle ? { idle: true } : {}),
-    ...(text ? { text } : {}),
-    ...(terminal || idle
-      ? {
-          completionSeq,
-          completionId:
-            retiredId ??
-            childCompletionId(
-              record.childKey,
-              state === 'cancelled' ? 'cancelled' : state === 'failed' ? 'failed' : 'completed',
-              idle ? completionSeq : undefined,
-            ),
-        }
-      : {}),
-    receipt: await childExecutionReceipt(parent, record),
+  const fallback = snapshotFromRecord(record)
+  try {
+    record = { ...((await requireChildControl(parent.d.log.storage).lookupByKey(record.childKey)) ?? record) }
+    const { lastSeq } = snapshot
+    const state = record.state
+    const idle = record.state === 'idle'
+    const terminal = state === 'completed' || state === 'failed' || state === 'cancelled'
+    const query = { fromSeq: record.boundarySeq + 1, toSeq: lastSeq, order: 'desc' as const, limit: 1 }
+    const [messages, completionSeq] = await Promise.all([
+      parent.d.log.storage.scan(record.childKey, { ...query, type: 'assistant/message', limit: 1 }),
+      terminal || idle ? childResultSequence(parent, record, lastSeq) : 0,
+    ])
+    const content = (messages[0]?.data as { content?: Array<{ type?: string; text?: string }> } | undefined)
+      ?.content
+    const text = (content ?? [])
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text ?? '')
+      .join('')
+    const retiredId =
+      state === 'completed' ? await retiredCompletionIdentity(parent, record, completionSeq) : undefined
+    return {
+      ...snapshotFromRecord(record),
+      ...(await lifecycleFacts(parent, record)),
+      lastSeq,
+      ...(state === 'failed' ? snapshot.end : state === 'cancelled' ? { cancelled: true as const } : {}),
+      ...(idle ? { idle: true } : {}),
+      ...(text ? { text } : {}),
+      ...(terminal || idle
+        ? {
+            completionSeq,
+            completionId:
+              retiredId ??
+              childCompletionId(
+                record.childKey,
+                state === 'cancelled' ? 'cancelled' : state === 'failed' ? 'failed' : 'completed',
+                idle ? completionSeq : undefined,
+              ),
+          }
+        : {}),
+      receipt: await childExecutionReceipt(parent, record),
+    }
+  } catch (error) {
+    const { completionId: _id, completionSeq: _seq, ...degraded } = fallback
+    return {
+      ...degraded,
+      ledgerReadFailed: true as const,
+      readError: error instanceof Error ? error.message : String(error),
+    }
   }
 }
 

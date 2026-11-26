@@ -39,6 +39,7 @@ export type ChildStatus = {
   idle?: boolean
   status?: ChildResult['status']
   executionState?: ChildResult['executionState']
+  stateRevision?: number
   /** Durable identity of the completed result returned by this snapshot. */
   completionId?: string
   completionSeq?: Seq
@@ -105,6 +106,7 @@ export type ChildrenFactory = {
   get?(childKey: string): ChildHandle | undefined
   inspect?(childKey: string): Promise<ChildStatus | null>
   collected?(childKey: string, completionId: string, resultSeq: Seq): Promise<void>
+  observedState?(childKey: string, state: 'waiting_approval', stateRevision: number): Promise<void>
   /** Backend recovery on an explicit owning-session run; not a model operation. */
   recover?(): Promise<void>
   /** Release owned child instances when the parent session closes. */
@@ -126,7 +128,7 @@ export type ChildrenFactory = {
     status: import('@agnes/extension-api').ChildAgentStatus
     executionState: import('@agnes/extension-api').ChildExecutionState
   }>
-  recap?(): Promise<{
+  recap?(opts?: { childKey?: string }): Promise<{
     snapshot: import('@agnes/extension-api').RecapFactSnapshot
     markdown: string
     allowedArtifactPaths: readonly string[]
@@ -527,15 +529,18 @@ export function buildToolContext(
             throw new CoreError(
               'E_STORAGE_FAULT',
               `Failed to read child ledger for ${childKey}${snap.readError ? `: ${snap.readError}` : ''}`,
-              { childKey, retryable: true },
+              { childKey, retryable: true, ...(snap.readError ? { readError: snap.readError } : {}) },
             )
+          const status = collectStatus(snap)
           const ackSeq =
             snap.completionSeq !== undefined ? snap.completionSeq : snap.cancelled ? 0 : undefined
           if (snap.completionId && ackSeq !== undefined)
             await d.children.collected?.(childKey, snap.completionId, ackSeq)
+          else if (status === 'waiting_approval' && snap.stateRevision !== undefined)
+            await d.children.observedState?.(childKey, 'waiting_approval', snap.stateRevision)
           return {
             childKey: child?.key ?? childKey,
-            status: collectStatus(snap),
+            status,
             ...(snap.executionState ? { executionState: snap.executionState } : {}),
             ...(snap.completionId === undefined ? {} : { completionId: snap.completionId }),
             ...(snap.completionSeq === undefined ? {} : { completionSeq: snap.completionSeq }),
@@ -614,8 +619,8 @@ export function buildToolContext(
         : {}),
       ...(d.children.recap
         ? {
-            recap: () =>
-              d.children.recap?.() ??
+            recap: (opts?: { childKey?: string }) =>
+              d.children.recap?.(opts) ??
               Promise.reject(new CoreError('E_UNSUPPORTED', 'child recap is not available')),
           }
         : {}),

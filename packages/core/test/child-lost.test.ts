@@ -4,6 +4,7 @@ import type { Provider, SystemInput } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import type { KernelChildren } from '../src/child/factory.js'
 import { CHILD_LOST } from '../src/child/lost-children.js'
+import { withChildLog } from '../src/child/status.js'
 import { Kernel } from '../src/kernel.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { hangingProvider, model, until } from './helpers/child-traces.js'
@@ -195,6 +196,73 @@ describe('a child whose process exited before it finished', () => {
     expect(notice).toMatchObject({ data: { childKey: child.key, status: 'cancelled' } })
     expect(notice?.data).not.toHaveProperty('error')
     await next.close().catch(() => undefined)
+  })
+
+  it('keeps a cold cancelling child with an unconfirmed stop receipt cancelling across cancel, recover and inspect until stop is confirmed (#05)', async () => {
+    const { clock, storage, first, child } = await crashed()
+    const childSession = first.get(child.key)!
+    await childSession.d.log.append([
+      childSession.ev(
+        'x/core/child-stop-receipt',
+        {
+          childKey: child.key,
+          toolUseId: 'non-interruptible-1',
+          toolName: 'write_note',
+          cancelRequestedAt: clock.now,
+          toolReturnedAt: null,
+          terminalConfirmedAt: null,
+          disposition: 'timed_out_unknown',
+        },
+        { ignorable: true },
+      ),
+    ])
+    const row = (await storage.lookupByKey(child.key))!
+    expect(await storage.casState(child.key, row.stateRevision, 'cancelling')).toBe(true)
+    clock.now += LEASE + 1
+
+    const { next, parent } = await reopen(storage)
+    try {
+      // Cold cancel sees timed_out_unknown -> keeps cancelling and emits no premature notice.
+      await parent.d.children.cancel?.(child.key)
+      expect((await storage.lookupByKey(child.key))?.state).toBe('cancelling')
+      expect(notices(parent)).toEqual([])
+
+      // Recovery shares the same terminal criterion -> must NOT settle to cancelled.
+      await parent.d.children.recover?.()
+      expect((await storage.lookupByKey(child.key))?.state).toBe('cancelling')
+      expect(notices(parent)).toEqual([])
+
+      // Subsequent inspection still reports cancelling.
+      expect(await parent.d.children.inspect?.(child.key)).toMatchObject({
+        status: 'running',
+        executionState: 'cancelling',
+      })
+
+      // Once a confirmed stop receipt arrives, recovery settles cancelling -> cancelled.
+      const latest = (await storage.lookupByKey(child.key))!
+      await withChildLog(parent, latest, undefined, (log) =>
+        log.append([
+          parent.ev(
+            'x/core/child-stop-receipt',
+            {
+              childKey: latest.childKey,
+              toolUseId: 'non-interruptible-1',
+              toolName: 'write_note',
+              cancelRequestedAt: clock.now - LEASE,
+              toolReturnedAt: clock.now,
+              terminalConfirmedAt: clock.now,
+              disposition: 'drained_clean',
+            },
+            { ignorable: true },
+          ),
+        ]),
+      )
+      await parent.d.children.recover?.()
+      expect((await storage.lookupByKey(child.key))?.state).toBe('cancelled')
+      expect(notices(parent)).toMatchObject([{ data: { childKey: child.key, status: 'cancelled' } }])
+    } finally {
+      await next.close().catch(() => undefined)
+    }
   })
 
   it('is left to the loop that started it, which can still adopt it', async () => {

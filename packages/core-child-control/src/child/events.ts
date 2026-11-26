@@ -78,13 +78,12 @@ class HeartbeatGate {
       state.leaseUntil = event.leaseUntil
       return true
     }
-    if (
-      state.retired.has(parsed.writer) ||
-      event.ts < state.ts ||
-      (event.ts === state.ts && event.leaseUntil < state.leaseUntil) ||
-      (event.ts === state.ts && event.leaseUntil === state.leaseUntil && parsed.seq <= state.seq)
-    ) {
+    if (state.retired.has(parsed.writer)) return false
+    if (event.ts < state.ts || (event.ts === state.ts && event.leaseUntil < state.leaseUntil)) {
       state.retired.add(parsed.writer)
+      return false
+    }
+    if (event.ts === state.ts && event.leaseUntil === state.leaseUntil && parsed.seq <= state.seq) {
       return false
     }
     state.retired.add(state.writer)
