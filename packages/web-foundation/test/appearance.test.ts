@@ -2,7 +2,7 @@
 
 import { enT, zhT } from '@agnes/web-foundation/testkit/locale'
 import { mountSettingsSelectOptions, unmountRegion } from '@agnes/web-ui'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { bindAppearance, bindSkinGroup } from '../src/appearance.js'
 import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { webLocaleCatalog } from '../src/locale-catalog.js'
@@ -13,7 +13,6 @@ import {
   UI_LOCALES,
   type UiLocale,
 } from '../src/locale-preference.js'
-import { SKIN_CACHE_VERSION, SKIN_STORAGE_KEY } from '../src/skin.js'
 import { FONT_SCALE_STORAGE_KEY, THEME_STORAGE_KEY } from '../src/theme.js'
 
 // i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
@@ -283,23 +282,12 @@ describe('bindAppearance 字号组', () => {
   })
 })
 
-// The skin group is the only writer of the `agnes-skin` cache: without it a selected skin can never
-// reach first paint. These cases pin what the user sees and, more importantly, that a failed
-// selection leaves no fake checked state behind.
 describe('bindSkinGroup', () => {
   const skins = [
-    { id: 'midnight', name: '午夜', packageName: '@acme/skins' },
-    { id: 'paper', name: '纸质', packageName: '@acme/skins' },
+    { value: 'exact-midnight', name: '午夜', packageName: '@acme/skins', version: '1.0.0' },
+    { value: 'exact-paper', name: '纸质', packageName: '@acme/skins', version: '1.0.0' },
   ]
-  const cached = (id: string): Record<string, string> => ({
-    [SKIN_STORAGE_KEY]: JSON.stringify({
-      version: SKIN_CACHE_VERSION,
-      id,
-      revision: 'sha256-x',
-      css: '.a{}',
-      tokens: {},
-    }),
-  })
+  const available = { selected: 'application', skins, unavailable: false }
   // The picker is a select whose options are the installed skins; these helpers read it as a list.
   let unmount: (() => void) | undefined
   function mountSkin(): void {
@@ -327,146 +315,81 @@ describe('bindSkinGroup', () => {
 
   beforeEach(mountSkin)
 
-  it('renders the built-in default plus every installed skin, with its source package', async () => {
+  it('renders both host choices and each candidate with its package and version', async () => {
     const group = bindSkinGroup({
       scope: document,
-      storage: fakeStorage(),
-      list: async () => skins,
-      select: () => undefined,
+      list: async () => available,
+      select: async () => undefined,
     })
     await group.refresh()
-    expect(inputs().map((entry) => entry.value)).toEqual(['', 'midnight', 'paper'])
-    expect(document.body.textContent).toContain('午夜')
-    expect(document.body.textContent).toContain('来自 @acme/skins')
-    expect(input('').checked).toBe(true)
+    expect(inputs().map((entry) => entry.value)).toEqual(['application', '', 'exact-midnight', 'exact-paper'])
+    expect(document.body.textContent).toContain('来自 @acme/skins 1.0.0')
+    expect(input('application').checked).toBe(true)
   })
-  it('back-fills the cached choice and reports it without refetching', async () => {
-    let calls = 0
+
+  it('does not replace the reported selection when the backend refuses a change', async () => {
+    let selected = 'exact-paper'
     const group = bindSkinGroup({
       scope: document,
-      storage: fakeStorage(cached('paper')),
-      list: async () => {
-        calls += 1
-        return skins
+      list: async () => ({ ...available, selected }),
+      select: async (value) => {
+        if (value === 'exact-midnight') throw new Error('conflict')
+        selected = value
       },
-      select: () => undefined,
     })
     await group.refresh()
-    expect(input('paper').checked).toBe(true)
-    expect(input('').checked).toBe(false)
-    group.sync()
-    expect(calls).toBe(1)
-  })
-  it('selects a skin, and the default selects no skin at all', async () => {
-    const chosen: Array<string | null> = []
-    const group = bindSkinGroup({
-      scope: document,
-      storage: fakeStorage(),
-      list: async () => skins,
-      select: (id) => void chosen.push(id),
-    })
-    await group.refresh()
-    pick('midnight')
+    pick('exact-midnight')
+    await vi.waitFor(() => expect(select().disabled).toBe(false))
+    expect(input('exact-paper').checked).toBe(true)
+    expect(document.body.textContent).toContain('无法保存皮肤选择')
     pick('')
-    expect(chosen).toEqual(['midnight', null])
+    await vi.waitFor(() => expect(input('').checked).toBe(true))
   })
-  it('keeps the previous choice when applying a new one fails, and says so', async () => {
-    let reject = true
+
+  it('shows an unavailable saved skin and lets the user choose a replacement', async () => {
     const group = bindSkinGroup({
       scope: document,
-      storage: fakeStorage(cached('paper')),
-      list: async () => skins,
-      select: (id) => (id === 'midnight' && reject ? Promise.reject(new Error('fetch failed')) : undefined),
+      list: async () => ({ ...available, selected: '', unavailable: true }),
+      select: async () => undefined,
     })
     await group.refresh()
-    expect(input('paper').checked).toBe(true)
-    pick('midnight')
-    await Promise.resolve()
-    await Promise.resolve()
-    // The failed selection must not leave a checked radio that no skin backs.
-    expect(input('paper').checked).toBe(true)
-    expect(input('midnight').checked).toBe(false)
-    // Nor may it fail silently: the user has to learn why the radio snapped back (design §8).
-    expect(document.body.textContent).toContain('这份皮肤没有生效，已保留原选择。')
-    // A later successful selection clears the message again.
-    reject = false
-    pick('midnight')
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(input('midnight').checked).toBe(true)
-    expect(document.body.textContent).not.toContain('这份皮肤没有生效')
-  })
-  it('shows a visible failure with a retry instead of pretending there are no skins', async () => {
-    let attempts = 0
-    const group = bindSkinGroup({
-      scope: document,
-      storage: fakeStorage(),
-      list: async () => {
-        attempts += 1
-        if (attempts === 1) throw new Error('offline')
-        return skins
-      },
-      select: () => undefined,
-    })
-    await group.refresh()
-    // Nothing can be picked from a list that failed to load.
-    expect(inputs().map((entry) => entry.value)).toEqual([''])
-    expect(select().disabled).toBe(true)
-    expect(document.body.textContent).toContain('皮肤清单读取失败')
-    const retry = document.querySelector<HTMLButtonElement>('#skin-option-items button')
-    expect(retry).not.toBeNull()
-    retry?.click()
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(inputs().map((entry) => entry.value)).toEqual(['', 'midnight', 'paper'])
+    expect(document.body.textContent).toContain('已选皮肤不可用')
     expect(select().disabled).toBe(false)
   })
-  it.each(['resolve', 'reject'] as const)(
-    'ignores a late %s roster reply after the pane unmounts',
-    async (outcome) => {
-      let resolve!: (value: typeof skins) => void
-      let reject!: (error: Error) => void
-      const pending = new Promise<typeof skins>((done, fail) => {
-        resolve = done
-        reject = fail
-      })
-      const group = bindSkinGroup({
-        scope: document,
-        storage: fakeStorage(),
-        list: () => pending,
-        select: () => undefined,
-      })
-      const refresh = group.refresh()
-      const retired = select().closest('fieldset')!
-      unmount?.()
-      document.body.replaceChildren()
-      const before = retired.innerHTML
-      if (outcome === 'resolve') resolve(skins)
-      else reject(new Error('late offline reply'))
-      await expect(refresh).resolves.toBeUndefined()
-      expect(() => group.sync()).not.toThrow()
-      expect(retired.innerHTML).toBe(before)
-      expect(document.body.childElementCount).toBe(0)
-    },
-  )
 
-  it('lists whatever is installed when the list is read again', async () => {
-    let installed = skins.slice(0, 1)
+  it('offers a retry if reading the backend fails', async () => {
+    let fail = true
     const group = bindSkinGroup({
       scope: document,
-      storage: fakeStorage(),
-      list: async () => installed,
-      select: () => undefined,
+      list: async () => {
+        if (fail) throw new Error('offline')
+        return available
+      },
+      select: async () => undefined,
     })
     await group.refresh()
-    expect(inputs().map((entry) => entry.value)).toEqual(['', 'midnight'])
-    installed = skins
-    await group.refresh()
-    expect(inputs().map((entry) => entry.value)).toEqual(['', 'midnight', 'paper'])
-    installed = []
-    await group.refresh()
-    expect(inputs().map((entry) => entry.value)).toEqual([''])
-    expect(select().options[0]?.textContent).toBe('AGH 默认')
+    expect(select().disabled).toBe(true)
+    expect(document.body.textContent).toContain('皮肤清单读取失败')
+    fail = false
+    document.querySelector<HTMLButtonElement>('#skin-option-items button')?.click()
+    await vi.waitFor(() => expect(select().disabled).toBe(false))
+    expect(inputs().map((entry) => entry.value)).toContain('exact-paper')
+  })
+
+  it('ignores a late roster after the pane unmounts', async () => {
+    let resolve!: (value: typeof available) => void
+    const promise = new Promise<typeof available>((done) => {
+      resolve = done
+    })
+    const group = bindSkinGroup({ scope: document, list: () => promise, select: async () => undefined })
+    const refresh = group.refresh()
+    const retired = select().closest('fieldset')!
+    unmount?.()
+    document.body.replaceChildren()
+    const before = retired.innerHTML
+    resolve(available)
+    await refresh
+    expect(retired.innerHTML).toBe(before)
   })
 })
 

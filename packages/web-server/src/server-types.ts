@@ -71,7 +71,10 @@ export type WebServerOptions = {
    * only method, the three-MIME allowlist and headers. A miss and a refusal are the same null, which
    * this route turns into the same 404 the skin route uses.
    */
-  clientModuleAsset?: (pathname: string) => ClientModuleAssetResolution | Promise<ClientModuleAssetResolution>
+  clientModuleAsset?: (
+    pathname: string,
+    purpose: AppServerParams<'_agnes/v1/clientModules.read'>['purpose'],
+  ) => ClientModuleAssetResolution | Promise<ClientModuleAssetResolution>
   /**
    * Optional launcher-owned subscription to daemon roster rebuilds.  The static server only fans
    * these safe `{ packageId, revision }` hints out over same-origin SSE; it neither watches package

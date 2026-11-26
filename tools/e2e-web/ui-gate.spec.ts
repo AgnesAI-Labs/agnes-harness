@@ -382,7 +382,7 @@ for (const locale of ['en', 'zh-CN'])
       })
     }
 
-test('live language switching updates sidebar and cached skin options without reloading', async ({
+test('live language switching updates sidebar and skin options without reloading', async ({
   page,
   runtime,
 }) => {
@@ -398,8 +398,11 @@ test('live language switching updates sidebar and cached skin options without re
     await expect(page.locator('#settings')).toHaveText(en ? 'Settings' : '设置')
     await expect(page.locator('#new')).toHaveAccessibleName(en ? 'New conversation' : '新对话')
     await expect(page.locator('#new')).toContainText(en ? 'New conversation' : '新对话')
-    await expect(page.locator('#skin-select option').first()).toHaveText(en ? 'AGH default' : 'AGH 默认')
-    await expect(page.locator('#skin-select')).toHaveValue('')
+    await expect(page.locator('#skin-select option[value=""]')).toHaveText(en ? 'AGH default' : 'AGH 默认')
+    await expect(page.locator('#skin-select option[value="application"]')).toHaveText(
+      en ? 'Use application setting' : '使用应用设置',
+    )
+    await expect(page.locator('#skin-select')).toHaveValue('application')
     await closeSettings(page, locale)
     await settings(page, locale)
     await section(page, 'general')

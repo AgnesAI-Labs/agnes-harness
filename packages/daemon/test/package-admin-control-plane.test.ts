@@ -15,15 +15,18 @@ import {
   parseSource,
   readLock,
   SKIN_MAX_ASSET_BYTES,
-  SKIN_MAX_CSS_BYTES,
   writeLock,
 } from '@agnes/package-manager'
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import {
+  type ApplicationPreview,
   jcs,
   type PackageOperation,
   type RuntimePinDescriptor,
   type RuntimePinReleaseResult,
+  type SkinChoice,
+  type SkinListResult,
+  type SkinReadResult,
 } from '@agnes/protocol'
 import * as systemNode from '@agnes/system-node'
 import { createPrivateDirectorySync } from '@agnes/system-node'
@@ -1636,11 +1639,26 @@ it('gives localWeb only browser rosters, enrolls client-module notices, and bind
     // ... and nothing else in the namespace. Every one of these declares the same `packages.read`
     // permission, so only the method allowlist can tell them apart from the roster read.
     for (const [id, method, params] of [
-      [3, '_agnes/v1/skins.read', { profile, path: '/skins/x/skin.css' }],
-      [4, '_agnes/v1/clientModules.read', { profile, path: '/plugins/x/y/index.js' }],
+      [
+        3,
+        '_agnes/v1/skins.read',
+        { profile, format: 'selected-v1', path: `/skins/${'a'.repeat(64)}/x/skin.css` },
+      ],
+      [4, '_agnes/v1/clientModules.read', { profile, path: '/plugins/x/y/index.js', purpose: 'document' }],
       [5, '_agnes/v1/packages.list', { profile }],
       [6, '_agnes/v1/packages.catalog.list', { profile }],
       [7, '_agnes/v1/packages.pins.inspect', { profile }],
+      [
+        8,
+        '_agnes/v1/skins.select',
+        { profile, clientId, commandId: 'denied-skin', expectedRevision: 0, choice: { kind: 'none' } },
+      ],
+      [9, '_agnes/v1/clientModules.frontendPublication', { profile }],
+      [
+        10,
+        '_agnes/v1/packages.docs.get',
+        { profile, id: 'fixture', expectedIntegrity: `sha256-${'a'.repeat(64)}`, locale: 'en' },
+      ],
     ] as const)
       expect(await localWeb.handle({ jsonrpc: '2.0', id, method, params }), method).toMatchObject({
         error: { data: { code: 'CAPABILITY_DENIED' } },
@@ -1961,163 +1979,128 @@ it('preserves an existing corrupt lock and serves it as read-only recovery inste
   })
 })
 
-// skins.list is registered automatically from PACKAGE_ADMIN_METHODS, so this pins the half that is
-// hand-written: the dispatch branch and its projection. The roster's own rules (enabled/trusted
-// filter, cross-package id uniqueness, shadowing) are pinned in package-manager's suite.
-it('projects a skin roster for the profile, hashed so a client can detect change', async () => {
-  const result = (await service().call('_agnes/v1/skins.list', { profile }, authority)) as {
-    revision: string
-    skins: unknown[]
-    shadowed: string[]
-  }
-  expect(result.skins).toEqual([])
-  expect(result.shadowed).toEqual([])
-  expect(result.revision).toMatch(/^sha256-[a-f0-9]{64}$/)
-  // Content-derived, so two reads of an unchanged profile agree; a client re-applies only on change.
-  const again = (await service().call('_agnes/v1/skins.list', { profile }, authority)) as {
-    revision: string
-  }
-  expect(again.revision).toBe(result.revision)
+it('reports the host default with no selected skin or persisted override', async () => {
+  await expect(service().call('_agnes/v1/skins.list', { profile }, authority)).resolves.toEqual({
+    profile,
+    revision: 0,
+    choice: { kind: 'application' },
+    skins: [],
+    selected: null,
+  })
 })
 
-// S18/S19: the whole pipeline against a real install rather than a hand-built inventory. The
-// package comes from the shipped example family, so this also pins that the examples on disk still
-// satisfy the install-time limits (stylesheet cap, asset extension allowlist, asset byte caps).
-it('installs the shipped skin example and projects all four presets with their inline stylesheets', async () => {
-  // A `file:` source must be a contained `./` path resolved against the manager's cwd, so the example
-  // is copied in rather than referenced where it lives. That is the same shape a user's install takes.
-  cpSync(join(examples, 'skins-builtin', 'v1'), join(root, 'skins-builtin'), { recursive: true })
-  const skinSource = parseSource('file:./skins-builtin')
-  const tree = new CompositeTargetStore(sqliteTables().table('composite'), secondProfile)
-  const admin = service({ pluginTree: tree, workerGeneration: () => 1 })
+async function listSkins(admin: PackageAdminService): Promise<SkinListResult> {
+  return (await admin.call('_agnes/v1/skins.list', { profile: secondProfile }, authority)) as SkinListResult
+}
 
-  const inspected = (await admin.call(
-    '_agnes/v1/packages.inspect',
-    { profile: secondProfile, clientId, commandId: 'skin-inspect', source: skinSource },
-    authority,
-  )) as { operationId: string }
-  const preview = await operation(admin, secondProfile, inspected.operationId)
-  expect(preview.state).toBe('completed')
-  expect(preview.preview?.source).toEqual(skinSource)
-  const integrity = preview.preview?.integrity
-  if (!integrity) throw new Error('inspection did not return integrity')
-
-  const accepted = (await admin.call(
-    '_agnes/v1/packages.install',
+async function selectSkin(admin: PackageAdminService, expectedRevision: number, choice: SkinChoice) {
+  return admin.call(
+    '_agnes/v1/skins.select',
     {
       profile: secondProfile,
       clientId,
-      commandId: 'skin-install',
-      source: skinSource,
-      expectedIntegrity: integrity,
+      commandId: `choose-${expectedRevision}`,
+      expectedRevision,
+      choice,
     },
     authority,
-  )) as { operationId: string }
-  expect(await operation(admin, secondProfile, accepted.operationId)).toMatchObject({
-    state: 'completed',
-    packageId: '@agnes-examples/skins-builtin',
-    installed: { desired: 'installed-disabled' },
-  })
-
-  // An install lands disabled and untrusted, and the roster only projects enabled, trusted packages,
-  // so the presets must stay invisible until both steps run.
-  await expect(
-    admin.call('_agnes/v1/skins.list', { profile: secondProfile }, authority),
-  ).resolves.toMatchObject({ skins: [] })
-
-  const listed = (await admin.call('_agnes/v1/packages.list', { profile: secondProfile }, authority)) as {
-    packages: { id: string; integrity: string; capabilityHash: string }[]
-  }
-  const row = listed.packages.find((entry) => entry.id === '@agnes-examples/skins-builtin')
-  if (!row) throw new Error('the installed package is missing from packages.list')
-
-  const trust = (await admin.call(
-    '_agnes/v1/packages.trust',
-    {
-      profile: secondProfile,
-      clientId,
-      commandId: 'skin-trust',
-      id: row.id,
-      expectedIntegrity: row.integrity,
-      capabilityHash: row.capabilityHash,
-    },
-    authority,
-  )) as { operationId: string }
-  expect(await operation(admin, secondProfile, trust.operationId)).toMatchObject({ state: 'completed' })
-
-  const enable = (await admin.call(
-    '_agnes/v1/packages.enable',
-    { profile: secondProfile, clientId, commandId: 'skin-enable', id: row.id },
-    authority,
-  )) as { operationId: string }
-  expect(await operation(admin, secondProfile, enable.operationId)).toMatchObject({ state: 'completed' })
-  await qualifyInstalledSkin(tree)
-
-  const roster = (await admin.call('_agnes/v1/skins.list', { profile: secondProfile }, authority)) as {
-    revision: string
-    skins: {
-      id: string
-      name: string
-      packageName: string
-      cssUrl: string
-      css?: string
-      assetBase?: string
-      tokens?: Record<string, { light: string; dark: string }>
-    }[]
-    shadowed: string[]
-  }
-  expect(roster.shadowed).toEqual([])
-  expect(roster.revision).toMatch(/^sha256-[a-f0-9]{64}$/)
-  // Declaration order inside the package, not a re-sort: the manifest stays the rendering order.
-  expect(roster.skins.map((skin) => skin.id)).toEqual(['high-contrast', 'midnight', 'paper', 'aurora'])
-  for (const skin of roster.skins) {
-    expect(skin.packageName).toBe('@agnes-examples/skins-builtin')
-    expect(skin.cssUrl).toBe(`/skins/${skin.id}/skin.css`)
-    // The stylesheet is inlined so a skin that ships no assets needs no second request. A packaged
-    // distribution reads it from `embeddedSkins`; a source checkout reads the file, as here.
-    expect(skin.css).toContain('[data-agnes-region')
-  }
-  // Only aurora ships an `assets/` directory, and it is the one preset a background image needs.
-  expect(roster.skins.filter((skin) => skin.assetBase !== undefined).map((skin) => skin.id)).toEqual([
-    'aurora',
-  ])
-  expect(roster.skins.find((skin) => skin.id === 'aurora')?.assetBase).toBe('/skins/aurora/assets/')
-  // The inlined text is projected, not raw: the client applies it with `replaceSync`, whose base URL
-  // is the document, so a relative `url()` would resolve against the page root and 404 (design §21).
-  const auroraCss = roster.skins.find((skin) => skin.id === 'aurora')?.css ?? ''
-  expect(auroraCss).toMatch(/url\("\/skins\/aurora\/assets\/[a-z0-9._-]+"\)/)
-  expect(auroraCss).not.toContain('url("assets/')
-  // The file on disk keeps the author's relative reference — only the projection is rewritten.
-  const auroraOnDisk = readFileSync(
-    join(
-      packageDir(root, secondProfile, '@agnes-examples/skins-builtin'),
-      'extensions/main/skins/aurora/skin.css',
-    ),
-    'utf8',
   )
-  expect(auroraOnDisk).toMatch(/url\("assets\/[a-z0-9._-]+"\)/)
-  // `cssUrl` and the rewrite must agree on the route, or the two application paths would diverge.
-  expect(roster.skins.find((skin) => skin.id === 'aurora')?.cssUrl).toBe('/skins/aurora/skin.css')
-  // Tokens ride the same manifest, and the picker needs them for the pre-paint token pass.
-  expect(roster.skins.find((skin) => skin.id === 'high-contrast')?.tokens).toMatchObject({
-    '--agnes-bg-page': { light: '#ffffff', dark: '#000000' },
-  })
-  // A skin that declares no tokens still projects `css`; `tokens` is omitted rather than empty.
-  expect(roster.skins.find((skin) => skin.id === 'aurora')?.tokens).toBeUndefined()
+}
 
-  // The revision is content-derived, so an unchanged roster is stable across reads.
-  const repeated = (await admin.call('_agnes/v1/skins.list', { profile: secondProfile }, authority)) as {
-    revision: string
+async function readSkin(
+  admin: PackageAdminService,
+  path: string,
+  targetProfile = secondProfile,
+): Promise<SkinReadResult> {
+  return (await admin.call(
+    '_agnes/v1/skins.read',
+    {
+      profile: targetProfile,
+      path,
+      format: 'selected-v1',
+    },
+    authority,
+  )) as SkinReadResult
+}
+
+function candidate(roster: SkinListResult, id: string) {
+  const row = roster.skins.find((skin) => skin.id === id)
+  if (!row) throw new Error(`missing ${id} skin`)
+  return row
+}
+
+it('lists enabled presets as metadata and uses an adopted application skin only in automatic mode', async () => {
+  const admin = await installedSkinPresets(true)
+  const roster = await listSkins(admin)
+  expect(roster.selected).toBeNull()
+  expect(roster.skins.map((skin) => skin.id).sort()).toEqual(['aurora', 'high-contrast', 'midnight', 'paper'])
+  for (const skin of roster.skins) {
+    expect(skin).toEqual({
+      id: skin.id,
+      name: expect.any(String),
+      packageId: '@agnes-examples/skins-builtin',
+      version: expect.any(String),
+      bindingDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+    })
   }
-  expect(repeated.revision).toBe(roster.revision)
+
+  const preview = (await admin.call(
+    '_agnes/v1/applications.preview',
+    {
+      profile: secondProfile,
+      packageId: '@agnes-examples/skins-builtin',
+    },
+    authority,
+  )) as ApplicationPreview
+  await admin.call(
+    '_agnes/v1/applications.adopt',
+    {
+      profile: secondProfile,
+      clientId,
+      commandId: 'adopt-skin-app',
+      packageId: preview.packageId,
+      expectedRevision: 0,
+      consentDigest: preview.consentDigest,
+    },
+    authority,
+  )
+  const contrast = candidate(roster, 'high-contrast')
+  const contrastPath = `/skins/${contrast.bindingDigest}/high-contrast/skin.css`
+  expect((await listSkins(admin)).selected).toMatchObject({
+    id: 'high-contrast',
+    kind: 'application',
+    cssUrl: contrastPath,
+    tokens: { '--agnes-bg-page': { light: '#ffffff', dark: '#000000' } },
+  })
+  expect(await readSkin(admin, contrastPath)).toMatchObject({ found: true })
+  await selectSkin(admin, 0, { kind: 'none' })
+  expect((await listSkins(admin)).selected).toBeNull()
+  expect(await readSkin(admin, contrastPath)).toEqual({ found: false })
+  await selectSkin(admin, 1, { kind: 'application' })
+  expect((await listSkins(admin)).selected?.kind).toBe('application')
+  await selectSkin(admin, 2, { kind: 'skin', bindingDigest: candidate(roster, 'aurora').bindingDigest })
+  await admin.call(
+    '_agnes/v1/applications.clear',
+    {
+      profile: secondProfile,
+      clientId,
+      commandId: 'clear-skin-app',
+      expectedRevision: 1,
+    },
+    authority,
+  )
+  expect((await listSkins(admin)).selected).toMatchObject({ id: 'aurora', kind: 'manual' })
 }, 30_000)
 
-/**
- * Bring the shipped skin example to the state `skins.read` answers for: installed, trusted and
- * enabled on `secondProfile` (the only non-primary profile scope the service resolves).
- */
-async function installedSkinPresets(): Promise<ReturnType<typeof service>> {
+/** Install a real example and qualify its backend contribution in the selected profile. */
+async function installedSkinPresets(withApplication = false): Promise<PackageAdminService> {
   cpSync(join(examples, 'skins-builtin', 'v1'), join(root, 'skins-builtin'), { recursive: true })
+  if (withApplication) {
+    const packageJson = join(root, 'skins-builtin', 'package.json')
+    const manifest = JSON.parse(readFileSync(packageJson, 'utf8'))
+    manifest.agnes.application = { id: 'skin-presets', presentation: { skin: 'high-contrast' } }
+    writeFileSync(packageJson, JSON.stringify(manifest))
+  }
   const tree = new CompositeTargetStore(sqliteTables().table('composite'), secondProfile)
   const admin = service({ pluginTree: tree, workerGeneration: () => 1 })
   const source = parseSource('file:./skins-builtin')
@@ -2169,105 +2152,104 @@ const skinAssetsDir = (): string =>
     'extensions/main/skins/aurora/assets',
   )
 
-it('hands out one file as bytes, and only for the enabled, trusted roster', async () => {
+it('serves exact selected CSS and assets; stale revision, bare IDs and changed files cannot grant access', async () => {
   const admin = await installedSkinPresets()
-  const read = async (path: string) =>
-    (await admin.call('_agnes/v1/skins.read', { profile: secondProfile, path }, authority)) as {
-      found: boolean
-      base64?: string
-    }
-
-  // The stylesheet and the asset both come back, and the asset is byte-identical to what is
-  // installed — no re-encoding beyond the base64 transport itself.
-  const css = await read('/skins/aurora/skin.css')
-  expect(css.found).toBe(true)
-  expect(Buffer.from(css.base64 ?? '', 'base64').toString('utf8')).toContain('[data-agnes-region="app"]')
-  const png = await read('/skins/aurora/assets/hero.jpg')
-  const onDisk = readFileSync(join(skinAssetsDir(), 'hero.jpg'))
-  expect(Buffer.from(png.base64 ?? '', 'base64').equals(onDisk)).toBe(true)
-
-  // A served snapshot can grow between verification and opening the file.
-  const pins = await manager.listRuntimePins(profileDirectory(secondProfile))
-  const snapshot = pins.find(
-    (pin) => pin.purpose === 'active' && pin.snapshot.packageId === '@agnes-examples/skins-builtin',
-  )?.snapshot
-  if (!snapshot) throw new Error('active skin snapshot missing')
-  const resolveAsset = packageManager.resolveSkinAsset
-  for (const [route, relative, cap] of [
-    ['/skins/aurora/skin.css', 'skin.css', SKIN_MAX_CSS_BYTES],
-    ['/skins/aurora/assets/hero.jpg', 'assets/hero.jpg', SKIN_MAX_ASSET_BYTES],
-  ] as const) {
-    const file = join(snapshot.directory, 'extensions/main/skins/aurora', relative)
-    const saved = readFileSync(file)
-    const resolution = vi.spyOn(packageManager, 'resolveSkinAsset').mockImplementationOnce((...args) => {
-      const result = resolveAsset(...args)
-      expect(result).toBe(file)
-      writeFileSync(file, Buffer.alloc(cap + 1, 32))
-      return result
-    })
-    try {
-      expect(await read(route)).toEqual({ found: false })
-    } finally {
-      writeFileSync(file, saved)
-      resolution.mockRestore()
-    }
-    expect(await read(route)).toMatchObject({ found: true })
-  }
-
-  // Every negative answer is the same answer: a miss, a skin with no assets, an unknown id, a
-  // traversal attempt and a missing file are indistinguishable to the caller (design §22.3).
-  for (const path of [
-    '/skins/paper/assets/aurora.png',
-    '/skins/nope/skin.css',
-    '/skins/aurora/assets/../skin.css',
-    '/skins/aurora/assets/missing.png',
-  ])
-    expect(await read(path), path).toEqual({ found: false })
-
-  // Disabling the package revokes the bytes too: the roster is the whole authority.
+  const roster = await listSkins(admin)
+  const aurora = candidate(roster, 'aurora')
+  const paper = candidate(roster, 'paper')
+  const base = `/skins/${aurora.bindingDigest}/aurora/`
+  const cssPath = `${base}skin.css`
+  const assetPath = `${base}assets/hero.jpg`
+  expect(await readSkin(admin, cssPath)).toEqual({ found: false })
   await expect(
-    admin.call('_agnes/v1/skins.read', { profile: secondProfile, path: '/skins/aurora/skin.css' }, authority),
-  ).resolves.toMatchObject({ found: true })
+    admin.call(
+      '_agnes/v1/skins.select',
+      {
+        profile: secondProfile,
+        clientId,
+        expectedRevision: 0,
+        commandId: 'bare-skin',
+        choice: { kind: 'skin', id: 'aurora' },
+      },
+      authority,
+    ),
+  ).rejects.toMatchObject({ code: -32602 })
+  await expect(selectSkin(admin, 0, { kind: 'skin', bindingDigest: '0'.repeat(64) })).rejects.toMatchObject({
+    data: { reason: 'SKIN_CHOICE_STALE' },
+  })
+  await expect(
+    selectSkin(admin, 0, { kind: 'skin', bindingDigest: aurora.bindingDigest }),
+  ).resolves.toMatchObject({
+    revision: 1,
+  })
+  await expect(selectSkin(admin, 0, { kind: 'none' })).rejects.toMatchObject({
+    data: { reason: 'CONFIG_REVISION_CONFLICT' },
+  })
+  expect((await listSkins(admin)).selected).toMatchObject({
+    id: 'aurora',
+    kind: 'manual',
+    cssUrl: cssPath,
+    css: expect.stringContaining('url(\"assets/'),
+  })
+  const proof = vi.spyOn(packageManager, 'hashDirectoryAsync')
+  try {
+    const result = await readSkin(admin, cssPath)
+    if (!result.found) throw new Error('selected stylesheet was not served')
+    const served = Buffer.from(result.base64, 'base64')
+    const relativeCss = 'extensions/main/skins/aurora/skin.css'
+    expect(
+      proof.mock.calls.some(([, options]) => {
+        const captured = options?.verifyFiles?.get(relativeCss)
+        return captured !== undefined && options?.exclude?.length === 0 && served.equals(captured)
+      }),
+    ).toBe(true)
+  } finally {
+    proof.mockRestore()
+  }
+  expect(await readSkin(admin, assetPath)).toEqual({
+    found: true,
+    base64: readFileSync(join(skinAssetsDir(), 'hero.jpg')).toString('base64'),
+  })
+  for (const path of [
+    `/skins/${paper.bindingDigest}/paper/skin.css`,
+    '/skins/aurora/skin.css',
+    `${base}assets/../skin.css`,
+    `${base}assets/missing.png`,
+  ])
+    expect(await readSkin(admin, path)).toEqual({ found: false })
+  expect(await readSkin(admin, cssPath, 'other')).toEqual({ found: false })
+  await expect(
+    admin.call('_agnes/v1/skins.read', { profile: secondProfile, path: cssPath }, authority),
+  ).rejects.toMatchObject({ code: -32602 })
+
+  const pin = (await manager.listRuntimePins(profileDirectory(secondProfile))).find(
+    ({ purpose, snapshot }) => purpose === 'active' && snapshot.packageId === aurora.packageId,
+  )
+  if (!pin) throw new Error('active skin pin missing')
+  const file = join(pin.snapshot.directory, 'extensions/main/skins/aurora/assets/hero.jpg')
+  const oldBytes = readFileSync(file)
+  writeFileSync(file, Buffer.alloc(SKIN_MAX_ASSET_BYTES + 1))
+  expect(await readSkin(admin, assetPath)).toEqual({ found: false })
+  writeFileSync(file, oldBytes)
+
   const disabled = (await admin.call(
     '_agnes/v1/packages.disable',
-    { profile: secondProfile, clientId, commandId: 'read-disable', id: '@agnes-examples/skins-builtin' },
+    {
+      profile: secondProfile,
+      clientId,
+      commandId: 'read-disable',
+      id: aurora.packageId,
+    },
     authority,
   )) as { operationId: string }
   await operation(admin, secondProfile, disabled.operationId)
-  expect(await read('/skins/aurora/skin.css')).toEqual({ found: false })
+  expect(await readSkin(admin, cssPath)).toEqual({ found: false })
+  expect((await listSkins(admin)).selected).toBeNull()
 }, 30_000)
 
-it('rejects a path that is not a skin route before dispatch', async () => {
-  const admin = await installedSkinPresets()
-  // The parameter schema owns this boundary: the handler never sees a filesystem path.
-  await expect(
-    admin.call('_agnes/v1/skins.read', { profile: secondProfile, path: '/etc/passwd' }, authority),
-  ).rejects.toMatchObject({ code: -32602 })
-  await expect(
-    admin.call('_agnes/v1/skins.read', { profile: secondProfile, path: 'skins/aurora/skin.css' }, authority),
-  ).rejects.toMatchObject({ code: -32602 })
-})
-
-it('refuses an out-of-scope profile instead of reading another scope', async () => {
-  const admin = await installedSkinPresets()
-  await expect(
-    admin.call('_agnes/v1/skins.read', { profile: 'other', path: '/skins/aurora/skin.css' }, authority),
-  ).rejects.toMatchObject({ data: { code: 'SEMANTIC_REJECTED' } })
-})
-
-it('fails the whole read closed when an installed file was swapped after install', async () => {
-  const admin = await installedSkinPresets()
-  // The read channel's own size cap is defence in depth; the primary control turned out to be
-  // stronger and is what this pins: `inventory()` re-verifies the installed tree against the lock, so
-  // a file grown (or replaced) on disk refuses the read outright instead of streaming past the cap.
-  writeFileSync(join(skinAssetsDir(), 'aurora.png'), Buffer.alloc(SKIN_MAX_ASSET_BYTES + 1))
-  await expect(
-    admin.call(
-      '_agnes/v1/skins.read',
-      { profile: secondProfile, path: '/skins/aurora/assets/aurora.png' },
-      authority,
-    ),
-  ).rejects.toMatchObject({ data: { reason: 'E_PACKAGE_INTEGRITY' } })
+it('rejects non-skin paths at the private read protocol', async () => {
+  for (const path of ['/etc/passwd', 'skins/aurora/skin.css'])
+    await expect(readSkin(service(), path)).rejects.toMatchObject({ code: -32602 })
 })
 
 it('refreshes discovery source bytes before an explicit local reload activation', async () => {

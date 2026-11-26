@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,6 +7,7 @@ import type { CommunitySnapshot } from '@agnes/daemon-admin/packages/community-d
 import {
   createPackageAdminService,
   FilePackageOperationStore,
+  localPackageAdminAuthority,
   scopedPackageProfileDirectory,
 } from '@agnes/daemon-admin/packages/index'
 import { createTestHost } from '@agnes/host/testkit'
@@ -15,6 +16,7 @@ import type {
   PackageAdminContext,
   PackageCatalogListParams,
   PackageCatalogPage,
+  PackageDocsGetParams,
   PackageInspectParams,
   PackageInstallParams,
   PackageListParams,
@@ -36,6 +38,10 @@ it.each([false, true])(
     cpSync(new URL('../../package-manager/test/fixtures/pkg-a', import.meta.url), join(root, 'candidate'), {
       recursive: true,
     })
+    const manifestPath = join(root, 'candidate', 'package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    writeFileSync(manifestPath, JSON.stringify({ ...manifest, agnesDocs: { en: 'README.md' } }))
+    writeFileSync(join(root, 'candidate', 'README.md'), '# Installed fixture')
     writeFileSync(
       join(root, 'candidate', 'index.ts'),
       "throw new Error('install must not execute this entry')",
@@ -145,6 +151,11 @@ it.each([false, true])(
       clientId: 'admin-web',
       invoke,
       backendFeatures: async () => (await client.initialize()).features ?? [],
+      docs: {
+        epoch: async () => 'test-current-connection',
+        isCurrent: (epoch) => epoch === 'test-current-connection',
+        get: (params, _epoch, signal) => client.request('_agnes/v1/packages.docs.get', params, { signal }),
+      },
     })
     let cookie = ''
     const post = (action: string, body: unknown) =>
@@ -167,12 +178,14 @@ it.each([false, true])(
     try {
       const info = await client.initialize()
       const catalogFeatures = ['packages.community-discovery.v2', 'packages.community-discovery.v3']
+      expect(info.features).toContain('packages.docs.v1')
       for (const feature of catalogFeatures)
         expect(info.features?.includes(feature) ?? false).toBe(communityEnabled)
+      const headers = { 'X-Agnes-Package-Docs': '1' }
       const negotiatedContext = (await (
-        await fetch(`${origin}/admin/plugins/api/context`)
+        await fetch(`${origin}/admin/plugins/api/context`, { headers })
       ).json()) as PackageAdminContext
-      const overview = await (await fetch(`${origin}/admin/plugins/api/overview`)).json()
+      const overview = await (await fetch(`${origin}/admin/plugins/api/overview`, { headers })).json()
       expect(
         negotiatedContext.features?.filter((feature) => feature.startsWith('packages.community-discovery.')),
       ).toEqual(communityEnabled ? catalogFeatures : [])
@@ -250,6 +263,50 @@ it.each([false, true])(
       expect(await client.packages.list({ profile: 'local-dev' })).toMatchObject({
         packages: [{ id: 'acme/pkg-a', trusted: false }],
       })
+      expect(negotiatedContext).toMatchObject({
+        docsConnectionEpoch: 'test-current-connection',
+        features: expect.arrayContaining(['packages.docs.v1']),
+      })
+      const docsParams: PackageDocsGetParams = {
+        profile: identity.profile,
+        id: 'acme/pkg-a',
+        expectedIntegrity: preview.preview.integrity,
+        locale: 'zh-CN',
+      }
+      const docsResponse = await post('docs/get', {
+        ...docsParams,
+        docsConnectionEpoch: negotiatedContext.docsConnectionEpoch,
+      })
+      expect(docsResponse.status).toBe(200)
+      await expect(docsResponse.json()).resolves.toEqual({
+        found: true,
+        locale: 'en',
+        markdown: '# Installed fixture',
+        docsConnectionEpoch: negotiatedContext.docsConnectionEpoch,
+      })
+      for (const patch of [{ expectedIntegrity: `sha256-${'a'.repeat(64)}` }, { id: 'not-installed' }])
+        await expect(
+          client.request('_agnes/v1/packages.docs.get', { ...docsParams, ...patch }),
+        ).resolves.toEqual({ found: false })
+      await expect(
+        client.request('_agnes/v1/packages.docs.get', { ...docsParams, profile: 'another-profile' }),
+      ).rejects.toMatchObject({ rpc: { data: { code: 'CAPABILITY_DENIED' } } })
+      const denied = createClient({
+        transport: {
+          kind: 'inproc',
+          endpoint: createLocalEndpoint(host, {
+            packageAdmin: { service: service(), authority: localPackageAdminAuthority(['packages.install']) },
+          }),
+        },
+        auth: { kind: 'local' },
+      })
+      try {
+        await expect(denied.request('_agnes/v1/packages.docs.get', docsParams)).rejects.toMatchObject({
+          rpc: { data: { code: 'CAPABILITY_DENIED' } },
+        })
+      } finally {
+        await denied.close()
+      }
       const provenance = await (await post('provenance', { profile: 'local-dev', id: 'acme/pkg-a' })).json()
       expect(provenance).toMatchObject({
         sourceKind: 'local-folder',

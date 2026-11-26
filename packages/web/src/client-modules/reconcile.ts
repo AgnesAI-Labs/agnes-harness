@@ -18,9 +18,11 @@ import type {
 } from './reconcile/contracts.js'
 import { createReconcileLifecycle } from './reconcile/lifecycle.js'
 import { createRosterNavigation } from './reconcile/navigation.js'
+import { validDocumentAdmission } from './reconcile/roster.js'
 import { prepareDocumentStyles } from './reconcile/styles.js'
 
 const DEFAULT_TIMEOUTS = { import: 15_000, styles: 15_000, apply: 15_000, dispose: 5_000 }
+type ReloadHint = { packageId: string; revision: string }
 
 /** Reuse immutable module URLs across roster rebinding; only explicit code changes bust ESM. */
 export function createModuleImportUrls() {
@@ -65,7 +67,15 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
   const packages = new Map<string, PackageState>()
   const statuses = new RuntimeStatusStore()
   const navigation = createRosterNavigation(locale)
-  ctx.effect(() => () => navigation.retain(new Set()))
+  let generation = 0
+  const startedExceptions = new Map<string, ReadyClientModule>()
+  let reloadRequired = false
+  let blockedPackages = new Set<string>()
+  ctx.effect(() => () => {
+    generation++
+    for (const state of packages.values()) state.attempt?.abort()
+    navigation.retain(new Set())
+  })
 
   async function lifecycle(step: ClientModuleLifecycleStep, packageId: string): Promise<void> {
     await options.onLifecycleStep?.(step, packageId)
@@ -84,6 +94,8 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
         ownerRowId: undefined,
         fiber: undefined,
         styles: undefined,
+        retainsMountedDuringAttempt: false,
+        attempt: undefined,
         draining: undefined,
         rosterPresent: false,
         cleanup: { fiber: undefined, styles: undefined },
@@ -153,6 +165,9 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
   })
   const { applyTarget, disposeCleanup } = createReconcileLifecycle({
     identity: () => source.identity?.(),
+    beginImport(rowId, target) {
+      if (target.documentAdmission.kind === 'approved-presentation') startedExceptions.set(rowId, target)
+    },
     ctx,
     registry,
     timeouts,
@@ -249,15 +264,70 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
     return blocked
   }
 
+  function stopVisibleStyles(state: PackageState): void {
+    state.retainsMountedDuringAttempt = false
+    state.attempt?.abort()
+    try {
+      state.styles?.dispose()
+      state.styles = undefined
+    } catch {
+      console.warn('[client-modules] retired stylesheet disposal failed')
+    }
+  }
+
+  function selectRoster(roster: ClientRoster): ClientRoster {
+    const modules = roster.modules.filter((mod) =>
+      validDocumentAdmission(mod.documentAdmission, mod.contentDigest),
+    )
+    if (!reloadRequired && startedExceptions.size) {
+      const byRow = new Map(modules.map((mod) => [rowKey(mod), mod]))
+      reloadRequired = [...startedExceptions].some(([rowId, previous]) => {
+        const next = byRow.get(rowId)
+        return (
+          next?.documentAdmission.kind !== 'approved-presentation' ||
+          next.documentAdmission.bindingDigest !== previous.documentAdmission.bindingDigest ||
+          next.contentDigest !== previous.contentDigest ||
+          next.binding?.activationId !== previous.binding?.activationId ||
+          next.revision !== previous.revision ||
+          next.entryUrl !== previous.entryUrl
+        )
+      })
+      if (reloadRequired) source.reloadRequired?.()
+    }
+    if (!reloadRequired) return { ...roster, modules }
+    const { application: _application, ...facts } = roster
+    return { ...facts, modules: modules.filter((mod) => mod.documentAdmission.kind === 'release') }
+  }
+
+  function projectBlockedStatuses(roster: ClientRoster): void {
+    const blocked = new Set<string>()
+    for (const status of roster.statuses) {
+      if (status.state !== 'blocked' || status.reason !== 'native-ui-not-admitted') continue
+      if (blocked.has(status.packageId)) continue
+      blocked.add(status.packageId)
+      const key = `admission:${status.packageId}`
+      statuses.set(
+        {
+          packageId: status.packageId,
+          revision: status.installedRevision,
+          phase: 'idle',
+          reason: 'native-ui-not-admitted',
+        },
+        key,
+      )
+    }
+    for (const packageId of blockedPackages)
+      if (!blocked.has(packageId)) statuses.delete(`admission:${packageId}`)
+    blockedPackages = blocked
+  }
+
   /**
    * Decide what each package should be doing and hand the work to that package's own queue. This
    * returns as soon as the work is enqueued: planning never awaits an import, a stylesheet fetch,
    * an apply or a teardown, so one slow module cannot delay another module's change.
    */
-  function plan(roster: ClientRoster, reload?: { packageId: string; revision: string }): Promise<void>[] {
-    const wanted = new Map(
-      roster.modules.filter((mod) => !mod.intelligentComponents?.length).map((mod) => [rowKey(mod), mod]),
-    )
+  function plan(roster: ClientRoster, fresh?: { reload: ReloadHint | undefined }): Promise<void>[] {
+    const wanted = new Map(roster.modules.map((mod) => [rowKey(mod), mod]))
     const blockedRows = migrateRosterAliases(roster.rowAliases, wanted)
     // A generation rebuild can withdraw executable rows before their replacement is ready.
     // Keep only their host-owned declarations; old module authority is still revoked below.
@@ -291,6 +361,7 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
         const previous = state.active ?? state.target
         const declaration = previous && navigation.describe(previous)
         state.target = undefined
+        stopVisibleStyles(state)
         state.cleanup = {
           fiber: state.cleanup.fiber ?? state.fiber,
           styles: state.cleanup.styles ?? state.styles,
@@ -331,6 +402,8 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
       state.rosterPresent = false
       fail(rowId, state, 'row-alias')
     }
+    if (!fresh) return waits
+    const { reload } = fresh
     for (const [rowId, mod] of wanted) {
       if (blockedRows.has(rowId)) continue
       const state = stateOf(rowId)
@@ -338,21 +411,24 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
       const unchanged =
         state.active?.revision === mod.revision &&
         state.active.entryUrl === mod.entryUrl &&
+        state.active.contentDigest === mod.contentDigest &&
+        state.active.documentAdmission.bindingDigest === mod.documentAdmission.bindingDigest &&
+        state.active.documentAdmission.kind === mod.documentAdmission.kind &&
         JSON.stringify(state.active.binding) === JSON.stringify(mod.binding) &&
         JSON.stringify(state.active.presentationRoleBindings) ===
           JSON.stringify(mod.presentationRoleBindings) &&
         state.phase === 'active'
-      const pending =
-        state.target?.revision === mod.revision &&
-        state.target.entryUrl === mod.entryUrl &&
-        JSON.stringify(state.target.binding) === JSON.stringify(mod.binding) &&
-        JSON.stringify(state.target.presentationRoleBindings) ===
-          JSON.stringify(mod.presentationRoleBindings) &&
-        (state.phase === 'loading' || state.phase === 'active')
-      const forced = reload?.packageId === mod.packageId && reload.revision === mod.revision
-      if (!forced && (unchanged || pending)) continue
+      const forced =
+        mod.documentAdmission.kind === 'release' &&
+        reload?.packageId === mod.packageId &&
+        reload.revision === mod.revision
+      if (!forced && unchanged) continue
       const previous = [state.active, state.target].find((item) => item?.entryUrl === mod.entryUrl)
-      if (forced || (previous?.entryUrl === mod.entryUrl && previous.revision !== mod.revision))
+      if (
+        forced ||
+        (previous?.entryUrl === mod.entryUrl &&
+          (previous.revision !== mod.revision || previous.contentDigest !== mod.contentDigest))
+      )
         importUrls.invalidate(mod.entryUrl)
       const declaration = navigation.describe(mod)
       if (
@@ -369,7 +445,10 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
         else updateContributionAvailability(registrationOwner(rowId, state), mod.binding)
       }
       try {
-        if (state.active) removeOwner(registrationOwner(rowId, state))
+        if (!unchanged) {
+          stopVisibleStyles(state)
+          if (state.active) removeOwner(registrationOwner(rowId, state))
+        }
         if (
           state.phase !== 'failed' &&
           navigation.prepare(
@@ -386,6 +465,8 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
         fail(rowId, state, 'apply')
         continue
       }
+      // Exact same-authority HMR can keep the mounted release until replacement is ready.
+      state.retainsMountedDuringAttempt = unchanged
       waits.push(applyTarget(rowId, state, mod))
     }
     return waits
@@ -394,44 +475,72 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
   // Queries may overlap; only the newest request in the same selection may commit. Planning
   // is ordered, while each module keeps its independent lifecycle/loading queue.
   let planning: Promise<void> = Promise.resolve()
-  let generation = 0
-  let scope: string | undefined
-  function runDiff(reload?: { packageId: string; revision: string }): Promise<void> {
-    const request = ++generation
-    const identity = source.identity?.()
-    if (identity !== scope) {
-      scope = identity
-      // Retire pending work from the old scope. Active root modules stay mounted until the
-      // authoritative roster changes them; a session switch alone must not tear down their UI.
-      for (const [rowId, state] of packages) {
-        if (state.phase !== 'loading') continue
-        state.epoch++
-        state.target = undefined
-        setPhase(rowId, state, state.active ? 'active' : 'idle')
-      }
-    }
-    const read = Promise.resolve().then(() => source.list())
-    const planned = read.then(
-      (roster) => {
-        const commit = planning.then(() => {
-          if (request !== generation || identity !== source.identity?.()) return []
-          source.commit?.(roster)
-          return plan(roster, reload)
-        })
-        planning = commit.then(
-          () => undefined,
-          () => undefined,
-        )
-        return commit
-      },
-      () => [],
+  function commitRoster(
+    request: number,
+    identity: string | undefined,
+    raw: ClientRoster | undefined,
+    reload?: ReloadHint,
+  ): Promise<Promise<void>[]> {
+    const commit = planning.then(() => {
+      if (request !== generation || identity !== source.identity?.()) return []
+      const roster = selectRoster(
+        raw ?? {
+          revision: '',
+          // Keep mounted release UI for offline history, but retire exceptions and pending targets.
+          modules: [...packages.values()].flatMap(({ active, phase }) =>
+            phase === 'active' && active?.documentAdmission.kind === 'release' ? [active] : [],
+          ),
+          statuses: [],
+        },
+      )
+      const waits = plan(roster, raw && { reload })
+      source.commit?.(roster)
+      projectBlockedStatuses(roster)
+      return waits
+    })
+    planning = commit.then(
+      () => undefined,
+      () => undefined,
     )
+    return commit
+  }
+
+  function retirePending(): number {
+    const request = ++generation
+    // No queued import, stylesheet preparation or activation may use authority that is being reread.
+    for (const [rowId, state] of packages) {
+      if (state.phase !== 'loading') continue
+      state.epoch++
+      state.target = undefined
+      state.attempt?.abort()
+      try {
+        if (!state.active) removeOwner(registrationOwner(rowId, state))
+      } catch {
+        console.warn('[client-modules] pending module revocation failed')
+      }
+      const mounted = state.retainsMountedDuringAttempt
+      state.retainsMountedDuringAttempt = false
+      setPhase(rowId, state, mounted ? 'active' : 'idle')
+    }
+    return request
+  }
+
+  function runDiff(reload?: ReloadHint): Promise<void> {
+    const identity = source.identity?.()
+    const request = retirePending()
+    const planned = Promise.resolve()
+      .then(() => source.list())
+      .then(
+        (roster) => commitRoster(request, identity, roster, reload),
+        () => commitRoster(request, identity, undefined),
+      )
     return planned.then(async (waits) => {
       await Promise.allSettled(waits)
     })
   }
 
   return {
+    retirePending,
     reconcileNow: () => runDiff(),
     invalidate: () => runDiff(),
     reload: (packageId, revision) => runDiff({ packageId, revision }),

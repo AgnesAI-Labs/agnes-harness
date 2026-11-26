@@ -181,11 +181,22 @@ const binding: UiPlacementBinding = {
             {
               rowId: 'web:finance',
               moduleName: 'finance',
+              packageId: 'finance',
               enabled: true,
               phase: customMode === 'blocked' ? ('blocked' as const) : ('ready' as const),
               revision: 'reviewed',
               contentDigest: `sha256-${'a'.repeat(64)}`,
-              entryUrl: '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/reviewed/diff.mjs',
+              rendererDataUrl:
+                '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/reviewed/diff.mjs?agnes_ui_source=1',
+              binding: {
+                owner: 'web:finance',
+                packageId: 'finance',
+                profileId: 'local-dev',
+                integrity: 'reviewed',
+                activationId: 'archived',
+                lifetime: 'session',
+                availability: 'history-only',
+              },
               intelligentComponents: [customDeclaration],
             },
           ],

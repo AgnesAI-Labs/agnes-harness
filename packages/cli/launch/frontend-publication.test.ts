@@ -16,30 +16,55 @@ const lease: PublicationLease = {
   },
 }
 
-it('requires a current ready installed contribution and rejects ambiguous publication owners', async () => {
-  const row = {
-    rowId: 'web:cloud',
-    moduleName: 'fixture/cloud',
-    enabled: true,
-    phase: 'ready',
-    services: ['frontend.publish'],
-    extIds: ['fixture/cloud'],
-    revision: '1',
-  }
-  let rows: unknown[] = []
+it('discovers only the private publication owner and binds its identity to the service lease', async () => {
+  const owner = { extension: 'fixture/cloud', identity: 'activation-1' }
+  let projection: { owner?: typeof owner } = {}
+  const calls: unknown[] = []
   const client = {
-    clientModules: { list: async () => ({ rows }) },
-    call: async () => ({ output: lease.publication }),
+    async call(method: string, input: unknown) {
+      calls.push([method, input])
+      if (method === '_agnes/v1/clientModules.frontendPublication') return projection
+      if (method === '_agnes/v1/extension.callScoped') return { output: lease.publication }
+      throw new Error(`unexpected method ${method}`)
+    },
   } as unknown as Parameters<typeof readFrontendPublication>[0]
   expect(await readFrontendPublication(client, 'local-dev')).toBeUndefined()
-  rows = [{ ...row, enabled: false }]
+  expect(calls).toEqual([['_agnes/v1/clientModules.frontendPublication', { profile: 'local-dev' }]])
+  projection = { owner }
+  const published = await readFrontendPublication(client, 'local-dev')
+  expect(published?.publication).toEqual(lease.publication)
+  expect(calls.slice(1)).toEqual([
+    ['_agnes/v1/clientModules.frontendPublication', { profile: 'local-dev' }],
+    [
+      '_agnes/v1/extension.callScoped',
+      { extension: owner.extension, service: 'frontend.publish', input: {} },
+    ],
+    ['_agnes/v1/clientModules.frontendPublication', { profile: 'local-dev' }],
+  ])
+  projection = { owner: { ...owner, identity: 'activation-2' } }
+  expect((await readFrontendPublication(client, 'local-dev'))?.identity).not.toBe(published?.identity)
+})
+
+it.each([
+  ['activation changes', { extension: 'fixture/cloud', identity: 'activation-2' }],
+  ['extension changes', { extension: 'fixture/replacement', identity: 'activation-1' }],
+  ['owner disappears', undefined],
+] as const)('discards service output when the %s during the call', async (_scenario, replacement) => {
+  let owner: { extension: string; identity: string } | undefined = {
+    extension: 'fixture/cloud',
+    identity: 'activation-1',
+  }
+  const client = {
+    async call(method: string) {
+      if (method === '_agnes/v1/clientModules.frontendPublication') return owner ? { owner } : {}
+      if (method === '_agnes/v1/extension.callScoped') {
+        owner = replacement
+        return { output: lease.publication }
+      }
+      throw new Error(`unexpected method ${method}`)
+    },
+  } as unknown as Parameters<typeof readFrontendPublication>[0]
   expect(await readFrontendPublication(client, 'local-dev')).toBeUndefined()
-  rows = [{ ...row, phase: 'pending-activation' }]
-  expect(await readFrontendPublication(client, 'local-dev')).toBeUndefined()
-  rows = [row]
-  expect((await readFrontendPublication(client, 'local-dev'))?.publication).toEqual(lease.publication)
-  rows = [row, { ...row, rowId: 'web:other' }]
-  await expect(readFrontendPublication(client, 'local-dev')).rejects.toThrow('only one')
 })
 
 it('starts only for an enabled plugin, revokes an old lease and stops after close', async () => {

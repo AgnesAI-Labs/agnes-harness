@@ -3,6 +3,7 @@ import {
   type PackageAdminService,
   type RuntimePinsAdapter,
 } from '@agnes/daemon-admin/packages/index'
+import { PACKAGE_DOCS_FEATURE } from '@agnes/protocol'
 import { assemblyPort } from './assembly-lifetime.js'
 
 type OperationListener = Parameters<PackageAdminService['subscribe']>[0]
@@ -41,6 +42,9 @@ export function packageAdminHandoff(catalog: PackageAdminService) {
     selected.closeClientModules()
   }
   const service: PackageAdminService = {
+    get features(): readonly string[] {
+      return !closed && current.features?.includes(PACKAGE_DOCS_FEATURE) ? [PACKAGE_DOCS_FEATURE] : []
+    },
     call: async (...args) => await read().call(...args),
     recover: async () => await read().recover(),
     rebuildClientModules: async (profile) => await read().rebuildClientModules(profile),

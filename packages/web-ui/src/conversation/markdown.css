@@ -3,7 +3,8 @@
 @layer ui {
   /* Appended after the pinned XMarkdown core and both themes. All rules stay within this root. */
   .conversation-markdown.x-markdown-light,
-  .conversation-markdown.x-markdown-dark {
+  .conversation-markdown.x-markdown-dark,
+  .plugin-docs-markdown {
     --font-size: var(--font-size-prose);
     --primary-color: var(--agnes-brand-primary);
     --primary-color-hover: var(--agnes-brand-primary);
@@ -56,6 +57,34 @@
     outline: var(--focus-outline);
     outline-offset: 1px;
     box-shadow: var(--focus-line);
+  }
+
+  .plugin-docs-markdown {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .plugin-docs-markdown .plugin-docs-link {
+    appearance: none;
+    display: inline-block;
+    height: auto;
+    min-height: 0;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--agnes-brand-primary);
+    cursor: pointer;
+    font: inherit;
+    overflow-wrap: anywhere;
+    text-align: start;
+    text-decoration: underline;
+    white-space: normal;
+  }
+
+  .plugin-docs-markdown .plugin-docs-link:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
   }
 
   /* The focusable .table-scroll owns overflow and the border; tables retain native column layout.

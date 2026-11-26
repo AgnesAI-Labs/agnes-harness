@@ -267,7 +267,7 @@ describe('Web command launch contract', () => {
 
   it('treats an unreachable daemon as an unavailable client module asset, not a launcher failure', async () => {
     const signals = new EventEmitter()
-    let resolveAsset: ((pathname: string) => Promise<Uint8Array | null>) | undefined
+    let resolveAsset: Parameters<NonNullable<WebCommandIO['createServer']>>[0]['clientModuleAsset']
     const ensureBackend = async (): Promise<LocalBackend> =>
       ({
         scope: { daemonDir, home: '/tmp/agnes-launch-fixture', profile: 'local-dev', scopeID: 'test-scope' },
@@ -283,7 +283,7 @@ describe('Web command launch contract', () => {
         close: async () => undefined,
       }) as unknown as LocalBackend
     const createServer: NonNullable<WebCommandIO['createServer']> = async (options) => {
-      resolveAsset = options.clientModuleAsset as (pathname: string) => Promise<Uint8Array | null>
+      resolveAsset = options.clientModuleAsset
       setTimeout(() => signals.emit('SIGTERM'), 0)
       return { url: 'http://127.0.0.1:4181', close: async () => undefined }
     }
@@ -297,7 +297,8 @@ describe('Web command launch contract', () => {
     if (!resolveAsset) throw new Error('the launcher did not pass a client module resolver')
     // Same contract as the skin resolver (design WC3): a miss, a refusal and an unreachable backend
     // are the one same null, which the Web server turns into a single 404 semantics.
-    await expect(resolveAsset('/plugins/demo/panel.js')).resolves.toBeNull()
+    await expect(resolveAsset('/plugins/demo/panel.js', 'document')).resolves.toBeNull()
+    await expect(resolveAsset('/plugins/demo/panel.js', 'isolated-component')).resolves.toBeNull()
   })
 
   it('M5: closes the Surface mount poller on shutdown (no leaked refresh interval)', async () => {

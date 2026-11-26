@@ -1,7 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { constants } from 'node:fs'
-import { chmod, lstat, mkdir, open, readFile, unlink } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import {
   API_KEY_PROVIDER_REGISTRY,
   ApiKeyProviderError,
@@ -56,9 +54,9 @@ import {
   readChildEngineSettings,
   type SessionDefaults,
   type SessionDefaultsSnapshot,
+  type SkinStoredSnapshot,
   validateAgainst,
 } from '@agnes/protocol'
-import { renameWriteThrough, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import { deploymentFetch, ensureDeploymentProxy } from '@agnes/system-node/deployment-network'
 import { subscriptionCredentials } from './adapters/codex-credentials.js'
 import {
@@ -66,7 +64,6 @@ import {
   isSubscriptionCredential,
   type StoredCredential,
 } from './adapters/credential-store.js'
-import { createWin32Platform } from './adapters/platform.js'
 import { type CodexLoginDependencies, createCodexLogin } from './codex-login.js'
 import { automaticFastModel } from './configuration-auto-slots.js'
 import * as compatible from './configuration-compatible.js'
@@ -106,6 +103,15 @@ import {
   testPayloadOnlyAccount,
 } from './configuration-payload-only.js'
 import { presentationSnapshot, updatePresentation } from './configuration-presentation.js'
+import {
+  atomicWrite,
+  CONFIGURATION_FILE,
+  createSkinConfiguration,
+  ensureDirectory,
+  MAX_CONFIG_BYTES,
+  readJsonFile,
+  windowsDirectories,
+} from './configuration-storage.js'
 import { payloadOnlyRoutes } from './payload-only-routes.js'
 import { permissionLevelDefaults } from './session-defaults-permission.js'
 
@@ -117,6 +123,11 @@ export { ConfigurationError, type ConfigurationErrorCode }
 export interface ConfigurationService {
   application?(): Promise<ApplicationConfigSnapshot>
   saveApplication?(input: ApplicationConfigSnapshot): Promise<ApplicationConfigSnapshot>
+  skin?(): Promise<SkinStoredSnapshot>
+  saveSkin?(
+    input: SkinStoredSnapshot,
+    isCurrent?: () => boolean | Promise<boolean>,
+  ): Promise<SkinStoredSnapshot>
   modelSlots?(): Promise<ModelSlotsSnapshot>
   saveModelSlots?(input: ModelSlotsSnapshot): Promise<ModelSlotsSnapshot>
   oauth?(input: ConfigOAuthInput, owner: object, signal: AbortSignal): Promise<ConfigOAuthResult>
@@ -213,9 +224,7 @@ type StaticCatalogue = {
   records: ModelRecord[]
 }
 
-const FILE = 'configuration.json'
 const LOCK_FILE = 'configuration-lock.sqlite'
-const MAX_CONFIG_BYTES = 1024 * 1024
 const MAX_MODELS = 4096
 const PROFILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const MODEL = /^[^\p{Cc}\p{Z}\s]{1,256}$/u
@@ -615,63 +624,24 @@ function cloneRecord(record: ModelRecord, baseUrl: string, route: string): Model
   return { ...structuredClone(record), baseUrl, route }
 }
 
-const windowsDirectories = createWin32Platform().matches()
-
-async function ensureDirectory(path: string): Promise<void> {
-  try {
-    if (windowsDirectories) {
-      windowsEnsurePrivateDirectorySync(path)
-      return
-    }
-    await mkdir(path, { recursive: true, mode: 0o700 })
-    await chmod(path, 0o700)
-    const stat = await lstat(path)
-    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('directory')
-  } catch {
-    throw new ConfigurationError('CONFIG_PERSIST_FAILED')
-  }
-}
-
-async function atomicWrite(path: string, contents: string): Promise<void> {
-  const parent = dirname(path)
-  await ensureDirectory(parent)
-  const temporary = join(
-    parent,
-    `.${FILE}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`,
-  )
-  let handle: Awaited<ReturnType<typeof open>> | undefined
-  try {
-    handle = await open(
-      temporary,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
-      0o600,
-    )
-    await handle.chmod(0o600)
-    await handle.writeFile(contents, 'utf8')
-    await handle.sync()
-    await handle.close()
-    handle = undefined
-    await renameWriteThrough(temporary, path, { noFollow: true })
-  } catch {
-    await handle?.close().catch(() => undefined)
-    await unlink(temporary).catch(() => undefined)
-    throw new ConfigurationError('CONFIG_PERSIST_FAILED')
-  }
-}
-
 export function createConfigurationService(
   options: ConfigurationServiceOptions,
 ): ConfigurationService &
   SessionDefaultsConfigurationService &
   ChildEnginesConfigurationService &
-  Required<Pick<ConfigurationService, 'application' | 'saveApplication' | 'modelSlots' | 'saveModelSlots'>> {
+  Required<
+    Pick<
+      ConfigurationService,
+      'application' | 'saveApplication' | 'modelSlots' | 'saveModelSlots' | 'skin' | 'saveSkin'
+    >
+  > {
   const chatModels = compatible.chatModelPolicy(isChatModelId, knownModel)
   const home = resolve(options.home)
   if (!PROFILE.test(options.profile)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
   const profile = options.profile
   const profileDir =
     options.profileDir === undefined ? join(home, 'profiles', profile) : resolve(options.profileDir)
-  const configPath = join(profileDir, FILE)
+  const configPath = join(profileDir, CONFIGURATION_FILE)
   const lockPath = join(profileDir, LOCK_FILE)
   ensureDeploymentProxy()
   const request = options.request ?? deploymentFetch
@@ -685,23 +655,6 @@ export function createConfigurationService(
     provider: null,
     effect: 'new-sessions',
   })
-
-  const readJsonFile = async (path: string): Promise<unknown | undefined> => {
-    let raw: string
-    try {
-      raw = await readFile(path, 'utf8')
-    } catch (error: unknown) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
-      throw new ConfigurationError('CONFIG_INVALID_STATE', path)
-    }
-    if (Buffer.byteLength(raw, 'utf8') > MAX_CONFIG_BYTES)
-      throw new ConfigurationError('CONFIG_INVALID_STATE', path)
-    try {
-      return JSON.parse(raw) as unknown
-    } catch {
-      throw new ConfigurationError('CONFIG_INVALID_STATE', path)
-    }
-  }
 
   const staticCatalogue = (entry: ConfigurationProvider): Promise<StaticCatalogue> => {
     const cacheKey = `${entry.id}:${getSubscriptionProvider(entry.id) === entry ? 'oauth' : 'api-key'}`
@@ -1375,6 +1328,7 @@ export function createConfigurationService(
         await persistState(next, true)
         return presentationSnapshot(next)
       }),
+    ...createSkinConfiguration(profileDir, serialized),
     async modelSlots() {
       return slotsSnapshot(await loadState())
     },

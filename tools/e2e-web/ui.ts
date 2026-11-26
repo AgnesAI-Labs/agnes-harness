@@ -5,7 +5,7 @@ import { settled } from './quality.js'
 import type { Runtime } from './runtime.js'
 
 /** Select the interactive tab, whose localized label may span several lines on a phone. */
-export function pluginTab(page: Page, name: 'permissions' | 'versions' | 'config' | 'details') {
+export function pluginTab(page: Page, name: 'permissions' | 'versions' | 'config' | 'details' | 'docs') {
   return page.getByRole('tab').filter({ has: page.getByTestId(`plugin-${name}-tab`) })
 }
 

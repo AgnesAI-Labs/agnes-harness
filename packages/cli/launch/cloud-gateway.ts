@@ -286,6 +286,17 @@ export function createCloudGateway(ownerOrigin?: string) {
         response.writeHead(401, { 'cache-control': 'no-store', ...ownerCors }).end()
         return true
       }
+      const rawPath = requestPath.slice(route.prefix.length).split('?', 1)[0] ?? '/'
+      const normalizedPath = route.url.pathname.slice(route.prefix.length)
+      const assetNamespace = /^\/(?:plugins|skins)(?:\/|$)/u
+      if (
+        rawPath !== normalizedPath &&
+        (assetNamespace.test(rawPath) || assetNamespace.test(normalizedPath))
+      ) {
+        request.resume()
+        response.writeHead(404, { 'cache-control': 'no-store' }).end()
+        return true
+      }
       if (route.grant.rejected) {
         try {
           await renew(route.prefix, route.grant)

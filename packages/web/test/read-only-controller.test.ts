@@ -341,6 +341,8 @@ it.each(['refused', 'preview'])(
               {
                 packageId: '@agnes/conversation-ui',
                 revision: 'current',
+                documentAdmission: { kind: 'release', bindingDigest: 'd'.repeat(64) },
+                contentDigest: `sha256-${'c'.repeat(64)}`,
                 entryUrl: '/conversation.js',
                 styleUrls: [],
                 slots: [],

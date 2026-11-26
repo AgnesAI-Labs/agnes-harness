@@ -23,6 +23,7 @@
     "dist/sea/THIRD-PARTY-NOTICES/computer-use-hermes.txt",
     "dist/sea/THIRD-PARTY-NOTICES/jevloop.txt",
     "dist/sea/bundled-plugins",
+    "dist/sea/bundled-plugin-digests.json",
     "dist/sea/bundled-examples",
     "dist/sea/ripgrep"
   ],

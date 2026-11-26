@@ -1,105 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import {
-  applySkinTokens,
-  cacheSkinEntry,
-  clearSkinCache,
-  fetchSkinCss,
-  planSkinReconcile,
-  readSkinCache,
-  SKIN_CACHE_VERSION,
-  SKIN_NONE,
-  SKIN_STORAGE_KEY,
-  type SkinCache,
-  type SkinRosterEntry,
-  selectedSkin,
-  skinOverride,
-  syncSkinSheet,
-  writeSkinCache,
-} from '../src/skin.js'
+import { applySkinTokens, syncSkinSheet } from '../src/skin.js'
 
-function memory(initial: Record<string, string> = {}) {
-  const store = new Map(Object.entries(initial))
-  return {
-    getItem: (key: string) => store.get(key) ?? null,
-    setItem: (key: string, value: string) => void store.set(key, value),
-    removeItem: (key: string) => void store.delete(key),
-    raw: store,
-  }
-}
-
-const cache: SkinCache = {
-  version: SKIN_CACHE_VERSION,
-  id: 'midnight',
-  revision: 'sha256-abc',
-  css: '[data-agnes-region="app"] { background: #000; }',
+const skin = {
   tokens: { '--agnes-bg-page': { light: '#fff', dark: '#000' } },
 }
-
-describe('skin cache', () => {
-  it('round-trips a cache and clears it', () => {
-    const storage = memory()
-    expect(readSkinCache(storage)).toBeNull()
-    writeSkinCache(storage, cache)
-    expect(readSkinCache(storage)).toEqual(cache)
-    clearSkinCache(storage)
-    expect(readSkinCache(storage)).toBeNull()
-  })
-  it('treats a damaged, stale or malformed cache as no skin instead of guessing', () => {
-    for (const value of [
-      'not json',
-      JSON.stringify({ ...cache, version: SKIN_CACHE_VERSION + 1 }),
-      JSON.stringify({ ...cache, id: 'Light' }),
-      JSON.stringify({ ...cache, id: '' }),
-      JSON.stringify({ ...cache, revision: 7 }),
-      JSON.stringify({ ...cache, css: null }),
-      JSON.stringify({ ...cache, tokens: { '--a': { light: '#fff' } } }),
-      JSON.stringify({ ...cache, tokens: { '--a': { light: '', dark: '#000' } } }),
-      JSON.stringify({ ...cache, tokens: ['--a'] }),
-      JSON.stringify([cache]),
-      JSON.stringify(null),
-    ])
-      expect(readSkinCache(memory({ [SKIN_STORAGE_KEY]: value })), value).toBeNull()
-  })
-  it('degrades quietly when storage refuses to read or write', () => {
-    const hostile = {
-      getItem: () => {
-        throw new Error('private mode')
-      },
-      setItem: () => {
-        throw new Error('quota')
-      },
-      removeItem: () => {
-        throw new Error('quota')
-      },
-    }
-    expect(readSkinCache(hostile)).toBeNull()
-    expect(() => writeSkinCache(hostile, cache)).not.toThrow()
-    expect(() => clearSkinCache(hostile)).not.toThrow()
-  })
-})
-
-describe('skin one-shot override', () => {
-  it('recognises only none and well-formed ids, ignoring everything else', () => {
-    expect(skinOverride('?skin=none')).toBe(SKIN_NONE)
-    expect(skinOverride('skin=none')).toBe(SKIN_NONE)
-    expect(skinOverride('?skin=midnight')).toBe('midnight')
-    expect(skinOverride('?skin=midnight&other=1')).toBe('midnight')
-    expect(skinOverride('?skin=solarized-light')).toBe('solarized-light')
-    // A typo must fall back to the stored choice rather than silently switching skins off.
-    for (const search of ['', '?other=1', '?skin=', '?skin=Light', '?skin=--x', '?skin=a b'])
-      expect(skinOverride(search), search).toBeNull()
-  })
-  it('lets the override win over the cache, including forcing the built-in look', () => {
-    expect(selectedSkin(cache, null)).toBe(cache)
-    expect(selectedSkin(cache, SKIN_NONE)).toBeNull()
-    expect(selectedSkin(cache, 'midnight')).toBe(cache)
-    // Forcing an id that is not the cached skin cannot materialise it at first paint.
-    expect(selectedSkin(cache, 'aurora')).toBeNull()
-    expect(selectedSkin(null, 'midnight')).toBeNull()
-    expect(selectedSkin(null, null)).toBeNull()
-  })
-})
 
 describe('skin token application', () => {
   const root = () => {
@@ -115,17 +20,17 @@ describe('skin token application', () => {
 
   it('writes the mode-specific value and reports what it wrote', () => {
     const target = root()
-    const applied = applySkinTokens(target, cache, 'dark', [])
+    const applied = applySkinTokens(target, skin, 'dark', [])
     expect(target.style_.get('--agnes-bg-page')).toBe('#000')
     expect([...applied]).toEqual(['--agnes-bg-page'])
-    const next = applySkinTokens(target, cache, 'light', applied)
+    const next = applySkinTokens(target, skin, 'light', applied)
     expect(target.style_.get('--agnes-bg-page')).toBe('#fff')
     expect(next).toEqual(applied)
   })
   it('removes exactly the properties it wrote before and nothing else', () => {
     const target = root()
     target.style_.set('--component-local', 'keep me')
-    const applied = applySkinTokens(target, cache, 'dark', [])
+    const applied = applySkinTokens(target, skin, 'dark', [])
     // A skin that now carries no tokens must clear its own leftovers only.
     const cleared = applySkinTokens(target, null, 'dark', applied)
     expect(cleared.size).toBe(0)
@@ -146,7 +51,7 @@ describe('skin token application', () => {
 // guards the choice rather than the symptom: a future edit that switches to injection would look
 // correct in review and fail silently in the browser.
 describe('first paint stays inside the page CSP', () => {
-  const sources = ['../../web/src/theme-boot.ts', '../src/skin.ts'].map((path) => ({
+  const sources = ['../../web/src/app/appearance-controller.ts', '../src/skin.ts'].map((path) => ({
     path,
     text: readFileSync(new URL(path, import.meta.url), 'utf8'),
   }))
@@ -165,7 +70,7 @@ describe('first paint stays inside the page CSP', () => {
   })
   it('adopts the stylesheet through the constructible-sheet API instead', () => {
     const [boot = '', skin = ''] = sources.map((source) => source.text)
-    // The sheet mechanics live in skin.ts; theme-boot only decides when to call them.
+    // The controller applies one sheet only after the current backend supplies an exact selection.
     expect(skin).toContain('adoptedStyleSheets')
     expect(skin).toContain('replaceSync')
     expect(skin).toContain('CSSStyleSheet')
@@ -238,127 +143,8 @@ describe('skin stylesheet ownership', () => {
     expect(target.adoptedStyleSheets).toEqual([first.sheet])
   })
 })
-
-const rosterEntry = (over: Partial<SkinRosterEntry> = {}): SkinRosterEntry => ({
-  id: 'midnight',
-  name: '午夜',
-  packageName: '@acme/skins',
-  revision: 'sha256-abc',
-  cssUrl: '/skins/midnight/skin.css',
-  css: 'a{}',
-  tokens: {},
-  ...over,
-})
-
-describe('skin roster reconciliation', () => {
-  it('keeps a matching cache and does nothing at all without one', () => {
-    expect(planSkinReconcile(null, [rosterEntry()])).toEqual({ kind: 'keep' })
-    expect(planSkinReconcile(cache, [rosterEntry()])).toEqual({ kind: 'keep' })
-  })
-  it('clears a skin whose source was uninstalled or disabled', () => {
-    expect(planSkinReconcile(cache, [rosterEntry({ id: 'aurora' })])).toEqual({ kind: 'clear' })
-    expect(planSkinReconcile(cache, [])).toEqual({ kind: 'clear' })
-  })
-  it('refreshes a skin whose roster digest moved', () => {
-    const moved = rosterEntry({ revision: 'sha256-def' })
-    expect(planSkinReconcile(cache, [moved])).toEqual({ kind: 'refresh', entry: moved })
-  })
-  it('restores a stored choice whose skin came back, but never a "none" choice', () => {
-    const back = rosterEntry()
-    expect(planSkinReconcile(null, [back], 'midnight')).toEqual({ kind: 'refresh', entry: back })
-    expect(planSkinReconcile(null, [], 'midnight')).toEqual({ kind: 'keep' })
-    expect(planSkinReconcile(null, [rosterEntry({ id: 'none' })], 'none')).toEqual({ kind: 'keep' })
-  })
-})
-
-describe('skin stylesheet fallback', () => {
-  const origin = 'http://127.0.0.1:4177'
-  const stub = (response: { ok: boolean; body?: string }) => {
-    const calls: string[] = []
-    return {
-      calls,
-      fetcher: async (input: string) => {
-        calls.push(input)
-        return { ok: response.ok, text: async () => response.body ?? '' }
-      },
-    }
-  }
-
-  it('fetches a same-origin skin route by path, dropping any query the roster carried', async () => {
-    const { calls, fetcher } = stub({ ok: true, body: 'a{}' })
-    await expect(fetchSkinCss('/skins/midnight/skin.css?v=2#x', { fetcher, origin })).resolves.toBe('a{}')
-    expect(calls).toEqual(['/skins/midnight/skin.css'])
-  })
-
-  it('refuses an off-origin or out-of-namespace reference before any request is made', async () => {
-    const { calls, fetcher } = stub({ ok: true, body: 'a{}' })
-    for (const url of [
-      'https://evil.example/x.css',
-      '//evil.example/x.css',
-      '/app.js',
-      '/other/skin.css',
-      'skin.css',
-    ])
-      await expect(fetchSkinCss(url, { fetcher, origin }), url).rejects.toThrow()
-    expect(calls).toEqual([])
-  })
-
-  it('treats a failed or empty response as no stylesheet, so no half cache is written', async () => {
-    for (const response of [
-      { ok: false, body: 'a{}' },
-      { ok: true, body: '' },
-    ])
-      await expect(
-        fetchSkinCss('/skins/midnight/skin.css', { fetcher: stub(response).fetcher, origin }),
-      ).rejects.toThrow()
-  })
-})
-
-// The selection path: a roster row the host did not inline must still end up with real CSS in the
-// cache. Writing `css: ''` here is what made such a skin look selected but paint nothing.
-describe('caching one selected skin', () => {
-  const origin = 'http://127.0.0.1:4177'
-  const fetched = (body: string, ok = true) => {
-    const calls: string[] = []
-    return {
-      calls,
-      fetcher: async (input: string) => {
-        calls.push(input)
-        return { ok, text: async () => body }
-      },
-    }
-  }
-
-  it('uses the inlined text when the roster carried it, without any request', async () => {
-    const storage = memory()
-    const { calls, fetcher } = fetched('from-network{}')
-    const cached = await cacheSkinEntry(storage, rosterEntry({ css: 'inlined{}' }), { fetcher, origin })
-    expect(cached.css).toBe('inlined{}')
-    expect(readSkinCache(storage)).toEqual(cached)
-    expect(calls).toEqual([])
-  })
-
-  it('falls back to cssUrl when the roster omitted the text', async () => {
-    const storage = memory()
-    const { calls, fetcher } = fetched('fetched{}')
-    const { css: _inlined, ...entry } = rosterEntry()
-    const cached = await cacheSkinEntry(storage, entry, { fetcher, origin })
-    expect(calls).toEqual(['/skins/midnight/skin.css'])
-    expect(cached.css).toBe('fetched{}')
-    expect(readSkinCache(storage)).toEqual(cached)
-  })
-
-  it('writes nothing at all when the stylesheet cannot be fetched', async () => {
-    const storage = memory()
-    const { fetcher } = fetched('', false)
-    const { css: _inlined, ...entry } = rosterEntry()
-    await expect(cacheSkinEntry(storage, entry, { fetcher, origin })).rejects.toThrow()
-    expect(readSkinCache(storage)).toBeNull()
-  })
-})
-
 describe('skin token names', () => {
-  it('never writes a non-custom property, even from a tampered cache', () => {
+  it('never writes a non-custom property from reported tokens', () => {
     const written = new Map<string, string>()
     const target = {
       style: {
@@ -367,31 +153,12 @@ describe('skin token names', () => {
       },
     }
     const tampered = {
-      version: SKIN_CACHE_VERSION,
-      id: 'midnight',
-      revision: 'r1',
-      css: '',
       tokens: {
         display: { light: 'none', dark: 'none' },
         '--agnes-bg-page': { light: '#fff', dark: '#000' },
       },
-    } as SkinCache
+    }
     expect([...applySkinTokens(target, tampered, 'light', [])]).toEqual(['--agnes-bg-page'])
     expect(written.has('display')).toBe(false)
-  })
-
-  it('rejects a cached skin whose token names are not custom properties', () => {
-    const storage = memory()
-    storage.setItem(
-      SKIN_STORAGE_KEY,
-      JSON.stringify({
-        version: SKIN_CACHE_VERSION,
-        id: 'midnight',
-        revision: 'r1',
-        css: '',
-        tokens: { display: { light: 'none', dark: 'none' } },
-      }),
-    )
-    expect(readSkinCache(storage)).toBeNull()
   })
 })

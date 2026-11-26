@@ -21,7 +21,11 @@
   },
   {
     "path": "packages/host-infrastructure/src/configuration.ts",
-    "includes": ["configuration.json", "defaultAccountId"]
+    "includes": ["CONFIGURATION_FILE", "defaultAccountId"]
+  },
+  {
+    "path": "packages/host-infrastructure/src/configuration-storage.ts",
+    "includes": ["configuration.json", "skin-selection.json"]
   },
   {
     "path": "packages/host-extensions/src/ext-host/row-services.ts",

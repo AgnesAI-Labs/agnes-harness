@@ -1,7 +1,15 @@
 /** @vitest-environment happy-dom */
 
-import type { PackageCatalogDescriptor, PackageCatalogPage, SkillImportResult } from '@agnes/protocol'
+import type {
+  PackageCatalogDescriptor,
+  PackageCatalogPage,
+  PackageDocsGetParams,
+  PackageInstalledDescriptor,
+  SkillImportResult,
+} from '@agnes/protocol'
 import { CredentialError, CredentialsApi } from '@agnes/resource-control-web/credentials-api'
+import { mountPluginAdmin, type PluginAdminViewContext } from '@agnes/web-admin/admin/plugins/admin'
+import type { AdminContext } from '@agnes/web-admin/admin/plugins/types'
 import {
   ComputerUseCapability,
   type SettingsComputerUseView,
@@ -1694,6 +1702,272 @@ it('filters a single inventory by provenance source and declared capabilities in
   expect(matchesPluginFilters(base, 'community', 'tool')).toBe(true)
   expect(matchesPluginFilters(base, 'official', 'tool')).toBe(false)
   expect(matchesPluginFilters(base, 'community', 'loop')).toBe(false)
+})
+
+it('owns installed Markdown by the active tab, package, locale and current backend connection', async () => {
+  const packageA = {
+    id: '@acme/package-a',
+    source: { type: 'file', ref: 'file:/fixture/package-a' },
+    version: '1.0.0',
+    integrity: `sha256-${'a'.repeat(64)}`,
+    actualIntegrity: `sha256-${'9'.repeat(64)}`,
+    trusted: false,
+    desired: 'installed-disabled',
+    actual: 'not-running',
+    blockers: [],
+    contributions: [],
+    metadata: {
+      displayName: 'Package A',
+      summary: 'Coordinates sample work.',
+      description: 'An **author description**.',
+      docsUrl: 'https://docs.example.test/package-a',
+      locales: { 'zh-CN': { description: '作者的**纯文本**说明。' } },
+    },
+  } satisfies PackageInstalledDescriptor
+  const { metadata: _metadata, ...base } = packageA
+  const packageB = { ...base, id: '@acme/package-b', integrity: `sha256-${'b'.repeat(64)}` }
+  const catalogEntry: PackageCatalogDescriptor = {
+    id: packageA.id,
+    version: packageA.version,
+    integrity: packageA.integrity,
+    source: packageA.source,
+    metadata: packageA.metadata,
+    license: 'MIT',
+    contributions: [],
+    compatibility: 'supported',
+    sourceId: 'fixture',
+    retrievedAt: '2026-11-26T00:00:00.000Z',
+  }
+  let packages: PackageInstalledDescriptor[] = [packageA, packageB]
+  let context: AdminContext = {
+    profile: 'local-dev',
+    clientId: 'web-docs-test',
+    authScope: 'auth.docs-test',
+    permissions: ['packages.read'],
+    features: ['packages.docs.v1'],
+    docsConnectionEpoch: 'docs.first-connection',
+    readOnly: false,
+  }
+  const pending: {
+    params: PackageDocsGetParams & { docsConnectionEpoch: string }
+    signal: AbortSignal | null | undefined
+    respond(response: Response): void
+  }[] = []
+  let surfaceReply: Promise<Response> | undefined
+  let replyToSurfaces: ((response: Response) => void) | undefined
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const path = String(input)
+    if (path.endsWith('/overview')) return Response.json({ context, inventory: { packages } })
+    if (path.endsWith('/surfaces')) return surfaceReply ?? Response.json({ surfaces: [] })
+    if (path.endsWith('/catalog/list')) return Response.json({ items: [catalogEntry], nextCursor: null })
+    if (path.endsWith('/docs/get'))
+      return new Promise<Response>((respond) => {
+        pending.push({ params: JSON.parse(String(init?.body)), signal: init?.signal, respond })
+      })
+    return new Response(null, { status: 404 })
+  })
+  const previousLanguage = document.documentElement.lang
+  document.documentElement.lang = 'en'
+  for (const id of ['plugin-detail', 'source-dialog', 'plugin-confirm']) {
+    const dialog = document.createElement('dialog')
+    dialog.id = id
+    if (id === 'plugin-detail') dialog.dataset.presentation = 'page'
+    document.body.append(dialog)
+  }
+  const host = document.body.appendChild(document.createElement('div'))
+  let view: PluginAdminViewContext | undefined
+  const mounted = mountPluginAdmin({
+    surface: {
+      host,
+      render(current) {
+        view = current
+        return null
+      },
+    },
+  })
+  const docs = () => document.querySelector('[data-testid="plugin-docs-detail"]')
+  const body = () => docs()?.querySelector('[data-testid="plugin-docs-markdown"]') ?? undefined
+  const tab = (name: 'docs' | 'details') =>
+    document.querySelector<HTMLElement>(`#plugin-detail [data-testid="plugin-${name}-tab"]`)
+  const clickTab = async (name: 'docs' | 'details') => {
+    await vi.waitFor(() => expect(tab(name)).not.toBeNull())
+    await act(async () => tab(name)?.click())
+  }
+  const select = (item: PackageInstalledDescriptor | PackageCatalogDescriptor) =>
+    act(async () => view?.selectItem(item))
+  const read = async (index: number) => {
+    await vi.waitFor(() => expect(pending).toHaveLength(index + 1))
+    const request = pending[index]
+    if (!request) throw new Error('Missing pending documentation read')
+    return request
+  }
+  const article = (epoch: string, markdown: string) =>
+    Response.json({ docsConnectionEpoch: epoch, found: true, locale: 'en', markdown })
+  try {
+    await act(async () => mounted.ready)
+    await select(packageA)
+    expect(pending).toHaveLength(0)
+    await clickTab('docs')
+    const original = await read(0)
+    expect(original.params).toEqual({
+      profile: 'local-dev',
+      id: packageA.id,
+      expectedIntegrity: packageA.integrity,
+      locale: 'en',
+      docsConnectionEpoch: 'docs.first-connection',
+    })
+    expect(docs()?.querySelector('p')?.textContent).toBe('An **author description**.')
+    expect(docs()?.querySelector('strong')).toBeNull()
+    expect(docs()?.querySelector('[role="status"]')?.textContent).toBe('Loading package documentation…')
+    await act(async () => mounted.reload())
+    expect(pending).toHaveLength(1)
+    await act(async () => original.respond(article(original.params.docsConnectionEpoch, '# Old backend')))
+    expect(body()?.querySelector('h1')?.textContent).toBe('Old backend')
+
+    context = { ...context, docsConnectionEpoch: 'docs.second-connection' }
+    await act(async () => mounted.reload())
+    expect(body()).toBeUndefined()
+    const oldInFlight = await read(1)
+    context = { ...context, docsConnectionEpoch: 'docs.next-connection' }
+    await act(async () => mounted.reload())
+    const newConnection = await read(2)
+    expect(newConnection.params).toEqual({
+      ...oldInFlight.params,
+      docsConnectionEpoch: 'docs.next-connection',
+    })
+    expect(oldInFlight.signal?.aborted).toBe(true)
+    await act(async () => oldInFlight.respond(article(oldInFlight.params.docsConnectionEpoch, '# Too late')))
+    expect(body()).toBeUndefined()
+
+    await act(async () => {
+      document.documentElement.lang = 'zh-CN'
+      window.dispatchEvent(new Event('agnes:locale-changed'))
+    })
+    const translated = await read(3)
+    expect(translated.params.locale).toBe('zh-CN')
+    expect(newConnection.signal?.aborted).toBe(true)
+    await act(async () =>
+      newConnection.respond(article(newConnection.params.docsConnectionEpoch, '# Old language')),
+    )
+    expect(docs()?.querySelector('p')?.textContent).toBe('作者的**纯文本**说明。')
+    expect(body()).toBeUndefined()
+    await act(async () =>
+      translated.respond(article(translated.params.docsConnectionEpoch, '# English fallback')),
+    )
+    expect(body()?.getAttribute('lang')).toBe('en')
+    expect(body()?.querySelector('h1')?.textContent).toBe('English fallback')
+
+    const updated = { ...packageA, version: '2.0.0', integrity: `sha256-${'c'.repeat(64)}` }
+    packages = [updated, packageB]
+    // The verified overview has both the new row and its context. An unrelated surface read must
+    // not keep old Markdown visible or delay the new document request.
+    surfaceReply = new Promise<Response>((resolve) => {
+      replyToSurfaces = resolve
+    })
+    let updateRefresh: Promise<void> | undefined
+    await act(async () => {
+      updateRefresh = mounted.reload()
+    })
+    expect(body()).toBeUndefined()
+    const updatedRead = await read(4)
+    expect(updatedRead.params.expectedIntegrity).toBe(updated.integrity)
+    await act(async () => {
+      replyToSurfaces?.(Response.json({ surfaces: [] }))
+      await updateRefresh
+    })
+    surfaceReply = undefined
+    await act(async () =>
+      updatedRead.respond(Response.json({ error: { message: 'Private diagnostics' } }, { status: 503 })),
+    )
+    expect(docs()?.textContent).not.toContain('Private diagnostics')
+    expect(docs()?.querySelector('a')?.getAttribute('href')).toBe(packageA.metadata?.docsUrl)
+
+    await clickTab('details')
+    await clickTab('docs')
+    const previousSelection = await read(5)
+    await select(packageB)
+    expect(previousSelection.signal?.aborted).toBe(true)
+    expect(docs()).toBeNull()
+    await clickTab('docs')
+    const nextSelection = await read(6)
+    expect(nextSelection.params.id).toBe(packageB.id)
+    await act(async () => {
+      previousSelection.respond(article(previousSelection.params.docsConnectionEpoch, '# Previous selection'))
+      nextSelection.respond(
+        Response.json({ found: false, docsConnectionEpoch: nextSelection.params.docsConnectionEpoch }),
+      )
+    })
+    expect(body()).toBeUndefined()
+    expect(docs()?.querySelector('[role="status"]')?.textContent).toBe('此软件包没有可用文档。')
+
+    await clickTab('details')
+    await clickTab('docs')
+    const revoked = await read(7)
+    const confirmation = document.querySelector<HTMLDialogElement>('#plugin-confirm')
+    await act(async () =>
+      view?.configureConfirm({
+        title: 'Confirm a plugin change',
+        description: 'Existing detail remains below this confirmation.',
+        label: 'Confirm',
+        run: async () => {},
+      }),
+    )
+    expect(confirmation?.open).toBe(true)
+    context = { ...context, permissions: [] }
+    await act(async () => mounted.reload())
+    await act(async () =>
+      revoked.respond(article(revoked.params.docsConnectionEpoch, '# Permission revoked')),
+    )
+    expect(revoked.signal?.aborted).toBe(true)
+    expect(tab('docs')).toBeNull()
+    expect(confirmation?.open).toBe(true)
+    await act(async () => view?.closeConfirm())
+    expect(confirmation?.open).toBe(false)
+    expect(tab('docs')).toBeNull()
+    context = { ...context, permissions: ['packages.read'] }
+    await act(async () => mounted.reload())
+    expect(docs()).toBeNull()
+    await clickTab('docs')
+    const removed = await read(8)
+    packages = [updated]
+    await act(async () => mounted.reload())
+    await act(async () => removed.respond(article(removed.params.docsConnectionEpoch, '# Uninstalled')))
+    expect(removed.signal?.aborted).toBe(true)
+    expect(docs()).toBeNull()
+
+    await select(updated)
+    await clickTab('docs')
+    const downgrade = await read(9)
+    await act(async () => downgrade.respond(new Response(null, { status: 404 })))
+    expect(docs()?.querySelector('a')?.getAttribute('href')).toBe(packageA.metadata?.docsUrl)
+    context = { ...context, features: [] }
+    await act(async () => mounted.reload())
+    expect(pending).toHaveLength(10)
+    expect(docs()?.querySelector('a')).not.toBeNull()
+
+    context = { ...context, features: ['packages.docs.v1'], docsConnectionEpoch: 'docs.restored-connection' }
+    await act(async () => mounted.reload())
+    const restored = await read(10)
+    expect(restored.params).toEqual({
+      ...downgrade.params,
+      docsConnectionEpoch: 'docs.restored-connection',
+    })
+    await act(async () => mounted.reload())
+    expect(pending).toHaveLength(11)
+    await act(async () => view?.selectTab('discover'))
+    await select(catalogEntry)
+    await clickTab('docs')
+    expect(restored.signal?.aborted).toBe(true)
+    await act(async () => restored.respond(article(restored.params.docsConnectionEpoch, '# Installed only')))
+    expect(body()).toBeUndefined()
+    expect(docs()?.querySelector('a')).not.toBeNull()
+    expect(pending).toHaveLength(11)
+  } finally {
+    replyToSurfaces?.(Response.json({ surfaces: [] }))
+    await act(async () => mounted.dispose())
+    document.documentElement.lang = previousLanguage
+    fetcher.mockRestore()
+  }
 })
 
 it('coalesces pending-review reads and rejects a response invalidated in flight', async () => {

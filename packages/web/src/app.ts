@@ -1,5 +1,6 @@
 import { defaultLoop, defaultModelAdapter } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
+import { PluginAdminApi } from '@agnes/web-admin/admin/plugins/api'
 import type { StartedSession } from '@agnes/web-admin/agents'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import { factChainLinks, reserveOwnerOnly } from '@agnes/web-client'
@@ -15,6 +16,7 @@ import {
 import { settingsRoute, sortSessionsByRecency, untitledSessionLabel } from '@agnes/web-units/shell'
 import { createAppearanceController } from './app/appearance-controller.js'
 import { createBackendConnection } from './app/backend-connection.js'
+import { createBrowserClientRoster } from './app/client-roster.js'
 import { type ApplySessionControls, createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
 import { bindConnectionEvents } from './app/connection-events.js'
@@ -36,12 +38,11 @@ import { createSubmissionController } from './app/submission-controller.js'
 import { SubmissionOwner } from './app/submission-owner.js'
 import { bindTerminalNavigation } from './app/terminal-navigation.js'
 import { createTurnController } from './app/turn-controller.js'
-import { openApplicationHome, projectApplication, requestNewSession } from './application.js'
+import { openApplicationHome, requestNewSession } from './application.js'
 import { installCloudConnectionSettings } from './backends/cloud-connection-settings.js'
 import { backendFrameStartup, installBackendFrameBridge } from './backends/frame-bridge.js'
 import { backendFrame, requestDiagnosticBackend } from './backends/frame-context.js'
 import { localLocationUrl, localStartupSearchParams } from './backends/local-workbench-bus.js'
-import { readyRosterModules } from './client-modules/reconcile/roster.js'
 import { ComposerDrafts, switchComposerDraft } from './composer-drafts.js'
 import { frontendBackendIdentity } from './remote-frontend.js'
 import '@agnes/web-admin/settings/registry'
@@ -77,10 +78,9 @@ import { createWorkspaceController } from './app/workspace-controller.js'
 import { appNotice, setConnectionNotice, setReconnectNotice } from './app-notices.js'
 import { mountAppShell } from './app-shell.js'
 import { createLocalManagementSettings as createSettingsController } from './backends/local-management.js'
-import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
+import { startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
 import { bindJobsClient } from './client-modules/jobs.js'
-import type { RosterSource } from './client-modules/reconcile.js'
 import { clientSessionServices } from './client-modules/session-services.js'
 import { readWebComposerMemory, rememberWebComposer, selectionFromMemory } from './composer-memory.js'
 import { composerReferences, composerSkills } from './composer-references.js'
@@ -720,44 +720,14 @@ function renderReconnect(phase: ReconnectPhase): void {
   setReconnectNotice(phase, () => reconnect.retry())
   if (phase !== 'idle') setConnection(phase === 'stalled' ? 'closed' : 'reconnecting')
 }
-// Client module foundation: Cordis root, five host services and a workbench.panel mount point.
-// The roster authority is `_agnes/v1/clientModules.list`; profile becomes available after config.get(),
-// until then treat the roster as empty (fail-closed, loading no modules).
-const customModuleListeners = new Set<() => void>()
-const moduleExtIds = new Map<string, string[]>()
 let profileName = ''
+let skinConnectionChanged: ((connected: boolean) => void) | undefined
 let moduleSessionId: string | undefined
-const rosterSource: RosterSource = {
-  identity: () => JSON.stringify([profileName, moduleSessionId, sessionBinding.generation]),
-  commit(roster) {
-    projectApplication(roster.application)
-    moduleExtIds.clear()
-    for (const mod of roster.modules) moduleExtIds.set(mod.rowId ?? mod.packageId, mod.extIds)
-    for (const listener of customModuleListeners) listener()
-  },
-  async list() {
-    if (!profileName) return { revision: '', modules: [], statuses: [] }
-    // These reads can cross an upgrade: the role registry admits only the roster binding
-    // matching the full consent identity, synchronously before every mount.
-    const [roster, application] = await Promise.all([
-      client.clientModules.list(profileName, moduleSessionId),
-      client.request('_agnes/v1/applications.get', { profile: profileName }).catch(() => undefined),
-    ])
-    // `rows` is the authoritative browser lifecycle surface. The legacy `modules` projection
-    // cannot carry every immutable declaration, including the per-module service allow-list.
-    const modules = readyRosterModules(roster.rows ?? [])
-    return {
-      ...(application ? { application } : {}),
-      revision: roster.revision,
-      modules,
-      statuses: roster.statuses,
-      ...(roster.rowAliases === undefined ? {} : { rowAliases: roster.rowAliases }),
-    }
-  },
-}
-// Claim timeline cards by package: fill.extId must match roster extIds of the package owning the registration.
-const claimSlotCard: ClaimResolver = (entry, extId) =>
-  entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
+const clientRoster = createBrowserClientRoster(client, () => ({
+  profile: profileName,
+  sessionId: moduleSessionId,
+  generation: sessionBinding.generation,
+}))
 const references = composerReferences(prepareComposerSession, renderControls)
 // Reserve host entries before installed modules can register their reviewed declarations.
 const removeHomeEntries = registerBuiltinHomeEntries(ownerCall)
@@ -770,18 +740,9 @@ const clientModules = await startClientModules({
       searchApproval()
       approvalRuntime.focus()
     },
-    async listComponents(sessionId) {
-      if (!profileName) return []
-      return (await client.clientModules.list(profileName, sessionId)).rows ?? []
-    },
-    subscribeComponents(listener) {
-      customModuleListeners.add(listener)
-      return () => {
-        customModuleListeners.delete(listener)
-      }
-    },
+    ...clientRoster.presentation,
   },
-  claim: claimSlotCard,
+  claim: clientRoster.claim,
   clientProfileCaller: async (module, service, input, options) => {
     const response = await fetch('/api/client-modules/profile', {
       method: 'POST',
@@ -950,7 +911,7 @@ const clientModules = await startClientModules({
       }
     },
   },
-  rosterSource,
+  rosterSource: clientRoster.source,
 })
 // The session list shows every session the daemon reports running or waiting for its owner, and
 // marks a turn that ended while another session was on screen.
@@ -1035,8 +996,7 @@ const workspaceController = createWorkspaceController(appSessionContext, hosts.n
 setLocaleTranslator(t)
 clientModules.locale.register('@agnes/web-workbench', workbenchLocaleCatalog)
 
-// A daemon notice is only an invalidation hint. Every read goes back through the SDK roster
-// endpoint, and a failed read leaves the sessionBinding.session page/modules intact for the next hint.
+// Notices are invalidation hints; only the daemon's fresh roster can start client code.
 function scheduleClientRosterRead(initial = false): void {
   void (initial ? clientModules.reconciler.reconcileNow() : clientModules.reconciler.invalidate()).catch(
     (error) => console.warn('[client-modules] 名册重读失败', error),
@@ -1598,6 +1558,8 @@ function clearSessionRecovery(nextSessionId?: string): void {
 }
 function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'closed'): void {
   connected = value === 'connected'
+  skinConnectionChanged?.(connected)
+  if (clientRoster.setOnline(connected) && !connected) scheduleClientRosterRead()
   const currentSessionId = clientModules.session.sessionId
   if (currentSessionId && clientModules.session.readiness.getSnapshot().status !== 'history-only')
     clientModules.session.setReadiness(
@@ -2103,10 +2065,19 @@ onWindowFocus(() => {
 })
 const { appearance, skins: skinGroup } = createAppearanceController({
   locale: clientModules.locale,
-  // The roster source reads the profile before config.get() has reported it.
-  profile: () => profileName,
+  profile: () => (connected ? profileName : ''),
+  backendIdentity: frontendBackendIdentity,
   listSkins: (profile) => client.skins.list(profile),
+  async selectSkin(profile, revision, choice, isCurrent) {
+    const context = await PluginAdminApi.context()
+    if (!isCurrent() || context.profile !== profile) throw new Error('Skin selection scope changed')
+    await new PluginAdminApi(context).selectSkin(revision, choice)
+  },
 })
+skinConnectionChanged = (ready) => {
+  if (!ready) skinGroup.invalidate()
+  else if (profileName) void skinGroup.refresh()
+}
 clientModules.locale.subscribe(() => {
   renderControls()
   updateSidebar()
@@ -2196,6 +2167,7 @@ client.on('generationChanged', (payload) => {
 // A cold daemon reports its tree and packages in quick succession; notices that close share one read.
 const packageNotices = coalesceBurst(() => {
   scheduleClientRosterRead()
+  void skinGroup.refresh()
   broadcast('agnes:plugins-invalidated')
   void modelRefresh.request().catch(showError)
 }, 100)
@@ -2217,7 +2189,11 @@ client.on('notice', (payload) => {
     typeof incoming.detail === 'object' && incoming.detail !== null
       ? (incoming.detail as { profile?: unknown })
       : undefined
-  if (profileName && detail?.profile === profileName) packageNotices.request()
+  if (profileName && detail?.profile === profileName) {
+    clientModules.reconciler.retirePending()
+    skinGroup.invalidate()
+    packageNotices.request()
+  }
 })
 onPageVisible(() => {
   reconnect.resume()

@@ -7,9 +7,9 @@ English | [简体中文](frontend.zh-CN.md)
 
 [Documentation](../README.md) · [Plugin lifecycle](../guide/packages.md)
 
-Display your own panel, update its version, and confirm that disabling it removes the added view. Learn the lifecycle first, then replace the version label with content useful for the role.
+Use the [client-panel/v1](../../examples/packages/client-panel/v1/package.json) fixture to learn how to declare and implement a browser contribution. The fixture adds a version label to the `workbench.panel` slot when loaded by a test. This is a browser contribution path, distinct from slot registration through Host `ctx.slots`.
 
-Reuse [client-panel/v1](../../examples/packages/client-panel/v1/package.json). It displays a version label in the supported `workbench.panel` slot; v2 tests page updates. This is a browser contribution path, distinct from slot registration through ordinary Host `ctx.slots`.
+The official workbench loads native JavaScript and CSS only from verified clients shipped with the current AGH release or an exact client approved through [application adoption or a presentation role](../extend/applications.md). The shipped navigation, conversation and composer, goals, interactions, and deliverables clients do not need separate approval. Installing, trusting, and enabling a third-party plugin does not approve its native UI. Tools, backend services, configuration, and readable session history keep their existing permissions. Intelligent UI renderers run in a separate sandboxed frame.
 
 <a id="声明和代码"></a>
 
@@ -65,9 +65,11 @@ node agnes.mjs package inspect file:./examples/packages/client-panel/v1
 node agnes.mjs install file:./examples/packages/client-panel/v1
 ```
 
-Trust and enable using hashes from the preview, then open Web for the same instance and create a new session. You should see v1. Update to `file:./examples/packages/client-panel/v2` through Web management or TUI, complete its trust/enable steps, and create another session to check v2. Return to the first session to confirm that this profile contribution follows the current activation and shows v2 there too. Disable the package and confirm that its additional view disappears immediately; management navigation stays available.
+Use the hashes from the preview to trust and enable the fixture. In the official workbench, open its plugin details and verify that its native UI is not approved. The version label does not appear. The backend state still reflects the operation you performed.
 
-Package desired=enabled, backend web row ready, and successful loading in this page are distinct stages. A closed browser, failed script/CSS fetch, unauthorized slot, or exception in apply can prevent frontend activation. Inspect per-row actual state as well as package enablement.
+To try explicit approval, install [Deliverables Gallery](../../examples/community/deliverables-gallery/README.md). In **Settings → Application**, review and adopt the application or choose its deliverables role. Open a session with a deliverable to see the approved gallery. Approval covers the reviewed client and version, not every client in the plugin. If a change invalidates approval, review it again. If the old interface has already run in your tab, reload the tab to clear its code.
+
+If the adopted interface prevents you from opening settings, open `/?admin` on the workbench origin or run `agh app clear`. Restoring the official interface does not change session pins or remove data.
 
 <a id="验证"></a>
 

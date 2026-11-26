@@ -14,6 +14,7 @@ import {
   normalizeRpcError,
   PACKAGE_ADMIN_METHODS,
   PACKAGE_ADMIN_PERMISSIONS,
+  PACKAGE_DOCS_CONTEXT_HEADER,
   type PackageAdminContext,
   type PackageAdminPermission,
   type PackageCatalogListParams,
@@ -35,6 +36,7 @@ import {
   SystemPromptSnapshot,
 } from '@agnes/protocol/gen/agnes-v1'
 
+import { type AdminDocsBackend, readPackageAdminContext, serveAdminDocs } from './admin-docs.js'
 import { backendCause, invalidResponse, responseCause } from './admin-failure.js'
 import { validCatalogProjection } from './catalog-query.js'
 import { configurationFailureStatus, configurationReadOnly } from './permissions.js'
@@ -60,10 +62,12 @@ export type AdminSurfaceOptions = {
   features?: readonly string[]
   /** Reads the currently connected backend; static presentation never grants backend capability. */
   backendFeatures?: () => Promise<readonly string[]>
+  /** Docs is bound to a live launcher connection, not to the static presentation features. */
+  docs?: AdminDocsBackend
   /** Stable opaque scope minted by the trusted launcher. Never accepts request data. */
   authScope?: string
   /** The trusted launcher binds this to the private Node SDK, never to request-selected RPC. */
-  invoke(action: AdminSurfaceAction, params: unknown): Promise<unknown>
+  invoke(action: Exclude<AdminSurfaceAction, 'docs/get'>, params: unknown): Promise<unknown>
   /** Resolves false while the backend is unreachable; the request then reports `unavailable`, never `internal`. */
   available?(): Promise<boolean>
   /** Live, routable Surface links. The launcher strips loopback endpoint details before returning. */
@@ -889,30 +893,12 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
         }
         // One verified inventory provides both the live health decision and the page's data.
         // Do not cache a completed authorization decision across requests.
-        let inventory: unknown
-        let backendFeatures: readonly string[] = []
-        readOnly = await configurationReadOnly(async () => {
-          inventory = await options.invoke('list', { profile: options.profile })
-          backendFeatures = (await options.backendFeatures?.()) ?? []
-          return inventory
-        })
-        const context: PackageAdminContext = {
-          ...configuredContext,
-          features: [
-            ...new Set([
-              ...(configuredContext.features ?? []).filter(
-                (feature) => !feature.startsWith('packages.community-discovery.'),
-              ),
-              ...backendFeatures,
-            ]),
-          ],
-          permissions: readOnly
-            ? configuredPermissions.filter(
-                (permission) => permission === 'packages.read' || permission === 'credentials.read',
-              )
-            : configuredPermissions,
-          readOnly,
-        }
+        const { context, inventory } = await readPackageAdminContext(
+          configuredContext,
+          options,
+          request.headers[PACKAGE_DOCS_CONTEXT_HEADER.toLowerCase()] === '1',
+        )
+        readOnly = context.readOnly
         if (!validatePackageAdminData('PackageAdminContext', context).ok) {
           error(response, 502, 'E_ADMIN_RESPONSE', '', responseCause('context'))
           return true
@@ -945,8 +931,22 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
       const name = action as AdminSurfaceAction
       const method = ACTIONS[name]
       try {
-        const body = statusGet ? { profile: options.profile } : await readBody(request)
-        if (!record(body) || !validatePackageAdminCall(method, 'params', body).ok) {
+        let body = statusGet
+          ? { profile: options.profile }
+          : await (name === 'docs/get' ? readBody(request).catch(() => undefined) : readBody(request))
+        let docsConnectionEpoch: string | undefined
+        if (name === 'docs/get' && record(body)) {
+          const { docsConnectionEpoch: epoch, ...params } = body
+          if (typeof epoch === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}(?![\s\S])/.test(epoch)) {
+            docsConnectionEpoch = epoch
+            body = params
+          }
+        }
+        if (
+          !record(body) ||
+          (name === 'docs/get' && docsConnectionEpoch === undefined) ||
+          !validatePackageAdminCall(method, 'params', body).ok
+        ) {
           error(response, 400, 'E_ADMIN_REQUEST', 'The admin parameters are not valid.')
           return true
         }
@@ -964,6 +964,10 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
         }
         if (!configuredPermissions.includes(PACKAGE_ADMIN_METHODS[method].administration.permission)) {
           error(response, 403, 'E_ADMIN_PERMISSION', 'The admin permission does not allow this operation.')
+          return true
+        }
+        if (name === 'docs/get') {
+          await serveAdminDocs(options.docs, body, docsConnectionEpoch, response, reply)
           return true
         }
         const result = await options.invoke(name, body)

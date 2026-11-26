@@ -7,12 +7,23 @@ import {
   jcs,
 } from '@agnes/protocol'
 
+import type { PresentationGrant } from './client-admission.js'
 import { clientRoleBindings } from './role-selection.js'
+
+export type ClientRegistryPackage = Pick<
+  InstalledPackage,
+  'id' | 'enabled' | 'trusted' | 'blockers' | 'directory' | 'capabilityHash' | 'contributions'
+> & {
+  entry: Pick<
+    InstalledPackage['entry'],
+    'integrity' | 'version' | 'previous' | 'declaredCapabilities' | 'metadata'
+  >
+}
 
 type Activations = Readonly<Record<string, { identity: string; id: string; active: boolean }>>
 export function reconcileContributionActivations(
   previousActivations: Activations | undefined,
-  packages: InstalledInventory['packages'],
+  packages: readonly ClientRegistryPackage[],
 ): Activations {
   const activations = { ...previousActivations }
   for (const row of packages) {
@@ -30,30 +41,56 @@ export function reconcileContributionActivations(
   return activations
 }
 export async function contributionProjection(
-  row: InstalledPackage,
+  row: Pick<ClientRegistryPackage, 'id' | 'entry'>,
   client: ClientContribution,
   owner: string,
   integrity: string,
-  context: { profile: string; inventory: InstalledInventory },
+  context: { profile: string; inventory?: InstalledInventory },
   activationId: string | undefined,
+  moduleName = owner,
+  grants?: readonly PresentationGrant[],
+  choices: readonly PresentationGrant[] = [],
 ): Promise<Partial<ClientModuleRosterRow>> {
+  const roles = grants ? [...new Set(grants.flatMap((grant) => grant.roles))] : client.presentationRoles
+  const pages = grants && new Set(grants.flatMap((grant) => grant.pages))
+  const installed = roles?.length
+    ? context.inventory?.packages.find((candidate) => candidate.id === row.id)
+    : undefined
+  const presentationRoleBindings =
+    roles?.length && row.entry.integrity === integrity && installed && context.inventory
+      ? await clientRoleBindings(
+          context.inventory.packages,
+          context.profile,
+          installed,
+          client,
+          integrity,
+          client.id ?? moduleName,
+          roles,
+        )
+      : undefined
+  if (presentationRoleBindings && row.entry.integrity === integrity) {
+    for (const choice of choices) {
+      if (
+        choice.roleChoice &&
+        choice.rowId === owner &&
+        choice.packageId === row.id &&
+        choice.clientId === (client.id ?? moduleName)
+      ) {
+        for (const role of choice.roles)
+          if (roles?.includes(role)) presentationRoleBindings[role] = choice.consent
+      }
+    }
+  }
   return {
-    ...(row.entry.metadata?.exampleOf ? { exampleOf: row.entry.metadata.exampleOf } : {}),
-    ...(row.entry.metadata?.pageEntry ? { pageEntry: row.entry.metadata.pageEntry } : {}),
-    clientId: client.id ?? owner,
-    ...(client.presentationRoles?.length
+    ...(!pages || (row.entry.metadata?.pageEntry !== undefined && pages.has(row.entry.metadata.pageEntry))
       ? {
-          presentationRoleBindings: await clientRoleBindings(
-            context.inventory.packages,
-            context.profile,
-            row,
-            client,
-            integrity,
-            client.id ?? owner,
-          ),
+          ...(row.entry.metadata?.exampleOf ? { exampleOf: row.entry.metadata.exampleOf } : {}),
+          ...(row.entry.metadata?.pageEntry ? { pageEntry: row.entry.metadata.pageEntry } : {}),
         }
       : {}),
-    ...(client.presentationRoles ? { presentationRoles: client.presentationRoles } : {}),
+    clientId: client.id ?? moduleName,
+    ...(presentationRoleBindings ? { presentationRoleBindings } : {}),
+    ...(roles ? { presentationRoles: roles } : {}),
     binding: {
       lifetime: client.lifetime ?? 'session',
       owner,
@@ -63,58 +100,60 @@ export async function contributionProjection(
       activationId: activationId ?? integrity,
       availability: 'active',
     },
-    ...(client.homeEntries ? { homeEntries: client.homeEntries } : {}),
-    ...(client.examplePages ? { examplePages: client.examplePages } : {}),
+    ...(client.homeEntries
+      ? { homeEntries: client.homeEntries.filter((page) => !pages || pages.has(page.id)) }
+      : {}),
+    ...(client.examplePages
+      ? { examplePages: client.examplePages.filter((page) => !pages || pages.has(page)) }
+      : {}),
   }
 }
+
+export function historicalContribution(row: ClientModuleRosterRow): boolean {
+  return row.rendererDataUrl !== undefined || row.binding?.lifetime === 'session'
+}
+
+export function modulesForContributionRows(
+  modules: ClientModuleListResult['modules'],
+  rows: readonly ClientModuleRosterRow[],
+): ClientModuleListResult['modules'] {
+  return modules.filter((module) => {
+    const rowId = module.rowId ?? `web:${module.packageId}`
+    return rows.some(
+      (row) => row.rowId === rowId && row.packageId === module.packageId && row.revision === module.revision,
+    )
+  })
+}
+
 export function combineContributionRosters(
   current: ClientModuleListResult,
   selected: ClientModuleListResult,
 ): ClientModuleListResult {
-  const rows = [
-    ...(current.rows ?? []).filter((row) => row.binding?.lifetime === 'profile'),
-    ...(selected.rows ?? [])
-      .filter(
-        (row) =>
-          row.binding?.lifetime !== 'profile' &&
-          !(current.rows ?? []).some(
-            (active) => active.rowId === row.rowId && active.binding?.lifetime === 'profile',
-          ),
+  const profileRows = (current.rows ?? []).filter(
+    (row) => row.binding?.lifetime === 'profile' && !row.rendererDataUrl,
+  )
+  const historicalRows = (selected.rows ?? [])
+    .filter((row) => historicalContribution(row) && !profileRows.some((active) => active.rowId === row.rowId))
+    .map((row) => {
+      const active = current.rows?.find(
+        (candidate) => candidate.rowId === row.rowId && candidate.enabled && candidate.phase === 'ready',
       )
-      .map((row) => {
-        const active = current.rows?.find(
-          (candidate) => candidate.rowId === row.rowId && candidate.enabled && candidate.phase === 'ready',
-        )
-        return {
-          ...row,
-          ...(row.binding
-            ? {
-                binding: {
-                  ...row.binding,
-                  availability: active ? ('active' as const) : ('history-only' as const),
-                },
-              }
-            : {}),
-        }
-      }),
-  ]
+      return {
+        ...row,
+        ...(row.binding
+          ? {
+              binding: {
+                ...row.binding,
+                availability: active ? ('active' as const) : ('history-only' as const),
+              },
+            }
+          : {}),
+      }
+    })
+  const rows = [...profileRows, ...historicalRows]
   const modules = [
-    ...current.modules.filter((module) =>
-      rows.some(
-        (row) =>
-          row.binding?.lifetime === 'profile' &&
-          row.packageId === module.packageId &&
-          row.entryUrl === module.entryUrl,
-      ),
-    ),
-    ...selected.modules.filter((module) =>
-      rows.some(
-        (row) =>
-          row.binding?.lifetime !== 'profile' &&
-          row.packageId === module.packageId &&
-          row.entryUrl === module.entryUrl,
-      ),
-    ),
+    ...modulesForContributionRows(current.modules, profileRows),
+    ...modulesForContributionRows(selected.modules, historicalRows),
   ]
   const rowAliases = Object.fromEntries(
     Object.entries({ ...selected.rowAliases, ...current.rowAliases }).filter(

@@ -161,9 +161,10 @@ for (const mode of ['ready', 'cloud-ready', 'blocked', 'error'])
   }) => {
     const blockedRequests: string[] = []
     const modulePath = '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/reviewed/diff.mjs'
+    const rendererDataPath = `${modulePath}?agnes_ui_source=1`
     const moduleRequests: string[] = []
     page.on('request', (request) => {
-      if (request.url().endsWith(modulePath)) moduleRequests.push(request.url())
+      if (request.url().includes(modulePath)) moduleRequests.push(request.url())
     })
     await page.context().route('https://csp-blocked.invalid/**', (route) => {
       blockedRequests.push(route.request().url())
@@ -174,8 +175,9 @@ for (const mode of ['ready', 'cloud-ready', 'blocked', 'error'])
       const unproxiedStatus = await page.evaluate(async (path) => {
         const res = await fetch(path)
         return res.status
-      }, modulePath)
+      }, rendererDataPath)
       expect(unproxiedStatus).toBe(404)
+      moduleRequests.length = 0
       await page.goto(`${url}/?host=cloud&locale=en`)
     } else {
       await page.goto(`${url}/?custom=${mode}&locale=en`)
@@ -198,7 +200,9 @@ for (const mode of ['ready', 'cloud-ready', 'blocked', 'error'])
     const frame = card.frameLocator('[data-testid="ui-custom-frame-custom"]')
     await expect(frame.getByText('Delta cents: 250')).toBeVisible()
     await expect(frame.getByText('Delta cents: 250')).toHaveAttribute('data-nonce-visible', 'false')
-    expect(moduleRequests).toContain(`${mode === 'cloud-ready' ? cloudUrl + cloudPrefix : url}${modulePath}`)
+    expect(moduleRequests).toEqual([
+      `${mode === 'cloud-ready' ? cloudUrl + cloudPrefix : url}${rendererDataPath}`,
+    ])
     expect(blockedRequests).toEqual([])
     expect(
       await frame.locator('body').evaluate(() => ({

@@ -384,7 +384,7 @@ Rules:
 - Maximum 2 MB per asset, 8 MB total assets per skin, and 128 KB per stylesheet. Packages exceeding limits are rejected.
 - **No remote resources or inline base64.** Page policy includes `default-src 'self'`; remote images/fonts and `data:` URIs are blocked. Include images in the package.
 - Only files under `assets/` are served. Other files next to the stylesheet are unavailable through the asset route.
-- **Relative paths resolve from the stylesheet**, as in ordinary CSS: `url('assets/x.png')` maps to `/skins/<SKIN_ID>/assets/x.png`. Do not hard-code the skin ID or a machine path. The host converts asset references to absolute served URLs when delivering stylesheet text because initial inline text otherwise resolves against the page. Author package-relative references; the host handles the served URL.
+- Use relative asset paths, such as `url('assets/x.png')`. The workbench resolves them against the exact versioned path on the backend that supplied the skin. Do not hard-code a skin ID or machine path.
 
 <a id="6-能力与限制"></a>
 
@@ -404,9 +404,10 @@ Rules:
 
 ## 7. Debugging
 
-- **Temporarily disable a skin:** Add `?skin=none` to the page URL to force the built-in appearance, or `?skin=<id>` to select a specific skin. These are one-time overrides without a cached preference change. Reopen the URL without the parameter to return to your saved selection. Use this if a skin makes settings inaccessible.
-- **CSS changes do not appear:** Stylesheets are cached by manifest `revision`. Disable/re-enable the package or reselect the skin to load current content.
-- **Inspect available skins:** Open Settings → General → Appearance → Skin. The list includes skins declared by **enabled and trusted** packages.
+- **Choose a skin:** Open **Settings → General → Appearance → Skin**. The list shows available skins from active, enabled, and trusted packages. Installing or enabling a package does not apply its skin.
+- **Use the application default:** Select **Use application setting**. The workbench uses a declared skin only while the adopted application and that skin's package remain valid.
+- **Use the built-in appearance:** Select **AGH default** to disable skins for this profile, including the application's skin. To suppress a skin for one page load, add `?skin=none`. A URL with `?skin=<id>` does not select a skin. `/?admin` always uses the built-in appearance.
+- **After a package or workbench update:** Select the skin again if its package identity changed. Browser-local skin IDs and cached styles from earlier workbench versions do not carry over.
 
 ## Shared controls and readability
 

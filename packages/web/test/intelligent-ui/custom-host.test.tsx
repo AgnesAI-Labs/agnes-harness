@@ -43,7 +43,7 @@ const surface = {
   components: [component, ...financeRecord().surface.components],
   data: { ...financeRecord().surface.data, custom: { amount: 12 } },
 }
-const row: ClientModuleRosterRow = {
+const row = {
   rowId: 'web:finance',
   moduleName: 'finance',
   packageId: 'finance',
@@ -51,9 +51,19 @@ const row: ClientModuleRosterRow = {
   phase: 'ready',
   revision: 'sha512-reviewed',
   contentDigest: `sha256-${'a'.repeat(64)}`,
-  entryUrl: '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/sha512-reviewed/diff.mjs',
+  rendererDataUrl:
+    '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/sha512-reviewed/diff.mjs?agnes_ui_source=1',
+  binding: {
+    owner: 'web:finance',
+    packageId: 'finance',
+    profileId: 'local-dev',
+    integrity: 'sha512-reviewed',
+    lifetime: 'session',
+    availability: 'history-only',
+    activationId: 'archived',
+  },
   intelligentComponents: [declaration],
-}
+} satisfies ClientModuleRosterRow
 const base = { component, surface, disabled: false, onAction: vi.fn() }
 const message = (frame: HTMLIFrameElement, data: unknown) =>
   window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow, origin: 'null' }))
@@ -68,11 +78,15 @@ describe('reviewed custom host', () => {
     } finally {
       compile.mockRestore()
     }
+    const { rendererDataUrl: _source, ...legacy } = row
     for (const rows of [
       [],
       [{ ...row, phase: 'blocked' as const }],
       [{ ...row, enabled: false }],
-      [{ ...row, entryUrl: '/plugins/current/diff.mjs' }],
+      [{ ...row, rendererDataUrl: '/plugins/current/diff.mjs?agnes_ui_source=1' }],
+      [{ ...legacy, entryUrl: '/plugins/generations/old/diff.mjs' }],
+      [{ ...row, entryUrl: '/plugins/generations/old/diff.mjs' }],
+      [{ ...row, rendererDataUrl: row.rendererDataUrl.replace('?agnes_ui_source=1', '') }],
       [{ ...row, contentDigest: '' }],
       [{ ...row, intelligentComponents: [declaration, declaration] }],
       [{ ...row, intelligentComponents: [{ ...declaration, maxPropsBytes: 1 }] }],
@@ -100,7 +114,9 @@ describe('reviewed custom host', () => {
     const token = `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`
     const prefix = remoteFrontendSessionPath(token)
     const renderer = 'export const renderers = {}'
-    const fetchModule = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(renderer))
+    const fetchModule = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => Response.json({ source: renderer }))
     const meta = document.createElement('meta')
     meta.id = 'agnes-config'
     meta.dataset.cloudOrigin = frameOrigin
@@ -140,7 +156,7 @@ describe('reviewed custom host', () => {
       const frame = container.querySelector('iframe')!
       expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
       expect(frame.getAttribute('src')).toBe('/__agnes/ui-frame')
-      expect(fetchModule).toHaveBeenCalledWith(`${frameOrigin}${prefix}${row.entryUrl}`, {
+      expect(fetchModule).toHaveBeenCalledWith(`${frameOrigin}${prefix}${row.rendererDataUrl}`, {
         signal: expect.any(AbortSignal),
         credentials: 'omit',
         redirect: 'error',
@@ -190,7 +206,7 @@ describe('reviewed custom host', () => {
       container.remove()
     }
   })
-  it.each(['unavailable', 'oversized', 'unmounted'])(
+  it.each(['unavailable', 'oversized', 'raw-javascript', 'unmounted'])(
     'leaves the fallback when module loading is %s',
     async (mode) => {
       const container = document.body.appendChild(document.createElement('div'))
@@ -201,7 +217,11 @@ describe('reviewed custom host', () => {
             options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true })
           })
         if (mode === 'unavailable') return new Response('unavailable', { status: 503 })
-        return new Response('é'.repeat(UI_COMPONENT_MODULE_BYTES / 2 + 1))
+        if (mode === 'raw-javascript')
+          return new Response('export const renderers = {}', {
+            headers: { 'content-type': 'text/javascript' },
+          })
+        return Response.json({ source: 'é'.repeat(UI_COMPONENT_MODULE_BYTES / 2 + 1) })
       })
       const source = {
         theme: new ThemeService(new Context(), 'light'),

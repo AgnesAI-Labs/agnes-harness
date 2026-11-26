@@ -11,12 +11,7 @@ export function serveUiComponentFrame(request: IncomingMessage, response: Server
     response.writeHead(405).end()
     return true
   }
-  sendUiComponentFrame(request, response)
-  return true
-}
-
-export function sendUiComponentFrame(request: IncomingMessage, response: ServerResponse, source?: string) {
-  const frame = uiComponentFrame(source)
+  const frame = uiComponentFrame()
   response.writeHead(200, {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-store',
@@ -25,19 +20,17 @@ export function sendUiComponentFrame(request: IncomingMessage, response: ServerR
     'X-Content-Type-Options': 'nosniff',
   })
   response.end(request.method === 'HEAD' ? undefined : frame.body)
+  return true
 }
 
 const lockdown = `for (const name of ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'Worker', 'SharedWorker']) {
   Object.defineProperty(globalThis, name, { value: undefined, configurable: false, writable: false });
 }`
 
-/** Legacy query responses still accept initialization without a source field. */
-export function uiComponentFrame(source?: string): { body: string; csp: string } {
+function uiComponentFrame(): { body: string; csp: string } {
   const nonce = randomBytes(16).toString('base64')
   const csp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'; object-src 'none'; sandbox allow-scripts`
-  const loadRenderers =
-    source === undefined
-      ? `
+  const loadRenderers = `
     const renderers = await new Promise((resolve, reject) => {
       document.addEventListener('agnes-ui-renderers', (event) => resolve(event.detail), { once: true });
       const script = document.importNode(template.content.firstElementChild, true);
@@ -50,7 +43,6 @@ export function uiComponentFrame(source?: string): { body: string; csp: string }
       script.removeAttribute('nonce');
       script.remove();
     });`
-      : ''
   const bootstrap = `
 ;(() => {
 const nonce = ${JSON.stringify(nonce)};
@@ -58,14 +50,14 @@ document.currentScript?.remove();
 const style = document.querySelector('style');
 style.nonce = '';
 style.removeAttribute('nonce');
-${source === undefined ? "const template = document.getElementById('renderer-module'); template.remove();" : ''}
-${source === undefined ? lockdown : ''}
+const template = document.getElementById('renderer-module'); template.remove();
+${lockdown}
 const send = (type, detail = {}) => parent.postMessage({ type, ...detail }, '*');
 addEventListener('error', () => send('agnes-ui-error'));
 addEventListener('unhandledrejection', () => send('agnes-ui-error'));
 let dispose;
 addEventListener('message', async function initialize(event) {
-  if (event.source !== parent || event.data?.type !== 'agnes-ui-init'${source === undefined ? " || typeof event.data.source !== 'string'" : ''}) return;
+  if (event.source !== parent || event.data?.type !== 'agnes-ui-init' || typeof event.data.source !== 'string') return;
   removeEventListener('message', initialize);
   const { kind, props, theme, locale } = event.data;
   const mount = document.getElementById('mount');
@@ -82,16 +74,9 @@ addEventListener('pagehide', () => { try { dispose?.(); } catch {} });
 send('agnes-ui-loaded');
 })();
 `
-  // Source is immutable reviewed code, never model data. Escaping prevents a JS string/comment
-  // containing an HTML end tag from terminating the script element.
-  const code = (
-    source === undefined ? bootstrap : `;(() => {${lockdown}})();\n${source}\n${bootstrap}`
-  ).replace(/<\/script/gi, '<\\/script')
-  // The empty module template stays inactive until initialization supplies its source and nonce.
-  const template =
-    source === undefined ? '<template id="renderer-module"><script type="module"></script></template>' : ''
+  const template = '<template id="renderer-module"><script type="module"></script></template>'
   return {
     csp,
-    body: `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style nonce="${nonce}">@layer ui {body{margin:0;font:14px system-ui;color:CanvasText;background:Canvas}button{font:inherit}table{border-collapse:collapse;width:100%}th,td{text-align:start;padding:.4em}button:focus-visible{outline:2px solid Highlight}body{color-scheme:light dark}}</style></head><body><div id="mount"></div>${template}<script${source === undefined ? '' : ' type="module"'} nonce="${nonce}">${code}</script></body></html>`,
+    body: `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style nonce="${nonce}">@layer ui {body{margin:0;font:14px system-ui;color:CanvasText;background:Canvas}button{font:inherit}table{border-collapse:collapse;width:100%}th,td{text-align:start;padding:.4em}button:focus-visible{outline:2px solid Highlight}body{color-scheme:light dark}}</style></head><body><div id="mount"></div>${template}<script nonce="${nonce}">${bootstrap}</script></body></html>`,
   }
 }

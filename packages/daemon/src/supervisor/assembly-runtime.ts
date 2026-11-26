@@ -134,6 +134,7 @@ export async function initializeRuntime(
                       join(o.config.dataDir, 'daemon', 'client-modules'),
                     profile,
                   ),
+                activationEpoch: () => pool.businessWorker()?.generation,
                 runtimeArtifacts: () =>
                   runtimeArtifactsFromStore(runtimeStore, pool.businessWorker()?.generation),
               }),

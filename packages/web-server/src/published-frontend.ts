@@ -15,6 +15,7 @@ import {
   REMOTE_FRONTEND_KEY_VERSION,
   REMOTE_FRONTEND_WS,
 } from '@agnes/protocol'
+import { noncanonicalAssetPath } from './asset-path.js'
 import { publicationAuthentication } from './published-auth.js'
 
 const HOP_HEADERS = new Set([
@@ -154,6 +155,11 @@ export async function createPublishedFrontend(input: {
       }
       const requestUrl = authorized.url
       const path = new URL(requestUrl, local).pathname
+      if (noncanonicalAssetPath(requestUrl.split('?', 1)[0] ?? '/', path)) {
+        req.resume()
+        res.writeHead(404, cors).end()
+        return
+      }
       if (path === '/' && !new URL(req.url ?? '/', local).searchParams.has('remote')) {
         const publicOrigin = new URL(`${publication.tls ? 'https' : 'http'}://${req.headers.host}`).origin
         const target = new URL(requestUrl, publicOrigin)

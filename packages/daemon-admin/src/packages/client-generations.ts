@@ -1,7 +1,12 @@
 import { readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { type InstalledPackage, RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
+import {
+  checkedArchiveClientTree,
+  RuntimeGenerationSnapshotStore,
+  type VerifiedClientTree,
+} from '@agnes/package-manager'
 import type { ClientModuleRegistry, ClientModuleRegistryOptions } from './client-modules.js'
+import type { ClientRegistryPackage } from './contribution-roster.js'
 
 type Input = Parameters<ClientModuleRegistry['list']>[0]
 const generationId = /^[a-f0-9-]{36}$/
@@ -63,31 +68,49 @@ export function createClientGenerations(
     },
     async input(input: Input, id: string) {
       requireOpen()
+      const store = new RuntimeGenerationSnapshotStore(input.profileDirectory)
+      const pinned = () => store.sessions().some((pin) => pin.generationId === id)
+      if (!generationId.test(id) || !pinned()) throw new Error('Client module generation is not retained')
+      const recordPath = join(store.root, id, 'generation.json')
+      const record = await readFile(recordPath, 'utf8')
       const snapshot = await read(input.profileDirectory, id)
       requireOpen()
-      const packages = snapshot.sources.map((source) => ({
-        id: source.snapshot.packageId,
-        directory: source.snapshot.directory,
-        entry: {
-          version: source.snapshot.version,
-          integrity: source.snapshot.integrity,
-          treeIntegrity: source.snapshot.treeIntegrity,
+      if ((await readFile(recordPath, 'utf8')) !== record || !pinned())
+        throw new Error('Client module generation changed')
+      const trees = new Map<string, VerifiedClientTree>()
+      const packages: ClientRegistryPackage[] = []
+      const sourceIds = new Set<string>()
+      for (const { snapshot: archived } of snapshot.sources) {
+        if (sourceIds.has(archived.packageId) || archived.profile !== input.profile)
+          throw new Error('Invalid client module generation binding')
+        sourceIds.add(archived.packageId)
+        const checked = checkedArchiveClientTree(archived)
+        if (!checked) continue
+        trees.set(archived.packageId, archived)
+        packages.push({
+          id: archived.packageId,
+          directory: archived.directory,
+          entry: {
+            version: archived.version,
+            integrity: archived.integrity,
+            previous: null,
+            ...(checked.declaredCapabilities ? { declaredCapabilities: checked.declaredCapabilities } : {}),
+            ...(archived.metadata ? { metadata: archived.metadata } : {}),
+          },
+          contributions: archived.contributions,
+          capabilityHash: archived.capabilityHash,
+          trusted: true,
           enabled: true,
-        },
-        contributions: source.snapshot.contributions,
-        capabilityHash: source.snapshot.capabilityHash,
-        trusted: true,
-        enabled: true,
-        blockers: [],
-      })) as unknown as InstalledPackage[]
-      const inventory = { ...input.inventory, packages }
+          blockers: [],
+        })
+      }
       let registry = registries.get(`${input.profile}:${id}`)
       if (!registry) {
         registry = createRegistry({
           ...options,
           snapshotDirectory: (profile, directory) =>
             join(options.snapshotDirectory(profile, directory), 'generations', id),
-          runtimeArtifacts: () => ({ desired: snapshot.artifact, lastGood: snapshot.artifact }),
+          runtimeArtifacts: () => undefined,
           composition: () => undefined,
           changed: () => undefined,
         })
@@ -98,12 +121,19 @@ export function createClientGenerations(
         input: {
           profile: input.profile,
           profileDirectory: input.profileDirectory,
-          inventory,
-          refreshInventory: async () => inventory,
+          inventory: input.inventory,
+          archive: {
+            id,
+            artifact: snapshot.artifact,
+            trees,
+            packages,
+            current: async () => (await readFile(recordPath, 'utf8')) === record && pinned(),
+          },
+          refreshInventory: input.refreshInventory,
           actual: async (packageId: string) => {
-            const source = snapshot.sources.find((item) => item.snapshot.packageId === packageId)
-            return source
-              ? { actual: 'running' as const, actualIntegrity: source.snapshot.integrity }
+            const tree = trees.get(packageId)
+            return tree
+              ? { actual: 'running' as const, actualIntegrity: tree.integrity, actualVersion: tree.version }
               : undefined
           },
         },

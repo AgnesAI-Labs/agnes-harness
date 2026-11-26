@@ -7,6 +7,7 @@ export function adminPayloadBudget(name: string, side: 'params' | 'result' = 're
   if (side === 'params') return 1048576
   if (name === 'PackageCatalogPage' || name === '_agnes/v1/packages.catalog.list') return 8 * 1024 * 1024
   if (name === '_agnes/v1/clientModules.read') return 44739244 + 1024
+  if (name === '_agnes/v1/skins.read') return 2796204 + 1024
   return 1048576
 }
 

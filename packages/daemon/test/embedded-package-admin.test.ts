@@ -2,9 +2,10 @@ import type { PackageAdminService } from '@agnes/daemon-admin/packages/index'
 import { expect, it } from 'vitest'
 import { packageAdminHandoff } from '../src/supervisor/embedded-package-admin.js'
 
-function fixture(label: string, released: string[]) {
+function fixture(label: string, released: string[], features: readonly string[] = []) {
   const listeners = new Set<Parameters<PackageAdminService['subscribe']>[0]>()
   const service: PackageAdminService = {
+    features,
     call: async () => label,
     recover: async () => undefined,
     rebuildClientModules: async () => undefined,
@@ -31,16 +32,18 @@ function fixture(label: string, released: string[]) {
 it('keeps captured calls and subscribers on one entry across catalog-to-runtime handoff', async () => {
   const released: string[] = []
   const catalog = fixture('catalog', released)
-  const runtime = fixture('runtime', released)
+  const runtime = fixture('runtime', released, ['packages.docs.v1', 'packages.community-discovery.v3'])
   const owner = packageAdminHandoff(catalog.service)
   const call = owner.service.call
   const seen: string[] = []
   owner.service.subscribe((event) => {
     seen.push(event.operationId)
   })
+  expect(owner.service.features).toEqual([])
   expect(await call('_agnes/v1/packages.list', {}, undefined)).toBe('catalog')
   catalog.emit('catalog')
   owner.initialize(runtime.service)
+  expect(owner.service.features).toEqual(['packages.docs.v1'])
   expect(await call('_agnes/v1/packages.list', {}, undefined)).toBe('runtime')
   catalog.emit('retired')
   runtime.emit('ready')

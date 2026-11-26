@@ -28,6 +28,7 @@ export const ADMIN_FEATURES = Object.freeze({
   runtimeIdentity: 'packages.runtime-identity.v1',
   rollbackTarget: 'packages.rollback-target.v1',
   operationControl: 'packages.operation-control.v1',
+  docs: 'packages.docs.v1',
 } as const)
 export type AdminFeature = (typeof ADMIN_FEATURES)[keyof typeof ADMIN_FEATURES]
 

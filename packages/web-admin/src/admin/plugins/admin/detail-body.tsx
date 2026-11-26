@@ -1,5 +1,7 @@
 import {
   type PackageCatalogDescriptor,
+  type PackageDocsGetParams,
+  type PackageDocsGetResult,
   type PackageInstalledDescriptor,
   type PackageSource,
   resolvePluginMetadata,
@@ -17,11 +19,14 @@ import {
   sourceLabel,
   Tag,
 } from '@agnes/web-ui'
-import type { ReactNode } from 'react'
+import { StaticPluginMarkdown } from '@agnes/web-ui/conversation'
+import { type ReactNode, useLayoutEffect, useState } from 'react'
+import type { PluginAdminApi } from '../api.js'
 import { CapabilityReview, FailureHelp, ProvenanceReview } from '../capability-review.js'
 import { PluginConfigTab } from '../config-tab.js'
 import { GenerationDrainSummary, pluginFailureMessage } from '../control-panel.js'
 import { PluginDetailCopy } from '../detail-copy.js'
+import { ADMIN_FEATURES, hasFeature } from '../types.js'
 import type { PluginAdminViewContext } from './page.js'
 
 type Item = PackageInstalledDescriptor | PackageCatalogDescriptor
@@ -59,6 +64,47 @@ function Actions({ actions }: { actions: readonly DetailActionSpec[] }) {
   )
 }
 
+function PluginDocsRead({
+  api,
+  id,
+  expectedIntegrity,
+  epoch,
+  locale,
+  onUnsupported,
+  loading,
+  fallback,
+}: {
+  api: PluginAdminApi
+  id: string
+  expectedIntegrity: string
+  epoch: string
+  locale: PackageDocsGetParams['locale']
+  onUnsupported(epoch: string): void
+  loading: ReactNode
+  fallback: ReactNode
+}) {
+  // The keyed tab body owns one read and one authority snapshot, not the polling view.
+  const [reader] = useState(() => api)
+  const [result, setResult] = useState<PackageDocsGetResult>()
+  useLayoutEffect(() => {
+    const controller = new AbortController()
+    void reader.docsGet({ id, expectedIntegrity, locale }, controller.signal).then(
+      (next) => {
+        if (controller.signal.aborted) return
+        if (next === undefined) onUnsupported(epoch)
+        else setResult(next)
+      },
+      () => {
+        if (!controller.signal.aborted) setResult({ found: false })
+      },
+    )
+    return () => controller.abort()
+  }, [epoch, expectedIntegrity, id, locale, onUnsupported, reader])
+  if (result === undefined) return loading
+  if (!result.found) return fallback
+  return <StaticPluginMarkdown source={result.markdown} locale={result.locale} />
+}
+
 /**
  * The tabs of one plugin's detail: what it is, its settings, what it may do, its versions and its
  * own documentation. Actions sit on the tab they belong to instead of one menu at the bottom.
@@ -76,8 +122,29 @@ export function PluginDetailBody({
   const locale = view.locale.getSnapshot()
   const purpose = resolvePluginMetadata(item.metadata, locale)
   const installed = 'desired' in item ? item : undefined
+  const context = view.state.context
+  const [unsupportedDocsEpoch, setUnsupportedDocsEpoch] = useState<string>()
+  const docsEpoch = context?.docsConnectionEpoch
+  const offerDocs =
+    installed &&
+    context &&
+    docsEpoch &&
+    docsEpoch !== unsupportedDocsEpoch &&
+    view.state.connection === 'connected' &&
+    context.permissions.includes('packages.read') &&
+    hasFeature(context, ADMIN_FEATURES.docs)
+  const api = view.api
+  const docsLoading = <p role="status">{t('detail.docsLoading')}</p>
+  const docsLink = purpose?.docsUrl && (
+    <a href={purpose.docsUrl} target="_blank" rel="noopener noreferrer">
+      {t('detail.openDocs')}
+    </a>
+  )
   const update = installed ? view.availableBundledUpdate(installed) : undefined
   const runtime = view.runtimeState(item.id)
+  const nativeUiBlocked = [...view.state.runtime.values()].some(
+    (state) => state.packageId === item.id && state.reason === 'native-ui-not-admitted',
+  )
   const failureReason =
     runtime?.error?.message ??
     (installed && installed.actual !== 'running' ? installed.actualReason : undefined)
@@ -212,13 +279,30 @@ export function PluginDetailBody({
         </section>
       }
       docs={
-        purpose?.description || purpose?.docsUrl ? (
+        offerDocs || purpose?.description || docsLink ? (
           <section data-testid="plugin-docs-detail" className="agnes-settings-stack">
-            {purpose.description && <p>{purpose.description}</p>}
-            {purpose.docsUrl && (
-              <a href={purpose.docsUrl} target="_blank" rel="noopener noreferrer">
-                {t('detail.openDocs')}
-              </a>
+            {purpose?.description && <p>{purpose.description}</p>}
+            {offerDocs && api && api.docsConnectionEpochFor(context) === docsEpoch ? (
+              <PluginDocsRead
+                key={JSON.stringify([
+                  context.profile,
+                  context.authScope,
+                  docsEpoch,
+                  installed.id,
+                  installed.integrity,
+                  locale,
+                ])}
+                api={api}
+                id={installed.id}
+                expectedIntegrity={installed.integrity}
+                epoch={docsEpoch}
+                locale={locale}
+                onUnsupported={setUnsupportedDocsEpoch}
+                loading={docsLoading}
+                fallback={docsLink || <SettingsState>{t('detail.docsEmpty')}</SettingsState>}
+              />
+            ) : (
+              docsLink || (offerDocs ? docsLoading : undefined)
             )}
           </section>
         ) : undefined
@@ -242,6 +326,11 @@ export function PluginDetailBody({
               {uiRetry.label}
             </Button>
           )}
+        </SettingsState>
+      )}
+      {nativeUiBlocked && (
+        <SettingsState data-testid="plugin-native-ui-not-admitted">
+          {t('status.nativeUiNotAdmitted')}
         </SettingsState>
       )}
       <PluginPurposeSections
@@ -299,7 +388,12 @@ export function PluginDetailBody({
                 t('status.currentGeneration'),
                 view.state.generations?.currentGenerationId ?? t('fact.unavailable'),
               ],
-              [t('status.browser'), runtime?.phase ?? t('fact.unavailable')],
+              [
+                t('status.browser'),
+                runtime?.reason === 'native-ui-not-admitted'
+                  ? t('status.nativeUiBlocked')
+                  : (runtime?.phase ?? t('fact.unavailable')),
+              ],
               [t('status.generation'), generation?.state ?? t('fact.unavailable')],
               [t('status.bound'), installed.boundSessions ?? t('fact.unavailable')],
               [t('status.draining'), installed.drainingSessions ?? t('fact.unavailable')],

@@ -61,6 +61,8 @@ function browserControlPlaneMethod(method: string): boolean {
     method.startsWith('_agnes/v1/autoReview.') ||
     method.startsWith('_agnes/v1/config.modelSlots.') ||
     method.startsWith('_agnes/v1/extension.') ||
+    method === '_agnes/v1/clientModules.read' ||
+    method === '_agnes/v1/clientModules.frontendPublication' ||
     method === '_agnes/v1/clientModules.callService' ||
     method === '_agnes/v1/clientModules.callEffect' ||
     isResourceControlMethod(method)

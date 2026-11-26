@@ -316,6 +316,12 @@ it.each(['integrity', 'declaration', 'dependency'] as const)(
         clientId: 'ui',
         rowId: 'web:gallery',
         revision,
+        documentAdmission: {
+          kind: 'approved-presentation',
+          bindingDigest: 'd'.repeat(64),
+          presentationRevision: application.revision,
+        },
+        contentDigest: `sha256-${'c'.repeat(64)}`,
         entryUrl: '/upgraded.js',
         styleUrls: [],
         slots: [],

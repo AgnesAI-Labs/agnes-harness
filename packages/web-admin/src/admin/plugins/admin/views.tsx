@@ -388,9 +388,13 @@ export function renderPluginView(this: PluginAdminViewContext): void {
 }
 
 export function renderDetailPluginView(this: PluginAdminViewContext): void {
-  // Source entry takes over the modal stack until it is submitted or dismissed. A retained
-  // detail selection must not reopen its dialog and close the form on every catalog refresh.
-  if (this.sourceDialog.open || this.confirmDialog.open) return
+  // Reconcile an open detail under confirmation without raising its host. Source entry (and
+  // same-level confirmations) can close the host; its retained selection must not keep reads alive.
+  const covered = this.sourceDialog.open || this.confirmDialog.open
+  if (covered && !this.detail.open) {
+    renderRegion(this.detail, <UiLocaleProvider source={this.locale} />)
+    return
+  }
   const item =
     this.tab === 'installed'
       ? this.state.installed.find((candidate) => candidate.id === this.state.selectedId)
@@ -402,7 +406,7 @@ export function renderDetailPluginView(this: PluginAdminViewContext): void {
       return
     }
     // Pass no focus target: refresh renders every 1.2 seconds and stealing focus would interrupt dialog input.
-    setDialog(this.detail, true)
+    if (!covered) setDialog(this.detail, true)
     renderRegion(
       this.detail,
       <UiLocaleProvider source={this.locale}>
@@ -437,7 +441,7 @@ export function renderDetailPluginView(this: PluginAdminViewContext): void {
     return
   }
   // Pass no focus target: refresh renders every 1.2 seconds and stealing focus would interrupt dialog interaction.
-  setDialog(this.detail, true)
+  if (!covered) setDialog(this.detail, true)
   const purpose = resolvePluginMetadata(item.metadata, this.locale.getSnapshot())
   const name = purpose?.displayName ?? item.id
   const actions = this.detailActions(item)
