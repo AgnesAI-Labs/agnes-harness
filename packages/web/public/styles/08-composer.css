@@ -443,6 +443,21 @@
     white-space: nowrap;
     text-align: start;
   }
+  /* Touch devices have no hover tooltip, and keyboard focus reveals the full truncated title. */
+  .composer-child-name:focus-visible > span,
+  .composer-child-name:focus-visible .composer-child-title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+  }
+  @media (hover: none), (pointer: coarse) {
+    .composer-child-name > span,
+    .composer-child-title {
+      white-space: normal;
+      overflow-wrap: anywhere;
+      text-overflow: clip;
+    }
+  }
   .composer-child-name:is(:hover, :focus-visible) {
     background: none;
     color: var(--agnes-brand-primary);
@@ -807,6 +822,7 @@
   }
   .composer-footer {
     padding: var(--s4) var(--s10) var(--s10);
+    container-type: inline-size;
   }
   /* The ghost is out of flow; its slot must not take space or a flex gap beside the textarea. */
   .composer-hint-slot {
@@ -1001,7 +1017,6 @@
     align-items: center;
     gap: var(--s8);
     min-width: 0;
-    container-type: inline-size;
   }
   /* Keep the permission chip readable instead of clipping to half a glyph in split-pane widths. */
   .composer-controls .composer-permission {

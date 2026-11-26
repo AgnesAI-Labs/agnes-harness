@@ -804,7 +804,10 @@ it.each([
   expect(header?.textContent).toBe(
     working
       ? '1 个运行中'
-      : status === 'waiting_approval' || status === 'paused' || status === 'disconnected'
+      : status === 'waiting_approval' ||
+          status === 'paused' ||
+          status === 'disconnected' ||
+          status === 'interrupted'
         ? '1 个待处理'
         : status === 'failed'
           ? '1 个失败'
@@ -934,7 +937,9 @@ it.each([
   const button = host.querySelector<HTMLButtonElement>(`[data-testid="child-${action}"]`)
   expect(button).not.toBeNull()
   await act(async () => button?.click())
-  expect(onChildControl).toHaveBeenCalledWith('controlled-child', action, undefined)
+  expect(onChildControl).toHaveBeenCalledWith('controlled-child', action, undefined, {
+    commandId: expect.any(String),
+  })
 })
 
 it('keeps idle ancestors with waiting_approval grandchildren out of history, preserves literal chars, formats unknown metrics and separates write from refresh', async () => {
@@ -1028,4 +1033,137 @@ it('keeps idle ancestors with waiting_approval grandchildren out of history, pre
   expect(retryRefresh).toHaveBeenCalledTimes(1)
   expect(onChildControl).toHaveBeenCalledTimes(1)
   expect(parentRow.querySelector('[data-testid="child-refresh-warning"]')).toBeNull()
+})
+
+it('pins continuable interrupted grandchildren in active tree, disambiguates duplicate names by short ID and reuses commandId on retry', async () => {
+  const onChildControl = vi
+    .fn()
+    .mockRejectedValueOnce(new Error('network ack lost'))
+    .mockRejectedValueOnce(new Error('still failing'))
+    .mockResolvedValueOnce(undefined)
+    .mockResolvedValueOnce(undefined)
+  const zhTranslate = (key: string, vars?: Record<string, string | number>) =>
+    (webUnitsLocaleCatalog['zh-CN'][key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) =>
+      String(vars?.[name] ?? name),
+    )
+  const { host } = mount(
+    {
+      onChildControl,
+      dependencies: { ...dependencies, translate: zhTranslate },
+    },
+    {
+      ...idle,
+      children: [
+        {
+          id: 'root/parent-x',
+          parentId: 'root',
+          providerId: 'in-process',
+          label: '同名调研任务',
+          status: 'idle',
+          controls: { stop: false, continue: true },
+          totalTokens: 100,
+          durationMs: 1000,
+        },
+        {
+          id: 'root/parent-x/736YNQ',
+          parentId: 'root/parent-x',
+          providerId: 'in-process',
+          label: '同名调研任务',
+          status: 'interrupted',
+          controls: { stop: false, continue: true },
+          totalTokens: 20,
+          durationMs: 500,
+        },
+        {
+          id: 'root/998ABC',
+          parentId: 'root',
+          providerId: 'in-process',
+          label: '同名调研任务',
+          status: 'paused',
+          controls: { stop: false, continue: true, resume: true },
+          totalTokens: 30,
+          durationMs: 600,
+        },
+        {
+          id: 'root/dead-stop',
+          parentId: 'root',
+          providerId: 'in-process',
+          label: '不可继续中断任务',
+          status: 'interrupted',
+          controls: { stop: false, continue: false },
+          totalTokens: 10,
+          durationMs: 400,
+        },
+      ],
+    },
+  )
+
+  // Continuable interrupted grandchild keeps its idle ancestor in the active list; non-continuable interrupted folds into history.
+  const topList = host.querySelector('.composer-children-list')!
+  expect(topList.querySelector('[data-child-id="root/parent-x"]')).not.toBeNull()
+  expect(topList.querySelector('[data-child-id="root/parent-x/736YNQ"]')).not.toBeNull()
+  expect(topList.querySelector('[data-child-id="root/998ABC"]')).not.toBeNull()
+  const history = host.querySelector('[data-testid="child-control-history"]')!
+  expect(history.querySelector('[data-child-id="root/dead-stop"]')).not.toBeNull()
+  expect(history.querySelector('[data-child-id="root/parent-x/736YNQ"]')).toBeNull()
+  expect(host.querySelector('[data-testid="child-control-tree"] .agh-disclosure-meta')?.textContent).toBe(
+    '2 个待处理 · 2 个已结束',
+  )
+
+  // Identically named tasks carry distinct short IDs in every button's accessible label while keeping testids intact.
+  const firstNamed = topList.querySelector<HTMLElement>('[data-child-id="root/parent-x/736YNQ"]')!
+  const secondNamed = topList.querySelector<HTMLElement>('[data-child-id="root/998ABC"]')!
+  expect(firstNamed.querySelector('[data-testid="child-open"]')?.getAttribute('aria-label')).toContain(
+    '736YNQ · 同名调研任务',
+  )
+  expect(secondNamed.querySelector('[data-testid="child-open"]')?.getAttribute('aria-label')).toContain(
+    '998ABC · 同名调研任务',
+  )
+  expect(firstNamed.querySelector('[data-testid="child-steer-toggle"]')?.getAttribute('aria-label')).toBe(
+    '继续：736YNQ · 同名调研任务',
+  )
+  expect(secondNamed.querySelector('[data-testid="child-resume"]')?.getAttribute('aria-label')).toBe(
+    '恢复：998ABC · 同名调研任务',
+  )
+
+  // Retrying the same draft after a lost write receipt reuses the exact commandId; editing the draft rotates it.
+  act(() => firstNamed.querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')?.click())
+  const input = firstNamed.querySelector<HTMLInputElement>('[data-testid="child-continue-message"]')!
+  expect(input.getAttribute('aria-label')).toContain('736YNQ · 同名调研任务')
+  const setInputValue = (value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  act(() => setInputValue('继续处理'))
+  const sendBtn = firstNamed.querySelector<HTMLButtonElement>('[data-testid="child-continue"]')!
+  expect(sendBtn.getAttribute('aria-label')).toBe('继续：736YNQ · 同名调研任务')
+  await act(async () => sendBtn.click())
+  // Write failed: draft stays open so user can retry with the same commandId.
+  expect(firstNamed.querySelector('[data-testid="child-continue-message"]')).not.toBeNull()
+  await act(async () => sendBtn.click())
+  const firstCmdId = (onChildControl.mock.calls[0]?.[3] as { commandId?: string } | undefined)?.commandId
+  const retryCmdId = (onChildControl.mock.calls[1]?.[3] as { commandId?: string } | undefined)?.commandId
+  expect(firstCmdId).toBeTruthy()
+  expect(retryCmdId).toBe(firstCmdId)
+  // Editing the draft rotates to a new commandId, and once confirmed the draft clears.
+  act(() => setInputValue('继续处理（修改后）'))
+  await act(async () => sendBtn.click())
+  const editedCmdId = (onChildControl.mock.calls[2]?.[3] as { commandId?: string } | undefined)?.commandId
+  expect(editedCmdId).toBeTruthy()
+  expect(editedCmdId).not.toBe(firstCmdId)
+  expect(firstNamed.querySelector('[data-testid="child-continue-message"]')).toBeNull()
+  act(() => firstNamed.querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')?.click())
+  const nextInput = firstNamed.querySelector<HTMLInputElement>('[data-testid="child-continue-message"]')!
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(nextInput, '继续处理（修改后）')
+    nextInput.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await act(async () =>
+    firstNamed.querySelector<HTMLButtonElement>('[data-testid="child-continue"]')?.click(),
+  )
+  const nextCmdId = (onChildControl.mock.calls[3]?.[3] as { commandId?: string } | undefined)?.commandId
+  expect(nextCmdId).toBeTruthy()
+  expect(nextCmdId).not.toBe(editedCmdId)
 })

@@ -9,8 +9,13 @@ import {
   StatusDot,
   type StatusDotTone,
 } from '@agnes/web-ui'
-import { type ChangeEvent, type ReactNode, useState } from 'react'
-import type { ComposerChildAction, ComposerChildControlOutcome, ComposerDependencies } from './contracts.js'
+import { type ChangeEvent, type ReactNode, useRef, useState } from 'react'
+import type {
+  ComposerChildAction,
+  ComposerChildControlOptions,
+  ComposerChildControlOutcome,
+  ComposerDependencies,
+} from './contracts.js'
 
 type ChildStatus = SessionControlledChild['status']
 /** The status mark a child takes. Words in the row stay the signal; colour only backs them. */
@@ -28,8 +33,27 @@ const CHILD_MARK: Record<ChildStatus, { dot: StatusDotTone; tag?: 'ok' | 'warn' 
 }
 const WORKING = new Set<ChildStatus>(['starting', 'running'])
 const ATTENTION = new Set<ChildStatus>(['waiting_approval', 'paused', 'disconnected'])
-const LIVE = new Set<ChildStatus>(['starting', 'running', 'waiting_approval', 'paused', 'disconnected'])
 const DANGER_ACTIONS = new Set<ComposerChildAction>(['stop', 'close'])
+
+function needsAttention(child: SessionControlledChild): boolean {
+  return ATTENTION.has(child.status) || (child.status === 'interrupted' && child.controls.continue === true)
+}
+
+function isActiveChild(child: SessionControlledChild): boolean {
+  return WORKING.has(child.status) || needsAttention(child)
+}
+
+function isChildActionAvailable(child: SessionControlledChild, action: ComposerChildAction): boolean {
+  if (action === 'recap') return child.providerId === 'in-process'
+  if (action === 'resume') return child.status === 'paused' && Boolean(child.controls.resume)
+  return Boolean(child.controls[action])
+}
+
+function nextIntentCommandId(): string {
+  return typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID()
+    : `child-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
 
 /**
  * Strip only paired Markdown formatting markers and leading ATX heading hashes while preserving
@@ -48,15 +72,23 @@ export function stripMarkdownFormatting(text: string): string {
     .trim()
 }
 
+function childLabelText(child: SessionControlledChild): string {
+  return child.label ? stripMarkdownFormatting(child.label) : ''
+}
+
+function childShortId(child: SessionControlledChild): string {
+  return child.id.slice(-6)
+}
+
 /**
  * A child prefers its human-readable task label when present (stripped of paired markdown markers);
  * otherwise falls back to its provider/subagent label with the trailing id segment.
  */
 function childName(child: SessionControlledChild, t: ComposerDependencies['translate']): string {
-  const label = child.label ? stripMarkdownFormatting(child.label) : ''
+  const label = childLabelText(child)
   if (label) return label
   const name = child.providerId === 'in-process' ? t('composer.child.name') : child.providerId
-  return `${name} · ${child.id.slice(-6)}`
+  return `${name} · ${childShortId(child)}`
 }
 
 function formatChildMetrics(child: SessionControlledChild, t: ComposerDependencies['translate']): string {
@@ -78,9 +110,9 @@ function childTreeMeta(
 ): string | undefined {
   if (!nodes.length) return undefined
   const working = nodes.filter((child) => WORKING.has(child.status)).length
-  const attention = nodes.filter((child) => ATTENTION.has(child.status)).length
+  const attention = nodes.filter((child) => needsAttention(child)).length
   const failed = nodes.filter((child) => child.status === 'failed').length
-  const settled = nodes.filter((child) => !LIVE.has(child.status)).length
+  const settled = nodes.filter((child) => !isActiveChild(child)).length
   if (working > 0 && attention === 0)
     return settled > 0
       ? t('composer.child.summaryMixed', { working, done: settled })
@@ -111,7 +143,7 @@ function openChildJob(target: EventTarget, childId: string): void {
 /**
  * The children a session started, above the composer: one row per workflow or subagent session,
  * nested under its parent. Any subtree containing a live or attention-needed descendant stays
- * pinned in the active group so pending approvals never hide in folded history.
+ * pinned in the active group so pending approvals and continuable stops never hide in folded history.
  */
 export function ChildControlTree({
   nodes,
@@ -125,6 +157,7 @@ export function ChildControlTree({
     id: string,
     action: ComposerChildAction,
     text?: string,
+    options?: ComposerChildControlOptions,
   ) => Promise<void | ComposerChildControlOutcome>
   t: ComposerDependencies['translate']
 }) {
@@ -139,7 +172,7 @@ export function ChildControlTree({
     if (seen.has(id)) return false
     const node = byId.get(id)
     if (!node) return false
-    if (LIVE.has(node.status)) return true
+    if (isActiveChild(node)) return true
     const next = new Set([...seen, id])
     return (childrenByParent.get(id) ?? []).some((child) => subtreeLive(child.id, next))
   }
@@ -211,6 +244,7 @@ export function ChildControlRow({
     id: string,
     action: ComposerChildAction,
     text?: string,
+    options?: ComposerChildControlOptions,
   ) => Promise<void | ComposerChildControlOutcome>
   t: ComposerDependencies['translate']
 }) {
@@ -223,11 +257,25 @@ export function ChildControlRow({
     message: string
     retry?: () => Promise<void>
   } | null>(null)
+  const intentCommandIds = useRef(
+    new Map<ComposerChildAction, { childId: string; text: string | undefined; commandId: string }>(),
+  )
+  for (const [savedAction, saved] of intentCommandIds.current) {
+    if (
+      saved.childId !== child.id ||
+      !isChildActionAvailable(child, savedAction) ||
+      (savedAction === 'continue' && saved.text !== text)
+    )
+      intentCommandIds.current.delete(savedAction)
+  }
   const pending = pendingAction !== null
   const mark = CHILD_MARK[child.status]
   const working = WORKING.has(child.status)
   const showReply = child.controls.continue && replyOpen
+  const labelText = childLabelText(child)
+  const shortId = childShortId(child)
   const name = childName(child, t)
+  const accessibleName = labelText ? `${shortId} · ${name}` : name
   const steerLabel = t(working ? 'composer.child.steer' : 'composer.child.continue')
   const sendLabel = t(working ? 'composer.child.send' : 'composer.child.continue')
   const primaryAction: ComposerChildAction | 'steer' | undefined =
@@ -238,11 +286,20 @@ export function ChildControlRow({
         : undefined
   const submit = (action: ComposerChildAction) => {
     if (pending) return
+    const payloadText = action === 'continue' ? text : undefined
+    const saved = intentCommandIds.current.get(action)
+    const commandId =
+      saved && saved.childId === child.id && saved.text === payloadText
+        ? saved.commandId
+        : nextIntentCommandId()
+    intentCommandIds.current.set(action, { childId: child.id, text: payloadText, commandId })
     setPendingAction(action)
     setError('')
     setRefreshWarning(null)
-    void control(child.id, action, action === 'continue' ? text : undefined)
+    void control(child.id, action, payloadText, { commandId })
       .then((outcome) => {
+        if (intentCommandIds.current.get(action)?.commandId === commandId)
+          intentCommandIds.current.delete(action)
         if (action === 'continue') {
           setText('')
           setReplyOpen(false)
@@ -287,14 +344,15 @@ export function ChildControlRow({
           appearance="ghost"
           className="composer-child-name"
           data-testid="child-open"
-          title={child.label ? `${child.label} (${child.id})` : child.id}
+          aria-label={t('composer.child.openAria', { name: accessibleName })}
+          title={labelText ? `${labelText} (${child.id})` : child.id}
           onClick={(event) => openChildJob(event.currentTarget, child.id)}
         >
           <span className="composer-child-title">{name}</span>
         </Button>
-        {child.label ? (
+        {labelText ? (
           <span className="composer-child-id" title={child.id}>
-            {child.id.slice(-6)}
+            {shortId}
           </span>
         ) : null}
         <span role="status" className="composer-child-state" data-tone={mark.tag}>
@@ -303,7 +361,7 @@ export function ChildControlRow({
         <p className="composer-child-metrics" data-testid="child-control-metrics">
           {formatChildMetrics(child, t)}
         </p>
-        <fieldset className="composer-child-actions" aria-label={name}>
+        <fieldset className="composer-child-actions" aria-label={accessibleName}>
           {child.controls.continue ? (
             <Button
               htmlType="button"
@@ -313,7 +371,7 @@ export function ChildControlRow({
               data-testid="child-steer-toggle"
               data-emphasis={primaryAction === 'steer' ? 'primary' : undefined}
               aria-expanded={replyOpen}
-              aria-label={t('composer.child.actionAria', { action: steerLabel, name })}
+              aria-label={t('composer.child.actionAria', { action: steerLabel, name: accessibleName })}
               title={t(working ? 'composer.child.steerTitle' : 'composer.child.continueTitle')}
               disabled={disabled || pending}
               onClick={() => setReplyOpen((open) => !open)}
@@ -322,13 +380,7 @@ export function ChildControlRow({
             </Button>
           ) : null}
           {(['stop', 'pause', 'resume', 'close', 'retain', 'recap'] as const).map((action) => {
-            const available =
-              action === 'recap'
-                ? child.providerId === 'in-process'
-                : action === 'resume'
-                  ? child.status === 'paused' && child.controls.resume
-                  : child.controls[action]
-            if (!available) return null
+            if (!isChildActionAvailable(child, action)) return null
             const label = t(`composer.child.${action}`)
             const busyThis = pendingAction === action
             return (
@@ -342,7 +394,7 @@ export function ChildControlRow({
                 data-emphasis={primaryAction === action ? 'primary' : undefined}
                 data-danger={DANGER_ACTIONS.has(action) ? 'true' : undefined}
                 aria-busy={busyThis || undefined}
-                aria-label={t('composer.child.actionAria', { action: label, name })}
+                aria-label={t('composer.child.actionAria', { action: label, name: accessibleName })}
                 title={t(`composer.child.${action}Title`)}
                 disabled={disabled || pending}
                 onClick={() => submit(action)}
@@ -357,11 +409,19 @@ export function ChildControlRow({
         <div className="composer-child-reply">
           <SettingsInput
             data-testid="child-continue-message"
-            aria-label={child.label ? t('composer.child.messageAria', { name }) : t('composer.child.message')}
+            aria-label={
+              labelText
+                ? t('composer.child.messageAria', { name: accessibleName })
+                : t('composer.child.message')
+            }
             placeholder={t('composer.child.message')}
             value={text}
             disabled={disabled || pending}
-            onChange={(event: ChangeEvent<HTMLInputElement>) => setText(event.currentTarget.value)}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => {
+              const next = event.currentTarget.value
+              if (next !== text) intentCommandIds.current.delete('continue')
+              setText(next)
+            }}
             onKeyDown={(event) => {
               if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
               event.preventDefault()
@@ -374,7 +434,7 @@ export function ChildControlRow({
             appearance="primary"
             data-testid="child-continue"
             aria-busy={pendingAction === 'continue' || undefined}
-            aria-label={t('composer.child.actionAria', { action: sendLabel, name })}
+            aria-label={t('composer.child.actionAria', { action: sendLabel, name: accessibleName })}
             disabled={disabled || pending || !text.trim()}
             title={text.trim() ? sendLabel : t('composer.child.messageRequired')}
             onClick={() => submit('continue')}

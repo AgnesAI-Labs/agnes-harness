@@ -237,3 +237,33 @@ it('checks needs-confirmation with the exact original identity and payload', asy
   expect(submits).toHaveLength(2)
   expect(submits[1]?.params).toEqual(submits[0]?.params)
 })
+it('forwards explicit commandId on control and followUp retries after a lost receipt', async () => {
+  const committed = new Map<string, number>()
+  let seq = 10
+  let dropFirstAck = true
+  const s = await setup((params) => {
+    const command = params as { commandId: string }
+    const existing = committed.get(command.commandId)
+    const assigned = existing ?? ++seq
+    committed.set(command.commandId, assigned)
+    if (dropFirstAck) {
+      dropFirstAck = false
+      throw Object.assign(new Error('transport dropped'), { code: -32001, data: { code: 'OVERLOADED' } })
+    }
+    return { seq: assigned, replayed: existing !== undefined }
+  })
+  await expect(
+    s.session.control('child-continue', { childId: 'c1', text: 'proceed', commandId: 'child-cmd-1' }),
+  ).rejects.toMatchObject({ submission: { commandId: 'child-cmd-1', state: 'pending' } })
+  expect(
+    await s.session.control('child-continue', { childId: 'c1', text: 'proceed', commandId: 'child-cmd-1' }),
+  ).toBe(11)
+  expect(await s.session.followUp('recap child', { commandId: 'recap-cmd-1' })).toBe(12)
+  const submits = s.f.calls.filter((call) => call.method === '_agnes/v1/submit')
+  expect(submits.map((call) => (call.params as { commandId: string }).commandId)).toEqual([
+    'child-cmd-1',
+    'child-cmd-1',
+    'recap-cmd-1',
+  ])
+  expect(committed.size).toBe(2)
+})

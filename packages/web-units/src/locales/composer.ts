@@ -48,6 +48,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.child.steerTitle': 'Send a follow-up message to this subagent',
     'composer.child.continueTitle': 'Continue this subagent with a new message',
     'composer.child.actionAria': '{action}: {name}',
+    'composer.child.openAria': 'Open {name} in terminal panel',
     'composer.child.messageAria': 'Message to {name}',
     'composer.child.submitting': 'Submitting…',
     'composer.child.recapPrompt':
@@ -249,6 +250,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.child.steerTitle': '向此子代理发送消息',
     'composer.child.continueTitle': '发送消息继续此子代理',
     'composer.child.actionAria': '{action}：{name}',
+    'composer.child.openAria': '在右侧工作台查看输出：{name}',
     'composer.child.messageAria': '发给「{name}」的消息',
     'composer.child.submitting': '提交中…',
     'composer.child.recapPrompt':

@@ -17,6 +17,10 @@ import type { ComposerSkill, ComposerSkills } from '../skill-picker.js'
 
 export type ComposerChildAction = 'stop' | 'continue' | 'pause' | 'resume' | 'close' | 'retain' | 'recap'
 
+export type ComposerChildControlOptions = {
+  readonly commandId?: string
+}
+
 /** Returned when a child control write succeeded but the follow-up state read failed. */
 export type ComposerChildControlOutcome = {
   readonly refreshFailed?: string
@@ -240,6 +244,7 @@ export interface ComposerRegionOptions {
     id: string,
     action: ComposerChildAction,
     text?: string,
+    options?: ComposerChildControlOptions,
   ): Promise<void | ComposerChildControlOutcome>
   onPauseResume?(): void
   onEditQueued?(itemId: string, text: string): Promise<void>
