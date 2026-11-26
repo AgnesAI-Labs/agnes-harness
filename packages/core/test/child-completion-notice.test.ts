@@ -1127,6 +1127,79 @@ describe('child completion notice', () => {
       expect(rechecked.executionState).toBe('running')
       expect(rechecked.completionSeq).toBeUndefined()
       expect(rechecked.completionId).toBeUndefined()
+
+      // Interleave 3 (Round 4 P1-E): 3 consecutive cross-revision turns during cold snapshotFromLedger
+      // must exhaust into a retryable ledgerReadFailed error (never delivering stale result 3),
+      // and the next stable collect must return result 4 with its exact completionSeq and ACK identity.
+      const runningNow = (await store.lookupByKey(child.key))!
+      await withChildLog(parent2, runningNow, undefined, (log) =>
+        log.append([
+          parent2.ev('assistant/message', {
+            content: [{ type: 'text', text: 'turn 3 body' }],
+            stopReason: 'end_turn',
+          }),
+          parent2.ev('turn/end', { reason: 'completed', lastAssistantSeq: null }),
+        ]),
+      )
+      expect(await store.casState(child.key, runningNow.stateRevision, 'idle')).toBe(true)
+
+      let advances = 0
+      let turn4EndSeq = 0
+      vi.restoreAllMocks()
+      const scanBase = storage.scan.bind(storage)
+      vi.spyOn(storage, 'scan').mockImplementation(async (sessionKey, query) => {
+        const rows = await scanBase(sessionKey, query)
+        if (sessionKey === child.key && query.type === 'assistant/message' && advances < 3) {
+          advances += 1
+          const turnNum = advances + 1
+          const currentRow = (await store.lookupByKey(child.key))!
+          expect(await store.casState(child.key, currentRow.stateRevision, 'running', { maxFanOut: 4 })).toBe(
+            true,
+          )
+          await withChildLog(parent2, currentRow, undefined, async (log) => {
+            await log.append([
+              parent2.ev('turn/start', { turn: turnNum, trigger: 'prompt' }),
+              parent2.ev('assistant/message', {
+                content: [{ type: 'text', text: `result ${turnNum}` }],
+                stopReason: 'end_turn',
+              }),
+            ])
+            const ended = await log.append([
+              parent2.ev('turn/end', { reason: 'completed', lastAssistantSeq: null }),
+            ])
+            if (advances === 3) turn4EndSeq = ended.firstSeq
+          })
+          const nextRow = (await store.lookupByKey(child.key))!
+          expect(await store.casState(child.key, nextRow.stateRevision, 'idle')).toBe(true)
+        }
+        return rows
+      })
+      const acksBefore = (await parent2.scan({ type: 'x/core/child-result-collected', limit: 100 })).length
+      await expect(collectContext(parent2).collect(child.key, { wait: true })).rejects.toMatchObject({
+        code: 'E_STORAGE_FAULT',
+        detail: { childKey: child.key, retryable: true },
+      })
+      expect(advances).toBe(3)
+      expect((await parent2.scan({ type: 'x/core/child-result-collected', limit: 100 })).length).toBe(
+        acksBefore,
+      )
+
+      // Once stable, the next collect returns result 4 and its exact completionSeq + ACK identity.
+      const settledTurn4 = await collectContext(parent2).collect(child.key, { wait: true })
+      expect(settledTurn4).toMatchObject({
+        childKey: child.key,
+        status: 'idle',
+        text: 'result 4',
+        completionSeq: turn4EndSeq,
+        completionId: childCompletionId(child.key, 'completed', turn4EndSeq),
+      })
+      const acksAfter = await parent2.scan({ type: 'x/core/child-result-collected', limit: 100 })
+      expect(acksAfter).toHaveLength(acksBefore + 1)
+      expect(acksAfter.at(-1)?.data).toMatchObject({
+        childKey: child.key,
+        commandId: settledTurn4.completionId,
+        resultSeq: turn4EndSeq,
+      })
     } finally {
       vi.restoreAllMocks()
       await second.close()

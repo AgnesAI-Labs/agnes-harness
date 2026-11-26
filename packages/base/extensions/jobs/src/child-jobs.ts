@@ -212,25 +212,24 @@ export function upsertChildProjection<J extends ChildJobTarget>(
 /**
  * Stop a direct child job and reconcile with its authoritative post-stop state.
  * Only transitions to a terminal job outcome (`finish(...)` and completion notice) once the source
- * confirms a durable terminal state (`completed`, `failed`, `cancelled`) or synchronously reclaims it.
+ * confirms a durable terminal state (`completed`, `failed`, `cancelled`).
+ * Returns `true` when the source no longer reports an entry (reclaimed without a terminal outcome).
  */
-export async function stopChildJob(job: ChildJobTarget): Promise<void> {
+export async function stopChildJob(job: ChildJobTarget): Promise<boolean> {
   await job.stop()
   job.cleanupPending = false
-  if (!job.refreshChild) return
+  if (!job.refreshChild) return false
   let latest: ChildJobListing | undefined
   try {
     latest = await job.refreshChild()
   } catch {
-    return
+    return false
   }
-  if (!latest) {
-    syncChildOutcome(job, 'cancelled')
-    return
-  }
+  if (!latest) return true
   if (latest.label !== undefined) job.view.childLabel = latest.label
   if (latest.text !== undefined) appendChildText(job, latest.text)
   syncChildOutcome(job, effectiveChildStatus(latest))
+  return false
 }
 
 /**

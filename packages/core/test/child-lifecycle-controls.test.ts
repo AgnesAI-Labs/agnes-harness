@@ -844,6 +844,149 @@ it('records waiting-safepoint control fact instead of premature applied for defe
     } finally {
       await k3.close()
     }
+
+    // Case F (Round 4 P1-B): failed checkpoint with delayed uncertain fact + independent pause + recover
+    // must NEVER attribute applied to the failed admission and must record exactly one terminal fact.
+    const fStorage = new MemoryStorage()
+    const k5 = Kernel.create({
+      loops: defaultLoops(),
+      storage: fStorage,
+      seams: fakeSeams(),
+      provider: fakeProvider([textTurn('ok'), textTurn('ok2')]),
+      contract: { contract_id: null, parser_version: '1' },
+      preset: { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 1, maxFanOut: 4 },
+      fsOps: testFsOps(),
+      netFetch: async () => new Response(''),
+      logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+      timers: noTimers,
+      clock: () => 1_757_203_200_000,
+    })
+    try {
+      const p5 = await k5.session('pause-p1b-race', {
+        actor,
+        resolvedProfileHash: 'h1',
+        cwd: '/w',
+        writerRunId: 'r1',
+      })
+      const c5 = await p5.d.children.create({
+        parent: p5.key,
+        cwd: '/w',
+        input: 'non-interruptible race work',
+        resident: true,
+      })
+      const c5Session = k5.get(c5.key)!
+      const c5Row = (await fStorage.lookupByKey(c5.key))!
+      await fStorage.casState(c5.key, c5Row.stateRevision, 'running')
+      const tool5 = gate()
+      trackChildDispatch(c5Session, 'eff-p1b', 'write_note', tool5.promise)
+      await applyChildControl(p5, c5.key, 'pause', actor, 'adm-pause-p1b')
+      const origC5Append = c5Session.d.log.append.bind(c5Session.d.log)
+      let failOnce = true
+      vi.spyOn(c5Session.d.log, 'append').mockImplementation(async (rows, opts) => {
+        if (failOnce && rows.some((e) => e.type === 'x/core/child-checkpoint')) {
+          failOnce = false
+          throw new Error('first checkpoint failed')
+        }
+        return origC5Append(rows, opts)
+      })
+      const entered = gate()
+      const release = gate()
+      const origP5Append = p5.d.log.append.bind(p5.d.log)
+      vi.spyOn(p5.d.log, 'append').mockImplementation(async (rows, opts) => {
+        if (
+          rows.length === 1 &&
+          rows[0]?.type === 'x/core/control' &&
+          (rows[0].data as { outcome?: string }).outcome === 'uncertain'
+        ) {
+          entered.resolve()
+          await release.promise
+        }
+        return origP5Append(rows, opts)
+      })
+      try {
+        tool5.resolve()
+        await entered.promise
+        expect((await fStorage.lookupByKey(c5.key))?.state).toBe('running')
+        const failedResults = await p5.scan({ type: 'x/core/child-control-result', limit: 100 })
+        expect(
+          failedResults.some(
+            (row) =>
+              (row.data as { admissionId?: string; failed?: boolean }).admissionId === 'adm-pause-p1b' &&
+              (row.data as { failed?: boolean }).failed === true,
+          ),
+        ).toBe(true)
+        // Independent extension-driven pause checkpoints the child to paused.
+        await p5.d.children.pause?.(c5.key)
+        expect((await fStorage.lookupByKey(c5.key))?.state).toBe('paused')
+        // Recovery while delayed uncertain fact is still in flight must not deadlock or write applied.
+        await p5.d.children.recover?.()
+        release.resolve()
+        await vi.waitFor(async () => {
+          const facts = (await p5.controls.state()).facts
+            .filter((f) => (f.details as { admissionId?: string }).admissionId === 'adm-pause-p1b')
+            .map((f) => f.outcome)
+          expect(facts).toEqual(['requested', 'queued', 'uncertain'])
+        })
+        await p5.d.children.recover?.()
+        const finalFacts = (await p5.controls.state()).facts
+          .filter((f) => (f.details as { admissionId?: string }).admissionId === 'adm-pause-p1b')
+          .map((f) => f.outcome)
+        expect(finalFacts).toEqual(['requested', 'queued', 'uncertain'])
+      } finally {
+        release.resolve()
+        vi.restoreAllMocks()
+      }
+
+      // Also verify cold reopen recovery: a queued admission with a persisted failed child-control-result
+      // and a child paused by another pause must reconcile to uncertain (never applied).
+      await p5.d.log.append([
+        p5.controls.fact('child-pause', 'requested', actor, {
+          admissionId: 'adm-pause-p1b-reopen',
+          childId: c5.key,
+        }),
+        p5.controls.fact('child-pause', 'queued', actor, {
+          admissionId: 'adm-pause-p1b-reopen',
+          childId: c5.key,
+          pausePending: true,
+          reason: 'WAITING_SAFEPOINT',
+        }),
+        p5.ev(
+          'x/core/child-control-result',
+          {
+            action: 'pause',
+            admissionId: 'adm-pause-p1b-reopen',
+            childKey: c5.key,
+            previousStatus: 'running',
+            status: 'running',
+            executionState: 'running',
+            failed: true,
+            reason: 'CHECKPOINT_FAILED',
+          },
+          { actor, ignorable: true },
+        ),
+      ])
+      await k5.close()
+
+      const k6 = Kernel.create({ ...k5.o, storage: fStorage })
+      try {
+        const reopened5 = await k6.session('pause-p1b-race', {
+          actor,
+          resolvedProfileHash: 'h1',
+          cwd: '/w',
+          writerRunId: 'r2',
+        })
+        await reopened5.d.children.recover?.()
+        await reopened5.d.children.recover?.()
+        const reopenedFacts = (await reopened5.controls.state()).facts
+          .filter((f) => (f.details as { admissionId?: string }).admissionId === 'adm-pause-p1b-reopen')
+          .map((f) => f.outcome)
+        expect(reopenedFacts).toEqual(['requested', 'queued', 'uncertain'])
+      } finally {
+        await k6.close()
+      }
+    } finally {
+      await k5.close()
+    }
   } finally {
     await k.close()
   }

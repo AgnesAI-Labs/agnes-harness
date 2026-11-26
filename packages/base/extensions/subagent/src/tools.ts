@@ -125,20 +125,29 @@ function isActiveChild(item: { status: string; executionState?: string }): boole
 }
 
 async function reconcileActiveChildren(state: SessionState, ctx: ToolContext): Promise<void> {
-  if (state.children.size === 0 || !ctx.subagent.list) return
+  if (!ctx.subagent.list) return
   const candidates = [...state.children.entries()].filter(([, rec]) => rec.running)
-  if (candidates.length === 0) return
+  const candidateKeys = new Set(candidates.map(([key]) => key))
   const listed = await ctx.subagent.list().catch(() => undefined)
   if (!listed) return
   const byId = new Map(listed.map((child) => [child.id, child]))
   for (const [key, rec] of candidates) {
     if (state.children.get(key) !== rec || !rec.running) continue
     const item = byId.get(key)
-    const isActive = item ? isActiveChild(item) : false
-    if (!isActive) {
+    if (!item || !isActiveChild(item)) {
       rec.running = false
       state.children.delete(key)
     }
+  }
+  for (const item of listed) {
+    if (
+      item.providerId !== IN_PROCESS_CHILD_PROVIDER_ID ||
+      !isActiveChild(item) ||
+      candidateKeys.has(item.id) ||
+      state.children.has(item.id)
+    )
+      continue
+    state.children.set(item.id, { running: true })
   }
 }
 

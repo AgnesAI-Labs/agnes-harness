@@ -656,8 +656,10 @@ export class ShellJobs {
       throw new Error('CAPABILITY_DENIED: read-only child job cannot be stopped from this session')
     if (job.view.status === 'running' || job.cleanupPending || job.childIdle) {
       if (job.view.kind === 'child') {
-        await stopChildJob(job)
-        return copy(job)
+        const reclaimed = await stopChildJob(job)
+        const view = copy(job)
+        if (reclaimed && !job.childTerminal) this.directChildren.get(owner(ctx))?.delete(id)
+        return view
       }
       const { status, code } = job.view
       job.view.code = null

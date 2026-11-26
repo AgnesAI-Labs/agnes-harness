@@ -231,10 +231,8 @@ export async function snapshotFromLedger(
         const { completionId: _id, completionSeq: _seq, ...unsettled } = freshBase
         return {
           ...unsettled,
-          ...(await lifecycleFacts(parent, current)),
-          lastSeq: upperSeq || freshBase.lastSeq,
-          ...(text ? { text } : {}),
-          receipt: await childExecutionReceipt(parent, current),
+          ledgerReadFailed: true as const,
+          readError: 'Child state changed during ledger read; retry collect',
         }
       }
       return {

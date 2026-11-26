@@ -6,6 +6,7 @@ import type { Actor } from '@agnes/protocol'
 import type { SessionControlledChild } from '@agnes/protocol/gen/agnes-v1'
 import { bestEffort } from '../best-effort.js'
 import { type PendingPauseSettlement, readHumanChildState } from '../child/human-control.js'
+import { appendPauseTerminalOnce, beginPauseAdmissionSettlement } from '../child/pause-control.js'
 import { IN_PROCESS_CHILD_PROVIDER_ID } from '../child/provider.js'
 import { childBackend, ownedChildTree } from '../child/sessions.js'
 import type { SessionImpl } from '../step/session.js'
@@ -225,7 +226,7 @@ export async function applyChildControl(
       } else await port.sendMessage(id, text ?? '', new AbortController().signal)
     }
     if (pendingPause) {
-      await s.d.log.append([
+      const queued = await s.d.log.append([
         s.controls.fact(name, 'queued', actor, {
           admissionId,
           childId: id,
@@ -233,12 +234,13 @@ export async function applyChildControl(
           reason: 'WAITING_SAFEPOINT',
         }),
       ])
+      const releaseAdmission = beginPauseAdmissionSettlement(s, admissionId)
       void pendingPause
         .then(
           async (settled) => {
             if (s.closingOrClosed) return
             const outcome = settled.executionState === 'paused' ? 'applied' : 'withdrawn'
-            await s.d.log.append([
+            await appendPauseTerminalOnce(s, admissionId, queued.firstSeq + 1, async () => [
               s.controls.fact(name, outcome, actor, {
                 admissionId,
                 childId: id,
@@ -248,7 +250,7 @@ export async function applyChildControl(
           },
           async (error) => {
             if (s.closingOrClosed) return
-            await s.d.log.append([
+            await appendPauseTerminalOnce(s, admissionId, queued.firstSeq + 1, async () => [
               s.controls.fact(name, controlErrorOutcome(error), actor, {
                 admissionId,
                 childId: id,
@@ -259,6 +261,7 @@ export async function applyChildControl(
           },
         )
         .catch(bestEffort(s.d.logger, 'child-pause-control-fact'))
+        .finally(releaseAdmission)
     } else {
       await s.d.log.append([s.controls.fact(name, 'applied', actor, { admissionId, childId: id })])
     }

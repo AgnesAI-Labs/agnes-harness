@@ -604,22 +604,24 @@ describe('subagent_spawn', () => {
     let listCalls = 0
     c.ctx.subagent.list = async () => {
       listCalls += 1
-      return [
-        {
-          id: 'child-1',
-          providerId: 'in-process',
-          status: aStatus,
-          executionState: aStatus,
-          continuable: true,
-        },
-      ]
+      return next === 0
+        ? []
+        : [
+            {
+              id: 'child-1',
+              providerId: 'in-process',
+              status: aStatus,
+              executionState: aStatus,
+              continuable: true,
+            },
+          ]
     }
 
     expect((await subagentSpawnTool(d).execute({ task: 'A' }, c.ctx)).isError).toBeUndefined()
     // While A is still running, B is refused without touching collect.
     expect((await subagentSpawnTool(d).execute({ task: 'blocked' }, c.ctx)).isError).toBe(true)
     expect(c.calls.collect).toEqual([])
-    expect(listCalls).toBe(1)
+    expect(listCalls).toBe(2)
 
     // Once A transitions to idle with an unconsumed notice, spawning B frees A's slot via list() and keeps A's notice intact.
     aStatus = 'idle'
@@ -629,7 +631,7 @@ describe('subagent_spawn', () => {
     expect(second.details).toMatchObject({ childKey: 'child-2' })
     expect(c.calls.collect).toEqual([])
     expect(pendingNoticeA).toBe(true)
-    expect(listCalls).toBe(2)
+    expect(listCalls).toBe(3)
 
     // Explicit subagent_collect still owns acknowledgement, withdraws the pending notice, and reads A's findings.
     const collected = await subagentCollectTool(d).execute({ childKey: 'child-1' }, c.ctx)
@@ -1283,6 +1285,7 @@ describe('child allowlist and continuable controls', () => {
     const d1 = deps({ maxFanOut: 2, isolation: 'shared' })
     const c1 = context({ spawn: async () => ({ childKey: `c-${++next}` }) })
     c1.ctx.subagent.list = async () => {
+      if (next === 0) return []
       listCalls += 1
       if (listCalls === 1) return staleList
       return [
@@ -1383,6 +1386,134 @@ describe('child allowlist and continuable controls', () => {
       active: 1,
       activeChildKeys: ['child-2'],
     })
+
+    // Round 4 P2-F: reactivated resident is counted by extension maxFanOut even when local state.children is empty
+    // and Core's maxFanOut is higher than the extension limit.
+    const storage = new MemoryStorage()
+    let turns = 0
+    let releaseSecondTurn!: () => void
+    const secondTurnGate = new Promise<void>((resolve) => {
+      releaseSecondTurn = resolve
+    })
+    const silentLog = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
+    const fsOps = fencedFs(
+      {
+        read: async () => new Uint8Array(),
+        write: async () => undefined,
+        list: async () => [],
+        stat: async () => ({ kind: 'file' as const, size: 0, mtimeMs: 0 }),
+      },
+      testFsPolicy('/w'),
+    )
+    const baseProvider = fakeProvider([textTurn('first result'), textTurn('second result')])
+    const k = Kernel.create({
+      loops: defaultLoops(),
+      storage,
+      seams: fakeSeams(),
+      provider: {
+        models: () => [
+          {
+            id: 'm1',
+            name: 'm1',
+            api: 'openai-completions' as const,
+            route: 'default',
+            baseUrl: 'https://example.invalid/v1',
+            reasoning: false,
+            input: ['text' as const],
+            cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 8192,
+            maxTokens: 128,
+            toolCallFormats: ['native' as const],
+            thinkingReplay: 'native' as const,
+            contract_id: null,
+          },
+        ],
+        async *infer(req, options) {
+          if (turns++ > 0) await secondTurnGate
+          yield* baseProvider.infer(req, options)
+        },
+      },
+      contract: { contract_id: null, parser_version: '1' },
+      preset: { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 1, maxFanOut: 4 },
+      fsOps,
+      netFetch: async () => new Response(''),
+      logger: silentLog,
+      timers: noTimers,
+      clock: () => 1_757_203_200_000,
+    })
+    try {
+      const parent = await k.session('fanout-p2f', {
+        actor,
+        resolvedProfileHash: 'h1',
+        cwd: '/w',
+        writerRunId: 'r1',
+      })
+      const realCtx: ToolContext = {
+        ...fakeToolContext({ sessionKey: parent.key }),
+        subagent: buildToolContext(
+          {
+            actor: parent.d.actor,
+            lane: parent.lane,
+            cwd: parent.d.cwd,
+            runtime: parent.d.runtime,
+            preset: parent.preset,
+            children: parent.d.children,
+            netFetch: parent.d.netFetch,
+            sessionKey: parent.key,
+            turn: 1,
+            step: 1,
+            depth: 0,
+            generationDepth: 0,
+            workspaceRoot: '/w',
+            log: silentLog,
+            fsOps,
+            invoke: async () => ({ content: [] }),
+            listTools: () => [],
+            appendPlan: async () => 1,
+            requestCompaction() {},
+            progress() {},
+            artifactJobEvent: async () => undefined,
+            lease: { remainingMs: () => 5000 },
+          },
+          {
+            toolUseId: 'spawn-p2f',
+            name: 'subagent_spawn',
+            signal: new AbortController().signal,
+            timeoutMs: 5000,
+            outputMaxBytes: 32768,
+          },
+        ).subagent,
+      }
+      const runtime = createSubagentRuntime()
+      const spawn = subagentSpawnTool({
+        limits: { isolation: 'shared', maxFanOut: 1, maxDepth: 2 },
+        runtime,
+        worktrees: worktrees().manager,
+      })
+      const first = await spawn.execute({ task: 'first', wait: true }, realCtx)
+      const firstKey = (first.details as { childKey: string }).childKey
+      expect(runtime.sessions.get(parent.key)).toBeUndefined()
+
+      const sent = await subagentSendMessageTool.execute(
+        { childKey: firstKey, text: 'start second turn' },
+        realCtx,
+      )
+      expect(sent.isError).toBeUndefined()
+      await vi.waitFor(async () => expect((await storage.lookupByKey(firstKey))?.state).toBe('running'))
+
+      const blocked = await spawn.execute({ task: 'new child' }, realCtx)
+      expect(blocked.isError).toBe(true)
+      expect(blocked.structured).toEqual({
+        code: 'E_CHILD_LIMIT',
+        limit: 1,
+        active: 1,
+        activeChildKeys: [firstKey],
+      })
+      expect(await storage.listByParent(parent.key)).toHaveLength(1)
+    } finally {
+      releaseSecondTurn()
+      await k.close()
+    }
   })
 
   it('does not output contradictory cancelled wording when cancel remains cancelling (P1-C)', async () => {

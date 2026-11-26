@@ -413,6 +413,86 @@ it('does not finish or publish completion on unconfirmed cancelling stop and pre
         }),
       ]),
     )
+
+    // 3. Round 4 P1-C: transient directory vanish after stop must NOT fabricate/lock cancelled;
+    // when the same ID reappears with completed + output, jobs.read settles completed/code 0 once.
+    const transient = new ShellJobs()
+    const [tRead, tControl] = createJobsServices(transient)
+    if (!tRead || !tControl) throw new Error('jobs services missing')
+    let transientEntry: Row | undefined = {
+      id: 'worker-1',
+      providerId: 'test-provider',
+      status: 'running',
+      continuable: false,
+    }
+    const tCtx = {
+      ...tool,
+      source: 'test',
+      requestId: 'r-transient',
+      timeoutMs: 1000,
+      childJobs: {
+        list: async () => (transientEntry ? [transientEntry] : []),
+        readDirect: async (id: string) => (id === 'worker-1' ? transientEntry : undefined),
+        cancel: async (id: string) => {
+          if (id === 'worker-1') transientEntry = undefined
+        },
+      },
+    } as unknown as ServiceContext
+    try {
+      const stopReceipt = (await tControl.handler(
+        { operation: 'kill', jobId: 'child:worker-1' },
+        tCtx,
+      )) as Record<string, unknown>
+      expect(stopReceipt).toMatchObject({
+        id: 'child:worker-1',
+        status: 'running',
+        childStatus: 'running',
+        code: null,
+      })
+      const whileAbsent = (await tRead.handler({}, tCtx)) as {
+        jobs: Array<Record<string, unknown>>
+        completions: Array<Record<string, unknown>>
+      }
+      expect(whileAbsent.jobs).toEqual([])
+      expect(whileAbsent.completions).toEqual([])
+
+      // Provider reattaches same ID with authoritative completed result and output.
+      transientEntry = {
+        id: 'worker-1',
+        providerId: 'test-provider',
+        status: 'completed',
+        continuable: false,
+        text: 'done before cancellation settled',
+      }
+      const settledRead = (await tRead.handler({ jobId: 'child:worker-1' }, tCtx)) as {
+        job: Record<string, unknown>
+        completions: Array<Record<string, unknown>>
+      }
+      expect(validateMethod('_agnes/v1/session.jobs.read', 'result', settledRead)).toMatchObject({ ok: true })
+      expect(settledRead.job).toMatchObject({
+        id: 'child:worker-1',
+        status: 'completed',
+        childStatus: 'completed',
+        code: 0,
+        stdout: 'done before cancellation settled',
+      })
+      expect(settledRead.completions).toHaveLength(1)
+      expect(settledRead.completions[0]).toMatchObject({
+        id: 'child:worker-1',
+        status: 'completed',
+        childStatus: 'completed',
+        code: 0,
+      })
+      // Repeated reads remain completed with exactly one completion notice.
+      const repeatedRead = (await tRead.handler({ jobId: 'child:worker-1' }, tCtx)) as {
+        job: Record<string, unknown>
+        completions: Array<Record<string, unknown>>
+      }
+      expect(repeatedRead.job).toMatchObject({ status: 'completed', childStatus: 'completed', code: 0 })
+      expect(repeatedRead.completions).toHaveLength(1)
+    } finally {
+      await transient.dispose()
+    }
   } finally {
     await jobs.dispose()
   }

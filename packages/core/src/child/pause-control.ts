@@ -7,6 +7,7 @@ import {
 import { requireChildControl } from '@agnes/core-child-control/child/store'
 import { isTerminalChildState } from '@agnes/core-child-control/child/types'
 import { CoreError } from '@agnes/core-common/types'
+import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type {
   ChildAgentCapabilities,
   ChildCheckpointRecord,
@@ -77,6 +78,8 @@ function signalled(signal: AbortSignal) {
 }
 const controllers = new WeakMap<SessionImpl, ChildLifecycleControls>()
 const livePendingPauses = new Map<string, Set<ChildLifecycleControls>>()
+const livePauseAdmissions = new WeakMap<SessionImpl, Map<string, number>>()
+export const SETTLED_PAUSE_OUTCOMES = new Set(['applied', 'withdrawn', 'refused', 'uncertain'])
 export function childControls(parent: SessionImpl) {
   const controls = controllers.get(parent)
   if (!controls) throw new CoreError('E_UNSUPPORTED', 'Child lifecycle controller is unavailable')
@@ -85,6 +88,65 @@ export function childControls(parent: SessionImpl) {
 export function hasLivePendingPause(childKey: string): boolean {
   const owners = livePendingPauses.get(childKey)
   return Boolean(owners && owners.size > 0)
+}
+export function beginPauseAdmissionSettlement(parent: SessionImpl, admissionId: string): () => void {
+  let map = livePauseAdmissions.get(parent)
+  if (!map) {
+    map = new Map()
+    livePauseAdmissions.set(parent, map)
+  }
+  map.set(admissionId, (map.get(admissionId) ?? 0) + 1)
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    const current = livePauseAdmissions.get(parent)
+    if (!current) return
+    const next = (current.get(admissionId) ?? 1) - 1
+    if (next <= 0) current.delete(admissionId)
+    else current.set(admissionId, next)
+    if (current.size === 0) livePauseAdmissions.delete(parent)
+  }
+}
+export function hasLivePauseAdmission(parent: SessionImpl, admissionId: string): boolean {
+  return (livePauseAdmissions.get(parent)?.get(admissionId) ?? 0) > 0
+}
+export async function settledPauseAdmissions(parent: SessionImpl, fromSeq = 1): Promise<Set<string>> {
+  const settled = new Set<string>()
+  for await (const rows of scanPages((query) => parent.scan(query), {
+    type: 'x/core/control',
+    lane: parent.lane,
+    fromSeq,
+    toSeq: parent.lastSeq,
+  })) {
+    for (const row of rows) {
+      if (row.trust !== 'trusted') continue
+      const data = row.data as { action?: string; outcome?: string; admissionId?: string }
+      if (
+        data.action === 'child-pause' &&
+        typeof data.admissionId === 'string' &&
+        typeof data.outcome === 'string' &&
+        SETTLED_PAUSE_OUTCOMES.has(data.outcome)
+      )
+        settled.add(data.admissionId)
+    }
+  }
+  return settled
+}
+export async function appendPauseTerminalOnce(
+  parent: SessionImpl,
+  admissionId: string,
+  fromSeq: number,
+  build: () => Promise<readonly Parameters<SessionImpl['d']['log']['append']>[0][number][]>,
+): Promise<boolean> {
+  return parent.locked(async () => {
+    if (parent.closingOrClosed) return false
+    if ((await settledPauseAdmissions(parent, fromSeq)).has(admissionId)) return false
+    const events = await build()
+    if (events.length === 0) return false
+    await parent.d.log.append([...events])
+    return true
+  })
 }
 
 export async function canSettleColdCancelling(

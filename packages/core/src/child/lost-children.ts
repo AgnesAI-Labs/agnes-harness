@@ -7,7 +7,13 @@ import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
 import { deliverChildCompletion, recoverChildCompletions } from './completion-notice.js'
 import { protectChildLeases } from './heartbeat.js'
-import { canSettleColdCancelling, hasLivePendingPause } from './pause-control.js'
+import {
+  appendPauseTerminalOnce,
+  canSettleColdCancelling,
+  hasLivePauseAdmission,
+  hasLivePendingPause,
+  SETTLED_PAUSE_OUTCOMES,
+} from './pause-control.js'
 import { recoverRoleChildren } from './resume-role.js'
 import { type ChildRolePort, recordedChildRole } from './roles.js'
 
@@ -65,7 +71,48 @@ export async function recoverChildren(
   )
 }
 
-const SETTLED_PAUSE_OUTCOMES = new Set(['applied', 'withdrawn', 'refused', 'uncertain'])
+const PAUSE_REFUSAL_REASONS = new Set([
+  'E_UNSUPPORTED',
+  'E_RELATION',
+  'E_CHILD_NOT_FOUND',
+  'E_CHILD_CONFLICT',
+  'E_ENVELOPE',
+])
+
+type PauseControlResult = {
+  failed?: boolean
+  reason?: string
+  executionState?: string
+}
+
+async function readPauseControlResult(
+  parent: SessionImpl,
+  admissionId: string,
+): Promise<{ failed?: PauseControlResult; settled?: PauseControlResult }> {
+  let failed: PauseControlResult | undefined
+  let settled: PauseControlResult | undefined
+  for await (const rows of scanPages((query) => parent.scan(query), {
+    type: 'x/core/child-control-result',
+    lane: parent.lane,
+    toSeq: parent.lastSeq,
+  })) {
+    for (const row of rows) {
+      if (row.trust !== 'trusted') continue
+      const data = row.data as {
+        action?: string
+        admissionId?: string
+        pausePending?: boolean
+        failed?: boolean
+        reason?: string
+        executionState?: string
+      }
+      if (data.action !== 'pause' || data.admissionId !== admissionId || data.pausePending === true) continue
+      if (data.failed === true) failed = data
+      else settled = data
+    }
+  }
+  return { ...(failed ? { failed } : {}), ...(settled ? { settled } : {}) }
+}
 
 /**
  * Reconciles `child-pause` admissions that remained `queued` when the parent closed or crashed before
@@ -83,7 +130,6 @@ async function reconcilePendingPauseAdmissions(parent: SessionImpl): Promise<voi
   }
   const queued = new Map<string, QueuedPause>()
   const settled = new Set<string>()
-  const latestAppliedByChild = new Map<string, number>()
   for await (const rows of scanPages((query) => parent.scan(query), {
     type: 'x/core/control',
     lane: parent.lane,
@@ -107,57 +153,56 @@ async function reconcilePendingPauseAdmissions(parent: SessionImpl): Promise<voi
         })
       } else if (typeof data.outcome === 'string' && SETTLED_PAUSE_OUTCOMES.has(data.outcome)) {
         settled.add(data.admissionId)
-        if (data.outcome === 'applied' && typeof data.childId === 'string' && data.childId)
-          latestAppliedByChild.set(data.childId, row.seq)
       }
     }
   }
-  const unresolved = [...queued.values()].filter((entry) => !settled.has(entry.admissionId))
-  if (unresolved.length === 0) return
-  const tailFrom = Math.min(...unresolved.map((entry) => entry.seq)) + 1
-  await parent.locked(async () => {
-    if (parent.closingOrClosed) return
-    const nowSettled = new Set<string>()
-    for await (const rows of scanPages((query) => parent.scan(query), {
-      type: 'x/core/control',
-      lane: parent.lane,
-      fromSeq: tailFrom,
-      toSeq: parent.lastSeq,
-    })) {
-      for (const row of rows) {
-        if (row.trust !== 'trusted') continue
-        const data = row.data as { action?: string; outcome?: string; admissionId?: string }
-        if (
-          data.action === 'child-pause' &&
-          typeof data.admissionId === 'string' &&
-          typeof data.outcome === 'string' &&
-          SETTLED_PAUSE_OUTCOMES.has(data.outcome)
-        )
-          nowSettled.add(data.admissionId)
-      }
-    }
-    const events = []
-    for (const entry of unresolved) {
-      if (nowSettled.has(entry.admissionId) || hasLivePendingPause(entry.childId)) continue
+  const unresolved = [...queued.values()].filter(
+    (entry) =>
+      !settled.has(entry.admissionId) &&
+      !hasLivePendingPause(entry.childId) &&
+      !hasLivePauseAdmission(parent, entry.admissionId),
+  )
+  for (const entry of unresolved) {
+    await appendPauseTerminalOnce(parent, entry.admissionId, entry.seq + 1, async () => {
+      if (hasLivePendingPause(entry.childId) || hasLivePauseAdmission(parent, entry.admissionId)) return []
+      const recorded = await readPauseControlResult(parent, entry.admissionId)
       const record = await store.lookupByKey(entry.childId)
-      const outcome: 'applied' | 'withdrawn' | 'uncertain' =
-        !record || isTerminalChildState(record.state)
-          ? 'withdrawn'
-          : record.state === 'paused' && (latestAppliedByChild.get(entry.childId) ?? 0) < entry.seq
-            ? 'applied'
-            : 'uncertain'
-      const reason =
-        outcome === 'withdrawn'
-          ? 'CHILD_TERMINATED_BEFORE_PAUSE'
-          : outcome === 'uncertain'
-            ? 'PAUSE_UNSETTLED_ON_RECOVERY'
-            : undefined
-      events.push(
+      if (recorded.failed) {
+        const reason =
+          typeof recorded.failed.reason === 'string' && recorded.failed.reason
+            ? recorded.failed.reason
+            : 'CHECKPOINT_FAILED'
+        const outcome = PAUSE_REFUSAL_REASONS.has(reason) ? 'refused' : 'uncertain'
+        return [
+          parent.controls.fact('child-pause', outcome, entry.actor, {
+            admissionId: entry.admissionId,
+            childId: entry.childId,
+            ...(record ? { executionState: record.state } : {}),
+            reason,
+          }),
+        ]
+      }
+      if (recorded.settled) {
+        const outcome = recorded.settled.executionState === 'paused' ? 'applied' : 'withdrawn'
+        return [
+          parent.controls.fact('child-pause', outcome, entry.actor, {
+            admissionId: entry.admissionId,
+            childId: entry.childId,
+            ...(outcome === 'withdrawn' && typeof recorded.settled.executionState === 'string'
+              ? { executionState: recorded.settled.executionState }
+              : {}),
+          }),
+        ]
+      }
+      const outcome: 'withdrawn' | 'uncertain' =
+        !record || isTerminalChildState(record.state) ? 'withdrawn' : 'uncertain'
+      const reason = outcome === 'withdrawn' ? 'CHILD_TERMINATED_BEFORE_PAUSE' : 'PAUSE_UNSETTLED_ON_RECOVERY'
+      return [
         parent.controls.fact('child-pause', outcome, entry.actor, {
           admissionId: entry.admissionId,
           childId: entry.childId,
           ...(record ? { executionState: record.state } : {}),
-          ...(reason ? { reason } : {}),
+          reason,
         }),
         parent.ev(
           'x/core/child-control-result',
@@ -167,14 +212,14 @@ async function reconcilePendingPauseAdmissions(parent: SessionImpl): Promise<voi
             childKey: entry.childId,
             status: record ? projectChildStatus(record).status : 'cancelled',
             executionState: record?.state ?? 'cancelled',
-            ...(outcome === 'applied' ? {} : { failed: true, ...(reason ? { reason } : {}) }),
+            failed: true,
+            reason,
           },
           { actor: entry.actor, ignorable: true },
         ),
-      )
-    }
-    if (events.length > 0) await parent.d.log.append(events)
-  })
+      ]
+    })
+  }
 }
 
 /**
