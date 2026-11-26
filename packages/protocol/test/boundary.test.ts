@@ -16,7 +16,11 @@ const schemaDefNames = (file: string): string[] =>
 // A schema can have several export blocks; value schemas also export their same-named type.
 const reexportedTypesFrom = (genModule: string): string[] => {
   const re = new RegExp(String.raw`export(?: type)? \{([^}]*)\} from '\.\./gen/ts/${genModule}\.js'`, 'g')
-  const blocks = [...indexSrc.matchAll(re)]
+  const source =
+    genModule === 'package-admin' && /^export \* from '\.\/package-admin-dtos\.js'$/m.test(indexSrc)
+      ? `${indexSrc}\n${readFileSync(new URL('../src/package-admin-dtos.ts', import.meta.url), 'utf8')}`
+      : indexSrc
+  const blocks = [...source.matchAll(re)]
   if (!blocks.length) throw new Error(`no re-export block from ../gen/ts/${genModule}.js found in index.ts`)
   return blocks
     .flatMap((match) =>
@@ -176,6 +180,9 @@ describe('protocol src boundary', () => {
         'PresentationRoleSelection',
         'PresentationRoleSelections',
         'PresentationRoleState',
+        'SkinConfigSnapshot',
+        'SkinIdentity',
+        'SkinStoredSnapshot',
         'isAdminLoop',
         'isAdminModelAdapter',
         'isSessionDefaults',

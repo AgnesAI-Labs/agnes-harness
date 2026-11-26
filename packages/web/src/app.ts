@@ -85,7 +85,8 @@ import { clientSessionServices } from './client-modules/session-services.js'
 import { readWebComposerMemory, rememberWebComposer, selectionFromMemory } from './composer-memory.js'
 import { composerReferences, composerSkills } from './composer-references.js'
 import { bindPluginUiConfiguration } from './declarative-ui/configuration.js'
-import { PLUGIN_UI_ENTRIES_METHOD, pluginUiEntries } from './declarative-ui/entries.js'
+import { bindPluginUiConnection, watchPluginUiSidebar } from './declarative-ui/connection.js'
+import { pluginUiEntries } from './declarative-ui/entries.js'
 import { createDiagnosticsDialog } from './diagnostics-dialog.js'
 import {
   type LoopSelection,
@@ -724,16 +725,7 @@ function renderReconnect(phase: ReconnectPhase): void {
   if (phase !== 'idle') setConnection(phase === 'stalled' ? 'closed' : 'reconnecting')
 }
 let profileName = ''
-let uiProfile = ''
-let uiConnectionEpoch = 0
-const refreshPluginUiEntries = () =>
-  pluginUiEntries.refresh((profile) => client.call(PLUGIN_UI_ENTRIES_METHOD, { profile }))
-function observePluginUiProfile(profile: string, ticket: number): void {
-  if (!connected || ticket !== uiConnectionEpoch || profile === uiProfile) return
-  uiProfile = profile
-  pluginUiEntries.setScope(true, profile)
-  void refreshPluginUiEntries()
-}
+const pluginUiConnection = bindPluginUiConnection(client, () => connected)
 let skinConnectionChanged: ((connected: boolean) => void) | undefined
 let moduleSessionId: string | undefined
 const clientRoster = createBrowserClientRoster(client, () => ({
@@ -1239,6 +1231,8 @@ let liveApproval:
   | undefined
 
 function updateSidebar(): void {
+  const homeSelected = activeHomeEntry() || pluginUiEntries.getSnapshot().sidebar
+  const currentSession = homeSelected ? undefined : (sessionBinding.session ?? readOnly)
   clientModules.sidebar?.update({
     sessions: sidebarPages.rows(),
     paging: sidebarPages.snapshot(),
@@ -1247,29 +1241,17 @@ function updateSidebar(): void {
     labels: sessionLabels,
     locale: clientModules.locale.getSnapshot(),
     // While a home page shows, the page's entry is the selected item, not the session behind it.
-    ...(activeHomeEntry() || pluginUiEntries.getSnapshot().sidebar
-      ? {}
-      : sessionBinding.session
-        ? { currentId: sessionBinding.session.id }
-        : readOnly
-          ? { currentId: readOnly.id }
-          : {}),
+    ...(currentSession ? { currentId: currentSession.id } : {}),
     sessionPending,
     newDisabled: !connected || submissions.sending || sessionPending || workspaceController.creating,
   })
 }
 
 // Opening or leaving a home page, or losing its entry, moves the sidebar's selection.
-let shownSidebarExtension = pluginUiEntries.getSnapshot().sidebar
 const stopHomeSelection = [
   watchActiveHomeEntry(updateSidebar),
   homeEntries.subscribe(updateSidebar),
-  pluginUiEntries.subscribe(() => {
-    const next = pluginUiEntries.getSnapshot().sidebar
-    if (next === shownSidebarExtension) return
-    shownSidebarExtension = next
-    updateSidebar()
-  }),
+  watchPluginUiSidebar(updateSidebar),
 ]
 
 const SESSION_WATCH_STOP_TIMEOUT_MS: number = 3000
@@ -1589,11 +1571,7 @@ function clearSessionRecovery(nextSessionId?: string): void {
 }
 function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'closed'): void {
   connected = value === 'connected'
-  if (!connected) {
-    uiConnectionEpoch++
-    uiProfile = ''
-    pluginUiEntries.setScope(false, '')
-  }
+  if (!connected) pluginUiConnection.disconnect()
   skinConnectionChanged?.(connected)
   if (clientRoster.setOnline(connected) && !connected) scheduleClientRosterRead()
   const currentSessionId = clientModules.session.sessionId
@@ -2210,7 +2188,6 @@ const packageNotices = coalesceBurst(() => {
   broadcast('agnes:plugins-invalidated')
   void modelRefresh.request().catch(showError)
 }, 100)
-const uiPackageNotices = coalesceBurst(() => void refreshPluginUiEntries(), 100)
 // Roster invalidation push: packages_changed is only a hint; reread the roster on receipt.
 client.on('notice', (payload) => {
   const incoming = payload as { kind?: unknown; detail?: unknown }
@@ -2229,15 +2206,7 @@ client.on('notice', (payload) => {
     typeof incoming.detail === 'object' && incoming.detail !== null
       ? (incoming.detail as { profile?: unknown; packageId?: unknown; reason?: unknown })
       : undefined
-  if (
-    incoming.kind === 'packages_changed' &&
-    detail?.reason !== 'resources' &&
-    uiProfile &&
-    detail?.profile === uiProfile
-  ) {
-    pluginUiEntries.packageChanged(typeof detail.packageId === 'string' ? detail.packageId : undefined)
-    uiPackageNotices.request()
-  }
+  if (incoming.kind === 'packages_changed') pluginUiConnection.packagesChanged(detail)
   if (profileName && detail?.profile === profileName) {
     clientModules.reconciler.retirePending()
     skinGroup.invalidate()
@@ -2273,9 +2242,7 @@ onHistoryNavigation(() => {
   })
 })
 async function refreshModelConfiguration(): Promise<void> {
-  const uiTicket = uiConnectionEpoch
-  const snapshot = await client.config.get()
-  observePluginUiProfile(snapshot.profile, uiTicket)
+  const snapshot = await pluginUiConnection.readProfile()
   accountProvider = snapshot.provider
   configuredAccounts = snapshot.accounts
   const catalogReady = refreshSessionCatalog()
@@ -2332,9 +2299,8 @@ onPageHide(() => {
   unmountAppShell()
   modelRefresh.stop()
   packageNotices.stop()
-  uiPackageNotices.stop()
+  pluginUiConnection.close()
   stopPluginUiConfiguration()
-  pluginUiEntries.setScope(false, '')
   stopSessionConfiguration()
   reconnect.cancel()
   titleRefresh.close()
@@ -2356,11 +2322,9 @@ const startup = backendFrameStartup(async () => {
   setConnection('connected')
   reconnect.reset()
   void workspaceController.refreshPicker()
-  const uiTicket = uiConnectionEpoch
-  const snapshot = await client.config.get()
+  const snapshot = await pluginUiConnection.readProfile()
   accountProvider = snapshot.provider
   profileName = snapshot.profile
-  observePluginUiProfile(snapshot.profile, uiTicket)
   void skinGroup.refresh()
   // A session selection reads its own roster. Defer the profile-only read until we know there
   // is no session to open, so startup never verifies and imports the same modules twice.

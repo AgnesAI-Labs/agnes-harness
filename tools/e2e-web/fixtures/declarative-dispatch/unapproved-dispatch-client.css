@@ -1,3 +1,5 @@
-:root {
-  --unapproved-dispatch-frontend: loaded;
+@layer app {
+  :root {
+    --unapproved-dispatch-frontend: loaded;
+  }
 }
