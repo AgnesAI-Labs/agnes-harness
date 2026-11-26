@@ -578,9 +578,11 @@ export class ShellJobs {
     const extended = port as ExtendedChildJobsPort
     if (extended.readDirect) {
       const rawId = jobId.slice('child:'.length)
+      const existing = this.directChildren.get(owner(ctx))?.get(jobId)
       const direct = await extended.readDirect(rawId)
       if (!direct || isReadOnlyChildListing(direct, ctx.session.key)) {
-        this.directChildren.get(owner(ctx))?.delete(jobId)
+        const map = this.directChildren.get(owner(ctx))
+        if (existing && !existing.childTerminal && map?.get(jobId) === existing) map.delete(jobId)
         return undefined
       }
       return copy(this.upsertChild(ctx, direct, extended))
@@ -656,9 +658,10 @@ export class ShellJobs {
       throw new Error('CAPABILITY_DENIED: read-only child job cannot be stopped from this session')
     if (job.view.status === 'running' || job.cleanupPending || job.childIdle) {
       if (job.view.kind === 'child') {
-        const reclaimed = await stopChildJob(job)
+        const isCurrent = () => this.directChildren.get(owner(ctx))?.get(id) === job
+        const reclaimed = await stopChildJob(job, isCurrent)
         const view = copy(job)
-        if (reclaimed && !job.childTerminal) this.directChildren.get(owner(ctx))?.delete(id)
+        if (reclaimed && !job.childTerminal && isCurrent()) this.directChildren.get(owner(ctx))?.delete(id)
         return view
       }
       const { status, code } = job.view

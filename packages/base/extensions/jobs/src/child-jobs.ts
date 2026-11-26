@@ -215,7 +215,10 @@ export function upsertChildProjection<J extends ChildJobTarget>(
  * confirms a durable terminal state (`completed`, `failed`, `cancelled`).
  * Returns `true` when the source no longer reports an entry (reclaimed without a terminal outcome).
  */
-export async function stopChildJob(job: ChildJobTarget): Promise<boolean> {
+export async function stopChildJob(
+  job: ChildJobTarget,
+  isCurrent: () => boolean = () => true,
+): Promise<boolean> {
   await job.stop()
   job.cleanupPending = false
   if (!job.refreshChild) return false
@@ -225,6 +228,7 @@ export async function stopChildJob(job: ChildJobTarget): Promise<boolean> {
   } catch {
     return false
   }
+  if (!isCurrent()) return false
   if (!latest) return true
   if (latest.label !== undefined) job.view.childLabel = latest.label
   if (latest.text !== undefined) appendChildText(job, latest.text)
@@ -255,7 +259,7 @@ export async function pruneReclaimedChildren<J extends ChildJobTarget>(
     for (const [id, job] of [...map]) {
       if (sync.present.has(id) || job.childTerminal) continue
       if (sync.selectedConfirmedMissing.has(id)) {
-        map.delete(id)
+        if (map.get(id) === job && !job.childTerminal) map.delete(id)
         continue
       }
       if (truncated) continue
@@ -266,7 +270,7 @@ export async function pruneReclaimedChildren<J extends ChildJobTarget>(
           continue
         }
       }
-      map.delete(id)
+      if (map.get(id) === job && !job.childTerminal) map.delete(id)
     }
   }
   await reconcile(stores.direct, sync.listedDirect >= MAX_DESCENDANT_LIST)

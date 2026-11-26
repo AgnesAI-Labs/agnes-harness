@@ -34,6 +34,7 @@ type ChildRecord = {
   running: boolean
   worktree?: string
   cleanup?: Promise<WorktreeFinishResult>
+  adoptedPending?: boolean
 }
 
 type SessionState = {
@@ -124,6 +125,12 @@ function isActiveChild(item: { status: string; executionState?: string }): boole
     : ACTIVE_STATUSES.has(item.status)
 }
 
+function isStartingChild(item: { status: string; executionState?: string }): boolean {
+  return item.executionState !== undefined
+    ? item.executionState === 'creating' || item.executionState === 'ready'
+    : item.status === 'starting'
+}
+
 async function reconcileActiveChildren(state: SessionState, ctx: ToolContext): Promise<void> {
   if (!ctx.subagent.list) return
   const candidates = [...state.children.entries()].filter(([, rec]) => rec.running)
@@ -137,7 +144,7 @@ async function reconcileActiveChildren(state: SessionState, ctx: ToolContext): P
     if (!item || !isActiveChild(item)) {
       rec.running = false
       state.children.delete(key)
-    }
+    } else if (rec.adoptedPending && state.pending === 0) delete rec.adoptedPending
   }
   for (const item of listed) {
     if (
@@ -147,14 +154,20 @@ async function reconcileActiveChildren(state: SessionState, ctx: ToolContext): P
       state.children.has(item.id)
     )
       continue
-    state.children.set(item.id, { running: true })
+    const adoptedPending = state.pending > 0 && isStartingChild(item)
+    state.children.set(item.id, adoptedPending ? { running: true, adoptedPending: true } : { running: true })
   }
 }
 
 function active(state: SessionState): number {
-  let count = state.pending
-  for (const child of state.children.values()) if (child.running) count += 1
-  return count
+  let owned = 0
+  let adoptedPending = 0
+  for (const child of state.children.values()) {
+    if (!child.running) continue
+    if (child.adoptedPending) adoptedPending += 1
+    else owned += 1
+  }
+  return owned + Math.max(state.pending, adoptedPending)
 }
 
 function fail(text: string): ToolResult {
@@ -412,23 +425,30 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
         }
         spawned = await ctx.subagent.spawn(args.task, options)
         childKey = spawned.childKey
-        if (worktree) {
-          await deps.worktrees.bind?.(spawned.childKey, worktree)
-          await ctx.subagent.resume(spawned.childKey)
-        }
-
-        if (spawned.childKey.length === 0 || state.children.has(spawned.childKey)) {
-          await ctx.subagent.cancel(spawned.childKey)
+        const existing = childKey.length > 0 ? state.children.get(childKey) : undefined
+        if (childKey.length === 0 || (existing && !existing.adoptedPending)) {
+          await ctx.subagent.cancel(childKey)
           await rollbackWorktree(deps, ctx, worktree)
           return fail('subagent backend returned an invalid or duplicate child key')
         }
         committedRecord = { running: true, ...(worktree ? { worktree } : {}) }
-        state.children.set(spawned.childKey, committedRecord)
+        state.children.set(childKey, committedRecord)
         state.pending -= 1
         pendingHeld = false
+        if (worktree) {
+          await deps.worktrees.bind?.(childKey, worktree)
+          await ctx.subagent.resume(childKey)
+        }
       } catch (error) {
-        if (childKey) await ctx.subagent.cancel(childKey)
-        await rollbackWorktree(deps, ctx, worktree)
+        try {
+          if (childKey) await ctx.subagent.cancel(childKey)
+          await rollbackWorktree(deps, ctx, worktree)
+        } finally {
+          if (committedRecord && childKey && state.children.get(childKey) === committedRecord) {
+            committedRecord.running = false
+            state.children.delete(childKey)
+          }
+        }
         // Core's admission limit refuses creation; failures after a child handle remain uncertain.
         const budget = !childKey && formatSpawnBudgetRefusal(error)
         if (budget) return budget

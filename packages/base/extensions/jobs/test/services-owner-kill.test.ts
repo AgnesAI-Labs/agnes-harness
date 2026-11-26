@@ -610,3 +610,91 @@ it('removes reclaimed active external children while preserving truncated descen
     await jobs.dispose()
   }
 })
+
+it.each([false, true])(
+  'ignores stale stop response after replacement completed projection without dropping history or duplicating completions (P1-C, detachAgain=%s)',
+  async (detachAgain) => {
+    const jobs = new ShellJobs()
+    const [read, control] = createJobsServices(jobs)
+    if (!read || !control) throw new Error('jobs services missing')
+    let resolveStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      resolveStarted = resolve
+    })
+    let resolveRelease!: () => void
+    const release = new Promise<void>((resolve) => {
+      resolveRelease = resolve
+    })
+    let visible:
+      | {
+          id: string
+          providerId: string
+          status: import('@agnes/extension-api').ChildAgentStatus
+          continuable: boolean
+          text?: string
+        }
+      | undefined = { id: 'worker', providerId: 'fixture', status: 'running', continuable: false }
+    let hold = false
+    const ctx = {
+      ...fakeToolContext({ cwd: resolve('/work/proj'), sessionKey: 'root' }),
+      source: 'test',
+      requestId: 'r-stale-stop',
+      timeoutMs: 1000,
+      childJobs: {
+        readDirect: async () => visible,
+        readDetail: async () => {
+          if (hold) {
+            hold = false
+            resolveStarted()
+            await release
+            return undefined
+          }
+          return visible
+        },
+        list: async () => (visible ? [visible] : []),
+        cancel: async () => {
+          visible = undefined
+          hold = true
+        },
+      },
+    } as unknown as ServiceContext
+    const id = { jobId: 'child:worker' }
+    try {
+      const kill = control.handler({ ...id, operation: 'kill' }, ctx)
+      await started
+      const empty = (await read.handler({}, ctx)) as { jobs: Array<Record<string, unknown>> }
+      expect(empty.jobs).toHaveLength(0)
+
+      visible = { id: 'worker', providerId: 'fixture', status: 'completed', continuable: false, text: 'done' }
+      const again = (await read.handler(id, ctx)) as {
+        job: Record<string, unknown>
+        completions: Array<Record<string, unknown>>
+      }
+      expect(again.job).toMatchObject({ status: 'completed', childStatus: 'completed', code: 0 })
+      expect(again.completions).toHaveLength(1)
+
+      resolveRelease()
+      await kill
+
+      if (detachAgain) {
+        visible = undefined
+        const history = (await read.handler({}, ctx)) as {
+          jobs: Array<Record<string, unknown>>
+          completions: Array<Record<string, unknown>>
+        }
+        expect(history.jobs.map((row) => [row.childStatus, row.code])).toEqual([['completed', 0]])
+        expect(history.completions.map((row) => row.childStatus)).toEqual(['completed'])
+        return
+      }
+      const last = (await read.handler(id, ctx)) as {
+        job: Record<string, unknown>
+        completions: Array<Record<string, unknown>>
+      }
+      expect(last.job).toMatchObject({ status: 'completed', childStatus: 'completed', code: 0 })
+      expect(last.completions.map((row) => row.childStatus)).toEqual(['completed'])
+    } finally {
+      resolveRelease()
+      await jobs.dispose()
+    }
+  },
+)

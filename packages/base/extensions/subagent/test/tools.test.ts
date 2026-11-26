@@ -1516,6 +1516,229 @@ describe('child allowlist and continuable controls', () => {
     }
   })
 
+  it('does not double-count or cancel an in-flight worktree or creating child under concurrent spawn (P1-F)', async () => {
+    // Real Kernel with Core maxFanOut=2 and extension maxFanOut=2: A suspended in worktrees.bind
+    // while Kernel already lists A as creating; concurrent B must succeed and A must not be cancelled.
+    const storage = new MemoryStorage()
+    const silentLog = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
+    const fsOps = fencedFs(
+      {
+        read: async () => new Uint8Array(),
+        write: async () => undefined,
+        list: async () => [],
+        stat: async () => ({ kind: 'file' as const, size: 0, mtimeMs: 0 }),
+      },
+      testFsPolicy('/w'),
+    )
+    let releaseInfer!: () => void
+    const inferGate = new Promise<void>((resolve) => {
+      releaseInfer = resolve
+    })
+    const baseProvider = fakeProvider([textTurn('done'), textTurn('done 2')])
+    const k = Kernel.create({
+      loops: defaultLoops(),
+      storage,
+      seams: fakeSeams(),
+      provider: {
+        models: () => [
+          {
+            id: 'm1',
+            name: 'm1',
+            api: 'openai-completions' as const,
+            route: 'default',
+            baseUrl: 'https://example.invalid/v1',
+            reasoning: false,
+            input: ['text' as const],
+            cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 8192,
+            maxTokens: 128,
+            toolCallFormats: ['native' as const],
+            thinkingReplay: 'native' as const,
+            contract_id: null,
+          },
+        ],
+        async *infer(req, options) {
+          await inferGate
+          yield* baseProvider.infer(req, options)
+        },
+      },
+      contract: { contract_id: null, parser_version: '1' },
+      preset: { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 1, maxFanOut: 2 },
+      fsOps,
+      netFetch: async () => new Response(''),
+      logger: silentLog,
+      timers: noTimers,
+      clock: () => 1_757_203_200_000,
+    })
+    let resolveEnteredBind!: () => void
+    const enteredBind = new Promise<void>((resolve) => {
+      resolveEnteredBind = resolve
+    })
+    let resolveReleaseBind!: () => void
+    const releaseBind = new Promise<void>((resolve) => {
+      resolveReleaseBind = resolve
+    })
+    const finishReasons: string[] = []
+    let keyA: string | undefined
+    try {
+      const parent = await k.session('concurrent-spawn-p1f', {
+        actor,
+        resolvedProfileHash: 'h1',
+        cwd: '/w',
+        writerRunId: 'r1',
+      })
+      const makeCtx = (toolUseId: string): ToolContext => ({
+        ...fakeToolContext({ sessionKey: parent.key }),
+        subagent: buildToolContext(
+          {
+            actor: parent.d.actor,
+            lane: parent.lane,
+            cwd: parent.d.cwd,
+            runtime: parent.d.runtime,
+            preset: parent.preset,
+            children: parent.d.children,
+            netFetch: parent.d.netFetch,
+            sessionKey: parent.key,
+            turn: 1,
+            step: 1,
+            depth: 0,
+            generationDepth: 0,
+            workspaceRoot: '/w',
+            log: silentLog,
+            fsOps,
+            invoke: async () => ({ content: [] }),
+            listTools: () => [],
+            appendPlan: async () => 1,
+            requestCompaction() {},
+            progress() {},
+            artifactJobEvent: async () => undefined,
+            lease: { remainingMs: () => 5000 },
+          },
+          {
+            toolUseId,
+            name: 'subagent_spawn',
+            signal: new AbortController().signal,
+            timeoutMs: 5000,
+            outputMaxBytes: 32768,
+          },
+        ).subagent,
+      })
+      const ctxA = makeCtx('spawn-a')
+      const ctxB = makeCtx('spawn-b')
+      const runtime = createSubagentRuntime()
+      const spawn = subagentSpawnTool({
+        limits: { isolation: 'shared', maxFanOut: 2, maxDepth: 2 },
+        runtime,
+        worktrees: {
+          async create() {
+            return { root: '/w', path: '/w/wt', branch: 'test', id: 'wt' }
+          },
+          async bind(key) {
+            keyA = key
+            resolveEnteredBind()
+            await releaseBind
+          },
+          async finish(_ctx, reason) {
+            finishReasons.push(reason)
+            return { action: 'removed' }
+          },
+        },
+      })
+      const first = spawn.execute({ task: 'first', isolation: 'worktree' }, ctxA)
+      await enteredBind
+      const listedAtBind = await ctxA.subagent.list?.()
+      expect(listedAtBind?.some((row) => row.id === keyA && row.executionState === 'creating')).toBe(true)
+
+      const second = await spawn.execute({ task: 'second', isolation: 'shared' }, ctxB)
+      resolveReleaseBind()
+      const a = await first
+      expect(a.isError).toBeFalsy()
+      expect(second.isError).toBeFalsy()
+      const keyB = (second.details as { childKey?: string } | undefined)?.childKey
+      expect(keyA).toBeTruthy()
+      expect(keyB).toBeTruthy()
+      expect(keyB).not.toBe(keyA)
+      const rows = await storage.listByParent(parent.key)
+      expect(rows).toHaveLength(2)
+      expect(rows.some((row) => row.state === 'cancelled')).toBe(false)
+      expect(finishReasons).toEqual([])
+    } finally {
+      resolveReleaseBind()
+      releaseInfer()
+      await k.close()
+    }
+
+    // Earlier window: A is still awaiting ctx.subagent.spawn() after backend persisted creating row;
+    // B reconciles and spawns without double-counting A, A takes ownership cleanly, and genuine duplicate keys still fail.
+    let resolveEnteredSpawnA!: () => void
+    const enteredSpawnA = new Promise<void>((resolve) => {
+      resolveEnteredSpawnA = resolve
+    })
+    let resolveReleaseSpawnA!: () => void
+    const releaseSpawnA = new Promise<void>((resolve) => {
+      resolveReleaseSpawnA = resolve
+    })
+    let spawnCount = 0
+    const cancelledKeys: string[] = []
+    const wtEarly = worktrees()
+    const dEarly = deps({ maxFanOut: 2, isolation: 'shared', worktrees: wtEarly.manager })
+    const cEarly = context({
+      spawn: async (task) => {
+        spawnCount += 1
+        if (task === 'A') {
+          resolveEnteredSpawnA()
+          await releaseSpawnA
+          return { childKey: 'child-a' }
+        }
+        if (task === 'dup') return { childKey: 'child-a' }
+        return { childKey: `child-${spawnCount}` }
+      },
+    })
+    cEarly.ctx.subagent.cancel = async (childKey) => {
+      cancelledKeys.push(childKey)
+      return { childKey, status: 'cancelled' }
+    }
+    cEarly.ctx.subagent.list = async () =>
+      spawnCount === 0
+        ? []
+        : [
+            {
+              id: 'child-a',
+              providerId: 'in-process',
+              status: 'starting',
+              executionState: 'creating',
+              continuable: true,
+            },
+          ]
+    const earlySpawn = subagentSpawnTool(dEarly)
+    const runA = earlySpawn.execute({ task: 'A' }, cEarly.ctx)
+    await enteredSpawnA
+    const runB = await earlySpawn.execute({ task: 'B' }, cEarly.ctx)
+    expect(runB.isError).toBeFalsy()
+    expect(runB.details).toMatchObject({ childKey: 'child-2' })
+    resolveReleaseSpawnA()
+    const resA = await runA
+    expect(resA.isError).toBeFalsy()
+    expect(resA.details).toMatchObject({ childKey: 'child-a' })
+    expect(cancelledKeys).toEqual([])
+
+    // Genuine duplicate key against an already-owned child is still rejected, cancelled, and rolled back.
+    const dDup = deps({ maxFanOut: 2, isolation: 'worktree', worktrees: wtEarly.manager })
+    const dupSpawn = subagentSpawnTool(dDup)
+    const cDup = context({ spawn: async () => ({ childKey: 'same-key' }) })
+    const dupCancelled: string[] = []
+    cDup.ctx.subagent.cancel = async (childKey) => {
+      dupCancelled.push(childKey)
+      return { childKey, status: 'cancelled' }
+    }
+    expect((await dupSpawn.execute({ task: 'first', isolation: 'shared' }, cDup.ctx)).isError).toBeFalsy()
+    const dupRes = await dupSpawn.execute({ task: 'second', isolation: 'worktree' }, cDup.ctx)
+    expect(dupRes.isError).toBe(true)
+    expect(JSON.stringify(dupRes.content)).toContain('invalid or duplicate child key')
+    expect(dupCancelled).toEqual(['same-key'])
+    expect(wtEarly.calls.finish).toEqual([['spawn-failed', '/work/proj/.worktrees/agnes-1234abcd']])
+  })
+
   it('does not output contradictory cancelled wording when cancel remains cancelling (P1-C)', async () => {
     const { ctx } = context()
     ctx.subagent.cancel = async (childKey) => ({
