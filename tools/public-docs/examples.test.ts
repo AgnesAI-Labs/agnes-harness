@@ -49,6 +49,15 @@ async function browserHarness(sessionId?: string, call?: (name: string) => Promi
 }
 
 const identity = (packageId: string, services: string[] = []): ModuleIdentity => ({
+  binding: {
+    owner: `web:${packageId}`,
+    lifetime: 'profile',
+    availability: 'active',
+    packageId,
+    integrity: 'docs-fixture',
+    profileId: 'docs-fixture',
+    activationId: 'docs-fixture',
+  },
   packageId,
   revision: 'docs-fixture',
   allowedSlots: ['workbench.panel'],
