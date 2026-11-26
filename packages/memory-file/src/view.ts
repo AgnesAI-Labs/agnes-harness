@@ -6,7 +6,7 @@ export type Segment = Readonly<{ view: number; raw?: number; length: number }>
 export type HideRange = Readonly<{
   start: number
   end: number
-  appliesTo: 'note' | 'read' | 'both'
+  appliesTo: 'note' | 'read' | 'both' | 'index'
   reason: string
   notice?: string
   readNotice?: string

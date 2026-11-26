@@ -38,7 +38,9 @@ export function buildIndexView(
   read?: MemoryView,
 ): MemoryView {
   const isSummary = (range: HideRange) =>
-    range.reason === 'topic-outdated' || range.reason === 'topic-missing'
+    range.reason === 'topic-outdated' ||
+    range.reason === 'topic-missing' ||
+    range.reason === 'topic-unverified'
   if (read && !ranges.some(isSummary)) return read
   const indexRanges = ranges.map((range) =>
     isSummary(range)

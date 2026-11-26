@@ -206,20 +206,79 @@ it.each(['workspace', 'user'] as const)('fingerprints effective topic links in %
 })
 
 it.each(['missing', 'invalid JSON', 'invalid binding'])(
-  'treats %s link metadata as unverified',
+  'handles %s link metadata safely without hiding pre-upgrade human summaries',
   async (damage) => {
     const f = await fixture()
     const line = 'Deploy weekly. [[deploy.md]]'
     await f.edit('deploy.md', 'Deploy weekly.')
-    await f.edit(index, line)
+    await f.files(0).write(f.path(index), `${line}\n\nKeep this.`)
     const path = f.path('meta/links.json')
     if (damage === 'missing') await rm(path)
     else await writeFile(path, damage === 'invalid JSON' ? '{' : '{"version":1,"bindings":{"broken":null}}')
-    await f.edit(index, `${line}\nOther changes.`)
-    expect(await f.note(1)).not.toContain(line)
-    expect(await f.note(1)).toContain('[Summary of deploy.md may be outdated; read deploy.md]')
+    // An agent editing another line never verifies an unbound or damaged summary.
+    await f.files(1).replaceExact!(f.path(index), 'Keep this.', 'Other changes.')
+    const stored = await f.session.readFile(index)
+    const env = await f.environment(2)
+    const ranges = f.pipeline.collectHideRanges(stored, {
+      layer: 'workspace',
+      files: env.workspaceFiles,
+      meta: env.meta,
+      now: env.now,
+      validity: f.validity,
+    })
+    expect(buildIndexView(stored, ranges).content).not.toContain(line)
+    if (damage === 'missing') {
+      // Pre-upgrade / never-bound summaries stay visible in the prompt note while excluded from recall.
+      expect(await f.note(2)).toContain(line)
+      expect(await f.note(2)).not.toContain('[Summary of deploy.md may be outdated; read deploy.md]')
+    } else {
+      expect(await f.note(2)).not.toContain(line)
+      expect(await f.note(2)).toContain('[Summary of deploy.md may be outdated; read deploy.md]')
+    }
+    // Saving MEMORY.md as a human re-confirms ordinary summary lines without rewording them.
+    await f.edit(index, `${line}\n\nHuman saved.`)
+    expect(await f.note(3)).toContain(line)
+    const afterStored = await f.session.readFile(index)
+    const afterEnv = await f.environment(3)
+    const afterRanges = f.pipeline.collectHideRanges(afterStored, {
+      layer: 'workspace',
+      files: afterEnv.workspaceFiles,
+      meta: afterEnv.meta,
+      now: afterEnv.now,
+      validity: f.validity,
+    })
+    expect(buildIndexView(afterStored, afterRanges).content).toContain(line)
   },
 )
+
+it('preserves pre-upgrade human summaries, re-confirms ordinary lines on human save, and keeps stale managed summaries hidden', async () => {
+  const f = await fixture()
+  try {
+    const id = 'ra000000001'
+    f.statuses.set(id, 'valid')
+    await writeFile(f.path('conventions.md'), 'Use tabs.')
+    const humanLine = '- Code style: tabs, see [conventions](conventions.md)'
+    await writeFile(f.path(index), humanLine)
+    // Pre-upgrade file with no meta/links.json stays visible in the note.
+    expect(await f.note(1)).toContain(humanLine)
+    expect(await f.note(1)).not.toContain('[Summary of conventions.md may be outdated; read conventions.md]')
+    // Human save binds ordinary summaries; editing the topic then marks both ordinary and managed summaries outdated.
+    const managedLine = `<!-- refinement:${id} -->\nSaved summary [conventions](conventions.md)\n<!-- /refinement:${id} -->`
+    await f.edit(index, `${humanLine}\n\n${managedLine}\n\nNotes.`)
+    expect(await f.note(2)).toContain(humanLine)
+    expect(await f.note(2)).toContain('Saved summary [conventions](conventions.md)')
+    await f.edit('conventions.md', 'Use spaces.')
+    expect(await f.note(3)).not.toContain(humanLine)
+    expect(await f.note(3)).toContain('[Summary of conventions.md may be outdated; read conventions.md]')
+    // A human saving MEMORY.md re-confirms the ordinary summary without rewording it,
+    // while leaving the unchanged managed saved paragraph hidden until updated.
+    await f.edit(index, `${humanLine}\n\n${managedLine}\n\nNotes updated.`)
+    expect(await f.note(4)).toContain(humanLine)
+    expect(await f.note(4)).not.toContain('Saved summary [conventions](conventions.md)')
+  } finally {
+    await f.session.close?.()
+  }
+})
 
 it('removes withdrawn references immediately from reads and recall and from the next injection', async () => {
   const f = await fixture()

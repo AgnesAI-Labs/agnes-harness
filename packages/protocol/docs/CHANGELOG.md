@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `SavedParagraph` (`_agnes/v1/admin.memory` `saved` results, additive). Adds optional fields `renewable` (boolean, whether renewal is currently permitted), `hidden` (`true` when an otherwise active paragraph is hidden from the agent), and `nextExpiry` (epoch milliseconds of the earliest active `expires_at` annotation). `SavedParagraph` is closed (`additionalProperties: false`), so strictly validating older clients need an update to read `saved` results carrying these fields.
+
 - Refinement save receipts and timeline nodes distinguish a protected paragraph (`human-edited`) from a conflict with a person's preference (`preference-conflict`). Both outcomes preserve the person's text. Older clients that validate the closed timeline reason enum need an update to read nodes carrying these reasons.
 
 - Task experience gateways. `RefinementSettings` accepts an optional `baseUrl` and `RefinementSettingsSnapshot` carries the available `endpoints` in default-first order. Saves require an exact match to a gateway on the daemon's list and default to its first address when omitted. Settings with a retired address read at the default with learning off. Discovery and review inference use the selected gateway, and changing the address invalidates queued reviews.

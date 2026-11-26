@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fault } from './content.js'
 import { missing, safe } from './paths.js'
@@ -32,6 +32,10 @@ export class MetaStore {
     const target = join(this.dir, filename)
     safe(this.store.protectedRoot, target)
     return target
+  }
+
+  has(filename: string): boolean {
+    return existsSync(this.pathOf(filename))
   }
 
   readJson<T>(filename: string): T | undefined {
