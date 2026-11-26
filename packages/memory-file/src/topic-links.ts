@@ -75,11 +75,12 @@ export const topicLinksObserver: CommitObserver = (intent, committed, ctx) => {
     const [topic] = topics
     const target = files.get(topic!)
     const inManaged = managed.some((span) => start >= span.start && end <= span.end)
-    // A human saving MEMORY.md confirms ordinary summary lines without having to reword them.
-    // Agent/host edits and managed paragraphs keep their previous binding unless rewritten.
-    if (unchanged.has(key) && (intent.origin !== 'human' || inManaged)) {
-      const binding = previous.get(key)
-      if (binding) bindings.set(key, binding)
+    const existing = previous.get(key)
+    // Preserve any existing binding (including stale ones) when an unrelated line changes so a
+    // stale summary is never silently refreshed. A human saving MEMORY.md can bind a never-bound
+    // ordinary summary line (e.g. upgraded from before links.json existed).
+    if (unchanged.has(key) && (existing !== undefined || intent.origin !== 'human' || inManaged)) {
+      if (existing) bindings.set(key, existing)
     } else if (target?.bytes) {
       bindings.set(key, { topic: target.path, topicHash: target.hash })
     }

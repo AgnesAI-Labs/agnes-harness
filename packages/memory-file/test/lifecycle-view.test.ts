@@ -251,7 +251,7 @@ it.each(['missing', 'invalid JSON', 'invalid binding'])(
   },
 )
 
-it('preserves pre-upgrade human summaries, re-confirms ordinary lines on human save, and keeps stale managed summaries hidden', async () => {
+it('preserves pre-upgrade human summaries in notes, binds them on human save, and never refreshes stale bindings from unrelated edits', async () => {
   const f = await fixture()
   try {
     const id = 'ra000000001'
@@ -262,7 +262,7 @@ it('preserves pre-upgrade human summaries, re-confirms ordinary lines on human s
     // Pre-upgrade file with no meta/links.json stays visible in the note.
     expect(await f.note(1)).toContain(humanLine)
     expect(await f.note(1)).not.toContain('[Summary of conventions.md may be outdated; read conventions.md]')
-    // Human save binds ordinary summaries; editing the topic then marks both ordinary and managed summaries outdated.
+    // First human save binds the never-bound ordinary summary; editing the topic then marks both stale.
     const managedLine = `<!-- refinement:${id} -->\nSaved summary [conventions](conventions.md)\n<!-- /refinement:${id} -->`
     await f.edit(index, `${humanLine}\n\n${managedLine}\n\nNotes.`)
     expect(await f.note(2)).toContain(humanLine)
@@ -270,11 +270,16 @@ it('preserves pre-upgrade human summaries, re-confirms ordinary lines on human s
     await f.edit('conventions.md', 'Use spaces.')
     expect(await f.note(3)).not.toContain(humanLine)
     expect(await f.note(3)).toContain('[Summary of conventions.md may be outdated; read conventions.md]')
-    // A human saving MEMORY.md re-confirms the ordinary summary without rewording it,
-    // while leaving the unchanged managed saved paragraph hidden until updated.
+    // Editing an unrelated line must NEVER refresh an existing stale binding (ordinary or managed).
     await f.edit(index, `${humanLine}\n\n${managedLine}\n\nNotes updated.`)
-    expect(await f.note(4)).toContain(humanLine)
+    expect(await f.note(4)).not.toContain(humanLine)
+    expect(await f.note(4)).toContain('[Summary of conventions.md may be outdated; read conventions.md]')
     expect(await f.note(4)).not.toContain('Saved summary [conventions](conventions.md)')
+    // Updating the summary line itself rebinds it cleanly to the new topic hash.
+    const updatedLine = '- Code style: spaces, see [conventions](conventions.md)'
+    await f.edit(index, `${updatedLine}\n\n${managedLine}\n\nNotes updated.`)
+    expect(await f.note(5)).toContain(updatedLine)
+    expect(await f.note(5)).not.toContain('Saved summary [conventions](conventions.md)')
   } finally {
     await f.session.close?.()
   }
