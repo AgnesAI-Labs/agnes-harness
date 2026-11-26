@@ -3,6 +3,8 @@ import { workspaceErrorNotice } from '@agnes/web-conversation/presentation'
 import { preserveRouteParams } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
 import { requestNewSession } from '../application.js'
+import { isDraftRoute, isSkillsRoute } from '../backends/local-route.js'
+import { localLocationUrl } from '../backends/local-workbench-bus.js'
 import { mountNewSessionDialog } from '../new-session-dialog.js'
 import { sessionInventory } from '../session-inventory.js'
 import { currentChats, requestWorkspacePicker, workspacePickerAvailable } from '../workspace-picker.js'
@@ -41,6 +43,7 @@ export function createWorkspaceController(
     | 'clientModules'
     | 'composerRuntime'
     | 'connected'
+    | 'draftingNew'
     | 'list'
     | 'renderControls'
     | 'run'
@@ -73,10 +76,12 @@ export function createWorkspaceController(
   })
 
   /** Select the draft's workspace and name it in the address. */
-  function remember(workspace: WorkspaceEntry | undefined): void {
+  function remember(workspace: WorkspaceEntry | undefined, explicitDraft = false): void {
     context.selectedWorkspace = workspace
     dialog.update({ current: workspace?.path })
-    const url = new URL(location.href)
+    const url = localLocationUrl()
+    if (!explicitDraft && isSkillsRoute(url.searchParams) && !isDraftRoute(url.searchParams)) return
+    if (explicitDraft) url.searchParams.set('new', '1')
     // No workspace at all (e.g. the list failed to load) keeps the address's choice for the next refresh.
     if (workspace?.workspaceId) url.searchParams.set('workspaceId', workspace.workspaceId)
     else if (workspace) url.searchParams.delete('workspaceId')
@@ -96,7 +101,7 @@ export function createWorkspaceController(
   function select(workspace: WorkspaceEntry | 'chats'): void {
     const next = workspace === 'chats' ? currentChats(context.workspaceRows) : workspace
     if (!next) return
-    remember(next)
+    remember(next, context.draftingNew)
     context.renderControls()
     context.composerRuntime.focus()
   }
@@ -124,6 +129,7 @@ export function createWorkspaceController(
     if (selected) context.selectedWorkspace = page.items.find((row) => row.path === selected.path)
     dialog.update({ workspaces: chosen(page.items), current: context.selectedWorkspace?.path })
     context.updateSidebar()
+    context.renderControls()
   }
 
   async function register(cwd: string): Promise<void> {

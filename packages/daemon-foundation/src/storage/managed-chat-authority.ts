@@ -36,6 +36,13 @@ type AuthorityState = {
   schedules: Record<string, { root: string; revision?: number; revoked?: boolean }>
   sources: Record<string, Source>
 }
+
+/** Boot verification can use a persistent inode when the OS renumbers a filesystem device. */
+export function sameRegisteredInode(actual: string, expected: string): boolean {
+  const inode = /^\d+:(\d+)$/u.exec(actual)?.[1]
+  return inode !== undefined && inode === /^\d+:(\d+)$/u.exec(expected)?.[1]
+}
+
 const issued = new WeakSet<object>()
 export function assertLegacyChatReadGrant(value: unknown): asserts value is LegacyChatReadGrant {
   if (!value || typeof value !== 'object' || !issued.has(value))
@@ -45,6 +52,7 @@ export function assertLegacyChatReadGrant(value: unknown): asserts value is Lega
 /** Internal provenance, separate from write-once bindings. Initialization and compatibility freeze share one transaction. */
 export class ManagedChatAuthority {
   private memory: AuthorityState = { initialized: false, schedules: {}, sources: {} }
+  private bootDirectoryIdentity: string | null | undefined
   constructor(
     private readonly table: TableHandle | undefined,
     private readonly bindings: WorkspaceBindingStore,
@@ -81,10 +89,21 @@ export class ManagedChatAuthority {
     schedules: readonly LegacyScheduleSnapshot[]
     legacyDirectoryIdentity?: string | null
   }): Promise<void> {
+    if (this.bootDirectoryIdentity !== undefined) return
+    let bootIdentity: string | null = null
     this.mutate((state) => {
-      if (state.initialized) return
+      if (state.initialized) {
+        const observed = snapshot.legacyDirectoryIdentity
+        const registered = state.legacyDirectoryIdentity
+        if (observed && registered && sameRegisteredInode(observed, registered)) {
+          state.legacyDirectoryIdentity = observed
+          bootIdentity = observed
+        }
+        return
+      }
       if (snapshot.legacyDirectoryIdentity !== undefined)
         state.legacyDirectoryIdentity = snapshot.legacyDirectoryIdentity
+      bootIdentity = state.legacyDirectoryIdentity ?? null
       for (const binding of snapshot.bindings)
         if (binding.canonicalRoot === this.legacyRoot)
           state.sources[binding.sessionKey] = {
@@ -101,9 +120,10 @@ export class ManagedChatAuthority {
           }
       state.initialized = true
     })
+    this.bootDirectoryIdentity = bootIdentity
   }
   get legacyDirectoryIdentity(): string | null | undefined {
-    return this.initialized().legacyDirectoryIdentity
+    return this.bootDirectoryIdentity
   }
   private initialized(state = this.read()): AuthorityState {
     if (!state.initialized) throw new Error('managed chat authority is not initialized')

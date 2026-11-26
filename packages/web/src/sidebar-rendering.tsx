@@ -89,7 +89,7 @@ export function SessionRowLabel({
 }: {
   options: SidebarNavigationOptions
   t: Translate
-  row: Row
+  row: Pick<Row, 'sessionId' | 'lastMessageAt'> & Partial<Pick<Row, 'createdAt'>>
   title: string
   active: boolean
   running: boolean

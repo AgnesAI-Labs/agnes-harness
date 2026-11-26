@@ -6,6 +6,7 @@ import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { createRegionRenderer, installFeedbackSink, type RegionRenderer } from '@agnes/web-ui'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { contributedModelCatalog } from '../src/model-picker/catalog-source.js'
 import { groupModels, namedModels } from '../src/model-picker/state.js'
 import {
   ModelPickerControl,
@@ -842,4 +843,46 @@ it('lets the popover hug its content and aligns model and session rows in fixed 
   expect(rule('  .model-picker-value')).toMatch(
     /text-align: start;[\s\S]*overflow: hidden;[\s\S]*text-overflow: ellipsis;[\s\S]*white-space: nowrap/,
   )
+})
+
+it('keeps contributed cloud catalogs isolated, preserves backend capabilities and a running legacy selection', async () => {
+  const cloud = contributedModelCatalog(),
+    local = contributedModelCatalog()
+  const native = [...models]
+  const remote = [{ route: 'cloud-primary', id: 'cloud-a' }]
+  cloud.set(remote)
+  remote[0]!.id = 'mutated-after-publication'
+  expect(cloud.visible(native, currentModel, false)).toEqual([{ route: 'cloud-primary', id: 'cloud-a' }])
+  expect(cloud.visible(native, currentModel, true)).toEqual([
+    { route: 'cloud-primary', id: 'cloud-a' },
+    currentModel,
+  ])
+  expect(local.visible(native, currentModel, false)).toBe(native)
+  cloud.set([])
+  expect(cloud.visible(native, undefined, false)).toEqual([])
+  cloud.set(undefined)
+  expect(cloud.visible(native, undefined, false)).toBe(native)
+  cloud.set([
+    { route: currentModel.route, id: currentModel.id, label: 'Cloud models' },
+    { route: 'another-cloud', id: currentModel.id },
+  ])
+  const visible = cloud.visible(native, currentModel, true)
+  expect(visible).toEqual([
+    { ...currentModel, label: 'Cloud models' },
+    { route: 'another-cloud', id: currentModel.id },
+  ])
+  expect(native[0]).toEqual(currentModel)
+  const selected = visible[0]
+  if (!selected?.contextWindow) throw new Error('backend capacity was lost')
+  const { trigger, onSettingsChange } = mountPicker({
+    options: visible,
+    selected,
+    settings: { capacity: selected.contextWindow },
+  })
+  await open(trigger)
+  expect(document.querySelector<HTMLButtonElement>('#model-picker-thinking')?.disabled).toBe(true)
+  expect(document.querySelector('#model-picker-thinking')?.textContent).toContain('此模型不支持')
+  await enter('context')
+  choose('session-model-budget', '中等')
+  await vi.waitFor(() => expect(onSettingsChange).toHaveBeenCalledWith({ contextWindow: 64000 }))
 })

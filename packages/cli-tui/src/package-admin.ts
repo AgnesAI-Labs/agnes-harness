@@ -143,6 +143,54 @@ export async function installPreview(
   return operation
 }
 
+/** Observe startup before taking an activation baseline; never replay a package operation. */
+async function settledPackage(
+  client: NodeClient,
+  profile: string,
+  previous: PackageInstalledDescriptor,
+): Promise<PackageInstalledDescriptor> {
+  // The daemon accepts a null active baseline while a client-only roster is still settling.
+  const clientOnly =
+    previous.contributions.length > 0 &&
+    previous.contributions.every(
+      (row) =>
+        row.kind === 'extension' &&
+        row.client !== undefined &&
+        Object.keys(row.capabilities ?? {}).every((capability) => capability === 'ui'),
+    )
+  if (!previous.trusted || previous.desired !== 'enabled' || previous.actual !== 'starting') return previous
+  if (clientOnly) return previous
+  const deadline = Date.now() + MAX_OPERATION_POLLS * POLL_INTERVAL_MS
+  for (let poll = 0; poll < MAX_OPERATION_POLLS && Date.now() < deadline; poll++) {
+    if (client.isClosed) throw new Error('Package connection closed before activation.')
+    const observed = await client.request(
+      '_agnes/v1/packages.list',
+      { profile },
+      {
+        timeoutMs: Math.max(1, deadline - Date.now()),
+      },
+    )
+    if (client.isClosed) throw new Error('Package connection closed before activation.')
+    if (Date.now() >= deadline) break
+    const current = observed.packages.find((row) => row.id === previous.id)
+    if (
+      !current ||
+      current.integrity !== previous.integrity ||
+      current.trusted !== previous.trusted ||
+      current.desired !== previous.desired ||
+      current.source.type !== previous.source.type ||
+      current.source.ref !== previous.source.ref ||
+      current.provenance?.resolvedLocation !== previous.provenance?.resolvedLocation
+    )
+      throw new Error('E_PACKAGE_PREVIEW_STALE: the installed package changed during startup.')
+    if (current.actual === 'restart-required')
+      throw new Error('E_GENERATION_RESTART_REQUIRED: this plugin requires a restart')
+    if (current.actual !== 'starting') return current
+    await pause()
+  }
+  throw new Error('Package runtime is still starting; check agh plugins status before trying again.')
+}
+
 /**
  * Brings the reviewed `preview` live over the installed `previous`: update changed bytes or source,
  * atomically activating trusted packages, then perform any missing trust/enable steps. `reenable` retries enable
@@ -157,6 +205,7 @@ export async function activateReviewedPackage(
 ): Promise<PackageOperation | undefined> {
   if (!preview.capabilityHash)
     throw new Error('Preview has no capability hash; update the daemon and inspect again.')
+  previous = await settledPackage(client, profile, previous)
   const base = { profile, clientId: await client.clientId(), id: preview.id }
   let last: PackageOperation | undefined
   if (
@@ -177,7 +226,7 @@ export async function activateReviewedPackage(
               activation: {
                 expectedInstalledIntegrity: previous.integrity,
                 expectedActiveIntegrity:
-                  previous.actual === 'running' ? (previous.actualIntegrity ?? previous.integrity) : null,
+                  previous.actualIntegrity ?? (previous.actual === 'running' ? previous.integrity : null),
                 trust: { integrity: preview.integrity, capabilityHash: preview.capabilityHash },
               },
             }

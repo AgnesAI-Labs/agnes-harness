@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+使用支持云端连接的部署时，请参阅[云端工作台对接预览](guide/remote-frontend.zh-CN.md)。
+
 从旧版 `main` 升级请先看[旧版升级指南](guide/upgrade-from-previous.zh-CN.md)：备份、清理旧环境，再重新配置。
 
 **AGH 把业务能力交付为可安装的插件、可启动的智能体和可采纳的应用。**

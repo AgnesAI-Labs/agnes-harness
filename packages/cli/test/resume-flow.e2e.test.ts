@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { operations } from '@agnes/code'
+import * as followUpRunner from '@agnes/daemon-rpc/local/follow-up-runner'
 import { createTestHost } from '@agnes/host/testkit'
 import type { Actor, InferenceEvent } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
@@ -83,6 +84,29 @@ describe('parked approval across the CLI one-shot boundary', () => {
     let first: Awaited<ReturnType<typeof bootLocal>> | undefined
     let second: Awaited<ReturnType<typeof bootLocal>> | undefined
     let app: TuiApp | undefined
+    let phase = 'initial-print'
+    let targetSessionId: string | undefined
+    let approvalSubmitted = false
+    const continuation = { started: 0, ended: 0 }
+    const makeRunner = followUpRunner.createFollowUpRunner
+    // Observe the real flight boundary synchronously: pushed, scheduling and the runner stay unchanged.
+    const observation = vi.spyOn(followUpRunner, 'createFollowUpRunner').mockImplementation((cx, pushed) =>
+      makeRunner(
+        {
+          ...cx,
+          onPromptStart(key) {
+            cx.onPromptStart?.(key)
+            if (approvalSubmitted && key === targetSessionId) continuation.started += 1
+          },
+          onPromptEnd(key) {
+            cx.onPromptEnd?.(key)
+            if (approvalSubmitted && key === targetSessionId && continuation.started > 0)
+              continuation.ended += 1
+          },
+        },
+        pushed,
+      ),
+    )
     try {
       first = await bootLocal(parseArgs(['-p', 'clean']), testDeps(home, { createHostImpl }))
       const output = printIo(home)
@@ -99,17 +123,22 @@ describe('parked approval across the CLI one-shot boundary', () => {
       await first.close()
       first = undefined
 
+      phase = 'reopened-boot'
       second = await bootLocal(
         parseArgs(['--resume', sessionId as string]),
         testDeps(home, { createHostImpl }),
       )
+      phase = 'reopened-load'
       const session = await second.client.session.load(sessionId as string, { cwd: home })
+      targetSessionId = session.id
       const term = new FakeTerminal({ columns: 100, rows: 30 })
       app = new TuiApp({ session, term, header: 'Agnes' })
       await app.start()
       await vi.waitFor(async () => expect((await screenOf(term, 100, 30)).join('\n')).toContain('Allow once'))
       // Approval keys count only after the card has sat untouched for 600 ms (approval-settle.ts).
       await new Promise((resolve) => setTimeout(resolve, 700))
+      phase = 'approval-decision'
+      approvalSubmitted = true
       term.feed('1')
       await vi.waitFor(async () => {
         const timeline = await session.projectUI(undefined, { surface: 'tui' })
@@ -133,27 +162,47 @@ describe('parked approval across the CLI one-shot boundary', () => {
       // only after that run ends (one run per session; earlier it is SESSION_BUSY), and must not be
       // consumed as if it were the approval continuation.
       const tui = app
-      await vi.waitFor(() => expect(tui.busy).toBe(false), { timeout: 10_000 })
+      phase = 'approved-continuation'
+      await vi.waitFor(
+        async () => {
+          expect(continuation).toEqual({ started: 1, ended: 1 })
+          const timeline = await session.projectUI(undefined, { surface: 'tui' })
+          expect(timeline.nodes).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                kind: 'tool',
+                name: 'shell',
+                status: expect.not.stringMatching('running'),
+              }),
+              expect.objectContaining({ kind: 'assistant', text: 'approved continuation completed' }),
+            ]),
+          )
+          expect(tui.busy).toBe(false)
+        },
+        { timeout: 10_000 },
+      )
+      phase = 'fresh-prompt'
       const resumed = await session.prompt([
         { type: 'text', text: 'queued only after the approved continuation' },
       ])
       expect(resumed.reason).toBe('completed')
-      const timeline = await session.projectUI(undefined, { surface: 'tui' })
-      expect(timeline.nodes).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            kind: 'tool',
-            name: 'shell',
-            status: expect.not.stringMatching('running'),
-          }),
-          expect.objectContaining({ kind: 'assistant', text: 'approved continuation completed' }),
-        ]),
+    } catch (error) {
+      // No RPC arguments, session ids, credentials or raw error messages in failure diagnostics.
+      const code = (error as { code?: unknown } | null)?.code
+      console.error(
+        'resume-flow phase',
+        JSON.stringify({ phase, rpcCode: typeof code === 'number' ? code : null }),
       )
+      throw error
     } finally {
-      await app?.stop()
-      await second?.close()
-      await first?.close()
-      rmSync(home, { recursive: true, force: true })
+      try {
+        await app?.stop()
+        await second?.close()
+        await first?.close()
+        rmSync(home, { recursive: true, force: true })
+      } finally {
+        observation.mockRestore()
+      }
     }
   }, 30_000)
 })

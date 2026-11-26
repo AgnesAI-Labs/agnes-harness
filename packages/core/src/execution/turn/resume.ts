@@ -3,6 +3,7 @@ import type { EventInput, Seq } from '@agnes/core-common/types'
 import { isNestedCall } from '@agnes/core-ledger'
 import { scanAll, scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { EffectNode } from '@agnes/core-ledger/reduce/state'
+import type { DispatchPhase } from '@agnes/protocol'
 import { anySideCallInFlight, settleSideCalls } from '../../loop/side-call-receipts.js'
 import { readSideCallBinding } from '../../orchestrator/side-call-effect-port.js'
 import {
@@ -16,6 +17,7 @@ import type { SessionImpl } from '../../step/session.js'
 import { classifyToolRecovery, type ToolRecoveryDecision } from '../../step/tool-recovery.js'
 import { interruptedRequestNote } from './inference-failure.js'
 import { failureNotes, recoveryNotes } from './nested-note.js'
+import { toolResultRecords } from './tool-result-records.js'
 import { unknownOutcomeRows } from './unknown-outcome.js'
 
 export type ResumeMode = 'continue' | 'close'
@@ -132,14 +134,16 @@ function syntheticResult(
   code: string,
   text: string,
   sourceSeq: Seq,
-): EventInput {
-  return s.ev(
-    'tool/result',
+  dispatchPhase?: DispatchPhase,
+): EventInput[] {
+  return toolResultRecords(
+    s,
     {
       toolUseId,
       content: [{ type: 'text', text }],
       isError: true,
       code,
+      dispatchPhase,
       enforcement: s.d.runtime.enforcement(),
       authz: { decisionId: 'n/a' },
     },
@@ -161,7 +165,7 @@ function settleUnknownSubtree(s: SessionImpl, n: EffectNode, events: EventInput[
   events.push(s.ev('effect/settled', { effectId: n.effectId, outcome: 'unknown' }))
   if (n.kind === 'tool' && n.tool)
     events.push(
-      syntheticResult(
+      ...syntheticResult(
         s,
         n.tool.toolUseId,
         'TOOL_OUTCOME_UNKNOWN',
@@ -349,7 +353,7 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
       const undispatchedNested = nestedCalls.filter(
         (call) => call.status !== 'completed' && call.effectId === undefined,
       )
-      const undispatchedNestedEvents = undispatchedNested.map((call) =>
+      const undispatchedNestedEvents = undispatchedNested.flatMap((call) =>
         syntheticResult(
           s,
           call.toolUseId,
@@ -364,6 +368,23 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
       // The `[nested result]` note a synthesized close of this call commits with. Read before the
       // result lands, while the effect is still pending and bounds the scan.
       const notesFor = (code: string) => recoveryNotes(s, root, callRow?.data, code)
+      const registered = s.turn?.snapshot.byName.get(root.tool.name)
+      const persisted =
+        cur.phase.kind === 'tools'
+          ? cur.phase.batch.calls.find((call) => call.toolUseId === root.tool?.toolUseId)
+          : undefined
+      const ledgerPolicy = hasTrustedToolCallProvenance(callRow)
+        ? (callRow?.data as PersistedToolPolicyFields)
+        : undefined
+      const dispatchPhase =
+        toolPolicyBindingProblem(persisted, ledgerPolicy) === undefined &&
+        hasCompleteToolPolicyEnvelope(persisted) &&
+        persisted.effectId === root.effectId &&
+        persisted.resolvedPolicy.replay === root.replay &&
+        registered !== undefined &&
+        persisted.definitionFingerprint === registered.definitionFingerprint
+          ? persisted.dispatchPhase
+          : undefined
       // A parent whose own children are still unsettled: the process died somewhere inside the
       // call it made, and there is no way to tell from here whether the parent's own work finished
       // around them. Every descendant is closed as `unknown` and the parent is handed the list, so
@@ -375,12 +396,13 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
         for (const c of root.children) settleUnknownSubtree(s, c, events)
         const descendants = flattenDescendants(root).map(effectSummary)
         events.push(
-          syntheticResult(
+          ...syntheticResult(
             s,
             root.tool.toolUseId,
             'CHILD_INTERRUPTED',
             JSON.stringify({ interrupted: true, effects: descendants }),
             root.argsSeq ?? root.intentSeq,
+            dispatchPhase,
           ),
           // The interrupted children's own closers are not on the ledger yet, so only the nested
           // calls that had already settled are listed.
@@ -404,19 +426,11 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
           await askUnknownOutcome(s, root.tool.toolUseId, root.tool.name)
         continue
       }
-      const registered = s.turn?.snapshot.byName.get(root.tool.name)
       // Recovery consumes the envelope durably written for this exact call. Looking at today's
       // ToolDef would re-run a classifier after a crash and could turn an input mutation into a safe
       // capture (or the reverse). Legacy open calls, tampered policy hashes, replay disagreement,
       // and definition drift all have an unknown external outcome and therefore take the same
       // human-reconciliation path as an explicit never-replay call.
-      const persisted =
-        cur.phase.kind === 'tools'
-          ? cur.phase.batch.calls.find((call) => call.toolUseId === root.tool?.toolUseId)
-          : undefined
-      const ledgerPolicy = hasTrustedToolCallProvenance(callRow)
-        ? (callRow?.data as PersistedToolPolicyFields)
-        : undefined
       let recoveryRefusal: string | undefined
       const bindingProblem = toolPolicyBindingProblem(persisted, ledgerPolicy ?? undefined)
       if (bindingProblem === 'missing') recoveryRefusal = 'persisted-policy-missing'
@@ -479,7 +493,7 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
         await s.transition(
           [
             ...undispatchedNestedEvents,
-            syntheticResult(
+            ...syntheticResult(
               s,
               root.tool.toolUseId,
               'CANCELLED',
@@ -509,8 +523,8 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
       await s.transition(
         [
           ...undispatchedNestedEvents,
-          s.ev(
-            'tool/result',
+          ...toolResultRecords(
+            s,
             {
               toolUseId: root.tool.toolUseId,
               content: [
@@ -521,6 +535,7 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
               ],
               isError: true,
               code,
+              dispatchPhase: recoveryRefusal ? undefined : persisted?.dispatchPhase,
               enforcement: s.d.runtime.enforcement(),
               authz: { decisionId: 'n/a' },
             },
@@ -603,10 +618,9 @@ export async function closeInterrupted(
         : []
     }),
   )
-  const stateCalls =
-    op.phase.kind === 'tools'
-      ? new Map(op.phase.batch.calls.map((call) => [call.toolUseId, call]))
-      : new Map()
+  const stateCalls = new Map<string, ToolCallState>(
+    op.phase.kind === 'tools' ? op.phase.batch.calls.map((call) => [call.toolUseId, call]) : [],
+  )
   // Calls closed as unknown with the effect each ran under, for their `[nested result]` notes.
   const unknownCalls: Array<{ toolUseId: string; name: string; effectId?: string }> = []
   const closeCall = (
@@ -616,12 +630,13 @@ export async function closeInterrupted(
     sourceSeq: Seq,
     detail?: string,
     effectId?: string,
+    dispatchPhase?: DispatchPhase,
   ): void => {
     if (closedCalls.has(toolUseId)) return
     if (code === 'TOOL_OUTCOME_UNKNOWN')
       unknownCalls.push({ toolUseId, name, ...(effectId ? { effectId } : {}) })
     events.push(
-      syntheticResult(
+      ...syntheticResult(
         s,
         toolUseId,
         code,
@@ -630,6 +645,7 @@ export async function closeInterrupted(
             ? `${name} never started: the session was closed first`
             : `the outcome of ${name} is unknown: the session was closed before it settled`),
         sourceSeq,
+        dispatchPhase,
       ),
     )
     closedCalls.add(toolUseId)
@@ -690,6 +706,7 @@ export async function closeInterrupted(
           n.argsSeq ?? n.intentSeq,
           undefined,
           n.effectId,
+          trusted ? call?.dispatchPhase : undefined,
         )
       actions.push({ effectId: n.effectId, action: settled ? 'settle' : 'unknown' })
       return

@@ -2,7 +2,7 @@ import { mergeWindowsEnvironment, startWindowsJobProcess } from '@agnes/system-n
 import { type WindowsLaunch, windowsLaunch } from '../windows-acl/launch.js'
 import type { ExecAdapter, ExecResult } from './exec.js'
 import { createExecOutput } from './exec-output.js'
-import type { PowerShellDescriptor } from './powershell.js'
+import { type PowerShellDescriptor, powerShellStartError } from './powershell.js'
 import { preparePowerShellFile } from './powershell-file.js'
 
 /** Finite Host commands only; the Job owns every process spawned by one command. */
@@ -61,6 +61,8 @@ export function createWindowsExec(options: {
             nodeExecutable: options.nodeExecutable,
             signal: controller.signal,
             ...(launch ? { confinement: launch.confinement } : {}),
+          }).catch((cause) => {
+            throw powerShellStartError(cause, options.powerShell, argv, launch !== undefined)
           })
           launch?.started(child.completion)
           child.stdout.on('data', output.stdout)

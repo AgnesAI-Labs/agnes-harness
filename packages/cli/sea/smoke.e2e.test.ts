@@ -1,4 +1,5 @@
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { once } from 'node:events'
 import {
   cpSync,
   existsSync,
@@ -24,6 +25,90 @@ const bin = process.env.AGNES_SEA_BIN
 const harness = process.env.AGNES_SEA_LOADER_HARNESS
 const version = process.env.AGNES_SEA_VERSION?.trim() || PUBLIC_PACKAGE_VERSION
 
+const IMAGE_SMOKE_OUTPUT = 'sea image smoke ok\n'
+
+async function runImageSmoke(binary: string, workspace: string, env: NodeJS.ProcessEnv, tracePath: string) {
+  const child = spawn(
+    binary,
+    ['-p', 'SEA_IMAGE_SMOKE', '--profile', 'local-dev', '--model', 'primary=faux/faux-1', '--cwd', workspace],
+    {
+      env: { ...env, NODE_PATH: '', NODE_OPTIONS: '', AGH_TIMING: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    },
+  )
+  let stdout = ''
+  let stderr = ''
+  let stage = 'response'
+  let expired: string | undefined
+  let exit: { code: number | null; signal: NodeJS.Signals | null } | undefined
+  let exitAtDeadline: typeof exit
+  child.once('exit', (code, signal) => {
+    exit = { code, signal }
+  })
+  const deadline = (ms: number) =>
+    setTimeout(() => {
+      expired = stage
+      exitAtDeadline = exit
+      child.kill('SIGKILL')
+      child.stdout.destroy()
+      child.stderr.destroy()
+    }, ms)
+  let timer = deadline(60_000)
+  child.stdout.setEncoding('utf8').on('data', (text: string) => {
+    stdout += text
+    if (stage === 'response' && stdout.includes(IMAGE_SMOKE_OUTPUT)) {
+      stage = 'shutdown'
+      clearTimeout(timer)
+      // The CLI still has to close the local host, release adapters, and flush stdio.
+      timer = deadline(30_000)
+    }
+  })
+  child.stderr.setEncoding('utf8').on('data', (text: string) => {
+    stderr = (stderr + text).slice(-64 * 1024)
+  })
+  let status: number | null | undefined
+  let signal: NodeJS.Signals | null | undefined
+  try {
+    const [exitStatus, exitSignal] = await once(child, 'close')
+    status = exitStatus
+    signal = exitSignal
+    if (expired) throw new Error(`SEA image smoke timed out during ${expired}`)
+    expect(exit).toEqual({ code: status, signal })
+    if (status !== 0) throw new Error(`SEA image smoke exited with status ${status} and signal ${signal}`)
+    expect(stdout).toBe(IMAGE_SMOKE_OUTPUT)
+  } catch (error) {
+    let stages: unknown[] = []
+    try {
+      stages = existsSync(tracePath)
+        ? readFileSync(tracePath, 'utf8')
+            .trim()
+            .split('\n')
+            .filter(Boolean)
+            .slice(0, 64)
+            .map((line) => JSON.parse(line))
+        : []
+    } catch {
+      // Preserve the original command failure, including a partial diagnostic trace write.
+    }
+    console.error(
+      'SEA image smoke stages',
+      JSON.stringify({
+        expired,
+        exit: exit ?? null,
+        exitAtDeadline: exitAtDeadline ?? null,
+        close: status === undefined ? null : { code: status, signal },
+        expectedStdout: stdout === IMAGE_SMOKE_OUTPUT,
+        timing: stderr.split(/\r?\n/).filter((line) => /^agh-timing [a-z][a-z0-9-]* \d+(\.\d+)?$/.test(line)),
+        stages,
+      }),
+    )
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 describe.skipIf(!bin || !harness)('SEA smoke', () => {
   it('starts the CLI with the Node memory flags from the SEA configuration', () => {
     const probe = fileURLToPath(new URL('./fixtures/exec-argv.cjs', import.meta.url))
@@ -47,10 +132,11 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
     const loaderHarness = join(distributionRoot, basename(harness as string))
     // Session workspaces cannot contain the private .agh state under home.
     const workspace = join(temporary, 'workspace')
+    const tracePath = join(temporary, 'provider-stages.jsonl')
     const server = spawn(
       process.env.AGNES_SEA_NODE || process.execPath,
       [fileURLToPath(new URL('./fixtures/openai-server.mjs', import.meta.url))],
-      { stdio: ['ignore', 'pipe', 'inherit'] },
+      { stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, AGNES_SEA_SMOKE_TRACE: tracePath } },
     )
     const env = {
       ...process.env,
@@ -256,26 +342,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
           { encoding: 'utf8', env },
         ),
       ).toBe('sea faux ok\n')
-      expect(
-        execFileSync(
-          binary,
-          [
-            '-p',
-            'SEA_IMAGE_SMOKE',
-            '--profile',
-            'local-dev',
-            '--model',
-            'primary=faux/faux-1',
-            '--cwd',
-            workspace,
-          ],
-          {
-            encoding: 'utf8',
-            env: { ...env, NODE_PATH: '', NODE_OPTIONS: '' },
-            timeout: 30_000,
-          },
-        ),
-      ).toBe('sea image smoke ok\n')
+      await runImageSmoke(binary, workspace, env, tracePath)
       const output = execFileSync(loaderHarness, [join(packageDirectory, 'index.ts')], {
         encoding: 'utf8',
         env,
@@ -331,5 +398,5 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       rmSync(temporary, { recursive: true, force: true })
     }
     // Multiple cold SEA launches plus daemon readiness and a real provider round-trip exceed 5s on Windows.
-  }, 60000)
+  }, 150_000)
 })

@@ -1,9 +1,10 @@
 /** @vitest-environment happy-dom */
 
 import { type UsageView, userImagePolicy } from '@agnes/protocol'
+import type { DshSlotProps } from '@agnes/web-client'
 import { setDisclosureOpen } from '@agnes/web-ui'
-import type { ComposerView } from '@agnes/web-units'
-import { act, createElement } from 'react'
+import type { ComposerView, ModelPickerProps } from '@agnes/web-units'
+import { act, createElement, type ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COMPOSER_SLOT } from '../src/region-slots.js'
 import { fakeVoice } from './helpers/fake-voice.js'
@@ -70,6 +71,10 @@ describe('rendered composer region', () => {
   it('renders the complete composer through its public handle and keeps native keyboard submit', async () => {
     const submitted: string[] = []
     const drafts: string[] = []
+    const selectModel = vi.fn(async () => true),
+      publishCatalog = vi.fn()
+    let catalogValue: unknown
+    let renderNative: (() => ReactNode) | undefined
     // Saved bindings remain managed in Plugins → Channels, outside every session composer.
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
       Response.json({
@@ -88,10 +93,13 @@ describe('rendered composer region', () => {
         ],
       }),
     )
+
     runtime = await mountRenderedIndex({
       composer: {
         onDraftChange: (value) => drafts.push(value),
         onSubmit: () => submitted.push('submit'),
+        onModelSelect: selectModel,
+        onModelCatalogChange: publishCatalog,
       },
     })
     const handle = runtime.composer
@@ -169,6 +177,68 @@ describe('rendered composer region', () => {
     expect(newline.defaultPrevented).toBe(false)
     expect(submitted).toEqual(['submit'])
     expect(document.activeElement).toBe(prompt)
+    // A profile catalog can replace the model control before the first message and in a session.
+    const removeCatalog = runtime.registry.register(
+      {
+        name: 'conversation.input.model.catalog',
+        id: 'fixture-model-catalog',
+        owner: 'fixture',
+        priority: -1,
+      },
+      (props: DshSlotProps) => {
+        catalogValue = props.value
+        const actions = props.actions as {
+          select: ModelPickerProps['onSelect']
+          setCatalog: NonNullable<ModelPickerProps['onCatalogChange']>
+          renderDefault: () => ReactNode
+        }
+        renderNative = actions.renderDefault
+        return createElement(
+          'button',
+          {
+            type: 'button',
+            'data-testid': 'fixture-model-catalog',
+            onClick() {
+              const model = { id: 'cloud-only', route: 'cloud-primary' }
+              actions.setCatalog([model])
+              void actions.select(model)
+            },
+          },
+          'Cloud catalog',
+        )
+      },
+    )
+    handle?.render({ ...readyView, hasSession: false })
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="fixture-model-catalog"]')).toBeTruthy()
+      expect(document.querySelector('#model')).toBeNull()
+    }, slotRender)
+    expect(catalogValue).toEqual(readyView.model)
+    document.querySelector<HTMLButtonElement>('[data-testid="fixture-model-catalog"]')?.click()
+    expect(selectModel).toHaveBeenCalledWith({ id: 'cloud-only', route: 'cloud-primary' })
+    expect(publishCatalog).toHaveBeenCalledWith([{ id: 'cloud-only', route: 'cloud-primary' }])
+    const removeNative = runtime.registry.register(
+      {
+        name: 'conversation.input.model.catalog',
+        id: 'fixture-native-delegate',
+        owner: 'fixture',
+        priority: -2,
+      },
+      () => renderNative?.(),
+    )
+    await vi.waitFor(() => expect(document.querySelector('#model')).toBeTruthy(), slotRender)
+    removeNative()
+    runtime.session.setSession('catalog-session')
+    handle?.render(readyView)
+    await vi.waitFor(
+      () => expect(document.querySelector('[data-testid="fixture-model-catalog"]')).toBeTruthy(),
+      slotRender,
+    )
+    removeCatalog()
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="fixture-model-catalog"]')).toBeNull()
+      expect(document.querySelector('#model')).toBeTruthy()
+    }, slotRender)
   })
 
   it('clears session-scoped attachments and revokes their preview when the session changes', async () => {

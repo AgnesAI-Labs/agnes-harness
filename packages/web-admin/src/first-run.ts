@@ -37,6 +37,7 @@ export async function loadDoctor(probeAccounts = false, signal?: AbortSignal): P
 /** Owns only UI drafts. Accounts, model tests and defaults stay on existing configuration RPCs. */
 export function createFirstRunController(options: {
   host: HTMLElement
+  modelCatalog?: { active(): boolean; subscribe(listener: () => void): () => void }
   banner: HTMLElement
   client: Client
   storage?: Pick<Storage, 'getItem' | 'setItem'> | undefined
@@ -272,6 +273,12 @@ export function createFirstRunController(options: {
     }
   }
   document.getElementById('config')?.addEventListener('close', resume)
+  const stopModelCatalog = options.modelCatalog?.subscribe(() => {
+    if (options.modelCatalog?.active()) {
+      visible = false
+      render()
+    }
+  })
   const stopHomeNavigation = homeNavigation.subscribe(resume)
   return {
     async initialize(value: ConfigSnapshot, hasSession: boolean) {
@@ -290,7 +297,7 @@ export function createFirstRunController(options: {
       } catch {
         /* Diagnostics never block startup. */
       }
-      visible = !hasSession && needsFirstRun(value) && !skipped()
+      visible = !hasSession && !options.modelCatalog?.active() && needsFirstRun(value) && !skipped()
       render()
       return visible
     },
@@ -308,6 +315,7 @@ export function createFirstRunController(options: {
       generation++
       pending.abort()
       stopHomeNavigation()
+      stopModelCatalog?.()
       document.getElementById('config')?.removeEventListener('close', resume)
       unmountRegion(options.host)
       unmountRegion(options.banner)

@@ -1,3 +1,4 @@
+import type { PackageCatalogPage, PackageSource } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import { type AdminApiError, PluginAdminApi } from '../src/admin/plugins/api.js'
 import { PluginConfigApi } from '../src/admin/plugins/config-api.js'
@@ -103,6 +104,79 @@ it('sends the generated install DTO through the fixed BFF route', async () => {
   expect(body).not.toHaveProperty('pluginId')
 })
 
+it('reads only the installed Docs DTO and binds the reply to the requested connection', async () => {
+  const docsConnectionEpoch = 'docs.browser-connection'
+  const fetcher = vi.fn<typeof fetch>()
+  const activeContext = {
+    ...context,
+    features: [...context.features, 'packages.docs.v1'],
+    docsConnectionEpoch,
+  }
+  const api = new PluginAdminApi(activeContext, fetcher)
+  const input = {
+    id: '@acme/plugin',
+    expectedIntegrity: `sha256-${'a'.repeat(64)}`,
+    locale: 'zh-CN',
+  } as const
+  const signal = new AbortController().signal
+  const markdown = '中'.repeat(21_845) + 'a'
+  fetcher.mockResolvedValueOnce(Response.json({ found: true, locale: 'en', markdown, docsConnectionEpoch }))
+  await expect(api.docsGet(input, signal)).resolves.toEqual({ found: true, locale: 'en', markdown })
+  expect(fetcher).toHaveBeenCalledWith(
+    '/admin/plugins/api/docs/get',
+    expect.objectContaining({
+      method: 'POST',
+      credentials: 'same-origin',
+      redirect: 'error',
+      signal,
+    }),
+  )
+  expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+    profile: 'local-dev',
+    ...input,
+    docsConnectionEpoch,
+  })
+
+  for (const body of [
+    { found: true, locale: 'en', markdown },
+    { found: true, locale: 'en', markdown, docsConnectionEpoch: 'another-connection' },
+    { found: true, locale: 'en', markdown: `${markdown}b`, docsConnectionEpoch },
+    { found: true, locale: 'en', markdown: '# Article', docsConnectionEpoch, path: 'README.md' },
+    { found: false, docsConnectionEpoch, markdown: 'Never return content on a miss' },
+    { found: true, locale: 'en', markdown: ' \n ', docsConnectionEpoch },
+    { found: true, locale: 'en', markdown: 'Text\u0000', docsConnectionEpoch },
+  ]) {
+    fetcher.mockResolvedValueOnce(Response.json(body))
+    await expect(api.docsGet(input, signal)).rejects.toMatchObject({
+      details: { code: 'ADMIN_RESPONSE_INVALID' },
+    })
+  }
+  fetcher.mockResolvedValueOnce(Response.json({ found: false, docsConnectionEpoch }))
+  await expect(api.docsGet(input, signal)).resolves.toEqual({ found: false })
+  fetcher.mockResolvedValueOnce(new Response(null, { status: 404 }))
+  await expect(api.docsGet(input, signal)).resolves.toBeUndefined()
+  fetcher.mockImplementationOnce(async () => {
+    activeContext.authScope = 'auth.reconnected'
+    return Response.json({ found: true, locale: 'en', markdown, docsConnectionEpoch })
+  })
+  await expect(api.docsGet(input, signal)).resolves.toBeUndefined()
+})
+
+it('does not request Docs without both negotiated support and packages.read', async () => {
+  const fetcher = vi.fn<typeof fetch>()
+  const docs = { features: ['packages.docs.v1'], docsConnectionEpoch: 'connection' }
+  const input = { id: '@acme/plugin', expectedIntegrity: `sha256-${'a'.repeat(64)}`, locale: 'en' } as const
+  for (const adminContext of [
+    context,
+    { ...context, features: docs.features },
+    { ...context, docsConnectionEpoch: docs.docsConnectionEpoch },
+    { ...context, ...docs, permissions: [] },
+  ]) {
+    await expect(new PluginAdminApi(adminContext, fetcher).docsGet(input)).resolves.toBeUndefined()
+  }
+  expect(fetcher).not.toHaveBeenCalled()
+})
+
 it('sends a revocation DTO through the fixed BFF route with its immutable CAS baselines', async () => {
   const fetcher = vi
     .fn<typeof fetch>()
@@ -189,7 +263,7 @@ it('keeps a read-only recovery context available when inventory reads need separ
   expect(fetcher).toHaveBeenCalledWith('/admin/plugins/api/context', {
     method: 'GET',
     credentials: 'same-origin',
-    headers: { Accept: 'application/json' },
+    headers: { Accept: 'application/json', 'X-Agnes-Package-Docs': '1' },
   })
 })
 
@@ -219,6 +293,11 @@ it('coalesces overlapping overview reads without caching authority and rejects i
   expect(first).toEqual(second)
   expect(first).not.toBe(second)
   expect(fetcher).toHaveBeenCalledTimes(1)
+  expect(fetcher).toHaveBeenCalledWith('/admin/plugins/api/overview', {
+    method: 'GET',
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json', 'X-Agnes-Package-Docs': '1' },
+  })
   await PluginAdminApi.overview(fetcher)
   expect(fetcher).toHaveBeenCalledTimes(2)
   fetcher.mockImplementation(async () =>
@@ -613,9 +692,14 @@ it('reads an agent start receipt through the same fixed launch facade', async ()
   expect(body).toEqual({ request: { action: 'read', operationId: 'original-operation' } })
 })
 
-it.each([undefined, 'packages.community-discovery.v1', 'packages.community-discovery.v2'])(
-  'negotiates the index response only with %s',
-  async (feature) => {
+it.each([
+  { features: [], version: undefined },
+  { features: ['packages.community-discovery.v1'], version: undefined },
+  { features: ['packages.community-discovery.v1', 'packages.community-discovery.v2'], version: 2 },
+  { features: ['packages.community-discovery.v2', 'packages.community-discovery.v3'], version: 3 },
+])(
+  'chooses the highest advertised community discovery version for $features',
+  async ({ features, version }) => {
     const snapshot = {
       state: 'ready',
       lastSuccessAt: null,
@@ -626,17 +710,123 @@ it.each([undefined, 'packages.community-discovery.v1', 'packages.community-disco
     }
     const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
       const body = JSON.parse(String(init?.body))
-      if (feature === 'packages.community-discovery.v2') {
-        expect(body).toMatchObject({ communityVersion: 2 })
+      if (version) {
+        expect(body).toMatchObject({ communityVersion: version })
         expect(body).not.toHaveProperty('includeCommunity')
         return Response.json({ items: [], nextCursor: null, communityIndex: snapshot })
       }
       expect(body).not.toHaveProperty('communityVersion')
-      expect(body.includeCommunity).toBe(feature ? true : undefined)
-      return Response.json({ items: [], nextCursor: null, ...(feature ? { community: snapshot } : {}) })
+      expect(body.includeCommunity).toBe(features.length ? true : undefined)
+      return Response.json({
+        items: [],
+        nextCursor: null,
+        ...(features.length ? { community: snapshot } : {}),
+      })
     })
-    const api = new PluginAdminApi({ ...context, features: feature ? [feature] : [] }, fetcher)
+    const api = new PluginAdminApi({ ...context, features }, fetcher)
     const page = await api.catalog()
-    expect(page.community).toEqual(feature ? snapshot : undefined)
+    expect(page.community).toEqual(features.length ? snapshot : undefined)
+    expect(page.communityVersion).toBe(version === 3 ? undefined : version)
   },
 )
+
+it('accepts an actual v2 downgrade, follows refreshed context, and refuses v3 data for a v2 request', async () => {
+  const source: PackageSource = {
+    type: 'git',
+    ref: `git:https://github.com/acme/fixture.git#${'a'.repeat(40)}`,
+  }
+  const release = { version: '1.2.3', source }
+  const row = { id: 'acme/fixture', fullName: 'acme/fixture', description: 'Fixture' }
+  const base = {
+    state: 'ready',
+    lastSuccessAt: null,
+    nextAttemptAt: null,
+    error: null,
+    totalReported: 1,
+    items: [{ ...row, versions: [release] }],
+  } satisfies NonNullable<PackageCatalogPage['communityIndex']>
+  const latest: NonNullable<PackageCatalogPage['communityIndex']> = {
+    ...base,
+    items: [
+      {
+        ...row,
+        versions: [
+          {
+            ...release,
+            provides: ['tool', 'mcp'],
+            publishTimestamp: 1_700_000_000,
+            compatibility: { kind: 'declared-compatible', range: '>=1.2.0' },
+          },
+        ],
+      },
+    ],
+  }
+  let daemon: 2 | 3 | undefined = 3
+  let request: unknown
+  let ignoreOptIn = false
+  let empty = false
+  const fetcher: typeof fetch = async (url, init) => {
+    if (String(url).endsWith('/context'))
+      return Response.json({
+        ...context,
+        features:
+          daemon === 3
+            ? ['packages.community-discovery.v2', 'packages.community-discovery.v3']
+            : daemon === 2
+              ? ['packages.community-discovery.v2']
+              : [],
+      })
+    request = JSON.parse(String(init?.body))
+    const asksV3 =
+      request &&
+      typeof request === 'object' &&
+      'communityVersion' in request &&
+      request.communityVersion === 3
+    const projection = daemon === 3 && (ignoreOptIn || asksV3) ? latest : daemon ? base : undefined
+    return Response.json({
+      items: [],
+      nextCursor: 'next',
+      ...(projection
+        ? { communityIndex: empty ? { ...projection, totalReported: 0, items: [] } : projection }
+        : {}),
+    })
+  }
+  const web = async () => new PluginAdminApi(await PluginAdminApi.context(fetcher), fetcher)
+  const v3 = await web()
+  await expect(v3.catalog('tools', 'cursor')).resolves.toEqual({
+    items: [],
+    nextCursor: 'next',
+    community: latest,
+    communityVersion: 3,
+  })
+  expect(request).toEqual({
+    profile: 'local-dev',
+    query: 'tools',
+    cursor: 'cursor',
+    limit: 50,
+    communityVersion: 3,
+  })
+
+  daemon = 2
+  await expect(v3.catalog()).resolves.toMatchObject({ community: base, communityVersion: 2 })
+  expect(request).toHaveProperty('communityVersion', 3)
+  empty = true
+  await expect(v3.catalog()).resolves.toEqual({
+    items: [],
+    nextCursor: 'next',
+    community: { ...base, totalReported: 0, items: [] },
+  })
+  empty = false
+  const v2 = await web()
+  await expect(v2.catalog()).resolves.toMatchObject({ community: base, communityVersion: 2 })
+  expect(request).toHaveProperty('communityVersion', 2)
+
+  daemon = undefined
+  await expect(v3.catalog()).resolves.toEqual({ items: [], nextCursor: 'next' })
+  daemon = 3
+  await expect(v2.catalog()).resolves.toMatchObject({ community: base, communityVersion: 2 })
+  const upgraded = await web()
+  await expect(upgraded.catalog()).resolves.toMatchObject({ community: latest, communityVersion: 3 })
+  ignoreOptIn = true
+  await expect(v2.catalog()).rejects.toMatchObject({ details: { code: 'ADMIN_RESPONSE_INVALID' } })
+})

@@ -24,25 +24,30 @@ export function buffersToolCalls(baseUrl: string, providerId: string | undefined
 }
 
 /**
- * Chat models only: the image and video generation ids the gateway also lists stay out of the
+ * Chat models only: the image, video and Sys1 decision ids the gateway also lists stay out of the
  * catalogue. Ids are what `GET /v1/models` returns; it publishes no modalities, so `true` marks a
- * model that correctly described a test image on the live gateway (2026-09-22). The rest stay
- * text-only until verified. Output allowances follow the official model docs (2026-09-30):
- * https://agnes-ai.com/zh-Hans/docs/agnes-30-flash and agnes-25-pro{-alpha}: 65536.
- * agnes-25-flash and agnes-20-flash publish rounded 65.5K, interpreted as 65536 tokens.
- * Pro Beta uses the Pro family allowance. Context limits remain provisional; deprecated ids stay.
+ * model that correctly described a test image on the live gateway (2026-09-22; 3.0 Pro and 2.5 Pro
+ * Theta verified 2026-11-21). The rest stay text-only until verified. Per-request output allowances
+ * use 65536 across the family (official docs list 65536 for 3.0 Flash and 2.5 Pro/Alpha, rounded
+ * 65.5K for 2.5/2.0 Flash, and 256K maximum for 3.0 Pro; Pro Beta and Pro Theta use the Pro family
+ * allowance). 3.0 Pro publishes a 1M context window; the remaining context limits stay provisional
+ * at 200K, and deprecated ids stay registered for existing configurations.
  */
-const CHAT_MODELS = [
+const CHAT_MODELS: ReadonlyArray<
+  readonly [id: string, name: string, image: boolean, contextWindow?: number]
+> = [
   ['agnes-3.0-flash', 'Agnes 3.0 Flash', true],
+  ['agnes-3.0-pro', 'Agnes 3.0 Pro', true, 1_000_000],
   ['agnes-2.5-pro', 'Agnes 2.5 Pro', false],
   ['agnes-2.5-pro-alpha', 'Agnes 2.5 Pro Alpha', false],
   ['agnes-2.5-pro-beta', 'Agnes 2.5 Pro Beta', false],
+  ['agnes-2.5-pro-theta', 'Agnes 2.5 Pro Theta', true],
   ['agnes-2.5-flash', 'Agnes 2.5 Flash', true],
   ['agnes-2.0-flash', 'Agnes 2.0 Flash', true],
-] as const
+]
 
 const AGNES_AI_MODELS: Model<Api>[] = CHAT_MODELS.map(
-  ([id, name, image]) =>
+  ([id, name, image, contextWindow = 200_000]) =>
     ({
       id,
       name,
@@ -52,7 +57,7 @@ const AGNES_AI_MODELS: Model<Api>[] = CHAT_MODELS.map(
       input: image ? ['text', 'image'] : ['text'],
       // Agnes counts images across the complete request, including history and tool results.
       ...(image ? { inputLimits: { images: { maxPerRequest: 4 } } } : {}),
-      contextWindow: 200000,
+      contextWindow,
       maxTokens: 65536,
       compat: { maxTokensField: 'max_tokens' },
       reasoning: false,

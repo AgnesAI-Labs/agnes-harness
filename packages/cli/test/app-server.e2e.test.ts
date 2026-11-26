@@ -14,9 +14,8 @@ it('embeds JSONL on the shared daemon, streams a turn, answers approval, and lea
   const root = await mkdtemp(join(tmpdir(), 'agh-as-'))
   const distribution = join(root, 'distribution')
   const entry = join(distribution, 'agnes.mjs')
-  const home = join(root, 'h'),
-    cwd = join(root, 'w')
-  await mkdir(cwd)
+  const [home, cwd, localAppData] = [join(root, 'h'), join(root, 'w'), join(root, 'localappdata')] as const
+  await Promise.all([mkdir(cwd), mkdir(localAppData)])
   initializeHome(home)
   const command = `node -e "process.stdout.write('AGH_STDIO_APPROVED')"`
   let sawApprovedOutput = false
@@ -67,6 +66,7 @@ it('embeds JSONL on the shared daemon, streams a turn, answers approval, and lea
     TEMP: root,
     TMP: root,
     HOME: root,
+    LOCALAPPDATA: localAppData,
     AGH_HOME: home,
     AGH_TELEMETRY_DISABLED: '1',
     AGNES_PROFILE: 'local-dev',

@@ -53,6 +53,11 @@ type ReadOnlyNoticeView = {
   scan?: Readonly<{ fromSeq: number; throughSeq: number }>
 }
 const readOnlyStore = createExternalStore<ReadOnlyNoticeView | undefined>(undefined)
+const presentationReload = createExternalStore(false)
+
+export function requirePresentationReload(): void {
+  presentationReload.set(true)
+}
 type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'closed'
 const reconnectStore = createExternalStore<{
   phase: ReconnectPhase
@@ -132,9 +137,21 @@ export function AppNotice() {
   const notifications = useStoreSelector(errors, (value) => value)
   const zh = useDocumentLanguage() === 'zh-CN'
   const diagnostics = useSyncExternalStore(presentationRoles.subscribe, presentationRoles.getSnapshot)
+  const reloadRequired = useStoreSelector(presentationReload, (value) => value)
   return (
     <>
       <FeedbackHost snapshot={outcomes} onDismiss={dismissFeedback} noticeContainer={noticeContainer} />
+      {reloadRequired && (
+        <StatusMessage
+          kind="notice"
+          data-testid="presentation-reload-required"
+          action={{ label: zh ? '重新加载' : 'Reload', onSelect: () => window.location.reload() }}
+        >
+          {zh
+            ? '插件界面的授权已失效。重新加载页面，以清除旧界面仍留在本页的代码。'
+            : 'Plugin UI approval is no longer valid. Reload to clear code left in this page by the previous interface.'}
+        </StatusMessage>
+      )}
       {diagnostics
         .filter((item) => item.failure)
         .map((item) => (

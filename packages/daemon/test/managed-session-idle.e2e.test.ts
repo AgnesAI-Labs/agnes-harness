@@ -54,8 +54,13 @@ describe.skipIf(process.platform === 'win32')('managed session idle signal on a 
       : []
   const idles = (sessionId: string) =>
     rows().filter((row) => row.kind === 'idle' && row.sessionId === sessionId)
-  const until = async <T>(read: () => T | Promise<T>, done: (value: T) => boolean, label: string) => {
-    const deadline = Date.now() + STEP_MS
+  const until = async <T>(
+    read: () => T | Promise<T>,
+    done: (value: T) => boolean,
+    label: string,
+    ms = STEP_MS,
+  ) => {
+    const deadline = Date.now() + ms
     for (;;) {
       const value = await read()
       if (done(value)) return value
@@ -242,9 +247,10 @@ describe.skipIf(process.platform === 'win32')('managed session idle signal on a 
       () => rows().filter((row) => row.kind === 'startup' && row.at >= restartedAt),
       (found) => found.length > 0,
       'startup after restart',
+      sdk().timeouts.loadPreparation + 10_000,
     )
     expect(startup, 'startup fires once, after the daemon accepts connections, and opens a session').toEqual([
       expect.objectContaining({ connected: true, opened: managedId }),
     ])
-  }, 180_000)
+  }, 270_000)
 })

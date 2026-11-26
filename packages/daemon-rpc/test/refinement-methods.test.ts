@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CallContext } from '@agnes/daemon-foundation/local/endpoint'
-import { RefinementSettingsStore } from '@agnes/host'
+import { createCredentialStore, RefinementSettingsStore } from '@agnes/host'
 import type { RefinementModelOption } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { registerRefinement } from '../src/local/methods/refinement.js'
@@ -14,10 +14,12 @@ afterEach(() => {
 })
 
 const model = { id: 'company/review', name: 'Review', contextWindow: 65536, maxTokens: 4096 }
-const credentialRef = 'secret://generic/review'
-const baseUrl = 'https://review.example/v1'
-const alternateUrl = 'https://alternate-review.example/v1'
-function setup(
+const credentialRef = 'secret://generic/00000000-0000-4000-8000-000000000001'
+const alternateRef = 'secret://generic/00000000-0000-4000-8000-000000000002'
+const baseUrl = 'https://api.llm.sg/v1'
+const alternateUrl = 'https://api.agnes-ai.cn/v1'
+const endpoints = [baseUrl, alternateUrl, 'https://apihub.agnes-ai.com/v1']
+async function setup(
   switchedOn?: () => void,
   skills?: Parameters<typeof registerRefinement>[1]['skills'],
   fetchModels: Parameters<typeof registerRefinement>[1]['fetchModels'] = async () => [model],
@@ -25,10 +27,11 @@ function setup(
   const dir = mkdtempSync(join(tmpdir(), 'agnes-refinement-rpc-'))
   dirs.push(dir)
   const handlers = new Map<string, Handler>()
-  const settings = new RefinementSettingsStore(dir, 'p', dir, [baseUrl, alternateUrl])
-  vi.spyOn(settings, 'serviceKey').mockImplementation((ref) =>
-    ref === credentialRef ? 'fixture' : undefined,
-  )
+  const settings = new RefinementSettingsStore(dir, 'p', dir)
+  const credentials = createCredentialStore({ root: dir })
+  const metadata = { label: 'Fixture', createdAt: new Date(0).toISOString() }
+  await credentials.putGeneric(credentialRef, 'fixture', metadata)
+  await credentials.putGeneric(alternateRef, 'alternate-fixture', metadata)
   registerRefinement({ register: (name: string, fn: Handler) => handlers.set(name, fn) } as never, {
     settings,
     fetchModels,
@@ -48,7 +51,7 @@ function setup(
 
 describe('_agnes/v1/refinement.*', () => {
   it('get/save round trip over RPC and refuses remote callers', async () => {
-    const call = setup()
+    const call = await setup()
     const first = (await call('refinement.get', {})) as { settings: unknown; revision: string }
     expect(first).toMatchObject({ settings: { enabled: false, mode: 'manual', baseUrl } })
 
@@ -61,7 +64,7 @@ describe('_agnes/v1/refinement.*', () => {
     expect(await call('refinement.get', {})).toEqual({
       settings: { credentialRef, model: model.id, enabled: true, mode: 'auto', baseUrl },
       revision: saved.revision,
-      endpoints: [baseUrl, alternateUrl],
+      endpoints,
     })
 
     await expect(
@@ -90,7 +93,7 @@ describe('_agnes/v1/refinement.*', () => {
 
   it('lists models only from the saved key and requires a usable selection before enabling', async () => {
     const discover = vi.fn(async (_baseUrl: string, _key: string) => [model])
-    const call = setup(undefined, undefined, discover)
+    const call = await setup(undefined, undefined, discover)
     await expect(call('refinement.models', {})).rejects.toMatchObject({
       data: { reason: 'REFINEMENT_KEY_MISSING' },
     })
@@ -122,7 +125,7 @@ describe('_agnes/v1/refinement.*', () => {
     expect(await call('refinement.get', {})).toEqual({
       settings: { enabled: false, mode: 'manual', credentialRef, baseUrl },
       revision,
-      endpoints: [baseUrl, alternateUrl],
+      endpoints,
     })
   })
 
@@ -130,10 +133,10 @@ describe('_agnes/v1/refinement.*', () => {
     const alternative = { ...model, id: 'company/alternate' }
     let release = () => {}
     const pending = new Promise<RefinementModelOption[]>((resolve) => {
-      release = () => resolve([model])
+      release = () => resolve([model, alternative])
     })
     const discover = vi.fn(async (url: string) => (url === baseUrl ? [model] : [alternative]))
-    const call = setup(undefined, undefined, discover)
+    const call = await setup(undefined, undefined, discover)
     const first = (await call('refinement.get', {})) as { revision: string }
     const settings = { credentialRef, model: model.id, enabled: true, mode: 'auto' }
     await expect(
@@ -146,32 +149,50 @@ describe('_agnes/v1/refinement.*', () => {
     const active = (await call('refinement.save', { settings, expectedRevision: first.revision })) as {
       revision: string
     }
-    await expect(
-      call('refinement.save', {
-        settings: { ...settings, baseUrl: alternateUrl },
-        expectedRevision: active.revision,
-      }),
-    ).rejects.toMatchObject({ data: { reason: 'REFINEMENT_MODEL_UNAVAILABLE' } })
-
-    discover.mockImplementationOnce(() => pending)
+    discover.mockClear()
+    for (const enabled of [true, false]) {
+      await expect(
+        call('refinement.save', {
+          settings: { ...settings, baseUrl: alternateUrl, enabled },
+          expectedRevision: active.revision,
+        }),
+      ).rejects.toMatchObject({ data: { reason: 'CONFIG_INVALID_INPUT' } })
+    }
+    expect(discover).not.toHaveBeenCalled()
+    discover.mockImplementationOnce(() => pending).mockImplementationOnce(() => pending)
     const outdated = call('refinement.models', {})
-    const paused = { ...settings, enabled: false, baseUrl: alternateUrl }
+    const outdatedSave = call('refinement.save', {
+      settings: { ...settings, model: alternative.id },
+      expectedRevision: active.revision,
+    })
+    const paused = { mode: settings.mode, enabled: false, baseUrl: alternateUrl }
     const switched = (await call('refinement.save', {
       settings: paused,
       expectedRevision: active.revision,
     })) as { revision: string }
     release()
     await expect(outdated).rejects.toMatchObject({ data: { reason: 'CONFIG_REVISION_CONFLICT' } })
+    await expect(outdatedSave).rejects.toMatchObject({ data: { reason: 'CONFIG_REVISION_CONFLICT' } })
+    await expect(call('refinement.models', {})).rejects.toMatchObject({
+      data: { reason: 'REFINEMENT_KEY_MISSING' },
+    })
+    expect(discover.mock.calls.every(([url]) => url === baseUrl)).toBe(true)
+    const binding = { ...paused, credentialRef: alternateRef }
+    const bound = (await call('refinement.save', {
+      settings: binding,
+      expectedRevision: switched.revision,
+    })) as { revision: string }
     expect(await call('refinement.models', {})).toEqual({ models: [alternative] })
-    expect(discover).toHaveBeenLastCalledWith(alternateUrl, 'fixture', expect.any(AbortSignal))
-    const enabled = { ...paused, model: alternative.id, enabled: true }
-    await call('refinement.save', { settings: enabled, expectedRevision: switched.revision })
+    expect(discover).toHaveBeenLastCalledWith(alternateUrl, 'alternate-fixture', expect.any(AbortSignal))
+    const enabled = { ...binding, model: alternative.id, enabled: true }
+    await call('refinement.save', { settings: enabled, expectedRevision: bound.revision })
+    expect(discover).toHaveBeenLastCalledWith(alternateUrl, 'alternate-fixture', expect.any(AbortSignal))
     expect(await call('refinement.get', {})).toMatchObject({ settings: enabled })
   })
 
   it('tells the daemon when a save switches refinement on, and only then', async () => {
     let told = 0
-    const call = setup(() => {
+    const call = await setup(() => {
       told++
       throw new Error('a listener failing does not fail the save')
     })
@@ -206,7 +227,7 @@ describe('_agnes/v1/refinement.*', () => {
 describe('_agnes/v1/refinement.skills', () => {
   it('reaches the saved skills for a local owner only, naming who asked', async () => {
     const asked: unknown[] = []
-    const call = setup(undefined, async (params, actor) => {
+    const call = await setup(undefined, async (params, actor) => {
       asked.push({ params, actor })
       return { skills: [], drafts: [] }
     })
@@ -218,7 +239,8 @@ describe('_agnes/v1/refinement.skills', () => {
       })
     expect(asked).toHaveLength(1)
     // Where the daemon saves no skills, the method says so.
-    await expect(setup()('refinement.skills', { cwd: '/w' })).rejects.toMatchObject({
+    const unsupported = await setup()
+    await expect(unsupported('refinement.skills', { cwd: '/w' })).rejects.toMatchObject({
       data: { code: 'SEMANTIC_REJECTED', reason: 'SKILL_UNAVAILABLE' },
     })
   })

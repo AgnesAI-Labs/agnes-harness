@@ -1,4 +1,5 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -44,3 +45,28 @@ it.each([false, true])(
     }
   },
 )
+
+const posixSignals = process.platform !== 'win32' // guards-allow-platform: native Windows termination does not deliver POSIX signals.
+it.runIf(posixSignals)('forwards termination and reports the terminated CLI exit status', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agh-launcher-test-'))
+  try {
+    await mkdir(join(root, 'bin'))
+    await mkdir(join(root, 'dist'))
+    await copyFile(join(import.meta.dirname, '../../packages/cli/bin/agh'), join(root, 'bin/agh'))
+    await writeFile(join(root, 'package.json'), '{"type":"module"}')
+    await writeFile(join(root, 'dist/agnes.mjs'), 'console.log("ready"); setInterval(() => {}, 1_000)')
+    const launcher = spawn(process.execPath, [join(root, 'bin/agh')], { timeout: 5_000 })
+    const exit = once(launcher, 'exit')
+    try {
+      const [ready] = await once(launcher.stdout, 'data')
+      expect(ready.toString()).toBe('ready\n')
+      launcher.kill('SIGTERM')
+      expect(await exit).toEqual([143, null])
+    } finally {
+      launcher.kill('SIGTERM')
+      await exit
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

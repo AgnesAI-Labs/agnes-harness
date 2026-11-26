@@ -5,18 +5,19 @@ export const REFINEMENT_SETTINGS_NAMESPACE = '@agnes/web-admin/refinement'
 export const refinementSettingsCatalog: LocaleCatalog = {
   en: {
     'refinement.endpoint': 'Service address',
-    'refinement.endpoint.hint': 'Switching pauses learning and reloads its models.',
-    'refinement.endpoint.singleHint': 'Dedicated company review gateway.',
+    'refinement.endpoint.hint':
+      'Switching gateways pauses learning. Save a key for the new gateway to choose its review model.',
+    'refinement.endpoint.singleHint': 'This deployment offers one review gateway.',
     'refinement.key': 'Service key',
     'refinement.key.label': 'Task experience service key',
-    'refinement.key.hint': 'Save your company service key to load the review models.',
+    'refinement.key.hint': 'Enter a key issued by the selected gateway.',
     'refinement.key.ready': 'Service key configured.',
-    'refinement.key.missing': 'Service key missing. Enter and save a new key.',
+    'refinement.key.missing': 'Service key missing. Save a new key for this gateway.',
     'refinement.key.save': 'Save key',
     'refinement.key.replace': 'Replace key',
     'refinement.key.error': 'Could not save the service key. Try again.',
     'refinement.model': 'Review model',
-    'refinement.model.needsKey': 'Save a service key to load the available models.',
+    'refinement.model.needsKey': 'Save a key issued by this gateway to load its models.',
     'refinement.model.loading': 'Loading available models…',
     'refinement.model.hint': 'Used for background reviews. Changes apply to subsequent reviews.',
     'refinement.model.placeholder': 'Select a review model',
@@ -35,7 +36,7 @@ export const refinementSettingsCatalog: LocaleCatalog = {
     'refinement.enabled.info':
       'Applies to sessions opened after you turn it on; sessions already open are not affected. Turning it off applies to all sessions at once. To keep lessons for later sessions, also turn workspace memory on (Settings → General → Personalization → Memory: "Ask me first" or "Automatic"); while it is off, lessons last only for the session they were learned in.',
     'refinement.billing':
-      'Reviews use your llm.sg key and are billed by usage. AGH does not know the price; the token budget limits how much each session uses.',
+      'Reviews are billed to the key for the selected gateway. AGH does not know the price. A token budget limits usage in each session.',
     'refinement.mode': 'How reviews start',
     'refinement.mode.hint':
       'On demand: use /refine, or let the model request a review for this session. With automatic triggers: the system also considers reviews after a successful summary compaction or repeated tool failures, subject to budget, cooldown and frequency limits. The model needs automatic triggers enabled to save lessons beyond this session; memory settings still apply.',
@@ -64,7 +65,7 @@ export const refinementSettingsCatalog: LocaleCatalog = {
       'A learned note reaches the model as untrusted text, so a turn that carries one may ask you to approve more commands.',
     'refinement.cost': 'Cost',
     'refinement.cost.hint':
-      'Each review uses the company review service. The terminal lists its cost on its own “RSI cost” line in the usage details; the web counts it in the session’s usage totals.',
+      'Each review uses the selected gateway. The terminal lists its cost on the “RSI cost” line in the usage details. The web counts it in the session’s usage totals.',
     'refinement.conflict':
       'The experience settings were changed somewhere else. They are shown again as they are now; make your change again.',
     'refinement.notice':
@@ -73,18 +74,18 @@ export const refinementSettingsCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     'refinement.endpoint': '服务地址',
-    'refinement.endpoint.hint': '切换后会暂停学习并重新读取该节点的模型。',
-    'refinement.endpoint.singleHint': '公司的专用复盘服务节点。',
+    'refinement.endpoint.hint': '切换站点会暂停学习。保存新站点的密钥后即可选择该站点的复盘模型。',
+    'refinement.endpoint.singleHint': '此部署提供一个复盘站点。',
     'refinement.key': '服务密钥',
     'refinement.key.label': '任务经验服务密钥',
-    'refinement.key.hint': '保存公司服务密钥后即可读取复盘模型。',
+    'refinement.key.hint': '请填写所选站点签发的密钥。',
     'refinement.key.ready': '已配置服务密钥。',
-    'refinement.key.missing': '服务密钥缺失，请重新填写并保存。',
+    'refinement.key.missing': '服务密钥缺失，请保存本站签发的新密钥。',
     'refinement.key.save': '保存密钥',
     'refinement.key.replace': '更换密钥',
     'refinement.key.error': '服务密钥保存失败，请重试。',
     'refinement.model': '复盘模型',
-    'refinement.model.needsKey': '保存服务密钥后即可读取可选模型。',
+    'refinement.model.needsKey': '保存本站签发的密钥后即可读取本站的模型。',
     'refinement.model.loading': '正在读取可选模型…',
     'refinement.model.hint': '用于后台复盘，切换后对后续复盘生效。',
     'refinement.model.placeholder': '选择复盘模型',
@@ -103,7 +104,7 @@ export const refinementSettingsCatalog: LocaleCatalog = {
     'refinement.enabled.info':
       '打开后，之后新开的会话生效；已经打开的会话不受影响。关闭立即对所有会话生效。要把经验留给之后的会话，还需打开工作区记忆（设置 → 通用 → 个性化 → 记忆：「先问我」或「自动」）；记忆为「关闭」时，经验只在学到它的会话里有效。',
     'refinement.billing':
-      '复盘使用你的 llm.sg 密钥，按实际用量计费。AGH 不知道价格；每个会话的用量受 token 预算限制。',
+      '复盘使用所选站点的密钥，按实际用量计费。AGH 不知道单价，每个会话的用量受 token 预算限制。',
     'refinement.mode': '复盘如何开始',
     'refinement.mode.hint':
       '按需：你用 /refine，或由模型主动发起当前会话的复盘。开启自动触发后：系统还会在摘要压缩成功、同类工具错误重复出现时尝试复盘，受预算、冷却时间和次数限制。模型主动把经验保存到工作区或用户记忆，需要开启自动触发；记忆设置仍然有效。',
@@ -131,7 +132,7 @@ export const refinementSettingsCatalog: LocaleCatalog = {
       '学到的经验会作为不受信任的文字交给模型，所以带着经验的那一轮可能会要求你批准更多命令。',
     'refinement.cost': '费用',
     'refinement.cost.hint':
-      '每次复盘都会调用公司的复盘服务。终端会在用量详情里单列“RSI 费用”一行；网页里它计入会话的用量合计。',
+      '每次复盘都会调用所选站点。终端会在用量详情里单列“RSI 费用”一行，网页里它计入会话的用量合计。',
     'refinement.conflict': '经验设置在别处被修改了。现在显示的是最新状态，请重新做一次你的修改。',
     'refinement.notice':
       '本版本新增：开启任务经验后，经验现在也会保存到工作区记忆和工作区技能，这里不会再次询问。工作区记忆设置仍然有效，询问模式下每次保存仍会等你确认。适用于所有工作区的经验会自动写入用户记忆。要停止，请关闭上面的“从已完成的工作中学习”。',

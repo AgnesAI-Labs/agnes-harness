@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { lstat, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -19,6 +19,22 @@ it('waits for an existing reader before entering the lock action', async () => {
   }, 75)
   try {
     await expect(withConfigurationLock(file, async () => 'saved')).resolves.toBe('saved')
+    if (process.platform !== 'win32') {
+      const corrupt = join(directory, 'corrupt.sqlite')
+      await writeFile(corrupt, 'not-a-sqlite-database', { mode: 0o644 })
+      const modeBefore = (await lstat(corrupt)).mode & 0o777
+      await expect(withConfigurationLock(corrupt, async () => 'never')).rejects.toMatchObject({
+        code: 'E_HOME_UNSAFE',
+      })
+      expect((await lstat(corrupt)).mode & 0o777).toBe(modeBefore)
+
+      const link = join(directory, 'symlink.sqlite')
+      await symlink(corrupt, link)
+      await expect(withConfigurationLock(link, async () => 'never')).rejects.toMatchObject({
+        code: 'E_HOME_UNSAFE',
+      })
+      expect((await lstat(corrupt)).mode & 0o777).toBe(modeBefore)
+    }
   } finally {
     clearTimeout(release)
     if (reader.isOpen) reader.close()
@@ -45,6 +61,22 @@ it('releases a configuration transaction after its owner process is killed', asy
     child.kill('SIGKILL')
     await exited
     await expect(withConfigurationLock(file, async () => 'saved')).resolves.toBe('saved')
+    if (process.platform !== 'win32') {
+      const corrupt = join(directory, 'corrupt.sqlite')
+      await writeFile(corrupt, 'not-a-sqlite-database', { mode: 0o644 })
+      const modeBefore = (await lstat(corrupt)).mode & 0o777
+      await expect(withConfigurationLock(corrupt, async () => 'never')).rejects.toMatchObject({
+        code: 'E_HOME_UNSAFE',
+      })
+      expect((await lstat(corrupt)).mode & 0o777).toBe(modeBefore)
+
+      const link = join(directory, 'symlink.sqlite')
+      await symlink(corrupt, link)
+      await expect(withConfigurationLock(link, async () => 'never')).rejects.toMatchObject({
+        code: 'E_HOME_UNSAFE',
+      })
+      expect((await lstat(corrupt)).mode & 0o777).toBe(modeBefore)
+    }
   } finally {
     child.kill('SIGKILL')
     await rm(directory, { recursive: true, force: true })

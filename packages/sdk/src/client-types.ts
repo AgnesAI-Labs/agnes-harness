@@ -52,7 +52,16 @@ export type CreateClientOptions = {
   auth?: AuthOption
   clientId?: string
   journal?: JournalStore
-  timeouts?: { request?: number; initialize?: number; claim?: number; loadIdle?: number; loadHard?: number }
+  /** Milliseconds. History load timeouts accept integers from 1 to 2,147,483,647. */
+  timeouts?: {
+    request?: number
+    initialize?: number
+    claim?: number
+    /** Time to admit a session and start verification, when supported by the daemon. */
+    loadPreparation?: number
+    loadIdle?: number
+    loadHard?: number
+  }
   locale?: string
   bufferLimit?: number
   claimStrict?: boolean

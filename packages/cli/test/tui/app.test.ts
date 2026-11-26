@@ -537,7 +537,7 @@ it('keeps long-conversation history inside fullscreen while paging the projected
     const session = await client.session.new({ cwd: dir })
     const term = new FakeTerminal({ columns: 40, rows: 16 })
     const copied: string[] = []
-    app = new TuiApp({ session, term, header: 'Agnes', copy: (text) => copied.push(text) })
+    app = new TuiApp({ session, term, header: 'Agnes', cwd: dir, copy: (text) => copied.push(text) })
     await app.start()
     await app.submit('long question')
     await vi.waitFor(async () => {

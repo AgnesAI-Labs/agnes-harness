@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -16,7 +17,9 @@ import { initializeHome } from '@agnes/host'
 import type { EventEnvelope, PackageOperationReceipt } from '@agnes/protocol'
 import { type Client, createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
-import { daemonTransport, hostFloor, readOwner, socketDirectoryOf } from '../fixtures/daemon-harness.js'
+import { sourceTranspileCache } from '../../../../tools/test-fixtures/source-transpile-cache.mjs'
+import { windowsTestHostEnv } from '../../../../tools/test-fixtures/windows-host-env.mjs'
+import { daemonTransport, readOwner, requestStop, socketDirectoryOf } from '../fixtures/daemon-harness.js'
 
 // The shipped payload on a real source daemon: the release grant reaches the managed service, and the plugin's hooks
 // leave the owner's own sessions alone.
@@ -32,6 +35,7 @@ const ROW = 'ext:agnes.superagent/main'
 const EXTENSION = `plugin/${createHash('sha256').update(ROW).digest('hex').slice(0, 16)}`
 const MARKER = 'owner-session-tool-ran'
 const STEP_MS = 60_000
+const WORKER_STARTUP_MS = 120_000
 
 async function bounded<T>(promise: Promise<T>, label: string, ms = STEP_MS): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -46,8 +50,8 @@ async function bounded<T>(promise: Promise<T>, label: string, ms = STEP_MS): Pro
     clearTimeout(timer)
   }
 }
-async function until<T>(read: () => Promise<T | undefined>, label: string): Promise<T> {
-  const deadline = Date.now() + STEP_MS
+async function until<T>(read: () => Promise<T | undefined>, label: string, ms = STEP_MS): Promise<T> {
+  const deadline = Date.now() + ms
   for (;;) {
     const value = await read()
     if (value !== undefined) return value
@@ -78,7 +82,8 @@ function writeProfile(root: string) {
     JSON.stringify({
       name: PROFILE,
       computerUse: { enabled: false },
-      limits: { 'worker.startup_ms': 120_000 },
+      cacheDir: sourceTranspileCache(),
+      limits: { 'worker.startup_ms': WORKER_STARTUP_MS },
       adapters: { secrets: { kind: 'file', path: join(root, 'secrets') } },
       provider: {
         package: '@agnes/ai',
@@ -115,16 +120,24 @@ function writeProfile(root: string) {
 
 it('the shipped payload starts its managed service with the bundled-app grant and leaves owner sessions alone', async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-superagent-payload-')))
+  const home = join(root, 'home')
+  const workspace = join(root, 'workspace')
   try {
-    initializeHome(root, PROFILE)
-    writeProfile(root)
-    writeFileSync(join(root, 'marker.txt'), `${MARKER}\n`)
+    initializeHome(home, PROFILE)
+    writeProfile(home)
+    mkdirSync(workspace)
+    writeFileSync(join(workspace, 'marker.txt'), `${MARKER}\n`)
   } catch (error) {
     rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     throw error
   }
-  const daemon: ChildProcess = spawn(process.execPath, ['--import', 'tsx', sourceDaemon, root, root], {
-    env: { ...hostFloor(), PATH: process.env.PATH, TMPDIR: tmpdir(), AGH_HOME: root },
+  const daemon: ChildProcess = spawn(process.execPath, ['--import', 'tsx', sourceDaemon, home, workspace], {
+    env: {
+      ...windowsTestHostEnv(join(root, 'windows-user')),
+      PATH: process.env.PATH,
+      TMPDIR: tmpdir(),
+      AGH_HOME: home,
+    },
     stdio: ['ignore', 'ignore', 'pipe'],
   })
   const exited = new Promise<number | null>((resolve) => daemon.once('exit', resolve))
@@ -142,8 +155,8 @@ it('the shipped payload starts its managed service with the bundled-app grant an
   const failures: unknown[] = []
   try {
     await bounded(ready, 'source daemon boot')
-    const owner = readOwner(root)
-    socketDirectory = socketDirectoryOf(owner.socketPath, root)
+    const owner = readOwner(home)
+    socketDirectory = socketDirectoryOf(owner.socketPath, home)
     const client = createClient({
       journal: memoryJournal(),
       auth: { kind: 'local' },
@@ -153,15 +166,19 @@ it('the shipped payload starts its managed service with the bundled-app grant an
     sdk = client
     await bounded(client.initialize(), 'SDK initialize')
 
-    const operation = async (receipt: PackageOperationReceipt) => {
+    const operation = async (receipt: PackageOperationReceipt, ms = STEP_MS) => {
       let last: unknown
-      return until(async () => {
-        const result = await client.packages.operation.get(receipt)
-        last = result
-        if (['failed', 'cancelled', 'rolled-back'].includes(result.state))
-          throw new Error(`package ${result.operation}: ${JSON.stringify(result.error)}`)
-        return result.state === 'completed' ? result : undefined
-      }, `package ${receipt.operationId}`).catch((error: unknown) => {
+      return until(
+        async () => {
+          const result = await client.packages.operation.get(receipt)
+          last = result
+          if (['failed', 'cancelled', 'rolled-back'].includes(result.state))
+            throw new Error(`package ${result.operation}: ${JSON.stringify(result.error)}`)
+          return result.state === 'completed' ? result : undefined
+        },
+        `package ${receipt.operationId}`,
+        ms,
+      ).catch((error: unknown) => {
         // Where the operation stopped: its stage, state and packages.
         throw new Error(`${String(error)}\nlast state: ${JSON.stringify(last)?.slice(0, 4000)}`, {
           cause: error,
@@ -182,7 +199,7 @@ it('the shipped payload starts its managed service with the bundled-app grant an
     expect(preview.bundledOrigin).toEqual({ ownerApplication: true })
     expect(preview.provenance.signatureVerified).toBe(false)
     // The fact is derived: the package-operation journal on disk never carries it.
-    const journal = join(root, 'daemon', 'package-operations', 'operations.json')
+    const journal = join(home, 'daemon', 'package-operations', 'operations.json')
     expect(readFileSync(journal, 'utf8')).toContain(preview.integrity)
     expect(readFileSync(journal, 'utf8')).not.toContain('bundledOrigin')
     await operation(
@@ -200,7 +217,10 @@ it('the shipped payload starts its managed service with the bundled-app grant an
         capabilityHash: preview.capabilityHash,
       }),
     )
-    await operation(await client.packages.enable({ ...(await common('enable')), id: PACKAGE }))
+    await operation(
+      await client.packages.enable({ ...(await common('enable')), id: PACKAGE }),
+      WORKER_STARTUP_MS,
+    )
     const listed = (await client.packages.list({ profile: PROFILE })).packages.find(
       (pkg) => pkg.id === PACKAGE,
     )
@@ -220,7 +240,7 @@ it('the shipped payload starts its managed service with the bundled-app grant an
       return output?.state === 'ready' ? output : undefined
     }, 'managed service ready')
     expect(status).toMatchObject({ state: 'ready' })
-    const { dataDir } = JSON.parse(readFileSync(join(root, 'daemon', 'discovery.json'), 'utf8'))
+    const { dataDir } = JSON.parse(readFileSync(join(home, 'daemon', 'discovery.json'), 'utf8'))
     const appRoot = join(dataDir, 'bundled-apps')
     const states = readdirSync(appRoot).filter((name) => existsSync(join(appRoot, name, 'superagent.sqlite')))
     expect(states, 'one platform state directory holds the database').toHaveLength(1)
@@ -232,7 +252,7 @@ it('the shipped payload starts its managed service with the bundled-app grant an
     }
     for (const role of ['router', 'worker'] as const) {
       const opened = await client.session.new({
-        cwd: root,
+        cwd: workspace,
         sessionKey: `bundle-check-${role}`,
         bundles: [`${PACKAGE}#${role}`],
         preset: `superagent-${role}`,
@@ -248,7 +268,7 @@ it('the shipped payload starts its managed service with the bundled-app grant an
     }
 
     // An owner's session, even one whose key looks like Superagent's, runs its tools untouched by the hooks.
-    const session = await client.session.new({ cwd: root, sessionKey: 'superagent:owner-made' })
+    const session = await client.session.new({ cwd: workspace, sessionKey: 'superagent:owner-made' })
     const events: EventEnvelope[] = []
     const iterator = session.events({ types: ['tool/result', 'turn/end'] })[Symbol.asyncIterator]()
     const collect = (async () => {
@@ -277,7 +297,8 @@ it('the shipped payload starts its managed service with the bundled-app grant an
       () => sdk?.close(),
       async () => {
         if (daemon.exitCode !== null || daemon.signalCode !== null) return
-        daemon.kill('SIGTERM')
+        if (process.platform === 'win32') await requestStop(home, 'tsx')
+        else daemon.kill('SIGTERM')
         try {
           await bounded(exited, 'daemon shutdown', 25_000)
         } catch (error) {
@@ -301,4 +322,4 @@ it('the shipped payload starts its managed service with the bundled-app grant an
   }
   if (failures.length === 1) throw failures[0]
   if (failures.length > 1) throw new AggregateError(failures, 'payload e2e and cleanup failed')
-}, 240_000)
+}, 360_000)

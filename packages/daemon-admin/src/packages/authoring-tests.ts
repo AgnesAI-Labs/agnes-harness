@@ -15,6 +15,32 @@ import {
   defaultAuthoringSandboxContext,
 } from './authoring-sandbox.js'
 
+// Launcher messages can contain private paths. Use them only to select a fixed receipt summary.
+function launcherFailureSummary(error: unknown): string {
+  const message = error instanceof Error ? error.message : ''
+  if (message === 'command timed out') return 'Candidate test command timed out.'
+  if (message === 'command output exceeded limit') return 'Candidate test command output exceeded limit.'
+  if (message === 'SANDBOX_UNAVAILABLE: candidate tests require OS isolation')
+    return 'Candidate tests require an available OS sandbox.'
+  if (error && typeof error === 'object') {
+    if ('code' in error) {
+      if (error.code === 'ENOENT') return 'Candidate test launcher executable was not found.'
+      if (error.code === 'EACCES' || error.code === 'EPERM')
+        return 'Candidate test launcher executable was denied.'
+    }
+    if (
+      'stderr' in error &&
+      typeof error.stderr === 'string' &&
+      /^(?:bwrap|sandbox-exec): /m.test(error.stderr)
+    )
+      return 'The OS sandbox refused to launch candidate tests.'
+  }
+  if (message === 'command exited with status signal') return 'Candidate test command was terminated.'
+  if (/^command exited with status \d{1,10}$/.test(message))
+    return 'Candidate test command exited unsuccessfully.'
+  return 'Candidate test command failed.'
+}
+
 /** Host-run Node tests, never caller-supplied success claims or Markdown-as-shell. */
 async function testCandidate(
   directory: string,
@@ -252,7 +278,7 @@ async function testCandidate(
                 return `CompileError: ${issue.text} (${location?.file ?? 'unknown'}:${location?.line ?? 0}:${location?.column ?? 0})`
               })
               .join('\n')
-          : `${error instanceof Error ? `${error.name}: ${error.message}` : 'Candidate test command failed'}; no passing result recorded.\n${partial}`,
+          : [launcherFailureSummary(error), partial].filter(Boolean).join('\n'),
         16384,
         directory,
       ),

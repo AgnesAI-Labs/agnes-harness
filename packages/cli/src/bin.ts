@@ -3,6 +3,7 @@
 import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
+import type { Writable } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { COMMANDS } from './args.js'
 import type { bootDefault as BootDefault } from './boot/default.js'
@@ -38,6 +39,14 @@ export type MainIO = {
   exit?: (code: number) => void
   /** What the ladder listens on. Injected for the same reason: a test signals this, not the process. */
   signals?: NodeJS.EventEmitter
+}
+
+function exitTimingMark(phase: string, io: Pick<MainIO, 'env' | 'stderr'> = process): void {
+  try {
+    timingMark(phase, io.env, (line) => io.stderr.write(line))
+  } catch {
+    // Optional exit diagnostics must never bypass owned cleanup or change the command result.
+  }
 }
 
 /** How long shutdown gets after a first signal before the process leaves anyway. */
@@ -643,7 +652,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       }
     } finally {
       opening?.abandon()
+      exitTimingMark('boot-close-enter', io)
       await Promise.race([booted.close().catch(() => undefined), exited])
+      exitTimingMark('boot-close-leave', io)
       // The TUI reports its own worktrees on the way out; the one-shot form does it here, on stderr.
       if (worktree && mode === 'print')
         io.stderr.write((await worktreeFlag?.printWorktreeEnd(worktree, resolveLocale(io.env))) ?? '')
@@ -696,6 +707,28 @@ export function agnesVersion(): string {
 /** Replaced with the package version by build:sea; absent in the source/test runtime. */
 declare const AGNES_VERSION: string | undefined
 
+function waitForPendingOutput(stream: Writable): Promise<void> | undefined {
+  if (!stream.writableLength || stream.destroyed || stream.closed) return
+  return new Promise((resolve) => {
+    const done = () => {
+      clearInterval(poll)
+      stream.off('close', done)
+      stream.off('error', done)
+      stream.off('drain', check)
+      resolve()
+    }
+    const check = () => {
+      if (!stream.writableLength || stream.destroyed || stream.closed) done()
+    }
+    // Below the high-water mark Node need not emit drain, even for a pending pipe write.
+    const poll = setInterval(check, 10)
+    stream.once('close', done)
+    stream.once('error', done)
+    stream.on('drain', check)
+    check()
+  })
+}
+
 export async function runExecutable(): Promise<void> {
   // A reader that exits early (`agh ... | head`) closes the pipe; the next write fails with EPIPE
   // as an unhandled 'error' event. That is a normal end of a one-shot command, not a crash: drop
@@ -712,14 +745,14 @@ export async function runExecutable(): Promise<void> {
     cwd: process.cwd(),
     agnesVersion: agnesVersion(),
   })
+  exitTimingMark('main-returned')
   process.exitCode = code
   // main has completed all owned cleanup. Flush redirected output before ending the executable;
   // unrelated library timers must not keep a successful one-shot command alive.
-  await Promise.all(
-    [process.stdout, process.stderr].map(
-      (stream) => new Promise<void>((resolve) => stream.write('', () => resolve())),
-    ),
-  )
+  exitTimingMark('stdio-flush-enter')
+  await Promise.all([waitForPendingOutput(process.stdout), waitForPendingOutput(process.stderr)])
+  exitTimingMark('stdio-flush-leave')
+  await waitForPendingOutput(process.stderr)
   process.exit(code)
 }
 

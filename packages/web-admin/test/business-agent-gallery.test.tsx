@@ -274,6 +274,29 @@ it('asks once with what the package gets, then installs, trusts, enables and ope
   })
 })
 
+it('finishes the review route before handing off the started session without a late history traversal', async () => {
+  const opened: { target: StartedSession; view: string | null }[] = []
+  const back = vi.spyOn(history, 'back').mockImplementation(() => {})
+  try {
+    await mount(setup({ ready: true }).source, (target) =>
+      opened.push({ target, view: new URL(location.href).searchParams.get('view') }),
+    )
+    await click('[data-testid="business-agent-start-data-report-work"]')
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-testid="agent-launch-confirm"]')).not.toBeNull(),
+    )
+    expect(new URL(location.href).searchParams.get('view')).toBeTruthy()
+    await click('[data-testid="agent-launch-confirm"]')
+    await vi.waitFor(() => expect(opened).toHaveLength(1))
+    expect(opened).toEqual([
+      { target: { sessionId: 'agent-session', prompt: 'Summarise the sample CSV.' }, view: null },
+    ])
+    expect(back).not.toHaveBeenCalled()
+  } finally {
+    back.mockRestore()
+  }
+})
+
 it('opens a session at once for a ready agent, and refuses package changes without permission', async () => {
   const ready = setup({ ready: true })
   const { api } = await ready.source.connect()

@@ -102,12 +102,14 @@ export function PluginToolbar({
   t,
   onQuery,
   leading,
+  unknownKind,
 }: {
   view: PluginView
   t: Text
   onQuery(): void
   /** A filter the tab owns, shown before the shared one. */
   leading?: ReactNode
+  unknownKind?: { label: string; selected: boolean; setSelected(selected: boolean): void } | undefined
 }) {
   return (
     <SearchBar
@@ -128,21 +130,33 @@ export function PluginToolbar({
             trigger="click"
             placement="bottomRight"
             content={
-              <>
-                <KindFilter
-                  value={view.kind}
-                  t={view.t}
-                  onChange={(value) => {
-                    view.kind = value
-                    view.render()
-                  }}
-                />
-              </>
+              <KindFilter
+                value={view.kind}
+                t={view.t}
+                unknown={
+                  unknownKind && {
+                    label: unknownKind.label,
+                    selected: unknownKind.selected,
+                    select: () => {
+                      view.kind = ''
+                      unknownKind.setSelected(true)
+                    },
+                  }
+                }
+                onChange={(value) => {
+                  unknownKind?.setSelected(false)
+                  view.kind = value
+                  view.render()
+                }}
+              />
             }
           >
             <Button icon={<Icon name="sliders-horizontal" />} data-testid="plugin-filter">
               {t('filter.label')}
-              <Count value={Number(!!view.kind)} label={t('filter.active')} />
+              <Count
+                value={Number(!!view.kind || unknownKind?.selected === true)}
+                label={t('filter.active')}
+              />
             </Button>
           </Popover>
         </>

@@ -118,6 +118,14 @@ export const DSH_SLOT_CATALOG: readonly DshSlotDefinition[] = Object.freeze([
     'conversation.composer.bar',
   ),
   definition(
+    'conversation.input.model.catalog',
+    'single',
+    'session-maybe',
+    'conversation.composer.bar',
+    'conversation.composer.bar',
+    'host',
+  ),
+  definition(
     'conversation.input.overlay',
     'list',
     'session',
@@ -269,6 +277,7 @@ export const DSH_RUNTIME_SUPPORTED_SLOT_NAMES: readonly string[] = Object.freeze
   'conversation.input.dock',
   'conversation.input.left',
   'conversation.input.model',
+  'conversation.input.model.catalog',
   'conversation.input.overlay',
   'conversation.input.permission',
   'conversation.input.plan',

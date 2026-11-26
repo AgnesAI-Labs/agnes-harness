@@ -3,14 +3,16 @@
 // spirit of `packages/daemon/test/fixtures/loop-provider.ts`, and the profile written the same way. The daemon
 // fixture is started as a child process by path, so no module of another package is imported.
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
-import { createHash, randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createClient, memoryJournal } from '@agnes/sdk'
+import { sourceTranspileCache } from '../../../../tools/test-fixtures/source-transpile-cache.mjs'
+import { windowsTestHostEnv } from '../../../../tools/test-fixtures/windows-host-env.mjs'
 import { killTree, trackRoot } from './process-tree.js'
 
 const repository = fileURLToPath(new URL('../../../../', import.meta.url))
@@ -59,6 +61,7 @@ export function hostFloor(home?: string): Record<string, string> {
     SystemRoot: process.env.SystemRoot,
     ComSpec: process.env.ComSpec,
     PATHEXT: process.env.PATHEXT,
+    ProgramFiles: process.env.ProgramFiles,
     TEMP: tmpdir(),
     TMP: tmpdir(),
     USERPROFILE: home ?? process.env.USERPROFILE,
@@ -77,7 +80,7 @@ const windows = process.platform === 'win32'
  * is the stop request the daemon watches for, and waits until it has exited or the wait ran out. The control runs by
  * path in a process of its own, as the daemon fixture does, so no module of another package is imported here.
  */
-function requestStop(home: string, tsx: string): Promise<void> {
+export function requestStop(home: string, tsx: string): Promise<void> {
   const script = [
     `import { stopDaemon } from ${JSON.stringify(daemonControl)}`,
     `await stopDaemon(${JSON.stringify(home)}, { waitMs: 30_000 })`,
@@ -112,16 +115,6 @@ async function until<T>(
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`)
     await sleep(100)
   }
-}
-
-/** The jiti transpile cache the daemon tests share (same key as packages/daemon/test/source-transpile-cache.ts). */
-function transpileCache(): string {
-  const loader = createRequire(join(repository, 'packages', 'host-extensions', 'package.json'))
-  const jiti = realpathSync(dirname(dirname(loader.resolve('jiti'))))
-  const key = createHash('sha256').update(`${jiti}\0${process.version}`).digest('hex').slice(0, 16)
-  const directory = join(repository, 'node_modules', '.cache', 'agnes-source-transpile', key)
-  mkdirSync(directory, { recursive: true })
-  return directory
 }
 
 type Message = { role: string; content?: unknown }
@@ -254,24 +247,29 @@ export async function startScriptedModel(respond?: Respond) {
 }
 
 /**
- * Lays out a fresh home with the host's own initializer, which the daemon requires before a profile is
- * written. It runs in the daemon package, the one place that resolves `@agnes/host` for tests, in a child
+ * Lays out a fresh home and writes the loopback key using the Host's private credential store.
+ * It runs in the daemon package, the one place that resolves `@agnes/host` for tests, in a child
  * process that ends on its own, or is killed after `STEP_MS`, or by `onSpawn`'s owner.
  */
-function initializeHome(aghHome: string, tsx: string, onSpawn: (child: ChildProcess) => void): Promise<void> {
+function initializeHome(
+  aghHome: string,
+  tsx: string,
+  env: NodeJS.ProcessEnv,
+  onSpawn: (child: ChildProcess) => void,
+): Promise<void> {
+  const root = JSON.stringify(aghHome)
+  const script = [
+    "import { createCredentialStore, initializeHome } from '@agnes/host'",
+    `initializeHome(${root}, ${JSON.stringify(PROFILE)})`,
+    `await createCredentialStore({ root: ${root} }).putApiKey('secret://fixture/model', 'synthetic-loop-fixture')`,
+  ].join('\n')
   return new Promise((resolve, reject) => {
     const child = execFile(
       process.execPath,
-      [
-        '--import',
-        tsx,
-        '--input-type=module',
-        '-e',
-        `import { initializeHome } from '@agnes/host'; initializeHome(${JSON.stringify(aghHome)}, ${JSON.stringify(PROFILE)})`,
-      ],
+      ['--import', tsx, '--input-type=module', '-e', script],
       {
         cwd: join(repository, 'packages', 'daemon'),
-        env: { ...hostFloor(), PATH: process.env.PATH ?? '', TMPDIR: tmpdir() },
+        env,
         timeout: STEP_MS,
         killSignal: 'SIGKILL',
       },
@@ -284,8 +282,6 @@ function initializeHome(aghHome: string, tsx: string, onSpawn: (child: ChildProc
 
 function writeProfile(aghHome: string, baseUrl: string): void {
   const secrets = join(aghHome, 'secrets')
-  mkdirSync(join(secrets, 'fixture'), { recursive: true, mode: 0o700 })
-  writeFileSync(join(secrets, 'fixture', 'model'), 'synthetic-loop-fixture', { mode: 0o600 })
   const model = {
     id: 'loop-script',
     name: 'Scripted loop fixture',
@@ -306,7 +302,7 @@ function writeProfile(aghHome: string, baseUrl: string): void {
     join(aghHome, 'profiles', PROFILE, 'profile.yaml'),
     JSON.stringify({
       name: PROFILE,
-      cacheDir: transpileCache(),
+      cacheDir: sourceTranspileCache(),
       computerUse: { enabled: false },
       adapters: { secrets: { kind: 'file', path: secrets } },
       provider: {
@@ -368,6 +364,8 @@ export async function startDaemon(opts: {
   /** More variables of the daemon's environment, such as a GitHub token the operator's shell exports. */
   env?: Record<string, string>
 }) {
+  const workspace = `${opts.aghHome}-workspace`
+  const windowsEnv = windowsTestHostEnv(opts.home)
   const model = await startScriptedModel(opts.respond)
   const clientId = randomUUID()
   let child: ChildProcess | undefined
@@ -380,20 +378,21 @@ export async function startDaemon(opts: {
   let failStartup: (error: Error) => void = () => {}
   const workspaces = new Set<string>()
   const tsx = pathToFileURL(createRequire(join(repository, 'package.json')).resolve('tsx')).href
+  const env = {
+    ...windowsEnv,
+    ...opts.env,
+    PATH: opts.path,
+    HOME: opts.home,
+    TMPDIR: tmpdir(),
+    AGH_HOME: opts.aghHome,
+  }
 
   const launch = async () => {
     if (stopped) throw new Error('stopped before the daemon was spawned')
     stderr = ''
-    const spawned = spawn(process.execPath, ['--import', tsx, sourceDaemon, opts.aghHome, opts.aghHome], {
+    const spawned = spawn(process.execPath, ['--import', tsx, sourceDaemon, opts.aghHome, workspace], {
       cwd: repository,
-      env: {
-        ...hostFloor(opts.home),
-        ...opts.env,
-        PATH: opts.path,
-        HOME: opts.home,
-        TMPDIR: tmpdir(),
-        AGH_HOME: opts.aghHome,
-      },
+      env,
       stdio: ['ignore', 'ignore', 'pipe'],
     })
     child = spawned
@@ -494,7 +493,7 @@ export async function startDaemon(opts: {
       })
     }
     for (const directory of opts.plugins) {
-      const source = { type: 'file' as const, ref: `file:${directory}` }
+      const source = { type: 'file' as const, ref: `file:${directory.split(sep).join('/')}` }
       const preview = (await finished(await client.packages.inspect({ ...(await command()), source })))
         .preview
       if (!preview?.capabilityHash) throw new Error(`plugin ${directory} has no capability hash`)
@@ -539,11 +538,17 @@ export async function startDaemon(opts: {
   })
   failure.catch(() => {})
   const startup = (async () => {
-    await initializeHome(opts.aghHome, tsx, (spawned) => {
-      initializer = spawned
-      trackRoot(spawned)
-      if (stopped) void killTree(spawned, 'SIGKILL', 5_000)
-    })
+    mkdirSync(workspace, { recursive: true })
+    await initializeHome(
+      opts.aghHome,
+      tsx,
+      { ...windowsEnv, PATH: process.env.PATH, TMPDIR: tmpdir() },
+      (spawned) => {
+        initializer = spawned
+        trackRoot(spawned)
+        if (stopped) void killTree(spawned, 'SIGKILL', 5_000)
+      },
+    )
     if (stopped) throw new Error('daemon stopped during startup')
     writeProfile(opts.aghHome, model.baseUrl)
     await launch()

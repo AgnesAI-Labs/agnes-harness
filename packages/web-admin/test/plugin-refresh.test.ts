@@ -27,24 +27,43 @@ it('keeps newer catalog community data when an older background read finishes la
     profile: 'community-refresh',
     clientId: 'web',
     permissions: ['packages.read'] as const,
+    features: ['packages.community-discovery.v2', 'packages.community-discovery.v3'],
     readOnly: false,
   }
-  const community = (totalReported: number): NonNullable<PackageCatalogPage['communityIndex']> => ({
+  const community = (
+    totalReported: number,
+    version: 2 | 3 = 3,
+  ): NonNullable<PackageCatalogPage['communityIndex']> => ({
     state: 'ready',
     error: null,
-    items: [],
+    items: [
+      {
+        id: 'fixture/plugin',
+        fullName: 'fixture/plugin',
+        description: 'Fixture',
+        versions: [
+          {
+            version: '1.0.0',
+            source: { type: 'git', ref: `git:https://github.com/fixture/plugin.git#${'a'.repeat(40)}` },
+            ...(version === 3 ? { compatibility: { kind: 'declared-compatible', range: '*' } } : {}),
+          },
+        ],
+      },
+    ],
     totalReported,
     lastSuccessAt: '2026-11-04T00:00:00.000Z',
     nextAttemptAt: null,
   })
-  vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue({ context, inventory: { packages: [] } })
+  const overview = vi
+    .spyOn(PluginAdminApi, 'overview')
+    .mockResolvedValue({ context, inventory: { packages: [] } })
   vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
   vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
   vi.spyOn(PluginAdminApi.prototype, 'runtime').mockRejectedValue(new Error('optional'))
   vi.spyOn(PluginAdminApi.prototype, 'composition').mockRejectedValue(new Error('optional'))
   const catalog = vi
     .spyOn(PluginAdminApi.prototype, 'catalog')
-    .mockResolvedValue({ items: [], nextCursor: null, community: community(1) })
+    .mockResolvedValue({ items: [], nextCursor: null, community: community(1), communityVersion: 3 })
   for (const id of ['plugin-detail', 'source-dialog', 'plugin-confirm']) {
     const dialog = document.createElement('dialog')
     dialog.id = id
@@ -54,36 +73,67 @@ it('keeps newer catalog community data when an older background read finishes la
     surface: { host: document.body.appendChild(document.createElement('div')), render: () => null },
   })
   try {
+    function deferredCatalog() {
+      let resolve!: (page: AdminCatalogPage) => void
+      const promise = new Promise<AdminCatalogPage>((complete) => {
+        resolve = complete
+      })
+      return { promise, resolve }
+    }
     await page.start()
     await page.selectTab('discover')
-    let complete!: (result: AdminCatalogPage) => void
-    catalog.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          complete = resolve
-        }),
+    expect(page.viewContext().state.community?.items[0]?.versions?.[0]).toHaveProperty(
+      'compatibility.kind',
+      'declared-compatible',
     )
+    const initial = deferredCatalog()
+    catalog.mockReturnValueOnce(initial.promise)
     const pending = page.viewContext().refreshCommunity()
-    catalog.mockResolvedValueOnce({ items: [], nextCursor: null, community: community(2) })
+    catalog.mockResolvedValueOnce({
+      items: [],
+      nextCursor: null,
+      community: community(2, 2),
+      communityVersion: 2,
+    })
     await page.loadCatalog()
-    complete({ items: [], nextCursor: null, community: community(1) })
+    initial.resolve({ items: [], nextCursor: null, community: community(1), communityVersion: 3 })
     await pending
     expect(page.viewContext().state.community?.totalReported).toBe(2)
+    expect(page.viewContext().state.communityVersion).toBe(2)
+    expect(page.viewContext().state.community?.items[0]?.versions?.[0]).not.toHaveProperty('compatibility')
     catalog.mockRejectedValueOnce(new Error('offline'))
     await page.viewContext().refreshCommunity()
     expect(page.viewContext().state.community?.totalReported).toBe(2)
     expect(page.viewContext().state.communityReadFailed).toBe(true)
-    catalog.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          complete = resolve
-        }),
-    )
+    const afterLeaving = deferredCatalog()
+    catalog.mockReturnValueOnce(afterLeaving.promise)
     const leaving = page.viewContext().refreshCommunity()
     await page.selectTab('installed')
-    complete({ items: [], nextCursor: null, community: community(3) })
+    afterLeaving.resolve({ items: [], nextCursor: null, community: community(3), communityVersion: 3 })
     await leaving
     expect(page.viewContext().state.community?.totalReported).toBe(2)
+
+    await page.selectTab('discover')
+    const stale = page.viewContext()
+    const afterReconnect = deferredCatalog()
+    catalog.mockReturnValueOnce(afterReconnect.promise)
+    const beforeReconnect = stale.refreshCommunity()
+    expect(stale.state.communityVersion).toBe(3)
+    const downgraded = { ...context, features: ['packages.community-discovery.v2'] }
+    overview.mockResolvedValue({ context: downgraded, inventory: { packages: [] } })
+    catalog.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      community: community(4, 2),
+      communityVersion: 2,
+    })
+    await page.refresh({ settled: true })
+    afterReconnect.resolve({ items: [], nextCursor: null, community: community(3), communityVersion: 3 })
+    await beforeReconnect
+    expect(page.viewContext().state.context?.features).toEqual(downgraded.features)
+    expect(page.viewContext().state.communityVersion).toBe(2)
+    expect(page.viewContext().state.community?.totalReported).toBe(4)
+    expect(page.viewContext().state.community?.items[0]?.versions?.[0]).not.toHaveProperty('compatibility')
   } finally {
     page.dispose()
   }
@@ -252,7 +302,7 @@ it.each([
       if (offered) {
         expect(importSource).toHaveBeenCalledWith({ type, ref: `${type}:fixture/skills` })
         expect(view.sourceError).toBeUndefined()
-        expect(view.sourceDialog.open).toBe(true)
+        expect(view.sourceDialog.open).toBe(false)
       } else {
         expect(importSource).not.toHaveBeenCalled()
         expect(view.sourceError?.sourceFailure).toBe(reason)

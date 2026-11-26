@@ -548,7 +548,7 @@ it('chooses a community role with the host app, overrides an application, restor
     chosen.roleSelections?.deliverables?.bindingDigest,
   )
   expect((await project({ ...declaration, entry: 'different.js' })).presentationRoleBindings).toEqual({})
-  expect((await project(declaration, 'different-integrity')).presentationRoleBindings).toEqual({})
+  expect((await project(declaration, 'different-integrity')).presentationRoleBindings).toBeUndefined()
   const originalPackages = f.packages()
   f.replace(originalPackages.map((p) => (p.id === 'b' ? { ...p, capabilityHash: 'f'.repeat(64) } : p)))
   expect((await project()).presentationRoleBindings?.deliverables).not.toBe(
@@ -900,4 +900,79 @@ it('resolves a review one agent at a time so a queued session open never waits f
     'a#two',
     'a#four',
   ])
+})
+
+it('admits only uniquely reviewed application pages and the effective role, and fences clearing', async () => {
+  const f = await fixture()
+  const [a, b] = f.packages()
+  if (!a || !b) throw new Error('Missing app fixtures')
+  const role = roleClient('navigation')
+  f.replace([
+    {
+      ...a,
+      entry: {
+        ...a.entry,
+        dependencies: { b: '*' },
+        application: {
+          id: 'a',
+          presentation: {
+            home: 'b#home',
+            roles: { navigation: { packageId: 'a', clientId: 'ui' } },
+          },
+        },
+      },
+      contributions: [role],
+    },
+    {
+      ...b,
+      contributions: [
+        {
+          ...role,
+          client: {
+            ...role.client,
+            id: 'page',
+            presentationRoles: [],
+            homeEntries: [
+              { id: 'home', placement: 'primary' },
+              { id: 'unused', placement: 'primary' },
+            ],
+          },
+        },
+        { ...role, id: 'b/override', client: { ...role.client, id: 'override' } },
+      ],
+    },
+  ])
+  const observe = () =>
+    f.applications.observePresentation('local-dev', {
+      profile: 'local-dev',
+      hash: 'same-observation',
+      packages: f.packages(),
+    })
+  expect((await observe()).grants).toEqual([])
+  const adopted = await f.adopt('a')
+  const pagesAndDefault = await observe()
+  expect(pagesAndDefault.revision).toBe(adopted.revision)
+  expect(pagesAndDefault.grants).toMatchObject([
+    { rowId: 'web:b:page', packageId: 'b', roles: [], pages: ['home'] },
+    { rowId: 'web:a', packageId: 'a', roles: ['navigation'], pages: [] },
+  ])
+  const target = { packageId: 'b', clientId: 'override' }
+  const preview = await f.applications.previewRole('local-dev', 'navigation', target)
+  const selected = await f.applications.selectRole(
+    'local-dev',
+    'navigation',
+    target,
+    adopted.revision,
+    preview.consentDigest,
+  )
+  expect(await pagesAndDefault.current()).toBe(false)
+  const overridden = await observe()
+  expect(overridden.revision).toBe(selected.revision)
+  expect(overridden.grants).toMatchObject([
+    { rowId: 'web:b:page', roles: [], pages: ['home'] },
+    { rowId: 'web:b:override', roles: ['navigation'], pages: [] },
+  ])
+  await f.applications.clear('local-dev', selected.revision)
+  expect(await overridden.current()).toBe(false)
+  expect((await observe()).grants).toEqual([])
 })

@@ -3,10 +3,11 @@
 // of Alice's Issue is admitted and routed to a ticket; its worker session, in the ticket directory, commits, pushes its
 // branch and opens a PR, and reports; the main session replies on the Issue; Alice's follow-up wakes the same ticket;
 // the PR is merged and the ticket ends. A second case restarts the daemon while the worker is busy and a comment waits
-// for it: the comment is taken once, within ten seconds of the restart.
+// for it: the comment is taken once, within ten seconds of the daemon serving that session again.
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { UITimeline } from '@agnes/protocol'
 import { afterAll, expect, it } from 'vitest'
 import { openStore } from '../../src/app/store.js'
 import { KV } from '../../src/kv.js'
@@ -40,6 +41,8 @@ const RESULT = 'The login page is fixed in PR #7.'
 const ACKNOWLEDGEMENT = 'Fixing the login page now.'
 /** A step that waits for a GitHub poll: the Source polls a minute apart. */
 const POLL_MS = 150_000
+const RECOVERY_MS = 10_000
+const RESTART_PROBE_MS = 5_000
 
 const textOf = (content: unknown): string =>
   typeof content === 'string'
@@ -51,6 +54,7 @@ const textOf = (content: unknown): string =>
       : ''
 
 const windows = process.platform === 'win32'
+const RESTART_READY_MS = windows ? 180_000 : 120_000
 /** The worker's commands as Windows PowerShell runs them in a session there: the same steps as the `sh` ones. */
 const powershellWork = (followUp: boolean): string =>
   followUp
@@ -380,7 +384,7 @@ it('routes a GitHub request to a ticket whose worker pushes and opens a PR, repl
   }
 }, 600_000)
 
-it('restart while busy: a comment waiting for a busy worker is taken once, within ten seconds of a daemon restart', async () => {
+it('restart while busy: takes the waiting comment once within ten seconds of restoring service', async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-superagent-busy-')))
   const world = githubWorld(join(root, 'github'), new Date(Date.now() - 1800_000).toISOString())
   const model = scriptedSessions(world, { busy: true })
@@ -414,57 +418,73 @@ it('restart while busy: a comment waiting for a busy worker is taken once, withi
     const timeline: string[] = []
     /** When Superagent's service answered again: the daemon publishes the plugin's service some seconds after it listens. */
     let back: number | undefined
-    /** When the daemon let the owner load the worker's session again, after restoring its sessions. */
+    /** When the daemon let the owner project the worker's session again, after restoring its sessions. */
     let sessionsBack: number | undefined
     let watching = true
     const watch = (async () => {
       let last = ''
       while (watching) {
-        const state = await run!.calls.service('superagent.state').catch(() => undefined)
-        if (state && back === undefined) back = Date.now()
+        // A slow service call must not defer a projection probe or stretch a single readiness sample
+        // to the full SDK request timeout. Neither probe opens the session ahead of recovery.
+        const [service, projection] = await Promise.allSettled([
+          run!.calls.service('superagent.state', {}, RESTART_PROBE_MS).then((state) => {
+            back ??= Date.now()
+            return state
+          }),
+          daemon.client
+            .call<UITimeline>(
+              '_agnes/v1/session.projectUI',
+              { sessionId: workerId },
+              { timeoutMs: RESTART_PROBE_MS },
+            )
+            .then((ui) => {
+              sessionsBack ??= Date.now()
+              return ui.pendingInputs?.length ?? 0
+            }),
+        ])
+        const state = service.status === 'fulfilled' ? service.value : undefined
         const health = state?.health as Record<string, { state: string; detail: string }> | undefined
         const stored = ticketOf(database, ticket.id) as
           | { assignments: { state: string; startedAt?: string }[] }
           | undefined
-        const pending = await worker()
-          .then(async (session) => (await session.projectUI()).pendingInputs?.length ?? 0)
-          .catch(() => -1)
-        if (pending >= 0 && sessionsBack === undefined) sessionsBack = Date.now()
         const line = JSON.stringify({
           runtime: health?.runtime?.state,
+          runtimeDetail: health?.runtime?.detail,
           launch: health?.launch?.detail,
           delivery: health?.delivery?.detail,
           assignments: stored?.assignments.map((item) => `${item.state}${item.startedAt ? ' started' : ''}`),
-          pending,
+          pending: projection.status === 'fulfilled' ? projection.value : undefined,
+          serviceError: service.status === 'rejected' ? String(service.reason) : undefined,
+          projectionError: projection.status === 'rejected' ? String(projection.reason) : undefined,
         })
         if (line !== last) timeline.push(`+${Date.now() - restarted} ms ${line}`)
         last = line
         await new Promise((resolve) => setTimeout(resolve, 250))
       }
     })()
-    // Superagent resumes it on its own, within ten seconds.
-    const taken = await until(
-      'the comment taken after the restart',
-      () =>
-        model.seen.workerRequests.find((request) => request.at >= restarted && request.text.includes(LATE)),
-      60_000,
-    ).finally(() => {
+    const takenComment = () =>
+      model.seen.workerRequests.find((request) => request.at >= restarted && request.text.includes(LATE))
+    try {
+      const readyAt = await until(
+        'Superagent and the worker session to be served again',
+        () => (back !== undefined && sessionsBack !== undefined ? Math.max(back, sessionsBack) : undefined),
+        RESTART_READY_MS,
+      )
+      const taken = await until('the comment taken after the restart', takenComment, RECOVERY_MS)
+      expect(taken.at - readyAt).toBeLessThanOrEqual(RECOVERY_MS)
+    } finally {
       watching = false
-    })
-    await watch
-    console.info(
-      [
-        `restart while busy: Superagent's service answered ${(back ?? Number.NaN) - restarted} ms after the restart, ` +
-          `the worker's session loaded again ${(sessionsBack ?? Number.NaN) - restarted} ms after it; ` +
-          `the comment reached the worker's model ${taken.at - restarted} ms after the restart`,
-        ...timeline,
-      ].join('\n'),
-    )
-    // Ten seconds from the moment the daemon serves Superagent and its sessions again: the time the daemon takes to start
-    // the plugin and restore the sessions is the platform's, and is logged above.
-    expect(back, "Superagent's service answered again").toBeDefined()
-    expect(sessionsBack, "the worker's session loaded again").toBeDefined()
-    expect(taken.at - Math.max(back!, sessionsBack!)).toBeLessThanOrEqual(10_000)
+      await watch
+      console.info(
+        [
+          `restart while busy: Superagent's service answered ${(back ?? Number.NaN) - restarted} ms after the restart, ` +
+            `the worker's session could be projected again ${(sessionsBack ?? Number.NaN) - restarted} ms after it; ` +
+            `the comment reached the worker's model ${(takenComment()?.at ?? Number.NaN) - restarted} ms after the restart`,
+          ...timeline,
+          ...(back === undefined || sessionsBack === undefined ? [daemon.stderr().slice(-2000)] : []),
+        ].join('\n'),
+      )
+    }
     await until(
       'the worker idle after the restart',
       async () => (await (await worker()).projectUI()).opState === null,
@@ -486,4 +506,4 @@ it('restart while busy: a comment waiting for a busy worker is taken once, withi
     await run?.stop()
     rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
-}, 480_000)
+}, 540_000)

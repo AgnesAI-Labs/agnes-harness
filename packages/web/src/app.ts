@@ -1,5 +1,6 @@
 import { defaultLoop, defaultModelAdapter } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
+import { PluginAdminApi } from '@agnes/web-admin/admin/plugins/api'
 import type { StartedSession } from '@agnes/web-admin/agents'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import { factChainLinks, reserveOwnerOnly } from '@agnes/web-client'
@@ -7,12 +8,15 @@ import {
   appServerErrorMessage,
   bindDialogSheets,
   createCatalogTranslator,
+  createExternalStore,
   preserveRouteParams,
   reportSuccess,
   searchParamRoute,
 } from '@agnes/web-ui'
 import { settingsRoute, sortSessionsByRecency, untitledSessionLabel } from '@agnes/web-units/shell'
 import { createAppearanceController } from './app/appearance-controller.js'
+import { createBackendConnection } from './app/backend-connection.js'
+import { createBrowserClientRoster } from './app/client-roster.js'
 import { type ApplySessionControls, createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
 import { bindConnectionEvents } from './app/connection-events.js'
@@ -34,9 +38,13 @@ import { createSubmissionController } from './app/submission-controller.js'
 import { SubmissionOwner } from './app/submission-owner.js'
 import { bindTerminalNavigation } from './app/terminal-navigation.js'
 import { createTurnController } from './app/turn-controller.js'
-import { openApplicationHome, projectApplication, requestNewSession } from './application.js'
-import { readyRosterModules } from './client-modules/reconcile/roster.js'
+import { openApplicationHome, requestNewSession } from './application.js'
+import { installCloudConnectionSettings } from './backends/cloud-connection-settings.js'
+import { backendFrameStartup, installBackendFrameBridge } from './backends/frame-bridge.js'
+import { backendFrame, requestDiagnosticBackend } from './backends/frame-context.js'
+import { localLocationUrl, localStartupSearchParams } from './backends/local-workbench-bus.js'
 import { ComposerDrafts, switchComposerDraft } from './composer-drafts.js'
+import { frontendBackendIdentity } from './remote-frontend.js'
 import '@agnes/web-admin/settings/registry'
 import type {
   ConfigSnapshot,
@@ -47,16 +55,8 @@ import type {
   UITurn,
   WorkspaceEntry,
 } from '@agnes/protocol'
-import {
-  createClient,
-  JsonRpcError,
-  localStorageJournal,
-  type PermissionOutcome,
-  type PermissionRequest,
-  type Session,
-} from '@agnes/sdk/browser'
+import type { PermissionOutcome, PermissionRequest, Session } from '@agnes/sdk/browser'
 import { type PermissionMode, permissionLabel, yoloEnabled } from '@agnes/web-admin/permission-picker'
-import { createSettingsController } from '@agnes/web-admin/settings'
 import { loadAuxiliaryModelDefaults, loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
 import { settingsCatalog } from '@agnes/web-admin/settings/locales'
 import { mountStatusCheck } from '@agnes/web-admin/settings/status-check'
@@ -77,12 +77,16 @@ import { attachmentErrorMessage } from '@agnes/web-units/shell'
 import { createWorkspaceController } from './app/workspace-controller.js'
 import { appNotice, setConnectionNotice, setReconnectNotice } from './app-notices.js'
 import { mountAppShell } from './app-shell.js'
-import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
+import { createLocalManagementSettings as createSettingsController } from './backends/local-management.js'
+import { startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
 import { bindJobsClient } from './client-modules/jobs.js'
-import type { RosterSource } from './client-modules/reconcile.js'
+import { clientSessionServices } from './client-modules/session-services.js'
 import { readWebComposerMemory, rememberWebComposer, selectionFromMemory } from './composer-memory.js'
 import { composerReferences, composerSkills } from './composer-references.js'
+import { bindPluginUiConfiguration } from './declarative-ui/configuration.js'
+import { bindPluginUiConnection, watchPluginUiSidebar } from './declarative-ui/connection.js'
+import { pluginUiEntries } from './declarative-ui/entries.js'
 import { createDiagnosticsDialog } from './diagnostics-dialog.js'
 import {
   type LoopSelection,
@@ -91,13 +95,15 @@ import {
   loopIdentity,
   type NewSessionCatalog,
 } from './loop-picker.js'
+import { contributedModelCatalog } from './model-picker/catalog-source.js'
 import { namedModels } from './model-picker/state.js'
 import type { ModelPickerOption } from './model-picker.js'
 import { businessAgentSuggestions } from './pages/business-agents.js'
 import { callChannel } from './pages/channel-api.js'
 import { registerBuiltinHomeEntries } from './pages/entries.js'
 import { activeHomeEntry, bindHomeRouting, mountHomePages, watchActiveHomeEntry } from './pages/host.js'
-import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
+import { openPlugins } from './pages/plugins/route.js'
+import { createReconnectController, type ReconnectPhase } from './reconnect.js'
 import { coalesceBurst, createRefreshCoordinator } from './refresh-coordinator.js'
 import { SESSION_SEARCH_EVENT } from './regions/session-tools.js'
 import { sessionViewCommands } from './regions/session-views.js'
@@ -116,13 +122,17 @@ import {
 import { mountSessionSearch } from './session-search.js'
 import { createTitleRefresh } from './session-title.js'
 import {
+  applySettingsSectionRoute,
   clearSettingsLink,
   consumeSettingsLink,
+  isDeferredCloudSettings,
   movedSettingsTarget,
   needsModelNotice,
   openMovedSettings,
   openMovedSettingsLink,
+  resolveRestoredSettingsLink,
   rewriteMovedSettingsLink,
+  settingsLinkTarget,
 } from './settings-redirects.js'
 import { createSidebarPagination } from './sidebar-pagination.js'
 import { openStartupAnchors } from './startup-anchors.js'
@@ -210,7 +220,7 @@ export interface AppSessionContext {
   runtimeCatalog: typeof runtimeCatalog
   runtimeModels: typeof runtimeModels
   draftSessionRequest: typeof draftSessionRequest
-  selectedModelAvailable: typeof selectedModelAvailable
+  selectedModelAvailable: () => boolean
   selectedWorkspace: typeof selectedWorkspace
   sessionControls: typeof sessionControls
   sessionPending: typeof sessionPending
@@ -243,6 +253,7 @@ export interface AppSessionContext {
 const sessionBinding = new SessionBindingOwner()
 const submissions = new SubmissionOwner(sessionBinding)
 const sessionActivity = new SessionActivityView()
+let runtimePlatform: string | undefined
 const appSessionContext: AppSessionContext = {
   sessionActivity,
   invalidateSessionRuntime: (id) => sessionActions.invalidateRuntime(id),
@@ -536,9 +547,7 @@ const appSessionContext: AppSessionContext = {
   get draftSessionRequest() {
     return draftSessionRequest
   },
-  get selectedModelAvailable() {
-    return selectedModelAvailable
-  },
+  selectedModelAvailable: () => modelCatalogSource.available(runtimeModels, knownSessionModel),
   get selectedWorkspace() {
     return selectedWorkspace
   },
@@ -667,7 +676,7 @@ const appSessionContext: AppSessionContext = {
   },
 }
 const commandController = createCommandController(appSessionContext)
-const composerController = createComposerController(appSessionContext)
+const composerController = createComposerController(appSessionContext, () => runtimePlatform)
 const submissionController = createSubmissionController(appSessionContext)
 const sessionController = createSessionController(appSessionContext, sessionBinding)
 const turnController = createTurnController(appSessionContext)
@@ -676,21 +685,24 @@ const readOnlyController = createReadOnlyController(appSessionContext, {
   beginNewDraft: () => beginExplicitNewDraft(),
 })
 
-const composerDrafts = new ComposerDrafts(sessionStorage, location.origin)
+const composerDrafts = new ComposerDrafts(sessionStorage, frontendBackendIdentity())
 // Keep image submissions below the daemon's WebSocket frame cap, including their JSON-RPC envelope.
 const savedComposerDraft = { text: composerDrafts.read(), references: composerDrafts.readReferences() }
 const notice = appNotice
 const conversation = hosts.conversation
 const goalHost = hosts.goal
-const wsUrl = shellConfig.wsUrl
-const client = createClient({
-  sessionRestoreHistory: 'none',
-  transport: { kind: 'ws', url: wsUrl ?? '', protocols: ['agnes-v1'] },
-  auth: { kind: 'local' },
-  journal: localStorageJournal(sessionStorage, `agnes-web-commands:${wsUrl ?? location.origin}`),
-})
-// Before any plugin code can reach the client: owner-only methods go out only through ownerCall.
+const { client, wsUrl, probe: backendProbe } = createBackendConnection(shellConfig.wsUrl)
+onPageHide(
+  installBackendFrameBridge(
+    client,
+    (id) => sessionLabels.get(id),
+    (action, id, title, trigger) => void sessionActions.act(action, id, title, trigger),
+    (section) => void openSettingsSection(section, true).catch(showError),
+  ),
+)
+// Before plugins load, retain develop's owner-only method reservation.
 const ownerCall = reserveOwnerOnly(client)
+
 onPageHide(
   bindJobsClient({
     client,
@@ -704,7 +716,7 @@ let intentionalClose = false
 // Recovery state lives beside the notice, not in it: later errors rewrite the notice, and the
 // retry control must survive them.
 const reconnect = createReconnectController({
-  probe: bootstrapProbe((input, init) => fetch(input, init), wsUrl ?? ''),
+  probe: backendProbe,
   reload: () => location.reload(),
   onPhase: renderReconnect,
 })
@@ -712,44 +724,15 @@ function renderReconnect(phase: ReconnectPhase): void {
   setReconnectNotice(phase, () => reconnect.retry())
   if (phase !== 'idle') setConnection(phase === 'stalled' ? 'closed' : 'reconnecting')
 }
-// Client module foundation: Cordis root, five host services and a workbench.panel mount point.
-// The roster authority is `_agnes/v1/clientModules.list`; profile becomes available after config.get(),
-// until then treat the roster as empty (fail-closed, loading no modules).
-const customModuleListeners = new Set<() => void>()
-const moduleExtIds = new Map<string, string[]>()
 let profileName = ''
+const pluginUiConnection = bindPluginUiConnection(client, () => connected)
+let skinConnectionChanged: ((connected: boolean) => void) | undefined
 let moduleSessionId: string | undefined
-const rosterSource: RosterSource = {
-  identity: () => JSON.stringify([profileName, moduleSessionId, sessionBinding.generation]),
-  commit(roster) {
-    projectApplication(roster.application)
-    moduleExtIds.clear()
-    for (const mod of roster.modules) moduleExtIds.set(mod.rowId ?? mod.packageId, mod.extIds)
-    for (const listener of customModuleListeners) listener()
-  },
-  async list() {
-    if (!profileName) return { revision: '', modules: [], statuses: [] }
-    // These reads can cross an upgrade: the role registry admits only the roster binding
-    // matching the full consent identity, synchronously before every mount.
-    const [roster, application] = await Promise.all([
-      client.clientModules.list(profileName, moduleSessionId),
-      client.request('_agnes/v1/applications.get', { profile: profileName }).catch(() => undefined),
-    ])
-    // `rows` is the authoritative browser lifecycle surface. The legacy `modules` projection
-    // cannot carry every immutable declaration, including the per-module service allow-list.
-    const modules = readyRosterModules(roster.rows ?? [])
-    return {
-      ...(application ? { application } : {}),
-      revision: roster.revision,
-      modules,
-      statuses: roster.statuses,
-      ...(roster.rowAliases === undefined ? {} : { rowAliases: roster.rowAliases }),
-    }
-  },
-}
-// Claim timeline cards by package: fill.extId must match roster extIds of the package owning the registration.
-const claimSlotCard: ClaimResolver = (entry, extId) =>
-  entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
+const clientRoster = createBrowserClientRoster(client, () => ({
+  profile: profileName,
+  sessionId: moduleSessionId,
+  generation: sessionBinding.generation,
+}))
 const references = composerReferences(prepareComposerSession, renderControls)
 // Reserve host entries before installed modules can register their reviewed declarations.
 const removeHomeEntries = registerBuiltinHomeEntries(ownerCall)
@@ -762,18 +745,9 @@ const clientModules = await startClientModules({
       searchApproval()
       approvalRuntime.focus()
     },
-    async listComponents(sessionId) {
-      if (!profileName) return []
-      return (await client.clientModules.list(profileName, sessionId)).rows ?? []
-    },
-    subscribeComponents(listener) {
-      customModuleListeners.add(listener)
-      return () => {
-        customModuleListeners.delete(listener)
-      }
-    },
+    ...clientRoster.presentation,
   },
-  claim: claimSlotCard,
+  claim: clientRoster.claim,
   clientProfileCaller: async (module, service, input, options) => {
     const response = await fetch('/api/client-modules/profile', {
       method: 'POST',
@@ -789,53 +763,7 @@ const clientModules = await startClientModules({
     if (!response.ok) throw new Error(t('app.plugin.serviceUnavailable'))
     return response.json()
   },
-  clientServiceCaller: async (module, sessionId, service, input) => {
-    const response = await fetch('/api/client-modules/service', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({ rowId: module.rowId ?? module.packageId, sessionId, service, input }),
-    })
-    if (!response.ok) throw new Error(t('app.plugin.serviceUnavailable'))
-    const body: unknown = await response.json().catch(() => undefined)
-    if (!body || typeof body !== 'object' || !('output' in body))
-      throw new Error(t('app.plugin.serviceInvalid'))
-    return (body as { output: unknown }).output
-  },
-  clientEffectCaller: async (module, sessionId, service, commandId, input) => {
-    const response = await fetch('/api/client-modules/effect', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        rowId: module.rowId ?? module.packageId,
-        sessionId,
-        service,
-        commandId,
-        input,
-      }),
-    })
-    const body: unknown = await response.json().catch(() => undefined)
-    if (!response.ok) {
-      const failure = (body as { error?: { code?: unknown; data?: { code?: unknown } } } | null)?.error
-      if (typeof failure?.code === 'number' && typeof failure.data?.code === 'string')
-        throw new JsonRpcError({
-          code: failure.code,
-          message: t('app.plugin.effectUnavailable'),
-          data: { code: failure.data.code },
-        })
-      throw new Error(t('app.plugin.effectUnavailable'))
-    }
-    if (!body || typeof body !== 'object' || !('output' in body))
-      throw new Error(t('app.plugin.effectInvalid'))
-    return (body as { output: unknown }).output
-  },
+  ...clientSessionServices((key) => t(key)),
   authorizeCommand: ({ owner, command }) =>
     window.confirm(
       t('app.plugin.authorize', {
@@ -866,6 +794,7 @@ const clientModules = await startClientModules({
       },
       openSession: (id) =>
         run(async () => {
+          pluginUiEntries.close('sidebar')
           homeNavigation.close()
           // The session already showing behind a page needs no second open.
           if (id !== sessionBinding.session?.id || draftingNew) await open(id)
@@ -923,6 +852,7 @@ const clientModules = await startClientModules({
     onDraftChange: handleComposerDraftChange,
     onError: showError,
     onModelSelect: selectModel,
+    onModelCatalogChange: (models) => modelCatalogSource.set(models),
     onAuxiliaryRead: readAuxiliaryModels,
     onAuxiliarySelect: selectAuxiliaryModel,
     onModelSettingsChange: selectModelSettings,
@@ -987,7 +917,7 @@ const clientModules = await startClientModules({
       }
     },
   },
-  rosterSource,
+  rosterSource: clientRoster.source,
 })
 // The session list shows every session the daemon reports running or waiting for its owner, and
 // marks a turn that ended while another session was on screen.
@@ -1007,30 +937,29 @@ if (!tracePanel) throw new Error('missing trace region')
 factChainLinks.register((target) => tracePanel.focusFact?.(target) ?? false)
 const stopTerminalNavigation = bindTerminalNavigation(() => settings.close())
 const statusCheck = mountStatusCheck({
-  details: () =>
-    run(async () => {
-      settingsRegion.open('model')
-      await settings.open()
-      settingsRegion.route('diagnostics')
-    }),
+  details: () => run(() => openSettingsSection('diagnostics')),
 })
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')
-const openSettingsSection = (section: string) => {
+onPageHide(installCloudConnectionSettings(clientModules.locale, client))
+const openSettingsSection = async (section: string, fromWorkbench = false) => {
+  if (!fromWorkbench && requestDiagnosticBackend(section)) return
   settingsRegion.open('model')
-  run(async () => {
-    await settings.open()
-    settingsRegion.route(section)
-  })
+  const loading = settings.open(section)
+  if (settings.isOpen()) settingsRegion.route(applySettingsSectionRoute(section))
+  await loading
 }
 // The sidebar's application switch asks for the settings page in place; its href stays the fallback.
 const stopSurfaceSettings = onSurfaceEvent('agnes:open-settings', (event) => {
   const section = (event as CustomEvent<{ section?: string }>).detail?.section
   if (!section) return
   event.preventDefault()
-  openSettingsSection(section)
+  run(() => openSettingsSection(section))
 })
 // Home entries open full pages in the main area; the built-in three register like any plugin's.
+const skillsWorkspace = createExternalStore<string | undefined | null | false>(null)
+const initialSkillsBinding = sessionBinding.capture()
+let startupSkillsScope: 'loading' | 'ready' | 'unavailable' = 'loading'
 const homePages = mountHomePages(hosts.homePage, {
   locale: clientModules.locale,
   data: {
@@ -1039,7 +968,7 @@ const homePages = mountHomePages(hosts.homePage, {
     requestProfileApproval: clientModules.requestProfileApproval,
     channelCall: callChannel,
     selectedWorkspace: () => (selectedWorkspace?.available ? selectedWorkspace.path : undefined),
-    openSettings: openSettingsSection,
+    openSettings: (section) => run(() => openSettingsSection(section)),
     startDraft: (prompt) =>
       run(async () => {
         requestNewSession()
@@ -1050,7 +979,7 @@ const homePages = mountHomePages(hosts.homePage, {
     plugins: {
       actualSlots: clientModules.actualSlots,
       runtime: clientModules.reconciler,
-      workspaceId: () => paneWorkspaceId(),
+      skillsWorkspace,
     },
   },
 })
@@ -1073,8 +1002,7 @@ const workspaceController = createWorkspaceController(appSessionContext, hosts.n
 setLocaleTranslator(t)
 clientModules.locale.register('@agnes/web-workbench', workbenchLocaleCatalog)
 
-// A daemon notice is only an invalidation hint. Every read goes back through the SDK roster
-// endpoint, and a failed read leaves the sessionBinding.session page/modules intact for the next hint.
+// Notices are invalidation hints; only the daemon's fresh roster can start client code.
 function scheduleClientRosterRead(initial = false): void {
   void (initial ? clientModules.reconciler.reconcileNow() : clientModules.reconciler.invalidate()).catch(
     (error) => console.warn('[client-modules] 名册重读失败', error),
@@ -1120,10 +1048,11 @@ let approvalSearch: 'idle' | 'searching' | 'not-found' = 'idle'
 let approvalSearchTicket: string | undefined
 let streamFrame: number | undefined
 let stopping = false
-let sessionPending = new URLSearchParams(location.search).get('new') === '1'
+let sessionPending = localStartupSearchParams().get('new') === '1'
 let stopAfterSeq = 0
 let approvalBusy = false
 let runtimeModels: ModelPickerOption[] = []
+const modelCatalogSource = contributedModelCatalog(() => void refreshModels().catch(showError))
 let configuredAccounts: ConfigSnapshot['accounts'] = []
 let accountProvider: { route?: string; id?: string; model?: string } | null = null
 let knownSessionModel: KnownSessionModel | undefined
@@ -1141,20 +1070,14 @@ let draftPermission: PermissionMode | undefined
 let draftBundles: string[] = []
 let sessionIsolation: import('./app/isolation-note.js').SessionIsolation | undefined
 let runtimeCatalog: import('@agnes/protocol').RuntimeAdminSnapshot | undefined
-const startupRequest = new URLSearchParams(location.search)
+const startupRequest = localStartupSearchParams()
 // Settings and nested pages keep their address across reload and history traversal.
 const startupSettingsLink = consumeSettingsLink()
-const startupSettingsAnchor = startupSettingsLink.anchor
 let startupSettingsDismissed = false
 const requestedLoop = startupRequest.get('loop') ?? undefined
 const requestedPreset = startupRequest.get('preset') ?? undefined
 const requestedBundles = startupRequest.getAll('bundle')
 const requestedPrompt = startupRequest.get('prompt') ?? undefined
-// `/admin/resources?workspaceId=…` forwards here: the link names the workspace its resources are for.
-const requestedWorkspaceId = (() => {
-  const id = startupRequest.get('workspaceId')
-  return id && /^[a-f0-9]{64}$/.test(id) ? id : undefined
-})()
 const settingsText = (key: string): string =>
   createCatalogTranslator(
     settingsCatalog,
@@ -1259,7 +1182,6 @@ function updateTitle(id: string, title: string): void {
   if (sessionBinding.session?.id === id) topbarRuntime.setTaskTitle(title)
   updateSidebar()
 }
-let runtimePlatform: string | undefined
 let sessionRows: PageSessionMeta['items'] = []
 let workspaceRows: WorkspaceEntry[] = []
 // The search panel's footer total follows the sidebar snapshot; the panel itself never reads pages.
@@ -1309,6 +1231,8 @@ let liveApproval:
   | undefined
 
 function updateSidebar(): void {
+  const homeSelected = activeHomeEntry() || pluginUiEntries.getSnapshot().sidebar
+  const currentSession = homeSelected ? undefined : (sessionBinding.session ?? readOnly)
   clientModules.sidebar?.update({
     sessions: sidebarPages.rows(),
     paging: sidebarPages.snapshot(),
@@ -1317,20 +1241,18 @@ function updateSidebar(): void {
     labels: sessionLabels,
     locale: clientModules.locale.getSnapshot(),
     // While a home page shows, the page's entry is the selected item, not the session behind it.
-    ...(activeHomeEntry()
-      ? {}
-      : sessionBinding.session
-        ? { currentId: sessionBinding.session.id }
-        : readOnly
-          ? { currentId: readOnly.id }
-          : {}),
+    ...(currentSession ? { currentId: currentSession.id } : {}),
     sessionPending,
     newDisabled: !connected || submissions.sending || sessionPending || workspaceController.creating,
   })
 }
 
 // Opening or leaving a home page, or losing its entry, moves the sidebar's selection.
-const stopHomeSelection = [watchActiveHomeEntry(updateSidebar), homeEntries.subscribe(updateSidebar)]
+const stopHomeSelection = [
+  watchActiveHomeEntry(updateSidebar),
+  homeEntries.subscribe(updateSidebar),
+  watchPluginUiSidebar(updateSidebar),
+]
 
 const SESSION_WATCH_STOP_TIMEOUT_MS: number = 3000
 function stopWithTimeout(stop: (() => Promise<void>) | undefined): Promise<boolean> {
@@ -1346,36 +1268,48 @@ const settings = createSettingsController({
       history.pushState(null, '', address.href([settingsRegion.form()?.dataset.settingsSection ?? 'model']))
   },
   onClose: () => {
+    pluginUiEntries.close('settings')
+    if (isDeferredCloudSettings()) return
     startupSettingsDismissed = true
     clearSettingsLink()
   },
 })
+const stopPluginUiConfiguration = bindPluginUiConfiguration(() => {
+  if (settings.isOpen()) settings.close()
+  pluginUiEntries.close('sidebar')
+  openPlugins('plugins')
+})
 const restoreSettingsLocation = () => {
-  const moved = rewriteMovedSettingsLink()
-  if (moved?.kind === 'page') {
-    settings.close()
-    homeNavigation.open(moved.page, moved.tab ? { tab: moved.tab } : undefined)
-    return
-  }
-  const id = consumeSettingsLink().id
-  if (!id) {
-    if (settings.isOpen()) settings.close()
-    return
-  }
-  if (movedSettingsTarget(id)) {
-    openMovedSettingsLink(id, {
+  if (isDeferredCloudSettings()) return
+  // A history traversal takes over settings restoration even during startup.
+  startupSettingsDismissed = true
+  const resolved = resolveRestoredSettingsLink(
+    () => settings.close(),
+    (page, tab) => homeNavigation.open(page, tab ? { tab } : undefined),
+  )
+  if (!resolved) return
+  if (movedSettingsTarget(resolved.id)) {
+    openMovedSettingsLink(resolved.id, {
       searchSessions: () => sessionSearch.open(),
       showArchived: () => sessionInventory.setMode('archived'),
     })
     return
   }
-  settingsRegion.route(id)
-  if (!settings.isOpen()) run(() => settings.open())
+  if (!settings.isOpen()) {
+    settingsRegion.open('model')
+    run(async () => {
+      await settings.open(resolved.id)
+      if (settings.isOpen()) settingsRegion.route(resolved.target)
+    })
+    return
+  }
+  settingsRegion.route(resolved.target)
 }
 const stopSettingsRouting = onHistoryNavigation(restoreSettingsLocation)
 clientModules.locale.subscribe(() => settings.refreshLocale())
 const firstRun = createFirstRunController({
   host: hosts.firstRun,
+  modelCatalog: modelCatalogSource,
   banner: hosts.doctorNotice,
   client,
   storage: safeThemeStorage(),
@@ -1496,6 +1430,7 @@ const sessionSearch = mountSessionSearch({
   titleOf: (id) => sessionRows.find((row) => row.sessionId === id)?.title || sessionLabels.get(id),
   open: (id) =>
     run(async () => {
+      pluginUiEntries.close('sidebar')
       homeNavigation.close()
       // A live session opened from search has to be visible in the list behind it.
       const row = sessionRows.find((item) => item.sessionId === id)
@@ -1636,6 +1571,9 @@ function clearSessionRecovery(nextSessionId?: string): void {
 }
 function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'closed'): void {
   connected = value === 'connected'
+  if (!connected) pluginUiConnection.disconnect()
+  skinConnectionChanged?.(connected)
+  if (clientRoster.setOnline(connected) && !connected) scheduleClientRosterRead()
   const currentSessionId = clientModules.session.sessionId
   if (currentSessionId && clientModules.session.readiness.getSnapshot().status !== 'history-only')
     clientModules.session.setReadiness(
@@ -1665,7 +1603,20 @@ function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'clo
 }
 const dockControlsHost = hosts.dockControls
 function renderControls(): void {
+  updateSkillsWorkspace()
   composerController.renderControls()
+}
+function updateSkillsWorkspace(): void {
+  // The first scope comes from startup or an explicit selection that supersedes it.
+  if (sessionBinding.isCurrent(initialSkillsBinding) && startupSkillsScope !== 'ready') {
+    skillsWorkspace.set(startupSkillsScope === 'loading' ? null : false)
+    return
+  }
+  const cwd = sessionBinding.session?.cwd
+  const id =
+    selectedWorkspace?.workspaceId ?? (cwd && workspaceRows.find((row) => row.path === cwd)?.workspaceId)
+  const workspace = id && /^[a-f0-9]{64}$/.test(id) ? id : undefined
+  skillsWorkspace.set(sessionPending ? null : (workspace ?? (workspaceController.loaded ? undefined : false)))
 }
 // During streaming every event makes the trace panel walk all nodes, costing more than the timeline in long sessions.
 // While busy, throttle panel updates to 500ms with a trailing update using the latest view; terminal and idle paths
@@ -1740,9 +1691,11 @@ function open(
     initialModel?: KnownSessionModel
   } = {},
 ): Promise<void> {
+  pluginUiEntries.close('sidebar')
   return sessionController.open(id, options)
 }
 function forkSidebar(id: string, title: string): Promise<void> {
+  pluginUiEntries.close('sidebar')
   homeNavigation.close()
   return sessionController.forkSidebar(id, title)
 }
@@ -1767,8 +1720,13 @@ function beginExplicitNewDraft(showWorkspacePicker = true, workspace?: Workspace
   requestNewSession()
   return beginNewDraft(showWorkspacePicker, workspace)
 }
-async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
-  if (sessionPending || submissions.sending) return
+async function beginNewDraft(
+  showWorkspacePicker = true,
+  workspace?: WorkspaceEntry,
+  supersedeSessionLoad = false,
+): Promise<void> {
+  if (submissions.sending || (sessionPending && !(supersedeSessionLoad && sessionBinding.targetId))) return
+  pluginUiEntries.close('sidebar')
   // A new draft the current filter would hide reads as a lost session: show the live list first.
   if (sessionInventory.getSnapshot().mode === 'archived') sessionInventory.setMode('active')
   sessionInventory.invalidate()
@@ -1803,7 +1761,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   liveApproval?.finish({ unanswered: 'detached' })
   liveApproval = undefined
   renderer.reset()
-  const url = new URL(location.href)
+  const url = localLocationUrl()
   url.searchParams.delete('session')
   const settingsHash =
     url.searchParams.has('settings') && url.hash.startsWith('#settings-subsection-') ? url.hash : ''
@@ -1871,18 +1829,16 @@ function selectComposerDraft(id?: string, options: { preserve?: boolean; carry?:
 }
 let modelReadGeneration = 0
 let modelAppliedGeneration = 0
-function selectedModelAvailable(): boolean {
-  const selected = knownSessionModel
-  return (
-    !selected || runtimeModels.some((model) => model.route === selected.route && model.id === selected.id)
-  )
-}
 async function refreshModels(catalogReady?: Promise<void>): Promise<ModelPickerOption[]> {
   const generation = ++modelReadGeneration
   const apis = await client.apis()
   // Start the model read immediately; defaults and labels must settle before selection is applied.
   await catalogReady
-  const models = namedModels(apis.profile.models ?? [], configuredAccounts ?? [])
+  const models = modelCatalogSource.visible(
+    namedModels(apis.profile.models ?? [], configuredAccounts ?? []),
+    knownSessionModel,
+    !!sessionBinding.session,
+  )
   if (generation > modelAppliedGeneration) {
     modelAppliedGeneration = generation
     runtimeModels = models
@@ -2126,10 +2082,19 @@ onWindowFocus(() => {
 })
 const { appearance, skins: skinGroup } = createAppearanceController({
   locale: clientModules.locale,
-  // The roster source reads the profile before config.get() has reported it.
-  profile: () => profileName,
+  profile: () => (connected ? profileName : ''),
+  backendIdentity: frontendBackendIdentity,
   listSkins: (profile) => client.skins.list(profile),
+  async selectSkin(profile, revision, choice, isCurrent) {
+    const context = await PluginAdminApi.context()
+    if (!isCurrent() || context.profile !== profile) throw new Error('Skin selection scope changed')
+    await new PluginAdminApi(context).selectSkin(revision, choice)
+  },
 })
+skinConnectionChanged = (ready) => {
+  if (!ready) skinGroup.invalidate()
+  else if (profileName) void skinGroup.refresh()
+}
 clientModules.locale.subscribe(() => {
   renderControls()
   updateSidebar()
@@ -2137,15 +2102,6 @@ clientModules.locale.subscribe(() => {
   skinGroup.sync()
 })
 onPageHide(composerCommands.subscribe(() => queueMicrotask(renderControls)))
-
-/**
- * The workspace the admin panes are scoped to: the workbench's current one, else the one the
- * address named. Only a canonical 64-hex directory id is passed on.
- */
-function paneWorkspaceId(): string | undefined {
-  const id = selectedWorkspace?.workspaceId
-  return id && /^[a-f0-9]{64}$/.test(id) ? id : requestedWorkspaceId
-}
 
 function handleComposerWorkspace(): void {
   composerController.handleComposerWorkspace()
@@ -2228,6 +2184,7 @@ client.on('generationChanged', (payload) => {
 // A cold daemon reports its tree and packages in quick succession; notices that close share one read.
 const packageNotices = coalesceBurst(() => {
   scheduleClientRosterRead()
+  void skinGroup.refresh()
   broadcast('agnes:plugins-invalidated')
   void modelRefresh.request().catch(showError)
 }, 100)
@@ -2247,9 +2204,14 @@ client.on('notice', (payload) => {
   if (incoming.kind !== 'packages_changed' && incoming.kind !== 'tree_changed') return
   const detail =
     typeof incoming.detail === 'object' && incoming.detail !== null
-      ? (incoming.detail as { profile?: unknown })
+      ? (incoming.detail as { profile?: unknown; packageId?: unknown; reason?: unknown })
       : undefined
-  if (profileName && detail?.profile === profileName) packageNotices.request()
+  if (incoming.kind === 'packages_changed') pluginUiConnection.packagesChanged(detail)
+  if (profileName && detail?.profile === profileName) {
+    clientModules.reconciler.retirePending()
+    skinGroup.invalidate()
+    packageNotices.request()
+  }
 })
 onPageVisible(() => {
   reconnect.resume()
@@ -2259,18 +2221,28 @@ onPageVisible(() => {
 })
 onHistoryNavigation(() => {
   const params = new URL(location.href).searchParams
+  if (!backendFrame() && params.has('remote')) return
   const id = params.get('session')
-  if (!id && params.has('settings')) return
+  if (!id && params.has('settings') && !params.has('new')) return
   run(async () => {
     if (id) {
       if (sessionBinding.session?.id !== id) await open(id)
       return
     }
-    if (sessionBinding.session || !draftingNew) await beginNewDraft(!homeNavigation.getSnapshot())
+    const workspace =
+      params.get('new') === '1'
+        ? workspaceRows.find((row) => row.available && row.workspaceId === params.get('workspaceId'))
+        : undefined
+    if (sessionBinding.session || !draftingNew)
+      await beginNewDraft(!homeNavigation.getSnapshot() && !params.has('settings'), workspace, true)
+    else if (workspace && workspace !== selectedWorkspace) {
+      workspaceController.resolveDraft(workspace)
+      renderControls()
+    }
   })
 })
 async function refreshModelConfiguration(): Promise<void> {
-  const snapshot = await client.config.get()
+  const snapshot = await pluginUiConnection.readProfile()
   accountProvider = snapshot.provider
   configuredAccounts = snapshot.accounts
   const catalogReady = refreshSessionCatalog()
@@ -2327,6 +2299,8 @@ onPageHide(() => {
   unmountAppShell()
   modelRefresh.stop()
   packageNotices.stop()
+  pluginUiConnection.close()
+  stopPluginUiConfiguration()
   stopSessionConfiguration()
   reconnect.cancel()
   titleRefresh.close()
@@ -2334,7 +2308,7 @@ onPageHide(() => {
   void (previous.stop?.() ?? Promise.resolve()).finally(() => client.close())
 })
 
-run(async () => {
+const startup = backendFrameStartup(async () => {
   const startupSelection = sessionBinding.capture()
   setConnection('connecting')
   if (!wsUrl) throw new Error(t('app.ws.unavailable'))
@@ -2348,7 +2322,7 @@ run(async () => {
   setConnection('connected')
   reconnect.reset()
   void workspaceController.refreshPicker()
-  const snapshot = await client.config.get()
+  const snapshot = await pluginUiConnection.readProfile()
   accountProvider = snapshot.provider
   profileName = snapshot.profile
   void skinGroup.refresh()
@@ -2365,7 +2339,8 @@ run(async () => {
   if (workspaces.status === 'fulfilled') {
     workspaceController.apply(workspaces.value)
     // A link that names a workspace selects it, unless the reader has already chosen one.
-    const requested = workspaceRows.find((row) => row.workspaceId === requestedWorkspaceId)
+    const workspaceId = startupRequest.get('workspaceId')
+    const requested = workspaceRows.find((row) => row.workspaceId === workspaceId)
     if (requested && !selectedWorkspace && sessionBinding.isCurrent(startupSelection))
       selectedWorkspace = requested
   } else showError(new Error(t('app.workspaceList.unreadable'), { cause: workspaces.reason }))
@@ -2419,16 +2394,19 @@ run(async () => {
         }),
     })
   }
+  const currentAddress = localStartupSearchParams()
   const guided =
     empty &&
-    !startupRequest.get('settings') &&
+    !currentAddress.get('settings') &&
     !homeNavigation.getSnapshot() &&
-    !startupRequest.get('session') &&
+    !currentAddress.get('session') &&
     needsFirstRun(snapshot)
   // A user selection made while startup was loading owns the current view.
   if (!sessionBinding.isCurrent(startupSelection)) return
-  const selected = new URL(location.href).searchParams.get('session')
-  if (startupRequest.get('new') === '1') {
+  const selected = currentAddress.get('session')
+  // A link can restore a draft underneath a home page or the settings dialog.
+  const startNew = currentAddress.get('new') === '1'
+  if (startNew && !currentAddress.has('settings') && !homeNavigation.getSnapshot()) {
     await awaitModels()
     if (!sessionBinding.isCurrent(startupSelection)) return
     requestNewSession()
@@ -2487,23 +2465,28 @@ run(async () => {
       notice.setText(() => t('app.session.notFound'))
       renderControls()
     }
-  } else if (first) await open(first.sessionId)
-  else if (empty) {
+  } else if (first && !startNew) await open(first.sessionId)
+  else if (empty || startNew) {
     await awaitModels()
     if (!sessionBinding.isCurrent(startupSelection)) return
     // Finishing or skipping the guide already starts a draft. Its Host catalogs must not
     // delay account setup; that draft still waits for the same catalogs before submission.
-    if (!guided)
+    if (!guided) {
+      if (startNew) sessionPending = false
       await beginNewDraft(
         configured && !startupSection && !startupTerminal && !startupMoved && !homeNavigation.getSnapshot(),
       )
-    // The guide opens over the shell: its sidebar and composer still come from the profile roster.
-    else scheduleClientRosterRead(true)
+    } else {
+      // The guide opens over the shell: its sidebar and composer still come from the profile roster.
+      scheduleClientRosterRead(true)
+    }
   } else {
     scheduleClientRosterRead(true)
     sessionPending = false
     renderControls()
   }
+  startupSkillsScope = 'ready'
+  updateSkillsWorkspace()
   const modelSelection = sessionBinding.capture()
   await awaitModels()
   if (!sessionBinding.isCurrent(modelSelection)) return
@@ -2514,24 +2497,28 @@ run(async () => {
     !empty || Boolean(startupSection || startupTerminal || startupMoved || homeNavigation.getSnapshot()),
   )
   if (guided && !shown) await beginNewDraft(true)
-  if (startupMoved)
+  if (startupMoved && !isDeferredCloudSettings())
     openMovedSettingsLink(startupSettings, {
       searchSessions: () => sessionSearch.open(),
       showArchived: () => sessionInventory.setMode('archived'),
     })
   showModelNotice()
   const settingsSelection = sessionBinding.capture()
-  if ((startupSection || startupTerminal) && !startupSettingsDismissed) {
-    settingsRegion.open('model')
-    await settings.open()
-    // A choice made while the dialog was loading owns the view.
-    if (!sessionBinding.isCurrent(settingsSelection)) return
-    const anchoredSettings = startupSettingsAnchor.replace(/^settings-subsection-/, '')
-    const anchoredRoute = settingsRoute(anchoredSettings)
-    const target =
-      anchoredRoute.id === startupSettings && anchoredRoute.anchor === startupSettingsAnchor
-        ? anchoredSettings
-        : startupSettings
-    settingsRegion.route(target)
+  if ((startupSection || startupTerminal) && !startupSettingsDismissed && !isDeferredCloudSettings()) {
+    if (!backendFrame()) settingsRegion.open('model')
+    await settings.open(startupRequest.get('settings') ?? startupSettings)
+    if (!sessionBinding.isCurrent(settingsSelection) || !settings.isOpen()) return
+    settingsRegion.route(settingsLinkTarget(startupSettingsLink))
+  }
+})
+run(async () => {
+  try {
+    await startup()
+  } catch (error) {
+    if (startupSkillsScope === 'loading') {
+      startupSkillsScope = 'unavailable'
+      updateSkillsWorkspace()
+    }
+    throw error
   }
 })

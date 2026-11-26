@@ -18,7 +18,9 @@ it('agh queue from another process runs after the current turn ends', async () =
   const entry = join(distribution, 'agnes.mjs')
   const home = join(root, 'h')
   const cwd = join(root, 'w')
+  const localAppData = join(root, 'localappdata')
   await mkdir(cwd)
+  await mkdir(localAppData)
   initializeHome(home)
   const prompts: string[] = []
   let release: () => void = () => undefined
@@ -55,6 +57,7 @@ it('agh queue from another process runs after the current turn ends', async () =
     TEMP: root,
     TMP: root,
     HOME: root,
+    LOCALAPPDATA: localAppData,
     AGH_TELEMETRY_DISABLED: '1',
     AGH_HOME: home,
     AGNES_PROFILE: 'local-dev',

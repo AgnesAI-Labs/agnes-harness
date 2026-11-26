@@ -353,87 +353,168 @@
         }
       }
     },
-    "SkinListResult": {
-      "description": "Selectable skins derived from the enabled, trusted package inventory.",
+    "SkinIdentity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["revision", "skins"],
+      "required": [
+        "packageId",
+        "id",
+        "rowId",
+        "source",
+        "version",
+        "integrity",
+        "treeIntegrity",
+        "cssDigest",
+        "assetsDigest"
+      ],
       "properties": {
-        "revision": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
+        "packageId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "maxLength": 64 },
+        "rowId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "source": { "$ref": "#/$defs/PackageSource" },
+        "version": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "integrity": { "type": "string", "minLength": 1, "maxLength": 192 },
+        "treeIntegrity": { "type": "string", "pattern": "^sha256-[a-f0-9]{64}$" },
+        "cssDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "assetsDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "SkinChoice": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "application" } }
         },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "none" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "bindingDigest"],
+          "properties": {
+            "kind": { "const": "skin" },
+            "bindingDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+          }
+        }
+      ]
+    },
+    "SkinConfigSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "choice"],
+      "properties": {
+        "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "choice": { "$ref": "#/$defs/SkinChoice" }
+      }
+    },
+    "SkinStoredSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "choice"],
+      "properties": {
+        "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "choice": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind"],
+              "properties": { "kind": { "const": "application" } }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind"],
+              "properties": { "kind": { "const": "none" } }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "identity"],
+              "properties": {
+                "kind": { "const": "skin" },
+                "identity": { "$ref": "#/$defs/SkinIdentity" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "SkinSelectParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "expectedRevision", "choice", "clientId", "commandId"],
+      "properties": {
+        "profile": { "type": "string", "pattern": "^[a-z][a-z0-9.-]{0,63}$" },
+        "expectedRevision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "choice": { "$ref": "#/$defs/SkinChoice" },
+        "clientId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "commandId": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "SkinListResult": {
+      "description": "Candidates have no execution URLs or stylesheet data. Only the current effective selection carries renderable data.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "revision", "choice", "skins", "selected"],
+      "properties": {
+        "profile": { "type": "string", "pattern": "^[a-z][a-z0-9.-]{0,63}$" },
+        "revision": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "choice": { "$ref": "#/$defs/SkinChoice" },
         "skins": {
           "type": "array",
           "maxItems": 128,
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "name", "packageName", "cssUrl"],
+            "required": ["id", "name", "packageId", "version", "bindingDigest"],
             "properties": {
-              "id": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 64
-              },
-              "name": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 64
-              },
-              "packageName": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 256
-              },
-              "cssUrl": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 1024
-              },
-              "css": {
-                "description": "Stylesheet text, sent with the roster so a skin that ships no assets needs no second request. Omitted when the stylesheet exceeds the install cap, in which case the client falls back to cssUrl.",
-                "type": "string",
-                "maxLength": 131072
-              },
-              "assetBase": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 1024
-              },
-              "tokens": {
-                "type": "object",
-                "additionalProperties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+              "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "maxLength": 64 },
+              "packageId": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "version": { "type": "string", "minLength": 1, "maxLength": 128 },
+              "bindingDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            }
+          }
+        },
+        "selected": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "kind", "bindingDigest", "cssUrl", "css"],
+              "properties": {
+                "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$", "maxLength": 64 },
+                "kind": { "enum": ["manual", "application"] },
+                "bindingDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "cssUrl": {
+                  "type": "string",
+                  "maxLength": 1024,
+                  "pattern": "^/skins/[a-f0-9]{64}/[a-z0-9-]+/skin\\.css$"
+                },
+                "css": { "type": "string", "maxLength": 131072 },
+                "tokens": {
                   "type": "object",
-                  "additionalProperties": false,
-                  "required": ["light", "dark"],
-                  "properties": {
-                    "light": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256
-                    },
-                    "dark": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 256
+                  "additionalProperties": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["light", "dark"],
+                    "properties": {
+                      "light": { "type": "string", "minLength": 1, "maxLength": 256 },
+                      "dark": { "type": "string", "minLength": 1, "maxLength": 256 }
                     }
                   }
                 }
               }
             }
-          }
-        },
-        "shadowed": {
-          "description": "Skin ids rejected because an earlier package already declared them.",
-          "type": "array",
-          "maxItems": 128,
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256
-          }
+          ]
         }
       }
     },
@@ -1274,6 +1355,12 @@
           "maxLength": 128,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
         },
+        "docsConnectionEpoch": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
         "features": {
           "type": "array",
           "items": {
@@ -2043,19 +2130,10 @@
                     "type": "array",
                     "minItems": 1,
                     "items": {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "properties": {
-                        "version": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 128
-                        },
-                        "source": {
-                          "$ref": "#/$defs/PackageSource"
-                        }
-                      },
-                      "required": ["version", "source"]
+                      "oneOf": [
+                        { "$ref": "#/$defs/PackageCommunityVersionV2" },
+                        { "$ref": "#/$defs/PackageCommunityVersionV3" }
+                      ]
                     }
                   }
                 },
@@ -2067,6 +2145,100 @@
         }
       },
       "required": ["items", "nextCursor"]
+    },
+    "PackageCommunityVersionV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source": {
+          "$ref": "#/$defs/PackageSource"
+        }
+      },
+      "required": ["version", "source"]
+    },
+    "PackageCommunityVersionV3": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source": {
+          "$ref": "#/$defs/PackageSource"
+        },
+        "provides": {
+          "$ref": "#/$defs/PackageCommunityProvides"
+        },
+        "publishTimestamp": {
+          "$ref": "#/$defs/PackageCommunityPublishTimestamp"
+        },
+        "compatibility": {
+          "$ref": "#/$defs/PackageCommunityCompatibility"
+        }
+      },
+      "required": ["version", "source", "compatibility"]
+    },
+    "PackageCommunityProvides": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "extension-manifest.json#/$defs/PluginProvide"
+      }
+    },
+    "PackageCommunityPublishTimestamp": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 253402300799,
+      "description": "The Git committer time recorded by the index, in Unix seconds."
+    },
+    "PackageCommunityCompatibility": {
+      "description": "The author's declared AGH range compared with the serving daemon's release, not an installation check.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "declared-compatible" },
+            "range": { "type": "string", "minLength": 1, "maxLength": 500 }
+          },
+          "required": ["kind", "range"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "incompatible" },
+            "range": { "type": "string", "minLength": 1, "maxLength": 500 }
+          },
+          "required": ["kind", "range"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "undeclared" }
+          },
+          "required": ["kind"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "unknown" },
+            "range": { "type": "string", "minLength": 1, "maxLength": 500 }
+          },
+          "required": ["kind"]
+        }
+      ]
     },
     "PluginGenerationStatus": {
       "type": "object",
@@ -2271,11 +2443,15 @@
           "maximum": 100
         },
         "communityVersion": {
-          "const": 2,
-          "description": "Opt in to the index-based v2 snapshot; omitted for legacy clients."
+          "enum": [2, 3],
+          "description": "Opt in to the negotiated indexed snapshot version. Version 3 adds per-version metadata."
         }
       },
-      "required": ["profile"]
+      "required": ["profile"],
+      "not": {
+        "type": "object",
+        "required": ["includeCommunity", "communityVersion"]
+      }
     },
     "PackageCatalogGetParams": {
       "type": "object",
@@ -3130,10 +3306,10 @@
       }
     },
     "SkinReadParams": {
-      "description": "One same-origin skin route path to read bytes for. The path is a URL path, never a filesystem path.",
+      "description": "A private selected-skin resource read. Paths are URL paths, not filesystem paths.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "path"],
+      "required": ["profile", "format", "path"],
       "properties": {
         "profile": {
           "type": "string",
@@ -3141,8 +3317,9 @@
           "maxLength": 64,
           "pattern": "^[a-z][a-z0-9.-]{0,63}$"
         },
+        "format": { "const": "selected-v1" },
         "path": {
-          "description": "Absolute URL path such as /skins/aurora/assets/aurora.png.",
+          "description": "Versioned URL path of the currently selected skin.",
           "type": "string",
           "minLength": 1,
           "maxLength": 1024,
@@ -3343,11 +3520,12 @@
                   "unsupported-slot",
                   "resources-invalid",
                   "snapshot-quota-exceeded",
+                  "native-ui-not-admitted",
                   "snapshot-retention-limit"
                 ]
               },
               "retained": {
-                "description": "Superseded snapshots still served during their grace window.",
+                "description": "Superseded snapshots held during their grace window. Retention does not grant asset access.",
                 "type": "array",
                 "maxItems": 8,
                 "items": {
@@ -3411,6 +3589,40 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128
+        },
+        "documentAdmission": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "bindingDigest"],
+              "properties": {
+                "kind": { "const": "release" },
+                "bindingDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "bindingDigest", "presentationRevision"],
+              "properties": {
+                "kind": { "const": "approved-presentation" },
+                "bindingDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "presentationRevision": {
+                  "description": "The application and role configuration revision observed when this row was admitted.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            }
+          ]
+        },
+        "rendererDataUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^/plugins/[^?#]+\\?agnes_ui_source=1$"
         },
         "entryUrl": {
           "type": "string",
@@ -3588,11 +3800,102 @@
       },
       "required": ["profile"]
     },
+    "PluginUiEntryDeclaration": {
+      "description": "Host-rendered static content declared by an ordinary plugin row. It does not grant runtime or native UI authority.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "placement", "title"],
+      "not": {
+        "type": "object",
+        "properties": {
+          "markdown": { "not": { "type": "object" } },
+          "configure": { "not": { "const": true } }
+        }
+      },
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9.-]{0,63}(?![\\s\\S])" },
+        "placement": { "enum": ["settings", "sidebar", "workbench.right", "workbench.bottom"] },
+        "title": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["en"],
+          "properties": {
+            "en": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "zh-CN": { "type": "string", "minLength": 1, "maxLength": 80 }
+          }
+        },
+        "icon": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}(?![\\s\\S])" },
+        "markdown": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["en"],
+          "properties": {
+            "en": { "type": "string", "maxLength": 2048 },
+            "zh-CN": { "type": "string", "maxLength": 2048 }
+          }
+        },
+        "configure": { "const": true }
+      }
+    },
+    "PluginUiEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "placement", "title", "packageId", "rowId", "integrity"],
+      "not": {
+        "type": "object",
+        "properties": {
+          "markdown": { "not": { "type": "object" } },
+          "configure": { "not": { "const": true } }
+        }
+      },
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9.-]{0,63}(?![\\s\\S])" },
+        "placement": { "enum": ["settings", "sidebar", "workbench.right", "workbench.bottom"] },
+        "title": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["en"],
+          "properties": {
+            "en": { "type": "string", "minLength": 1, "maxLength": 80 },
+            "zh-CN": { "type": "string", "minLength": 1, "maxLength": 80 }
+          }
+        },
+        "icon": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}(?![\\s\\S])" },
+        "markdown": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["en"],
+          "properties": {
+            "en": { "type": "string", "maxLength": 2048 },
+            "zh-CN": { "type": "string", "maxLength": 2048 }
+          }
+        },
+        "configure": { "const": true },
+        "packageId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "rowId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "integrity": {
+          "type": "string",
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)(?![\\s\\S])"
+        }
+      }
+    },
+    "PluginUiEntriesResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entries"],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/PluginUiEntry" }
+        }
+      }
+    },
     "ClientModuleReadParams": {
       "description": "One same-origin client-module route path to read bytes for. The path is a URL path, never a filesystem path.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["profile", "path"],
+      "required": ["profile", "path", "purpose"],
       "properties": {
         "profile": {
           "type": "string",
@@ -3606,6 +3909,9 @@
           "minLength": 1,
           "maxLength": 1024,
           "pattern": "^/plugins/"
+        },
+        "purpose": {
+          "enum": ["document", "isolated-component"]
         }
       }
     },
@@ -3639,6 +3945,21 @@
           }
         }
       ]
+    },
+    "FrontendPublicationOwnerResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "owner": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["extension", "identity"],
+          "properties": {
+            "extension": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "identity": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+          }
+        }
+      }
     },
     "ClientModuleServiceCallParams": {
       "description": "Private launcher-to-daemon request for one ready browser row's declared query service. Browser identity, extension identity and credentials are deliberately not parameters.",
@@ -3927,6 +4248,59 @@
           "maxLength": 256
         }
       }
+    },
+    "PackageDocsGetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "id", "expectedIntegrity", "locale"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)?)$"
+        },
+        "expectedIntegrity": {
+          "type": "string",
+          "maxLength": 95,
+          "pattern": "^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$"
+        },
+        "locale": {
+          "enum": ["en", "zh-CN"]
+        }
+      }
+    },
+    "PackageDocsGetResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["found"],
+          "properties": {
+            "found": { "const": false }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["found", "locale", "markdown"],
+          "properties": {
+            "found": { "const": true },
+            "locale": { "enum": ["en", "zh-CN"] },
+            "markdown": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 65536
+            }
+          }
+        }
+      ]
     },
     "PackageSourcePolicy": {
       "type": "object",

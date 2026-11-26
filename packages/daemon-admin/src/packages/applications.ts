@@ -4,6 +4,7 @@ import { dirname } from 'node:path'
 import { type ConfigurationService, createConfigurationService } from '@agnes/host'
 import {
   applicationConsentSnapshot,
+  type InstalledInventory,
   type InstalledPackage,
   lockPath,
   type PackageManager,
@@ -21,10 +22,18 @@ import {
   validatePackageAdminData,
 } from '@agnes/protocol'
 import { applicationDependencies } from './application-dependencies.js'
+import type { PresentationGrant, PresentationObservation } from './client-admission.js'
 import type { PackageActivationAdapter } from './handler.js'
 import type { PackageAdminAuthority } from './permissions.js'
 import type { PackageProfileDirectory } from './project.js'
-import { previewRole, roleDigest, roleStates } from './role-selection.js'
+import {
+  legacyPresentationPreview,
+  previewRole,
+  roleDigest,
+  roleStates,
+  standardRoles,
+  uniquePresentationClient,
+} from './role-selection.js'
 
 const digest = (value: unknown) => createHash('sha256').update(jcs(value)).digest('hex')
 const fail = (reason: string): never => {
@@ -46,6 +55,22 @@ const packageBoundary = (directory: string) =>
     if (error.code === 'ENOENT') return null
     throw error
   })
+
+function reviewedPageReferences(app: NonNullable<InstalledPackage['entry']['application']>) {
+  return [
+    ...(app.presentation?.navigation?.entries ?? []).map((ref) => ({ ref, tab: false })),
+    ...(app.presentation?.home ? [{ ref: app.presentation.home, tab: false }] : []),
+    ...(app.workbench?.tabs ?? []).flatMap((tab) => (tab.page ? [{ ref: tab.page, tab: true }] : [])),
+  ]
+}
+
+const pageClient = (row: InstalledPackage, page: string, tab: boolean) =>
+  uniquePresentationClient(
+    row,
+    (client) =>
+      !!client.homeEntries?.some((item) => item.id === page) ||
+      (!tab && !!client.examplePages?.includes(page)),
+  )
 
 /** Presentation has a separate configuration lane; no profile resolver, tree publication or pins. */
 export class Applications {
@@ -120,24 +145,12 @@ export class Applications {
       ...(declaration.workbench?.actions ?? []).flatMap((action) => (action.agent ? [action.agent] : [])),
     ])
       if (!owner(ref).entry.agents?.some((a) => a.ref === ref)) return fail('APPLICATION_AGENT_UNKNOWN')
-    for (const ref of [
-      ...(declaration.presentation?.navigation?.entries ?? []),
-      ...(declaration.presentation?.home ? [declaration.presentation.home] : []),
-      ...(declaration.workbench?.tabs ?? []).flatMap((tab) => (tab.page ? [tab.page] : [])),
-    ]) {
-      const page = ref.slice(ref.indexOf('#') + 1)
-      if (
-        !owner(ref).contributions.some(
-          (c) =>
-            'client' in c &&
-            c.client?.lifetime === 'profile' &&
-            ((!declaration.workbench?.tabs?.some((tab) => tab.page === ref) &&
-              c.client.examplePages?.includes(page)) ||
-              c.client.homeEntries?.some((p) => p.id === page)),
-        )
-      )
-        return fail('APPLICATION_PAGE_UNKNOWN')
-    }
+    const reviewedPages = reviewedPageReferences(declaration).map(({ ref, tab }) => {
+      const p = owner(ref)
+      const match = pageClient(p, ref.slice(ref.indexOf('#') + 1), tab)
+      if (!match) return fail('APPLICATION_PAGE_UNKNOWN')
+      return { ref, packageId: p.id, rowId: match.rowId, declarationDigest: roleDigest(match.client) }
+    })
     if (
       declaration.presentation?.skin &&
       !row.contributions.some(
@@ -148,15 +161,14 @@ export class Applications {
     const replacedRoles = await Promise.all(
       Object.entries(declaration.presentation?.roles ?? {}).map(async ([role, target]) => {
         const p = packages.find((p) => p.id === target.packageId)
-        const c = p?.contributions.find(
-          (c) =>
-            'client' in c &&
-            c.client?.lifetime === 'profile' &&
-            (c.client.id ?? c.id) === target.clientId &&
-            c.client.presentationRoles?.some((r) => r === role),
-        )
-        if (!p || !required.has(p.id) || !c || !('client' in c) || !c.client)
-          return fail('APPLICATION_ROLE_UNDECLARED')
+        const match =
+          p &&
+          uniquePresentationClient(
+            p,
+            (client, id) =>
+              id === target.clientId && !!client.presentationRoles?.some((declared) => declared === role),
+          )
+        if (!p || !required.has(p.id) || !match) return fail('APPLICATION_ROLE_UNDECLARED')
         if (!this.options.active || !(await this.options.active(profile, p.id, p.entry.integrity)))
           return fail('APPLICATION_ROLE_UNAVAILABLE')
         return {
@@ -164,7 +176,9 @@ export class Applications {
           ...target,
           integrity: p.entry.integrity,
           source: p.entry.source,
-          entry: c.client.entry,
+          entry: match.client.entry,
+          rowId: match.rowId,
+          declarationDigest: roleDigest(match.client),
         }
       }),
     )
@@ -174,8 +188,10 @@ export class Applications {
         packageId: id,
         version: p.entry.version,
         integrity: p.entry.integrity,
+        treeIntegrity: p.entry.treeIntegrity ?? null,
         capabilityHash: p.capabilityHash,
         capabilities: p.entry.declaredCapabilities ?? [],
+        pages: reviewedPages.filter((page) => page.packageId === id),
         source: p.entry.source,
       }
     })
@@ -331,18 +347,20 @@ export class Applications {
     }
   }
 
-  async get(profile: string): Promise<ApplicationState> {
+  async get(profile: string, observedInventory?: InstalledInventory): Promise<ApplicationState> {
     const { directory, config } = await this.context(profile)
     const saved = await config.application()
     // Clearing remains possible even when inventory cannot be read.
     let unavailable = false
-    const packages = await this.options.manager
-      .inventory(directory, { settled: true })
-      .then((i) => i.packages)
-      .catch(() => {
-        unavailable = true
-        return []
-      })
+    const packages =
+      observedInventory?.packages ??
+      (await this.options.manager
+        .inventory(directory, { settled: true })
+        .then((i) => i.packages)
+        .catch(() => {
+          unavailable = true
+          return []
+        }))
     const candidates = packages.flatMap((p) =>
       p.entry.application
         ? [
@@ -393,8 +411,12 @@ export class Applications {
     if (reason) return present({ ...fallback, reason })
     try {
       const current = await this.reviewed(profile, saved.selection.packageId, packages, saved.selection)
-      if (bindingDigest(current.preview) !== saved.selection.bindingDigest)
-        return present({ ...fallback, reason: 'dependencies-changed' })
+      if (bindingDigest(current.preview) !== saved.selection.bindingDigest) {
+        const legacy =
+          applicationConsentSnapshot(saved.selection) && legacyPresentationPreview(current.preview)
+        if (!legacy || bindingDigest(legacy) !== saved.selection.bindingDigest)
+          return present({ ...fallback, reason: 'dependencies-changed' })
+      }
       return present({
         ...fallback,
         status: 'active',
@@ -404,6 +426,73 @@ export class Applications {
     } catch {
       return present({ ...fallback, reason: 'assets-or-references-unavailable' })
     }
+  }
+
+  /** Only server-resolved, current consent can produce grants for the registry. */
+  async observePresentation(
+    profile: string,
+    inventory: InstalledInventory,
+  ): Promise<PresentationObservation> {
+    const { config } = await this.context(profile)
+    const state = await this.get(profile, inventory)
+    const current = async () => (await config.application()).revision === state.revision
+    const grants: PresentationGrant[] = []
+    const packages = new Map(inventory.packages.map((row) => [row.id, row]))
+    const adopted = state.status === 'active' ? state.selection : null
+    const applicationConsent =
+      adopted &&
+      digest([
+        adopted.packageId,
+        adopted.applicationId,
+        adopted.adoptionGeneration,
+        adopted.declarationDigest,
+        adopted.bindingDigest,
+        adopted.consentDigest,
+      ])
+    if (state.effective && applicationConsent) {
+      for (const { ref, tab } of reviewedPageReferences(state.effective)) {
+        const separator = ref.indexOf('#')
+        const row = packages.get(ref.slice(0, separator))
+        const page = ref.slice(separator + 1)
+        const match = row && pageClient(row, page, tab)
+        if (!row || !match) continue
+        grants.push({
+          packageId: row.id,
+          clientId: match.clientId,
+          rowId: match.rowId,
+          declarationDigest: roleDigest(match.client),
+          consent: applicationConsent,
+          roles: [],
+          pages: [page],
+        })
+      }
+    }
+    for (const role of standardRoles) {
+      const selection = state.roles?.find((item) => item.role === role)
+      const choice = selection?.source === 'choice' && selection.status === 'resolved'
+      const target = choice ? selection.effective : state.effective?.presentation?.roles?.[role]
+      if (!target) continue
+      const consent = choice ? selection.selection?.bindingDigest : applicationConsent
+      const row = packages.get(target.packageId)
+      const match =
+        row &&
+        uniquePresentationClient(
+          row,
+          (client, id) => id === target.clientId && !!client.presentationRoles?.includes(role),
+        )
+      if (!consent || !row || !match) continue
+      grants.push({
+        packageId: row.id,
+        clientId: match.clientId,
+        rowId: match.rowId,
+        declarationDigest: roleDigest(match.client),
+        consent,
+        roles: [role],
+        pages: [],
+        ...(choice ? { roleChoice: true as const } : {}),
+      })
+    }
+    return { revision: state.revision, grants, current }
   }
 
   async preview(profile: string, packageId: string): Promise<ApplicationPreview> {

@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { validatePluginMetadata } from '@agnes/protocol'
 import { expect, it } from 'vitest'
+import { OPTIONAL_BUNDLED_PACKAGES } from '../src/bundled-plugin-source.js'
 import { buildJudgmentPayload } from '../tools/build-judgment-payload.mjs'
 import { ensureJudgmentPayload } from '../tools/ensure-judgment-payload.mjs'
 
@@ -21,6 +22,10 @@ const payload = new URL('../bundled-plugins/judgment/', import.meta.url)
 it('mirrors the source row with API 5.20 and exports the real plugin', async () => {
   const source = JSON.parse(readFileSync(new URL('../../judgment/package.json', import.meta.url), 'utf8'))
   const manifest = JSON.parse(readFileSync(new URL('package.json', payload), 'utf8'))
+  expect(OPTIONAL_BUNDLED_PACKAGES.find((item) => item.id === manifest.name)).toMatchObject({
+    id: manifest.name,
+    version: manifest.version,
+  })
   const { default: disabled, ...row } = source.agnes.plugins[0]
   expect(disabled).toBe(false)
   expect(validatePluginMetadata(row.metadata).ok).toBe(true)

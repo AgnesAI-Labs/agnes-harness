@@ -6,6 +6,7 @@ import { flushSync } from 'react-dom'
 import { expect, it, vi } from 'vitest'
 import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { registerJobsClientContribution } from '../src/client-modules/jobs.js'
+import { pluginUiEntries } from '../src/declarative-ui/entries.js'
 import { registerSessionApprovalPanel } from '../src/workbench/approval-panel.js'
 import { workbenchApproval } from '../src/workbench/approval-store.js'
 import { Dock, renderWorkbench, unmountWorkbench, unmountWorkbenchSoon } from '../src/workbench/dock.js'
@@ -617,5 +618,71 @@ it('opens a panel at the selection a link carries', () => {
     remove()
     localStorage.clear()
     document.body.replaceChildren()
+  }
+})
+
+it('opens a bottom declaration on its own and restores the native dock without saving the transient layout', async () => {
+  localStorage.clear()
+  document.body.innerHTML =
+    '<div class="workbench-split"><div id="controls"></div><aside id="workbench-right" hidden><div id="workbench-right-content"></div></aside><aside id="workbench-bottom" hidden><div id="workbench-bottom-content"></div></aside></div>'
+  const host = document.getElementById('controls')!
+  const right = document.getElementById('workbench-right')!
+  const bottom = document.getElementById('workbench-bottom')!
+  const remove = workbenchPanels.register({
+    id: 'test.native',
+    order: 1,
+    edge: 'right',
+    titleKey: 'Native tab',
+    component: () => <p>Native tab body</p>,
+  })
+  const click = (element: Element | null | undefined) => flushSync(() => (element as HTMLElement).click())
+  vi.stubGlobal('innerWidth', 390)
+  pluginUiEntries.setScope(true, 'local')
+  try {
+    await pluginUiEntries.refresh(async () => ({
+      entries: [
+        {
+          id: 'notes',
+          placement: 'workbench.bottom',
+          packageId: 'my-plugin',
+          rowId: 'my-plugin',
+          integrity: `sha256-${'a'.repeat(64)}`,
+          title: { en: 'Extension notes' },
+          markdown: { en: '**Owned by the host**' },
+        },
+      ],
+    }))
+    renderRegion(host, <Dock context={{ t: (key) => key }} />)
+    expect(bottom.hidden).toBe(true)
+    expect(host.querySelector('[data-edge="bottom"]')).toBeNull()
+    click(host.querySelector('[data-edge="right"]'))
+    const tab = right.querySelector('[aria-selected="true"]')
+    expect(tab?.textContent).toBe('Native tab')
+    const layout = localStorage.getItem('agnes.workbench.layout.v1')
+    const selection = localStorage.getItem('agnes.workbench.selection.v1')
+    click(right.querySelector('button[aria-label="Bottom extensions"]'))
+    const choice = await vi.waitFor(() => {
+      const item = document.querySelector('[data-testid="declarative-ui-workbench-bottom-notes"]')
+      expect(item).not.toBeNull()
+      return item
+    })
+    click(choice)
+    expect(right.hidden).toBe(true)
+    expect(bottom.hidden).toBe(false)
+    expect(bottom.querySelector('h2')?.textContent).toBe('Extension notes')
+    expect(bottom.querySelector('[role="tab"]')).toBeNull()
+    flushSync(() => pluginUiEntries.packageChanged('my-plugin'))
+    expect(bottom.hidden).toBe(true)
+    expect(right.hidden).toBe(false)
+    expect(right.querySelector('[aria-selected="true"]')).toBe(tab)
+    expect(localStorage.getItem('agnes.workbench.layout.v1')).toBe(layout)
+    expect(localStorage.getItem('agnes.workbench.selection.v1')).toBe(selection)
+  } finally {
+    unmountRegion(host)
+    remove()
+    pluginUiEntries.setScope(false, '')
+    document.body.replaceChildren()
+    localStorage.clear()
+    vi.unstubAllGlobals()
   }
 })

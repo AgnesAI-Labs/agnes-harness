@@ -175,59 +175,7 @@ export type CatalogueFacts = Readonly<{
   maxTokens: number
 }>
 
-/**
- * What an account's models start with, before the person changes them: input types and capacity.
- * An endpoint at a built-in provider's exact address and protocol takes that provider's catalogue.
- * Any other endpoint, such as a gateway like llm.sg whose model list names models but not what they
- * accept or hold, takes for each id what the built-in catalogues that know it agree on: only the input
- * types every one allows, and the smallest context window and output allowance. An id no catalogue
- * knows has no facts and keeps the text fallback and default capacity. That inference by id is for
- * listing a gateway's models, where the person sees it before saving; with `byId` false (saved
- * accounts, routes) only the exact endpoint lends its catalogue, so a saved account stays as saved.
- */
-export async function catalogueFacts<T extends { api: string; baseUrl: string; capabilities?: unknown }>(
-  providers: readonly T[],
-  read: (provider: T) => Promise<{ records: ModelRecord[] }>,
-  api: string,
-  address: string,
-  byId = true,
-): Promise<ReadonlyMap<string, CatalogueFacts>> {
-  const catalogued = providers.filter((candidate) => !candidate.capabilities)
-  const records = (provider: T) =>
-    read(provider).then(
-      (catalogue) => catalogue.records,
-      () => [] as ModelRecord[],
-    )
-  const facts = (record: ModelRecord): CatalogueFacts => ({
-    input: [...record.input],
-    contextWindow: record.contextWindow,
-    maxTokens: record.maxTokens,
-  })
-  const exact = catalogued.find(
-    (candidate) =>
-      candidate.api === api && candidate.baseUrl.replace(/\/$/, '') === address.replace(/\/$/, ''),
-  )
-  if (exact) return new Map((await records(exact)).map((record) => [record.id, facts(record)]))
-  if (!byId) return new Map()
-  const agreed = new Map<string, CatalogueFacts>()
-  for (const catalogue of await Promise.all(catalogued.map(records)))
-    for (const record of catalogue) {
-      const prior = agreed.get(record.id)
-      if (!prior) {
-        agreed.set(record.id, facts(record))
-        continue
-      }
-      const input = (prior.input ?? []).filter((type) => record.input.includes(type)) as ModelRecord['input']
-      agreed.set(record.id, {
-        ...(input.length ? { input } : {}),
-        contextWindow: Math.min(prior.contextWindow, record.contextWindow),
-        maxTokens: Math.min(prior.maxTokens, record.maxTokens),
-      })
-    }
-  return agreed
-}
-
-/** The input types part of `catalogueFacts`, for ids whose catalogues agree on at least one. */
+/** The input types part of catalogue facts, for ids whose catalogues agree on at least one. */
 export function factsInputs(
   facts: ReadonlyMap<string, CatalogueFacts>,
 ): ReadonlyMap<string, ModelRecord['input']> {

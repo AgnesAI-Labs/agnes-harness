@@ -14,7 +14,6 @@ import {
   type ChildEnginesState,
   type ClientModuleEffectCallParams,
   type ClientModuleListResult,
-  type ClientModuleReadResult,
   type ClientModuleRosterRow,
   type ClientModuleServiceCallParams,
   type ConfigAccountInput,
@@ -44,18 +43,12 @@ import {
   type SessionListParams,
   type SessionPreferences,
   type SessionRuntimeDescriptor,
-  type SkinListResult,
-  type SkinReadResult,
   type SurfacesMountsResult,
   validateAgainst,
   validateMethod,
   type WorkspaceAddResult,
   type WorkspaceListResult,
 } from '@agnes/protocol'
-import type {
-  ClientModuleEffectCallResult,
-  ClientModuleServiceCallResult,
-} from '@agnes/protocol/gen/package-admin'
 import { type AuthOption, type AuthProvider, jwtAuth, localAuth, portalIdentityAuth } from './auth.js'
 import { BrandingCache } from './branding.js'
 import { type Claim, makeClaim } from './claim.js'
@@ -73,7 +66,7 @@ import { JsonRpcError, ProtocolViolation, RequestTimeout, TransportClosed, Unsup
 import { type Disposer, Emitter } from './events.js'
 import { untilAborted } from './initialize-wait.js'
 import { type JournalStore, memoryJournal } from './journal.js'
-import { loadHistory } from './load-history.js'
+import { loadHistory, MAX_TIMER_DELAY_MS, validateLoadTimeouts } from './load-history.js'
 import { type PermissionRequest, unansweredPermission } from './permission.js'
 import { Reconnector } from './reattach.js'
 import { RpcConnection } from './rpc.js'
@@ -145,6 +138,7 @@ export class Client {
     request: number
     initialize: number
     claim: number
+    loadPreparation: number
     loadIdle: number
     loadHard: number
   }
@@ -192,6 +186,7 @@ export class Client {
     this.journal = opts.journal ?? memoryJournal(opts.clientId)
     this.timeouts = {
       request: opts.timeouts?.request ?? 30_000,
+      loadPreparation: opts.timeouts?.loadPreparation ?? 180_000,
       loadIdle: opts.timeouts?.loadIdle ?? 30_000,
       loadHard: opts.timeouts?.loadHard ?? 600_000,
       initialize: opts.timeouts?.initialize ?? 10_000,
@@ -200,9 +195,10 @@ export class Client {
     if (
       !Number.isInteger(this.timeouts.initialize) ||
       this.timeouts.initialize < 0 ||
-      this.timeouts.initialize > 2_147_483_647
+      this.timeouts.initialize > MAX_TIMER_DELAY_MS
     )
       throw new TypeError('invalid initialize timeout')
+    validateLoadTimeouts(this.timeouts.loadIdle, this.timeouts.loadHard, this.timeouts.loadPreparation)
     this.locale = opts.locale ?? 'en'
     this.bufferLimit = opts.bufferLimit ?? 1000
     const factories = {
@@ -416,13 +412,13 @@ export class Client {
    * accepts exactly that one — and `cssUrl` is same-origin, so the client fetches it directly.
    */
   readonly skins = {
-    list: (profile: string): Promise<SkinListResult> => this.call('_agnes/v1/skins.list', { profile }),
+    list: (profile: string) => this.request('_agnes/v1/skins.list', { profile }),
     /**
      * Bytes for one `/skins/...` path. The launcher's asset proxy needs the file contents, and the
      * path never leaves the URL space: the daemon resolves it against its own roster (design §22).
      */
-    read: (profile: string, path: string): Promise<SkinReadResult> =>
-      this.call('_agnes/v1/skins.read', { profile, path }),
+    read: (profile: string, path: string) =>
+      this.request('_agnes/v1/skins.read', { profile, path, format: 'selected-v1' }),
   }
 
   /**
@@ -443,14 +439,17 @@ export class Client {
       projectClientModuleRows(
         await this.call('_agnes/v1/clientModules.list', { profile, ...(sessionId ? { sessionId } : {}) }),
       ) as ClientModuleListResult & { rows: ClientModuleRosterRow[] },
-    read: (profile: string, path: string): Promise<ClientModuleReadResult> =>
-      this.call('_agnes/v1/clientModules.read', { profile, path }),
+    read: (
+      profile: string,
+      path: string,
+      purpose: AppServerParams<'_agnes/v1/clientModules.read'>['purpose'],
+    ) => this.request('_agnes/v1/clientModules.read', { profile, path, purpose }),
     /** Private launcher BFF only; it is not exposed by the browser SDK surface. */
-    callService: (input: ClientModuleServiceCallParams): Promise<ClientModuleServiceCallResult> =>
-      this.call('_agnes/v1/clientModules.callService', input),
+    callService: (input: ClientModuleServiceCallParams) =>
+      this.request('_agnes/v1/clientModules.callService', input),
     /** Private launcher BFF only; browser builds reject this method. */
-    callEffect: (input: ClientModuleEffectCallParams): Promise<ClientModuleEffectCallResult> =>
-      this.call('_agnes/v1/clientModules.callEffect', input),
+    callEffect: (input: ClientModuleEffectCallParams) =>
+      this.request('_agnes/v1/clientModules.callEffect', input),
   }
 
   createSession(options: NewSessionOptions): Promise<Session> {
@@ -683,11 +682,15 @@ export class Client {
   ): Promise<unknown> {
     const info = signal ? await untilAborted(() => this.initialize(), signal) : await this.initialize()
     signal?.throwIfAborted()
-    const meta = info.capabilities._meta as Record<string, { sessionOpen?: boolean }> | undefined
-    const open = admissionOnly && meta?.[META_KEY]?.sessionOpen === true
+    const capabilities = info.capabilities._meta as
+      | Record<string, { sessionOpen?: boolean; sessionLoadPreparation?: boolean }>
+      | undefined
+    const meta = capabilities?.[META_KEY]
+    const open = admissionOnly && meta?.sessionOpen === true
     const requestId = open ? crypto.randomUUID() : undefined
     return loadHistory({
       ...(signal ? { signal } : {}),
+      ...(meta?.sessionLoadPreparation === true ? { preparationMs: this.timeouts.loadPreparation } : {}),
       sessionId: id,
       idleMs: this.timeouts.loadIdle,
       hardMs: this.timeouts.loadHard,

@@ -11,6 +11,7 @@ import {
 } from '@agnes/web-client'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
 import { preserveRouteParams } from '@agnes/web-ui'
+import { localLocationUrl, localStartupSearchParams } from './backends/local-workbench-bus.js'
 
 let urls: string[] = []
 let sourceSignature: string | undefined = ''
@@ -91,7 +92,8 @@ export function projectApplication(state: ApplicationState | undefined): void {
 
 /** An explicit draft intent survives asynchronous application/contribution registration. */
 export function requestNewSession(): void {
-  const url = new URL(location.href)
+  const url = localLocationUrl()
+  url.searchParams.delete('session')
   url.searchParams.set('new', '1')
   history.replaceState(history.state, '', preserveRouteParams(url))
   homeNavigation.close()
@@ -99,7 +101,7 @@ export function requestNewSession(): void {
 
 /** Explicit URL and user page choices are resolved before the application's home default. */
 export function openApplicationHome(): void {
-  const params = new URLSearchParams(location.search)
+  const params = localStartupSearchParams()
   if (params.has('new') || params.has('session') || params.has('page') || homeNavigation.getSnapshot()) return
   const app = effectiveApplication()
   let user: string | undefined

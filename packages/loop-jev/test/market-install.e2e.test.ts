@@ -61,6 +61,7 @@ const PROXY_VARIABLES = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy
 
 describe('the Jev loop installed from the Market into a real daemon', () => {
   let root: string
+  let localAppData: string | undefined
   let fake: FakeSystemOne
   let daemon: ChildProcess
   let exited: Promise<number | null>
@@ -72,6 +73,8 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
 
   beforeAll(async () => {
     root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-jev-market-')))
+    if (process.platform === 'win32')
+      localAppData = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-jev-market-appdata-')))
     // Every pick is the first option except the two phases the scenario scripts: list, then answer.
     fake = await startFakeSystemOne((n, seen) => {
       const questions = (seen.body as { questions?: Record<string, unknown> } | null)?.questions ?? {}
@@ -152,7 +155,18 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
         },
       }),
     )
-    const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, TMPDIR: tmpdir(), AGH_HOME: root }
+    const env: NodeJS.ProcessEnv = {
+      PATH: process.env.PATH,
+      TMPDIR: tmpdir(),
+      TEMP: tmpdir(),
+      TMP: tmpdir(),
+      AGH_HOME: root,
+    }
+    if (localAppData) {
+      // The default Windows permission needs a real Host write boundary and isolated journal.
+      env.LOCALAPPDATA = localAppData
+      for (const key of ['SystemRoot', 'COMSPEC', 'PATHEXT']) env[key] = process.env[key]
+    }
     // The stand-in is on loopback; a proxy set on the machine must not sit in between.
     for (const key of PROXY_VARIABLES) delete env[key]
     env.NO_PROXY = '127.0.0.1,localhost'
@@ -235,6 +249,7 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
     await fake?.close()
     if (socketDirectory) rmSync(socketDirectory, { recursive: true, force: true })
     rmSync(root, { recursive: true, force: true })
+    if (localAppData) rmSync(localAppData, { recursive: true, force: true })
   }, 40_000)
 
   it('offers the loop in the Market, installs and uninstalls it, then installs it again, lists the loop and runs a turn on it', async () => {
@@ -386,6 +401,13 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
       'The workspace has a credentials folder.',
     )
     expect(fake.seen.length).toBeGreaterThanOrEqual(2)
-    expect((await sdk.session.runtime(session.id)).loop).toMatchObject(LOOP)
+    const runtime = await sdk.session.runtime(session.id)
+    expect(runtime.loop).toMatchObject(LOOP)
+    if (process.platform === 'win32')
+      expect(runtime.policy?.sandbox.enforcement).toMatchObject({
+        level: 'partial',
+        scope: ['file'],
+        boundary: { contract: 'windows-write-restricted-v1' },
+      })
   }, 240_000)
 })

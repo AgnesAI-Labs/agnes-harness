@@ -1,49 +1,75 @@
-import type { LocaleService } from '@agnes/web-client'
-import { applicationIdentity, effectiveApplication } from '@agnes/web-client'
-import { bindAppearance, bindSkinGroup } from '@agnes/web-foundation/appearance'
+import { type SkinChoice, type SkinListResult, validatePackageAdminCall } from '@agnes/protocol'
+import { applicationIdentity, type LocaleService } from '@agnes/web-client'
+import { bindAppearance, bindSkinGroup, type SkinGroupView } from '@agnes/web-foundation/appearance'
 import {
   applyDocumentLocale,
   readLocalePreference,
   writeLocalePreference,
 } from '@agnes/web-foundation/locale-preference'
 import {
-  cacheSkinEntry,
-  clearSkinCache,
-  fetchSkinCss,
-  planSkinReconcile,
-  readSkinCache,
+  applySkinTokens,
   SKIN_PREFERENCE_KEY,
-  SKIN_STORAGE_KEY,
-  type SkinRosterEntry,
-  skinOverride,
+  type SkinSheetState,
+  syncSkinSheet,
 } from '@agnes/web-foundation/skin'
-import { safeThemeStorage } from '@agnes/web-foundation/theme'
+import {
+  readThemePreference,
+  resolveTheme,
+  safeThemeStorage,
+  systemPrefersDark,
+  THEME_STORAGE_KEY,
+  watchSystemTheme,
+} from '@agnes/web-foundation/theme'
 import { updateApplicationTitle } from '../application.js'
+import { backendResourceUrl, selectedRemoteOrigin } from '../remote-frontend.js'
 import { broadcast, onBroadcast, onPageHide, onWindowFocus } from './global-events.js'
 
-type SkinRoster = {
-  revision: string
-  skins: readonly {
-    id: string
-    name: string
-    packageName: string
-    cssUrl: string
-    css?: string
-    tokens?: SkinRosterEntry['tokens']
-  }[]
+type SelectedSkin = NonNullable<SkinListResult['selected']>
+
+/** Constructed sheets resolve relative URLs against the document, not the original stylesheet. */
+function bindAssetUrls({ css, cssUrl, id }: SelectedSkin): string {
+  const base = cssUrl.slice(0, -'skin.css'.length)
+  const stylesheet = new URL(cssUrl, location.origin)
+  const authorBase = `/skins/${id}/`
+  const remote = selectedRemoteOrigin()
+  return css.replace(
+    /url\(\s*(['"]?)([^'")]*)\1\s*\)/gi,
+    (whole: string, _quote: string, reference: string) => {
+      const value = reference.trim()
+      if (!value || value.startsWith('#')) return whole
+      let url: URL
+      try {
+        url = new URL(value, stylesheet)
+      } catch {
+        return whole
+      }
+      if (!url.pathname.startsWith('/skins/'))
+        return /^(?:\/|[a-zA-Z][a-zA-Z0-9+.-]*:)/u.test(value) ? whole : 'url("")'
+      if (url.origin !== location.origin && url.origin !== remote) return 'url("")'
+      const path = url.pathname.startsWith(base)
+        ? url.pathname
+        : url.pathname.startsWith(authorBase)
+          ? `${base}${url.pathname.slice(authorBase.length)}`
+          : ''
+      if (!path.startsWith(`${base}assets/`)) return 'url("")'
+      // Always use the chosen backend's transport. Never leave a legacy or local same-ID URL behind.
+      return `url(${JSON.stringify(backendResourceUrl(`${path}${url.search}${url.hash}`, remote))})`
+    },
+  )
 }
 
-/**
- * Theme, language and skin preferences of this document.
- *
- * The skin manifest uses the profile reported by `config.get()`. The daemon accepts only its own profile,
- * so pass it back here; client parameters cannot select a directory.
- */
 export function createAppearanceController(options: {
   locale: LocaleService
-  /** Empty until the daemon has reported its profile. */
-  profile: () => string
-  listSkins: (profile: string) => Promise<SkinRoster>
+  /** Empty until the current connection has a daemon-reported profile. */
+  profile(): string
+  backendIdentity(): string
+  listSkins(profile: string): Promise<unknown>
+  selectSkin(
+    profile: string,
+    revision: number,
+    choice: SkinChoice,
+    isCurrent: () => boolean,
+  ): Promise<unknown>
 }) {
   const storage = safeThemeStorage(window)
   const appearance = bindAppearance({
@@ -63,155 +89,165 @@ export function createAppearanceController(options: {
       text: (key) => options.locale.t(key),
     },
   })
-  /** Most recently fetched manifest, used for selected CSS and tokens; replace it entirely when it changes. */
-  let roster: SkinRosterEntry[] = []
-  /** Same-origin fetcher for the `cssUrl` fallback; accept only `/skins/` paths (see `fetchSkinCss`). */
-  const cssOptions = { fetcher: (input: string) => fetch(input), origin: location.origin }
-  /** Increment on every explicit selection so in-flight reconciliation cannot overwrite the user's latest choice. */
-  let selection = 0
+  let roster: SkinListResult | undefined
   let disposed = false
+  let epoch = 0
+  let skin: { css: string; tokens: NonNullable<SelectedSkin['tokens']> } | null = null
+  let sheet: SkinSheetState = { sheet: undefined, css: undefined }
+  let written: ReadonlySet<string> = new Set()
 
-  const readSkinPreference = (): string | null => {
-    try {
-      return storage.getItem(SKIN_PREFERENCE_KEY)
-    } catch {
-      return null
-    }
-  }
-
-  /** Notify first-frame logic and other same-origin documents that the cached skin changed; dispatch manually because storage events skip this document. */
-  const skinChanged = (): void => {
-    window.dispatchEvent(new StorageEvent('storage', { key: SKIN_STORAGE_KEY }))
-  }
-
-  /**
-   * Reconcile the cache after receiving a new manifest.
-   *
-   * Skins whose source was uninstalled/disabled must **stop coloring the page**. If only the digest changes,
-   * replace the cache without flicker. Fall back to the built-in appearance only while fetching new text;
-   * that temporary flicker is accepted.
-   */
-  async function reconcile(entries: readonly SkinRosterEntry[]): Promise<void> {
-    if (disposed) return
-    const plan = planSkinReconcile(readSkinCache(storage), entries, readSkinPreference())
-    if (plan.kind === 'keep') return
-    const version = selection
-    if (plan.kind === 'clear') {
-      clearSkinCache(storage)
-      skinChanged()
-      return
-    }
-    if (plan.entry.css !== undefined) {
-      await cacheSkinEntry(storage, plan.entry, cssOptions)
-      skinChanged()
-      return
-    }
-    clearSkinCache(storage)
-    skinChanged()
-    try {
-      const css = await fetchSkinCss(plan.entry.cssUrl, cssOptions)
-      // The user may have changed selection while text was fetched: discard reconciliation rather than restoring the old skin.
-      if (disposed || version !== selection) return
-      await cacheSkinEntry(storage, { ...plan.entry, css }, cssOptions)
-      skinChanged()
-    } catch {
-      // On fetch failure keep the built-in appearance instead of writing a partial cache.
-    }
-  }
-
-  let skinEpoch = 0
-  let skinIdentity = ''
-  const publishApplicationSkin = (detail: unknown) =>
-    window.dispatchEvent(new CustomEvent('agnes:application-skin', { detail }))
-  const updateApplicationSkin = (): void => {
-    const override = skinOverride(location.search)
-    const application = effectiveApplication()
-    const identity = applicationIdentity.getSnapshot()
-    const selected = roster.find((skin) =>
-      override !== null
-        ? skin.id === override
-        : skin.id === application?.presentation?.skin && skin.packageName === identity?.selection?.packageId,
-    )
-    const next = JSON.stringify([
-      selected,
-      override === null ? [identity?.selection?.packageId, identity?.selection?.consentDigest] : override,
-    ])
-    if (next === skinIdentity) return
-    skinIdentity = next
-    const epoch = ++skinEpoch
-    // Revoke the previous application synchronously, before any fetch or observer can yield.
-    publishApplicationSkin(null)
-    if (!selected || disposed) return
-    const publish = (css: string) => {
-      if (disposed || epoch !== skinEpoch) return
-      publishApplicationSkin({
-        version: 1,
-        id: selected.id,
-        revision: selected.revision,
-        css,
-        tokens: selected.tokens,
-      })
-    }
-    if (selected.css !== undefined) publish(selected.css)
-    else
-      void fetchSkinCss(selected.cssUrl, cssOptions)
-        .then(publish)
-        .catch(() => undefined)
-  }
-
-  const skins = bindSkinGroup({
-    scope: document,
-    storage,
-    list: async () => {
-      const profile = options.profile()
-      if (profile === '') return []
-      const listed = await options.listSkins(profile)
-      if (disposed) return roster
-      roster = listed.skins.map((skin) => ({
-        id: skin.id,
-        name: skin.name,
-        packageName: skin.packageName,
-        revision: listed.revision,
-        cssUrl: skin.cssUrl,
-        ...(skin.css === undefined ? {} : { css: skin.css }),
-        tokens: skin.tokens ?? {},
-      }))
-      // Reconcile only after receiving a manifest: `[]` here would mean all skins were uninstalled and erase the selection.
-      await reconcile(roster)
-      updateApplicationSkin()
-      return roster
-    },
-    select: async (id) => {
-      // Record selection first: fetching CSS awaits, and in-flight reconciliation must not restore the old skin in that gap.
-      selection += 1
-      if (id === null) clearSkinCache(storage)
-      else {
-        const chosen = roster.find((skin) => skin.id === id)
-        // Missing from the manifest means it just changed: throw so the group restores the old choice rather than a false selection.
-        if (chosen === undefined) throw new Error(`skin ${id} is not in the current roster`)
-        // If not inlined, fetch text before caching; otherwise an empty cached stylesheet would make selection have no effect.
-        await cacheSkinEntry(storage, chosen, cssOptions)
+  const paintSkin = () => {
+    const root = document.documentElement
+    const mode = resolveTheme(readThemePreference(storage), systemPrefersDark(window))
+    if (typeof CSSStyleSheet === 'function' && 'adoptedStyleSheets' in document) {
+      try {
+        sheet = syncSkinSheet(document, sheet, skin?.css ?? '', () => new CSSStyleSheet())
+      } catch {
+        skin = null
+        sheet = syncSkinSheet(document, sheet, '', () => new CSSStyleSheet())
       }
-      storage.setItem(SKIN_PREFERENCE_KEY, id ?? 'none')
-      skinChanged()
+    }
+    written = applySkinTokens(root, skin, mode, written)
+    broadcast('agnes:skin-painted')
+  }
+
+  const invalidate = () => {
+    epoch += 1
+    roster = undefined
+    if (skin !== null) {
+      skin = null
+      paintSkin()
+    }
+  }
+  const canRender = !new URLSearchParams(location.search).has('admin')
+  const group = bindSkinGroup({
+    scope: document,
+    list: async (): Promise<SkinGroupView> => {
+      invalidate()
+      const token = epoch
+      const profile = options.profile()
+      const backend = options.backendIdentity()
+      if (!profile || !canRender || disposed) throw new Error('Skin roster is unavailable')
+      const raw = await options.listSkins(profile)
+      if (
+        disposed ||
+        token !== epoch ||
+        profile !== options.profile() ||
+        backend !== options.backendIdentity()
+      )
+        throw new Error('Skin roster changed')
+      const checked = validatePackageAdminCall('_agnes/v1/skins.list', 'result', raw)
+      if (!checked.ok) throw new Error('Skin roster is invalid')
+      const listed = checked.value as SkinListResult
+      if (listed.profile !== profile) throw new Error('Skin roster belongs to another profile')
+      const { selected, choice } = listed
+      if (
+        selected &&
+        (selected.cssUrl !== `/skins/${selected.bindingDigest}/${selected.id}/skin.css` ||
+          !listed.skins.some(
+            ({ id, bindingDigest }) => id === selected.id && bindingDigest === selected.bindingDigest,
+          ) ||
+          (selected.kind === 'manual'
+            ? choice.kind !== 'skin' || choice.bindingDigest !== selected.bindingDigest
+            : choice.kind !== 'application'))
+      )
+        throw new Error('Selected skin is invalid')
+      roster = listed
+      let legacyNone = false
+      try {
+        legacyNone = listed.revision === 0 && storage.getItem(SKIN_PREFERENCE_KEY) === 'none'
+      } catch {
+        // The obsolete preference can only suppress a skin.
+      }
+      if (selected && !legacyNone && new URLSearchParams(location.search).get('skin') !== 'none') {
+        skin = { css: bindAssetUrls(selected), tokens: selected.tokens ?? {} }
+        paintSkin()
+      }
+      return {
+        selected:
+          choice.kind === 'skin' && selected
+            ? selected.bindingDigest
+            : choice.kind === 'none' || choice.kind === 'skin'
+              ? ''
+              : 'application',
+        skins: listed.skins.map(({ bindingDigest, name, packageId, version }) => ({
+          value: bindingDigest,
+          name,
+          packageName: packageId,
+          version,
+        })),
+        unavailable: choice.kind === 'skin' && selected === null,
+      }
+    },
+    select: async (value) => {
+      const listed = roster
+      if (!listed || !canRender || disposed || listed.profile !== options.profile())
+        throw new Error('Skin list changed')
+      const backend = options.backendIdentity()
+      const choice: SkinChoice =
+        value === ''
+          ? { kind: 'none' }
+          : value === 'application'
+            ? { kind: 'application' }
+            : { kind: 'skin', bindingDigest: value }
+      invalidate()
+      const token = epoch
+      await options.selectSkin(
+        listed.profile,
+        listed.revision,
+        choice,
+        () =>
+          !disposed &&
+          token === epoch &&
+          options.profile() === listed.profile &&
+          options.backendIdentity() === backend,
+      )
     },
   })
-  const stopApplication = applicationIdentity.subscribe(updateApplicationSkin)
-  updateApplicationSkin()
-  const stopPackages = onBroadcast('agnes:packages-changed', () => void skins.refresh())
-  // A cold daemon can initially report no active backend rows. Re-read after its
-  // authoritative tree/package notice, just as the client module roster does.
-  const stopRuntime = onBroadcast('agnes:plugins-invalidated', () => void skins.refresh())
-  const stopFocus = onWindowFocus(() => void skins.refresh())
+  const refresh = () => {
+    invalidate()
+    return group.refresh()
+  }
+  const applicationKey = () => {
+    const current = applicationIdentity.getSnapshot()
+    return JSON.stringify([current?.revision, current?.status, current?.selection?.adoptionGeneration])
+  }
+  let application = applicationKey()
+  const stopApplication = applicationIdentity.subscribe(() => {
+    const next = applicationKey()
+    if (next === application) return
+    application = next
+    void refresh()
+  })
+  const stopPackages = onBroadcast('agnes:packages-changed', () => void refresh())
+  const stopRuntime = onBroadcast('agnes:plugins-invalidated', () => void refresh())
+  const stopFocus = onWindowFocus(() => void refresh())
+  const stopTheme = onBroadcast('agnes:theme-changed', paintSkin)
+  const stopSystem = watchSystemTheme(window, paintSkin)
+  const storageChanged = (event: StorageEvent) => {
+    if (event.key === THEME_STORAGE_KEY) paintSkin()
+  }
+  window.addEventListener('storage', storageChanged)
   onPageHide(() => {
     disposed = true
+    invalidate()
     stopApplication()
-    skinEpoch += 1
-    publishApplicationSkin(null)
     stopPackages()
     stopRuntime()
     stopFocus()
-    selection += 1
+    stopTheme()
+    stopSystem()
+    window.removeEventListener('storage', storageChanged)
   })
-  return { appearance, skins }
+  return {
+    appearance,
+    skins: {
+      sync: group.sync,
+      refresh,
+      invalidate() {
+        invalidate()
+        group.invalidate()
+      },
+    },
+  }
 }

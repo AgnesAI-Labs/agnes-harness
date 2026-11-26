@@ -1,5 +1,7 @@
 import type { AppSessionContext } from '../app.js'
+import { backendFrame } from '../backends/frame-context.js'
 import type { ReconnectController } from '../reconnect.js'
+import { selectedRemoteOrigin } from '../remote-frontend.js'
 import { showCommandFeedback } from './command-feedback.js'
 
 /** Retire transport-driven UI updates before the application releases its React controls. */
@@ -31,7 +33,11 @@ export function bindConnectionEvents(
     if (notice.kind === 'command-needs-confirmation' && session?.id === notice.sessionId && session)
       context.run(() => showCommandFeedback(context, session).then(() => undefined))
   })
-  const stopReconnecting = context.client.on('reconnecting', () => options.setConnection('reconnecting'))
+  const stopReconnecting = context.client.on('reconnecting', () => {
+    options.setConnection('reconnecting')
+    if (!context.intentionalClose && !backendFrame()?.remote && selectedRemoteOrigin())
+      options.reconnect.start()
+  })
   const stopReconnected = context.client.on('reconnected', () => {
     options.reconnect.reset()
     options.setConnection('connected')

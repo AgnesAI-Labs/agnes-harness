@@ -243,9 +243,9 @@ static bool restrictedStdio(napi_env env, std::vector<std::unique_ptr<Handle>>& 
 
 // (application, commandLine, cwd, environment block, writeSids, readOnly, isolationSid)
 // -> suspended target.
-static napi_value spawnRestricted(napi_env env, napi_callback_info info) {
+static napi_value spawnSuspendedImpl(napi_env env, napi_callback_info info, bool restricted) {
   napi_value args[7];
-  if (!arguments(env, info, 7, args)) return nullptr;
+  if (!arguments(env, info, restricted ? 7 : 4, args)) return nullptr;
   std::wstring application, commandLine, cwd, environment;
   if (!stringArgument(env, args[0], application) || !stringArgument(env, args[1], commandLine) ||
       !stringArgument(env, args[2], cwd) || !detachedEnvironment(env, args[3], environment)) return nullptr;
@@ -253,13 +253,15 @@ static napi_value spawnRestricted(napi_env env, napi_callback_info info) {
     napi_throw_type_error(env, "EINVAL", "Restricted executable and cwd must be absolute"); return nullptr;
   }
   std::vector<std::vector<BYTE>> writeSids;
-  if (!restrictedWriteSids(env, args[4], args[5], writeSids)) return nullptr;
   // A fresh capability SID per launch, never one of the grants' SIDs.
   std::wstring isolationText;
   std::vector<BYTE> isolation;
-  if (!stringArgument(env, args[6], isolationText)) return nullptr;
-  if (!aclCapabilitySid(isolationText, isolation) || std::find(writeSids.begin(), writeSids.end(), isolation) != writeSids.end()) {
-    napi_throw_type_error(env, "EINVAL", "Expected a distinct isolation SID (S-1-4-...)"); return nullptr;
+  if (restricted) {
+    if (!restrictedWriteSids(env, args[4], args[5], writeSids) ||
+        !stringArgument(env, args[6], isolationText)) return nullptr;
+    if (!aclCapabilitySid(isolationText, isolation) || std::find(writeSids.begin(), writeSids.end(), isolation) != writeSids.end()) {
+      napi_throw_type_error(env, "EINVAL", "Expected a distinct isolation SID (S-1-4-...)"); return nullptr;
+    }
   }
   auto owner = std::make_unique<RestrictedProcess>();
   napi_value result;
@@ -277,12 +279,12 @@ static napi_value spawnRestricted(napi_env env, napi_callback_info info) {
   auto* target = owner.release();  // The result's finalizer owns it from here, even on failure.
   Handle token(nullptr);
   std::vector<BYTE> objectDacl;
-  if (!restrictedToken(env, writeSids, isolation, token, objectDacl)) return nullptr;
+  if (restricted && !restrictedToken(env, writeSids, isolation, token, objectDacl)) return nullptr;
   // The target's own process and thread objects get that same DACL explicitly, so they do not take
   // the creating process's default DACL.
   SECURITY_DESCRIPTOR descriptor;
-  if (!InitializeSecurityDescriptor(&descriptor, SECURITY_DESCRIPTOR_REVISION) ||
-      !SetSecurityDescriptorDacl(&descriptor, TRUE, reinterpret_cast<PACL>(objectDacl.data()), FALSE))
+  if (restricted && (!InitializeSecurityDescriptor(&descriptor, SECURITY_DESCRIPTOR_REVISION) ||
+      !SetSecurityDescriptorDacl(&descriptor, TRUE, reinterpret_cast<PACL>(objectDacl.data()), FALSE)))
     return failure(env, "restricted process security descriptor", GetLastError());
   SECURITY_ATTRIBUTES objectSecurity = {static_cast<DWORD>(sizeof(objectSecurity)), &descriptor, FALSE};
   std::vector<std::unique_ptr<Handle>> copies;
@@ -300,11 +302,13 @@ static napi_value spawnRestricted(napi_env env, napi_callback_info info) {
   PROCESS_INFORMATION child = {};
   // No console flag: a restricted target that must create its own console fails to initialize, so
   // it attaches to this gate's hidden console, and its own console descendants do the same.
-  if (injectedFault(L"create") ||
-      !CreateProcessAsUserW(token.value, application.c_str(), commandLine.data(), &objectSecurity, &objectSecurity, TRUE,
-                            CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
-                            environment.data(), cwd.c_str(), &startup.StartupInfo, &child))
-    return failure(env, "CreateProcessAsUserW", GetLastError());
+  const DWORD flags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT;
+  const BOOL spawned = injectedFault(L"create") ? FALSE : restricted
+    ? CreateProcessAsUserW(token.value, application.c_str(), commandLine.data(), &objectSecurity, &objectSecurity, TRUE,
+                            flags, environment.data(), cwd.c_str(), &startup.StartupInfo, &child)
+    : CreateProcessW(application.c_str(), commandLine.data(), nullptr, nullptr, TRUE,
+                      flags, environment.data(), cwd.c_str(), &startup.StartupInfo, &child);
+  if (!spawned) return failure(env, restricted ? "CreateProcessAsUserW" : "CreateProcessW suspended", GetLastError());
   target->process = child.hProcess;
   target->thread = child.hThread;  // From here the target is ended unless it is resumed.
   FILETIME created, exited, kernel, user;
@@ -324,4 +328,12 @@ static napi_value spawnRestricted(napi_env env, napi_callback_info info) {
     napi_throw_error(env, "E_NATIVE_FAILURE", "Cannot publish restricted process identity"); return nullptr;
   }
   return result;
+}
+
+static napi_value spawnRestricted(napi_env env, napi_callback_info info) {
+  return spawnSuspendedImpl(env, info, true);
+}
+// Same owned, still-suspended target, using the broker's unchanged token and standard streams.
+static napi_value spawnSuspended(napi_env env, napi_callback_info info) {
+  return spawnSuspendedImpl(env, info, false);
 }

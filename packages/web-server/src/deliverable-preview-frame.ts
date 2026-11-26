@@ -1,4 +1,25 @@
+import type { IncomingMessage, ServerResponse } from 'node:http'
+
 export const DELIVERABLE_PREVIEW_PATH = '/__agnes/deliverable-preview'
+
+/** Shared bootstrap route on both workbench origins; never serves session or workspace bytes. */
+export function serveDeliverablePreview(request: IncomingMessage, response: ServerResponse): boolean {
+  if (new URL(request.url ?? '/', 'http://127.0.0.1').pathname !== DELIVERABLE_PREVIEW_PATH) return false
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    response.writeHead(405).end()
+    return true
+  }
+  const frame = deliverablePreviewFrame()
+  response.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Content-Security-Policy': frame.csp,
+    'Referrer-Policy': 'no-referrer',
+    'X-Content-Type-Options': 'nosniff',
+  })
+  response.end(request.method === 'HEAD' ? undefined : frame.body)
+  return true
+}
 
 /**
  * The document an HTML deliverable is shown in. A deliverable is a page the model wrote, with its
@@ -13,7 +34,7 @@ export const DELIVERABLE_PREVIEW_PATH = '/__agnes/deliverable-preview'
  */
 export function deliverablePreviewFrame(): { body: string; csp: string } {
   const csp =
-    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; " +
+    "default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline'; img-src data: blob:; " +
     "media-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; " +
     "frame-src 'none'; object-src 'none'; sandbox allow-scripts"
   const bootstrap = `

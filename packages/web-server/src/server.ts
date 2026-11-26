@@ -1,12 +1,14 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { createServer, type ServerResponse } from 'node:http'
-import { extname, isAbsolute, join } from 'node:path'
-import { FILE_UPLOAD_PATH } from '@agnes/protocol'
-import { DELIVERABLE_PREVIEW_PATH, deliverablePreviewFrame } from './deliverable-preview-frame.js'
+import { extname, isAbsolute } from 'node:path'
+import { type AppServerParams, FILE_UPLOAD_PATH } from '@agnes/protocol'
+import { noncanonicalAssetPath } from './asset-path.js'
+import { serveDeliverablePreview } from './deliverable-preview-frame.js'
 import { HISTORY_SEARCH_PATH, handleHistorySearch } from './history-route.js'
+import { servePdfPreview } from './pdf-preview-frame.js'
 import type { PluginRebuiltEvent, WebServer, WebServerOptions } from './server-types.js'
-import { UI_COMPONENT_MODULE_BYTES, uiComponentFrame } from './ui-component-frame.js'
+import { serveUiComponentFrame, UI_COMPONENT_MODULE_BYTES } from './ui-component-frame.js'
 import { fileUploadRoute } from './upload-route.js'
 import { webhookRoute } from './webhook-route.js'
 import { createWorkspacePickerRoute, handlePlanMode } from './workspace-routes.js'
@@ -28,11 +30,11 @@ import {
   fileName,
   HOST,
   importMapScriptHash,
-  MIME,
   PLAN_MODE_PATH,
   SKIN_MIME,
   WORKSPACE_PICKER_PATH,
 } from './server-assets.js'
+import { createCloudFrameServer } from './server-cloud-frames.js'
 import { json, listen } from './server-http.js'
 import {
   acceptsWebRequest,
@@ -50,10 +52,21 @@ type WatchedPluginBuild = {
   size: number
   digest: string
 }
+
+function clientAssetNotFound(response: ServerResponse): void {
+  response
+    .writeHead(404, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    })
+    .end()
+}
+
 /** Start the static Web client. The daemon is intentionally outside this module's lifecycle. */
 export async function createWebServer(options: WebServerOptions): Promise<WebServer> {
   if (!isAbsolute(options.root)) throw new Error('Web asset root must be absolute')
-  let wsUrl = loopbackWs(options.wsUrl)
+  const wsUrl = loopbackWs(options.wsUrl)
   const surfaceNotReady = (requestUrl: string, response: ServerResponse): boolean => {
     const pathname = new URL(requestUrl, 'http://127.0.0.1').pathname
     if (options.surfaceMountsReady?.(pathname) !== false) return false
@@ -82,7 +95,14 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
     throw new Error('Web origin must include the selected Web listener port')
   const policyFor = (ws: URL): string =>
     `default-src 'self'; media-src 'self' blob:; connect-src 'self' ${expectedOrigin.origin.replace(/^http/, 'ws')} ${ws.origin.replace(/^http/, 'ws')}; style-src 'self'; script-src 'self'${importMapHash ? ` 'sha256-${importMapHash}'` : ''}`
-  let contentSecurityPolicy = policyFor(wsUrl)
+  const contentSecurityPolicy = policyFor(wsUrl)
+  const cloudFrames = await createCloudFrameServer({
+    ...options,
+    origin: expectedOrigin.origin,
+    wsUrl,
+    policyFor,
+  })
+  const serveDocument = cloudFrames.serve
 
   const handleWorkspacePicker = createWorkspacePickerRoute(expectedOrigin.origin, options)
   const changeEpoch = randomBytes(16).toString('hex')
@@ -190,36 +210,35 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       const host = loopbackHost(request.headers.host, `${HOST}:${address.port}`, address.port)
       // Another loopback name (a `localhost` bookmark) is sent to the one page origin every
       // route checks against; any other Host is a rebinding domain and gets nothing.
-      if (host === 'alias' && (request.method === 'GET' || request.method === 'HEAD')) {
-        const target = new URL(request.url ?? '/', expectedOrigin)
+      const read = request.method === 'GET' || request.method === 'HEAD'
+      if (host !== 'canonical' && !(host === 'alias' && read)) {
+        response.writeHead(403).end()
+        return
+      }
+      const requestUrl = new URL(request.url ?? '/', expectedOrigin)
+      const assetPath = requestUrl.pathname
+      const rawAssetPath = (request.url ?? '/').split('?', 1)[0] ?? '/'
+      const pluginAsset = assetPath === '/plugins' || assetPath.startsWith('/plugins/')
+      const skinAsset = assetPath === '/skins' || assetPath.startsWith('/skins/')
+      if (noncanonicalAssetPath(rawAssetPath, assetPath)) {
+        clientAssetNotFound(response)
+        return
+      }
+      if (host === 'alias') {
         response
-          .writeHead(307, { Location: `${expectedOrigin.origin}${target.pathname}${target.search}` })
+          .writeHead(307, { Location: `${expectedOrigin.origin}${assetPath}${requestUrl.search}` })
           .end()
         return
       }
-      if (host !== 'canonical') {
-        response.writeHead(403).end()
+      if ((pluginAsset || skinAsset) && !read) {
+        response.writeHead(405, { Allow: 'GET, HEAD' }).end()
         return
       }
       if (await options.pluginStreams?.handleHttp(request, response)) return
       if (await handleWebhook?.(request, response)) return
-      const requestUrl = new URL(request.url ?? '/', expectedOrigin)
-      if (requestUrl.pathname === DELIVERABLE_PREVIEW_PATH) {
-        if (request.method !== 'GET' && request.method !== 'HEAD') {
-          response.writeHead(405).end()
-          return
-        }
-        const frame = deliverablePreviewFrame()
-        response.writeHead(200, {
-          'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'no-store',
-          'Content-Security-Policy': frame.csp,
-          'Referrer-Policy': 'no-referrer',
-          'X-Content-Type-Options': 'nosniff',
-        })
-        response.end(request.method === 'HEAD' ? undefined : frame.body)
-        return
-      }
+      if (serveDeliverablePreview(request, response)) return
+      if (servePdfPreview(request, response)) return
+      if (serveUiComponentFrame(request, response)) return
       if (requestUrl.pathname === FILE_UPLOAD_PATH) {
         await handleFileUpload(request, response)
         return
@@ -420,9 +439,9 @@ void poll();\n`,
         response.writeHead(405, { Allow: 'GET, HEAD' }).end()
         return
       }
-      const assetPath = new URL(request.url ?? '/', expectedOrigin).pathname
-      if (options.skinAsset && assetPath.startsWith('/skins/')) {
-        const resolved = await options.skinAsset(assetPath)
+      if (skinAsset) {
+        const versioned = /^\/skins\/[a-f0-9]{64}\/[a-z0-9]+(?:-[a-z0-9]+)*\//u.test(assetPath)
+        const resolved = versioned ? ((await options.skinAsset?.(assetPath)) ?? null) : null
         // A file answers for its own extension; bytes have no path of their own, so the request
         // path names the type. Both are the same extension under this route, because the resolver
         // only ever accepts the installer's asset allowlist.
@@ -447,55 +466,59 @@ void poll();\n`,
         else response.end(typeof resolved === 'string' ? await readFile(resolved) : resolved)
         return
       }
-      // Client module assets follow the skin branch's exact shape: the resolver owns
-      // path authority, this route owns method, MIME and headers, and a miss, an unknown suffix and
-      // a refusal are the one same 404. It must sit before mountProxy so a mounted Surface can never
-      // claim the reserved `/plugins` prefix.
-      if (options.clientModuleAsset && assetPath.startsWith('/plugins/')) {
-        const resolved = await options.clientModuleAsset(assetPath)
-        const named = typeof resolved === 'string' ? resolved : assetPath
-        const contentType = resolved === null ? undefined : CLIENT_MODULE_MIME[extname(named).toLowerCase()]
-        if (resolved === null || contentType === undefined) {
-          response.writeHead(404, {
-            'Content-Type': 'text/plain; charset=utf-8',
-            'Cache-Control': 'no-store',
-          })
-          response.end()
+      // This reserved namespace never falls through to a Surface or a static file.
+      if (pluginAsset) {
+        const source = requestUrl.search === '?agnes_ui_source=1'
+        const contentType = CLIENT_MODULE_MIME[extname(assetPath).toLowerCase()]
+        if (
+          !options.clientModuleAsset ||
+          !contentType ||
+          requestUrl.searchParams.has('agnes_ui_frame') ||
+          (!source && requestUrl.searchParams.has('agnes_ui_source')) ||
+          (source && contentType !== 'text/javascript')
+        ) {
+          clientAssetNotFound(response)
           return
         }
-        const bytes = typeof resolved === 'string' ? await readFile(resolved) : Buffer.from(resolved)
-        if (new URL(request.url ?? '/', expectedOrigin).searchParams.get('agnes_ui_frame') === '1') {
-          if (
-            !['.js', '.mjs'].includes(extname(named).toLowerCase()) ||
-            bytes.length > UI_COMPONENT_MODULE_BYTES
-          ) {
-            response.writeHead(404).end()
+        const purpose: AppServerParams<'_agnes/v1/clientModules.read'>['purpose'] = source
+          ? 'isolated-component'
+          : 'document'
+        let bytes: Uint8Array
+        let renderer: string | undefined
+        try {
+          const resolved = await options.clientModuleAsset(assetPath, purpose)
+          if (resolved === null || (source && typeof resolved === 'string')) {
+            clientAssetNotFound(response)
             return
           }
-          const frame = uiComponentFrame(bytes.toString('utf8'))
-          response.writeHead(200, {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Cache-Control': 'no-store',
-            'Content-Security-Policy': frame.csp,
-            'Referrer-Policy': 'no-referrer',
-            'X-Content-Type-Options': 'nosniff',
-          })
-          response.end(request.method === 'HEAD' ? undefined : frame.body)
+          if (typeof resolved === 'string') {
+            const file = await readFile(resolved)
+            await rememberPluginBuild(assetPath, resolved, file)
+            bytes = file
+          } else {
+            bytes = resolved
+            if (source) {
+              if (bytes.byteLength > UI_COMPONENT_MODULE_BYTES) {
+                clientAssetNotFound(response)
+                return
+              }
+              renderer = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+            }
+          }
+        } catch {
+          clientAssetNotFound(response)
           return
         }
-        if (typeof resolved === 'string') await rememberPluginBuild(assetPath, resolved, bytes)
         response.writeHead(200, {
-          'Content-Type': contentType,
+          'Content-Type': source ? 'application/json' : contentType,
           'Cache-Control': 'no-store',
           'Content-Security-Policy': contentSecurityPolicy,
           'Referrer-Policy': 'no-referrer',
           'X-Content-Type-Options': 'nosniff',
         })
         if (request.method === 'HEAD') response.end()
-        else if (
-          contentType === 'text/css' &&
-          new URL(request.url ?? '/', expectedOrigin).searchParams.get('agnes_css_layer') === 'app'
-        ) {
+        else if (renderer !== undefined) response.end(JSON.stringify({ source: renderer }))
+        else if (contentType === 'text/css' && requestUrl.searchParams.get('agnes_css_layer') === 'app') {
           // A layered import preserves the stylesheet's own relative imports and asset URLs.
           response.end(`@import url(${JSON.stringify(assetPath)}) layer(app);\n`)
         } else response.end(bytes)
@@ -510,65 +533,7 @@ void poll();\n`,
       // the launcher's mount-table filter refuses the reserved `/plugins`, `/admin` and `/skins`
       // prefixes (see packages/cli/launch/surface-mounts.ts).
       if (options.mountProxy?.(request, response)) return
-      const file = fileName(request.url ?? '/')
-      if (file.endsWith('.html') && options.refreshWsUrl) {
-        // A daemon that was restarted advertises a new loopback address; hand the page the current one.
-        try {
-          const next = loopbackWs(await options.refreshWsUrl())
-          if (next.href !== wsUrl.href) {
-            wsUrl = next
-            contentSecurityPolicy = policyFor(next)
-          }
-        } catch {
-          // Keep the last known address: a failed refresh must not take the page itself down.
-        }
-      }
-      let body = await readFile(join(options.root, file))
-      const documentNonce = file.endsWith('.html') ? randomBytes(16).toString('base64') : undefined
-      if (file === 'index.html') {
-        const html = body.toString()
-        const marker = '__AGNES_WS_URL__'
-        const occurrences = html.split(marker).length - 1
-        if (occurrences !== 1) throw new Error('Web index is missing its connection marker')
-        body = Buffer.from(html.replace(marker, wsUrl.href))
-      }
-      if (documentNonce) {
-        const html = body.toString()
-        const marker = '__AGNES_CSP_NONCE__'
-        const occurrences = html.split(marker).length - 1
-        if (occurrences !== 1) throw new Error('Web document is missing its CSP nonce marker')
-        body = Buffer.from(html.replace(marker, documentNonce))
-      }
-      if (options.developmentReload && file.endsWith('.html')) {
-        const html = body.toString()
-        const marker = '</body>'
-        if (!html.includes(marker)) throw new Error('Web document is missing its body marker')
-        body = Buffer.from(
-          html.replace(marker, '<script type="module" src="/__agnes/dev/reload.js"></script></body>'),
-        )
-      }
-      // The main page admits workbench previews and the two MHS media origins. Other pages keep
-      // the base policy; CDN access does not extend to scripts or API connections.
-      const documentCsp =
-        file === 'index.html'
-          ? `${contentSecurityPolicy.replace(
-              "media-src 'self' blob:",
-              "media-src 'self' blob: https://cos-agent-default.agnes-ai.cn https://cos-agent-default.agnes-ai.com",
-            )}; img-src 'self' blob: https://cos-agent-default.agnes-ai.cn https://cos-agent-default.agnes-ai.com; frame-src 'self' blob:`
-          : contentSecurityPolicy
-      const responseCsp = documentNonce
-        ? documentCsp.replace("style-src 'self'", `style-src 'self' 'nonce-${documentNonce}'`)
-        : documentCsp
-      const headers = {
-        'Content-Type': `${MIME[extname(file)] ?? 'application/octet-stream'}; charset=utf-8`,
-        'Cache-Control': 'no-store',
-        'Content-Security-Policy': responseCsp,
-        'Referrer-Policy': 'no-referrer',
-        'X-Content-Type-Options': 'nosniff',
-      }
-      response.writeHead(200, headers)
-      if (request.method === 'HEAD') response.end()
-      else response.end(body)
+      await serveDocument(request, response)
     } catch (error) {
       const missing = error instanceof Error && error.message === 'Web asset not found'
       if (missing && surfaceNotReady(request.url ?? '/', response)) return
@@ -587,13 +552,15 @@ void poll();\n`,
     sockets.add(socket)
     socket.once('close', () => sockets.delete(socket))
   })
-  const bound = await listen(server, requestedPort).catch((error: unknown) => {
+  const bound = await listen(server, requestedPort).catch(async (error: unknown) => {
     server.close()
+    await cloudFrames.close()
     throw error
   })
   const actualOrigin = `http://${HOST}:${bound.port}`
   if (expectedOrigin.origin !== actualOrigin) {
     await new Promise<void>((resolve) => server.close(() => resolve()))
+    await cloudFrames.close()
     throw new Error(`Web listener origin mismatch: expected ${expectedOrigin.origin}`)
   }
   let closing: Promise<void> | undefined
@@ -614,7 +581,9 @@ void poll();\n`,
         for (const response of developmentReloadClients) response.end()
         developmentReloadClients.clear()
         for (const socket of sockets) socket.destroy()
-        server.close((error) => (error ? reject(error) : resolve()))
+        void cloudFrames.close().then(() => {
+          server.close((error) => (error ? reject(error) : resolve()))
+        }, reject)
       })),
   }
 }

@@ -1,33 +1,264 @@
 /** @vitest-environment happy-dom */
+
+import { META_KEY, rpcError } from '@agnes/protocol'
+import { type Client, JsonRpcError } from '@agnes/sdk/browser'
 import { homeNavigation } from '@agnes/web-client'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
+import { installBackendFrameBridge } from '../src/backends/frame-bridge.js'
+import * as frameContext from '../src/backends/frame-context.js'
+import { executeLocalBackendCommand } from '../src/backends/local-workbench-bus.js'
 import { bindHomeRouting } from '../src/pages/host.js'
 
 afterEach(() => {
+  vi.useRealTimers()
   homeNavigation.close()
   history.replaceState(null, '', '/')
 })
 
-it('restores pages and tabs on history traversal without adding entries and preserves session scope', () => {
-  history.replaceState({ scope: 1 }, '', '/?page=plugins&tab=skills&session=s&workspaceId=w')
+it.each(['supported', 'old', 'mismatch', 'local'] as const)(
+  'negotiates display labels on cloud frames, caches capability/downgrade, and skips polling on native local (%s)',
+  async (mode) => {
+    vi.useFakeTimers()
+    const frame = vi
+      .spyOn(frameContext, 'backendFrame')
+      .mockReturnValue(
+        mode === 'local' ? undefined : { parentOrigin: location.origin, remote: 'http://cloud.test:8443' },
+      )
+    const publish = vi.spyOn(window.parent, 'postMessage')
+    const initialize = vi.fn(async () => ({
+      capabilities: { _meta: { [META_KEY]: { sessionPromptTitles: mode !== 'old' } } },
+    }))
+    const list = vi.fn(async (params: { includePromptTitles?: boolean }) => {
+      if (mode === 'mismatch' && params.includePromptTitles)
+        throw new JsonRpcError(
+          rpcError('INVALID_PARAMS', {
+            code: 'UNKNOWN_KEY',
+            key: 'includePromptTitles',
+            path: '/includePromptTitles',
+          }),
+        )
+      return { items: [] }
+    })
+    const client = {
+      initialize,
+      on: () => () => {},
+      session: { list, activity: async () => ({ items: [] }) },
+    } as unknown as Client
+    const stop = installBackendFrameBridge(client)
+    try {
+      window.dispatchEvent(new CustomEvent('agnes:backend-frame-ready'))
+      if (mode === 'local') {
+        await vi.advanceTimersByTimeAsync(15_000)
+        expect(initialize).not.toHaveBeenCalled()
+        expect(list).not.toHaveBeenCalled()
+        expect(publish).not.toHaveBeenCalled()
+        return
+      }
+      await vi.waitFor(() =>
+        expect(
+          publish.mock.calls.some(([message]) => message.kind === 'state' && message.snapshot.connected),
+        ).toBe(true),
+      )
+      expect(list.mock.calls.map(([params]) => params.includePromptTitles)).toEqual(
+        mode === 'mismatch' ? [true, undefined] : [mode === 'supported' ? true : undefined],
+      )
+      await vi.advanceTimersByTimeAsync(15_000)
+      expect(initialize).toHaveBeenCalledTimes(1)
+      expect(list.mock.calls.at(-1)?.[0].includePromptTitles).toBe(mode === 'supported' ? true : undefined)
+      expect(list).toHaveBeenCalledTimes(mode === 'mismatch' ? 3 : 2)
+    } finally {
+      stop()
+      publish.mockRestore()
+      frame.mockRestore()
+    }
+  },
+)
+
+it.each([
+  rpcError('CAPABILITY_DENIED'),
+  rpcError('INVALID_PARAMS', { code: 'UNKNOWN_KEY', key: 'limit', path: '/limit' }),
+  rpcError('INVALID_PARAMS', { code: 'TYPE', key: 'includePromptTitles', path: '/includePromptTitles' }),
+])('does not downgrade unrelated display-list errors ($data.code)', async (failure) => {
+  const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue({
+    parentOrigin: location.origin,
+    remote: 'http://cloud.test:8443',
+  })
+  const publish = vi.spyOn(window.parent, 'postMessage')
+  const list = vi.fn(async () => {
+    throw new JsonRpcError(failure)
+  })
+  const client = {
+    initialize: async () => ({ capabilities: { _meta: { [META_KEY]: { sessionPromptTitles: true } } } }),
+    on: () => () => {},
+    session: { list, activity: async () => ({ items: [] }) },
+  } as unknown as Client
+  const stop = installBackendFrameBridge(client)
+  try {
+    window.dispatchEvent(new CustomEvent('agnes:backend-frame-ready'))
+    await vi.waitFor(() =>
+      expect(publish.mock.calls.some(([message]) => message.kind === 'state' && message.snapshot.error)).toBe(
+        true,
+      ),
+    )
+    expect(list).toHaveBeenCalledTimes(1)
+  } finally {
+    stop()
+    publish.mockRestore()
+    frame.mockRestore()
+  }
+})
+
+it('does not start a display-list read when disposed during capability negotiation', async () => {
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const initialize = vi.fn(async () => {
+    await gate
+    return { capabilities: {} }
+  })
+  const list = vi.fn(async () => ({ items: [] }))
+  const frame = vi
+    .spyOn(frameContext, 'backendFrame')
+    .mockReturnValue({ parentOrigin: location.origin, remote: 'http://cloud.test:8443' })
+  const stop = installBackendFrameBridge({
+    initialize,
+    on: () => () => {},
+    session: { list },
+  } as unknown as Client)
+  try {
+    window.dispatchEvent(new CustomEvent('agnes:backend-frame-ready'))
+    expect(initialize).toHaveBeenCalledTimes(1)
+    stop()
+    release()
+    await initialize.mock.results[0]?.value
+    expect(list).not.toHaveBeenCalled()
+  } finally {
+    stop()
+    release()
+    frame.mockRestore()
+  }
+})
+
+it('uses the existing cloud history entry for a workbench session command', () => {
+  const remote = 'http://cloud.test:8443'
+  history.replaceState(null, '', `/?remote=${encodeURIComponent(remote)}&session=first&page=rsi`)
+  const frame = vi
+    .spyOn(frameContext, 'backendFrame')
+    .mockReturnValue({ parentOrigin: location.origin, remote })
+  const stopRouting = bindHomeRouting()
+  const stopBridge = installBackendFrameBridge({
+    initialize: async () => ({ capabilities: {} }),
+    on: () => () => {},
+    session: { list: async () => ({ items: [] }), activity: async () => ({ items: [] }) },
+  } as unknown as Client)
+  try {
+    const before = history.length
+    window.dispatchEvent(new CustomEvent('agnes:backend-frame-ready'))
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: location.origin,
+        source: window.parent,
+        data: {
+          type: 'agh.backend.command/v1',
+          commandId: crypto.randomUUID(),
+          kind: 'session',
+          sessionId: 'second',
+        },
+      }),
+    )
+    expect(history.length).toBe(before)
+    expect(homeNavigation.getSnapshot()).toBeUndefined()
+    const params = new URLSearchParams(location.search)
+    expect(params.get('session')).toBe('second')
+    expect(params.get('remote')).toBe(remote)
+    expect(params.get('page')).toBeNull()
+  } finally {
+    stopBridge()
+    stopRouting()
+    frame.mockRestore()
+  }
+})
+
+it.each([undefined, 'http://cloud.test:8443'])(
+  'returns from every sidebar page to a session through the backend bridge (remote=%s)',
+  (remote) => {
+    const url = new URL('/?session=current&workspaceId=w', location.origin)
+    if (remote) url.searchParams.set('remote', remote)
+    history.replaceState(null, '', url)
+    const frame = vi
+      .spyOn(frameContext, 'backendFrame')
+      .mockReturnValue(remote ? { parentOrigin: location.origin, remote } : undefined)
+    const stopRouting = bindHomeRouting()
+    const client = {
+      initialize: async () => ({ capabilities: {} }),
+      on: () => () => {},
+      session: { list: async () => ({ items: [] }), activity: async () => ({ items: [] }) },
+    } as unknown as Client
+    const stopBridge = installBackendFrameBridge(client)
+    try {
+      window.dispatchEvent(new CustomEvent('agnes:backend-frame-ready'))
+      for (const page of ['plugins', 'agents', 'automation', 'mhs', 'fixture#overview']) {
+        const sessionId = page === 'agents' ? 'another' : 'current'
+        if (page.includes('#')) homeNavigation.openRef(page, { tab: 'details' })
+        else homeNavigation.open(page, { tab: 'details' })
+        expect(homeNavigation.getSnapshot()).toBeDefined()
+        if (remote) {
+          window.dispatchEvent(
+            new MessageEvent('message', {
+              origin: location.origin,
+              source: window.parent,
+              data: {
+                type: 'agh.backend.command/v1',
+                commandId: crypto.randomUUID(),
+                kind: 'session',
+                sessionId,
+              },
+            }),
+          )
+        } else {
+          executeLocalBackendCommand({ kind: 'session', sessionId })
+        }
+        expect(homeNavigation.getSnapshot()).toBeUndefined()
+        const params = new URLSearchParams(location.search)
+        expect(params.get('session')).toBe(sessionId)
+        expect(params.get('workspaceId')).toBe('w')
+        expect(params.get('remote')).toBe(remote ?? null)
+        for (const key of ['page', 'pagePackage', 'tab']) expect(params.has(key)).toBe(false)
+      }
+    } finally {
+      stopBridge()
+      stopRouting()
+      frame.mockRestore()
+    }
+  },
+)
+
+it('restores page history and drops the Skills workspace when leaving its scope', () => {
+  const workspaceId = 'a'.repeat(64)
+  const skills = `/?page=plugins&tab=skills&session=s&workspaceId=${workspaceId}`
+  history.replaceState({ scope: 1 }, '', skills)
   const stop = bindHomeRouting()
   try {
     expect(homeNavigation.getSnapshot()).toEqual({ id: 'plugins', selection: { tab: 'skills' } })
     const count = history.length
     homeNavigation.open('plugins', { tab: 'mcp' })
     expect(history.length).toBe(count + 1)
-    expect(location.search).toBe('?page=plugins&tab=mcp&session=s&workspaceId=w')
+    expect(location.search).toBe('?page=plugins&tab=mcp&session=s')
     homeNavigation.open('plugins', { tab: 'mcp' })
     expect(history.length).toBe(count + 1)
     // Model the browser's URL change before it dispatches popstate.
-    history.replaceState(null, '', '/?page=plugins&tab=skills&session=s&workspaceId=w')
+    history.replaceState(null, '', skills)
     window.dispatchEvent(new PopStateEvent('popstate'))
     expect(homeNavigation.getSnapshot()).toEqual({ id: 'plugins', selection: { tab: 'skills' } })
     expect(history.length).toBe(count + 1)
-    history.replaceState(null, '', '/?session=s&workspaceId=w')
+    expect(new URLSearchParams(location.search).get('workspaceId')).toBe(workspaceId)
+    history.replaceState(null, '', `/?session=s&workspaceId=${workspaceId}`)
     window.dispatchEvent(new PopStateEvent('popstate'))
     expect(homeNavigation.getSnapshot()).toBeUndefined()
     expect(history.length).toBe(count + 1)
+    homeNavigation.open('plugins', { tab: 'skills' })
+    expect(location.search).toBe('?session=s&page=plugins&tab=skills')
     homeNavigation.openRef('a#overview', { tab: 'work' })
     expect(new URL(location.href).searchParams.get('pagePackage')).toBe('a')
     window.dispatchEvent(new PopStateEvent('popstate'))
@@ -47,6 +278,21 @@ it('restores pages and tabs on history traversal without adding entries and pres
   history.replaceState(null, '', '/?page=agents')
   window.dispatchEvent(new PopStateEvent('popstate'))
   expect(homeNavigation.getSnapshot()).toEqual({ id: 'third-party' })
+})
+
+it.each([
+  ['a draft', 'new=1', true],
+  ['a session starting a new draft', 'new=1&session=s', false],
+] as const)('leaves Skills from %s with the right workspace', (_entry, selection, keepsWorkspace) => {
+  const workspaceId = 'a'.repeat(64)
+  history.replaceState(null, '', `/?${selection}&workspaceId=${workspaceId}&page=plugins&tab=skills`)
+  const stop = bindHomeRouting()
+  try {
+    homeNavigation.open('rsi')
+    expect(new URLSearchParams(location.search).get('workspaceId')).toBe(keepsWorkspace ? workspaceId : null)
+  } finally {
+    stop()
+  }
 })
 
 it.each(['business-agents', 'business-agent', 'agent-fde', 'fde'])(

@@ -313,7 +313,8 @@ export function useBusinessAgentStart(options: {
     )
     const complete = (result: { sessionId: string; draft?: StartTarget['launch']['prompt'] }) => {
       setPhase({ kind: 'idle' })
-      hide(agent)
+      // Finish closes the review entry synchronously; `back` fires a late popstate behind the opened session.
+      if (navRef.current.stack.at(-1) === agentPageId(agent)) navRef.current.finish()
       ;(latest.current.openSession ?? openStartedSession)({
         sessionId: result.sessionId,
         prompt: result.draft?.text[locale] ?? result.draft?.text.en,
@@ -411,7 +412,7 @@ export function useBusinessAgentStart(options: {
       disabled={phase.kind === 'failed' && !!phase.checking}
       onClick={() => {
         const agent = phase.agent
-        hide(agent)
+        if (navRef.current.stack.at(-1) === agentPageId(agent)) navRef.current.finish()
         plugins(agent)
       }}
     >

@@ -1,3 +1,4 @@
+import { ok } from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,11 +8,12 @@ import {
 } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import type { EventEnvelope } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
+import type { SessionMetaRow } from '../src/local/ports.js'
 import { MemorySessionWorkspaces, SessionWorkspaceIndex } from '../src/storage/lister.js'
 import { SessionPrincipalOwnershipIndex } from '../src/storage/session-ownership.js'
 import { SessionPreferencesStore } from '../src/storage/session-preferences.js'
 import { MemorySidebarSessions } from '../src/storage/sidebar-memory.js'
-import { SidebarSessions } from '../src/storage/sidebar-sessions.js'
+import { SidebarSessions, withSessionPromptTitles } from '../src/storage/sidebar-sessions.js'
 import type { TableHandle } from '../src/storage/table.js'
 import { WorkspaceIndex, workspaceIdFor } from '../src/storage/workspaces.js'
 import { sqliteTables } from './sqlite-tables.js'
@@ -320,6 +322,240 @@ it('uses owner SQL capabilities and atomically invalidates pages for an independ
     await writer.close()
     await reader.close()
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('lists untitled sessions from their first visible prompt after reopening storage, without opening them', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'sidebar-title-'))
+  const file = join(root, 'sessions.db')
+  let tables = sqliteTables(file)
+  let sidebar: SidebarSessions | undefined
+  let pages: ReturnType<typeof withSessionPromptTitles> | undefined
+  try {
+    const t = tables.table('session_workspaces'),
+      s = setup(t)
+    t.exec('CREATE TABLE history (session_key TEXT, seq INTEGER, event TEXT, PRIMARY KEY (session_key, seq))')
+    const title = {
+      turn: 1,
+      startSeq: 1,
+      route: 'r',
+      model: 'm',
+      prompt: 'p',
+      budgetCap: null,
+      treeBudgetCap: null,
+    }
+    const prompt = (seq: number, text: string) =>
+      event(seq, 'user/message', '2026-10-16T00:00:00Z', { content: [{ type: 'text', text }] })
+    const histories: Record<string, EventEnvelope[]> = {
+      demo: [prompt(2, 'ooo'), prompt(3, 'later prompt must not replace the first')],
+      failed: [
+        prompt(2, '{"hello":"world"}'),
+        {
+          ...event(3, 'x/host/session-title', '2026-10-16T00:00:00Z', {
+            ...title,
+            status: 'failed',
+            reason: 'provider',
+          }),
+          origin: 'system',
+          trust: 'trusted',
+          ignorable: true,
+        },
+      ],
+      generated: [
+        prompt(2, 'original input'),
+        {
+          ...event(3, 'x/host/session-title', '2026-10-16T00:00:00Z', {
+            ...title,
+            status: 'generated',
+            title: '模型标题',
+          }),
+          origin: 'system',
+          trust: 'trusted',
+          ignorable: true,
+        },
+      ],
+      renamed: [prompt(2, 'original input')],
+      visible: [
+        {
+          ...prompt(2, 'private runtime context'),
+          data: { kind: 'runtime_context', content: [{ type: 'text', text: 'private runtime context' }] },
+        },
+        { ...prompt(3, 'side lane'), lane: 'side' },
+        prompt(
+          4,
+          '真实问题\n\n' +
+            JSON.stringify({ applicationId: 'acme', packageId: 'acme/kit', actionId: 'review' }),
+        ),
+      ],
+      foreign: [prompt(2, 'another owner must not be read')],
+      archived: [prompt(2, 'archived prompt must not be read')],
+      pending: [prompt(2, 'unactivated prompt must not be read')],
+    }
+    for (const [key, rows] of Object.entries(histories)) {
+      const owner = key === 'foreign' ? 'other' : 'owner'
+      s.ownership.bindNew(key, owner)
+      s.workspaces.put(key, '/repo')
+      const history = [
+        event(1, 'session/start', '2026-10-15T00:00:00Z', { key, preset: 'standard' }),
+        ...rows,
+      ]
+      for (const row of history) {
+        s.workspaces.observe(key, row)
+        t.exec('INSERT INTO history VALUES (?, ?, ?)', [key, row.seq, JSON.stringify(row)])
+      }
+      if (key !== 'pending') s.ownership.activateNew(key, owner)
+    }
+    s.preferences.rename('renamed', '手动标题')
+    s.preferences.archive('archived', true)
+    await tables.close()
+    tables = sqliteTables(file)
+    const reopened = tables.table('session_workspaces')
+    let unavailable = true
+    const scan = vi.fn(
+      async (key: string, q: { fromSeq?: number; toSeq?: number; limit: number; order?: 'asc' | 'desc' }) => {
+        if (key === 'demo' && unavailable) throw new Error('temporarily unavailable')
+        return reopened
+          .all<{ event: string }>(
+            `SELECT event FROM history WHERE session_key = ? AND seq >= ? AND seq <= ? ORDER BY seq ${q.order === 'desc' ? 'DESC' : 'ASC'} LIMIT ?`,
+            [key, q.fromSeq ?? 1, q.toSeq ?? Number.MAX_SAFE_INTEGER, q.limit],
+          )
+          .map((row) => JSON.parse(row.event) as EventEnvelope)
+      },
+    )
+    const index = new SessionWorkspaceIndex(reopened)
+    const grouped = new SidebarSessions(reopened, index, scan)
+    sidebar = grouped
+    const groupId = workspaceIdFor('/repo')
+    expect((await grouped.groups('owner')).ready).toBe(true)
+    const defaultPage = await grouped.list('owner', { groupId })
+    expect(defaultPage.items.find((row) => row.sessionId === 'demo')?.title).toBeUndefined()
+    expect(scan).not.toHaveBeenCalled()
+    pages = withSessionPromptTitles(
+      {
+        async list(query) {
+          const { items, next } = await grouped.list('owner', {
+            groupId,
+            ...(query.limit !== undefined ? { limit: query.limit } : {}),
+            ...(query.cursor !== undefined ? { cursor: query.cursor } : {}),
+          })
+          return { items, ...(next ? { cursor: next } : {}) }
+        },
+      },
+      scan,
+    )
+    const partial = await pages.list({ includePromptTitles: true })
+    expect(partial.items).toHaveLength(5)
+    expect(partial.items.find((row) => row.sessionId === 'demo')?.title).toBeUndefined()
+    unavailable = false
+    const page = await pages.list({ includePromptTitles: true })
+    expect(Object.fromEntries(page.items.map((row) => [row.sessionId, row.title]))).toEqual({
+      demo: 'ooo',
+      failed: '{"hello":"world"}',
+      generated: '模型标题',
+      renamed: '手动标题',
+      visible: '真实问题',
+    })
+    expect(page.items).toHaveLength(5)
+    for (const key of ['foreign', 'archived', 'pending'])
+      expect(scan.mock.calls.map(([key]) => key)).not.toContain(key)
+    expect(scan.mock.calls.map(([key]) => key)).not.toContain('generated')
+    expect(scan.mock.calls.map(([key]) => key)).not.toContain('renamed')
+    expect(scan.mock.calls.every(([, q]) => q.limit <= 500)).toBe(true)
+    const reads = scan.mock.calls.length
+    const first = await pages.list({ includePromptTitles: true, limit: 2 })
+    ok(first.cursor, 'Expected a second page of title results')
+    const second = await pages.list({ includePromptTitles: true, limit: 2, cursor: first.cursor })
+    ok(second.cursor, 'Expected a third page of title results')
+    const third = await pages.list({ includePromptTitles: true, limit: 2, cursor: second.cursor })
+    expect([...first.items, ...second.items, ...third.items]).toEqual(page.items)
+    expect(scan.mock.calls.length).toBe(reads) // Repeated pages must not reread unchanged histories.
+    expect(
+      reopened.get<{ title: string | null }>('SELECT title FROM session_workspaces WHERE session_key = ?', [
+        'demo',
+      ])?.title,
+    ).toBeNull()
+    new SessionPreferencesStore(reopened).rename('failed', '新的手动标题')
+    index.observe('demo', {
+      ...event(4, 'x/host/session-title', '2026-10-16T00:00:00Z', {
+        ...title,
+        status: 'generated',
+        title: '新的模型标题',
+      }),
+      origin: 'system',
+      trust: 'trusted',
+      ignorable: true,
+    })
+    const updated = await pages.list({ includePromptTitles: true })
+    expect(updated.items.find((row) => row.sessionId === 'demo')?.title).toBe('新的模型标题')
+    expect(updated.items.find((row) => row.sessionId === 'failed')?.title).toBe('新的手动标题')
+    expect(scan.mock.calls.length).toBe(reads)
+  } finally {
+    pages?.close()
+    await sidebar?.close()
+    await tables.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('bounds overlapping title reads and stops queued work on close without dropping pages', async () => {
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let active = 0,
+    peak = 0
+  const scan = vi.fn(async () => {
+    active++
+    peak = Math.max(peak, active)
+    try {
+      await gate
+      return [event(1)]
+    } finally {
+      active--
+    }
+  })
+  const lister = withSessionPromptTitles(
+    {
+      async list(query) {
+        return {
+          items: (query.sessionIds ?? []).map(
+            (sessionId): SessionMetaRow => ({
+              sessionId,
+              createdAt: '2026-11-20T00:00:00Z',
+              lastSeq: 1,
+              generation: 0,
+              preset: null,
+            }),
+          ),
+        }
+      },
+    },
+    scan,
+  )
+  const requests = [0, 1].map((page) =>
+    lister.list({
+      includePromptTitles: true,
+      sessionIds: Array.from({ length: 8 }, (_, i) => `${page}-${i}`),
+    }),
+  )
+  try {
+    await vi.waitFor(() => expect(scan.mock.calls.length).toBeGreaterThanOrEqual(5))
+    expect(peak).toBe(5)
+    lister.close()
+    release()
+    const pages = await Promise.all(requests)
+    expect(pages.flatMap((page) => page.items)).toHaveLength(16)
+    expect(scan).toHaveBeenCalledTimes(5)
+    expect(active).toBe(0)
+    await expect(
+      lister.list({ includePromptTitles: true, sessionIds: ['after-close'] }),
+    ).resolves.toMatchObject({
+      items: [{ sessionId: 'after-close' }],
+    })
+    expect(scan).toHaveBeenCalledTimes(5)
+  } finally {
+    release()
+    await Promise.allSettled(requests)
   }
 })
 

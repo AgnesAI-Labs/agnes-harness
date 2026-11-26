@@ -129,7 +129,7 @@ import type { CoreDiagName } from '../kernel.js'
 import { Listeners } from '../listeners.js'
 import { LoopChildren } from '../loop/children.js'
 import { SessionControls } from '../loop/controls.js'
-import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
+import { LoopEventRegistry } from '../loop/events.js'
 import { drivenOutcome, isAdmissionEnding, publicOutcome, shouldStopLoop } from '../loop/outcome.js'
 import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
 import { settleSideCalls } from '../loop/side-call-receipts.js'
@@ -219,6 +219,7 @@ import { filteredTools, NO_TOOL_FILTER, type SessionToolFilter, setToolFilter } 
 import { effectiveToolPolicy, sessionFloor } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
+import { notifyCommittedTurnHook, notifyLoopTurnEnd } from './turn-observers.js'
 import { attend, attendRecovered, rehydratedCallState } from './turn-restore.js'
 
 /**
@@ -335,6 +336,8 @@ export type HookPort = {
   resources?(): ReadonlyArray<import('@agnes/extension-api').ResourceEntry>
   sessionStart?(p: { reason: 'new' | 'resume'; preset: string; cwd: string }): Promise<void>
   shutdown?(): Promise<void>
+  /** Passive notification after the terminal transaction; observers cannot change its outcome. */
+  turnEnd?(payload: HookPayloadMap['turn_end']): Promise<void>
   resetTurn?(): void
   toolCall(p: {
     toolUseId: string
@@ -1408,17 +1411,11 @@ export class SessionImpl {
       this.turn = null
       return result.seqs
     })
+    await notifyCommittedTurnHook(this, { turn: turnNumber, reason, endSeq: seqs[seqs.length - 1] as number })
     this.turnEndError = extra.error
     // Between turns: a proposed refinement is applied now, before any queued input opens a turn.
     if (this.d.refinement) await refinementAfterTurn(this)
-    // Observer failure cannot undo a committed turn ending.
-    await this.loopEvents
-      .dispatch(
-        'turn_end',
-        { turn: turnNumber, reason },
-        loopEventContext(this, new AbortController().signal),
-      )
-      .catch((error) => this.d.logger.warn('turn_end observer failed', { message: String(error) }))
+    await notifyLoopTurnEnd(this, { turn: turnNumber, reason })
     return seqs[seqs.length - 1] as Seq
   }
 

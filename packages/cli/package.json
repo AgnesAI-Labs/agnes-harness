@@ -23,6 +23,7 @@
     "dist/sea/THIRD-PARTY-NOTICES/computer-use-hermes.txt",
     "dist/sea/THIRD-PARTY-NOTICES/jevloop.txt",
     "dist/sea/bundled-plugins",
+    "dist/sea/bundled-plugin-digests.json",
     "dist/sea/bundled-examples",
     "dist/sea/ripgrep"
   ],
@@ -68,6 +69,7 @@
     "@agnes/host-extensions": "workspace:*"
   },
   "devDependencies": {
+    "@agnes/daemon-rpc": "workspace:*",
     "@agnes/extension-api": "workspace:*",
     "@sinclair/typebox": "0.34.33",
     "@xterm/headless": "6.0.0",

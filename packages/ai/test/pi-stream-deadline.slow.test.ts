@@ -14,7 +14,7 @@ import {
  * The request deadline bounds a model request only until its answer starts. Three layers are handed
  * it: this adapter's own timer, the deployment fetch, and the `timeout` pi-ai passes to the OpenAI
  * SDK. The first two have their own tests; the SDK's can only be seen on a real socket, so this
- * streams a real answer for four times the request deadline and expects all of it.
+ * streams a real answer past the request deadline and expects all of it.
  */
 const PROXY_VARIABLES = ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']
 const savedEnv = new Map<string, string | undefined>()
@@ -56,10 +56,13 @@ it('streams an OpenAI-compatible answer well past the request deadline it was gi
   server = createServer((request, response) => {
     request.resume()
     response.writeHead(200, { 'Content-Type': 'text/event-stream' })
-    let sent = 0
+    const sendPart = () =>
+      response.write(chunk({ choices: [{ index: 0, delta: { content: 'a' }, finish_reason: null }] }))
+    sendPart()
+    let sent = 1
     const tick = setInterval(() => {
       if (sent < parts) {
-        response.write(chunk({ choices: [{ index: 0, delta: { content: 'a' }, finish_reason: null }] }))
+        sendPart()
         sent++
         return
       }
@@ -71,7 +74,7 @@ it('streams an OpenAI-compatible answer well past the request deadline it was gi
         }),
       )
       response.end('data: [DONE]\n\n')
-    }, 50)
+    }, 150)
     response.on('close', () => clearInterval(tick))
   })
   const port = await new Promise<number>((resolve) =>
@@ -88,8 +91,8 @@ it('streams an OpenAI-compatible answer well past the request deadline it was gi
         api: 'openai-completions',
         baseUrl,
         credentialRef: 'secret://agnes/gateway',
-        // About 850 ms of answer against a 200 ms request deadline; gaps stay far below the idle limit.
-        networkTimeouts: { requestMs: 200, streamIdleMs: 1_000 },
+        // Send the first byte immediately, then stream for about 2.4 s across the 1 s request deadline.
+        networkTimeouts: { requestMs: 1_000, streamIdleMs: 3_000 },
         models: [fakeModel({ id: 'flash', route: 'gw', api: 'openai-completions', baseUrl })],
       },
     ],
@@ -101,7 +104,7 @@ it('streams an OpenAI-compatible answer well past the request deadline it was gi
     signal: new AbortController().signal,
     toolNames: [],
     sessionKey: 'k',
-    timeoutMs: { firstToken: 5_000, total: 5_000 },
+    timeoutMs: { firstToken: 5_000, total: 10_000 },
   }))
     events.push(event)
   expect(events.flatMap((event) => (event.type === 'text_delta' ? [event.delta] : [])).join('')).toBe(

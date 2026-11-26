@@ -31,7 +31,9 @@ import { attachIntelligentBinding, TurnViews } from './turn-views.js'
 
 /** One owned presentation across placements, dock and historical answer receipts. Mounting never submits. */
 export function mountIntelligentUi(options: {
-  contributions: Pick<import('@agnes/web-client').ClientContext, 'conversationCards' | 'workbenchPanels'>
+  contributions: Pick<import('@agnes/web-client').ClientContext, 'conversationCards' | 'workbenchPanels'> & {
+    presentation?: Pick<import('@agnes/web-client').PresentationHost, 'resolveResourceUrl'>
+  }
   resources?: ClientResourceService
   customModules?: CustomUiModuleSource
   client: Client
@@ -42,6 +44,13 @@ export function mountIntelligentUi(options: {
   /** Bring the conversation card out from under the trace pane. */
   revealInline?(): void
 }): () => void {
+  const resolveResourceUrl = options.contributions.presentation?.resolveResourceUrl
+  const customModules = options.customModules
+    ? {
+        ...(resolveResourceUrl ? { resolveUrl: (url: string) => resolveResourceUrl(url) } : {}),
+        ...options.customModules,
+      }
+    : undefined
   let current: IntelligentUiClient | undefined
   let stopWatch: (() => void) | undefined
   let seenSurfaces = new Set<string>()
@@ -64,7 +73,7 @@ export function mountIntelligentUi(options: {
     getSnapshot: () => current,
     getVersion: () => version,
     ...(options.resources ? { resources: options.resources } : {}),
-    ...(options.customModules ? { customModules: options.customModules } : {}),
+    ...(customModules ? { customModules } : {}),
     locale: documentLocale.source,
     target: () => target,
     expand: (surfaceId, revision) => {

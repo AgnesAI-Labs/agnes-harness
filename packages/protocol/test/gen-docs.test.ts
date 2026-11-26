@@ -10,7 +10,7 @@ describe('gen-docs', () => {
     // One row per event in the five-tuple table, and one per event in the IO table below it.
     expect(
       md.split('\n').filter((l) => /^\| `[a-z_]+` \| (emit|parallel|serial|waterfall) \|/.test(l)),
-    ).toHaveLength(16)
+    ).toHaveLength(17)
   })
   // Independent of the renderer: the page must carry facts read out of the decision tables, not out
   // of the renderer's own output. Checked-in staleness is enforced separately by gen:check.

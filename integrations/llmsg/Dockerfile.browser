@@ -1,0 +1,36 @@
+ARG AGH_BASE_IMAGE
+FROM ${AGH_BASE_IMAGE}
+
+USER root
+RUN . /etc/os-release && test "$ID:$VERSION_CODENAME:$(dpkg --print-architecture)" = debian:bookworm:amd64 \
+ && test "$(id -u node)" = 1000 \
+ && test -x /usr/bin/bwrap \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+    bash zsh fonts-liberation fonts-wqy-zenhei \
+    libasound2 libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcairo2 libcups2 libdbus-1-3 \
+    libdrm2 libgbm1 libglib2.0-0 libnspr4 libnss3 libpango-1.0-0 libx11-6 libx11-xcb1 \
+    libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 \
+ && rm -rf /var/lib/apt/lists/* \
+ && printf '#!/bin/sh\nexec /usr/bin/bwrap --unshare-user "$@"\n' > /usr/local/bin/bwrap \
+ && chmod 0755 /usr/local/bin/bwrap \
+ && install -d -m 0755 -o node -g node /data /workspace /workspace/data /data/agh-assets \
+ && install -d -m 0700 -o node -g node /data/agh /run/agh-sync
+
+ENV HOME=/home/node XDG_CACHE_HOME=/home/node/.cache AGH_TELEMETRY_DISABLED=1
+USER node
+
+# Reuse the browser plugin's installer and the reviewed archive in its manifest.
+RUN node --input-type=module <<'JS'
+import { setTimeout as delay } from 'node:timers/promises'
+import { createLauncher } from '/opt/agh/runtime/bundled-plugins/browser/src/launcher.mjs'
+
+const launcher = createLauncher()
+const runtime = { enabled: true, epoch: 0, guard() {}, notify() {} }
+await launcher.check(runtime)
+if (runtime.state === 'stopped') {
+  launcher.prepare(runtime)
+  while (runtime.state === 'preparing') await delay(250)
+}
+if (runtime.state !== 'ready') throw new Error(runtime.error ?? 'Chromium preparation failed')
+JS

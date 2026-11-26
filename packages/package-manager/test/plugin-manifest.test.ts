@@ -88,6 +88,62 @@ describe('package.json agnes.plugins', () => {
     ).toThrow(/Retired.*clean home/)
   })
 
+  it('normalizes static UI entries for distinct rows without filling an omitted field', () => {
+    const help = {
+      id: 'help.start',
+      title: { en: 'Guide', 'zh-CN': '指南' },
+      placement: 'settings',
+      markdown: { en: '# Start' },
+      icon: 'unknown-icon',
+    }
+    const [settings, sidebar, old] = parseAgnesPluginEntries('@acme/example', [
+      { export: 'main', apiRange: '^5.0.0', uiEntries: [help] },
+      {
+        export: 'other',
+        apiRange: '^5.0.0',
+        uiEntries: [{ ...help, placement: 'sidebar', configure: true }],
+      },
+      { export: 'old', apiRange: '^5.0.0' },
+    ])
+    expect(settings?.uiEntries).toEqual([help])
+    expect(settings?.uiEntries?.[0]).not.toBe(help)
+    expect(Object.isFrozen(settings?.uiEntries?.[0]?.title)).toBe(true)
+    expect(sidebar?.uiEntries?.[0]).toMatchObject({ placement: 'sidebar', configure: true })
+    expect(old).not.toHaveProperty('uiEntries')
+  })
+
+  it('rejects closed-shape violations and more than eight entries per row or 32 per package', () => {
+    const help = { id: 'help', title: { en: 'Guide' }, placement: 'settings', configure: true }
+    const row = { export: 'main', apiRange: '^5.0.0' }
+    for (const uiEntries of [
+      null,
+      [help, help],
+      [{ ...help, id: 'uppercase-A' }],
+      [{ ...help, id: 'includes-a-line-break\n' }],
+      [{ ...help, placement: 'settings.plugin.item' }],
+      [{ ...help, title: { en: 'x'.repeat(81) } }],
+      [{ ...help, title: { en: 'Guide', fr: 'Guide' } }],
+      [{ ...help, markdown: { en: 'x'.repeat(2049) } }],
+      [{ ...help, markdown: { 'zh-CN': '指南' } }],
+      [{ ...help, icon: 'https://example.invalid/icon.svg' }],
+      [{ ...help, configure: false }],
+      [{ id: 'help', title: { en: 'Guide' }, placement: 'settings' }],
+      [{ ...help, target: '@acme/other' }],
+      [{ ...help, packageId: '@acme/other' }],
+      Array.from({ length: 9 }, (_, index) => ({ ...help, id: `help-${index}` })),
+    ])
+      expect(() => parseAgnesPluginEntries('@acme/example', [{ ...row, uiEntries }])).toThrow(/uiEntries/)
+    const rows = Array.from({ length: 4 }, (_, index) => ({
+      ...row,
+      export: `row${index}`,
+      uiEntries: Array.from({ length: 8 }, (_, index) => ({ ...help, id: `help-${index}` })),
+    }))
+    expect(parseAgnesPluginEntries('@acme/example', rows)).toHaveLength(4)
+    expect(() => parseAgnesPluginEntries('@acme/example', [...rows, { ...row, uiEntries: [help] }])).toThrow(
+      /uiEntries/,
+    )
+  })
+
   it('rejects duplicate normalized ids', () => {
     expect(() =>
       parseAgnesPluginEntries('@acme/example', [

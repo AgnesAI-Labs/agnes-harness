@@ -7,10 +7,11 @@ import {
   sha256Hex as uploadSessionHash,
 } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { readSessionAttachment } from '../src/request/session-files.js'
 import { readSessionImages } from '../src/request/session-images.js'
+import { imageInput } from '../src/request/tool-images.js'
 import { fencedFs, testFsPolicy } from '../testkit/fenced-fs.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { actor, openSession } from './helpers/open-session.js'
@@ -609,6 +610,35 @@ it.each([true, false])(
     expect(images).toHaveLength(vision ? 1 : 0)
     expect(reads).toEqual(['/w/picture.png'])
     expect(artifacts.size).toBe(vision ? 1 : 0)
+    const registrations = await log.scan({ type: 'x/core/artifact.registered', limit: 10 })
+    expect(registrations).toHaveLength(vision ? 1 : 0)
+    if (vision)
+      expect(registrations[0]).toMatchObject({
+        origin: 'system',
+        trust: 'trusted',
+        ignorable: true,
+        data: { artifact: { sha256: sha256Hex(bytes), size: bytes.length, mime: 'image/png' } },
+      })
+    if (vision) {
+      const append = vi.spyOn(log, 'append').mockRejectedValueOnce(new Error('registration unavailable'))
+      try {
+        const failed = await imageInput(
+          session,
+          { bytes, mimeType: 'image/png', name: 'picture.png' },
+          new AbortController().signal,
+        )
+        expect(failed.isError).toBe(true)
+        expect(failed.content.every((block) => block.type !== 'image')).toBe(true)
+      } finally {
+        append.mockRestore()
+      }
+      const cancelled = new AbortController()
+      cancelled.abort()
+      await expect(
+        imageInput(session, { bytes, mimeType: 'image/png', name: 'picture.png' }, cancelled.signal),
+      ).rejects.toThrow()
+      expect(await log.scan({ type: 'x/core/artifact.registered', limit: 10 })).toHaveLength(1)
+    }
     const results = await log.scan({ type: 'tool/result', limit: 10 })
     expect(JSON.stringify(results)).toContain(vision ? 'untrusted data' : 'pixels were not inspected')
     scripts.push(toolTurn('read', { path: '/outside/picture.png' }), textTurn('refused outside path'))

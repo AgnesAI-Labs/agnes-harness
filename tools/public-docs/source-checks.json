@@ -21,7 +21,11 @@
   },
   {
     "path": "packages/host-infrastructure/src/configuration.ts",
-    "includes": ["configuration.json", "defaultAccountId"]
+    "includes": ["CONFIGURATION_FILE", "defaultAccountId"]
+  },
+  {
+    "path": "packages/host-infrastructure/src/configuration-storage.ts",
+    "includes": ["configuration.json", "skin-selection.json"]
   },
   {
     "path": "packages/host-extensions/src/ext-host/row-services.ts",
@@ -69,6 +73,10 @@
   },
   {
     "path": "packages/web/src/app.ts",
+    "includes": ["from '@agnes/sdk/browser'", "createBackendConnection(shellConfig.wsUrl)"]
+  },
+  {
+    "path": "packages/web/src/app/backend-connection.ts",
     "includes": ["from '@agnes/sdk/browser'", "transport: { kind: 'ws'", "auth: { kind: 'local' }"]
   },
   {

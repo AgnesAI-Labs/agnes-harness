@@ -30,6 +30,7 @@ export type RegistryOptions = Readonly<{
 export type ArtifactAuthorityLifecycle = Readonly<{
   observe(sessionId: string, event: unknown, signal: AbortSignal): Promise<void>
   resetSession(sessionId: string): void
+  detachSession?(sessionId: string): void
 }>
 
 type RemoteOpen = Readonly<{
@@ -305,6 +306,11 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     for (const waiter of [...waiters]) waiter.reject(new Error('artifact authority session is unavailable'))
   }
 
+  private detachArtifactAuthority(sessionKey: string): void {
+    if (this.artifactAuthority?.detachSession) this.artifactAuthority.detachSession(sessionKey)
+    else this.artifactAuthority?.resetSession(sessionKey)
+  }
+
   /**
    * Wired to `WorkerPool`'s `onPreview`: live streamed text for a session. It rides behind any
    * event still being projected for artifact authority so it cannot overtake the row that opened
@@ -511,7 +517,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     const resourceEpoch = this.resourceEpoch
     // Detach stale in-memory scope before replay. resetSession bumps the projection epoch before
     // touching durable rows, so an old asynchronous observe cannot resurrect authority.
-    this.artifactAuthority?.resetSession(key)
+    this.detachArtifactAuthority(key)
     this.rejectArtifactProjectionWaiters(key)
     this.artifactProjectedThrough.delete(key)
     const link = await this.pool.acquire(key, {
@@ -598,7 +604,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         if (this.entries.get(key) === entry) this.entries.delete(key)
         entry.ac.abort(new Error('resource snapshot retired while opening'))
         try {
-          this.artifactAuthority?.resetSession(key)
+          this.detachArtifactAuthority(key)
         } catch {
           // Scope detachment is best-effort here; the worker is still retired below and the next
           // open resets before replay, so a failed durable cleanup cannot publish stale authority.
@@ -625,7 +631,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         if (this.entries.get(key) === entry) this.entries.delete(key)
         entry.ac.abort(error)
         try {
-          this.artifactAuthority?.resetSession(key)
+          this.detachArtifactAuthority(key)
         } catch {
           // The original replay failure is the public startup result; scope is already detached.
         }
@@ -661,7 +667,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         if (entry.listeners.size === 0 && this.listenerSets.get(key) === entry.listeners)
           this.listenerSets.delete(key)
         try {
-          this.artifactAuthority?.resetSession(key)
+          this.detachArtifactAuthority(key)
         } catch {
           // Preserve the startup failure; authority was detached before its durable cleanup ran.
         }
@@ -800,7 +806,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     entry.recover = false
     this.listenerSets.delete(key)
     try {
-      this.artifactAuthority?.resetSession(key)
+      this.detachArtifactAuthority(key)
     } catch {
       // resetSession detaches the live scope before durable cleanup; retirement must still forget
       // this generation so a cleanup failure cannot keep stale authority reachable.
@@ -855,7 +861,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     this.publishedThrough.delete(key)
     let firstError: unknown
     try {
-      this.artifactAuthority?.resetSession(key)
+      this.detachArtifactAuthority(key)
     } catch (error) {
       firstError = error
     }
@@ -908,7 +914,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       this.entries.delete(key)
       entry.ac.abort(reason)
       try {
-        this.artifactAuthority?.resetSession(key)
+        this.detachArtifactAuthority(key)
       } catch {
         // The next open resets again before replay; transport callbacks never throw cleanup errors.
       }

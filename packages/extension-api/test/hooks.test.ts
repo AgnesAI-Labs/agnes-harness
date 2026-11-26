@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { HOOK_EVENTS } from '../src/index.js'
 
 describe('hook event vocabulary', () => {
-  it('exposes all sixteen events in the specified order and prevents mutation', () => {
+  it('exposes all supported events in the specified order and prevents mutation', () => {
     expect([...HOOK_EVENTS]).toEqual([
       'session_start',
       'resources_discover',
@@ -19,6 +19,7 @@ describe('hook event vocabulary', () => {
       'subagent_start',
       'subagent_end',
       'format_deviation',
+      'turn_end',
       'shutdown',
     ])
     expect(Object.isFrozen(HOOK_EVENTS)).toBe(true)

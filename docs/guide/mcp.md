@@ -151,7 +151,9 @@ Local-dev permits stdio `node`, `npx`, `python`, and `python3` on PATH, plus HTT
 
 ## Configure and verify
 
-AGH normalizes empty input schemas and object-like schemas without `type` to `type: "object"`. A genuinely non-object or invalid root is skipped with an `invalid-schema` reason in the catalog; other tools from that server remain available.
+Remote MCP tool input schemas must describe an object at the root. AGH normalizes empty schemas and object-like schemas without `type` to `type: "object"`. Omitting `$schema` selects JSON Schema 2020-12. An explicit `$schema` must be `https://json-schema.org/draft/2020-12/schema` or `http://json-schema.org/draft-07/schema`, with or without a trailing `#`. AGH does not infer a dialect from the keywords or convert between drafts.
+
+AGH checks tool arguments synchronously and strictly, without coercion, default insertion, or fetching schemas over the network. The supported formats are `uri` and `date-time`; `x-mcp-native` is accepted as an annotation that does not affect validation. Invalid or unsupported input schemas skip only the affected tool, typically with `invalid-schema` in the catalog. Local validation does not guarantee that a model provider accepts the schema.
 
 The MCP settings page shows services, connection state, and tool catalogs. Use the CLI to configure stdio, HTTP, or SSE manually. `MCP_URL` must be a reviewed, reachable MCP endpoint, rather than a normal webpage or model Base URL:
 

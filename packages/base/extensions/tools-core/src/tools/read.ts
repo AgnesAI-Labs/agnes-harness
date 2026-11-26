@@ -185,7 +185,7 @@ function pageOfLines(
 export const readTool = defineTool({
   name: 'read',
   description:
-    'Read an actual workspace file (relative paths use the session working directory), not packaged demo fixtures, with line numbers; offset and limit page through it. Also reads artifact:// truncated outputs. Read uploaded text files using session-file://message-seq/file-index; long lines wrap into paged rows. session-file://list lists saved attachments (offset/limit page entries). Local single-frame PNG/JPEG files become model image input when vision is supported; inputs are limited to 20 MiB and 64 million pixels, and are downscaled to the active limits. Other binary files, PDF, audio and video may be unreadable. For image originals, use session-image://list, then session-image://message-seq/image-index; combine references as session-image://12/1,34/2. Originals count toward the model image limit; inspect them before claiming unseen details. Use save_to with one session original to create a new workspace file without overwriting; max_edge can lower the image size.',
+    'Read an actual workspace file (relative paths use the session working directory), not packaged demo fixtures, with line numbers; offset and limit page through it. Also reads artifact:// truncated outputs. Read uploaded text files and PNG/JPEG images using session-file://message-seq/file-index; long lines wrap into paged rows. session-file://list lists saved attachments (offset/limit page entries). Local and uploaded single-frame PNG/JPEG files become model image input when vision is supported; inputs are limited to 20 MiB and 64 million pixels, and are downscaled to the active limits. Other binary files, PDF, audio and video may be unreadable. For image originals, use session-image://list, then session-image://message-seq/image-index; combine references as session-image://12/1,34/2. Originals count toward the model image limit; inspect them before claiming unseen details. Use save_to with one session original to create a new workspace file without overwriting; max_edge can lower the image size.',
   parameters: ReadParams,
   meta: {
     paths: [
@@ -232,6 +232,9 @@ export const readTool = defineTool({
           maxBytes: 100 * 1024 * 1024,
         })
         if (!file) throw new Error('This attachment is unavailable in the current session.')
+        // Historical images uploaded with a text-only model retain session-file references.
+        // Reuse the bounded image decoder and the active model's image-input policy.
+        if (localImageMime(file.bytes)) return readLocalImage(file.bytes, file.name, ctx, args.max_edge)
         const header = String.fromCharCode(...file.bytes.subarray(0, 16))
         if (
           /^(audio|video)\//iu.test(file.mimeType) ||

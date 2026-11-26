@@ -6,12 +6,14 @@ import type { FsPolicy } from '@agnes/core'
 import { withSessionFileAccess } from '@agnes/host-common/session-file-access'
 import { CliWorkspaceAuthority } from '@agnes/host-common/workspace-authority'
 import { compileWorkspacePolicy, normalizeSandboxStaticConfig } from '@agnes/host-common/workspace-policy'
-import type { RemoteWorkspacePool } from '@agnes/sandbox-remote'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ExecAdapter } from '../../src/adapters/exec.js'
 import { createPlatform } from '../../src/adapters/platform.js'
 import { createLoopbackTransport, type RemoteTransport } from '../../src/adapters/remote-transport.js'
-import { createSessionWorkspaceAdapterFactory } from '../../src/adapters/session-workspace.js'
+import {
+  createSessionWorkspaceAdapterFactory,
+  type RemoteWorkspacePoolPort,
+} from '../../src/adapters/session-workspace.js'
 import { WorkspaceHookLoader } from '../../src/workspace-hook-loader.js'
 
 const roots: string[] = []
@@ -187,14 +189,14 @@ describe('session workspace adapters', () => {
 
   it('leases remote roots per session and releases each owner independently', async () => {
     const released: string[] = []
-    const pool = {
+    const pool: RemoteWorkspacePoolPort = {
       acquire: vi.fn(async (sessionKey: string) => ({
         root: `/remote/${sessionKey}`,
         close: async () => {
           released.push(sessionKey)
         },
       })),
-    } as unknown as RemoteWorkspacePool
+    }
     const transport = {} as RemoteTransport
     const factory = createSessionWorkspaceAdapterFactory({
       platform: createPlatform(),
@@ -241,9 +243,9 @@ describe('session workspace adapters', () => {
 
     // A remote workspace is a different machine's disk: this machine's state paths mean nothing there,
     // so the roots are not applied and the write goes through to the remote io.
-    const pool = {
+    const pool: RemoteWorkspacePoolPort = {
       acquire: async () => ({ root: work, close: async () => undefined }),
-    } as unknown as RemoteWorkspacePool
+    }
     const remote = createSessionWorkspaceAdapterFactory({
       platform: createPlatform(),
       exec,

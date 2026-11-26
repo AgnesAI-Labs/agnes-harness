@@ -13,7 +13,7 @@
 | `read` | 读取受工作区权限约束的文本、会话附件及原图。对支持视觉的模型，本地单帧 PNG/JPEG 通过 artifact 成为模型图片输入；输入上限为 20 MiB、6400 万像素与 256 MiB 解码采样内存；渐进或隔行输入限制为 1600 万像素与 64 MiB 解码采样内存。进程最多同时解码两张图片，整个准备流程共享 30 秒时限；可选的原生 codec 只在读取图片时加载。按当前模型/运行时的字节、尺寸及像素限制等比例缩小，并去掉元数据。Web 沿用工具图片卡片；非视觉模型收到明确未检查像素的文字说明。`max_edge`（8–1456）可进一步降低输出尺寸。对单个 session-file/session-image 原件使用 `save_to`，可在正常写授权下通过独占、不跟随符号链接的创建能力复制到新的工作区相对路径，禁止覆盖。每份最多 100 MiB，每会话同时一份、每进程两份；更大的原件需客户端按字节窗口下载。其他格式需相应工具。 |
 | `web_search` | `{"queries":["主题"]}`；一至四条非空查询。宿主提供搜索标题、链接和摘要。没有配置搜索提供方或密钥时返回 `WEB_SEARCH_UNAVAILABLE`。结果会说明只是这个工具不可用：模型仍可用 `web_fetch` 抓取搜索结果页，或站点自己的搜索、API 地址。 |
 | `ask_user_question` | `{"questions":[{"id":"route","question":"请选择路线","options":["A","B"]}]}`。省略 options 使用自由文本；`multiple:true` 允许多选，`allowFreeText:true` 允许补充答案。一至四个问题，id 必须唯一。`timeoutMs` 默认为 0（立即继续），1–60000 可选择等待至持久化截止时间。同批其他工具仍可执行；晚答作为新输入送达。 |
-| `present` | `{"files":[{"path":"report.pdf","name":"Report.pdf","description":"供审阅"}]}`。注册已存在、可读取的普通文件，将内容复制为会话产物。最多十六个文件，每个文件和总量都不超过 32 MiB。surface 列出名称、说明及产物身份；工具结果保留需授权读取的 artifact 引用。 |
+| `present` | `{"files":[{"path":"report.pdf","name":"Report.pdf","description":"供审阅"}]}`。注册已存在、可读取的普通文件，将内容复制为会话产物。新登记的展示及下载名称保留源文件后缀：`name: "报告"` 会登记为 `报告.pdf`；已有相同后缀时忽略大小写、不重复添加，名称超过 256 字符时裁剪主体并保留后缀。不重命名工作区文件，已有登记记录保留原名称。最多十六个文件，每个文件和总量都不超过 32 MiB。surface 列出名称、说明及产物身份；工具结果保留需授权读取的 artifact 引用。 |
 | `shell` | `{"command":"npm run build","background":true}` 启动会话任务。`timeoutMs` 设置前台等待时间；超时或等满 5 分钟（取较早者）后，同一个进程作为后台任务继续运行，结果会给出任务 ID。未指定 `timeoutMs` 时等待预设默认值（随包预设为 2 分钟）。`timeoutToBackground:false` 则在 `timeoutMs` 时终止进程，不受 5 分钟上限约束。结果只提及该次请求中完整提供的任务工具。在有时间上限的回合（`agh -p --timeout`）中，前台等待还会在回合截止前结束，预留 15 秒与上限 5% 中的较大者；此时结果会说明回合时间即将用完以及还剩多少。后台任务不受此限制。 |
 | `job_list` | `{}` 列出当前会话与分支的运行中和已完成任务。 |
 | `job_output` | `{"jobId":"返回的任务ID","waitMs":1000}` 读取输出和状态，可选等待最多 5 分钟，任务一结束即返回；等待受工具期限限制（随包 base 预设给 `job_output` 310 秒），在有时间上限的回合中，等待也像前台 `shell` 一样在回合截止前结束。运行中的任务状态会写明已运行时长（`[running for 4m20s; exit pending]`），因此反复查询无新输出的任务不会被当作循环。长输出存为可读取产物。 |
@@ -64,7 +64,7 @@ const searchProvider: SearchProvider = {
 // 在已有 createHost(profile, dependencies) 参数中加入 searchProvider。
 ```
 
-提供方负责凭据、传输和厂商选择。工具不接收密钥，也不选择厂商。「插件 → 内置 → 网页搜索」可配置 Brave、Tavily、Exa、Perplexity 或自建 SearXNG。端点、结果上限、超时和速率限制保存在配置档数据目录。保存启用的连接或新密钥前，会先用候选配置进行一次最小搜索；验证失败会保留原配置和密钥。停用或移除密钥不需要联网。验证、工具调用和设置页测试共用同一速率窗口，也可能消耗服务商额度。API 密钥只写入 `secret://search/<provider>`，位于主目录的 secrets（`<home>/secrets`）。配置档未指定其他路径时，文件适配器也读取该目录。原先落在 `<dataDir>/secrets` 的存储会迁移过去。没有就绪的默认提供方时，工具返回 `WEB_SEARCH_UNAVAILABLE`。部署方传入的 `SearchProvider` 会替换该注册表。规范化摘要包含 Citations 列表。页面区分“已配置，尚未验证”和本次页面中“测试通过”的状态。失败按认证、权限、付费、限流、超时和连接问题显示固定提示，不在日志中泄露凭据。官方结果行通过可选的 `SearchResult.provider` 字段声明实际使用的服务；全部结果都标明同一服务时，工具会在 `Search service` 标题和 `details.provider` 中明确返回。空结果、混合服务结果或未声明身份的自定义提供方不推断服务名称。
+提供方负责凭据、传输和厂商选择。工具不接收密钥，也不选择厂商。「插件 → 内置 → 网页搜索」可配置 Brave、Tavily、Exa、Perplexity 或自建 SearXNG。端点、结果上限、超时和速率限制保存在配置档数据目录。保存启用的连接或新密钥前，会先用候选配置进行一次最小搜索；验证失败会保留原配置和密钥。停用或移除密钥不需要联网。验证、工具调用和设置页测试共用同一速率窗口，也可能消耗服务商额度。API 密钥只写入 `secret://search/<provider>`，位于主目录的 secrets（`<home>/secrets`）。配置档未指定其他路径时，文件适配器也读取该目录。没有就绪的默认提供方时，工具返回 `WEB_SEARCH_UNAVAILABLE`。部署方传入的 `SearchProvider` 会替换该注册表。规范化摘要包含 Citations 列表。页面区分“已配置，尚未验证”和本次页面中“测试通过”的状态。失败按认证、权限、付费、限流、超时和连接问题显示固定提示，不在日志中泄露凭据。官方结果行通过可选的 `SearchResult.provider` 字段声明实际使用的服务；全部结果都标明同一服务时，工具会在 `Search service` 标题和 `details.provider` 中明确返回。空结果、混合服务结果或未声明身份的自定义提供方不推断服务名称。
 
 持久 shell：为 `shell` 设置 `persistent:true`，可选择 `shell:"bash"|"zsh"|"pwsh"`。返回命令的 `jobId` 与解释器的 `sessionId`，后续调用保留 cwd、环境变量和解释器变量。可传 `sessionId` 选择现有解释器；忙碌时拒绝另一条命令，终止命令会关闭解释器。交互式 stdin 请使用 PTY。
 

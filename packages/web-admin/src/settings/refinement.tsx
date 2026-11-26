@@ -250,9 +250,11 @@ function RefinementFields(props: {
     },
   })
   const settings = autosave.value ?? stored
+  const switching = (settings.baseUrl ?? endpoints[0]) !== (baseUrl ?? endpoints[0])
   const binding = settings.credentialRef !== stored.credentialRef
-  const locked = creatingKey || binding
-  const result = catalogue?.ref === credentialRef && catalogue?.baseUrl === baseUrl ? catalogue : undefined
+  const locked = creatingKey || binding || switching
+  const activeRef = switching ? undefined : credentialRef
+  const result = catalogue?.ref === activeRef && catalogue?.baseUrl === baseUrl ? catalogue : undefined
   const models = result && 'models' in result ? result.models : undefined
   const modelError = result && 'error' in result ? result.error : undefined
   const firstModel = models?.[0]?.id
@@ -263,7 +265,7 @@ function RefinementFields(props: {
   const proposed = stored.model ? undefined : firstModel
   const canEnable = models !== undefined && !notOffered && (stored.model ?? proposed) !== undefined
   const { set: saveSettings, busy } = autosave
-  const modelStatus = !credentialRef
+  const modelStatus = !activeRef
     ? 'refinement.model.needsKey'
     : (modelError ??
       (models
@@ -323,11 +325,11 @@ function RefinementFields(props: {
               disabled={locked || busy || endpoints.length === 1}
               onChange={(event) => {
                 const next = event.target.value
-                if (!locked && !busy && endpoints.includes(next))
-                  saveSettings(
-                    next === baseUrl ? stored : { ...stored, baseUrl: next, enabled: false },
-                    'now',
-                  )
+                if (locked || busy || next === (baseUrl ?? endpoints[0]) || !endpoints.includes(next)) return
+                setKeyInput('')
+                setEditingKey(false)
+                setKeyError(false)
+                saveSettings({ baseUrl: next, mode: stored.mode, enabled: false }, 'now')
               }}
             >
               {endpoints.map((url) => (
@@ -341,14 +343,14 @@ function RefinementFields(props: {
         <SettingsItem
           label={t('refinement.key')}
           description={t(
-            missing
+            missing && !switching
               ? 'refinement.key.missing'
-              : credentialRef
+              : activeRef
                 ? 'refinement.key.ready'
                 : 'refinement.key.hint',
           )}
         >
-          {credentialRef && !editingKey ? (
+          {activeRef && !editingKey ? (
             <Button disabled={locked || autosave.busy} onClick={() => setEditingKey(true)}>
               {t('refinement.key.replace')}
             </Button>
@@ -412,7 +414,7 @@ function RefinementFields(props: {
             id="refinement-enabled"
             testId="refinement-enabled"
             label={t('refinement.enabled')}
-            checked={stored.enabled}
+            checked={stored.enabled && !switching}
             disabled={locked || busy || (!stored.enabled && !canEnable)}
             onToggle={(enabled) => {
               if (!enabled || canEnable) change({ enabled })

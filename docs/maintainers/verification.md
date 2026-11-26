@@ -85,6 +85,8 @@ Every sample gates wall time (10 s per stage, 15 s cold preparation, 1 s Surface
 
 On Windows, tests that exercise symlink escapes require permission to create symbolic links (Developer Mode or the corresponding account privilege). An `EPERM` from `symlinkSync` while staging a fixture means that environment prerequisite is missing; the security assertion has not run. The shared CI startup diagnostic also runs after a failing test step, unless the suite was skipped or the job was cancelled.
 
+The [heavy shard lists](../../tools/ci/heavy-shards.json) distribute real-process tests using per-file timings from Linux, macOS and Windows. Shard six runs the remaining heavy files, including new files, and retains the browser and refinement registry suites. When updating the lists, compare elapsed time as well as file counts and leave room for cold starts and platform-specific steps.
+
 ## Previous-build upgrade gate
 
 The [previous-build test](../../tools/upgrade/previous-build.e2e.test.ts) is **suspended by default**, including in the heavy CI tier. Its pinned baselines predate Extension API 5.0 and the SQLite data-directory gate: their fixture plugin/API ranges and persisted formats are incompatible. A skipped test is not upgrade acceptance.

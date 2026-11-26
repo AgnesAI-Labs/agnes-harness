@@ -3,3 +3,5 @@
 * text=auto eol=lf
 *.bat text eol=crlf
 *.cmd text eol=crlf
+# Unified patches retain LF bytes and the required space on blank context lines.
+integrations/llmsg/*.patch -text whitespace=-blank-at-eol,-space-before-tab

@@ -11,6 +11,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { assertFsEnforces, FS_DENIED, isDenial } from '@agnes/core'
 import { testFsPolicy } from '@agnes/core/testkit'
 import { withSessionFileAccess } from '@agnes/host-common/session-file-access'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -41,6 +42,56 @@ describe('fs adapter', () => {
     rmSync(outside, { recursive: true, force: true })
   })
   const fs = () => createFs(() => bindingFor(root))
+
+  it.each(
+    ['hard deny', 'allow', 'no-match', 'soft deny'].flatMap((rule) =>
+      [false, true].map((overlay) => ({ rule, overlay })),
+    ),
+  )(
+    'keeps $rule distinct from a native inaccessible parent (Skill overlay $overlay)',
+    async ({ rule, overlay }) => {
+      const protectedRoot = join(realpathSync.native(outside), 'private-state')
+      mkdirSync(protectedRoot)
+      const path = join(protectedRoot, 'agnes-fs-enforcement-probe')
+      const policy = testFsPolicy(realpathSync.native(root), {
+        rules:
+          rule === 'no-match'
+            ? []
+            : [
+                {
+                  effect: rule === 'allow' ? 'allow' : 'deny',
+                  path: protectedRoot,
+                  hard: rule === 'hard deny',
+                  source: rule === 'hard deny' ? 'host-integrity' : 'extra',
+                },
+              ],
+      })
+      const nativeDenied = Object.assign(new Error('native parent is not traversable'), { code: 'EACCES' })
+      const fenced = createFs(
+        () => ({ policy, caseSensitive: true }),
+        {
+          ...localFsIo,
+          async lstat(requested) {
+            if (requested === path) throw nativeDenied
+            return localFsIo.lstat(requested)
+          },
+        },
+        overlay ? () => [protectedRoot] : undefined,
+      )
+      for (const operation of [
+        () => fenced.read(path),
+        () => fenced.list(path),
+        () => fenced.stat(path),
+        () => fenced.write(path, new Uint8Array([1])),
+        () => fenced.mkdir(path),
+        () => fenced.rm(path),
+      ])
+        await expect(operation()).rejects.toMatchObject({ code: rule === 'hard deny' ? FS_DENIED : 'EACCES' })
+      expect(isDenial(nativeDenied)).toBe(false)
+      expect((await fenced.stat(`${policy.workspaceRoot}/.git/..`)).kind).toBe('dir')
+      if (rule === 'hard deny') await expect(assertFsEnforces(fenced, policy)).resolves.toBeUndefined()
+    },
+  )
 
   it('reads, writes, lists and stats inside the workspace', async () => {
     const f = fs()

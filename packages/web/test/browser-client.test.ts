@@ -53,17 +53,18 @@ function fixture() {
 }
 
 it.each(['browser.open', 'browser.control'])(
-  '%s reuses the original session request after transport failure and refuses another conversation',
+  '%s reuses the original ID only for an explicit matching action in the same conversation',
   async (service) => {
     const { client, selected, sessionEffect } = fixture()
     sessionEffect.mockRejectedValueOnce(new Error('Connection lost'))
     const input =
       service === 'browser.open' ? { url: 'http://localhost:5173/' } : { pageId: 'page-one', mode: 'human' }
     await expect(client.effect(service, input)).rejects.toThrow('Connection lost')
-    const pending = client.pendingEffect()!
+    const first = sessionEffect.mock.calls[0]
     const other =
       service === 'browser.open' ? { url: 'http://localhost:5174/' } : { pageId: 'page-two', mode: 'human' }
-    await expect(client.effect(service, other)).rejects.toThrow('uncertain')
+    await expect(client.effect(service, other)).resolves.toBeDefined()
+    expect(sessionEffect.mock.calls[1]?.[2]).not.toEqual(first?.[2])
     // A later permission refusal cannot prove an earlier lost request never ran.
     sessionEffect.mockRejectedValueOnce(
       Object.assign(new Error('Permission revoked'), {
@@ -71,14 +72,12 @@ it.each(['browser.open', 'browser.control'])(
         data: { code: 'CAPABILITY_DENIED' },
       }),
     )
-    await expect(client.effect(pending.service, pending.input)).rejects.toThrow('Permission revoked')
-    expect(client.pendingEffect()?.operationId).toBe(pending.operationId)
-    await expect(client.effect(pending.service, pending.input)).resolves.toMatchObject({
-      operationId: pending.operationId,
+    await expect(client.effect(service, input)).rejects.toThrow('Permission revoked')
+    await expect(client.effect(service, input)).resolves.toMatchObject({
+      operationId: first?.[2].operationId,
     })
-    expect(sessionEffect.mock.calls[0]).toEqual(sessionEffect.mock.calls[1])
-    expect(sessionEffect.mock.calls[0]).toEqual(sessionEffect.mock.calls[2])
-    expect(client.pendingEffect()).toBeUndefined()
+    expect(sessionEffect.mock.calls[2]).toEqual(first)
+    expect(sessionEffect.mock.calls[3]).toEqual(first)
     sessionEffect.mockImplementationOnce(async () => {
       selected.sessionId = 'two'
       selected.epoch++
@@ -119,10 +118,10 @@ it('preserves errors and session boundaries without opening the browser dock', a
   await client.refresh()
   expect(client.getSnapshot()).toMatchObject({
     enabled: true,
-    state: 'failed',
+    state: 'ready',
     pages,
-    error: 'Error: Disconnected',
   })
+  expect(client.getSnapshot().error).toBeUndefined()
   sessionQuery.mockRejectedValueOnce(new Error('Pages temporarily unavailable'))
   await client.refresh()
   expect(client.getSnapshot()).toMatchObject({ sessionId: 'one', pages, pagesUnavailable: true })
@@ -242,16 +241,16 @@ it('accepts a new action after a known browser refusal without retaining an unce
         }) as never,
     )
     const running = client.effect('browser.open', { url: 'http://localhost:5173/' })
-    expect(client.pendingEffect()).toBeUndefined()
+    await expect(client.effect('browser.open', { url: 'http://localhost:5173/' })).rejects.toThrow(
+      'still running',
+    )
     finish({ status: 'ok' })
     await running
-    expect(client.pendingEffect()).toBeUndefined()
     sessionEffect.mockClear()
     sessionEffect.mockResolvedValueOnce({ status: 'refused', code: 'PROTECTED_TARGET' } as never)
     await expect(client.effect('browser.open', { url: 'http://localhost:4180/' })).rejects.toMatchObject({
       code: 'PROTECTED_TARGET',
     })
-    expect(client.pendingEffect()).toBeUndefined()
     await expect(client.effect('browser.open', { url: 'http://localhost:5173/' })).resolves.toBeDefined()
     expect(sessionEffect.mock.calls[0]![2]).not.toEqual(sessionEffect.mock.calls[1]![2])
   } finally {
@@ -259,26 +258,27 @@ it('accepts a new action after a known browser refusal without retaining an unce
   }
 })
 
-it.each(['CAPABILITY_DENIED', 'OVERLOADED', 'OUTCOME_UNKNOWN', 'INTERNAL_ERROR'])(
-  'uses the authenticated %s outcome when deciding whether another operation is safe',
+it.each(['CAPABILITY_DENIED', 'OVERLOADED', 'OUTCOME_UNKNOWN', 'INTERNAL_ERROR', 'GENERATION_STALE'])(
+  'interprets the authenticated %s outcome without automatically replaying the action',
   async (code) => {
     const { client, sessionEffect } = fixture()
     try {
       sessionEffect.mockRejectedValueOnce(
         Object.assign(new Error(code), { kind: 'json-rpc', data: { code } }),
       )
-      await expect(client.effect('browser.control', { pageId: 'one', mode: 'human' })).rejects.toThrow(code)
-      if (code === 'CAPABILITY_DENIED' || code === 'OVERLOADED') {
-        expect(client.pendingEffect()).toBeUndefined()
-        await expect(
-          client.effect('browser.control', { pageId: 'two', mode: 'human' }),
-        ).resolves.toBeDefined()
-      } else {
-        expect(client.pendingEffect()).toBeDefined()
-        await expect(client.effect('browser.control', { pageId: 'two', mode: 'human' })).rejects.toThrow(
-          'uncertain',
-        )
+      const input = { pageId: 'one', mode: 'human' }
+      await expect(client.effect('browser.control', input)).rejects.toThrow(code)
+      expect(sessionEffect).toHaveBeenCalledTimes(1)
+      if (code === 'GENERATION_STALE') {
+        expect(client.getSnapshot()).toMatchObject({ incompatible: true })
+        await expect(client.effect('browser.control', input)).rejects.toMatchObject({ code })
+        expect(sessionEffect).toHaveBeenCalledTimes(1)
+        return
       }
+      await expect(client.effect('browser.control', input)).resolves.toBeDefined()
+      const [first, second] = sessionEffect.mock.calls
+      if (code === 'INTERNAL_ERROR') expect(first?.[2]).toEqual(second?.[2])
+      else expect(first?.[2]).not.toEqual(second?.[2])
     } finally {
       client.close()
     }

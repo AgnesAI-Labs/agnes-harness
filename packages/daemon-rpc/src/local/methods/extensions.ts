@@ -94,6 +94,7 @@ function sanitizedServiceFailure(error: unknown): never {
   if (code === 'INTERNAL_ERROR') throw rpcError('INTERNAL_ERROR')
   if (code === 'E_WORKSPACE_REQUIRED') throw rpcError('INTERNAL_ERROR', { code: 'E_WORKSPACE_REQUIRED' })
   if (code === 'CAPABILITY_DENIED') throw rpcError('CAPABILITY_DENIED')
+  if (code === 'GENERATION_STALE') throw rpcError('GENERATION_STALE')
   throw rpcError('INTERNAL_ERROR')
 }
 

@@ -156,26 +156,24 @@
   .composer-mention {
     position: relative;
     color: var(--agnes-brand-primary);
-    font-weight: var(--font-weight-semibold);
+    font: inherit;
     /* Cover the literal `@name` in the textarea before drawing its inline file marker. */
     background: var(--agnes-bg-surface);
     pointer-events: auto;
     cursor: default;
   }
   .composer-mention-at {
-    display: inline-block;
-    width: 0.625em;
-    height: 1em;
-    vertical-align: text-bottom;
+    position: relative;
+    color: transparent;
   }
   .composer-mention-icon {
-    display: block;
-    width: 0.625em;
-    height: 0.625em;
-    margin-top: 0.1875em;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0.875em;
+    height: 0.875em;
     color: var(--agnes-brand-primary);
-    transform: scale(1.4);
-    transform-origin: right center;
+    transform: translate(-50%, -50%);
   }
   /* A selected skill keeps its literal `$name` in the draft, while the overlay renders a light,
      link-like sparkle marker instead of a second opaque input chip. */

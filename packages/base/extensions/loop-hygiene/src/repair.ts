@@ -1,4 +1,4 @@
-import type { RepairSeam } from '@agnes/core'
+import type { RepairSeam } from '@agnes/extension-api/seams'
 import type { SeamFactory } from '../../../src/seam-init.js'
 
 /**

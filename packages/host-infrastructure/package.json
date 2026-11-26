@@ -79,7 +79,6 @@
     "@agnes/git-worktree-contract": "workspace:*",
     "@agnes/host-common": "workspace:*",
     "@agnes/protocol": "workspace:*",
-    "@agnes/sandbox-remote": "workspace:*",
     "@agnes/system-node": "workspace:*",
     "ipaddr.js": "2.5.0",
     "undici": "8.10.2",

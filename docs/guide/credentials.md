@@ -28,11 +28,13 @@ The daemon generates an immutable `secret://generic/<UUID>` id. MCP uses this in
 
 Open **Settings → Permissions → Credentials**. The list shows each name, API-key type, creation date, and the configurations using it. Choose **New credential**, enter a name and secret value, then save. The value starts masked, can be shown while entering it, and is cleared after saving; saved values cannot be retrieved.
 
-The row menu offers rename, replace value, and delete. Renaming keeps the reference unchanged. Replacement may require reconnecting MCP services. Deletion shows the using configurations and is refused while referenced. Remove those references first, or explicitly acknowledge that the configurations will stop working and choose **Delete anyway**.
+The row menu offers **Rename**, **Replace value**, and **Delete**. Renaming keeps the reference unchanged. To replace the value, enter a new secret and save. The name and reference stay the same. If an MCP service uses the credential, AGH shows a reconnect reminder after saving. Deletion shows the using configurations and is refused while referenced. Remove those references first, or explicitly acknowledge that the configurations will stop working and choose **Delete anyway**. The workbench checks the references again before sending a force-delete request. If the references change, review them and confirm again. If they cannot be refreshed, retry the refresh before confirming.
 
 The MCP add and edit dialog also offers **New credential** beside its saved-credential picker. Saving selects the new credential and preserves the connection draft. Generic credentials are also available in plugin secret-field and trigger credential pickers, alongside existing references. Read-only recovery, insufficient permissions, and an unavailable credential store show an explanation in the page or dialog.
 
 ## Public contract
+
+[Cloud connection](remote-frontend.md) Keys also use A's credential store, selected from existing generic credentials through the cloud connection dropdown. A's daemon resolves the reference and verifies it with B without returning the original value to the browser. This exchange requires local administration with `packages.activate`, `credentials.read` and `credentials.write`; metadata-read authority alone is insufficient. The browser retains only the origin/reference binding, currently outside backend configuration-reference counting. Deletion prevents the next cloud authorization; an issued temporary capability remains valid until expiry or disconnection.
 
 | SDK method | App Server method suffix after `_agnes/v1/admin.credentials.` | Input | Result |
 | --- | --- | --- | --- |
@@ -52,7 +54,9 @@ Failures use the standard App Server error envelope. Fixed cause codes include `
 
 ## Rotation and deletion
 
-`set` replaces the complete secret atomically; concurrent updates use last-writer-wins, with no revision or CAS parameter. The daemon serializes credential operations to preserve the label and creation time during rotation. A failed update leaves the existing value usable unless the underlying durable write reports an uncertain failure after replacement.
+`set` replaces the complete secret atomically; concurrent updates use last-writer-wins, with no revision or CAS parameter. The daemon serializes credential operations to preserve the label and creation time during rotation. A refusal before writing leaves the existing value usable. If the response is lost or storage reports a failure after replacement, the new value may already be active. Check the service using the credential.
+
+Returning from the editor after submitting leaves the save in progress. In the same workbench, replacement and deletion for that credential are unavailable until the pending request finishes. A later success confirms only that request. An unconfirmed replacement notice stays visible until dismissed or the credential is deleted. Successful deletion also clears that credential’s reconnect reminder.
 
 Deletion is refused while saved MCP definitions, trigger rules, profiles, or plugin configurations still reference the id. Disabled configurations, pending MCP operations, saved plugin values, and retained rollback targets also count. Remove their references first. To explicitly accept breaking those configurations, send both `force: true` and `confirm: true`, following the explicit confirmation pattern used by other admin mutations. A force flag alone is refused. Force deletion leaves the configurations in place; subsequent resolution fails closed. Reference inspection failures refuse deletion even with confirmation.
 

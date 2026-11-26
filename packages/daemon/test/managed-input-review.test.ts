@@ -5,6 +5,7 @@ import type { ManagedInputResult } from '@agnes/extension-api'
 import { grantKey } from '@agnes/plugin-runtime/host'
 import { rpcError } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
+import { RECOVERY_CONTINUATION_TEXT } from '../src/supervisor/managed-input-admission.js'
 import type { OwnerInputAttention } from '../src/supervisor/managed-input-notes.js'
 import {
   type ManagedInputReviewEngine,
@@ -26,15 +27,15 @@ function row(over: Partial<ManagedInputRow> = {}): ManagedInputRow {
     bindingDigest: 'b'.repeat(64),
     actorOwner: SERVICE,
     receiptId: null,
-    kind: 'legacyOwnerMessage',
+    kind: 'recoveryContinuation',
     taskId: 'T-1',
     taskGeneration: 2,
     startKey: 'start-1',
     contentDigest: null,
-    text: 'ship the release notes',
-    source: { kind: 'legacy', originalInbox: null },
+    text: RECOVERY_CONTINUATION_TEXT,
+    source: { turnEndSeq: 9 },
     state: 'recoveryUnknown',
-    reason: 'legacySourceUnknown',
+    reason: 'recoveryUnverified',
     version: 3,
     itemCommandId: null,
     submittedSeq: null,
@@ -42,8 +43,8 @@ function row(over: Partial<ManagedInputRow> = {}): ManagedInputRow {
     consumedSeq: null,
     history: [
       { version: 1, state: 'queued', reason: 'eligible', at: 1_000, by: 'platform' },
-      { version: 2, state: 'recoveryUnknown', reason: 'legacySourceUnknown', at: 2_000, by: 'platform' },
-      { version: 3, state: 'recoveryUnknown', reason: 'legacySourceUnknown', at: 3_000, by: 'platform' },
+      { version: 2, state: 'recoveryUnknown', reason: 'recoveryUnverified', at: 2_000, by: 'platform' },
+      { version: 3, state: 'recoveryUnknown', reason: 'recoveryUnverified', at: 3_000, by: 'platform' },
     ],
     createdAt: 1_000,
     updatedAt: 3_000,
@@ -210,26 +211,26 @@ it("get returns text, source, binding, state, reason, version and history, plus 
   expect(reply.result).toEqual({
     input: {
       key: 'k1',
-      kind: 'legacyOwnerMessage',
+      kind: 'recoveryContinuation',
       state: 'recoveryUnknown',
-      reason: 'legacySourceUnknown',
+      reason: 'recoveryUnverified',
       version: 3,
-      text: 'ship the release notes',
-      source: { kind: 'legacy', originalInbox: null },
+      text: RECOVERY_CONTINUATION_TEXT,
+      source: { turnEndSeq: 9 },
       binding: { taskId: 'T-1', taskGeneration: 2, startKey: 'start-1' },
       history: [
         { version: 1, state: 'queued', reason: 'eligible', at: '1970-01-01T00:00:01.000Z', by: 'platform' },
         {
           version: 2,
           state: 'recoveryUnknown',
-          reason: 'legacySourceUnknown',
+          reason: 'recoveryUnverified',
           at: '1970-01-01T00:00:02.000Z',
           by: 'platform',
         },
         {
           version: 3,
           state: 'recoveryUnknown',
-          reason: 'legacySourceUnknown',
+          reason: 'recoveryUnverified',
           at: '1970-01-01T00:00:03.000Z',
           by: 'platform',
         },
@@ -303,7 +304,7 @@ it("the engine's refusal codes reach the caller in data.code", async () => {
 
 it('list shows every parked receipt and every input needing the owner, with no key known, to the owner page only', async () => {
   const attention: OwnerInputAttention[] = [
-    { input: row({ state: 'needsOwner', reason: 'receiptUnknown', key: 'k1' }) },
+    { input: row({ kind: 'ownerMessage', state: 'needsOwner', reason: 'receiptUnknown', key: 'k1' }) },
     { input: row({ state: 'enqueued', reason: 'busy', key: 'k2', version: 2 }), held: 'gatesUnreadable' },
     {
       input: row({ state: 'queued', reason: 'eligible', key: 'k3', version: 1 }),
@@ -320,7 +321,7 @@ it('list shows every parked receipt and every input needing the owner, with no k
       {
         sessionId: 's1',
         key: 'k1',
-        kind: 'legacyOwnerMessage',
+        kind: 'ownerMessage',
         state: 'needsOwner',
         reason: 'receiptUnknown',
         version: 3,
@@ -329,7 +330,7 @@ it('list shows every parked receipt and every input needing the owner, with no k
       {
         sessionId: 's1',
         key: 'k2',
-        kind: 'legacyOwnerMessage',
+        kind: 'recoveryContinuation',
         state: 'enqueued',
         reason: 'busy',
         version: 2,
@@ -339,7 +340,7 @@ it('list shows every parked receipt and every input needing the owner, with no k
       {
         sessionId: 's1',
         key: 'k3',
-        kind: 'legacyOwnerMessage',
+        kind: 'recoveryContinuation',
         state: 'queued',
         reason: 'eligible',
         version: 1,

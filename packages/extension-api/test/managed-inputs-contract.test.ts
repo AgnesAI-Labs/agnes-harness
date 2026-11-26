@@ -12,7 +12,7 @@ import type {
 type Branch<S extends ManagedInputResult['state']> = Extract<ManagedInputResult, { state: S }>
 
 describe('owner input admission contract', () => {
-  it('pins the four result shapes', () => {
+  it('pins the three result shapes', () => {
     type Held = Branch<
       'queued' | 'enqueued' | 'retained' | 'needsOwner' | 'waitingQuestion' | 'recoveryUnknown'
     >
@@ -25,8 +25,6 @@ describe('owner input admission contract', () => {
     >()
     expectTypeOf<Branch<'consumed'>['turn']>().toEqualTypeOf<number>()
     expectTypeOf<Branch<'consumed'>['seq']>().toEqualTypeOf<number>()
-    expectTypeOf<keyof Branch<'legacySend'>>().toEqualTypeOf<'state' | 'delivery'>()
-    expectTypeOf<Branch<'legacySend'>['delivery']>().toEqualTypeOf<'consumed' | 'pending' | 'unknown'>()
     expectTypeOf<keyof Branch<'absent'>>().toEqualTypeOf<'state' | 'historyCoverage'>()
     expectTypeOf<Branch<'absent'>['historyCoverage']>().toEqualTypeOf<'complete' | 'partial'>()
     expectTypeOf<ManagedInputResult['state']>().toEqualTypeOf<
@@ -37,17 +35,15 @@ describe('owner input admission contract', () => {
       | 'waitingQuestion'
       | 'recoveryUnknown'
       | 'consumed'
-      | 'legacySend'
       | 'absent'
     >()
   })
 
-  it('names exactly eleven reasons', () => {
+  it('names exactly ten reasons', () => {
     const all: Record<ManagedInputReason, true> = {
       eligible: true,
       busy: true,
       questionOpen: true,
-      legacySourceUnknown: true,
       recoveryUnverified: true,
       receiptUnknown: true,
       pairingChanged: true,
@@ -56,7 +52,7 @@ describe('owner input admission contract', () => {
       ownerRetained: true,
       ownerDiscarded: true,
     }
-    expect(Object.keys(all)).toHaveLength(11)
+    expect(Object.keys(all)).toHaveLength(10)
     expectTypeOf<ManagedInputReason>().toEqualTypeOf<keyof typeof all>()
   })
 
@@ -68,9 +64,7 @@ describe('owner input admission contract', () => {
       readonly startKey: string
     }>()
     type Input = ManagedInputAdmission['input']
-    expectTypeOf<Input['kind']>().toEqualTypeOf<
-      'ownerMessage' | 'recoveryContinuation' | 'legacyOwnerMessage'
-    >()
+    expectTypeOf<Input['kind']>().toEqualTypeOf<'ownerMessage' | 'recoveryContinuation'>()
     expectTypeOf<Extract<Input, { kind: 'ownerMessage' }>>().toEqualTypeOf<{
       readonly kind: 'ownerMessage'
       readonly receiptId: string
@@ -78,11 +72,6 @@ describe('owner input admission contract', () => {
     expectTypeOf<Extract<Input, { kind: 'recoveryContinuation' }>>().toEqualTypeOf<{
       readonly kind: 'recoveryContinuation'
       readonly turnEndSeq: number
-    }>()
-    expectTypeOf<Extract<Input, { kind: 'legacyOwnerMessage' }>>().toEqualTypeOf<{
-      readonly kind: 'legacyOwnerMessage'
-      readonly text: string
-      readonly originalInbox: string | null
     }>()
     expectTypeOf<ManagedSessions['admitInput']>().toEqualTypeOf<
       (sessionId: string, input: ManagedInputAdmission) => Promise<ManagedInputResult>

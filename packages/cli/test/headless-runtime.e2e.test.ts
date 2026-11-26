@@ -65,7 +65,7 @@ vi.mock('@agnes/host', async (original) => ({
 
 // Transpiles plugins from source and takes the durable package lock repeatedly: 4-5 s on a Linux
 // CI runner against Vitest's 5 s default there, so the case keeps its own budget.
-it('loads zero-build loops and panels into isolated headless sessions and publishes reloaded panel assets', async () => {
+it('reloads zero-build workspace plugins without granting their panels native Web execution', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agh-headless-runtime-'))
   const home = join(root, 'home')
   const plugins = localPluginRoots(home, root).workspace
@@ -171,7 +171,7 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
       loop: { id: 'student-loop', version: '0.1.0' },
     })
     expect(host.kernel.get(loopSession.id)?.loop).toEqual({ id: 'student-loop', version: '0.1.0' })
-    const inventory = await manager.inventory(join(home, 'profiles/local-dev'))
+    const readInventory = () => manager.inventory(join(home, 'profiles/local-dev'))
     registry = createClientModuleRegistry({
       snapshotDirectory: () => join(root, 'browser'),
       runtimeArtifacts: () => ({
@@ -184,42 +184,52 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
     const input = {
       profile: 'local-dev',
       profileDirectory: join(host.profile.dataDir, 'profiles/local-dev'),
-      inventory,
-      refreshInventory: async () => inventory,
+      inventory: await readInventory(),
+      refreshInventory: readInventory,
       actual: async (id: string) => {
-        const pkg = inventory.packages.find((pkg) => pkg.id === id)
+        const pkg = (await readInventory()).packages.find((pkg) => pkg.id === id)
         if (!pkg) throw new Error('Package not found')
         return { actual: 'running' as const, actualIntegrity: pkg.entry.integrity }
       },
     }
-    expect((await registry.list(input)).rows).toContainEqual(
-      expect.objectContaining({ packageId: 'student-panel', phase: 'ready' }),
-    )
+    const profileRoster = await registry.list(input)
     const roster = await registry.list({ ...input, sessionId: first.id })
-    expect(roster.rows).toContainEqual(
-      expect.objectContaining({ packageId: 'student-panel', phase: 'ready' }),
-    )
     await writeFile(join(panel, 'client/index.js'), 'export const panelVersion = "reloaded"')
     await expect(host.reloadPlugin('student-panel', panel)).rejects.toThrow('E_GENERATION_UNTRUSTED')
     await manager.refreshLocalPlugins(join(home, 'profiles/local-dev'))
     await reviewWorkspace()
     await host.reloadPlugin('student-panel', panel)
     const second = await boot.client.session.new({ cwd: root, sessionKey: 'panel-second' })
-    const next = await registry.list({ ...input, sessionId: second.id })
+    const updatedInput = { ...input, inventory: await readInventory() }
+    const next = await registry.list({ ...updatedInput, sessionId: second.id })
     const store = new RuntimeGenerationSnapshotStore(input.profileDirectory)
     expect(store.session(second.id)?.generationId).not.toBe(store.session(first.id)?.generationId)
     expect(store.session(first.id)).toBeDefined()
-    expect(next.rows).toContainEqual(expect.objectContaining({ packageId: 'student-panel', phase: 'ready' }))
-    const original = roster.modules[0],
-      updated = next.modules[0]
-    if (!original || !updated) throw new Error('Panel module missing')
-    expect(updated.entryUrl).not.toBe(original.entryUrl)
-    const asset = await registry.read({ ...input, path: updated.entryUrl })
-    expect(asset.found).toBe(true)
-    if (asset.found) expect(Buffer.from(asset.base64, 'base64').toString()).toContain('reloaded')
-    const oldAsset = await registry.read({ ...input, path: original.entryUrl })
-    expect(oldAsset.found).toBe(true)
-    if (oldAsset.found) expect(Buffer.from(oldAsset.base64, 'base64').toString()).toContain('original')
+    for (const projection of [profileRoster, roster, next]) {
+      expect(projection.rows).not.toContainEqual(
+        expect.objectContaining({ packageId: 'student-panel', phase: 'ready' }),
+      )
+      expect(projection.modules).not.toContainEqual(expect.objectContaining({ packageId: 'student-panel' }))
+    }
+    for (const [session, installed] of [
+      [first, input.inventory],
+      [second, updatedInput.inventory],
+    ] as const) {
+      const panel = installed.packages.find((row) => row.id === 'student-panel')
+      if (!panel) throw new Error('workspace panel not installed')
+      const loaderPath = `/student-panel/${encodeURIComponent(panel.entry.integrity)}/client/index.js`
+      const generation = store.session(session.id)?.generationId
+      expect(generation).toBeDefined()
+      for (const prefix of ['/plugins', `/plugins/generations/${generation}`]) {
+        expect(
+          await registry.read({
+            ...updatedInput,
+            purpose: 'document',
+            path: `${prefix}${loaderPath}`,
+          }),
+        ).toEqual({ found: false })
+      }
+    }
   } finally {
     registry?.close()
     await boot?.close()

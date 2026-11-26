@@ -1,50 +1,76 @@
-import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { dirname, extname, join, posix, relative, resolve, sep } from 'node:path'
+import { createHash } from 'node:crypto'
+import { mkdir, readFile, stat } from 'node:fs/promises'
+import { join, posix } from 'node:path'
 import { clientModuleRowIdForContribution } from '@agnes/daemon-foundation/composite-desired'
 import { type CompositionPatch, CompositionSessionStore, compositionModuleAllowed } from '@agnes/host'
 import {
-  CLIENT_RESOURCE_MAX_FILE_BYTES,
+  CLIENT_MAX_TOTAL_BYTES,
   CLIENT_RESOURCE_MAX_TOTAL_BYTES,
+  clientReleaseEvidence,
+  hashDirectoryAsync,
   type InstalledInventory,
   type InstalledPackage,
   isRuntimePackageEligible,
   RuntimeGenerationSnapshotStore,
   resolveClientModuleAsset,
+  type VerifiedClientTree,
 } from '@agnes/package-manager'
 import type { RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import {
   type ClientModuleListResult,
+  type ClientModuleReadParams,
   type ClientModuleReadResult,
   DSH_WEB_CLIENT_SLOT_CATALOG_VERSION,
   isDshWebClientModuleSlotName,
   isWebClientModuleSlotName,
   jcs,
 } from '@agnes/protocol'
-import { validUiComponentDeclaration } from '@agnes/protocol/intelligent-ui'
-import { cleanRelative, collectSnapshotFiles, SERVABLE } from './client-asset-references.js'
+import {
+  admissionDigest,
+  admitClient,
+  type ClientAdmission,
+  type DocumentAdmission,
+  installedClientTree,
+  type PresentationObservation,
+  type ReleaseEvidence,
+} from './client-admission.js'
+import { cleanRelative, collectSnapshotFiles } from './client-asset-references.js'
 import { createClientGenerations } from './client-generations.js'
+import {
+  digest,
+  emptyState,
+  encodedRevision,
+  type PackageState,
+  type ProfileState,
+  pruneUntracked,
+  publishSnapshot,
+  type Retained,
+  readState,
+  removeSnapshot,
+  type StoredDeclaration,
+  sameAsset,
+  saveState,
+  snapshotBytes,
+  snapshotContentDigest,
+  trackedDeclarations,
+  type VerifiedAsset,
+  verifySnapshot,
+} from './client-module-snapshots.js'
 import { createPublicationChecks } from './client-publication-checks.js'
 import { runtimeClientTruth } from './client-runtime-truth.js'
 import {
+  type ClientRegistryPackage,
   clientContributionDeclarations,
   combineContributionRosters,
   contributionProjection,
+  historicalContribution,
+  modulesForContributionRows,
   reconcileContributionActivations,
 } from './contribution-roster.js'
 import type { PackageActivationObservation } from './handler.js'
 
 export const CLIENT_MODULE_RETENTION_MS = 30 * 60 * 1000
 export const CLIENT_MODULE_SNAPSHOT_QUOTA_BYTES = 256 * 1024 * 1024
-
-const STATE_FILE = '_client-modules.json'
-const SNAPSHOT_FILE = '_snapshot.json'
-const CLIENT_PARENT_CHILD_DECLARATION_VERSION = 'dsh-parent-child/v1'
-const PACKAGE_ID =
-  /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?)$/
-const REVISION = /^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$/
-const GENERATION_ID = /^[a-f0-9-]{36}$/
-const MAX_METADATA_BYTES = 1024 * 1024
 
 type ClientContribution = NonNullable<
   Extract<InstalledPackage['contributions'][number], { kind: 'extension' }>['client']
@@ -60,58 +86,6 @@ type ClientDeclaration = Readonly<{
   extIds: readonly string[]
   requiresBackend: boolean
   backendRowId?: string
-}>
-
-type Retained = Readonly<{ revision: string; expiresAt?: string; protected?: boolean }>
-type StoredDeclaration = Readonly<{
-  id?: string
-  moduleName: string
-  legacyRowIds?: readonly string[]
-  entry: string
-  styles: readonly string[]
-  slots: readonly string[]
-  slotCatalogVersion?: string
-  extIds: readonly string[]
-  services: readonly string[]
-  streams?: ClientContribution['streams']
-  backendRowId?: string
-  intelligentComponents?: ClientContribution['intelligentComponents']
-  requiresBackendRows?: ClientContribution['requiresBackendRows']
-  presentationRoles?: ClientContribution['presentationRoles']
-  lifetime?: ClientContribution['lifetime']
-  homeEntries?: ClientContribution['homeEntries']
-  examplePages?: ClientContribution['examplePages']
-  assets?: ClientContribution['assets']
-  publicConfig?: Readonly<Record<string, unknown>>
-}>
-type PackageState = Readonly<{
-  current?: string
-  retained: readonly Retained[]
-  declarations?: Readonly<Record<string, Readonly<Record<string, StoredDeclaration>>>>
-  rowAliases?: Readonly<Record<string, string>>
-}>
-type ProfileState = Readonly<{
-  version: 1
-  activations?: Readonly<Record<string, { identity: string; id: string; active: boolean }>>
-  profile: string
-  packages: Readonly<Record<string, PackageState>>
-}>
-type SnapshotManifest = Readonly<{
-  version: 2
-  packageId: string
-  revision: string
-  contentDigest: string
-  rows: readonly Readonly<{
-    rowId: string
-    moduleName: string
-    entry: string
-    styles: readonly string[]
-    slots: readonly string[]
-    slotCatalogVersion?: string
-    parentChildVersion: string
-    contentDigest: string
-  }>[]
-  files: readonly Readonly<{ path: string; bytes: number; sha256: string }>[]
 }>
 
 export type ClientModulesChanged = Readonly<{
@@ -141,247 +115,68 @@ export type ClientModuleRegistryOptions = Readonly<{
       }>
     | undefined
   changed?: (event: ClientModulesChanged) => void
+  releaseEvidence?: ReleaseEvidence
+  activationEpoch?: () => number | undefined
 }>
 
 export { type RuntimeArtifactsStore, runtimeArtifactsFromStore } from './client-runtime-truth.js'
 
+type ClientRegistryInput = {
+  sessionId?: string
+  profile: string
+  profileDirectory: string
+  inventory: InstalledInventory
+  actual(packageId: string): Promise<PackageActivationObservation | undefined>
+  refreshInventory(): Promise<InstalledInventory>
+  presentation?(inventory: InstalledInventory): Promise<PresentationObservation>
+  archive?: Readonly<{
+    id: string
+    artifact: RuntimeTargetArtifact
+    trees: ReadonlyMap<string, VerifiedClientTree>
+    packages: readonly ClientRegistryPackage[]
+    current(): Promise<boolean>
+  }>
+}
+
+type NativeOrIsolated = Exclude<ClientAdmission, { kind: 'denied' }>
+type AssetPurpose = ClientModuleReadParams['purpose']
+type RowAssets = {
+  rowId: string
+  packageId: string
+  revision: string
+  purpose: AssetPurpose
+  admission: NativeOrIsolated
+  files: readonly VerifiedAsset[]
+}
+
+type ObservationStatus = 'current' | 'presentation-changed' | 'runtime-changed'
+type SelectedAsset = {
+  file: VerifiedAsset
+  packageId: string
+  revision: string
+  expiresAt?: number
+}
+
+type Reconciled = {
+  roster: ClientModuleListResult
+  assets: readonly RowAssets[]
+  state: ProfileState
+  checkCurrent(includePresentation: boolean): Promise<ObservationStatus>
+}
+
 export type ClientModuleRegistry = Readonly<{
-  list(input: {
-    sessionId?: string
-    profile: string
-    profileDirectory: string
-    inventory: InstalledInventory
-    actual(packageId: string): Promise<PackageActivationObservation | undefined>
-    refreshInventory(): Promise<InstalledInventory>
-  }): Promise<ClientModuleListResult>
+  list(input: ClientRegistryInput): Promise<ClientModuleListResult>
   refresh(
-    input: {
-      profile: string
-      profileDirectory: string
-      inventory: InstalledInventory
-      actual(packageId: string): Promise<PackageActivationObservation | undefined>
-      refreshInventory(): Promise<InstalledInventory>
-    },
+    input: ClientRegistryInput,
     reason: ClientModulesChanged['reason'],
     packageId?: string,
   ): Promise<ClientModuleListResult>
-  read(input: {
-    profile: string
-    profileDirectory: string
-    inventory: InstalledInventory
-    path: string
-    actual(packageId: string): Promise<PackageActivationObservation | undefined>
-    refreshInventory(): Promise<InstalledInventory>
-  }): Promise<ClientModuleReadResult>
+  read(
+    input: ClientRegistryInput & Pick<ClientModuleReadParams, 'path' | 'purpose'>,
+  ): Promise<ClientModuleReadResult>
   subscribe(listener: (event: ClientModulesChanged) => void): () => void
   close(): void
 }>
-
-function emptyState(profile: string): ProfileState {
-  return { version: 1, profile, packages: {} }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function isWebRowId(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.startsWith('web:') &&
-    value.length >= 5 &&
-    value.length <= 256 &&
-    !value.includes('\0')
-  )
-}
-
-function isState(value: unknown, profile: string): value is ProfileState {
-  if (!isRecord(value) || value.version !== 1 || value.profile !== profile || !isRecord(value.packages))
-    return false
-  if (Object.keys(value.packages).length > 256) return false
-  if (
-    value.activations !== undefined &&
-    (!isRecord(value.activations) ||
-      Object.keys(value.activations).length > 256 ||
-      Object.values(value.activations).some(
-        (item) =>
-          !isRecord(item) ||
-          typeof item.identity !== 'string' ||
-          typeof item.id !== 'string' ||
-          typeof item.active !== 'boolean',
-      ))
-  )
-    return false
-  for (const [packageId, item] of Object.entries(value.packages)) {
-    if (!PACKAGE_ID.test(packageId)) return false
-    if (!isRecord(item) || !Array.isArray(item.retained)) return false
-    if (item.current !== undefined && (typeof item.current !== 'string' || !REVISION.test(item.current)))
-      return false
-    if (item.retained.length > 8) return false
-    if (
-      item.retained.some(
-        (entry) =>
-          !isRecord(entry) ||
-          typeof entry.revision !== 'string' ||
-          (entry.expiresAt !== undefined && typeof entry.expiresAt !== 'string') ||
-          (entry.expiresAt === undefined && entry.protected !== true),
-      )
-    )
-      return false
-    for (const entry of item.retained) {
-      const retained = entry as { revision: string; expiresAt?: string; protected?: boolean }
-      if (!REVISION.test(retained.revision)) return false
-      if (retained.protected !== undefined && typeof retained.protected !== 'boolean') return false
-      if (retained.expiresAt !== undefined) {
-        const timestamp = Date.parse(retained.expiresAt)
-        if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString() !== retained.expiresAt)
-          return false
-      } else if (retained.protected !== true) return false
-    }
-    const revisions = item.retained.map((entry) => (entry as { revision: string }).revision)
-    if (new Set(revisions).size !== revisions.length || (item.current && revisions.includes(item.current)))
-      return false
-    if (item.declarations !== undefined) {
-      if (!isRecord(item.declarations) || Object.keys(item.declarations).length > 16) return false
-      for (const [revision, declarations] of Object.entries(item.declarations)) {
-        // The same per-revision row bound as the snapshot manifest the declarations describe.
-        if (!REVISION.test(revision) || !isRecord(declarations) || Object.keys(declarations).length > 64)
-          return false
-        for (const [rowId, declaration] of Object.entries(declarations)) {
-          if (!rowId.startsWith('web:') || !isRecord(declaration)) return false
-          if (
-            (declaration.id !== undefined &&
-              (typeof declaration.id !== 'string' ||
-                !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(declaration.id))) ||
-            (declaration.presentationRoles !== undefined &&
-              (!Array.isArray(declaration.presentationRoles) ||
-                declaration.presentationRoles.some(
-                  (role) =>
-                    ![
-                      'navigation',
-                      'conversation',
-                      'composer',
-                      'goal',
-                      'interaction',
-                      'deliverables',
-                    ].includes(role),
-                ))) ||
-            typeof declaration.moduleName !== 'string' ||
-            (declaration.legacyRowIds !== undefined &&
-              (!Array.isArray(declaration.legacyRowIds) ||
-                !declaration.legacyRowIds.every((legacyRowId) => isWebRowId(legacyRowId)))) ||
-            typeof declaration.entry !== 'string' ||
-            !Array.isArray(declaration.styles) ||
-            !declaration.styles.every((path) => typeof path === 'string') ||
-            !Array.isArray(declaration.slots) ||
-            !declaration.slots.every((slot) => typeof slot === 'string') ||
-            (declaration.slotCatalogVersion !== undefined &&
-              typeof declaration.slotCatalogVersion !== 'string') ||
-            !Array.isArray(declaration.extIds) ||
-            !declaration.extIds.every((id) => typeof id === 'string') ||
-            !Array.isArray(declaration.services) ||
-            !declaration.services.every((service) => typeof service === 'string') ||
-            (declaration.requiresBackendRows !== undefined &&
-              (!Array.isArray(declaration.requiresBackendRows) ||
-                declaration.requiresBackendRows.length > 32 ||
-                !declaration.requiresBackendRows.every(
-                  (id) =>
-                    typeof id === 'string' &&
-                    id.length > 0 &&
-                    id.length <= 256 &&
-                    ![...id].some((character) => character.charCodeAt(0) < 32),
-                ))) ||
-            (declaration.publicConfig !== undefined && !isRecord(declaration.publicConfig)) ||
-            (declaration.intelligentComponents !== undefined &&
-              (!Array.isArray(declaration.intelligentComponents) ||
-                declaration.intelligentComponents.length > 16 ||
-                !declaration.intelligentComponents.every(validUiComponentDeclaration)))
-          )
-            return false
-        }
-      }
-    }
-    if (item.rowAliases !== undefined) {
-      if (!isRecord(item.rowAliases) || Object.keys(item.rowAliases).length > 256) return false
-      for (const [oldRowId, canonicalRowId] of Object.entries(item.rowAliases)) {
-        if (
-          !isWebRowId(oldRowId) ||
-          typeof canonicalRowId !== 'string' ||
-          !isWebRowId(canonicalRowId) ||
-          oldRowId === canonicalRowId
-        )
-          return false
-      }
-    }
-  }
-  return true
-}
-
-function isSnapshotManifest(value: unknown, packageId: string, revision: string): value is SnapshotManifest {
-  return (
-    isRecord(value) &&
-    value.version === 2 &&
-    value.packageId === packageId &&
-    value.revision === revision &&
-    typeof value.contentDigest === 'string' &&
-    /^sha256-[a-f0-9]{64}$/.test(value.contentDigest) &&
-    PACKAGE_ID.test(packageId) &&
-    REVISION.test(revision) &&
-    Array.isArray(value.rows) &&
-    value.rows.length > 0 &&
-    value.rows.length <= 64 &&
-    value.rows.every(
-      (row) =>
-        isRecord(row) &&
-        isWebRowId(row.rowId) &&
-        typeof row.moduleName === 'string' &&
-        typeof row.entry === 'string' &&
-        cleanRelative(row.entry) === row.entry &&
-        Array.isArray(row.styles) &&
-        row.styles.every((path) => typeof path === 'string' && cleanRelative(path) === path) &&
-        Array.isArray(row.slots) &&
-        row.slots.every((slot) => typeof slot === 'string') &&
-        (row.slotCatalogVersion === undefined || typeof row.slotCatalogVersion === 'string') &&
-        row.parentChildVersion === CLIENT_PARENT_CHILD_DECLARATION_VERSION &&
-        typeof row.contentDigest === 'string' &&
-        /^sha256-[a-f0-9]{64}$/.test(row.contentDigest),
-    ) &&
-    Array.isArray(value.files) &&
-    value.files.length > 0 &&
-    value.files.length <= 4096 &&
-    value.files.every(
-      (file) =>
-        isRecord(file) &&
-        typeof file.path === 'string' &&
-        cleanRelative(file.path) === file.path &&
-        SERVABLE.has(extname(file.path).toLowerCase()) &&
-        Number.isInteger(file.bytes) &&
-        (file.bytes as number) >= 0 &&
-        (file.bytes as number) <= CLIENT_RESOURCE_MAX_FILE_BYTES &&
-        typeof file.sha256 === 'string' &&
-        /^[a-f0-9]{64}$/.test(file.sha256),
-    )
-  )
-}
-
-function digest(bytes: Buffer): string {
-  return createHash('sha256').update(bytes).digest('hex')
-}
-
-function snapshotContentDigest(files: SnapshotManifest['files']): string {
-  const sorted = [...files].sort((left, right) => left.path.localeCompare(right.path))
-  return `sha256-${createHash('sha256').update(jcs(sorted), 'utf8').digest('hex')}`
-}
-
-function encodedRevision(revision: string): string {
-  return encodeURIComponent(revision)
-}
-
-function snapshotDirectory(root: string, packageId: string, revision: string): string {
-  if (!PACKAGE_ID.test(packageId) || !REVISION.test(revision))
-    throw new Error('invalid client-module snapshot identity')
-  return join(root, ...packageId.split('/'), encodedRevision(revision))
-}
 
 function route(packageId: string, revision: string, path: string): string {
   const encodedPath = path
@@ -391,7 +186,7 @@ function route(packageId: string, revision: string, path: string): string {
   return `/plugins/${packageId}/${encodedRevision(revision)}/${encodedPath}`
 }
 
-function declarations(row: InstalledPackage): readonly ClientDeclaration[] {
+function declarations(row: ClientRegistryPackage): readonly ClientDeclaration[] {
   const extensions = row.contributions.filter(
     (item): item is Extract<typeof item, { kind: 'extension' }> => item.kind === 'extension',
   )
@@ -421,7 +216,12 @@ function declarations(row: InstalledPackage): readonly ClientDeclaration[] {
     const styles = (owner.client.styles ?? []).map(packagePath)
     if (!entry || styles.some((path) => path === undefined)) return []
     output.push({
-      rowId: clientModuleRowIdForContribution(row.id, owner.id, clients.length, owner.client.id ?? owner.id),
+      rowId: clientModuleRowIdForContribution(
+        row.id,
+        owner.id,
+        clients.length + rowClients.length,
+        owner.client.id ?? owner.id,
+      ),
       moduleName: owner.id,
       legacyRowIds: [...(owner.client.legacyRowIds ?? [])],
       client: owner.client,
@@ -468,7 +268,7 @@ function declarations(row: InstalledPackage): readonly ClientDeclaration[] {
   return output.sort((left, right) => left.rowId.localeCompare(right.rowId))
 }
 
-function hasClient(row: InstalledPackage): boolean {
+function hasClient(row: ClientRegistryPackage): boolean {
   return row.contributions.some(
     (item) =>
       (item.kind === 'client' && 'client' in item) ||
@@ -569,226 +369,69 @@ function migrateRowAliases(
   }
 }
 
-async function writeAtomic(path: string, value: unknown): Promise<void> {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-  const temporary = `${path}.${randomUUID()}.tmp`
-  await writeFile(temporary, `${JSON.stringify(value)}\n`, { mode: 0o600 })
-  await rename(temporary, path)
+async function rowFiles(tree: VerifiedClientTree, declared: ClientDeclaration, purpose: AssetPurpose) {
+  return collectSnapshotFiles(
+    tree.directory,
+    purpose === 'isolated-component'
+      ? [declared.entry]
+      : [
+          declared.entry,
+          ...declared.styles,
+          ...(declared.client.assets ?? []).map((asset) =>
+            posix.join(
+              posix.dirname(declared.entry),
+              posix.relative(posix.dirname(declared.client.entry), asset),
+            ),
+          ),
+        ],
+    purpose,
+  ).catch(() => null)
 }
 
-async function readState(root: string, profile: string): Promise<ProfileState | undefined> {
-  try {
-    const path = join(root, STATE_FILE)
-    if ((await stat(path)).size > MAX_METADATA_BYTES) return undefined
-    const parsed: unknown = JSON.parse(await readFile(path, 'utf8'))
-    return isState(parsed, profile) ? parsed : undefined
-  } catch {
-    return undefined
-  }
+const assetRecords = (files: ReadonlyMap<string, Buffer>): VerifiedAsset[] =>
+  [...files].map(([path, bytes]) => ({ path, bytes: bytes.length, sha256: digest(bytes) }))
+
+function observedTree(row: InstalledPackage, revision: string) {
+  if (revision === row.entry.integrity) return installedClientTree(row)
+  const previous = row.verifiedRollbackTarget
+  if (previous?.integrity === revision) return { packageId: row.id, ...previous }
+  return undefined
 }
 
-async function verifySnapshot(
-  root: string,
-  packageId: string,
-  revision: string,
-): Promise<{ bytes: number; manifest: SnapshotManifest } | null> {
-  const directory = snapshotDirectory(root, packageId, revision)
-  let canonicalRoot: string
-  let canonicalDirectory: string
-  let parsed: unknown
-  try {
-    canonicalRoot = await realpath(root)
-    canonicalDirectory = await realpath(directory)
-    const directoryRel = relative(canonicalRoot, canonicalDirectory)
-    if (
-      directoryRel === '' ||
-      directoryRel === '..' ||
-      directoryRel.startsWith(`..${sep}`) ||
-      resolve(canonicalRoot, directoryRel) !== canonicalDirectory
-    )
-      return null
-    const manifestPath = join(canonicalDirectory, SNAPSHOT_FILE)
-    if ((await stat(manifestPath)).size > MAX_METADATA_BYTES) return null
-    parsed = JSON.parse(await readFile(manifestPath, 'utf8'))
-  } catch {
-    return null
-  }
-  if (!isSnapshotManifest(parsed, packageId, revision)) return null
-  if (new Set(parsed.files.map((file) => file.path)).size !== parsed.files.length) return null
-  if (parsed.contentDigest !== snapshotContentDigest(parsed.files)) return null
-  if (
-    new Set(parsed.rows.map((row) => row.rowId)).size !== parsed.rows.length ||
-    parsed.rows.some(
-      (row) =>
-        row.contentDigest !== parsed.contentDigest ||
-        !parsed.files.some((file) => file.path === row.entry) ||
-        row.styles.some((style) => !parsed.files.some((file) => file.path === style)),
-    )
+function treeDeclarations(row: ClientRegistryPackage, tree: VerifiedClientTree) {
+  const verified = tree.integrity === row.entry.integrity ? row.entry : row.entry.previous
+  const { declaredCapabilities: _current, ...entry } = row.entry
+  return declarations({
+    ...row,
+    directory: tree.directory,
+    contributions: tree.contributions,
+    entry: {
+      ...entry,
+      integrity: tree.integrity,
+      version: tree.version,
+      ...(verified?.declaredCapabilities ? { declaredCapabilities: verified.declaredCapabilities } : {}),
+    },
+  })
+}
+
+function supportsClientSlots(client: ClientContribution): boolean {
+  return (client.slots ?? []).every(
+    (slot) =>
+      isWebClientModuleSlotName(slot) &&
+      (!isDshWebClientModuleSlotName(slot) ||
+        client.slotCatalogVersion === DSH_WEB_CLIENT_SLOT_CATALOG_VERSION),
   )
-    return null
-  let total = 0
-  for (const file of parsed.files) {
-    let target: string
-    try {
-      target = await realpath(resolve(canonicalDirectory, file.path))
-    } catch {
-      return null
-    }
-    const rel = relative(canonicalDirectory, target)
-    if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`)) return null
-    try {
-      const bytes = await readFile(target)
-      if (bytes.length !== file.bytes || digest(bytes) !== file.sha256) return null
-      total += bytes.length
-      if (total > CLIENT_RESOURCE_MAX_TOTAL_BYTES) return null
-    } catch {
-      return null
-    }
-  }
-  return { bytes: total, manifest: parsed }
 }
 
-async function removeSnapshot(root: string, packageId: string, revision: string): Promise<void> {
-  if (!PACKAGE_ID.test(packageId) || !REVISION.test(revision)) return
-  const target = resolve(snapshotDirectory(root, packageId, revision))
-  const rel = relative(resolve(root), target)
-  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`)) return
-  await rm(target, { recursive: true, force: true })
-}
-
-async function snapshotBytes(root: string, state: ProfileState): Promise<number> {
-  let total = 0
-  for (const [packageId, item] of Object.entries(state.packages)) {
-    for (const revision of new Set([
-      ...(item.current ? [item.current] : []),
-      ...item.retained.map((entry) => entry.revision),
-    ])) {
-      const snapshot = await verifySnapshot(root, packageId, revision)
-      if (snapshot !== null) total += snapshot.bytes
-    }
-  }
-  return total
-}
-
-/** Declarations only for the revisions a package state still tracks, so the map stays bounded. */
-function trackedDeclarations(item: PackageState): PackageState {
-  if (!item.declarations) return item
-  const revisions = [item.current, ...item.retained.map((entry) => entry.revision)]
-  const kept = Object.entries(item.declarations).filter(([revision]) => revisions.includes(revision))
-  return { ...item, declarations: Object.fromEntries(kept) }
-}
-
-async function pruneUntracked(root: string, state: ProfileState): Promise<boolean> {
-  const tracked = new Set<string>()
-  for (const [packageId, item] of Object.entries(state.packages))
-    for (const revision of [
-      ...(item.current ? [item.current] : []),
-      ...item.retained.map((entry) => entry.revision),
-    ])
-      tracked.add(resolve(snapshotDirectory(root, packageId, revision)))
-  let changed = false
-  const visit = async (directory: string, depth: number): Promise<void> => {
-    let entries: import('node:fs').Dirent[]
-    try {
-      entries = await readdir(directory, { withFileTypes: true })
-    } catch {
-      return
-    }
-    if (entries.some((entry) => entry.isFile() && entry.name === SNAPSHOT_FILE)) {
-      if (!tracked.has(resolve(directory))) {
-        await rm(directory, { recursive: true, force: true })
-        changed = true
-      }
-      return
-    }
-    if (depth >= 3) return
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue
-      // A generation registry owns `generations/<id>` and prunes it in its own serialization domain.
-      if (directory === join(root, 'generations') && GENERATION_ID.test(entry.name)) continue
-      const child = join(directory, entry.name)
-      if (entry.name.startsWith('_staging-')) {
-        await rm(child, { recursive: true, force: true })
-        changed = true
-      } else await visit(child, depth + 1)
-    }
-  }
-  await visit(root, 0)
-  return changed
-}
-
-async function publishSnapshot(input: {
-  root: string
-  row: InstalledPackage
-  declarations: readonly ClientDeclaration[]
-  quotaAvailable: number
-}): Promise<'published' | 'present' | 'quota' | 'invalid'> {
-  const { root, row, declarations } = input
-  if (!row.directory) return 'invalid'
-  if ((await verifySnapshot(root, row.id, row.entry.integrity)) !== null) return 'present'
-  const finalDirectory = snapshotDirectory(root, row.id, row.entry.integrity)
-  // A corrupt/incomplete candidate at the final name is never served. Removing it is safe because
-  // its manifest failed verification, and the same integrity binds the verified install tree.
-  await rm(finalDirectory, { recursive: true, force: true })
-  const staging = join(root, `_staging-${randomUUID()}`)
-  const files = await collectSnapshotFiles(
-    row.directory,
-    declarations.flatMap((declared) => [
-      declared.entry,
-      ...declared.styles,
-      ...(declared.client.assets ?? []).map((asset) =>
-        posix.join(
-          posix.dirname(declared.entry),
-          posix.relative(posix.dirname(declared.client.entry), asset),
-        ),
-      ),
-    ]),
-  )
-  if (!files) return 'invalid'
-  const manifestFiles: SnapshotManifest['files'][number][] = []
-  try {
-    let total = 0
-    for (const [path, bytes] of files) {
-      total += bytes.length
-      if (total > input.quotaAvailable) return 'quota'
-      const target = join(staging, path)
-      await mkdir(dirname(target), { recursive: true, mode: 0o700 })
-      await writeFile(target, bytes, { mode: 0o600 })
-      manifestFiles.push({ path, bytes: bytes.length, sha256: digest(bytes) })
-    }
-    const manifest: SnapshotManifest = {
-      version: 2,
-      packageId: row.id,
-      revision: row.entry.integrity,
-      contentDigest: snapshotContentDigest(manifestFiles),
-      rows: declarations.map((declared) => ({
-        rowId: declared.rowId,
-        moduleName: declared.moduleName,
-        entry: declared.entry,
-        styles: [...declared.styles],
-        slots: [...(declared.client.slots ?? [])],
-        ...(declared.client.slotCatalogVersion === undefined
-          ? {}
-          : { slotCatalogVersion: declared.client.slotCatalogVersion }),
-        parentChildVersion: CLIENT_PARENT_CHILD_DECLARATION_VERSION,
-        contentDigest: snapshotContentDigest(manifestFiles),
-      })),
-      files: manifestFiles,
-    }
-    await writeFile(join(staging, SNAPSHOT_FILE), `${JSON.stringify(manifest)}\n`, { mode: 0o600 })
-    // Re-read every copied byte before publication. The final rename is the publication point.
-    for (const file of manifestFiles) {
-      const bytes = await readFile(join(staging, file.path))
-      if (bytes.length !== file.bytes || digest(bytes) !== file.sha256) return 'invalid'
-    }
-    await mkdir(dirname(finalDirectory), { recursive: true, mode: 0o700 })
-    await rename(staging, finalDirectory)
-    return 'published'
-  } catch {
-    return 'invalid'
-  } finally {
-    await rm(staging, { recursive: true, force: true })
-  }
+function runtimeObservation(
+  artifacts: ReturnType<NonNullable<ClientModuleRegistryOptions['runtimeArtifacts']>>,
+) {
+  return JSON.stringify([
+    artifacts?.desired?.digest,
+    artifacts?.previous?.digest,
+    artifacts?.lastGood?.digest,
+    [...(artifacts?.activeBackendRows ?? [])].sort(),
+  ])
 }
 
 function rosterRevision(
@@ -797,7 +440,28 @@ function rosterRevision(
   return `sha256-${createHash('sha256').update(jcs(value), 'utf8').digest('hex')}`
 }
 
+function withRosterRows(
+  roster: ClientModuleListResult,
+  rows: NonNullable<ClientModuleListResult['rows']>,
+): ClientModuleListResult {
+  const rowIds = new Set(rows.map((row) => row.rowId))
+  const rowAliases = Object.fromEntries(
+    Object.entries(roster.rowAliases ?? {}).filter(
+      ([, target]) => typeof target === 'string' && rowIds.has(target),
+    ),
+  )
+  const { rowAliases: _aliases, ...previous } = roster
+  const selected = {
+    ...previous,
+    rows,
+    modules: modulesForContributionRows(roster.modules, rows),
+    ...(Object.keys(rowAliases).length ? { rowAliases } : {}),
+  }
+  return { ...selected, revision: rosterRevision(selected) }
+}
+
 export function createClientModuleRegistry(options: ClientModuleRegistryOptions): ClientModuleRegistry {
+  const releaseEvidence = options.releaseEvidence ?? clientReleaseEvidence
   const filterRoster = (
     roster: ClientModuleListResult,
     selection: Pick<CompositionPatch, 'packages' | 'uiModules' | 'shell' | 'surfaces'> | undefined,
@@ -811,12 +475,10 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
           slots: row.slots ?? [],
         }),
       ) ?? []
-    const modules = roster.modules.filter((module) => rows.some((row) => row.entryUrl === module.entryUrl))
     const statuses = roster.statuses.filter((status) =>
       rows.some((row) => row.packageId === status.packageId),
     )
-    const selected = { ...roster, rows, modules, statuses }
-    return { ...selected, revision: rosterRevision(selected) }
+    return withRosterRows({ ...roster, statuses }, rows)
   }
   const generations = createClientGenerations(options, createClientModuleRegistry)
   const { prune: pruneGenerationAssets, input: generationInput } = generations
@@ -840,6 +502,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
               ...row,
               ...(row.entryUrl ? { entryUrl: route(row.entryUrl) } : {}),
               ...(row.styleUrls ? { styleUrls: row.styleUrls.map(route) } : {}),
+              ...(row.rendererDataUrl ? { rendererDataUrl: route(row.rendererDataUrl) } : {}),
             })),
           }
         : {}),
@@ -857,9 +520,10 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
     string,
     {
       inventory: InstalledInventory
+      archiveId: string | undefined
       directory: string
       tail: Promise<void> | undefined
-      promise: Promise<void>
+      promise: Promise<Reconciled>
     }
   >()
   const inputs = new Map<string, Parameters<ClientModuleRegistry['list']>[0]>()
@@ -935,7 +599,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
   const reconcile = async (
     input: Parameters<ClientModuleRegistry['list']>[0],
     announce: boolean,
-  ): Promise<ClientModuleListResult> => {
+  ): Promise<Reconciled> => {
     const root = options.snapshotDirectory(input.profile, input.profileDirectory)
     await mkdir(root, { recursive: true, mode: 0o700 })
     const now = clock()
@@ -943,23 +607,65 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
     const savedState = await readState(root, input.profile)
     const beforeState = savedState ? jcs(savedState) : undefined
     let state = savedState ?? emptyState(input.profile)
+    const scopePackages = input.archive?.packages ?? input.inventory.packages
     state = {
       ...state,
-      activations: reconcileContributionActivations(state.activations, input.inventory.packages),
+      activations: reconcileContributionActivations(state.activations, scopePackages),
     }
 
     let resourcesChanged = await pruneUntracked(root, state)
     let resourceFailure = false
     const packages: Record<string, PackageState> = {}
-    const truth = runtimeClientTruth(options.runtimeArtifacts?.(input.profile))
-    const installed = new Map(input.inventory.packages.map((row) => [row.id, row]))
+    const artifacts = input.archive
+      ? { desired: input.archive.artifact, lastGood: input.archive.artifact }
+      : options.runtimeArtifacts?.(input.profile)
+    const observedRuntime = runtimeObservation(artifacts)
+    const activationEpoch = input.archive ? undefined : options.activationEpoch?.()
+    const truth = runtimeClientTruth(artifacts)
+    const presentation = input.archive
+      ? undefined
+      : await input.presentation?.(input.inventory).catch(() => undefined)
+    const observations = new Map<string, PackageActivationObservation>()
+    const checkCurrent = async (includePresentation: boolean): Promise<ObservationStatus> => {
+      try {
+        if (!input.archive) {
+          const fresh = await input.refreshInventory()
+          if (fresh.profile !== input.inventory.profile || fresh.hash !== input.inventory.hash)
+            return 'runtime-changed'
+        }
+        for (const [id, prior] of observations) {
+          const actual = await input.actual(id)
+          if (
+            actual?.actual !== prior.actual ||
+            actual.actualIntegrity !== prior.actualIntegrity ||
+            actual.actualVersion !== prior.actualVersion
+          )
+            return 'runtime-changed'
+        }
+        if (input.archive) return (await input.archive.current()) ? 'current' : 'runtime-changed'
+        const presentationCurrent =
+          !includePresentation || (await presentation?.current().catch(() => false)) === true
+        if (
+          options.activationEpoch?.() !== activationEpoch ||
+          runtimeObservation(options.runtimeArtifacts?.(input.profile)) !== observedRuntime
+        )
+          return 'runtime-changed'
+        return presentationCurrent ? 'current' : 'presentation-changed'
+      } catch {
+        return 'runtime-changed'
+      }
+    }
+    const live = new Map<string, InstalledPackage>(
+      input.archive ? [] : input.inventory.packages.map((row) => [row.id, row]),
+    )
+    const installed = input.archive ? new Map(scopePackages.map((row) => [row.id, row])) : live
     const trusted = new Map(
-      input.inventory.packages
+      scopePackages
         .filter((row) => row.trusted && row.blockers.length === 0 && hasClient(row))
         .map((row) => [row.id, row]),
     )
     const eligible = new Map(
-      input.inventory.packages
+      scopePackages
         .filter((row) =>
           truth.useArtifact ? trusted.has(row.id) : isRuntimePackageEligible(row) && hasClient(row),
         )
@@ -1021,7 +727,9 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       if (
         current &&
         !currentReferenced &&
-        (currentPackage === undefined || !currentPackage.enabled) &&
+        (currentPackage === undefined ||
+          !currentPackage.enabled ||
+          currentPackage.entry.integrity !== current) &&
         retained.length < 8
       ) {
         retained.push({ revision: current, expiresAt: new Date(nowMs + retentionMs).toISOString() })
@@ -1045,10 +753,10 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
     const rows: NonNullable<ClientModuleListResult['rows']> = []
     const statuses: ClientModuleListResult['statuses'] = []
     const rowAliases: Record<string, string> = {}
+    const assets: RowAssets[] = []
     const publications = createPublicationChecks(input.inventory)
     for (const row of [...eligible.values()].sort((left, right) => left.id.localeCompare(right.id))) {
       const installedRevision = row.entry.integrity
-      const liveDeclarations = declarations(row)
       const activeRows = [...truth.active.values()].filter((entry) => entry.packageId === row.id)
       const revisions = new Set(activeRows.map((entry) => entry.revision))
       const selectedRevision = truth.useArtifact
@@ -1060,46 +768,26 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
           : undefined
       if (!selectedRevision) continue
       const current = state.packages[row.id] ?? { retained: [] }
-      const saved = current.declarations?.[selectedRevision]
-      const declared =
-        selectedRevision === installedRevision
-          ? liveDeclarations
-          : Object.entries(saved ?? {}).map(([rowId, value]) => ({
-              rowId,
-              moduleName: value.moduleName,
-              legacyRowIds: [...(value.legacyRowIds ?? [])],
-              client: {
-                ...clientContributionDeclarations(value),
-                entry: value.entry,
-                slots: [...value.slots],
-                ...(value.legacyRowIds === undefined ? {} : { legacyRowIds: [...value.legacyRowIds] }),
-                ...(value.slotCatalogVersion === undefined
-                  ? {}
-                  : { slotCatalogVersion: value.slotCatalogVersion }),
-                services: [...value.services],
-                ...(value.intelligentComponents
-                  ? { intelligentComponents: value.intelligentComponents }
-                  : {}),
-                ...(value.publicConfig === undefined ? {} : { publicConfig: value.publicConfig }),
-              },
-              entry: value.entry,
-              styles: value.styles,
-              extIds: value.extIds,
-              services: value.services,
-              ...(value.backendRowId ? { backendRowId: value.backendRowId } : {}),
-              requiresBackend: value.extIds.length > 0,
-            }))
+      const liveRow = live.get(row.id)
+      const tree = input.archive
+        ? input.archive.trees.get(row.id)
+        : liveRow && observedTree(liveRow, selectedRevision)
+      const declared = tree ? treeDeclarations(row, tree) : []
       const selectedDeclarations = truth.useArtifact
-        ? declared.filter((item) => truth.active.get(item.rowId)?.revision === selectedRevision)
+        ? declared.filter((item) => {
+            const active = truth.active.get(item.rowId)
+            return active?.packageId === row.id && active.revision === selectedRevision
+          })
         : declared
       const activeDeclarations = selectedDeclarations.filter((item) => {
         if (item.client.lifetime === 'profile' && selectedRevision !== installedRevision) return false
-        if (!item.backendRowId) return true
+        if (!item.backendRowId || !truth.useArtifact) return true
         const backend = truth.backend.get(item.backendRowId)
         return backend?.packageId === row.id && backend.revision === selectedRevision
       })
+      const priorRevision = savedState?.packages[row.id]?.current
       const migration = migrateRowAliases(
-        current.current === undefined ? undefined : current.declarations?.[current.current],
+        priorRevision === undefined ? undefined : current.declarations?.[priorRevision],
         activeDeclarations,
         current.rowAliases,
       )
@@ -1121,70 +809,153 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         resourceFailure = true
         continue
       }
-      if (!activeDeclarations.length || row.blockers.length) {
+      if (!tree) {
+        statuses.push({ ...baseStatus, state: 'blocked', reason: 'native-ui-not-admitted' })
+        continue
+      }
+      if (!declared.length || row.blockers.length) {
         statuses.push({ ...baseStatus, state: 'blocked', reason: 'resources-invalid' })
         resourceFailure = true
         continue
       }
-      const unsupportedSlots = [
-        ...new Set(
-          activeDeclarations.flatMap((item) =>
-            (item.client.slots ?? []).filter((slot) => !isWebClientModuleSlotName(slot)),
-          ),
-        ),
-      ]
-      const catalogVersionMismatch = activeDeclarations.some((item) =>
-        (item.client.slots ?? []).some(
-          (slot) =>
-            isDshWebClientModuleSlotName(slot) &&
-            item.client.slotCatalogVersion !== DSH_WEB_CLIENT_SLOT_CATALOG_VERSION,
-        ),
-      )
-      if (unsupportedSlots.length || catalogVersionMismatch) {
-        statuses.push({ ...baseStatus, state: 'blocked', reason: 'unsupported-slot' })
-        resourceFailure = true
-        continue
-      }
-      if (requiresBackend && !backendRevision) {
-        statuses.push({ ...baseStatus, state: 'blocked', reason: 'backend-revision-unavailable' })
-        continue
-      }
-      if (requiresBackend && backendRevision !== selectedRevision) {
-        statuses.push({ ...baseStatus, state: 'pending-activation' })
-        continue
-      }
-      if (requiresBackend && observation?.actual !== 'running') {
+      if (!activeDeclarations.length) {
         statuses.push({ ...baseStatus, state: 'blocked', reason: 'backend-not-running' })
         continue
       }
-      let publication: Awaited<ReturnType<typeof publishSnapshot>> = 'present'
-      if (current.current !== selectedRevision) {
+      const release = releaseEvidence(tree, input.archive !== undefined)
+      const rendererEntries = new Set(
+        declared.filter((item) => item.client.intelligentComponents?.length).map((item) => item.entry),
+      )
+      const candidateRows: {
+        item: ClientDeclaration
+        admission: NativeOrIsolated
+        purpose: AssetPurpose
+        files: readonly VerifiedAsset[]
+      }[] = []
+      const packageFiles = new Map<string, Buffer>()
+      const manifestFiles = new Map<string, VerifiedAsset>()
+      let packageBytes = 0
+      let packageCodeBytes = 0
+      for (const item of activeDeclarations) {
+        if (!supportsClientSlots(item.client)) {
+          statuses.push({ ...baseStatus, state: 'blocked', reason: 'unsupported-slot' })
+          resourceFailure = true
+          continue
+        }
+        const admission = admitClient({
+          release,
+          profile: input.profile,
+          tree,
+          rowId: item.rowId,
+          clientId: item.client.id ?? item.moduleName,
+          client: item.client,
+          installed: row.enabled && !input.archive && selectedRevision === installedRevision,
+          presentation,
+        })
+        const needsRunning =
+          item.requiresBackend ||
+          (admission.kind === 'native' &&
+            admission.source === 'approved-presentation' &&
+            admission.grants.some((grant) => grant.roles.length))
+        if (needsRunning && !observation?.actualIntegrity) {
+          statuses.push({ ...baseStatus, state: 'blocked', reason: 'backend-revision-unavailable' })
+          continue
+        }
+        if (needsRunning && observation?.actualIntegrity !== selectedRevision) {
+          statuses.push({ ...baseStatus, state: 'pending-activation' })
+          continue
+        }
         if (
-          selectedRevision !== installedRevision &&
-          (await verifySnapshot(root, row.id, selectedRevision)) === null
+          (needsRunning && observation?.actual !== 'running') ||
+          item.client.requiresBackendRows?.some(
+            (id) => !truth.backend.has(id) && !truth.activeBackendRows.has(id),
+          )
+        ) {
+          statuses.push({ ...baseStatus, state: 'blocked', reason: 'backend-not-running' })
+          continue
+        }
+        if (
+          admission.kind === 'denied' ||
+          (admission.kind === 'isolated-component' &&
+            !input.archive &&
+            (!row.enabled || selectedRevision !== installedRevision))
+        ) {
+          statuses.push({ ...baseStatus, state: 'blocked', reason: 'native-ui-not-admitted' })
+          continue
+        }
+        const purpose = admission.kind === 'native' ? 'document' : 'isolated-component'
+        const files = await rowFiles(tree, item, purpose)
+        // A renderer entry is data-only even when another row references the same path.
+        if (
+          !files ||
+          (purpose === 'document' && [...files.keys()].some((path) => rendererEntries.has(path)))
         ) {
           statuses.push({ ...baseStatus, state: 'blocked', reason: 'resources-invalid' })
           resourceFailure = true
           continue
         }
-        if (current.current && retained.length >= 8) {
+        const records = assetRecords(files)
+        let fileCount = manifestFiles.size
+        let nextBytes = packageBytes
+        let nextCodeBytes = packageCodeBytes
+        let inconsistent = false
+        for (const file of records) {
+          const prior = manifestFiles.get(file.path)
+          if (prior) {
+            if (!sameAsset(prior, file)) inconsistent = true
+            continue
+          }
+          fileCount++
+          nextBytes += file.bytes
+          if (/\.(?:js|mjs|css|map)$/.test(file.path)) nextCodeBytes += file.bytes
+        }
+        if (
+          inconsistent ||
+          fileCount > 4096 ||
+          nextBytes > CLIENT_RESOURCE_MAX_TOTAL_BYTES ||
+          nextCodeBytes > CLIENT_MAX_TOTAL_BYTES
+        ) {
+          statuses.push({ ...baseStatus, state: 'blocked', reason: 'resources-invalid' })
           resourceFailure = true
-          statuses.push({
-            ...baseStatus,
-            state: 'blocked',
-            reason: 'snapshot-retention-limit',
-            retained: reportRetained,
-          })
           continue
         }
-        const used = await snapshotBytes(root, state)
-        publication = await publishSnapshot({
-          root,
-          row,
-          declarations: activeDeclarations,
-          quotaAvailable: Math.max(0, quotaBytes - used),
-        })
+        packageBytes = nextBytes
+        packageCodeBytes = nextCodeBytes
+        for (const [path, bytes] of files) packageFiles.set(path, bytes)
+        for (const file of records) manifestFiles.set(file.path, file)
+        candidateRows.push({ item, admission, purpose, files: records })
+        if (needsRunning && observation) observations.set(row.id, observation)
       }
+      if (!candidateRows.length) continue
+      if (
+        new Set(candidateRows.map(({ item }) => item.rowId)).size !== candidateRows.length ||
+        (await hashDirectoryAsync(tree.directory, { exclude: [], verifyFiles: packageFiles }).catch(
+          () => undefined,
+        )) !== tree.treeIntegrity
+      ) {
+        statuses.push({ ...baseStatus, state: 'blocked', reason: 'resources-invalid' })
+        resourceFailure = true
+        continue
+      }
+      if (current.current && current.current !== selectedRevision && retained.length >= 8) {
+        resourceFailure = true
+        statuses.push({
+          ...baseStatus,
+          state: 'blocked',
+          reason: 'snapshot-retention-limit',
+          retained: reportRetained,
+        })
+        continue
+      }
+      const publication = await publishSnapshot({
+        root,
+        tree,
+        declarations: candidateRows.map(({ item }) => item),
+        files: packageFiles,
+        records: [...manifestFiles.values()],
+        quotaBytes,
+        quotaUsed: () => snapshotBytes(root, state),
+      })
       if (publication === 'invalid' || publication === 'quota') {
         await removeSnapshot(root, row.id, selectedRevision)
         statuses.push({
@@ -1197,15 +968,9 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         resourceFailure = true
         continue
       }
-      const verifiedSnapshot = await verifySnapshot(root, row.id, selectedRevision)
-      if (verifiedSnapshot === null) {
-        statuses.push({ ...baseStatus, state: 'blocked', reason: 'resources-invalid' })
-        resourceFailure = true
-        continue
-      }
-      if (current.current !== selectedRevision && selectedRevision === installedRevision) {
+      if (publication === 'published' && liveRow && selectedRevision === installedRevision) {
         const prior = state.packages[row.id]
-        publications.add(row, async () => {
+        publications.add(liveRow, async () => {
           await removeSnapshot(root, row.id, selectedRevision)
           const restored = { ...state.packages }
           if (prior) restored[row.id] = prior
@@ -1223,12 +988,13 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
             if (modules[index]?.packageId === row.id) modules.splice(index, 1)
           for (let index = rows.length - 1; index >= 0; index--)
             if (rows[index]?.packageId === row.id) rows.splice(index, 1)
+          for (let index = assets.length - 1; index >= 0; index--)
+            if (assets[index]?.packageId === row.id) assets.splice(index, 1)
           for (const key of Object.keys(migration.aliases)) delete rowAliases[key]
           resourcesChanged = true
           resourceFailure = true
         })
       }
-      const contentDigest = snapshotContentDigest(verifiedSnapshot.manifest.files)
       if (current.current && current.current !== selectedRevision)
         retained.push({ revision: current.current, expiresAt: new Date(nowMs + retentionMs).toISOString() })
       const declarationMap = Object.fromEntries(
@@ -1253,21 +1019,72 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       const visible = retained.filter(
         (item): item is Readonly<{ revision: string; expiresAt: string }> => item.expiresAt !== undefined,
       )
-      for (const item of activeDeclarations) {
-        if (
-          item.client.requiresBackendRows?.some(
-            (id) => !truth.backend.has(id) && !truth.activeBackendRows.has(id),
-          )
-        ) {
-          statuses.push({ ...baseStatus, state: 'blocked', reason: 'backend-not-running' })
-          continue
-        }
-        statuses.push({ ...baseStatus, state: 'ready', ...(visible.length ? { retained: visible } : {}) })
-        modules.push({
-          ...(activeDeclarations.length === 1 ? {} : { rowId: item.rowId }),
+      for (const { item, admission, purpose, files } of candidateRows) {
+        const contentDigest = snapshotContentDigest(files)
+        const entryUrl = route(row.id, selectedRevision, item.entry)
+        const projection = await contributionProjection(
+          row,
+          item.client,
+          item.rowId,
+          selectedRevision,
+          input.archive ? { profile: input.profile } : input,
+          state.activations?.[row.id]?.id,
+          item.moduleName,
+          admission.kind === 'native' && admission.source === 'approved-presentation'
+            ? admission.grants
+            : undefined,
+          presentation?.grants,
+        )
+        assets.push({
+          rowId: item.rowId,
           packageId: row.id,
           revision: selectedRevision,
-          entryUrl: route(row.id, selectedRevision, item.entry),
+          purpose,
+          admission,
+          files,
+        })
+        const commonRow = {
+          rowId: item.rowId,
+          moduleName: item.moduleName,
+          packageId: row.id,
+          enabled: true,
+          phase: 'ready' as const,
+          revision: selectedRevision,
+          contentDigest,
+        }
+        if (admission.kind === 'isolated-component') {
+          statuses.push({ ...baseStatus, state: 'ready' })
+          rows.push({
+            ...commonRow,
+            ...(projection.binding ? { binding: projection.binding } : {}),
+            rendererDataUrl: `${entryUrl}?agnes_ui_source=1`,
+            ...(item.client.intelligentComponents
+              ? { intelligentComponents: item.client.intelligentComponents }
+              : {}),
+          })
+          continue
+        }
+        const bindingDigest = admissionDigest([
+          admission.evidence,
+          input.profile,
+          input.archive?.id ?? null,
+          item.rowId,
+          selectedRevision,
+          contentDigest,
+          projection.binding?.activationId ?? null,
+          activationEpoch ?? null,
+          admissionDigest(item.client),
+        ])
+        const documentAdmission: DocumentAdmission =
+          admission.source === 'release'
+            ? { kind: admission.source, bindingDigest }
+            : { kind: admission.source, bindingDigest, presentationRevision: admission.presentationRevision }
+        statuses.push({ ...baseStatus, state: 'ready', ...(visible.length ? { retained: visible } : {}) })
+        modules.push({
+          ...(declared.length === 1 ? {} : { rowId: item.rowId }),
+          packageId: row.id,
+          revision: selectedRevision,
+          entryUrl,
           styleUrls: item.styles.map((path) => route(row.id, selectedRevision, path)),
           slots: [...(item.client.slots ?? [])],
           ...(item.client.slotCatalogVersion === undefined
@@ -1275,39 +1092,21 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
             : { slotCatalogVersion: item.client.slotCatalogVersion }),
           contentDigest,
           extIds: [...item.extIds],
-          ...(item.client.intelligentComponents
-            ? { intelligentComponents: item.client.intelligentComponents }
-            : {}),
           ...(item.client.publicConfig === undefined ? {} : { publicConfig: item.client.publicConfig }),
         })
         rows.push({
-          rowId: item.rowId,
-          moduleName: item.moduleName,
-          ...(await contributionProjection(
-            row,
-            item.client,
-            item.rowId,
-            selectedRevision,
-            input,
-            state.activations?.[row.id]?.id,
-          )),
-          packageId: row.id,
-          enabled: true,
-          phase: 'ready',
-          revision: selectedRevision,
-          entryUrl: route(row.id, selectedRevision, item.entry),
+          ...projection,
+          ...commonRow,
+          documentAdmission,
+          entryUrl,
           styleUrls: item.styles.map((path) => route(row.id, selectedRevision, path)),
           slots: [...(item.client.slots ?? [])],
           ...(item.client.slotCatalogVersion === undefined
             ? {}
             : { slotCatalogVersion: item.client.slotCatalogVersion }),
-          contentDigest,
           extIds: [...item.extIds],
           services: [...(item.client.services ?? [])],
           ...(item.client.streams ? { streams: [...item.client.streams] } : {}),
-          ...(item.client.intelligentComponents
-            ? { intelligentComponents: item.client.intelligentComponents }
-            : {}),
           ...(item.client.publicConfig === undefined ? {} : { publicConfig: item.client.publicConfig }),
         })
       }
@@ -1315,18 +1114,40 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
     await publications.verify(input.refreshInventory)
     const bounded = Object.entries(state.packages).map(([id, item]) => [id, trackedDeclarations(item)])
     state = { ...state, packages: Object.fromEntries(bounded) }
-    // An unreadable state reads back as empty and prunes every snapshot, so refuse to persist it.
-    if (!isState(state, input.profile)) throw new Error('client-module state exceeds its persisted bounds')
-    if (beforeState !== jcs(state)) await writeAtomic(join(root, STATE_FILE), state)
+    await saveState(root, input.profile, state, beforeState)
+    const freshness = assets.length
+      ? await checkCurrent(
+          assets.some(
+            ({ admission }) => admission.kind === 'native' && admission.source === 'approved-presentation',
+          ),
+        )
+      : 'current'
+    const allowed = assets.filter(
+      ({ admission }) =>
+        freshness === 'current' ||
+        (freshness === 'presentation-changed' &&
+          (admission.kind !== 'native' || admission.source !== 'approved-presentation')),
+    )
+    const allowedRows = new Set(allowed.map((asset) => asset.rowId))
+    const selectedRows = rows.filter((row) => allowedRows.has(row.rowId))
+    const selectedModules = modulesForContributionRows(modules, selectedRows)
+    const selectedAliases = Object.fromEntries(
+      Object.entries(rowAliases).filter(([, target]) => allowedRows.has(target)),
+    )
     resourceFailures.set(input.profile, resourceFailure)
     scheduleExpiry(input.profile, state)
     const result: ClientModuleListResult = {
-      revision: rosterRevision({ modules, statuses, rows, rowAliases }),
-      rows,
-      modules,
+      revision: rosterRevision({
+        modules: selectedModules,
+        statuses,
+        rows: selectedRows,
+        rowAliases: selectedAliases,
+      }),
+      rows: selectedRows,
+      modules: selectedModules,
       statuses,
       serverTime: now.toISOString(),
-      ...(Object.keys(rowAliases).length ? { rowAliases } : {}),
+      ...(Object.keys(selectedAliases).length ? { rowAliases: selectedAliases } : {}),
     }
     const previous = lastRevision.get(input.profile)
     lastRevision.set(input.profile, result.revision)
@@ -1342,7 +1163,66 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       else if (resourcesChanged)
         emit({ profile: input.profile, revision: result.revision, reason: 'resources' })
     }
-    return result
+    return { roster: result, assets: allowed, state, checkCurrent }
+  }
+
+  const retainedAsset = async (
+    input: ClientRegistryInput & { path: string },
+    state: ProfileState,
+    visible: ReturnType<NonNullable<ClientModuleRegistryOptions['composition']>>,
+  ): Promise<SelectedAsset | undefined> => {
+    if (input.archive) return undefined
+    const now = clock().getTime()
+    for (const row of input.inventory.packages) {
+      if (!row.trusted || row.blockers.length) continue
+      const cached = Object.hasOwn(state.packages, row.id) ? state.packages[row.id] : undefined
+      for (const retained of cached?.retained ?? []) {
+        const revision = retained.revision
+        const expiresAt = retained.expiresAt === undefined ? undefined : Date.parse(retained.expiresAt)
+        if (
+          (expiresAt !== undefined && expiresAt <= now) ||
+          !input.path.startsWith(route(row.id, revision, ''))
+        )
+          continue
+        const tree = observedTree(row, revision)
+        if (!tree || !releaseEvidence(tree, false)) continue
+        const declared = treeDeclarations(row, tree)
+        const rendererPaths = new Set(
+          declared.filter(({ client }) => client.intelligentComponents?.length).map(({ entry }) => entry),
+        )
+        for (const item of declared) {
+          if (
+            item.client.intelligentComponents?.length ||
+            !supportsClientSlots(item.client) ||
+            (visible &&
+              !compositionModuleAllowed(visible, {
+                id: item.rowId,
+                aliases: [item.moduleName, row.id],
+                slots: item.client.slots ?? [],
+              }))
+          )
+            continue
+          const files = await rowFiles(tree, item, 'document')
+          if (!files || [...files.keys()].some((path) => rendererPaths.has(path))) continue
+          const match = [...files].find(([path]) => route(row.id, revision, path) === input.path)
+          if (
+            !match ||
+            (await hashDirectoryAsync(tree.directory, { exclude: [], verifyFiles: files }).catch(
+              () => undefined,
+            )) !== tree.treeIntegrity
+          )
+            continue
+          const [path, bytes] = match
+          return {
+            file: { path, bytes: bytes.length, sha256: digest(bytes) },
+            packageId: row.id,
+            revision,
+            ...(expiresAt === undefined ? {} : { expiresAt }),
+          }
+        }
+      }
+    }
+    return undefined
   }
 
   return {
@@ -1357,18 +1237,34 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         // releasing this profile's queue, including on failure; neither can publish a partial roster.
         const results = await Promise.allSettled([
           reconcile(input, true),
-          pin ? generationRoster(input, pin.generationId) : Promise.resolve(undefined),
+          pin ? generationRoster(input, pin.generationId).catch(() => undefined) : Promise.resolve(undefined),
         ])
         for (const result of results) if (result.status === 'rejected') throw result.reason
         const [profileRead, historicalRead] = results
         if (profileRead.status !== 'fulfilled' || historicalRead.status !== 'fulfilled')
           throw new Error('Roster unavailable')
-        const current = filterRoster(profileRead.value, options.composition?.(input.profile))
+        const prepared = profileRead.value
+        let current = prepared.roster
+        if (pin && current.rows?.length) {
+          const freshness = await prepared.checkCurrent(
+            current.rows.some((row) => row.documentAdmission?.kind === 'approved-presentation'),
+          )
+          if (freshness !== 'current')
+            current = withRosterRows(
+              current,
+              freshness === 'presentation-changed'
+                ? current.rows.filter((row) => row.documentAdmission?.kind !== 'approved-presentation')
+                : [],
+            )
+        }
+        current = filterRoster(current, options.composition?.(input.profile))
+        if (!pin || !input.sessionId) return current
         const historical = historicalRead.value
-        if (!historical || !input.sessionId) return current
         const selection = new CompositionSessionStore(input.profileDirectory).read(input.sessionId)?.tree
           .selection
-        const selected = filterRoster(historical, selection)
+        const selected = historical
+          ? filterRoster(historical, selection)
+          : { ...current, rows: [], modules: [], statuses: [], rowAliases: {} }
         const result = combineContributionRosters(current, selected)
         return { ...result, revision: rosterRevision(result) }
       }).catch((error: unknown) => {
@@ -1380,7 +1276,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       serialize(input.profile, async () => {
         await pruneGenerationAssets(input)
         inputs.set(input.profile, input)
-        const result = await reconcile(input, false)
+        const { roster: result } = await reconcile(input, false)
         emit({
           profile: input.profile,
           revision: result.revision,
@@ -1393,81 +1289,96 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         throw error
       }),
     read: async (input) => {
-      const generationPath = /^\/plugins\/generations\/([a-f0-9-]{36})\/(.+)$/.exec(input.path)
-      if (generationPath) {
-        await serialize(input.profile, () => pruneGenerationAssets(input))
-        const selected = await generationInput(input, generationPath[1] as string)
-        return selected.registry.read({ ...selected.input, path: `/plugins/${generationPath[2]}` })
-      }
-      const prior = assetPreparations.get(input.profile)
-      let preparation: Promise<void>
-      if (
-        prior?.inventory === input.inventory &&
-        prior.directory === input.profileDirectory &&
-        prior.tail === tails.get(input.profile)
-      )
-        preparation = prior.promise
-      else {
-        // Only requests already sharing the manager's unfinished inventory observation can join.
-        // A queued refresh/list/expiry changes the tail; a fresh inventory changes its identity.
-        // Nothing is retained after preparation settles, and every asset still checks its bytes.
-        preparation = serialize(input.profile, async () => {
-          await pruneGenerationAssets(input)
-          inputs.set(input.profile, input)
-          await reconcile(input, true)
-        })
-        const pending = {
-          inventory: input.inventory,
-          directory: input.profileDirectory,
-          tail: tails.get(input.profile),
-          promise: preparation,
+      try {
+        const generationPath = /^\/plugins\/generations\/([a-f0-9-]{36})\/(.+)$/.exec(input.path)
+        if (generationPath?.[1] && generationPath[2]) {
+          if (input.archive) return { found: false }
+          await serialize(input.profile, () => pruneGenerationAssets(input))
+          const selected = await generationInput(input, generationPath[1])
+          return await selected.registry.read({
+            ...selected.input,
+            path: `/plugins/${generationPath[2]}`,
+            purpose: input.purpose,
+          })
         }
-        assetPreparations.set(input.profile, pending)
-        const clear = () => {
-          if (assetPreparations.get(input.profile) === pending) assetPreparations.delete(input.profile)
-        }
-        preparation.then(clear, clear)
-      }
-      await preparation
-      return serialize(input.profile, async () => {
-        const root = options.snapshotDirectory(input.profile, input.profileDirectory)
-        const state = (await readState(root, input.profile)) ?? emptyState(input.profile)
-        let declaredFile: SnapshotManifest['files'][number] | undefined
-        for (const [packageId, item] of Object.entries(state.packages)) {
-          for (const revision of [
-            ...(item.current ? [item.current] : []),
-            ...item.retained.map((retained) => retained.revision),
-          ]) {
-            // Reconciliation already checked the roster. At the byte-serving boundary,
-            // verify only the snapshot this canonical URL can name, not every earlier package.
-            if (!input.path.startsWith(route(packageId, revision, ''))) continue
-            const snapshot = await verifySnapshot(root, packageId, revision)
-            const file = snapshot?.manifest.files.find(
-              (candidate) => route(packageId, revision, candidate.path) === input.path,
-            )
-            if (file) {
-              declaredFile = file
-              break
-            }
+        const prior = assetPreparations.get(input.profile)
+        let preparation: Promise<Reconciled>
+        if (
+          prior?.inventory === input.inventory &&
+          prior.archiveId === input.archive?.id &&
+          prior.directory === input.profileDirectory &&
+          prior.tail === tails.get(input.profile)
+        )
+          preparation = prior.promise
+        else {
+          preparation = serialize(input.profile, async () => {
+            await pruneGenerationAssets(input)
+            inputs.set(input.profile, input)
+            return reconcile(input, true)
+          })
+          const pending = {
+            inventory: input.inventory,
+            archiveId: input.archive?.id,
+            directory: input.profileDirectory,
+            tail: tails.get(input.profile),
+            promise: preparation,
           }
-          if (declaredFile) break
+          assetPreparations.set(input.profile, pending)
+          const clear = () => {
+            if (assetPreparations.get(input.profile) === pending) assetPreparations.delete(input.profile)
+          }
+          preparation.then(clear, clear)
         }
-        // State membership alone is insufficient: only bytes named and hashed by the immutable
-        // snapshot manifest may cross the private read channel.
-        if (!declaredFile) return { found: false }
-        const resolved = resolveClientModuleAsset(root, input.path)
-        if (!resolved) return { found: false }
-        try {
+        const prepared = await preparation
+        return await serialize(input.profile, async (): Promise<ClientModuleReadResult> => {
+          const root = options.snapshotDirectory(input.profile, input.profileDirectory)
+          const visible = options.composition?.(input.profile)
+          const rows = new Set(
+            filterRoster(prepared.roster, visible)
+              .rows?.filter((row) => !input.archive || historicalContribution(row))
+              .map(({ rowId }) => rowId),
+          )
+          let selected: SelectedAsset | undefined
+          let approved = false
+          for (const grant of prepared.assets) {
+            if (grant.purpose !== input.purpose || !rows.has(grant.rowId)) continue
+            const { packageId, revision } = grant
+            const file = grant.files.find(({ path }) => route(packageId, revision, path) === input.path)
+            if (!file) continue
+            selected = { file, packageId, revision }
+            approved = grant.admission.kind === 'native' && grant.admission.source === 'approved-presentation'
+            if (!approved) break
+          }
+          if (!selected && input.purpose === 'document')
+            selected = await retainedAsset(input, prepared.state, visible)
+          if (!selected) return { found: false }
+          const { file, packageId, revision } = selected
+          const snapshot = await verifySnapshot(root, packageId, revision)
+          if (
+            !sameAsset(
+              snapshot?.manifest.files.find((item) => item.path === file.path),
+              file,
+            )
+          )
+            return { found: false }
+          const resolved = resolveClientModuleAsset(root, input.path)
+          if (!resolved) return { found: false }
           const info = await stat(resolved)
-          if (!info.isFile() || info.size !== declaredFile.bytes) return { found: false }
+          if (!info.isFile() || info.size !== file.bytes) return { found: false }
           const bytes = await readFile(resolved)
-          if (bytes.length !== declaredFile.bytes || digest(bytes) !== declaredFile.sha256)
+          if (
+            bytes.length !== file.bytes ||
+            digest(bytes) !== file.sha256 ||
+            (await prepared.checkCurrent(approved)) !== 'current'
+          )
+            return { found: false }
+          if (selected.expiresAt !== undefined && clock().getTime() >= selected.expiresAt)
             return { found: false }
           return { found: true, base64: bytes.toString('base64') }
-        } catch {
-          return { found: false }
-        }
-      })
+        })
+      } catch {
+        return { found: false }
+      }
     },
     subscribe(listener) {
       listeners.add(listener)

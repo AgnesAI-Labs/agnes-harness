@@ -1,8 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { RECOVERY_CONTINUATION_TEXT } from '../src/supervisor/managed-input-admission.js'
 import { bounded } from './fixtures/managed-probe.js'
 import { COMPANION, type Harness, openHarness, pause, setUp } from './fixtures/owner-input-plugin/index.js'
 
@@ -10,36 +8,6 @@ import { COMPANION, type Harness, openHarness, pause, setUp } from './fixtures/o
 // case, and the session view (every user message and every rendered node) shows it once when it ran
 // and never when it must not run. A `user/message` carrying the input's commandId also carries its
 // text, so one occurrence of the text bounds the messages for that commandId to one.
-
-/** Seeds the old `send` ledger of a stopped daemon, as a pre-upgrade daemon left it. */
-function seedSend(root: string, sessionId: string, key: string, state: 'pending' | 'sent') {
-  const files = (dir: string): string[] =>
-    readdirSync(dir).flatMap((name) => {
-      const full = join(dir, name)
-      const stat = statSync(full, { throwIfNoEntry: false })
-      return stat?.isDirectory() ? files(full) : stat?.isFile() ? [full] : []
-    })
-  for (const file of files(root).filter((path) => /\.(db|sqlite|sqlite3)$/.test(path))) {
-    const db = new DatabaseSync(file)
-    try {
-      const table = db
-        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'managed_session_sends'")
-        .get()
-      if (!table) continue
-      const record = db.prepare('SELECT owner FROM managed_sessions WHERE session_id = ?').get(sessionId) as
-        | { owner: string }
-        | undefined
-      if (!record) throw new Error(`no managed session record for ${sessionId}`)
-      db.prepare(
-        'INSERT INTO managed_session_sends (owner, session_id, idempotency_key, state) VALUES (?, ?, ?, ?)',
-      ).run(record.owner, sessionId, key, state)
-      return
-    } finally {
-      db.close()
-    }
-  }
-  throw new Error('no daemon database holds the managed session sends')
-}
 
 describe.skipIf(process.platform === 'win32')('owner input admission on a real daemon', () => {
   let h: Harness
@@ -235,52 +203,42 @@ describe.skipIf(process.platform === 'win32')('owner input admission on a real d
   )
 
   it(
-    'legacy migration: legacySend consumed/pending/unknown, legacyOwnerMessage recoveryUnknown until the owner delivers it in the Web',
+    'an unbound session separates sends from admissions, and only its owner can release an unverified continuation',
     withLog(async () => {
-      const task = 'legacy'
-      const legacyText = 'OWNER_TEXT_LEGACY_MESSAGE'
-      // A session opened before task bindings existed, driven with the old `send`.
-      const sessionId = await h.start(task, 'Start legacy.', false)
+      const task = 'review-recovery'
+      const sessionId = await h.start(task, 'Start an unbound session.', false)
       await h.settled(sessionId, 1)
       const sent = await h.companion('sessions.send', sessionId, {
-        text: 'LEGACY_SEND_TEXT',
-        idempotencyKey: 'old-1',
+        text: 'ORDINARY_SEND_TEXT',
+        idempotencyKey: 'send-1',
       })
       expect(sent.value, JSON.stringify(sent.error)).toEqual({ state: 'started' })
       await h.settled(sessionId, 2)
-      // The upgraded daemon finds the old ledger as the old one left it: one send interrupted after it
-      // was recorded, one recorded as sent whose message is nowhere in the session.
-      await h.stop()
-      seedSend(h.root, sessionId, 'old-2', 'pending')
-      seedSend(h.root, sessionId, 'old-3', 'sent')
-      await h.boot()
-      expect(await h.result(sessionId, 'old-1')).toEqual({ state: 'legacySend', delivery: 'consumed' })
-      expect(await h.result(sessionId, 'old-2')).toEqual({ state: 'legacySend', delivery: 'pending' })
-      expect(await h.result(sessionId, 'old-3')).toEqual({ state: 'legacySend', delivery: 'unknown' })
-      expect(await h.occurrences(sessionId, 'LEGACY_SEND_TEXT')).toBe(1)
+      expect(await h.result(sessionId, 'send-1')).toEqual({ state: 'absent', historyCoverage: 'complete' })
+      expect(await h.occurrences(sessionId, 'ORDINARY_SEND_TEXT')).toBe(1)
 
-      // The first admission binds the session to its task, once.
-      const legacy = { kind: 'legacyOwnerMessage', text: legacyText, originalInbox: null }
-      const admitted = await h.admit(sessionId, 'legacy-1', task, legacy)
+      // The first admission binds the session to its task, even when the named turn cannot be verified.
+      const recovery = { kind: 'recoveryContinuation', turnEndSeq: 1 }
+      const admitted = await h.admit(sessionId, 'recover-1', task, recovery)
       expect(admitted.value, JSON.stringify(admitted.error)).toMatchObject({
         state: 'recoveryUnknown',
-        reason: 'legacySourceUnknown',
-        reviewLocation: `/?session=${encodeURIComponent(sessionId)}&ownerInput=legacy-1`,
+        reason: 'recoveryUnverified',
+        reviewLocation: `/?session=${encodeURIComponent(sessionId)}&ownerInput=recover-1`,
       })
       const elsewhere = await h.companion('sessions.admitInput', sessionId, {
-        key: 'legacy-2',
+        key: 'recover-2',
         target: { taskId: 'another-task', taskGeneration: 0, startKey: task },
-        input: legacy,
+        input: recovery,
       })
       expect(elsewhere.error?.data).toMatchObject({ reason: 'OWNER_INPUT_TARGET_MISMATCH' })
-      const old = await h.companion('sessions.send', sessionId, { text: 'x', idempotencyKey: 'old-4' })
-      expect(old.error?.data).toMatchObject({ reason: 'OWNER_INPUT_REQUIRED' })
+      const refused = await h.companion('sessions.send', sessionId, { text: 'x', idempotencyKey: 'send-2' })
+      expect(refused.error?.data).toMatchObject({ reason: 'OWNER_INPUT_REQUIRED' })
       await pause(2_000)
-      expect(await h.result(sessionId, 'legacy-1')).toMatchObject({ state: 'recoveryUnknown' })
-      expect(await h.occurrences(sessionId, legacyText)).toBe(0)
+      expect(await h.result(sessionId, 'recover-1')).toMatchObject({ state: 'recoveryUnknown' })
+      expect(await h.occurrences(sessionId, RECOVERY_CONTINUATION_TEXT)).toBe(0)
 
       // Only the owner's Web page reads and decides it; a local SDK client on the Unix socket cannot.
-      const read = { sessionId, key: 'legacy-1' }
+      const read = { sessionId, key: 'recover-1' }
       await expect(h.sdk().request('_agnes/v1/managedInput.get', read as never)).rejects.toMatchObject({
         message: expect.stringContaining('CAPABILITY_DENIED'),
       })
@@ -288,18 +246,18 @@ describe.skipIf(process.platform === 'win32')('owner input admission on a real d
         input: { text: string; state: string; kind: string; version: number }
       }
       expect(view.input).toMatchObject({
-        text: legacyText,
+        text: RECOVERY_CONTINUATION_TEXT,
         state: 'recoveryUnknown',
-        kind: 'legacyOwnerMessage',
+        kind: 'recoveryContinuation',
       })
       const decided = await h.owner().request('_agnes/v1/managedInput.decide', {
         sessionId,
-        target: { kind: 'input', key: 'legacy-1', decision: 'deliver', version: view.input.version },
+        target: { kind: 'input', key: 'recover-1', decision: 'deliver', version: view.input.version },
       } as never)
       expect(decided).toMatchObject({ state: 'enqueued' })
-      await h.reaches(sessionId, 'legacy-1', 'consumed')
+      await h.reaches(sessionId, 'recover-1', 'consumed')
       await h.settled(sessionId, 3)
-      expect(await h.occurrences(sessionId, legacyText)).toBe(1)
+      expect(await h.occurrences(sessionId, RECOVERY_CONTINUATION_TEXT)).toBe(1)
     }),
     240_000,
   )

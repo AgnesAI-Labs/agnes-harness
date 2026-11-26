@@ -1017,3 +1017,69 @@ describe('an installed row that throws', () => {
     expect(t.host.statusEntries()[0]?.status).toMatchObject({ loaded: false, error: { code: 'E_EXT_LOAD' } })
   })
 })
+
+it('lets a live installed hook read only its declared own projection and revokes the reader with its row', async () => {
+  const root = new Context()
+  const origins = new WeakMap<Fiber, RowOrigin>()
+  const capability = { name: 'usage', inputEventTypes: ['turn/end'], maxStateBytes: 1024 }
+  let projectionNames = ['usage']
+  const host = createRowExtensionHost({
+    projectionNames: () => projectionNames,
+    info,
+    log,
+    order: createExtensionOrder(),
+    describePackage: () => ({
+      version: '1.0.0',
+      integrity: 'fixture',
+      declaredCapabilities: { projections: [capability] },
+    }),
+  })
+  host.installRoot(root, { lookup: (fiber) => origins.get(fiber) })
+  let handler: import('@agnes/extension-api').HookHandler<'turn_end'> | undefined
+  let reader: import('@agnes/extension-api').ProjectionReader | undefined
+  const read = vi.fn(async (_key: string, _meta: unknown, _alive: unknown) => ({
+    asOfSeq: 7,
+    unit: { stateVersion: 1, state: {}, view: { count: 2 } },
+  }))
+  const rowId = 'ext:test/usage'
+  const row = root.plugin((ctx) => {
+    origins.set(ctx.fiber, {
+      trustTier: 'third-party',
+      packageId: '@test/usage',
+      snapshotId: 'fixture',
+      rowId,
+      exportName: 'main',
+      declaredProvides: [],
+    })
+    ctx.hooks.register('turn_end', async (_payload, context) => {
+      reader = context.projections
+      expect(await reader.readOwn('usage')).toMatchObject({ status: 'available', value: { count: 2 } })
+      await expect(reader.readOwn('another.owner')).rejects.toThrow('projection not declared')
+    })
+  })
+  await row
+  host.activate({
+    ports: {
+      hooks: {
+        on(_name: string, callback: typeof handler) {
+          handler = callback
+          return () => {}
+        },
+      },
+      projections: { read },
+      registrations: () => [],
+    } as unknown as KernelPorts,
+    platform,
+    shutdown: async () => {},
+    reservedTool: () => false,
+    governance: new Map(),
+  })
+  const context = { signal: new AbortController().signal } as import('@agnes/extension-api').HookContext
+  await handler?.({ turn: 1, reason: 'completed', endSeq: 7 }, context)
+  expect(read.mock.calls[0]?.[0]).toBe(`${pluginRowSource(rowId)}/usage`)
+  projectionNames = []
+  await expect(reader?.readOwn('usage')).rejects.toThrow('projection not declared')
+  await row.dispose()
+  await expect(reader?.readOwn('usage')).rejects.toThrow()
+  await root.fiber.dispose()
+})

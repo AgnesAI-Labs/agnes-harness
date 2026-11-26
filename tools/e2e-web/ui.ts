@@ -5,7 +5,7 @@ import { settled } from './quality.js'
 import type { Runtime } from './runtime.js'
 
 /** Select the interactive tab, whose localized label may span several lines on a phone. */
-export function pluginTab(page: Page, name: 'permissions' | 'versions' | 'config' | 'details') {
+export function pluginTab(page: Page, name: 'permissions' | 'versions' | 'config' | 'details' | 'docs') {
   return page.getByRole('tab').filter({ has: page.getByTestId(`plugin-${name}-tab`) })
 }
 
@@ -322,8 +322,13 @@ async function dismissWorkbench(page: Page) {
 
 /** The session composer command opens the Goal popover. */
 export async function openGoal(page: Page) {
-  await page.getByRole('textbox', { name: /^(Task content|任务内容)$/ }).fill('/goal')
-  await page.getByRole('textbox', { name: /^(Task content|任务内容)$/ }).press('Enter')
+  // The first Enter completes the slash suggestion; the second submits that command.
+  const input = page.locator('#prompt')
+  await input.fill('/goal')
+  await expect(input).toHaveAttribute('role', 'combobox')
+  await input.press('Enter')
+  await expect(input).toHaveValue('/goal ')
+  await input.press('Enter')
   await expect(page.getByTestId('goal-objective')).toBeVisible()
 }
 
@@ -453,7 +458,7 @@ export async function chooseWorkspace(page: Page, runtime: Pick<Runtime, 'worksp
     .toBe(true)
   // The chip opens the workspace switcher; adding a workspace opens the full dialog.
   if (!(await workspace.isVisible())) {
-    await expect(chip).toBeEnabled()
+    await expect(chip).toBeEnabled({ timeout: 30_000 })
     await chip.click()
     choosingFromPicker = true
     await expect(picker).toBeVisible()

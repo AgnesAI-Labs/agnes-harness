@@ -1,8 +1,9 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { setImmediate } from 'node:timers/promises'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
-import type { SessionMetaRow } from '../local/ports.js'
+import type { SessionLister, SessionMetaRow } from '../local/ports.js'
 import type { SessionWorkspacePort } from './lister.js'
+import { sidebarPromptTitle } from './sidebar-message.js'
 import { ensureSidebarSchema } from './sidebar-schema.js'
 import type { TableHandle } from './table.js'
 
@@ -33,6 +34,93 @@ const fail = (code: string, reason: string): never => {
   throw rpcError('SEMANTIC_REJECTED', { code, reason })
 }
 type Cursor = [string, string, string, number, number, number, string]
+
+/** Presentation-only labels shared by grouped and flat lists; never persisted as manual names. */
+class PromptTitles {
+  private readonly cache = new Map<string, { version: string; title: Promise<string | undefined> }>()
+  private readonly active = new Set<Promise<string | undefined>>()
+  private readonly waiting = new Set<() => void>()
+  private closed = false
+  constructor(private readonly scan?: FactRead) {}
+  close(): void {
+    this.closed = true
+    this.cache.clear()
+    for (const resume of this.waiting) resume()
+    this.waiting.clear()
+  }
+  private async read(row: SessionMetaRow): Promise<string | undefined> {
+    while (!this.closed && this.active.size >= 5)
+      await new Promise<void>((resolve) => this.waiting.add(resolve))
+    if (this.closed || !this.scan) return undefined
+    const task = this.scan(row.sessionId, {
+      fromSeq: 1,
+      toSeq: row.lastSeq,
+      limit: 500,
+      order: 'asc',
+    }).then(sidebarPromptTitle)
+    this.active.add(task)
+    try {
+      return await task
+    } finally {
+      this.active.delete(task)
+      const resume = this.waiting.values().next().value
+      if (resume) {
+        this.waiting.delete(resume)
+        resume()
+      }
+    }
+  }
+  async fill(rows: SessionMetaRow[]): Promise<void> {
+    const scan = this.scan
+    if (!scan) return
+    // A flat list can contain 500 rows: cap concurrent cold ledger reads as well as each read.
+    for (let offset = 0; offset < rows.length && !this.closed; offset += 5) {
+      await Promise.all(
+        rows.slice(offset, offset + 5).map(async (row) => {
+          if (row.title || row.archived || row.lastSeq === 0 || this.closed) return
+          const version = JSON.stringify([row.createdAt, row.generation, row.lastSeq])
+          let cached = this.cache.get(row.sessionId)
+          try {
+            if (!cached || cached.version !== version) {
+              cached = {
+                version,
+                title: this.read(row),
+              }
+              this.cache.delete(row.sessionId)
+              this.cache.set(row.sessionId, cached)
+              if (this.cache.size > 512) {
+                const oldest = this.cache.keys().next().value
+                if (oldest !== undefined) this.cache.delete(oldest)
+              }
+            }
+            const title = await cached.title
+            if (title) row.title = title
+          } catch {
+            if (this.cache.get(row.sessionId) === cached) this.cache.delete(row.sessionId)
+            // Missing fallback must not hide usable pages, and a later refresh can retry.
+          }
+        }),
+      )
+    }
+  }
+}
+
+/** Call after preferences and after the lister has applied owner scope and pagination. */
+export function withSessionPromptTitles(
+  lister: SessionLister,
+  scan?: FactRead,
+): SessionLister & { close(): void } {
+  const titles = new PromptTitles(scan)
+  return {
+    supportsPromptTitles: scan !== undefined,
+    close: () => titles.close(),
+    async list(query) {
+      const page = await lister.list(query)
+      if (query.includePromptTitles === true) await titles.fill(page.items)
+      return page
+    },
+  }
+}
 
 /** SQL owns filtering and keyset order. Only an authenticated caller may choose a group. */
 export class SidebarSessions implements SidebarSessionPort {

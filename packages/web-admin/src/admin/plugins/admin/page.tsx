@@ -51,7 +51,7 @@ import {
   type InstallReviewState,
   type PluginRuntimeSource,
 } from '../types.js'
-import { type CatalogPublish, CatalogReads } from './catalog-read.js'
+import { type CatalogPublish, CatalogReads, resetCommunityCatalog } from './catalog-read.js'
 import { confirmEnable, confirmSimple, offeredActions, PreviewFacts, RollbackFacts } from './confirms.js'
 import { blockedDependents, startDependentReview } from './dependent-update.js'
 import { adminErrorKey, element, markSettingsPage, setDialog } from './dom.js'
@@ -69,6 +69,7 @@ import {
   canCombineUpdate,
   hasClientContribution,
   isClientOnly,
+  runtimeOperationOutcome,
   safeMessage,
   sourceForCatalog,
 } from './model.js'
@@ -567,18 +568,28 @@ export class PluginAdminPage {
       const { context, inventory } = await PluginAdminApi.overview()
       if (!current()) return false
       resolvedContext = context
+      // Context also controls read-only UI when the inventory cannot be read.
       if (JSON.stringify(this.#state.context) !== JSON.stringify(context) || !this.#api) {
         this.#api = new PluginAdminApi(context)
         this.#generation++
+        this.#catalogReads.invalidate()
+        this.#state = resetCommunityCatalog(this.#state, context)
       }
-      // Context remains useful even when inventory cannot be read: its recovery flag must still
-      // disable effects, while read-only catalog calls may remain available.
-      this.#state = { ...this.#state, context }
       if (!inventory)
         throw new AdminApiError({
           code: 'E_ADMIN_READ_ONLY',
           message: 'The package inventory could not be verified. Administration is read-only.',
         })
+      // A verified context and its installed rows take effect together. Supplemental indexes may
+      // delay write readiness, but must not let a detail keep reading the previous package identity.
+      this.#state = {
+        ...this.#state,
+        context,
+        installed: inventory.packages,
+        externalPackages: inventory.externalPackages,
+        generations: inventory.generations,
+      }
+      this.render()
       // The verified inventory and small indexes gate effects; optional presentation does not.
       const { list, surfaceFeed, tree, presentation, bundledCatalog } = await readInventorySnapshot(
         this.#api,
@@ -1014,6 +1025,7 @@ export class PluginAdminPage {
         const source = this.#source.compatibleSource(operation, this.#state.context?.features)
         if (source && this.#surface?.importSource) {
           this.#source.error = undefined
+          this.closeSourceDialog()
           this.#surface.importSource(source)
           this.render()
           return
@@ -1145,12 +1157,14 @@ export class PluginAdminPage {
       true,
       this.#confirmDialog.querySelector('button.agh-btn--primary') ?? undefined,
     )
+    this.renderDetail()
   }
 
   closeConfirm(): void {
     this.#exampleInstallId = undefined
     this.#pendingConfirm = undefined
     this.renderConfirm()
+    if (this.#detail.open) this.renderDetail()
     setDialog(this.#confirmDialog, false)
     this.#confirmTrigger?.focus({ preventScroll: true })
     this.#confirmTrigger = undefined
@@ -1534,7 +1548,12 @@ export class PluginAdminPage {
 
   runtimeState(packageId: string): PluginRuntimeState | undefined {
     const states = [...this.#state.runtime.values()].filter((state) => state.packageId === packageId)
-    return states.find((state) => state.phase === 'failed') ?? states.at(-1)
+    return (
+      states.find((state) => state.phase === 'failed') ??
+      states.find((state) => state.phase === 'active') ??
+      states.find((state) => state.reason === 'native-ui-not-admitted') ??
+      states.at(-1)
+    )
   }
 
   async reconcileRuntimeAfterOperation(
@@ -1545,49 +1564,20 @@ export class PluginAdminPage {
   ): Promise<void> {
     if (!this.#runtime || !['enable', 'disable', 'update'].includes(operation.operation)) return
     if (!hasBrowserUi) return
-    if (!expectedRevision) {
-      this.#state = {
-        ...this.#state,
-        error: {
-          code: 'RUNTIME_NOT_CONFIRMED',
-          message: 'The host completed the operation, but the browser UI state is not confirmed yet.',
-        },
+    if (expectedRevision) {
+      try {
+        await this.#runtime.invalidate()
+        const deadline = Date.now() + 4_000
+        while (Date.now() < deadline) {
+          const states = [...this.#state.runtime.values()].filter((state) => state.packageId === packageId)
+          const outcome = runtimeOperationOutcome(states, expectedRevision, operation.operation === 'disable')
+          if (outcome === 'settled') return
+          if (outcome === 'failed') break
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+      } catch {
+        // The package operation succeeded, but the browser status could not be confirmed.
       }
-      this.render()
-      return
-    }
-    try {
-      await this.#runtime.invalidate()
-    } catch {
-      this.#state = {
-        ...this.#state,
-        error: {
-          code: 'RUNTIME_NOT_CONFIRMED',
-          message: 'The host completed the operation, but the browser UI state is not confirmed yet.',
-        },
-      }
-      this.render()
-      return
-    }
-
-    const deadline = Date.now() + 4_000
-    while (Date.now() < deadline) {
-      const states = [...this.#state.runtime.values()].filter((state) => state.packageId === packageId)
-      const hasWrongActiveRevision = states.some(
-        (state) => state.phase === 'active' && state.revision !== expectedRevision,
-      )
-      const matching = states.filter((state) => state.revision === expectedRevision)
-      const matchingFailed = matching.some((state) => state.phase === 'failed')
-      if (matchingFailed) break
-      if (
-        matching.length > 0 &&
-        !hasWrongActiveRevision &&
-        matching.every((state) =>
-          operation.operation === 'disable' ? state.phase === 'idle' : state.phase === 'active',
-        )
-      )
-        return
-      await new Promise((resolve) => setTimeout(resolve, 50))
     }
     this.#state = {
       ...this.#state,

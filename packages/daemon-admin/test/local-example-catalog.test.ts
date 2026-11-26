@@ -73,6 +73,10 @@ it('serves real local examples through daemon catalog and source inspection', as
     now: () => now,
   })
   const catalog = await discoverLocalExamples(workspace)
+  const pinned = {
+    version: '1.0.0',
+    source: { type: 'git' as const, ref: `git:https://github.com/example/plugin.git#${'a'.repeat(40)}` },
+  }
   const service = createPackageAdminService({
     manager,
     profileDirectory: async (requested) => {
@@ -81,18 +85,37 @@ it('serves real local examples through daemon catalog and source inspection', as
     },
     operations: new FilePackageOperationStore(join(dataDir, 'operations')),
     catalog,
+    agnesVersion: '0.0.0',
     community: () => ({
-      state: 'pending',
+      state: 'ready',
       lastSuccessAt: null,
       nextAttemptAt: null,
       error: null,
-      totalReported: 0,
-      items: [],
+      totalReported: 1,
+      items: [
+        {
+          id: '@example/plugin',
+          fullName: 'example/plugin',
+          description: '',
+          versions: [{ ...pinned, provides: ['tool'], aghEngine: { kind: 'range', range: '^5.0.0' } }],
+        },
+      ],
     }),
     clock: () => now,
   })
 
-  expect(service.features).toEqual(['packages.community-discovery.v2'])
+  expect(service.features).toEqual([
+    'packages.docs.v1',
+    'packages.community-discovery.v2',
+    'packages.community-discovery.v3',
+  ])
+  await expect(
+    service.call(
+      '_agnes/v1/packages.docs.get',
+      { profile, id: '@agnes/skill-helper', expectedIntegrity: `sha256-${'a'.repeat(64)}`, locale: 'en' },
+      authority,
+    ),
+  ).resolves.toEqual({ found: false })
   const legacy = await service.call(
     '_agnes/v1/packages.catalog.list',
     { profile, includeCommunity: true },
@@ -108,7 +131,18 @@ it('serves real local examples through daemon catalog and source inspection', as
     authority,
   )) as PackageCatalogPage
   expect(helpers.items).toHaveLength(1)
-  expect(helpers.communityIndex).toMatchObject({ state: 'pending', items: [] })
+  expect(helpers.communityIndex).toMatchObject({ state: 'ready', totalReported: 1 })
+  expect(helpers.communityIndex?.items[0]?.versions).toEqual([pinned])
+  const enriched = (await service.call(
+    '_agnes/v1/packages.catalog.list',
+    { profile, query: 'skill-helper', limit: 50, communityVersion: 3 },
+    authority,
+  )) as PackageCatalogPage
+  expect(enriched.items).toEqual(helpers.items)
+  expect(enriched.nextCursor).toBe(helpers.nextCursor)
+  expect(enriched.communityIndex?.items[0]?.versions).toEqual([
+    { ...pinned, provides: ['tool'], compatibility: { kind: 'unknown', range: '^5.0.0' } },
+  ])
   expect(helpers.items[0]).toMatchObject({
     id: '@agnes/skill-helper',
     sourceId: 'builtin-plugins',

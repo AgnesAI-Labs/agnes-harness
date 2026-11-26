@@ -303,8 +303,9 @@ export function FileMentionLayer({
                 relayout((value) => value + 1)
               }}
             >
-              {/* The fixed-width prefix replaces the literal `@` without shifting the textarea caret. */}
+              {/* Keep the literal glyph's metrics while its icon covers it. */}
               <span className="composer-mention-at">
+                @
                 <Icon
                   name={fileMentionIcon(piece.mention.name, piece.mention.directory)}
                   size={16}

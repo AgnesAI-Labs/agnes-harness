@@ -2,6 +2,35 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## Unreleased
+
+- Managed input admission accepts a channel receipt (`ownerMessage`) or a turn end
+  (`recoveryContinuation`). Callers with an unverified continuation receive
+  `recoveryUnknown` with reason `recoveryUnverified`. `inputResult` reports
+  `absent` with `historyCoverage: 'complete'` for a key with no admission, including
+  keys used only by `send`. The `legacySend` result and `legacyOwnerMessage` admission
+  with reason `legacySourceUnknown` have been removed. Supply a recorded receipt
+  for owner text and start with fresh runtime data if it contains retired admissions.
+- Import the provider conformance runners from `@agnes/extension-api/testkit`.
+
+## 5.23.0
+
+### Added
+
+- Observe-only `turn_end` hook with `turn`, `reason` and committed `endSeq`. It runs after the
+  terminal ledger transaction with a separate bounded cancellation signal. Failure cannot alter
+  execution or undo the committed end. Existing hooks and adapters remain compatible.
+- Installed hook/tool contexts can read their own declared projections. Reads still require the
+  reviewed name, owner-scoped lease and live row; undeclared or revoked reads are refused.
+- Optional ledger `tool/result.dispatchPhase` records `not_sent`, `may_have_sent` or `responded`.
+  It describes backend dispatch, independently of tool-provided result content, so consumers can
+  distinguish admitted attempts from pre-dispatch refusals without a second tool counter.
+
+兼容修复：新的 Core 写入改用同事务、先于结果的可忽略 `x/core/tool-dispatch` 附注，
+数据为 `{version: 1, toolUseId, phase}`，以 `sourceEventSeqs` 关联原调用。新的 `tool/result`
+不再携带 `dispatchPhase`；该可选字段仍保留历史读取能力，内部恢复状态不变。
+读取阶段的插件应兼容新附注和历史字段；先升级插件，再升级 Core，避免旧插件漏记用量。
+
 ## 5.22.0
 
 - Optional `ProfileManagedInit.bundledApp` (`BundledAppGrant`, `BundledAppChannels`) gives a release-whitelisted bundled package a platform-chosen state directory, an owner-level local SDK client (typed `unknown`; narrow it with the SDK client type) and channel group access. Only release assembly grants it, for a payload matching the shipped digest; package code, manifests and configuration cannot request it. `assertCurrent()` refuses with `CAPABILITY_DENIED` after disable or activation change, and the client is closed.

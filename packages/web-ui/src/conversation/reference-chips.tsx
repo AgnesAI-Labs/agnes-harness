@@ -1,4 +1,4 @@
-import type { UINode } from '@agnes/protocol'
+import { type UINode, withRemoteFrontend } from '@agnes/protocol'
 import type { Translate } from '../locales/index.js'
 import { Icon } from '../ui/icon.js'
 
@@ -28,7 +28,13 @@ export function UserMessageReferences({
           title={`${reference.id}\nSHA-256: ${reference.hash}`}
         >
           {reference.source === 'session' ? (
-            <a href={`?session=${encodeURIComponent(reference.id)}`} data-testid="reference-session-link">
+            <a
+              href={withRemoteFrontend(
+                `?session=${encodeURIComponent(reference.id)}`,
+                globalThis.location?.href,
+              )}
+              data-testid="reference-session-link"
+            >
               <span className="reference-sent-icon" aria-hidden="true">
                 <Icon name="message-square" size={16} />
               </span>

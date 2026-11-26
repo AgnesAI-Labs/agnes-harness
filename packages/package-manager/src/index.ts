@@ -26,6 +26,7 @@ export {
 export * from './capabilities.js'
 export * from './catalog.js'
 export * from './client-assets.js'
+export * from './client-release.js'
 export { demoProvider } from './demo-provider.js'
 export * from './deployment-refs.js'
 export * from './entry-path.js'

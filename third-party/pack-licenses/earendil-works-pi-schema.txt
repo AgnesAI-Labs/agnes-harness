@@ -21,7 +21,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 This package includes code ported from TypeBox. Its license, shipped as
-LICENSES/typebox-LICENSE in the package, follows.
+THIRD_PARTY_NOTICES/typebox-LICENSE in the package, follows.
 
 TypeBox
 

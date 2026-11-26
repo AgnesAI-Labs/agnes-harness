@@ -39,8 +39,8 @@ const native = {
 }
 if (mode === 'test-build') native.testFaults = true
 if (mode !== 'missing')
-  native.spawnRestricted = (...args) => {
-    log({ call: 'spawnRestricted', args })
+  for (const call of ['spawnRestricted', 'spawnSuspended']) native[call] = (...args) => {
+    log({ call, args })
     if (mode === 'throws') throw fault('EACCES')
     let resumed = false
     let polls = 0
@@ -152,10 +152,37 @@ describe('process broker restricted launch', () => {
   it('refuses a test build of the native artifact for a direct launch too', async () => {
     const run = start('test-build')
     await run.next()
-    run.child.send({ type: 'run', argv: [process.execPath], cwd: scratch, env: {}, windowsBatch: 'script' })
+    run.child.send({ ...payload(), type: 'run' })
     expect(await run.next()).toEqual({ type: 'error', code: 'E_SYSTEM_NATIVE_UNAVAILABLE' })
     expect(run.calls()).toEqual([])
   })
+
+  it.each(['ok', 'missing', 'throws'])(
+    'uses the same owned handshake for an ordinary launch: %s',
+    async (mode) => {
+      const run = start(mode)
+      await run.next()
+      run.child.send({ ...payload(), type: 'run' })
+      if (mode !== 'ok') {
+        expect(await run.next()).toEqual({
+          type: 'error',
+          code: mode === 'missing' ? 'E_SYSTEM_NATIVE_UNAVAILABLE' : 'EACCES',
+        })
+        expect((await run.exited)[0]).toBe(1)
+        return
+      }
+      expect(await run.next()).toEqual({ type: 'created', pid: 77, start: '888' })
+      expect(run.calls()[0]).toMatchObject({
+        call: 'spawnSuspended',
+        args: [payload().application, payload().commandLine, payload().cwd, payload().environment],
+      })
+      run.child.send({ type: 'resume' })
+      expect(await run.next()).toEqual({ type: 'started', pid: 77 })
+      expect(await run.next()).toEqual({ type: 'exit', code: 7, signal: null })
+      expect((await run.exited)[0]).toBe(0)
+      expect(run.calls().map(({ call }) => call)).toEqual(['spawnSuspended', 'resume', 'close'])
+    },
+  )
 
   it.each([
     ['no application', { application: '' }],

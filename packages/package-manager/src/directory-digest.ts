@@ -58,10 +58,36 @@ export function contained(root: string, candidate: string): boolean {
  * verification refusal clears this store (`forgetDirectoryDigests`). A cache hit still walks the
  * tree and refuses links and special entries, but skips the per-file real-path containment check.
  */
-type KnownTree = Readonly<{ dev: number; ino: number; signature: string; digest: string }>
+type KnownTree = Readonly<{ dev: number; ino: number; signature: string; digest: string; manifest?: Buffer }>
 const knownTrees = new Map<string, KnownTree>()
 const KNOWN_TREE_LIMIT = 512
 const RECENT_WRITE_MS = 2_000
+// The tree digest fixes the manifest leaf regardless of the tree's path.
+const manifestDigests = new Map<string, Buffer>()
+
+function rememberManifest(digest: string, manifest: Buffer | undefined): string {
+  if (manifest && !manifestDigests.has(digest)) {
+    const oldest = manifestDigests.keys().next().value
+    if (manifestDigests.size >= KNOWN_TREE_LIMIT && oldest !== undefined) manifestDigests.delete(oldest)
+    manifestDigests.set(digest, manifest)
+  }
+  return digest
+}
+
+/** Compare the inspected manifest to the exact leaf observed when the verifier hashed this tree. */
+export function isVerifiedPackageManifest(
+  directory: string,
+  treeIntegrity: string,
+  manifest: Buffer,
+): boolean {
+  let observed = manifestDigests.get(treeIntegrity)
+  if (!observed) {
+    // A runtime read can reuse a settled tree digest after its leaf proof has been evicted.
+    if (hashDirectory(directory, { exclude: [] }) !== treeIntegrity) return false
+    observed = manifestDigests.get(treeIntegrity)
+  }
+  return observed?.equals(leafHash('package.json').update(manifest).digest()) === true
+}
 
 export function forgetDirectoryDigests(): void {
   knownTrees.clear()
@@ -96,7 +122,7 @@ function knownDigest(key: string, root: Readonly<{ dev: number; ino: number }>, 
   if (freshDigests.getStore()) return undefined
   const known = knownTrees.get(key)
   return known && known.dev === root.dev && known.ino === root.ino && known.signature === signature
-    ? known.digest
+    ? rememberManifest(known.digest, known.manifest)
     : undefined
 }
 
@@ -107,12 +133,13 @@ function rememberDigest(
   digest: string,
   started: number,
   mtimes: Iterable<number>,
+  manifest: Buffer | undefined,
 ): void {
   for (const mtime of mtimes) if (mtime > started - RECENT_WRITE_MS) return
   knownTrees.delete(key)
   const oldest = knownTrees.keys().next().value
   if (knownTrees.size >= KNOWN_TREE_LIMIT && oldest !== undefined) knownTrees.delete(oldest)
-  knownTrees.set(key, { dev: root.dev, ino: root.ino, signature, digest })
+  knownTrees.set(key, { dev: root.dev, ino: root.ino, signature, digest, ...(manifest ? { manifest } : {}) })
 }
 
 export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: AbortSignal } = {}): string {
@@ -162,6 +189,7 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
   // Unlike the async walk this read does not refuse a file that changes under it; it only declines
   // to store a digest that may mix two versions of a file.
   let unchanged = true
+  let manifest: Buffer | undefined
   for (const { rel, file, stat } of files) {
     checkCancelled(opts.signal)
     let actual: string
@@ -171,7 +199,8 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
       throw sourceError('package file changed while hashing', 'tree-changed')
     }
     if (!contained(root, actual)) throw sourceError('package file escapes its source tree', 'path-escape')
-    const inner = createHash('sha256').update(rel).update('\0').update(readFileSync(file)).digest()
+    const inner = leafHash(rel).update(readFileSync(file)).digest()
+    if (rel === 'package.json') manifest = inner
     outer.update(inner)
     const after = lstatSync(file)
     if (!sameFileObservation(after, stat)) unchanged = false
@@ -185,15 +214,133 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
       digest,
       started,
       files.map(({ stat }) => stat.mtimeMs),
+      manifest,
     )
-  return digest
+  return rememberManifest(digest, manifest)
+}
+
+type DigestOptions = {
+  exclude?: string[]
+  signal?: AbortSignal
+  verifyFiles?: ReadonlyMap<string, Uint8Array>
+}
+type LeafCapture = {
+  root: Stats
+  paths: ReadonlySet<string>
+  maxBytes: number
+  bytes: Map<string, Buffer>
+}
+type LeafVerification = {
+  remaining: Map<string, Buffer>
+  capture?: LeafCapture
+}
+
+function leafHash(path: string) {
+  return createHash('sha256').update(path).update('\0')
+}
+
+/** A single uncached traversal. Captures are inaccessible to the caller if verification fails. */
+export async function captureDirectoryLeaves(
+  root: string,
+  options: {
+    observedRoot: Stats
+    manifest: Buffer
+    paths: ReadonlySet<string>
+    maxBytes: number
+    signal?: AbortSignal
+  },
+): Promise<{ digest: string; bytes: ReadonlyMap<string, Buffer> }> {
+  const capture: LeafCapture = {
+    root: options.observedRoot,
+    paths: options.paths,
+    maxBytes: options.maxBytes,
+    bytes: new Map(),
+  }
+  const digest = await hashDirectoryOnce(
+    root,
+    { exclude: [], ...(options.signal ? { signal: options.signal } : {}) },
+    {
+      remaining: new Map([['package.json', leafHash('package.json').update(options.manifest).digest()]]),
+      capture,
+    },
+  )
+  return { digest, bytes: capture.bytes }
+}
+
+export async function readBoundedPackageManifest(
+  root: string,
+  maxBytes: number,
+  signal?: AbortSignal,
+): Promise<Buffer> {
+  checkCancelled(signal)
+  const file = join(root, 'package.json')
+  const observed = await asyncFs.lstat(file)
+  if (!observed.isFile() || observed.size < 1 || observed.size > maxBytes)
+    throw sourceError('package file is unavailable or too large', 'file-size')
+  return withObservedFile(root, file, observed, true, async (handle) =>
+    readBoundedBytes(handle, observed.size, new Uint8Array(1), signal),
+  )
+}
+
+async function readBoundedBytes(
+  handle: asyncFs.FileHandle,
+  size: number,
+  scratch: Uint8Array,
+  signal?: AbortSignal,
+): Promise<Buffer> {
+  const bytes = Buffer.allocUnsafe(size)
+  let offset = 0
+  while (offset < size) {
+    checkCancelled(signal)
+    const { bytesRead } = await handle.read(bytes, offset, Math.min(size - offset, 256 * 1024))
+    if (!bytesRead) throw sourceError('package file changed while hashing', 'tree-changed')
+    offset += bytesRead
+  }
+  checkCancelled(signal)
+  if ((await handle.read(scratch, 0, 1)).bytesRead)
+    throw sourceError('package file changed while hashing', 'tree-changed')
+  return bytes
+}
+
+async function withObservedFile<T>(
+  root: string,
+  file: string,
+  observed: Stats,
+  exactPath: boolean,
+  read: (handle: asyncFs.FileHandle) => Promise<T>,
+): Promise<T> {
+  const actual = await asyncFs.realpath(file)
+  if (exactPath ? actual !== file : !contained(root, actual))
+    throw sourceError('package file escapes its source tree', 'path-escape')
+  const handle = await asyncFs.open(
+    file,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+  )
+  try {
+    const before = await handle.stat()
+    if (!before.isFile() || !sameFileObservation(before, observed))
+      throw sourceError('package file changed while hashing', 'tree-changed')
+    const result = await read(handle)
+    const after = await handle.stat()
+    const linked = await asyncFs.lstat(file)
+    if (!linked.isFile() || !sameFileObservation(after, before) || !sameFileObservation(linked, before))
+      throw sourceError('package file changed while hashing', 'tree-changed')
+    return result
+  } finally {
+    await handle.close()
+  }
 }
 
 /** Same wire digest and exclusions as hashDirectory; yields for filesystem IO and streams file bytes. */
-export async function hashDirectoryAsync(
-  dir: string,
-  opts: { exclude?: string[]; signal?: AbortSignal } = {},
-): Promise<string> {
+export async function hashDirectoryAsync(dir: string, opts: DigestOptions = {}): Promise<string> {
+  if (opts.verifyFiles) {
+    const remaining = new Map<string, Buffer>()
+    for (const [path, bytes] of opts.verifyFiles) {
+      checkCancelled(opts.signal)
+      remaining.set(path, leafHash(path).update(bytes).digest())
+    }
+    return hashDirectoryOnce(dir, opts, { remaining })
+  }
   // A Host worker hard-links immutable snapshot files into each runtime generation without the
   // package lock, which moves their ctime but never their bytes. Walk again a few times so one such
   // link is not a changed tree; every digest still comes from a single unchanged traversal.
@@ -210,7 +357,8 @@ export async function hashDirectoryAsync(
 
 async function hashDirectoryOnce(
   dir: string,
-  opts: { exclude?: string[]; signal?: AbortSignal },
+  opts: DigestOptions,
+  verification?: LeafVerification,
 ): Promise<string> {
   const started = Date.now()
   checkCancelled(opts.signal)
@@ -225,6 +373,10 @@ async function hashDirectoryOnce(
   }
   const rootStat = await asyncFs.stat(root)
   if (!rootStat.isDirectory()) throw sourceError('package source is not a directory', 'not-directory')
+  const capture = verification?.capture
+  if (capture && (root !== dir || !sameFileObservation(rootStat, capture.root)))
+    throw sourceError('package directory changed while hashing', 'tree-changed')
+  const directories = verification ? new Map([[root, rootStat]]) : undefined
   const rules = normalizedExcludes(opts.exclude ?? [...DEFAULT_EXCLUDES])
   const files: { rel: string; file: string; observed: Stats }[] = []
   // Reuse the bounded metadata pool for sibling directories too. Nested entry checks stay
@@ -232,6 +384,7 @@ async function hashDirectoryOnce(
   await walkFileChecks([root], async (current) => {
     const next: string[] = []
     checkCancelled(opts.signal)
+    if (directories) await verifyDirectory(current, directories.get(current))
     const entries = await asyncFs.readdir(current, { withFileTypes: true })
     const observed = await mapFileChecks(entries, async (entry) => {
       checkCancelled(opts.signal)
@@ -244,86 +397,114 @@ async function hashDirectoryOnce(
       if (!item) continue
       const { file, rel, stat } = item
       if (stat.isSymbolicLink()) throw sourceError('package tree contains a symbolic link', 'symlink')
-      if (stat.isDirectory()) next.push(file)
-      else if (stat.isFile()) files.push({ rel, file, observed: stat })
+      if (stat.isDirectory()) {
+        directories?.set(file, stat)
+        next.push(file)
+      } else if (stat.isFile()) files.push({ rel, file, observed: stat })
       else throw sourceError('package tree contains a special entry', 'special-entry')
     }
     return next
   })
   files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
-  const key = treeKey(root, rules),
-    signature = treeSignature(files.map(({ rel, observed }) => ({ rel, stat: observed })))
-  const known = knownDigest(key, rootStat, signature)
-  if (known !== undefined) return known
+  const cache = verification
+    ? undefined
+    : {
+        key: treeKey(root, rules),
+        signature: treeSignature(files.map(({ rel, observed }) => ({ rel, stat: observed }))),
+      }
+  if (cache) {
+    const known = knownDigest(cache.key, rootStat, cache.signature)
+    if (known !== undefined) return known
+  }
   const hashFile = async ({ rel, file, observed }: (typeof files)[number], chunk: Uint8Array) => {
     checkCancelled(opts.signal)
-    if (!contained(root, await asyncFs.realpath(file)))
-      throw sourceError('package file escapes its source tree', 'path-escape')
-    const handle = await asyncFs.open(
-      file,
-      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
-    )
-    try {
-      const before = await handle.stat()
-      if (!before.isFile() || !sameFileObservation(before, observed))
-        throw sourceError('package file changed while hashing', 'tree-changed')
-      const inner = createHash('sha256').update(rel).update('\0')
-      for (;;) {
-        checkCancelled(opts.signal)
-        const { bytesRead } = await handle.read(chunk)
-        if (!bytesRead) break
-        inner.update(chunk.subarray(0, bytesRead))
+    return withObservedFile(root, file, observed, verification !== undefined, async (handle) => {
+      const inner = leafHash(rel)
+      if (capture?.paths.has(rel) && observed.size > 0 && observed.size <= capture.maxBytes) {
+        const bytes = await readBoundedBytes(handle, observed.size, chunk, opts.signal)
+        inner.update(bytes)
+        capture.bytes.set(rel, bytes)
+      } else {
+        for (;;) {
+          checkCancelled(opts.signal)
+          const { bytesRead } = await handle.read(chunk)
+          if (!bytesRead) break
+          inner.update(chunk.subarray(0, bytesRead))
+        }
       }
-      const after = await handle.stat()
-      const linked = await asyncFs.lstat(file)
-      if (
-        linked.isSymbolicLink() ||
-        linked.ino !== before.ino ||
-        linked.dev !== before.dev ||
-        after.size !== before.size ||
-        after.mtimeMs !== before.mtimeMs ||
-        after.ctimeMs !== before.ctimeMs
-      )
-        throw sourceError('package file changed while hashing', 'tree-changed')
-      return inner.digest()
-    } finally {
-      await handle.close()
-    }
+      const digest = inner.digest()
+      if (verification) {
+        const expected = verification.remaining.get(rel)
+        if (expected) {
+          if (!digest.equals(expected))
+            throw sourceError('package file differs from observed bytes', 'tree-changed')
+          verification.remaining.delete(rel)
+        }
+      }
+      return digest
+    })
   }
   const digests = await hashFileReads(files, hashFile)
+  if (verification?.remaining.size)
+    throw sourceError('package file differs from observed bytes', 'tree-changed')
   // A previously closed file can change while a later file yields. Recheck the entire observation,
   // including ctime: same-size writes with a restored mtime must still refuse this traversal.
   await mapFileChecks(files, async ({ file, observed }) => {
     checkCancelled(opts.signal)
     const current = await asyncFs.lstat(file)
+    const actual = await asyncFs.realpath(file)
     if (
       !current.isFile() ||
       !sameFileObservation(current, observed) ||
-      !contained(root, await asyncFs.realpath(file))
+      (verification ? actual !== file : !contained(root, actual))
     )
       throw sourceError('package file changed while hashing', 'tree-changed')
   })
+  if (directories)
+    await mapFileChecks([...directories], async ([directory, observed]) => {
+      checkCancelled(opts.signal)
+      await verifyDirectory(directory, observed)
+    })
   const finalRoot = await asyncFs.lstat(dir)
   if (
     finalRoot.isSymbolicLink() ||
     finalRoot.ino !== rootStat.ino ||
     finalRoot.dev !== rootStat.dev ||
+    (verification && !sameFileObservation(finalRoot, rootStat)) ||
     (await asyncFs.realpath(dir)) !== root
   )
     throw sourceError('package directory changed while hashing', 'tree-changed')
   checkCancelled(opts.signal)
   const outer = createHash('sha256')
-  for (const digest of digests) outer.update(digest)
+  let manifest: Buffer | undefined
+  let index = 0
+  for (const digest of digests) {
+    outer.update(digest)
+    if (files[index++]?.rel === 'package.json') manifest = digest
+  }
   const digest = `sha256-${outer.digest('hex')}`
-  rememberDigest(
-    key,
-    rootStat,
-    signature,
-    digest,
-    started,
-    files.map(({ observed }) => observed.mtimeMs),
+  if (cache)
+    rememberDigest(
+      cache.key,
+      rootStat,
+      cache.signature,
+      digest,
+      started,
+      files.map(({ observed }) => observed.mtimeMs),
+      manifest,
+    )
+  return rememberManifest(digest, manifest)
+}
+
+async function verifyDirectory(directory: string, observed: Stats | undefined): Promise<void> {
+  const current = await asyncFs.lstat(directory)
+  if (
+    !observed ||
+    !current.isDirectory() ||
+    !sameFileObservation(current, observed) ||
+    (await asyncFs.realpath(directory)) !== directory
   )
-  return digest
+    throw sourceError('package directory changed while hashing', 'tree-changed')
 }
 
 function sameFileObservation(a: Stats, b: Stats): boolean {

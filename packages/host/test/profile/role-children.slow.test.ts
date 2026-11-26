@@ -462,13 +462,18 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
             expect.objectContaining({ id: retiringRole.key, status: 'idle', continuable: true }),
           ]),
         )
-        await vi.advanceTimersByTimeAsync(3_600_000)
-        await expect.poll(() => fixture.host.kernel.get(retiringRole.key) === undefined).toBe(true)
-        expect(await parent.d.children.list?.()).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ id: retiringRole.key, status: 'completed', continuable: false }),
-          ]),
-        )
+        // Jump to the idle cutoff and run one maintenance tick. Role cleanup can finish after its
+        // durable status changes to completed, so wait for the parent to see it as non-continuable.
+        vi.setSystemTime(Date.now() + 3_600_000)
+        await vi.advanceTimersByTimeAsync(60_000)
+        await expect
+          .poll(() => parent.d.children.list?.(), { timeout: 10_000 })
+          .toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ id: retiringRole.key, status: 'completed', continuable: false }),
+            ]),
+          )
+        expect(fixture.host.kernel.get(retiringRole.key)).toBeUndefined()
         expect(await parent.d.children.inspect?.(retiringRole.key)).toMatchObject({
           text: 'Findings ready; signed actions belong to the main assistant.',
         })

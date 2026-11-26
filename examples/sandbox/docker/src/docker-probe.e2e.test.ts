@@ -75,7 +75,21 @@ describe('Docker Linux container capability probe', () => {
 
   it('does not turn a failing daemon query into support even when stdout says linux', async () => {
     cli('linux', 13)
-    expect(await probeDocker()).toMatchObject({ available: false, network: false, fsWrite: [] })
+    const result = await probeDocker()
+    expect(result).toMatchObject({ available: false, network: false, fsWrite: [] })
+    expect(result.unavailableReason).toContain('"stage":"close"')
+    expect(result.unavailableReason).toContain('"exitCode":13')
+    expect(result.unavailableReason).toMatch(/"elapsedMs":\d+/)
+  })
+
+  it('distinguishes an unavailable executable from a daemon refusal without exposing raw errors', async () => {
+    vi.stubEnv('PATH', join(dir, 'missing-command-directory'))
+    const result = await probeDocker()
+    expect(result).toMatchObject({ available: false, network: false, fsWrite: [] })
+    expect(result.unavailableReason).toContain('"stage":"spawn-error"')
+    expect(result.unavailableReason).toContain('"errno":"ENOENT"')
+    expect(result.unavailableReason).not.toContain(dir)
+    expect(result.unavailableReason).not.toContain('spawn docker')
   })
 
   it.each([String.raw`D:\work\proj`, String.raw`\\server\share\proj`, '//server/share/proj'])(

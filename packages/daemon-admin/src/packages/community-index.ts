@@ -1,8 +1,14 @@
-import { type PackageCatalogPage, validatePackageAdminData } from '@agnes/protocol'
+import { validateAgainst, validatePackageAdminData } from '@agnes/protocol'
+import { PackageCommunityProvides, PackageCommunityPublishTimestamp } from '@agnes/protocol/gen/package-admin'
+import {
+  type CommunityItem,
+  type CommunityVersion,
+  projectCommunitySnapshot,
+  readAghEngine,
+} from './community-catalog.js'
 
 /** Listing permits discovery only; it does not identify a publisher as official or authorize installation. */
 export const COMMUNITY_INDEX_URL = 'https://agnesai-labs.github.io/agh-plugin-market/index.json'
-type Item = NonNullable<PackageCatalogPage['communityIndex']>['items'][number]
 
 function githubRepository(value: unknown): string {
   if (typeof value !== 'string') throw new Error('invalid repository URL')
@@ -13,7 +19,7 @@ function githubRepository(value: unknown): string {
   return `${match[1]}/${name}`.toLowerCase()
 }
 
-function localized(value: unknown): Item['summary'] {
+function localized(value: unknown): CommunityItem['summary'] {
   if (value === undefined) return undefined
   if (typeof value === 'string') return value
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid text')
@@ -22,12 +28,12 @@ function localized(value: unknown): Item['summary'] {
 }
 
 /** Project the complete format-1 index, without topic searches or entry-count truncation. */
-export function indexedCommunityPlugins(value: unknown): Item[] {
+export function indexedCommunityPlugins(value: unknown): CommunityItem[] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid index')
   const index = value as Record<string, unknown>
   if (index.format !== 1 || !Array.isArray(index.plugins)) throw new Error('invalid index')
   const names = new Set<string>()
-  const items = index.plugins.map((entry): Item => {
+  const items = index.plugins.map((entry): CommunityItem => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new Error('invalid entry')
     const row = entry as Record<string, unknown>
     const repository = row.repository as Record<string, unknown> | undefined
@@ -37,7 +43,7 @@ export function indexedCommunityPlugins(value: unknown): Item[] {
     const fullName = githubRepository(repository?.url)
     if (!Array.isArray(row.versions) || !row.versions.length) throw new Error('invalid versions')
     const versions = new Set<string>()
-    const sources = row.versions.map((version) => {
+    const sources = row.versions.map((version): CommunityVersion => {
       if (!version || typeof version !== 'object' || Array.isArray(version))
         throw new Error('invalid version')
       const record = version as Record<string, unknown>
@@ -54,12 +60,26 @@ export function indexedCommunityPlugins(value: unknown): Item[] {
       )
         throw new Error('invalid source')
       versions.add(record.version)
+      const provides =
+        record.provides === undefined
+          ? undefined
+          : validateAgainst<PackageCommunityProvides>(PackageCommunityProvides, record.provides)
+      const publishTimestamp =
+        record.publishTimestamp === undefined
+          ? undefined
+          : validateAgainst<PackageCommunityPublishTimestamp>(
+              PackageCommunityPublishTimestamp,
+              record.publishTimestamp,
+            )
       return {
         version: record.version,
         source: {
-          type: 'git' as const,
+          type: 'git',
           ref: `git:https://github.com/${fullName}.git#${source.commit.toLowerCase()}`,
         },
+        ...(provides?.ok ? { provides: provides.value } : {}),
+        ...(publishTimestamp?.ok ? { publishTimestamp: publishTimestamp.value } : {}),
+        aghEngine: readAghEngine(record.engines),
       }
     })
     const summary = localized(row.description)
@@ -81,14 +101,17 @@ export function indexedCommunityPlugins(value: unknown): Item[] {
     !validatePackageAdminData('PackageCatalogPage', {
       items: [],
       nextCursor: null,
-      communityIndex: {
-        state: 'ready',
-        lastSuccessAt: null,
-        nextAttemptAt: null,
-        error: null,
-        totalReported: items.length,
-        items,
-      },
+      communityIndex: projectCommunitySnapshot(
+        {
+          state: 'ready',
+          lastSuccessAt: null,
+          nextAttemptAt: null,
+          error: null,
+          totalReported: items.length,
+          items,
+        },
+        2,
+      ),
     }).ok
   )
     throw new Error('invalid index projection')

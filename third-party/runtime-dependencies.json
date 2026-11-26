@@ -15,6 +15,7 @@
         "packages/package-manager",
         "packages/sdk",
         "packages/web",
+        "packages/web-server",
         "packages/web-ui"
       ]
     },
@@ -34,6 +35,15 @@
       "source": "https://github.com/ant-design/x/tree/main/packages/x-markdown",
       "purpose": "Static React rendering of assistant body and thinking Markdown in the shared Web UI layer.",
       "rationale": "Pins the React 18 compatible implementation verified in the W5a-0 fixture while keeping Agnes URL, HTML, image and copy rules in an auditable adapter.",
+      "consumers": ["packages/web-ui"]
+    },
+    {
+      "name": "parse5",
+      "version": "8.1.1",
+      "license": "MIT",
+      "source": "https://github.com/inikulin/parse5",
+      "purpose": "Locate HTML preview resources and decode attributes in an in-memory syntax tree without browser DOM operations.",
+      "rationale": "Reuse an HTML-standard tokenizer and source offsets to preserve the original document and the workbench CSP.",
       "consumers": ["packages/web-ui"]
     },
     {
@@ -76,11 +86,11 @@
     },
     {
       "name": "@earendil-works/pi-ai",
-      "version": "1.5.0",
+      "version": "1.6.0",
       "license": "MIT",
-      "source": "https://github.com/earendil-works/pi/tree/main/packages/ai",
+      "source": "https://github.com/earendil-works/pi/tree/faac585884ae2c013a6b1400f3e9e77f10b34bac/packages/ai",
       "purpose": "Provider adapters, model catalog and streaming AI protocol support.",
-      "rationale": "Uses the project's selected public AI abstraction instead of maintaining parallel provider implementations. A retained pnpm patch wires Bedrock connection/request/socket deadlines into its existing Smithy proxy transport; no upstream copyright notice is removed.",
+      "rationale": "Uses the project's selected public AI abstraction instead of maintaining parallel provider implementations. A retained pnpm patch wires Bedrock connection/request/socket deadlines into its Smithy transport and preserves Node proxy environment handling; no upstream copyright notice is removed.",
       "consumers": ["packages/ai"]
     },
     {

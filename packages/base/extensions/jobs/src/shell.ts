@@ -2,6 +2,7 @@ import type { ToolContext, ToolResult } from '@agnes/extension-api'
 import { failureCode, toolFailure } from '../../tools-core/src/guards/feedback.js'
 import { guardedCommandResult } from '../../tools-core/src/guards/output.js'
 import {
+  commandNetworkNote,
   DEADLINE_ADVICE,
   deadlineStop,
   deadlineWait,
@@ -10,6 +11,7 @@ import {
   jobToolsHint,
   packageListsNote,
   shellGuidance,
+  shellSetupAdvice,
   signalNote,
   timeoutGuidance,
 } from '../../tools-core/src/shell-guidance.js'
@@ -94,6 +96,7 @@ export async function runShellJob(
         ? `\n[processes this command started in the background (with & or nohup) keep running as background job ${id}; ${hint}]`
         : ''
     const packageLists = packageListsNote(job.stdout, job.stderr)
+    const networkNote = commandNetworkNote(ctx, job.stdout, job.stderr)
     return {
       structured: { jobId: id, status: job.status },
       ...(await guardedCommandResult(
@@ -102,7 +105,7 @@ export async function runShellJob(
           .map((note) => `${note}\n`)
           .join(
             '',
-          )}${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}${packageLists ? `\n${packageLists}` : ''}${ended}${kept}${code === 0 ? '' : '\nCommand failed; inspect job_output and current state, correct the command/arguments before retrying.'}\n[exit ${code}]${job.truncated ? ' [capture limit reached]' : ''}`,
+          )}${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}${packageLists ? `\n${packageLists}` : ''}${networkNote ? `\n${networkNote}` : ''}${ended}${kept}${code === 0 ? '' : '\nCommand failed; inspect job_output and current state, correct the command/arguments before retrying.'}\n[exit ${code}]${job.truncated ? ' [capture limit reached]' : ''}`,
       )),
       ...(code === 0 ? {} : { isError: true }),
       details: {
@@ -128,6 +131,8 @@ export async function runShellJob(
         'SHELL_JOB_BACKEND_UNAVAILABLE',
         'command backend unavailable; run a foreground command or ask the user to configure the jobs backend.',
       )
+    const setupAdvice = shellSetupAdvice(e)
+    if (setupAdvice) return toolFailure(ctx, failureCode(e, 'SHELL_JOB_FAILED'), setupAdvice)
     const message = e instanceof Error ? e.message : ''
     const reason: [string, string] =
       message.startsWith('SHELL_BUSY:') || message === 'shell is busy'

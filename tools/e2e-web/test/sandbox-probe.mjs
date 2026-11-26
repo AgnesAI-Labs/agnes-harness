@@ -30,7 +30,7 @@ const plan = await compileWorkspacePolicy({
       return await realpath(target)
     } catch (error) {
       if (error.code !== 'ENOENT') throw error
-      // Host may migrate the old data/secrets leaf; its real parent still fixes the identity.
+      // Uncreated leaf directories such as secrets resolve through their existing real parent.
       return join(await realpath(dirname(target)), basename(target))
     }
   },

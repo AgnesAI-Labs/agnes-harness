@@ -5,6 +5,9 @@ import { rpcError } from '@agnes/protocol'
 type Activation = { integrity: string; revision: string; activationId: string; active: boolean }
 const listeners = new Map<object | string, Set<() => void>>()
 
+/** Internal evidence that a profile-owned resource has a different active binding. */
+export class SupersededProfileResourceError extends Error {}
+
 /** Durable epochs: disabling and enabling the same code never revives an old grant. */
 export class ProfileActivations {
   constructor(

@@ -1,3 +1,5 @@
+# Link the gallery's portable version declarations during workspace development.
+linkWorkspacePackages: true
 packages:
   - packages/*
   - packages/package-manager/bundled-plugins/document-reader
@@ -19,5 +21,5 @@ packages:
   - examples/sandbox/docker
   - tools/*
 patchedDependencies:
-  '@earendil-works/pi-ai@1.5.0': patches/@earendil-works__pi-ai@1.5.0.patch
+  '@earendil-works/pi-ai@1.6.0': patches/@earendil-works__pi-ai@1.6.0.patch
   jiti@2.7.0: patches/jiti@2.7.0.patch

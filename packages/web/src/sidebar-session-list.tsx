@@ -157,7 +157,7 @@ function SessionGroupBody({
           data-testid="workspace-sessions-toggle"
           data-workspace={id}
           aria-expanded={page ? page.items.length > RECENT_SESSIONS : expanded}
-          disabled={page?.loading ?? false}
+          disabled={(page?.loading && !page.refreshing) ?? false}
           onClick={() => {
             if (page) {
               options.groupAction?.(id, page.next ? 'more' : 'collapse')

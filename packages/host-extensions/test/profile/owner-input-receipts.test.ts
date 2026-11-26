@@ -260,18 +260,13 @@ describe('owner input receipts', () => {
     expect(calls.admitResolved).not.toHaveBeenCalled()
   })
 
-  it('recoveryContinuation and legacyOwnerMessage pass through without resolution', async () => {
+  it('recoveryContinuation passes through without resolution', async () => {
     const { targets } = await paired()
     const { sessions, calls } = host()
     const plugin = withOwnerReceipts(sessions, targets.receipts, DESK)
     const recovery = admission({ kind: 'recoveryContinuation', turnEndSeq: 7 })
-    const legacy = admission({ kind: 'legacyOwnerMessage', text: 'old', originalInbox: null })
     await plugin.admitInput('s1', recovery)
-    await plugin.admitInput('s1', legacy)
-    expect(calls.admitInput.mock.calls).toEqual([
-      ['s1', recovery],
-      ['s1', legacy],
-    ])
+    expect(calls.admitInput.mock.calls).toEqual([['s1', recovery]])
     expect(calls.admitResolved).not.toHaveBeenCalled()
   })
 })

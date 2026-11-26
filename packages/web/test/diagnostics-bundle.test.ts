@@ -1,6 +1,13 @@
 import { inflateRawSync } from 'node:zlib'
-import { attachmentLink, type EventEnvelope, rpcError, type UITimeline } from '@agnes/protocol'
+import {
+  attachmentLink,
+  type EventEnvelope,
+  remoteFrontendSessionPath,
+  rpcError,
+  type UITimeline,
+} from '@agnes/protocol'
 import { JsonRpcError } from '@agnes/sdk/browser'
+import { REDACTED } from '@agnes/web-foundation/diagnostics-redact'
 import type { BrowserLog, DiagnosticsInclude } from '@agnes/web-units'
 import { describe, expect, it } from 'vitest'
 import {
@@ -44,6 +51,11 @@ const SECRET_EVENT = 'ghp_' + 'e'.repeat(36)
 const SECRET_BROWSER = 'xoxb-' + 'b'.repeat(20)
 const SECRET_CONFIG = 'AIza' + 'c'.repeat(30)
 const SECRET_ERROR = 'sk-' + 'err'.repeat(8)
+const CLOUD_KEY = `agh_sk_${'synthetic-0123'.repeat(3)}`
+const OPAQUE_CLOUD_KEY = 'synthetic-opaque-key'
+const NUMERIC_CLOUD_KEY = '91736120540719032764'
+const CLOUD_TICKET = `m0ck.${'n'.repeat(22)}.${'S1g-_'.repeat(8)}xyz`
+const cloudPath = (ticket: string) => `/_agnes/remote-access/${ticket}/_agnes/remote-frontend/ws`
 const SHA_A = 'a'.repeat(64)
 const SHA_B = 'b'.repeat(64)
 
@@ -180,16 +192,84 @@ describe('collectDiagnostics', () => {
   })
 
   it('redacts every text file', async () => {
+    const cloudEndpoint = (ticket: string) => `https://cloud.example${cloudPath(ticket)}`
+    const escapedEndpoint = (ticket: string) =>
+      JSON.stringify({ endpoint: cloudEndpoint(ticket) }).replaceAll('/', '\\/')
+    const cloudKeyDict = (key: string) => `{'AGH_CLOUD_KEY': '${key}', 'region': 'east'}`
+    const unicodeEndpoint = (ticket: string) => escapedEndpoint(ticket).replaceAll('\\/', '\\u002f')
+    const indentedCloudKey = (key: string) =>
+      `{"AGH_CLOUD_KEY":\n${' '.repeat(24)}"${key}","operationId":9007199254740993,"sample":1e400}`
+    const splitCloudKey = (key: string) => `AGH_CLOUD_KEY:\n"${key}"`
+    const numericKeyRecord = `{"AGH_CLOUD_KEY":${NUMERIC_CLOUD_KEY},"firstToken":12}`
+    const ordinaryLink = 'https://docs.example/reference/_agnes/remote-access/overview'
+    const publishedEndpoint = `https://cloud.example${remoteFrontendSessionPath(CLOUD_TICKET)}/_agnes/remote-frontend/ws`
+    const windowsEndpoint = (ticket: string) =>
+      `https://cloud.example${cloudPath(ticket).replaceAll('/', '\\')}`
+    const prefixedJson = (ticket: string) => `request failed: ${unicodeEndpoint(ticket)}`
+    const query = 'synthetic-query-value'
+    const queriedEndpoint = (ticket: string, path: string) => `${cloudEndpoint(ticket)}?path=${path}`
+    const runtimeMessage = (key: string, ticket: string) =>
+      `${'log line\n'.repeat(16_000)}${key}\nGET ${cloudPath(ticket)} rejected\n${escapedEndpoint(ticket)}`
+    const runtimeText =
+      [
+        {
+          kind: 'worker.stderr',
+          AGH_CLOUD_KEY: OPAQUE_CLOUD_KEY,
+          message: runtimeMessage(CLOUD_KEY, CLOUD_TICKET),
+        },
+        { kind: 'worker.stderr', message: JSON.stringify({ url: queriedEndpoint(CLOUD_TICKET, query) }) },
+      ]
+        .map((row) => JSON.stringify(row))
+        .join('\n') + '\n'
     const { call } = fake({
-      ...standard([[ev(1, 'tool/result', { content: [{ type: 'text', text: `token ${SECRET_EVENT}` }] })]]),
-      'config.get': () => ({ profile: 'default', provider: { note: `key ${SECRET_CONFIG}` } }),
+      ...standard([
+        [
+          ev(1, 'tool/result', {
+            content: [
+              { type: 'text', text: `token ${SECRET_EVENT}` },
+              { type: 'text', text: escapedEndpoint(CLOUD_TICKET) },
+              { type: 'text', text: cloudKeyDict(OPAQUE_CLOUD_KEY) },
+              { type: 'text', text: unicodeEndpoint(CLOUD_TICKET) },
+              { type: 'text', text: indentedCloudKey(OPAQUE_CLOUD_KEY) },
+              { type: 'text', text: splitCloudKey(OPAQUE_CLOUD_KEY) },
+              { type: 'text', text: numericKeyRecord },
+              { type: 'text', text: windowsEndpoint(CLOUD_TICKET) },
+              { type: 'text', text: prefixedJson(CLOUD_TICKET) },
+            ],
+            details: { timings: { [cloudEndpoint(CLOUD_TICKET)]: 21, [cloudEndpoint(REDACTED)]: 22 } },
+          }),
+          ev(2, 'user/message', { text: `cloud rejected ${CLOUD_KEY} for ${cloudPath(CLOUD_TICKET)}` }),
+        ],
+      ]),
+      'config.get': () => ({
+        profile: 'default',
+        provider: {
+          note: `key ${SECRET_CONFIG}`,
+          AGH_CLOUD_KEY: OPAQUE_CLOUD_KEY,
+          endpoint: publishedEndpoint,
+          helpUrl: ordinaryLink,
+        },
+      }),
+      'diagnostics.collect': () => ({
+        ...collectResult,
+        logs: collectResult.logs.map((log) =>
+          log.name === 'runtime.jsonl' ? { ...log, text: runtimeText, size: runtimeText.length } : log,
+        ),
+      }),
     })
     const projection = {
       sessionId: 'abc-123_DEF456',
       upto: 1,
       generation: 1,
       opState: null,
-      nodes: [{ kind: 'context', id: 'n1', seq: 1, text: `leaked ${SECRET_PROJECTION}` }],
+      nodes: [
+        {
+          kind: 'context',
+          id: 'n1',
+          seq: 1,
+          text: `leaked ${SECRET_PROJECTION} and ${CLOUD_KEY}\n${cloudKeyDict(OPAQUE_CLOUD_KEY)}\n${unicodeEndpoint(CLOUD_TICKET)}`,
+        },
+      ],
       turns: [],
     } as UITimeline
     const log: BrowserLog = {
@@ -197,18 +277,61 @@ describe('collectDiagnostics', () => {
       entries: [{ ts: NOW.toISOString(), level: 'log', text: `slack ${SECRET_BROWSER}` }],
     }
     const out = await collectDiagnostics(
-      input(call, { projection, browserLog: log }),
+      input(call, { projection, browserLog: log, projectionHasEarlier: true }),
       ALL,
       new AbortController().signal,
     )
     const files = readZip(out.zip)
-    expect(files.size).toBeGreaterThanOrEqual(6)
+    expect(files.size).toBe(9)
     for (const [name, text] of files) {
-      for (const secret of [SECRET_PROJECTION, SECRET_EVENT, SECRET_BROWSER, SECRET_CONFIG]) {
-        expect(text.includes(secret), `${name} leaks ${secret.slice(0, 4)}`).toBe(false)
+      for (const secret of [
+        SECRET_PROJECTION,
+        SECRET_EVENT,
+        SECRET_BROWSER,
+        SECRET_CONFIG,
+        CLOUD_KEY,
+        OPAQUE_CLOUD_KEY,
+        NUMERIC_CLOUD_KEY,
+        CLOUD_TICKET,
+        query,
+      ]) {
+        expect(text.includes(secret), `${name} contains an unredacted fixture credential`).toBe(false)
       }
     }
-    expect(files.get('events.jsonl')).toContain('REDACTED')
+    expect(files.get('events.jsonl')).toContain(`cloud rejected ${REDACTED} for ${cloudPath(REDACTED)}`)
+    const toolResult = JSON.parse(files.get('events.jsonl')?.split('\n')[0] ?? '{}').data
+    expect(JSON.parse(toolResult.content[1].text)).toEqual({ endpoint: cloudEndpoint(REDACTED) })
+    expect(toolResult.content[2].text).toBe(cloudKeyDict(REDACTED))
+    expect(JSON.parse(toolResult.content[3].text)).toEqual({ endpoint: cloudEndpoint(REDACTED) })
+    expect(toolResult.content[4].text).toBe(
+      `{"AGH_CLOUD_KEY":"${REDACTED}","operationId":9007199254740993,"sample":1e400}`,
+    )
+    expect(toolResult.content[5].text).toBe(splitCloudKey(REDACTED))
+    expect(JSON.parse(toolResult.content[6].text)).toEqual({ AGH_CLOUD_KEY: REDACTED, firstToken: 12 })
+    expect(toolResult.content[7].text).toBe(windowsEndpoint(REDACTED))
+    expect(toolResult.content[8].text).toBe(prefixedJson(REDACTED))
+    expect(Object.values(toolResult.details.timings).sort()).toEqual([21, 22])
+    expect(toolResult.details.timings[cloudEndpoint(REDACTED)]).toBe(22)
+    expect(files.get('system.json')).toContain(`"AGH_CLOUD_KEY": "${REDACTED}"`)
+    expect(files.get('system.json')).toContain(cloudEndpoint(REDACTED))
+    expect(files.get('system.json')).toContain(ordinaryLink)
+    const runtimeLog = files.get('logs/daemon-runtime.jsonl') ?? ''
+    expect(runtimeLog.endsWith('\n')).toBe(true)
+    const [runtime, nestedRuntime] = runtimeLog
+      .trimEnd()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+    expect(runtime.AGH_CLOUD_KEY).toBe(REDACTED)
+    const runtimeLines = runtime.message.split('\n')
+    expect(runtimeLines.slice(0, -1).join('\n')).toBe(
+      `${'log line\n'.repeat(16_000)}${REDACTED}\nGET ${cloudPath(REDACTED)} rejected`,
+    )
+    expect(JSON.parse(runtimeLines.at(-1))).toEqual({ endpoint: cloudEndpoint(REDACTED) })
+    expect(JSON.parse(nestedRuntime.message)).toEqual({ url: queriedEndpoint(REDACTED, REDACTED) })
+    expect(files.get('index.html')).toContain(cloudEndpoint(REDACTED))
+    expect(files.get('index.html')).toContain(ordinaryLink)
+    expect(files.get('index.html')).toContain(`GET ${cloudPath(REDACTED)} rejected`)
+    expect(files.get('index.html')).toContain(`and ${REDACTED}`)
   })
 
   it('omits inline base64 media from trace.json and index.html without touching the live projection', async () => {

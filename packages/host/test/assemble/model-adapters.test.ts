@@ -2,11 +2,12 @@ import { closeSync, cpSync, mkdtempSync, readFileSync, realpathSync, rmSync, wri
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import * as adapterHelpers from '@agnes/ai/model-adapter'
 import { fakeModel } from '@agnes/ai/testkit'
 import { Context } from '@agnes/cordis'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
-import type { ModelAdapter, ModelAdapterInstance } from '@agnes/extension-api'
-import { modelAdapterKind } from '@agnes/extension-api'
+import type { ExtensionManifest, ModelAdapter, ModelAdapterInstance } from '@agnes/extension-api'
+import { bundledExtensionManifest, modelAdapterKind } from '@agnes/extension-api'
 import { SEAM_KINDS } from '@agnes/extension-api/seams'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import { MemoryPackageLoader, type PackageModule } from '@agnes/host-extensions/assemble/packages'
@@ -19,6 +20,7 @@ import {
   modelAdapterCatalog,
 } from '@agnes/host-providers/assemble/model-adapters'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import { providedExternalModules } from '@agnes/plugin-runtime/provided-externals'
 import type { InferenceEvent, RequestBody } from '@agnes/protocol'
 import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -48,8 +50,12 @@ const definition = (over: Partial<ModelAdapter> = {}): ModelAdapter => ({
 })
 
 it('registers factories with immutable metadata, rejects duplicates and releases them with the plugin', async () => {
+  // Package entries are imported before the first provider registry exists on a cold boot.
+  expect(providedExternalModules['@agnes/ai/model-adapter']).toBe(adapterHelpers)
   const root = new Context()
   new ModelAdapterRegistry(root)
+  expect(Object.keys(adapterHelpers).sort()).toEqual(['PiAdapter', 'getModelCatalogueFacts', 'isChatModelId'])
+  expect(providedExternalModules['@agnes/ai']).toBeUndefined()
   const lifecycle: string[] = []
   let release: (() => Promise<void>) | undefined
   const plugin = root.plugin((ctx) => {
@@ -57,6 +63,10 @@ it('registers factories with immutable metadata, rejects duplicates and releases
       modelAdapterKind,
       '@agnes/host',
       definition({
+        contributeRoutes: async (signal) => {
+          signal.throwIfAborted()
+          return [{ route: 'owned', api: 'custom', baseUrl: 'https://fixture.invalid/v1', models: [] }]
+        },
         create: (config) => ({
           ...(definition().create(config) as ModelAdapterInstance),
           dispose() {
@@ -87,10 +97,17 @@ it('registers factories with immutable metadata, rejects duplicates and releases
   expect(() => root.providers.registerHost(modelAdapterKind, '@agnes/host', definition())).toThrow(
     'duplicate model adapter',
   )
+  expect(root.modelAdapters.hasContributedRoutes()).toBe(true)
+  const contributions = await root.modelAdapters.contributedRoutes()
+  expect(contributions).toMatchObject([{ adapter: 'custom', routes: [{ route: 'owned', api: 'custom' }] }])
+  contributions[0]!.routes[0]!.models.push(fakeModel({ id: 'mutated', route: 'owned' }))
+  expect((await root.modelAdapters.contributedRoutes())[0]!.routes[0]!.models).toEqual([])
   const instance = await root.modelAdapters.create('custom', { routes: [] })
   await plugin.dispose()
   expect(lifecycle).toEqual(['instance', 'registration'])
   expect(modelAdapterCatalog(root)).toEqual([])
+  expect(root.modelAdapters.hasContributedRoutes()).toBe(false)
+  expect(await root.modelAdapters.contributedRoutes()).toEqual([])
   expect(() =>
     instance.adapter.stream('custom', body(), {
       signal: new AbortController().signal,
@@ -242,7 +259,7 @@ const body = (): RequestBody => ({
   ],
 })
 
-async function fixture(selected: string, missingCredential = false) {
+async function fixture(selected: string, missingCredential = false, withBuiltinRows = false) {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-model-adapter-'))
   dirs.push(dataDir)
   const directory = join(dataDir, 'snapshot')
@@ -329,6 +346,23 @@ async function fixture(selected: string, missingCredential = false) {
       id: '@agnes/base',
       ...seamFactories(Object.fromEntries(SEAM_KINDS.map((name) => [name, async () => seams[name]]))),
       presets: { base: { name: 'base' } },
+      ...(withBuiltinRows
+        ? {
+            embeddedExtensions: [
+              {
+                ...(bundledExtensionManifest(
+                  JSON.parse(
+                    readFileSync(
+                      new URL('../../../base/extensions/tools-web/package.json', import.meta.url),
+                      'utf8',
+                    ),
+                  ),
+                ) as ExtensionManifest),
+                capabilities: {},
+              },
+            ],
+          }
+        : {}),
     },
     '@agnes/code': {
       id: '@agnes/code',
@@ -339,7 +373,13 @@ async function fixture(selected: string, missingCredential = false) {
   const imported: string[] = []
   let fixtureNamespace:
     | {
-        observations: { requests: Array<{ model: string }>; disposed: boolean; cleaned: boolean }
+        observations: {
+          requests: Array<{ model: string }>
+          disposed: boolean
+          cleaned: boolean
+          cleanups: number
+          rejectNextMount: boolean
+        }
       }
     | undefined
   const extensionLoader = {
@@ -512,4 +552,169 @@ it('reads release adapter identities and capabilities without assembling a Host'
   await publish()
   expect(JSON.parse(readFileSync(file, 'utf8')).entries).toEqual([])
   expect(warn).not.toHaveBeenCalled()
+})
+
+it('keeps contributed models callable after builtin mounting and a later ordinary-tree replacement', async () => {
+  const { RuntimeTargetPublisher } = await import('@agnes/host-providers/runtime-target-publisher')
+  const apply = RuntimeTargetPublisher.prototype.apply
+  // A changed importer takes the supported whole-tree candidate path during builtin row mounting.
+  const rebuild = vi.spyOn(RuntimeTargetPublisher.prototype, 'apply').mockImplementation(function (
+    this: InstanceType<typeof RuntimeTargetPublisher>,
+    target,
+    options,
+  ) {
+    return apply.call(this, target, { ...options, rebuild: true })
+  })
+  const { assembled, module } = await fixture('community-fake', false, true).catch((error) => {
+    rebuild.mockRestore()
+    throw error
+  })
+  try {
+    expect(assembled.runtimeTargetSnapshot().tree.rows).toContainEqual(
+      expect.objectContaining({ id: 'ext:agnes/tools-web' }),
+    )
+    await expect.poll(() => module.observations.cleaned).toBe(true)
+    module.observations.cleaned = false
+    await assembled.applyRuntimeTarget(assembled.runtimeTargetSnapshot())
+    await expect.poll(() => module.observations.cleaned).toBe(true)
+    const events: InferenceEvent[] = []
+    for await (const event of assembled.provider.infer(body(), {
+      signal: new AbortController().signal,
+      toolNames: [],
+    }))
+      events.push(event)
+    expect(events).toContainEqual({ type: 'text_delta', delta: 'community adapter called' })
+  } finally {
+    rebuild.mockRestore()
+    await assembled.rollback.unwind()
+  }
+})
+
+it('does not rebuild model instances for an unchanged owner and refuses publication after close', async () => {
+  const { assembled } = await fixture('community-fake')
+  const create = vi.spyOn(ModelAdapterRegistry.prototype, 'create')
+  try {
+    const target = assembled.runtimeTargetSnapshot()
+    await assembled.applyRuntimeTarget(target)
+    expect(create).not.toHaveBeenCalled()
+    await assembled.ordinaryReconciliation.close()
+    expect(() => assembled.applyRuntimeTarget(target)).toThrow('E_HOST_CLOSED')
+    expect(create).not.toHaveBeenCalled()
+  } finally {
+    create.mockRestore()
+    await assembled.rollback.unwind()
+  }
+})
+
+it('retries failed model-owner reconciliation on the same published target without replaying inference', async () => {
+  const { assembled, module } = await fixture('community-fake')
+  const { RuntimeTargetPublisher } = await import('@agnes/host-providers/runtime-target-publisher')
+  const apply = RuntimeTargetPublisher.prototype.apply
+  const rebuild = vi.spyOn(RuntimeTargetPublisher.prototype, 'apply').mockImplementation(function (
+    this: InstanceType<typeof RuntimeTargetPublisher>,
+    target,
+    options,
+  ) {
+    return apply.call(this, target, { ...options, rebuild: true })
+  })
+  const create = ModelAdapterRegistry.prototype.create
+  let attempts = 0
+  const modelInstances = vi.spyOn(ModelAdapterRegistry.prototype, 'create').mockImplementation(function (
+    this: ModelAdapterRegistry,
+    id,
+    config,
+    signal,
+  ) {
+    if (id === 'community-fake' && ++attempts === 1) return Promise.reject(new Error('model rebuild failed'))
+    return create.call(this, id, config, signal)
+  })
+  try {
+    const target = assembled.runtimeTargetSnapshot()
+    await expect(assembled.applyRuntimeTarget(target)).rejects.toThrow('model rebuild failed')
+    rebuild.mockRestore()
+    expect(module.observations.requests).toEqual([])
+    await assembled.applyRuntimeTarget(target)
+    expect(attempts).toBe(2)
+    expect(module.observations.requests).toEqual([])
+    const events: InferenceEvent[] = []
+    for await (const event of assembled.provider.infer(body(), {
+      signal: new AbortController().signal,
+      toolNames: [],
+    }))
+      events.push(event)
+    expect(events).toContainEqual({ type: 'text_delta', delta: 'community adapter called' })
+    expect(module.observations.requests).toHaveLength(1)
+  } finally {
+    rebuild.mockRestore()
+    modelInstances.mockRestore()
+    await assembled.rollback.unwind()
+  }
+})
+
+it('cleans model registrations before returning a failed startup reconciliation', async () => {
+  const { RuntimeTargetPublisher } = await import('@agnes/host-providers/runtime-target-publisher')
+  const apply = RuntimeTargetPublisher.prototype.apply
+  const rebuild = vi.spyOn(RuntimeTargetPublisher.prototype, 'apply').mockImplementation(function (
+    this: InstanceType<typeof RuntimeTargetPublisher>,
+    target,
+    options,
+  ) {
+    return apply.call(this, target, { ...options, rebuild: true })
+  })
+  const create = ModelAdapterRegistry.prototype.create
+  const registries = new Set<ModelAdapterRegistry>()
+  let attempts = 0
+  const modelInstances = vi.spyOn(ModelAdapterRegistry.prototype, 'create').mockImplementation(function (
+    this: ModelAdapterRegistry,
+    id,
+    config,
+    signal,
+  ) {
+    registries.add(this)
+    if (id === 'community-fake' && ++attempts === 2)
+      return Promise.reject(new Error('startup model rebuild failed'))
+    return create.call(this, id, config, signal)
+  })
+  try {
+    await expect(fixture('community-fake', false, true)).rejects.toThrow('startup model rebuild failed')
+    expect(attempts).toBe(2)
+    expect(registries.size).toBeGreaterThan(0)
+    for (const registry of registries) expect(registry.catalog()).toEqual([])
+  } finally {
+    rebuild.mockRestore()
+    modelInstances.mockRestore()
+  }
+})
+
+it('reconciles model owners when a rejected candidate restores the published tree', async () => {
+  const { assembled, module } = await fixture('community-fake')
+  const { RuntimeTargetPublisher } = await import('@agnes/host-providers/runtime-target-publisher')
+  const apply = RuntimeTargetPublisher.prototype.apply
+  const rebuild = vi.spyOn(RuntimeTargetPublisher.prototype, 'apply').mockImplementation(function (
+    this: InstanceType<typeof RuntimeTargetPublisher>,
+    target,
+    options,
+  ) {
+    return apply.call(this, target, { ...options, rebuild: true })
+  })
+  try {
+    const original = assembled.runtimeTargetSnapshot()
+    module.observations.rejectNextMount = true
+    await expect(assembled.applyRuntimeTarget(original)).rejects.toThrow('candidate plugin mount failed')
+    expect(rebuild).toHaveBeenCalledTimes(2)
+    expect(assembled.runtimeTargetSnapshot()).toEqual(original)
+    await expect.poll(() => module.observations.cleanups).toBe(2)
+    expect(module.observations.requests).toEqual([])
+    const events: InferenceEvent[] = []
+    for await (const event of assembled.provider.infer(body(), {
+      signal: new AbortController().signal,
+      toolNames: [],
+    }))
+      events.push(event)
+    expect(events).toContainEqual({ type: 'text_delta', delta: 'community adapter called' })
+    expect(module.observations.requests).toHaveLength(1)
+  } finally {
+    rebuild.mockRestore()
+    await assembled.rollback.unwind()
+  }
 })

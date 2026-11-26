@@ -944,6 +944,7 @@ static napi_value initialize(napi_env env, napi_value exports) {
     {"reservePipeName", nullptr, guarded<reservePipeName>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"spawnInherited", nullptr, guarded<spawnInherited>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"spawnRestricted", nullptr, guarded<spawnRestricted>, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"spawnSuspended", nullptr, guarded<spawnSuspended>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"environmentNamesEqual", nullptr, guarded<environmentNamesEqual>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"createProcessJob", nullptr, guarded<createProcessJob>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"createPrivateFile", nullptr, guarded<createFile>, nullptr, nullptr, nullptr, napi_default, nullptr},

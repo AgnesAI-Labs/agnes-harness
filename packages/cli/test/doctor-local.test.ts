@@ -14,10 +14,13 @@ describe('local doctor checks', () => {
     try {
       mkdirSync(join(d.home, 'data'))
       writeFileSync(join(d.home, 'data', 'doctor.db'), 'existing-user-data')
+      writeFileSync(join(d.home, 'sessions.db'), 'unrelated-file')
       const r = await doctorStorage(d)
       expect(r.status).toBe('ok')
       expect(r.detail.join(' ')).toContain('journal_mode wal')
       expect(r.detail.join(' ')).toContain('transaction write/read verified')
+      expect(r.detail.join(' ')).not.toContain('sessions.db')
+      expect(readFileSync(join(d.home, 'sessions.db'), 'utf8')).toBe('unrelated-file')
       expect(readdirSync(join(d.home, 'data'))).toEqual(['doctor.db'])
       expect(readFileSync(join(d.home, 'data', 'doctor.db'), 'utf8')).toBe('existing-user-data')
     } finally {
@@ -57,30 +60,4 @@ describe('local doctor checks', () => {
       }
     },
   )
-
-  // The actual failure mode this pair of defaults used to have: a database from the pre-fix
-  // default sitting at the home root, invisible to everything that now looks under home/data.
-  // `agnes doctor` has to say so, plainly, and only when it is actually true.
-  it('names a leftover pre-fix database at the home root, without opening or moving it', async () => {
-    const d = setup()
-    try {
-      writeFileSync(join(d.home, 'sessions.db'), 'left-behind-by-an-older-build')
-      const r = await doctorStorage(d)
-      expect(r.detail.join('\n')).toContain(join(d.home, 'sessions.db'))
-      expect(r.detail.join('\n')).toContain(join(d.home, 'data'))
-      expect(readFileSync(join(d.home, 'sessions.db'), 'utf8')).toBe('left-behind-by-an-older-build')
-    } finally {
-      rmSync(d.home, { recursive: true, force: true })
-    }
-  })
-
-  it('says nothing about a leftover database when there is none to find', async () => {
-    const d = setup()
-    try {
-      const r = await doctorStorage(d)
-      expect(r.detail.some((line) => line.includes('sessions.db'))).toBe(false)
-    } finally {
-      rmSync(d.home, { recursive: true, force: true })
-    }
-  })
 })

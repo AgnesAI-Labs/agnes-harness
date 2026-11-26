@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
-import { ARTIFACT_RECLAIMED_FAILURE } from '@agnes/host'
-import { describe, expect, it, vi } from 'vitest'
 import {
   type ArtifactReadAuthority,
   createAuthenticatedArtifactReadHandler,
   createTrustedSessionArtifactReadHandler,
-} from '../src/local/artifact-read.js'
+} from '@agnes/daemon-rpc/local/artifact-read'
+import { ARTIFACT_RECLAIMED_FAILURE } from '@agnes/host'
+import { describe, expect, it, vi } from 'vitest'
 import { artifactMediaReadReply } from '../src/supervisor/artifact-read.js'
 
 const bytes = new TextEncoder().encode('0123456789abcdef')

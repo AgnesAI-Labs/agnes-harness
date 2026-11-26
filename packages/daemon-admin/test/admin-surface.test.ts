@@ -19,6 +19,14 @@ afterEach(async () => {
   await Promise.all(closers.splice(0).map((close) => close()))
 })
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
 async function server(
   invoke = vi.fn(
     async (_action: AdminSurfaceAction, _params: unknown): Promise<unknown> => ({ packages: [] }),
@@ -39,6 +47,8 @@ async function server(
     runtimeAdmin?: NonNullable<AdminSurfaceOptions['runtimeAdmin']>
     available?: NonNullable<AdminSurfaceOptions['available']>
     backendFeatures?: NonNullable<AdminSurfaceOptions['backendFeatures']>
+    features?: NonNullable<AdminSurfaceOptions['features']>
+    docs?: NonNullable<AdminSurfaceOptions['docs']>
   } = {},
 ) {
   let now = Date.now()
@@ -66,11 +76,17 @@ async function server(
     await new Promise<void>((resolve) => http.close(() => resolve()))
   })
   let cookie = ''
-  const request = (action: string, body?: unknown, headers: Record<string, string> = {}) =>
+  const request = (
+    action: string,
+    body?: unknown,
+    headers: Record<string, string> = {},
+    signal?: AbortSignal,
+  ) =>
     fetch(`${origin}/admin/plugins/api/${action}`, {
       method: body === undefined ? 'GET' : 'POST',
       headers: { Origin: origin, 'Content-Type': 'application/json', Cookie: cookie, ...headers },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(signal ? { signal } : {}),
     })
   const login = async () => {
     const response = await request('session', { token })
@@ -197,11 +213,168 @@ describe('local package admin surface trust boundary', () => {
       features: [],
     })
     expect(context.authScope).toMatch(/^auth\.[a-f0-9]{32}$/)
-    let features = ['packages.community-discovery.v2']
-    const dynamic = await server(undefined, undefined, { backendFeatures: async () => features })
-    expect((await (await dynamic.request('context')).json()).features).toEqual(features)
+    const v2 = 'packages.community-discovery.v2'
+    const v3 = 'packages.community-discovery.v3'
+    let features = [v2, v3]
+    const dynamic = await server(undefined, undefined, {
+      backendFeatures: async () => features,
+      features: [v3],
+    })
+    const spoofed = { 'X-Agnes-Features': v3 }
+    expect((await (await dynamic.request('context', undefined, spoofed)).json()).features).toEqual(features)
+    features = [v2]
+    expect((await (await dynamic.request('overview', undefined, spoofed)).json()).context.features).toEqual([
+      v2,
+    ])
     features = []
-    expect((await (await dynamic.request('context')).json()).features).toEqual([])
+    expect((await (await dynamic.request('context', undefined, spoofed)).json()).features).toEqual([])
+  })
+
+  it('uses a live Docs epoch and checks the exact origin, profile, permission, payload, and response', async () => {
+    const docsConnectionEpoch = 'connection-1'
+    const feature = 'packages.docs.v1'
+    const get = vi.fn(async (): Promise<unknown> => ({ found: true, locale: 'en', markdown: '# Local docs' }))
+    const docs = {
+      epoch: async () => docsConnectionEpoch,
+      isCurrent: (epoch: string) => epoch === docsConnectionEpoch,
+      get,
+    }
+    const s = await server(undefined, undefined, { docs })
+    const params = {
+      profile: 'local-dev',
+      id: 'acme/plugin',
+      expectedIntegrity: `sha256-${'a'.repeat(64)}`,
+      locale: 'en',
+    }
+    const body = { ...params, docsConnectionEpoch }
+    const optIn = { 'X-Agnes-Package-Docs': '1' }
+    const unnegotiated = await (await s.request('context')).json()
+    expect(unnegotiated).toMatchObject({ profile: 'local-dev', readOnly: false, features: [] })
+    expect(unnegotiated).not.toHaveProperty('docsConnectionEpoch')
+    const wrongHeaderValue = await (
+      await s.request('context', undefined, { 'X-Agnes-Package-Docs': 'true' })
+    ).json()
+    expect(wrongHeaderValue).toEqual(unnegotiated)
+    expect(await (await s.request('context', undefined, optIn)).json()).toMatchObject({
+      docsConnectionEpoch,
+      features: [feature],
+    })
+    const overview = await (await s.request('overview', undefined, optIn)).json()
+    expect(overview.context).toMatchObject({ docsConnectionEpoch, features: [feature] })
+    const response = await s.request('docs/get', body)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer')
+    expect(response.headers.get('content-security-policy')).toContain("default-src 'none'")
+    await expect(response.json()).resolves.toEqual({
+      found: true,
+      locale: 'en',
+      markdown: '# Local docs',
+      docsConnectionEpoch,
+    })
+    expect(get).toHaveBeenCalledWith(params, docsConnectionEpoch, expect.any(AbortSignal))
+    expect((await s.request('docs/get', body, { Origin: 'http://wrong.example' })).status).toBe(403)
+    expect((await s.request('docs/get', body, { 'Sec-Fetch-Site': 'cross-site' })).status).toBe(403)
+    expect((await s.request('docs/get', body, { 'Content-Type': 'text/plain' })).status).toBe(400)
+    expect((await s.request('docs/get', { ...body, profile: 'outside' })).status).toBe(403)
+    expect((await s.request('docs/get', { ...body, path: 'README.md' })).status).toBe(400)
+    expect((await s.request('docs/get', params)).status).toBe(400)
+    expect((await s.request('docs/get', { ...body, docsConnectionEpoch: 'outdated' })).status).toBe(404)
+    get.mockRejectedValueOnce({ rpc: { code: -32601 } })
+    expect((await s.request('docs/get', body)).status).toBe(404)
+    get.mockResolvedValueOnce({ found: true, locale: 'en', markdown: '字'.repeat(21_846) })
+    expect((await s.request('docs/get', body)).status).toBe(502)
+    get.mockResolvedValueOnce({ found: false, markdown: 'must not leak' })
+    expect((await s.request('docs/get', body)).status).toBe(502)
+    const denied = await server(undefined, undefined, { docs, permissions: ['packages.install'] })
+    expect((await denied.request('overview', undefined, optIn)).status).toBe(403)
+    expect((await denied.request('docs/get', body, optIn)).status).toBe(403)
+    const old = await server(undefined, undefined, {
+      features: [feature],
+      backendFeatures: async () => [feature],
+    })
+    const oldContext = await (await old.request('context', undefined, optIn)).json()
+    expect(oldContext).not.toHaveProperty('docsConnectionEpoch')
+    expect(oldContext.features).not.toContain(feature)
+    expect((await old.request('docs/get', body)).status).toBe(404)
+  })
+
+  it('drops a late response from an outdated Docs epoch and cancels when HTTP disconnects', async () => {
+    let current = 'connection-1'
+    const arrived = deferred<void>()
+    const entered = deferred<void>()
+    const body = {
+      profile: 'local-dev',
+      id: 'acme/plugin',
+      expectedIntegrity: `sha256-${'a'.repeat(64)}`,
+      locale: 'en',
+      docsConnectionEpoch: current,
+    }
+    const answer = deferred<unknown>()
+    const disconnected = deferred<void>()
+    const s = await server(undefined, undefined, {
+      docs: {
+        epoch: async () => current,
+        isCurrent: (epoch) => current === epoch,
+        get: async (_params, epoch, signal) => {
+          if (epoch === body.docsConnectionEpoch) {
+            arrived.resolve()
+            return answer.promise
+          }
+          signal.addEventListener('abort', () => disconnected.resolve(), { once: true })
+          entered.resolve()
+          await disconnected.promise
+          return { found: false }
+        },
+      },
+    })
+    const old = s.request('docs/get', body)
+    await arrived.promise
+    current = 'connection-2'
+    answer.resolve({ found: true, markdown: 'discarded', locale: 'en' })
+    const response = await old
+    expect(response.status).toBe(404)
+    expect(await response.text()).not.toContain('discarded')
+    const controller = new AbortController()
+    const pending = s.request('docs/get', { ...body, docsConnectionEpoch: current }, {}, controller.signal)
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    await entered.promise
+    controller.abort()
+    await Promise.all([rejected, disconnected.promise])
+  })
+
+  it('allows a coherent stale-context downgrade but rejects unrequested or mixed indexed versions', async () => {
+    const legacy = {
+      version: '1.0.0',
+      source: { type: 'git', ref: `git:https://github.com/acme/plugin.git#${'a'.repeat(40)}` },
+    }
+    const enriched = { ...legacy, version: '2.0.0', compatibility: { kind: 'undeclared' } }
+    const result = (versions: unknown[]) => ({
+      items: [],
+      nextCursor: null,
+      communityIndex: {
+        state: 'ready',
+        lastSuccessAt: null,
+        nextAttemptAt: null,
+        error: null,
+        totalReported: 1,
+        items: [{ id: 'p', fullName: 'acme/plugin', description: '', versions }],
+      },
+    })
+    const invoke = vi.fn(
+      async (_action: AdminSurfaceAction, _params: unknown): Promise<unknown> => result([legacy]),
+    )
+    const backendFeatures = vi.fn(async () => ['packages.community-discovery.v2'])
+    const admin = await server(invoke, undefined, { backendFeatures })
+    const params = { profile: 'local-dev', communityVersion: 3 }
+    expect((await admin.request('catalog/list', params)).status).toBe(200)
+    expect(backendFeatures).not.toHaveBeenCalled()
+    invoke.mockResolvedValueOnce(result([legacy, enriched]))
+    expect((await admin.request('catalog/list', params)).status).toBe(502)
+    invoke.mockResolvedValueOnce(result([enriched]))
+    expect((await admin.request('catalog/list', { ...params, communityVersion: 2 })).status).toBe(502)
+    expect((await admin.request('catalog/list', { profile: params.profile })).status).toBe(502)
   })
 
   it('returns one freshly verified inventory with the matching context and fails closed on recovery', async () => {
@@ -380,6 +553,30 @@ describe('local package admin surface trust boundary', () => {
     expect(await (await s.request('context')).json()).toMatchObject({ readOnly: false })
   })
 
+  it('binds skin selection to the authenticated admin client and profile', async () => {
+    const s = await server()
+    const choice = { kind: 'skin', bindingDigest: 'b'.repeat(64) }
+    const body = {
+      profile: 'local-dev',
+      clientId: 'admin-web',
+      commandId: 'select-skin',
+      expectedRevision: 0,
+      choice,
+    }
+    await s.request('context')
+    expect((await s.request('skins/select', { ...body, profile: 'other' })).status).toBe(403)
+    expect((await s.request('skins/select', { ...body, clientId: 'other' })).status).toBe(403)
+    expect(
+      (await s.request('skins/select', { ...body, choice: { kind: 'skin', id: 'aurora' } })).status,
+    ).toBe(400)
+    const reader = await server(undefined, undefined, { permissions: ['packages.read'] })
+    await reader.request('context')
+    expect((await reader.request('skins/select', body)).status).toBe(403)
+    s.invoke.mockResolvedValueOnce({ revision: 1, choice })
+    expect((await s.request('skins/select', body)).status).toBe(200)
+    expect(s.invoke).toHaveBeenCalledWith('skins/select', body)
+  })
+
   // packages/web-admin/src/admin/plugins/api.ts keeps its own hand-maintained METHOD_BY_PATH map of the
   // exact same BFF surface (@agnes/daemon can't import from @agnes/web — see
   // tools/guards/dependency-allowlist.json — so the expected list is hardcoded here instead of
@@ -395,6 +592,7 @@ describe('local package admin surface trust boundary', () => {
       'application/preview',
       'application/adopt',
       'application/clear',
+      'skins/select',
       'candidates/list',
       'candidates/show',
       'candidates/create',
@@ -406,6 +604,7 @@ describe('local package admin surface trust boundary', () => {
       'catalog/list',
       'generations',
       'provenance',
+      'docs/get',
       'source-policy',
       'publication-status',
       'sessions/migrate',

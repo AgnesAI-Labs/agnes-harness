@@ -6,20 +6,28 @@ English | [简体中文](refinement.zh-CN.md)
 
 Task experience lets AGH review a session in the background and keep short lessons, called **entries**, for the rest of that session: a command that needs a flag, a file that lives somewhere unexpected, a rule the user stated. Later turns of the same session get the entries as notes. Memory and prompt entries can also be saved to the workspace memory, and later sessions of the workspace get them back as entries (see [Save to the workspace](#save-to-the-workspace)).
 
-It is **off by default**. Each review sends session evidence to the company's dedicated review service. It has not yet been shown to improve results.
+It is **off by default**. Each review sends session evidence to the gateway selected in your RSI settings. It has not yet been shown to improve results.
 
 ## Turn it on
 
-Open **RSI** in the Web workbench sidebar. **Service address** is fixed to the company's dedicated review gateway, `https://api.llm.sg/v1`. Enter a service key with access to the gateway and select **Save key**. The workbench loads chat models from the gateway and saves the first available model if your profile has no available selection. Choose another under **Review model** at any time. Once the key and model are ready, turn on **Learn from finished work** and choose a mode.
+Open **RSI** in the Web workbench sidebar and choose a **Service address**.
 
-The key stays in the local credential store. If the gateway rejects it, use **Replace key** to save a key with access. Replacing the key pauses learning. If the model list is unavailable, select **Reload models**.
+| Gateway | Service address |
+| --- | --- |
+| llm.sg (default) | `https://api.llm.sg/v1` |
+| Agnes China | `https://api.agnes-ai.cn/v1` |
+| Agnes International | `https://apihub.agnes-ai.com/v1` |
 
-Upgraded profiles without a saved address use the default gateway. If a saved gateway is removed, the profile falls back to the default with learning paused and keeps its mode and saved key.
+Enter a key issued by the selected gateway and choose **Save key**. The key stays in the local credential store. The workbench loads that key's chat models and suggests the first one if you have no saved selection. Choose a **Review model** or turn on **Learn from finished work** to accept the suggestion. If a saved model disappears from the list, choose a model that the gateway offers.
+
+Switching gateways pauses learning and clears the active key binding and model selection. Save a key for the destination gateway to load its models, then turn learning back on when ready. **Replace key** also pauses learning. If the model list is unavailable, select **Reload models**.
+
+An upgraded profile keeps its saved gateway while it is offered. Older profiles without a saved address use llm.sg. If a saved gateway is retired, the profile keeps its review mode and returns to the default gateway with learning paused. Save a key for the default gateway before resuming.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| Service address | `https://api.llm.sg/v1` | Dedicated company review gateway |
-| Review model | First available model | Used for background reviews |
+| Service address | `https://api.llm.sg/v1` | Selects the gateway for model discovery and reviews |
+| Review model | First available model suggested | Saved when you choose a model or enable learning |
 | Learn from finished work | Off | Requires a valid service key and a saved review model |
 | How reviews start | Manual only | **Manual only** or **Manual and automatic** |
 
@@ -232,8 +240,8 @@ The TUI shows the same lines as text but has no withdraw action. A client can ca
 
 ## Cost
 
-- Each review uses the dedicated service and draws from a token budget of its own: 524,288 tokens for all reviews of a session. It never draws on a turn's budget.
-- The review service has a configured price, so manual and automatic reviews can start without a price confirmation.
+- Reviews share a separate budget of 524,288 tokens per session.
+- The selected gateway bills usage to its key. AGH does not know its rates. A review you request asks you to accept the unknown price. Turning on learning covers automatic and model-requested reviews.
 - In the TUI, the footer, `/status` and the `/usage` figures leave review spend out, and `/usage` lists it on its own **RSI cost** line (a free model shows a zero cost, a model with no known price shows "price unknown").
 - The Web counts review spend in the session's usage totals.
 - The guidance and entry notes add tokens to every request of a session where task experience is on.

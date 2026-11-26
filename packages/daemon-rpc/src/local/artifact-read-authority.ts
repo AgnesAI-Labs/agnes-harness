@@ -65,6 +65,12 @@ const TABLE_DDL =
   'PRIMARY KEY (session_id, lane_id, sha256, mime))'
 const INDEX_DDL =
   'CREATE INDEX artifact_read_authority_v1_lane ON artifact_read_authority_v1 (session_id, lane_id)'
+// Litestream 0.5.18 adds these tables independently during replication startup. They do not
+// confer artifact authority; only their exact layouts are compatible, never a name prefix.
+const REPLICATION_TABLES = new Map([
+  ['_litestream_seq', 'CREATE TABLE _litestream_seq (id INTEGER PRIMARY KEY, seq INTEGER)'],
+  ['_litestream_lock', 'CREATE TABLE _litestream_lock (id INTEGER)'],
+])
 
 const result = (ok: boolean, code: ArtifactAuthorityWriteResult['code']): ArtifactAuthorityWriteResult =>
   Object.freeze({ ok, code })
@@ -208,6 +214,17 @@ function normalizedDdl(value: string): string {
     .toLowerCase()
 }
 
+function replicationTable(row: SchemaRow): boolean {
+  const ddl = typeof row.name === 'string' ? REPLICATION_TABLES.get(row.name) : undefined
+  return (
+    ddl !== undefined &&
+    row.type === 'table' &&
+    row.tbl_name === row.name &&
+    typeof row.sql === 'string' &&
+    normalizedDdl(row.sql) === normalizedDdl(ddl)
+  )
+}
+
 function requireSchema(sql: SqlCapabilities): void {
   const allowed = new Map<string, Readonly<{ type: 'table' | 'index'; table: string; ddl: string | null }>>([
     [META, { type: 'table', table: META, ddl: META_DDL }],
@@ -216,9 +233,10 @@ function requireSchema(sql: SqlCapabilities): void {
     ['artifact_read_authority_v1_lane', { type: 'index', table: TABLE, ddl: INDEX_DDL }],
   ])
   const rows = sql.all<SchemaRow>('SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name')
-  if (rows.length !== allowed.size) throw new Error('unexpected schema inventory')
+  let required = 0
   for (const row of rows) {
     if (typeof row.name !== 'string') throw new Error('malformed schema inventory')
+    if (replicationTable(row)) continue
     const expected = allowed.get(row.name)
     if (
       !expected ||
@@ -229,7 +247,9 @@ function requireSchema(sql: SqlCapabilities): void {
         : typeof row.sql !== 'string' || normalizedDdl(row.sql) !== normalizedDdl(expected.ddl))
     )
       throw new Error('incompatible schema inventory')
+    required++
   }
+  if (required !== allowed.size) throw new Error('unexpected schema inventory')
 }
 
 function requireTempSchemaEmpty(sql: SqlCapabilities): void {
@@ -254,10 +274,12 @@ function attestStore(sql: SqlCapabilities): void {
 function initialize(sql: SqlCapabilities): void {
   sql.transaction(() => {
     requireTempSchemaEmpty(sql)
-    const existing = sql.all<{ name: unknown }>(
-      "SELECT name FROM sqlite_master WHERE type IN ('table','index','view','trigger') ORDER BY type, name",
+    const existing = sql.all<SchemaRow>(
+      'SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name',
     )
-    if (existing.length === 0) {
+    // A directory watcher can initialize replication before this dedicated store creates its
+    // schema. Exact replication metadata alone is equivalent to an empty business schema.
+    if (existing.every(replicationTable)) {
       sql.exec(META_DDL)
       sql.exec(TABLE_DDL)
       sql.exec(INDEX_DDL)

@@ -305,6 +305,7 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
     const serviceCapabilities = info?.declaredCapabilities?.services ?? []
     const manifest = manifestLikeFor(source, packageVersion)
     manifest.capabilities.services = [...serviceCapabilities]
+    manifest.capabilities.projections = [...(info?.declaredCapabilities?.projections ?? [])]
     const lease = leaseFor(manifest, {
       ttlMs: ROW_BOUND_LEASE_TTL_MS,
       now: clock(),

@@ -17,6 +17,9 @@ const FAKE_GOOGLE = 'AI' + 'za' + 'Q'.repeat(30)
 const FAKE_BEARER_TOKEN = 'x'.repeat(30)
 const FAKE_API_KEY_VALUE = 'v'.repeat(10)
 const FAKE_PASSWORD_VALUE = 'p'.repeat(8)
+const FAKE_CLOUD_KEY = `agh_sk_${'abc_DEF-123'.repeat(3)}`
+const FAKE_CLOUD_TICKET = `m0ck.${'t'.repeat(22)}.${'Ab_1-'.repeat(8)}xyz`
+const REMOTE_ACCESS = '/_agnes/remote-access/'
 const PEM_BODY = '-----BEGIN ' + 'PRIVATE KEY-----\nMIIabc\n-----END ' + 'PRIVATE KEY-----'
 
 function joinedUrls(count: number, separator: string): string {
@@ -29,7 +32,8 @@ describe('redactDiagnostic (structured)', () => {
   })
 
   it('keeps a bare secret:// reference key untouched', () => {
-    expect(redactDiagnostic({ credentialRef: 'secret://p/x' })).toEqual({ credentialRef: 'secret://p/x' })
+    const input = { credentialRef: 'secret://p/x', AGH_CLOUD_KEY: 'secret://generic/cloud-key' }
+    expect(redactDiagnostic(input)).toEqual(input)
   })
 
   it('does not let a secret:// prefix launder trailing prose containing a real secret', () => {
@@ -79,6 +83,64 @@ describe('redactDiagnostic (structured)', () => {
     })
   })
 
+  it('redacts a cloud Key field even when its value has no recognizable credential shape', () => {
+    expect(
+      redactDiagnostic({ env: { AGH_CLOUD_KEY: FAKE_API_KEY_VALUE, AGH_CLOUD_KEY_FILE: '/tmp/key' } }),
+    ).toEqual({
+      env: { AGH_CLOUD_KEY: REDACTED, AGH_CLOUD_KEY_FILE: '/tmp/key' },
+    })
+  })
+
+  it.each(['AGH_CLOUD_KEY', 'AGH_API_KEY'])('masks scalar values under the exact %s field', (field) => {
+    for (const value of [1234567, true, null]) {
+      expect(redactDiagnostic({ [field]: value, firstToken: 12, AGH_CLOUD_KEY_FILE: '/tmp/key' })).toEqual({
+        [field]: REDACTED,
+        firstToken: 12,
+        AGH_CLOUD_KEY_FILE: '/tmp/key',
+      })
+    }
+    const reference = 'secret://generic/cloud-key'
+    expect(redactDiagnostic({ [field]: reference })).toEqual({ [field]: reference })
+  })
+
+  it('redacts a ticket from a structured endpoint after stripping its query and fragment', () => {
+    const endpoint = `https://h.example${REMOTE_ACCESS}${FAKE_CLOUD_TICKET}/_agnes/plugin-stream/open`
+    expect(redactDiagnostic({ endpoint: `${endpoint}?view=debug#frag` })).toEqual({
+      endpoint: `https://h.example${REMOTE_ACCESS}${REDACTED}/_agnes/plugin-stream/open`,
+    })
+  })
+
+  it('redacts cloud credentials in property names without losing colliding entries', () => {
+    const endpoint = (ticket: string) => `https://h.example${REMOTE_ACCESS}${ticket}/health`
+    const maskedEndpoint = endpoint(REDACTED)
+    const reference = 'secret://generic/cloud-key'
+    const ordinaryUrl = 'https://h.example/health'
+    const result = redactDiagnostic({
+      [endpoint(FAKE_CLOUD_TICKET)]: 21,
+      [endpoint(FAKE_CLOUD_TICKET.replace('m0ck', 'm0ck2'))]: 22,
+      [maskedEndpoint]: 23,
+      [`${maskedEndpoint} (2)`]: 24,
+      [FAKE_CLOUD_KEY]: 25,
+      [reference]: 26,
+      [ordinaryUrl]: 27,
+    })
+    expect(result).toMatchObject({
+      [maskedEndpoint]: 23,
+      [`${maskedEndpoint} (2)`]: 24,
+      [reference]: 26,
+      [ordinaryUrl]: 27,
+    })
+    expect(
+      Object.entries(result)
+        .filter(([key]) => key.startsWith(maskedEndpoint))
+        .map(([, value]) => value)
+        .sort(),
+    ).toEqual([21, 22, 23, 24])
+    expect(result[REDACTED]).toBe(25)
+    expect(Object.keys(result)).toHaveLength(7)
+    expect(redactDiagnostic(result)).toEqual(result)
+  })
+
   it('recurses through arrays and nested objects', () => {
     const input = { items: [{ apiKey: 'a' }, { nested: { password: 'b' } }, 'plain'] }
     expect(redactDiagnostic(input)).toEqual({
@@ -126,6 +188,153 @@ describe('redactDiagnosticText (string patterns)', () => {
     }
   })
 
+  it('redacts a standalone cloud Key in prose and retains the surrounding text', () => {
+    expect(redactDiagnosticText(`got (${FAKE_CLOUD_KEY}), rejected`)).toBe(`got (${REDACTED}), rejected`)
+  })
+
+  it('redacts a standalone cloud Key and a rootless ticket path after JSON-escaped whitespace', () => {
+    const path = REMOTE_ACCESS.slice(1)
+    const line = (key: string, ticket: string) =>
+      JSON.stringify({ message: `error:\n${key}\t${path}${ticket}/health` })
+    expect(redactDiagnosticText(line(FAKE_CLOUD_KEY, FAKE_CLOUD_TICKET))).toBe(line(REDACTED, REDACTED))
+  })
+
+  it.each([
+    ["export AGH_CLOUD_KEY='", "'"],
+    ['{"AGH_CLOUD_KEY":"', '"}'],
+    ["{'AGH_CLOUD_KEY': '", "', 'region': 'east'}"],
+    ["{'AGH_CLOUD_KEY': \"", '"}'],
+    ["'AGH_CLOUD_KEY': ", ''],
+  ])('redacts cloud Key assignments after %j', (before, after) => {
+    expect(redactDiagnosticText(`${before}${FAKE_API_KEY_VALUE}${after}`)).toBe(
+      `${before}${REDACTED}${after}`,
+    )
+  })
+
+  it('keeps the single-quoted dictionary intact when its cloud Key contains an escaped quote', () => {
+    const assignment = (key: string) => `{'AGH_CLOUD_KEY': '${key}', 'region': 'east'}`
+    expect(redactDiagnosticText(assignment(String.raw`value\'remainder`))).toBe(assignment(REDACTED))
+  })
+
+  it.each(['"AGH_CLOUD_KEY"', "'AGH_CLOUD_KEY'"])(
+    'redacts a double-quoted value for %s inside a JSON log message',
+    (field) => {
+      const line = (key: string) =>
+        JSON.stringify({ message: `{${field}: ${JSON.stringify(key)}, "region": "east"}` })
+      const result = JSON.parse(redactDiagnosticText(line('value"with\\escapes')))
+      expect(result.message.replaceAll(' ', '')).toBe(`{${field}:"${REDACTED}","region":"east"}`)
+    },
+  )
+
+  it.each(['https://h.example/deployment', 'wss://h.example', '', '.'])(
+    'redacts only the ticket segment for a connection path with prefix %j',
+    (prefix) => {
+      const endpoint = '/_agnes/remote-frontend/ws'
+      const makeText = (ticket: string) => `GET (${prefix}${REMOTE_ACCESS}${ticket}${endpoint}), retrying`
+      expect(redactDiagnosticText(makeText(FAKE_CLOUD_TICKET))).toBe(makeText(REDACTED))
+    },
+  )
+
+  it('covers a rootless relative path and a ticket path with no endpoint', () => {
+    const path = REMOTE_ACCESS.slice(1)
+    expect(redactDiagnosticText(`GET ${path}${FAKE_CLOUD_TICKET}/health`)).toBe(
+      `GET ${path}${REDACTED}/health`,
+    )
+    expect(redactDiagnosticText(`see ${REMOTE_ACCESS}${FAKE_CLOUD_TICKET}.`)).toBe(
+      `see ${REMOTE_ACCESS}${REDACTED}.`,
+    )
+  })
+
+  it.each(['\\/', '\\u002f'])('redacts tickets in JSON paths with %s separators', (separator) => {
+    const endpoint = (ticket: string) => `https://h.example${REMOTE_ACCESS}${ticket}/health`
+    const escaped = JSON.stringify({ endpoint: endpoint(FAKE_CLOUD_TICKET) }).replaceAll('/', separator)
+    expect(JSON.parse(redactDiagnosticText(escaped))).toEqual({ endpoint: endpoint(REDACTED) })
+    const nested = JSON.parse(redactDiagnosticText(JSON.stringify({ message: escaped })))
+    expect(JSON.parse(nested.message)).toEqual({ endpoint: endpoint(REDACTED) })
+  })
+
+  it('preserves backslash separators when masking a normalized HTTP URL', () => {
+    const endpoint = (ticket: string) =>
+      `https://h.example${REMOTE_ACCESS.replaceAll('/', '\\')}${ticket}\\health`
+    expect(new URL(endpoint(FAKE_CLOUD_TICKET)).pathname).toBe(`${REMOTE_ACCESS}${FAKE_CLOUD_TICKET}/health`)
+    expect(redactDiagnosticText(endpoint(FAKE_CLOUD_TICKET))).toBe(endpoint(REDACTED))
+  })
+
+  it.each(['\\u002F', '\\u005c'])('preserves %s separators in JSON after a log prefix', (separator) => {
+    const line = (ticket: string) =>
+      `request failed: ${JSON.stringify({ endpoint: `https://h.example${REMOTE_ACCESS}${ticket}/health` }).replaceAll('/', separator)}`
+    expect(redactDiagnosticText(line(FAKE_CLOUD_TICKET))).toBe(line(REDACTED))
+  })
+
+  it('redacts a deeply indented JSON field and keeps ordinary URLs and credential references', () => {
+    const text = `{"AGH_CLOUD_KEY":\n${' '.repeat(24)}"${FAKE_API_KEY_VALUE}", "url":"https://h.example/health", "ref":"secret://generic/cloud-key"}`
+    expect(JSON.parse(redactDiagnosticText(text))).toEqual({
+      AGH_CLOUD_KEY: REDACTED,
+      url: 'https://h.example/health',
+      ref: 'secret://generic/cloud-key',
+    })
+  })
+
+  it('keeps a quoted value with its preceding secret label in mixed logs', () => {
+    const record = '{"message":"next record"}'
+    const endpoint = (ticket: string) => JSON.stringify(`https://h.example${REMOTE_ACCESS}${ticket}/health`)
+    const escaped = endpoint(FAKE_CLOUD_TICKET).replaceAll('/', '\\u002f')
+    const text = `AGH_CLOUD_KEY:\n  "${FAKE_API_KEY_VALUE}"\nendpoint follows\n${escaped}\n${record}`
+    expect(redactDiagnosticText(text)).toBe(
+      `AGH_CLOUD_KEY:\n  "${REDACTED}"\nendpoint follows\n${endpoint(REDACTED)}\n${record}`,
+    )
+  })
+
+  it('keeps exact JSON number text while masking secrets in the same record', () => {
+    const nearMarker = '\u00000:0'
+    const text =
+      `{"AGH_CLOUD_KEY":"${FAKE_API_KEY_VALUE}","op":9007199254740993,"metrics":[1e400,-0,1.2300],` +
+      `"label":${JSON.stringify(nearMarker)},${JSON.stringify(nearMarker)}:9007199254740993}`
+    const result = redactDiagnosticText(text)
+    expect(result).toBe(text.replace(FAKE_API_KEY_VALUE, REDACTED))
+    expect(redactDiagnosticText(result)).toBe(result)
+  })
+
+  it('masks a JSON number in a Key field even when JSON is embedded in prose', () => {
+    const payload = '{"AGH_CLOUD_KEY":91736120540719032764,"operationId":9007199254740993}'
+    const expected = `{"AGH_CLOUD_KEY":"${REDACTED}","operationId":9007199254740993}`
+    expect(redactDiagnosticText(payload)).toBe(expected)
+    expect(redactDiagnosticText(`output: ${payload}`)).toBe(`output: ${expected}`)
+    expect(redactDiagnosticText(`output: ${payload.replace('":', '":\n                        ')}`)).toBe(
+      `output: ${expected.replace('":', '":\n                        ')}`,
+    )
+  })
+
+  it('keeps nested log JSON valid while masking the ticket and query value', () => {
+    const endpoint = (ticket: string, path: string) =>
+      `https://h.example${REMOTE_ACCESS}${ticket}/api/artifacts?path=${path}`
+    const line = JSON.stringify({ message: JSON.stringify({ url: endpoint(FAKE_CLOUD_TICKET, V) }) })
+    const redacted = JSON.parse(redactDiagnosticText(line))
+    expect(JSON.parse(redacted.message)).toEqual({ url: endpoint(REDACTED, REDACTED) })
+  })
+
+  it('keeps an own __proto__ JSON property as data and redacts its contents', () => {
+    const text = `{"__proto__":{"AGH_CLOUD_KEY":"${FAKE_API_KEY_VALUE}"},"region":"east"}`
+    const redacted = JSON.parse(redactDiagnosticText(text))
+    expect(Object.hasOwn(redacted, '__proto__')).toBe(true)
+    expect(Object.getOwnPropertyDescriptor(redacted, '__proto__')?.value).toEqual({ AGH_CLOUD_KEY: REDACTED })
+    expect(redacted.region).toBe('east')
+  })
+
+  it('masks the whole ticket before generic secret rules can replace part of it', () => {
+    const ticket = `m0ck.${'t'.repeat(22)}.sk-${'z'.repeat(40)}`
+    expect(redactDiagnosticText(`${REMOTE_ACCESS}${ticket}/health`)).toBe(
+      `${REMOTE_ACCESS}${REDACTED}/health`,
+    )
+  })
+
+  it('masks a percent-encoded copy of a valid ticket', () => {
+    const encoded = FAKE_CLOUD_TICKET.replace('m', '%6D').replaceAll('.', '%2E')
+    expect(redactDiagnosticText(`https://h.example${REMOTE_ACCESS}${encoded}/health`)).toBe(
+      `https://h.example${REMOTE_ACCESS}${REDACTED}/health`,
+    )
+  })
+
   it('redacts an entire PEM private key block', () => {
     const result = redactDiagnosticText(PEM_BODY)
     expect(result).not.toContain('MIIabc')
@@ -151,8 +360,23 @@ describe('redactDiagnosticText (string patterns)', () => {
   })
 
   it('leaves a URL with no fragment unchanged', () => {
-    const text = 'see https://plain.example/path for details'
-    expect(redactDiagnosticText(text)).toBe(text)
+    for (const text of [
+      'see https://plain.example/path for details',
+      'https://plain.example/_agnes/cloud-connection/authorize',
+      'https://plain.example/_agnes/remote-access/',
+      'https://plain.example/reference/_agnes/remote-access/overview',
+      '/_agnes/remote-access/overview.html',
+      '/_agnes/remote-access/%ZZ-overview',
+      `https://_agnes/remote-access/${FAKE_CLOUD_TICKET}`,
+      `https://_agnes/remote-access/${FAKE_CLOUD_TICKET}`.replaceAll('/', '\\/'),
+      `https://_agnes/remote-access/${FAKE_CLOUD_TICKET}`.replaceAll('/', '\\u002F'),
+      `https://_agnes/remote-access/${FAKE_CLOUD_TICKET}`.replaceAll('/', '\\'),
+      'C:\\support\\_agnes\\remote-access\\overview',
+      `https://plain.example/_agnes/remote-access-guide/${FAKE_CLOUD_TICKET}`,
+      `https://plain.example/ordinary/${FAKE_CLOUD_TICKET}`,
+    ]) {
+      expect(redactDiagnosticText(text)).toBe(text)
+    }
   })
 
   it('redacts 5000 comma-joined URLs in under 200ms (linear URL-run scan, no backtracking)', () => {
@@ -283,6 +507,8 @@ describe('redactDiagnosticText (common secret spellings)', () => {
 
   it.each([
     ['200k underscores', '_'.repeat(200_000)],
+    ['200k backslashes', '\\'.repeat(200_000)],
+    ['unclosed JSON-looking lines separated by Unicode newlines', `{${'\u2028{'.repeat(30_000)}\n`],
     ['200k word characters', 'a'.repeat(200_000)],
     ['200k secret-name words', 'password'.repeat(25_000)],
     ['max-length prefixes before a name and colon', `${'x'.repeat(39)}_token: ,`.repeat(4_000)],

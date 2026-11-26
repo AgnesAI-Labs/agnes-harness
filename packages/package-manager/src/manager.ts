@@ -52,6 +52,7 @@ import {
 import { entryOf, writable } from './lock-state.js'
 import { type LockEntry, type Lockfile, readLock, withLock, writeLock } from './lockfile.js'
 import { readBundledManifest } from './manifest.js'
+import { createPackageDocumentationReader, type PackageDocumentationReader } from './package-documentation.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
 import { applyReviewedContract, entryFrom, readPackageJson } from './package-record.js'
 import { readPluginCapabilityPolicy } from './plugin-capabilities.js'
@@ -112,6 +113,7 @@ export type PackageStatus = {
 
 export interface PackageManager {
   provenance(profileDir: string, id: string): Promise<PackageProvenance>
+  documentation: PackageDocumentationReader
   sourcePolicy(profileDir: string): PackageSourcePolicy
   readonly localPluginRoots: LocalPluginRoots | undefined
   bindLocalPluginReload(reload: LocalPluginReload): void
@@ -233,6 +235,7 @@ export type ManagerOptions = {
   residueCheck?: (id: string) => Promise<string[]>
   /** Worker-only: hash AGH-stored trees once per process while their directories stay in place. */
   settleStoredTrees?: boolean
+  builtinDirectory?: (id: string) => string | undefined
 }
 
 export { readBundledManifest } from './manifest.js'
@@ -647,6 +650,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             )
       })
     },
+    documentation: createPackageDocumentationReader(options, load),
     localPluginRoots: options.localPlugins,
     bindLocalPluginReload(reload) {
       localReload = reload
@@ -720,6 +724,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               await readInventoryAsync(lock, {
                 ...storeFor(profileDir),
                 ceiling: ceiling(lock),
+                ...(options.builtinDirectory ? { builtinDirectory: options.builtinDirectory } : {}),
                 // Static manifest interpretation is reusable only after this read verifies
                 // every file again. Fresh admission still has its own digest boundary.
                 verificationCache,

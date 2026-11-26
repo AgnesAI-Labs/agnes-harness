@@ -138,12 +138,18 @@ it('chooses recovery before the workbench can load third-party modules, CSS, rol
   const workbench = vi.fn(() => {
     throw new Error('third-party side effect')
   })
+  const groupedWorkbench = vi.fn(() => {
+    throw new Error('grouped workbench side effect')
+  })
   vi.doMock('../src/app.js', workbench)
+  vi.doMock('../src/backends/workbench.js', groupedWorkbench)
   vi.doMock('../src/recovery.js', recovery)
   await import('../src/bootstrap.js')
   expect(recovery).toHaveBeenCalledOnce()
   expect(workbench).not.toHaveBeenCalled()
+  expect(groupedWorkbench).not.toHaveBeenCalled()
   vi.doUnmock('../src/app.js')
+  vi.doUnmock('../src/backends/workbench.js')
   vi.doUnmock('../src/recovery.js')
 })
 
@@ -310,6 +316,12 @@ it.each(['integrity', 'declaration', 'dependency'] as const)(
         clientId: 'ui',
         rowId: 'web:gallery',
         revision,
+        documentAdmission: {
+          kind: 'approved-presentation',
+          bindingDigest: 'd'.repeat(64),
+          presentationRevision: application.revision,
+        },
+        contentDigest: `sha256-${'c'.repeat(64)}`,
         entryUrl: '/upgraded.js',
         styleUrls: [],
         slots: [],

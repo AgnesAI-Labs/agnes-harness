@@ -26,7 +26,9 @@ export function AttachmentImage({
   const host = useRef<HTMLDivElement>(null)
   const loadOriginal = useRef<((download?: boolean) => Promise<void>) | undefined>(undefined)
   const { artifact, thumbnail } = file.attachment
-  const image = !!file.attachment.image
+  // Text-only sessions in older runtimes stored PNG/JPEG originals without image metadata.
+  // Their authenticated artifact bytes can still be previewed without changing the saved record.
+  const image = !!file.attachment.image || /^image\/(png|jpeg)$/u.test(artifact.mime)
   const { sha256, size, mime } = artifact
   const thumbSha = thumbnail?.sha256,
     thumbSize = thumbnail?.size,

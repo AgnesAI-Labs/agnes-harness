@@ -159,6 +159,7 @@ Package administration, resource control, configuration, scheduling, diagnostics
 
 ### Credentials
 
+- `_agnes/v1/admin.cloud.authorize`
 - `_agnes/v1/admin.credentials.list`
 - `_agnes/v1/admin.credentials.create`
 - `_agnes/v1/admin.credentials.set`
@@ -216,6 +217,7 @@ Package administration, resource control, configuration, scheduling, diagnostics
 - `_agnes/v1/packages.catalog.list`
 - `_agnes/v1/packages.catalog.get`
 - `_agnes/v1/packages.provenance`
+- `_agnes/v1/packages.docs.get`
 - `_agnes/v1/packages.sourcePolicy`
 - `_agnes/v1/packages.skillImport`
 - `_agnes/v1/applications.get`
@@ -242,8 +244,11 @@ Package administration, resource control, configuration, scheduling, diagnostics
 
 - `_agnes/v1/skins.list`
 - `_agnes/v1/skins.read`
+- `_agnes/v1/skins.select`
 - `_agnes/v1/clientModules.list`
 - `_agnes/v1/clientModules.read`
+- `_agnes/v1/clientModules.uiEntries`
+- `_agnes/v1/clientModules.frontendPublication`
 - `_agnes/v1/clientModules.callService`
 - `_agnes/v1/clientModules.callEffect`
 

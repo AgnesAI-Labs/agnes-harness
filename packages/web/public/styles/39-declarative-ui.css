@@ -1,0 +1,78 @@
+@layer app {
+  #settings-everyday:has(.settings-nav-label + [data-settings-group="extensions"])
+    .declarative-ui-settings
+    > .settings-nav-label {
+    display: none;
+  }
+  .declarative-ui-settings-list {
+    max-block-size: 30dvh;
+    overflow: auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .declarative-ui-settings-list .settings-nav-item > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #settings-content-slots:has(> .declarative-ui-settings-page) > :not(.declarative-ui-settings-page),
+  .home-page-host:has(> .declarative-ui-sidebar-page) > :not(.declarative-ui-sidebar-page),
+  .workbench-panel-content[hidden] {
+    display: none;
+  }
+  .declarative-ui-settings-page {
+    overflow: auto;
+  }
+  .declarative-ui-content {
+    min-inline-size: 0;
+    padding: var(--s12);
+    overflow-wrap: anywhere;
+  }
+  .settings-shell .declarative-ui-content {
+    padding: var(--s16) var(--settings-header-end) var(--s16) var(--settings-gutter);
+  }
+  .declarative-ui-content .plugin-docs-markdown {
+    overflow-x: auto;
+    margin-block: var(--s12);
+  }
+  .declarative-ui-dock-row {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: var(--s4);
+    padding: var(--s4) var(--s8);
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .workbench-header-actions[aria-hidden="true"] {
+    visibility: hidden;
+  }
+  .declarative-ui-sidebar-fallback {
+    flex: 0 0 auto;
+  }
+  .declarative-ui-sidebar-fallback .agh-menu-anchor {
+    width: 100%;
+  }
+  .agh-menu-popup
+    .agh-menu:not(:has(.agh-menu-item:not(.declarative-ui-menu-item))):has(.declarative-ui-menu-item),
+  .agh-menu-popup .agh-menu-group:has(.declarative-ui-menu-item) > ul {
+    max-block-size: min(24rem, 55dvh);
+    max-inline-size: calc(100vw - var(--s32));
+    overflow: auto;
+  }
+  .agh-menu-popup .declarative-ui-menu-item .agh-menu-label-text {
+    display: block;
+    max-inline-size: min(22rem, 65vw);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  @media (max-width: 767px) {
+    #config-form.settings-shell:has(.declarative-ui-settings-page)
+      :is(.settings-rail, #settings-content-slots) {
+      display: none;
+    }
+    #config-form.settings-shell:has(.declarative-ui-settings-page) #settings-content-slots {
+      display: flex;
+    }
+  }
+}

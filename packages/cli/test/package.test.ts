@@ -80,6 +80,10 @@ function client(options: { installed?: unknown[]; preview?: unknown; updated?: u
       async clientId() {
         return 'cli-client'
       },
+      async request(this: NodeClient, method: string) {
+        if (method !== '_agnes/v1/packages.list') throw new Error('unexpected request')
+        return this.packages.list({ profile })
+      },
       packages: {
         catalog: {
           async list() {
@@ -283,6 +287,147 @@ describe('plugins add on an installed package', () => {
     expect(text).toContain(added.length ? 'capabilities added: exec:node' : 'capabilities unchanged')
     expect(text).toContain('update, trust and enable this reviewed version')
     expect(text).toContain('desired enabled; actual running; trusted true')
+  })
+
+  it.each(['ready', 'installed changed', 'disabled'] as const)(
+    'waits for an already starting package before updating: %s',
+    async (outcome) => {
+      const fixture = client({ installed: [], updated: running })
+      const list = vi.spyOn(fixture.value.packages, 'list')
+      list.mockResolvedValueOnce({ packages: [{ ...installed, actual: 'starting' }] })
+      list.mockResolvedValue({
+        packages: [
+          {
+            ...installed,
+            actual: 'running',
+            actualIntegrity: oldIntegrity,
+            ...(outcome === 'installed changed' ? { integrity } : {}),
+            ...(outcome === 'disabled' ? { desired: 'installed-disabled' as const } : {}),
+          },
+        ],
+      })
+      const result = runPackageCommand(parseArgs(['plugins', 'add', source.ref, '--yes']), fixture.value, {
+        write: () => {},
+        confirm: async () => true,
+      })
+      if (outcome !== 'ready') {
+        await expect(result).rejects.toThrow('E_PACKAGE_PREVIEW_STALE')
+        noWrites(fixture)
+      } else {
+        await result
+        expect(fixture.updates).toEqual([
+          expect.objectContaining({
+            activation: {
+              expectedInstalledIntegrity: oldIntegrity,
+              expectedActiveIntegrity: oldIntegrity,
+              trust: { integrity, capabilityHash: preview.capabilityHash },
+            },
+          }),
+        ])
+      }
+    },
+  )
+
+  it('retains a known active integrity when updating a failed package', async () => {
+    const actualIntegrity = `sha256-${'d'.repeat(64)}`
+    const { fixture, result } = await run(['plugins', 'add', source.ref, '--yes'], {
+      installed: [{ ...installed, actual: 'failed', actualIntegrity }],
+      updated: running,
+    })
+    await result
+    expect(fixture.updates).toEqual([
+      expect.objectContaining({
+        activation: expect.objectContaining({
+          expectedInstalledIntegrity: oldIntegrity,
+          expectedActiveIntegrity: actualIntegrity,
+        }),
+      }),
+    ])
+  })
+
+  it('keeps client-only updates available while their browser roster is starting', async () => {
+    const { fixture, result } = await run(['plugins', 'add', source.ref, '--yes'], {
+      installed: [
+        {
+          ...installed,
+          actual: 'starting',
+          contributions: [
+            {
+              kind: 'extension',
+              id: 'ui',
+              path: './ui.js',
+              apiRange: '*',
+              capabilities: { ui: ['client'] },
+              client: { entry: './ui.js' },
+            },
+          ],
+        },
+      ],
+      updated: running,
+    })
+    await result
+    expect(fixture.updates).toEqual([
+      expect.objectContaining({
+        activation: expect.objectContaining({
+          expectedInstalledIntegrity: oldIntegrity,
+          expectedActiveIntegrity: null,
+        }),
+      }),
+    ])
+  })
+
+  it.each(['closed', 'timeout'] as const)(
+    'stops waiting for startup after %s without updating the package',
+    async (outcome) => {
+      vi.useFakeTimers()
+      let closed = false
+      const fixture = client({ installed: [{ ...installed, actual: 'starting' }] })
+      Object.defineProperty(fixture.value, 'isClosed', { get: () => closed })
+      try {
+        const pending = runPackageCommand(parseArgs(['plugins', 'add', source.ref, '--yes']), fixture.value, {
+          write: () => {},
+          confirm: async () => true,
+        })
+        const rejected = expect(pending).rejects.toThrow(
+          outcome === 'closed' ? 'connection closed' : 'still starting',
+        )
+        await vi.advanceTimersByTimeAsync(0)
+        closed = outcome === 'closed'
+        await vi.advanceTimersByTimeAsync(outcome === 'closed' ? 200 : 30_000)
+        await rejected
+        expect(vi.getTimerCount()).toBe(0)
+        noWrites(fixture)
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
+
+  it('rejects a startup observation arriving after its budget without updating', async () => {
+    vi.useFakeTimers()
+    const fixture = client({ installed: [] })
+    const list = vi.spyOn(fixture.value.packages, 'list')
+    list.mockResolvedValueOnce({ packages: [{ ...installed, actual: 'starting' }] })
+    list.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 45_000))
+      return { packages: [installed] }
+    })
+    const request = vi.spyOn(fixture.value, 'request')
+    try {
+      const pending = runPackageCommand(parseArgs(['plugins', 'add', source.ref, '--yes']), fixture.value, {
+        write: () => {},
+        confirm: async () => true,
+      })
+      const rejected = expect(pending).rejects.toThrow('still starting')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(request).toHaveBeenCalledWith('_agnes/v1/packages.list', { profile }, { timeoutMs: 30_000 })
+      await vi.advanceTimersByTimeAsync(45_000)
+      await rejected
+      noWrites(fixture)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('does nothing when the same version already runs', async () => {

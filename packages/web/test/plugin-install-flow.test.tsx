@@ -2,6 +2,7 @@
 
 import type {
   PackageCatalogDescriptor,
+  PackageCatalogPage,
   PackageInstalledDescriptor,
   PackageOperation,
   PackagePreview,
@@ -110,11 +111,13 @@ function backend(
     inspect?: Outcome
     install?: Outcome
     declaredCapabilities?: PackagePreview['declaredCapabilities']
+    communityIndex?: PackageCatalogPage['communityIndex']
   } = {},
 ) {
   const outcome = { inspect: options.inspect ?? 'completed', install: options.install ?? 'completed' }
   let installed: PackageInstalledDescriptor[] = []
   const calls: string[] = []
+  const inspections: unknown[] = []
   const failure = (message: string) => ({
     state: 'failed' as const,
     error: { code: 'E_PACKAGE_SOURCE' as const, safeMessage: message, blockers: [] },
@@ -131,17 +134,26 @@ function backend(
           permissions: ['packages.read', 'packages.install', 'packages.trust', 'packages.activate'],
           readOnly: false,
           authScope: 'auth.install-flow-test',
-          features: Object.values(ADMIN_FEATURES),
+          features: [
+            ...Object.values(ADMIN_FEATURES),
+            ...(options.communityIndex ? ['packages.community-discovery.v3'] : []),
+          ],
         },
         inventory: { packages: installed },
       })
-    if (url.endsWith('/catalog/list')) return Response.json({ items: [entry], nextCursor: null })
+    if (url.endsWith('/catalog/list'))
+      return Response.json({
+        items: [entry],
+        nextCursor: null,
+        ...(options.communityIndex ? { communityIndex: options.communityIndex } : {}),
+      })
     if (url.endsWith('/list')) return Response.json({ packages: installed })
     if (url.endsWith('/tree/list')) return Response.json({ desiredDigest: 'sha256-x', actual: true })
     if (url.endsWith('/surfaces')) return Response.json({ surfaces: [] })
     if (url.endsWith('/pins/inspect')) return Response.json({ orphans: [] })
     if (url.endsWith('/inspect')) {
       calls.push('inspect')
+      inspections.push(body.source)
       return Response.json({ operationId: 'inspect-1', profile: 'local-dev' })
     }
     if (url.endsWith('/install')) {
@@ -175,7 +187,7 @@ function backend(
     }
     return Response.json({ error: { code: 'UNEXPECTED', message: url } }, { status: 500 })
   })
-  return { fetcher, calls, outcome }
+  return { fetcher, calls, inspections, outcome }
 }
 
 let host: Awaited<ReturnType<typeof import('./web-dom-fixture.js').mountRenderedIndex>> | undefined
@@ -435,6 +447,59 @@ it('cancels from the breadcrumb without installing', async () => {
   await vi.waitFor(() => expect(view()).toBeNull())
   expect(kit.calls).toEqual(['inspect'])
   expect(installButton()?.disabled).toBe(false)
+})
+
+it('checks the exact selected community pin without submitting an install', async () => {
+  const selected = `git:https://github.com/fixture/community.git#${'b'.repeat(40)}`
+  const kit = backend({
+    inspect: 'running',
+    communityIndex: {
+      state: 'ready',
+      lastSuccessAt: timestamp,
+      nextAttemptAt: null,
+      error: null,
+      totalReported: 1,
+      items: [
+        {
+          id: 'fixture/community',
+          fullName: 'fixture/community',
+          description: 'Fixture for checking explicit pins.',
+          versions: [
+            {
+              version: '1.0.0',
+              source: { type: 'git', ref: `git:https://github.com/fixture/community.git#${'a'.repeat(40)}` },
+              compatibility: { kind: 'undeclared' },
+            },
+            {
+              version: '2.0.0',
+              source: { type: 'git', ref: selected },
+              compatibility: { kind: 'incompatible', range: '^99.0.0' },
+            },
+          ],
+        },
+      ],
+    },
+  })
+  await mountMarket(kit.fetcher)
+  await click('[data-testid="community-view"]')
+  const details = document.querySelector('[data-testid="community-details"]')
+  const picker = details?.querySelector('[aria-label="版本"]')
+  expect(picker).toBeTruthy()
+  await act(async () => picker?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+  const option = [...(details?.querySelectorAll<HTMLElement>('.ant-select-item-option') ?? [])].find(
+    (entry) => entry.textContent === '2.0.0',
+  )
+  expect(option).toBeDefined()
+  await act(async () => option?.click())
+  expect(details?.textContent).toContain('明确不兼容')
+  const check = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+    (button) => button.textContent === '检查安装条件',
+  )
+  expect(check?.disabled).toBe(false)
+  expect(kit.inspections).toEqual([])
+  await act(async () => check?.click())
+  expect(kit.inspections).toEqual([{ type: 'git', ref: selected }])
+  expect(kit.calls).toEqual(['inspect'])
 })
 
 it('never opens 插件操作 by itself; a running install is reachable from the activity line', async () => {

@@ -289,6 +289,69 @@ describe('shell', () => {
     expect(textOf(result)).not.toContain('could not be started')
   })
 
+  it.each([
+    [true, 'E_ACL_ACCESS_DENIED', 'WRITE_DAC and WRITE_OWNER'],
+    [false, 'E_ACL_ACCESS_DENIED', 'WRITE_DAC and WRITE_OWNER'],
+    [true, 'E_POWERSHELL_UNAVAILABLE', 'AGNES_POWERSHELL=auto'],
+    [false, 'E_POWERSHELL_UNAVAILABLE', 'AGNES_POWERSHELL=auto'],
+  ] as const)('explains Windows setup failure with jobs=%s and code=%s', async (useJobs, code, advice) => {
+    const denied = Object.assign(new Error('/private/native-detail'), { code })
+    const ctx = fakeToolContext({
+      exec: () => {
+        throw denied
+      },
+    })
+    const jobs = new ShellJobs()
+    vi.spyOn(jobs, 'start').mockRejectedValue(denied)
+    ctx.sandbox.openProcess = async () => {
+      throw denied
+    }
+    const result = await createShellTool(useJobs ? jobs : undefined).execute({ command: 'echo ready' }, ctx)
+    expect(result.isError).toBe(true)
+    expect(result.details).toMatchObject({ code })
+    expect(textOf(result)).toContain('command did not start')
+    expect(textOf(result)).toContain(advice)
+    expect(textOf(result)).not.toContain('/private/native-detail')
+  })
+
+  it.each([
+    [true, true],
+    [true, false],
+    [false, true],
+    [false, false],
+  ])(
+    'identifies Windows curl TLS initialization with restricted=%s and jobs=%s',
+    async (restricted, useJobs) => {
+      const stderr = 'curl: (35) schannel: AcquireCredentialsHandle failed: SEC_E_NO_CREDENTIALS (0x8009030e)'
+      const ctx = fakeToolContext({ exec: () => ({ code: 35, stdout: '', stderr }) })
+      ctx.sandbox.enforcement = () =>
+        restricted
+          ? {
+              level: 'partial',
+              scope: ['file'],
+              boundary: {
+                contract: 'windows-write-restricted-v1',
+                fileWrite: 'acl-partial',
+                fileRead: 'unrestricted',
+                network: 'unrestricted',
+                processTree: 'job-object',
+              },
+            }
+          : { level: 'none', scope: [] }
+      const jobs = new ShellJobs()
+      const view = { id: 'job-tls', status: 'failed', stdout: '', stderr, code: 35 }
+      vi.spyOn(jobs, 'start').mockResolvedValue({ ...view, status: 'running', code: null } as never)
+      vi.spyOn(jobs, 'wait').mockResolvedValue(view as never)
+      const result = await createShellTool(useJobs ? jobs : undefined).execute(
+        { command: 'curl.exe https://example.com' },
+        ctx,
+      )
+      expect(result.isError).toBe(true)
+      expect(textOf(result).includes('Node HTTPS client')).toBe(restricted)
+      expect(textOf(result)).toContain('[exit 35]')
+    },
+  )
+
   it('has a complete definition with replay never', () => {
     expect(checkToolDef(shellTool)).toEqual({ ok: true })
     expect(shellTool.meta.replay).toBe('never')
@@ -928,6 +991,30 @@ describe('shell without a job registry', () => {
     expect(ctx.calls.exec).toHaveLength(0)
     expect(ctx.calls.jobs).toHaveLength(0)
   })
+})
+
+it.each([
+  '$c = Get-Content -Raw -Encoding utf8 (session-file://3/1; $null) 2>$null; exit 1',
+  "Get-Content -LiteralPath 'session-file://3/1'",
+])('directs a PowerShell attachment read to the session read tool: %s', async (command) => {
+  const base = fakeToolContext({ exec: () => ({ code: 1, stdout: '', stderr: 'PowerShell error' }) })
+  const ctx = { ...base, platform: { ...base.platform, shell: 'powershell' as const } }
+  const result = await shellTool.execute({ command }, ctx)
+  expect(result.isError).toBe(true)
+  expect(textOf(result)).toContain('Use read with path "session-file://3/1"')
+  expect(textOf(result)).toContain('save_to')
+  expect(base.calls.exec).toEqual([])
+})
+
+it.each([
+  "Get-Content -LiteralPath 'proofread.txt' -Encoding utf8",
+  "Get-Content -LiteralPath 'proofread.txt' | Select-String 'session-file://3/1'",
+  "Write-Output 'session-file://3/1'",
+])('passes ordinary PowerShell commands through unchanged: %s', async (command) => {
+  const base = fakeToolContext({ exec: () => ({ code: 0, stdout: 'ok', stderr: '' }) })
+  const ctx = { ...base, platform: { ...base.platform, shell: 'powershell' as const } }
+  expect(textOf(await shellTool.execute({ command }, ctx))).toContain('[exit 0]')
+  expect(base.calls.exec).toEqual([[SHELL_SENTINEL, command]])
 })
 
 it('reports measured descendant cleanup and PowerShell wrapper guidance, without claiming a timeout cause', async () => {

@@ -369,7 +369,21 @@ describe('[nested result] notes', () => {
         const outerResult = (await reopened.log.scan({ type: 'tool/result', limit: 20 })).find(
           (row) => (row.data as { code?: string }).code === code,
         )
-        expect(outerResult).toBeDefined()
+        if (!outerResult) throw new Error('missing recovered outer result')
+        expect(outerResult.data).not.toHaveProperty('dispatchPhase')
+        expect(await reopened.log.scan({ type: 'x/core/tool-dispatch', limit: 20 })).toContainEqual(
+          expect.objectContaining({
+            origin: 'system',
+            trust: 'trusted',
+            ignorable: true,
+            sourceEventSeqs: outerResult?.sourceEventSeqs,
+            data: {
+              version: 1,
+              toolUseId: (outerResult.data as { toolUseId: string }).toolUseId,
+              phase: 'may_have_sent',
+            },
+          }),
+        )
         expect(await ledgerNotes(reopened.log)).toEqual([
           [
             `${PREFIX}outer ended with ${code} after these nested calls had results: write ok. Check the current state before running them again.`,

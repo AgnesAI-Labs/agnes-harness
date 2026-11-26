@@ -107,12 +107,12 @@ it.each([
     })
     expect(result.entries.find((entry) => entry.id === '@agnes/interaction-ui')).toMatchObject({
       id: '@agnes/interaction-ui',
-      version: '0.1.2',
+      version: '0.1.3',
       source: { ref: 'file:./bundled-plugins/interaction-ui' },
     })
     expect(result.entries.find((entry) => entry.id === '@agnes/deliverables-ui')).toMatchObject({
       id: '@agnes/deliverables-ui',
-      version: '0.1.5',
+      version: '0.1.6',
       source: { ref: 'file:./bundled-plugins/deliverables-ui' },
     })
     for (const id of ['navigation-ui', 'conversation-ui'])

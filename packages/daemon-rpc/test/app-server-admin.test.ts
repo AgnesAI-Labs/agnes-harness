@@ -24,6 +24,36 @@ import { CommandQueue } from '../src/local/command-queue.js'
 import { createAppServerAdmin, registerAppServerAdmin } from '../src/local/methods/admin.js'
 import { createPlanCommands } from '../src/local/plan-commands.js'
 
+it('propagates admin connection closure to the cloud exchange', async () => {
+  const endpoint = new LocalEndpoint({ clock: Date.now, principalId: 'local' })
+  endpoint.conn.initialized = true
+  endpoint.conn.authKind = 'local'
+  endpoint.conn.credentialKind = 'local'
+  const authorizeCloud = vi.fn(async (_input: unknown, signal: AbortSignal) => {
+    await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }))
+    signal.throwIfAborted()
+  })
+  const service = { authorizeCloud } as unknown as ReturnType<typeof createAppServerAdmin>
+  registerAppServerAdmin(endpoint, service, localPackageAdminAuthority())
+  try {
+    const call = endpoint.handle({
+      jsonrpc: '2.0',
+      id: 1,
+      method: '_agnes/v1/admin.cloud.authorize',
+      params: { credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111' },
+    })
+    expect(authorizeCloud).toHaveBeenCalledWith(
+      { credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111' },
+      expect.any(AbortSignal),
+    )
+    await endpoint.close()
+    expect(authorizeCloud.mock.calls[0]?.[1].aborted).toBe(true)
+    expect(await call).toHaveProperty('error')
+  } finally {
+    await endpoint.close()
+  }
+})
+
 it('owns settings and plan writes behind local admin and registered-workspace authority', async () => {
   const fixtureRoot = await mkdtemp(join(tmpdir(), 'agh-app-admin-'))
   const home = join(fixtureRoot, 'home')
@@ -639,12 +669,33 @@ it('manages write-only generic credentials with MCP references, restart persiste
     return response
   }
   try {
+    const cloud = () =>
+      endpoint.handle({
+        jsonrpc: '2.0',
+        id: ++command,
+        method: '_agnes/v1/admin.cloud.authorize',
+        params: {
+          origin: 'https://cloud.fixture:8443',
+          credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111',
+        },
+      })
+    expect(await cloud()).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
     expect(await call('create', { label: 'MCP', value: canary })).toHaveProperty(
       'error.data.code',
       'CAPABILITY_DENIED',
     )
     endpoint.conn.authKind = 'local'
     endpoint.conn.credentialKind = 'local'
+    for (const permissions of [
+      ['packages.read'],
+      ['packages.activate', 'credentials.read'],
+      ['packages.activate', 'credentials.write'],
+    ] as const) {
+      authority = localPackageAdminAuthority(permissions)
+      expect(await cloud()).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
+    }
+    authority = localPackageAdminAuthority()
+    expect(await cloud()).toHaveProperty('error.data.cause.code', 'CONFIG_CREDENTIAL_NOT_FOUND')
     for (const permissions of [[], ['packages.read', 'credentials.read'], ['packages.activate']] as const) {
       authority = localPackageAdminAuthority(permissions)
       expect(await call('create', { label: 'MCP', value: canary })).toHaveProperty(
@@ -774,11 +825,18 @@ it('manages write-only generic credentials with MCP references, restart persiste
       'error.data.cause.code',
       'CONFIG_CREDENTIAL_CONFIRMATION_REQUIRED',
     )
-    const updates = await Promise.all(
-      ['first-write', 'last-write'].map((value) => call('set', { id, value })),
+    unavailable = true
+    expect(await call('set', { id, value: `${canary}-refused` })).toHaveProperty(
+      'error.data.cause.code',
+      'CONFIG_CREDENTIAL_STORE',
     )
-    expect(updates.every((response) => !response.error)).toBe(true)
-    expect(resolver.resolve(id)).toBe('last-write')
+    expect(resolver.resolve(definition.secretBinding.credentialRef) === canary).toBe(true)
+    unavailable = false
+    const updates = await Promise.all(
+      [`${canary}-first`, `${canary}-last`].map((value) => call('set', { id, value })),
+    )
+    for (const update of updates) expect(update.result).toEqual({ ...metadata, references: allRefs })
+    expect(resolver.resolve(definition.secretBinding.credentialRef) === `${canary}-last`).toBe(true)
     expect(await call('rename', { id, label: 'Renamed' })).toHaveProperty('result.label', 'Renamed')
     await endpoint.close()
     endpoint = new LocalEndpoint({
@@ -797,7 +855,7 @@ it('manages write-only generic credentials with MCP references, restart persiste
       label: 'Renamed',
       createdAt: metadata.createdAt,
     })
-    expect(resolver.resolve(id)).toBe('last-write')
+    expect(resolver.resolve(id) === `${canary}-last`).toBe(true)
     unavailable = true
     expect(await call('delete', { id, force: true, confirm: true })).toHaveProperty(
       'error.data.cause.code',

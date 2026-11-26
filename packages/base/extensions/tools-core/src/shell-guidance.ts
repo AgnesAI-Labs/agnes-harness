@@ -1,6 +1,22 @@
 import type { ToolContext } from '@agnes/extension-api'
 
 const timeouts = new Map<string, number>()
+
+export function shellSetupAdvice(error: unknown): string | undefined {
+  if ((error as { code?: unknown } | null)?.code === 'E_POWERSHELL_UNAVAILABLE')
+    return 'The selected PowerShell cannot start as a managed Windows command (E_POWERSHELL_UNAVAILABLE); the command did not start. Set AGNES_POWERSHELL=auto or install a compatible PowerShell, then restart. Do not change permissions automatically.'
+  if ((error as { code?: unknown } | null)?.code === 'E_ACL_ACCESS_DENIED')
+    return "Windows denied setup of the workspace write restriction; the command did not start. Use an NTFS workspace where this account can change permissions (WRITE_DAC and WRITE_OWNER), or ask the user to review that directory's permissions. Ordinary file write access alone is insufficient."
+  return undefined
+}
+
+export function commandNetworkNote(ctx: ToolContext, stdout: string, stderr: string): string | undefined {
+  if (ctx.sandbox.enforcement().boundary?.contract !== 'windows-write-restricted-v1') return undefined
+  const output = `${stdout}\n${stderr}`
+  if (/curl:/i.test(output) && /schannel:/i.test(output) && /SEC_E_NO_CREDENTIALS|0x8009030e/i.test(output))
+    return '[Windows curl could not initialize Schannel TLS credentials under the write restriction. Check connectivity using a Node HTTPS client or an OpenSSL-based curl under the same permission. This error alone does not establish a DNS or network outage; do not repeat the same request or change permissions automatically.]'
+  return undefined
+}
 function wrapsPowerShell(command: string): boolean {
   const words = command.match(/"[^"]*"|'[^']*'|[^\s]+/g) ?? []
   if (words[0] === '&') words.shift()

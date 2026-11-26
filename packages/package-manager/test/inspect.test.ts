@@ -125,6 +125,28 @@ it.each(['file', 'git'] as const)(
     clean()
   },
 )
+
+it('refuses an illegal UI annotation during inspection and installation without changing the lock', async () => {
+  pkg({
+    agnes: {
+      plugins: [
+        {
+          apiRange: '^5.0.0',
+          export: 'main',
+          uiEntries: [{ id: 'guide', placement: 'sidebar', title: { en: 'Guide' }, configure: 'other' }],
+        },
+      ],
+    },
+  })
+  const before = lockBytes()
+  const m = manager()
+  await expect(m.inspect(profile, source)).rejects.toMatchObject({ detail: { reason: 'plugins' } })
+  await expect(
+    m.install(profile, source, { expectedIntegrity: hashDirectory(sourceDir, { exclude: [] }) }),
+  ).rejects.toMatchObject({ detail: { reason: 'plugins' } })
+  expect(lockBytes()).toBe(before)
+})
+
 it('recognizes the static agnes.plugins declaration without importing plugin code', async () => {
   writeFileSync(join(sourceDir, 'index.mjs'), `throw new Error('plugin code must not run during inspect')`)
   pkg({
@@ -137,6 +159,45 @@ it('recognizes the static agnes.plugins declaration without importing plugin cod
   const preview = await manager().inspect(profile, source)
   expect(preview.blockers).toEqual([])
   expect(preview.contributions).toEqual([])
+})
+
+it('installs row-bound UI text without packaging a frontend or changing the capability review', async () => {
+  const m = manager()
+  const before = await m.inspect(profile, source)
+  const help = {
+    id: 'guide',
+    placement: 'workbench.right',
+    title: { en: 'Guide', 'zh-CN': '指南' },
+    markdown: { en: 'Start here.' },
+  }
+  pkg({
+    agnes: {
+      plugins: [{ apiRange: '^5.0.0', export: 'main', id: 'ext:acme/pkg-a/main', uiEntries: [help] }],
+    },
+  })
+  const preview = await m.inspect(profile, source)
+  expect(preview.contributions).toEqual(before.contributions)
+  expect(preview.capabilityHash).toBe(before.capabilityHash)
+  expect(preview).not.toHaveProperty('uiEntries')
+  if (!preview.capabilityHash) throw new Error('Expected an inspectable capability hash')
+  const installed = await m.install(profile, source, { expectedIntegrity: preview.integrity })
+  expect(installed).not.toHaveProperty('uiEntries')
+  expect(lockBytes()).not.toContain('"uiEntries"')
+  await m.trust(profile, preview.id, {
+    integrity: preview.integrity,
+    capabilityHash: preview.capabilityHash,
+  })
+  await m.enable(profile, preview.id, true)
+  const inventory = await m.inventory(profile, { fresh: true })
+  expect(inventory.packages).toMatchObject([
+    {
+      id: preview.id,
+      enabled: true,
+      trusted: true,
+      entry: { integrity: preview.integrity },
+      uiEntries: [{ ...help, rowId: 'ext:acme/pkg-a/main' }],
+    },
+  ])
 })
 
 it('refuses invalid present package purpose without installing or executing it', async () => {

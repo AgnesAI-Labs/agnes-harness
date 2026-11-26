@@ -1,7 +1,15 @@
 /** @vitest-environment happy-dom */
 
-import type { PackageCatalogDescriptor, PackageCatalogPage, SkillImportResult } from '@agnes/protocol'
+import type {
+  PackageCatalogDescriptor,
+  PackageCatalogPage,
+  PackageDocsGetParams,
+  PackageInstalledDescriptor,
+  SkillImportResult,
+} from '@agnes/protocol'
 import { CredentialError, CredentialsApi } from '@agnes/resource-control-web/credentials-api'
+import { mountPluginAdmin, type PluginAdminViewContext } from '@agnes/web-admin/admin/plugins/admin'
+import type { AdminContext } from '@agnes/web-admin/admin/plugins/types'
 import {
   ComputerUseCapability,
   type SettingsComputerUseView,
@@ -822,9 +830,9 @@ it('groups marketplace releases and opens or installs the selected release', asy
   }
 })
 
-it.each([true, false])(
-  'reviews complete Skill content and cleans up abandoned review (commit=%s)',
-  async (commit) => {
+it.each(['commit', 'unmount', 'cancel-button'] as const)(
+  'reviews complete Skill content and cleans up abandoned review (%s)',
+  async (outcome) => {
     vi.useFakeTimers()
     const prepared = {
       state: 'prepared',
@@ -835,11 +843,17 @@ it.each([true, false])(
       fileCount: 2,
       environment: [{ name: 'node', evidence: 'probed', state: 'satisfied' }],
     }
+    let finishCancellation!: (value: SkillImportResult) => void
+    const cancellation = new Promise<SkillImportResult>((resolve) => {
+      finishCancellation = resolve
+    })
     const skillImport = vi
       .fn()
       .mockResolvedValueOnce({ state: 'running', proposalId: 'skill-check-fixture', phase: 'acquiring' })
       .mockResolvedValueOnce(prepared)
-      .mockResolvedValueOnce({ ...prepared, state: 'installed' })
+      .mockImplementationOnce(() =>
+        outcome === 'cancel-button' ? cancellation : Promise.resolve({ ...prepared, state: 'installed' }),
+      )
     const view = { api: { skillImport } } as unknown as PluginView
     const host = document.body.appendChild(document.createElement('div'))
     const root = createRoot(host)
@@ -867,7 +881,8 @@ it.each([true, false])(
       await act(async () => vi.advanceTimersByTimeAsync(300))
       expect(host.textContent).toContain('skill.import.env.satisfied')
       expect(host.textContent).toContain('skill.import.unverified')
-      if (!commit) return
+      if (outcome === 'cancel-button') await act(async () => button('skill.import.cancel')?.click())
+      if (outcome !== 'commit') return
       await act(async () => button('skill.import.confirm')?.click())
       expect(skillImport).toHaveBeenLastCalledWith({
         action: 'commit',
@@ -878,10 +893,62 @@ it.each([true, false])(
       expect(button('skill.import.confirm')).toBeUndefined()
     } finally {
       flushSync(() => root.unmount())
+      finishCancellation({ state: 'cancelled' })
       host.remove()
       vi.useRealTimers()
-      if (!commit)
+      if (outcome !== 'commit') {
         expect(skillImport).toHaveBeenLastCalledWith({ action: 'cancel', proposalId: prepared.proposalId })
+        expect(skillImport.mock.calls.filter(([arg]) => arg.action === 'cancel')).toHaveLength(1)
+      }
+    }
+  },
+)
+
+it.each(['skill', 'mcp'] as const)(
+  'retries a failed %s import cancellation without refreshing',
+  async (kind) => {
+    const prepared = { kind, state: 'prepared', proposalId: 'cancel-retry-fixture', digest: 'a'.repeat(64) }
+    const skillImport = vi
+      .fn()
+      .mockResolvedValueOnce(prepared)
+      .mockRejectedValueOnce(new Error('network unavailable'))
+      .mockResolvedValueOnce({ ...prepared, state: 'cancelled' })
+    const refresh = vi.fn(() => new Promise<void>(() => {}))
+    const invalidated = vi.fn()
+    const onClose = vi.fn()
+    const view = { api: { skillImport }, canEffect: () => false, refresh } as unknown as PluginView
+    const host = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(host)
+    const button = (text: string) =>
+      [...host.querySelectorAll<HTMLButtonElement>('button')].find((entry) => entry.textContent === text)!
+    window.addEventListener('agnes:plugins-invalidated', invalidated)
+    try {
+      await act(async () =>
+        root.render(
+          createElement(SkillInstallDialog, {
+            view,
+            initialSource: 'git:https://github.com/owner/repository.git',
+            t: (key) => key,
+            onClose,
+          }),
+        ),
+      )
+      await act(async () => button('skill.import.cancel').click())
+      expect(host.textContent).toContain('skill.import.failed')
+      expect(onClose).not.toHaveBeenCalled()
+      expect(button('skill.import.cancel').disabled).toBe(false)
+      if (kind === 'skill') expect(button('skill.import.confirm').disabled).toBe(false)
+      await act(async () => button('skill.import.cancel').click())
+      expect(skillImport.mock.calls.slice(1)).toEqual([
+        [{ action: 'cancel', proposalId: prepared.proposalId }],
+        [{ action: 'cancel', proposalId: prepared.proposalId }],
+      ])
+      expect(onClose).toHaveBeenCalledOnce()
+      expect(refresh).not.toHaveBeenCalled()
+      expect(invalidated).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener('agnes:plugins-invalidated', invalidated)
+      await act(async () => root.unmount())
     }
   },
 )
@@ -955,6 +1022,8 @@ it('cancels a late check response when its installation window has already close
 it.each([false, true])(
   'reviews MCP connections and gates rollback on remove permission (remove=%s)',
   async (canRemove) => {
+    const refresh = vi.fn(async () => {})
+    const onClose = vi.fn()
     const prepared = {
       state: 'prepared',
       kind: 'mcp',
@@ -990,9 +1059,11 @@ it.each([false, true])(
         },
       })
       .mockResolvedValueOnce({ ...prepared, state: 'installed' })
+      .mockResolvedValueOnce({ ...prepared, state: 'cancelled', phase: 'rolled-back' })
     const view = {
       api: { skillImport },
       canEffect: (permission: string) => permission !== 'packages.remove' || canRemove,
+      refresh,
     } as unknown as PluginView
     const host = document.body.appendChild(document.createElement('div')),
       root = createRoot(host)
@@ -1003,7 +1074,7 @@ it.each([false, true])(
             view,
             initialSource: 'git:https://github.com/example/mcp.git',
             t: (key) => key,
-            onClose: vi.fn(),
+            onClose,
           }),
         ),
       )
@@ -1046,6 +1117,24 @@ it.each([false, true])(
       )
       if (!rollback) throw new Error('Missing rollback action')
       expect(rollback.disabled).toBe(!canRemove)
+      if (canRemove) {
+        await act(async () => rollback.click())
+        const confirmRollback = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
+          (button) => button.textContent === 'mcp.import.confirmRollback',
+        )
+        await act(async () => confirmRollback?.click())
+        expect(skillImport).toHaveBeenLastCalledWith({
+          action: 'rollback',
+          proposalId: prepared.proposalId,
+          expectedDigest: prepared.digest,
+        })
+      }
+      const close = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent === 'skill.import.close',
+      )
+      await act(async () => close?.click())
+      expect(refresh).toHaveBeenCalledOnce()
+      expect(onClose).toHaveBeenCalledOnce()
     } finally {
       flushSync(() => root.unmount())
       host.remove()
@@ -1057,10 +1146,10 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
   const community: NonNullable<PackageCatalogPage['communityIndex']> = {
     state: 'ready',
     error: null,
-    totalReported: 13,
+    totalReported: 25,
     lastSuccessAt: new Date().toISOString(),
     nextAttemptAt: null,
-    items: Array.from({ length: 13 }, (_, id) => ({
+    items: Array.from({ length: 25 }, (_, id) => ({
       id: `author/repo-${id}`,
       name: `author/repo-${id}`,
       fullName: `author/repo-${id}`,
@@ -1070,10 +1159,20 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
         {
           version: '1.0.0',
           source: { type: 'git', ref: `git:https://github.com/author/repo-${id}.git#${'a'.repeat(40)}` },
+          ...(id === 0
+            ? {
+                provides: ['tool', 'mcp'],
+                publishTimestamp: 1_700_000_000,
+                compatibility: { kind: 'declared-compatible', range: '>=1.2.0' },
+              }
+            : { compatibility: { kind: 'undeclared' } }),
         },
         {
           version: '2.0.0',
           source: { type: 'git', ref: `git:https://github.com/author/repo-${id}.git#${'b'.repeat(40)}` },
+          provides: ['loop'],
+          publishTimestamp: 1_710_000_000,
+          compatibility: { kind: 'incompatible', range: '^9.0.0' },
         },
       ],
     })),
@@ -1081,9 +1180,14 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
   const fetcher = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('No external fetch expected'))
   const catalog = vi.fn(async () => ({ items: [], nextCursor: null, community }))
   const inspect = vi.fn()
+  let installAllowed = true
+  const loadCatalog = vi.fn(async (): Promise<void> => {
+    view.state.loading = true
+  })
   const view = {
     state: {
       community,
+      communityVersion: 3,
       catalog: [
         {
           id: '@example/official',
@@ -1108,21 +1212,48 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
     kind: '',
     t: (key: string) => key,
     purposeText: (key: string) => key,
+    render: () => renderMarket(),
     can: () => true,
-    canEffect: () => true,
+    canEffect: () => installAllowed,
     inspecting: () => false,
     inspectFailure: () => undefined,
     primaryAction: () => ({ disabled: false, run: () => undefined }),
-    loadCatalog: vi.fn(),
+    loadCatalog,
     inspect,
   } as unknown as PluginView
   const host = document.body.appendChild(document.createElement('div'))
   const root = createRoot(host)
+  const renderMarket = () => root.render(createElement(MarketTab, { view, t: (key) => key }))
+  const communityCards = () => host.querySelectorAll('[data-testid="community-card"]')
+  let notifyTail: ((isIntersecting: boolean) => void) | undefined
   try {
-    flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(private readonly callback: IntersectionObserverCallback) {}
+        observe(target: Element) {
+          if (!target.matches('.plugins-page-gallery-tail')) return
+          notifyTail = (isIntersecting) =>
+            this.callback(
+              [{ target, isIntersecting } as IntersectionObserverEntry],
+              this as unknown as IntersectionObserver,
+            )
+        }
+        disconnect() {
+          notifyTail = undefined
+        }
+      },
+    )
+    flushSync(renderMarket)
     expect(host.querySelectorAll('[data-testid="market-list"]')).toHaveLength(1)
     expect(host.querySelectorAll('[data-testid="market-card"]')).toHaveLength(1)
-    expect(host.querySelectorAll('[data-testid="community-card"]')).toHaveLength(11)
+    expect(communityCards()).toHaveLength(11)
+    expect(host.querySelector('.plugin-more')).toBeNull()
+    await act(async () => notifyTail!(false))
+    expect(communityCards()).toHaveLength(11)
+    expect(loadCatalog).not.toHaveBeenCalled()
+    await act(async () => notifyTail!(true))
+    expect(communityCards()).toHaveLength(23)
     expect(host.querySelectorAll('.community-market-topics a')).toHaveLength(0)
     expect(host.textContent).not.toContain('community.coverage')
     expect(host.textContent).not.toContain('community.updated')
@@ -1131,7 +1262,7 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
       source.value = 'community'
       source.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    expect(host.querySelectorAll('[data-testid="community-card"]')).toHaveLength(12)
+    expect(communityCards()).toHaveLength(12)
     expect(host.querySelectorAll('[data-testid="market-card"]')).toHaveLength(0)
     expect(host.querySelector('.community-market-card p')?.textContent).toBe('<script>not markup</script>')
     expect(host.querySelector('script')).toBeNull()
@@ -1145,12 +1276,22 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
     expect(host.textContent).not.toContain('Stars')
     expect(details()?.textContent).toContain('<script>not markup</script>')
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('community.reviewRequired')
+    expect(details()?.textContent).toContain('community.compatibility.declared-compatible')
+    expect(details()?.textContent).toContain('kind.tool · kind.mcp')
+    expect(details()?.querySelector('time')?.dateTime).toBe('2023-11-14T22:13:20.000Z')
+    const firstPin = 'a'.repeat(40)
+    expect(
+      details()?.querySelector(`a[href="https://github.com/author/repo-0/commit/${firstPin}"]`)?.textContent,
+    ).toBe(firstPin)
     await act(async () =>
       document.querySelector<HTMLButtonElement>('[aria-label="community.close"]')?.click(),
     )
     await vi.waitFor(() => expect(details()).toBeNull())
     await vi.waitFor(() => expect(document.activeElement).toBe(views[0]))
     await act(async () => views[1]?.click())
+    expect(details()?.textContent).toContain('community.compatibility.undeclared')
+    expect(details()?.textContent).toContain('community.notRecorded')
+    expect(details()?.querySelector('time')).toBeNull()
     const picker = details()!.querySelector('[data-testid="community-version-picker"]')!
     await act(async () => {
       picker.querySelector('input')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
@@ -1159,34 +1300,134 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
       (entry) => entry.textContent === '2.0.0',
     )!
     await act(async () => option.click())
-    const check = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
-      (button) => button.textContent === 'community.check',
-    )
+    expect(details()?.textContent).toContain('community.compatibility.incompatible')
+    expect(details()?.textContent).toContain('^9.0.0')
+    expect(details()?.textContent).toContain('kind.loop')
+    expect(details()?.textContent).not.toContain('community.typeUnknown')
+    expect(details()?.querySelector('time')?.dateTime).toBe('2024-03-09T16:00:00.000Z')
+    const secondPin = 'b'.repeat(40)
+    expect(details()?.querySelector(`a[href$="/commit/${secondPin}"]`)?.textContent).toBe(secondPin)
+    expect(
+      document.querySelector('[role="dialog"] a[href="https://github.com/author/repo-1/releases"]'),
+    ).not.toBeNull()
+
+    installAllowed = false
+    flushSync(renderMarket)
+    const checkAction = () =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+        (button) => button.textContent === 'community.check',
+      )
+    expect(checkAction()?.disabled).toBe(true)
+    await act(async () => checkAction()?.click())
+    expect(inspect).not.toHaveBeenCalled()
+    installAllowed = true
+    view.state.community = {
+      ...community,
+      items: community.items.map((row) => ({
+        ...row,
+        ...(row.versions
+          ? { versions: row.versions.map(({ version, source }) => ({ version, source })) }
+          : {}),
+      })),
+    }
+    view.state.communityVersion = 2
+    flushSync(renderMarket)
+    expect(details()?.textContent).toContain('community.unverified')
+    expect(details()?.textContent).not.toContain('^9.0.0')
+    expect(details()?.querySelector('time')).toBeNull()
+    expect(details()?.querySelector(`a[href$="/commit/${secondPin}"]`)?.textContent).toBe(secondPin)
+    const check = checkAction()
     await act(async () => check?.click())
     expect(inspect).toHaveBeenCalledWith(
       { type: 'git', ref: `git:https://github.com/author/repo-1.git#${'b'.repeat(40)}` },
       'install',
       check,
     )
-    const next = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
-      (button) => button.textContent === 'market.more',
-    )!
-    await act(async () => next.click())
-    expect(host.querySelectorAll('[data-testid="community-card"]')).toHaveLength(13)
+    view.state.community = community
+    view.state.communityVersion = 3
+    flushSync(renderMarket)
+    await act(async () => notifyTail!(true))
+    expect(communityCards()).toHaveLength(24)
+    await act(async () => notifyTail!(false))
+    expect(communityCards()).toHaveLength(24)
+    await act(async () => notifyTail!(true))
+    expect(communityCards()).toHaveLength(25)
+    expect(notifyTail).toBeUndefined()
+    expect(loadCatalog).not.toHaveBeenCalled()
+
+    view.state.nextCursor = 'page-2'
+    flushSync(renderMarket)
+    await act(async () => notifyTail!(false))
+    expect(loadCatalog).not.toHaveBeenCalled()
+    const notifyPage = notifyTail!
+    await act(async () => {
+      notifyPage(true)
+      notifyPage(true)
+    })
+    expect(loadCatalog).toHaveBeenCalledTimes(1)
+    expect(loadCatalog).toHaveBeenLastCalledWith('page-2')
+    expect(notifyTail).toBeUndefined()
+    view.state.loading = false
+    view.state.nextCursor = 'page-3'
+    flushSync(renderMarket)
+    await act(async () => notifyTail!(true))
+    expect(loadCatalog).toHaveBeenCalledTimes(2)
+    expect(loadCatalog).toHaveBeenLastCalledWith('page-3')
+    view.state.loading = false
+    view.state.error = { code: 'CATALOG_ERROR', message: 'Catalog unavailable' }
+    flushSync(renderMarket)
+    expect(notifyTail).toBeUndefined()
+
+    view.kind = 'tool'
+    flushSync(renderMarket)
+    expect(communityCards()).toHaveLength(1)
+    expect(communityCards()[0]?.textContent).toContain('author/repo-0')
+    view.kind = 'mcp'
+    flushSync(renderMarket)
+    expect(communityCards()).toHaveLength(1)
+    expect(communityCards()[0]?.textContent).toContain('author/repo-0')
+    view.kind = 'loop'
+    flushSync(renderMarket)
+    expect(communityCards()).toHaveLength(0)
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="plugin-filter"]')?.click())
+    const capability = () => document.querySelector<HTMLInputElement>('input[aria-label="kind.filter"]')
+    await vi.waitFor(() => expect(capability()).not.toBeNull())
+    const selectCapability = async (label: string) => {
+      await act(async () => capability()?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+      const option = [...document.querySelectorAll<HTMLElement>('.ant-select-item-option')].find(
+        (entry) => entry.textContent === label,
+      )
+      expect(option).toBeDefined()
+      await act(async () => option?.click())
+    }
+    await selectCapability('community.typeUnknown')
+    expect(communityCards()).toHaveLength(12)
+    expect(communityCards()[0]?.textContent).toContain('author/repo-1')
+    view.query = 'repo-0'
+    flushSync(renderMarket)
+    expect(communityCards()).toHaveLength(0)
+    view.query = ''
+    await selectCapability('kind.all')
+    flushSync(renderMarket)
+    expect(communityCards()).toHaveLength(12)
+    await act(async () => notifyTail!(true))
+    view.query = 'author/repo-'
+    flushSync(renderMarket)
+    expect(communityCards()).toHaveLength(12)
     view.query = 'repo-5'
-    flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
-    expect(host.querySelectorAll('[data-testid="community-card"]')).toHaveLength(1)
+    flushSync(renderMarket)
+    expect(communityCards()).toHaveLength(1)
     expect(host.textContent).toContain('author/repo-5')
     view.query = 'no-match'
     view.state.community = { ...community, state: 'syncing' }
-    flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
+    flushSync(renderMarket)
     expect(host.textContent).toContain('market.none')
     expect(host.textContent).not.toContain('market.loading')
     view.state.community = { ...community, items: [], state: 'syncing' }
-    flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
+    flushSync(renderMarket)
     expect(host.textContent).toContain('market.none')
     view.state.community = { ...community, items: [], state: 'pending', lastSuccessAt: null }
-    flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
+    flushSync(renderMarket)
     expect(host.textContent).toContain('market.loading')
     expect(fetcher).not.toHaveBeenCalled()
     expect(catalog).not.toHaveBeenCalled()
@@ -1196,6 +1437,7 @@ it('merges indexed plugins into one gallery and reviews pinned versions without 
   } finally {
     flushSync(() => root.unmount())
     fetcher.mockRestore()
+    vi.unstubAllGlobals()
   }
 })
 
@@ -1460,6 +1702,272 @@ it('filters a single inventory by provenance source and declared capabilities in
   expect(matchesPluginFilters(base, 'community', 'tool')).toBe(true)
   expect(matchesPluginFilters(base, 'official', 'tool')).toBe(false)
   expect(matchesPluginFilters(base, 'community', 'loop')).toBe(false)
+})
+
+it('owns installed Markdown by the active tab, package, locale and current backend connection', async () => {
+  const packageA = {
+    id: '@acme/package-a',
+    source: { type: 'file', ref: 'file:/fixture/package-a' },
+    version: '1.0.0',
+    integrity: `sha256-${'a'.repeat(64)}`,
+    actualIntegrity: `sha256-${'9'.repeat(64)}`,
+    trusted: false,
+    desired: 'installed-disabled',
+    actual: 'not-running',
+    blockers: [],
+    contributions: [],
+    metadata: {
+      displayName: 'Package A',
+      summary: 'Coordinates sample work.',
+      description: 'An **author description**.',
+      docsUrl: 'https://docs.example.test/package-a',
+      locales: { 'zh-CN': { description: '作者的**纯文本**说明。' } },
+    },
+  } satisfies PackageInstalledDescriptor
+  const { metadata: _metadata, ...base } = packageA
+  const packageB = { ...base, id: '@acme/package-b', integrity: `sha256-${'b'.repeat(64)}` }
+  const catalogEntry: PackageCatalogDescriptor = {
+    id: packageA.id,
+    version: packageA.version,
+    integrity: packageA.integrity,
+    source: packageA.source,
+    metadata: packageA.metadata,
+    license: 'MIT',
+    contributions: [],
+    compatibility: 'supported',
+    sourceId: 'fixture',
+    retrievedAt: '2026-11-26T00:00:00.000Z',
+  }
+  let packages: PackageInstalledDescriptor[] = [packageA, packageB]
+  let context: AdminContext = {
+    profile: 'local-dev',
+    clientId: 'web-docs-test',
+    authScope: 'auth.docs-test',
+    permissions: ['packages.read'],
+    features: ['packages.docs.v1'],
+    docsConnectionEpoch: 'docs.first-connection',
+    readOnly: false,
+  }
+  const pending: {
+    params: PackageDocsGetParams & { docsConnectionEpoch: string }
+    signal: AbortSignal | null | undefined
+    respond(response: Response): void
+  }[] = []
+  let surfaceReply: Promise<Response> | undefined
+  let replyToSurfaces: ((response: Response) => void) | undefined
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const path = String(input)
+    if (path.endsWith('/overview')) return Response.json({ context, inventory: { packages } })
+    if (path.endsWith('/surfaces')) return surfaceReply ?? Response.json({ surfaces: [] })
+    if (path.endsWith('/catalog/list')) return Response.json({ items: [catalogEntry], nextCursor: null })
+    if (path.endsWith('/docs/get'))
+      return new Promise<Response>((respond) => {
+        pending.push({ params: JSON.parse(String(init?.body)), signal: init?.signal, respond })
+      })
+    return new Response(null, { status: 404 })
+  })
+  const previousLanguage = document.documentElement.lang
+  document.documentElement.lang = 'en'
+  for (const id of ['plugin-detail', 'source-dialog', 'plugin-confirm']) {
+    const dialog = document.createElement('dialog')
+    dialog.id = id
+    if (id === 'plugin-detail') dialog.dataset.presentation = 'page'
+    document.body.append(dialog)
+  }
+  const host = document.body.appendChild(document.createElement('div'))
+  let view: PluginAdminViewContext | undefined
+  const mounted = mountPluginAdmin({
+    surface: {
+      host,
+      render(current) {
+        view = current
+        return null
+      },
+    },
+  })
+  const docs = () => document.querySelector('[data-testid="plugin-docs-detail"]')
+  const body = () => docs()?.querySelector('[data-testid="plugin-docs-markdown"]') ?? undefined
+  const tab = (name: 'docs' | 'details') =>
+    document.querySelector<HTMLElement>(`#plugin-detail [data-testid="plugin-${name}-tab"]`)
+  const clickTab = async (name: 'docs' | 'details') => {
+    await vi.waitFor(() => expect(tab(name)).not.toBeNull())
+    await act(async () => tab(name)?.click())
+  }
+  const select = (item: PackageInstalledDescriptor | PackageCatalogDescriptor) =>
+    act(async () => view?.selectItem(item))
+  const read = async (index: number) => {
+    await vi.waitFor(() => expect(pending).toHaveLength(index + 1))
+    const request = pending[index]
+    if (!request) throw new Error('Missing pending documentation read')
+    return request
+  }
+  const article = (epoch: string, markdown: string) =>
+    Response.json({ docsConnectionEpoch: epoch, found: true, locale: 'en', markdown })
+  try {
+    await act(async () => mounted.ready)
+    await select(packageA)
+    expect(pending).toHaveLength(0)
+    await clickTab('docs')
+    const original = await read(0)
+    expect(original.params).toEqual({
+      profile: 'local-dev',
+      id: packageA.id,
+      expectedIntegrity: packageA.integrity,
+      locale: 'en',
+      docsConnectionEpoch: 'docs.first-connection',
+    })
+    expect(docs()?.querySelector('p')?.textContent).toBe('An **author description**.')
+    expect(docs()?.querySelector('strong')).toBeNull()
+    expect(docs()?.querySelector('[role="status"]')?.textContent).toBe('Loading package documentation…')
+    await act(async () => mounted.reload())
+    expect(pending).toHaveLength(1)
+    await act(async () => original.respond(article(original.params.docsConnectionEpoch, '# Old backend')))
+    expect(body()?.querySelector('h1')?.textContent).toBe('Old backend')
+
+    context = { ...context, docsConnectionEpoch: 'docs.second-connection' }
+    await act(async () => mounted.reload())
+    expect(body()).toBeUndefined()
+    const oldInFlight = await read(1)
+    context = { ...context, docsConnectionEpoch: 'docs.next-connection' }
+    await act(async () => mounted.reload())
+    const newConnection = await read(2)
+    expect(newConnection.params).toEqual({
+      ...oldInFlight.params,
+      docsConnectionEpoch: 'docs.next-connection',
+    })
+    expect(oldInFlight.signal?.aborted).toBe(true)
+    await act(async () => oldInFlight.respond(article(oldInFlight.params.docsConnectionEpoch, '# Too late')))
+    expect(body()).toBeUndefined()
+
+    await act(async () => {
+      document.documentElement.lang = 'zh-CN'
+      window.dispatchEvent(new Event('agnes:locale-changed'))
+    })
+    const translated = await read(3)
+    expect(translated.params.locale).toBe('zh-CN')
+    expect(newConnection.signal?.aborted).toBe(true)
+    await act(async () =>
+      newConnection.respond(article(newConnection.params.docsConnectionEpoch, '# Old language')),
+    )
+    expect(docs()?.querySelector('p')?.textContent).toBe('作者的**纯文本**说明。')
+    expect(body()).toBeUndefined()
+    await act(async () =>
+      translated.respond(article(translated.params.docsConnectionEpoch, '# English fallback')),
+    )
+    expect(body()?.getAttribute('lang')).toBe('en')
+    expect(body()?.querySelector('h1')?.textContent).toBe('English fallback')
+
+    const updated = { ...packageA, version: '2.0.0', integrity: `sha256-${'c'.repeat(64)}` }
+    packages = [updated, packageB]
+    // The verified overview has both the new row and its context. An unrelated surface read must
+    // not keep old Markdown visible or delay the new document request.
+    surfaceReply = new Promise<Response>((resolve) => {
+      replyToSurfaces = resolve
+    })
+    let updateRefresh: Promise<void> | undefined
+    await act(async () => {
+      updateRefresh = mounted.reload()
+    })
+    expect(body()).toBeUndefined()
+    const updatedRead = await read(4)
+    expect(updatedRead.params.expectedIntegrity).toBe(updated.integrity)
+    await act(async () => {
+      replyToSurfaces?.(Response.json({ surfaces: [] }))
+      await updateRefresh
+    })
+    surfaceReply = undefined
+    await act(async () =>
+      updatedRead.respond(Response.json({ error: { message: 'Private diagnostics' } }, { status: 503 })),
+    )
+    expect(docs()?.textContent).not.toContain('Private diagnostics')
+    expect(docs()?.querySelector('a')?.getAttribute('href')).toBe(packageA.metadata?.docsUrl)
+
+    await clickTab('details')
+    await clickTab('docs')
+    const previousSelection = await read(5)
+    await select(packageB)
+    expect(previousSelection.signal?.aborted).toBe(true)
+    expect(docs()).toBeNull()
+    await clickTab('docs')
+    const nextSelection = await read(6)
+    expect(nextSelection.params.id).toBe(packageB.id)
+    await act(async () => {
+      previousSelection.respond(article(previousSelection.params.docsConnectionEpoch, '# Previous selection'))
+      nextSelection.respond(
+        Response.json({ found: false, docsConnectionEpoch: nextSelection.params.docsConnectionEpoch }),
+      )
+    })
+    expect(body()).toBeUndefined()
+    expect(docs()?.querySelector('[role="status"]')?.textContent).toBe('此软件包没有可用文档。')
+
+    await clickTab('details')
+    await clickTab('docs')
+    const revoked = await read(7)
+    const confirmation = document.querySelector<HTMLDialogElement>('#plugin-confirm')
+    await act(async () =>
+      view?.configureConfirm({
+        title: 'Confirm a plugin change',
+        description: 'Existing detail remains below this confirmation.',
+        label: 'Confirm',
+        run: async () => {},
+      }),
+    )
+    expect(confirmation?.open).toBe(true)
+    context = { ...context, permissions: [] }
+    await act(async () => mounted.reload())
+    await act(async () =>
+      revoked.respond(article(revoked.params.docsConnectionEpoch, '# Permission revoked')),
+    )
+    expect(revoked.signal?.aborted).toBe(true)
+    expect(tab('docs')).toBeNull()
+    expect(confirmation?.open).toBe(true)
+    await act(async () => view?.closeConfirm())
+    expect(confirmation?.open).toBe(false)
+    expect(tab('docs')).toBeNull()
+    context = { ...context, permissions: ['packages.read'] }
+    await act(async () => mounted.reload())
+    expect(docs()).toBeNull()
+    await clickTab('docs')
+    const removed = await read(8)
+    packages = [updated]
+    await act(async () => mounted.reload())
+    await act(async () => removed.respond(article(removed.params.docsConnectionEpoch, '# Uninstalled')))
+    expect(removed.signal?.aborted).toBe(true)
+    expect(docs()).toBeNull()
+
+    await select(updated)
+    await clickTab('docs')
+    const downgrade = await read(9)
+    await act(async () => downgrade.respond(new Response(null, { status: 404 })))
+    expect(docs()?.querySelector('a')?.getAttribute('href')).toBe(packageA.metadata?.docsUrl)
+    context = { ...context, features: [] }
+    await act(async () => mounted.reload())
+    expect(pending).toHaveLength(10)
+    expect(docs()?.querySelector('a')).not.toBeNull()
+
+    context = { ...context, features: ['packages.docs.v1'], docsConnectionEpoch: 'docs.restored-connection' }
+    await act(async () => mounted.reload())
+    const restored = await read(10)
+    expect(restored.params).toEqual({
+      ...downgrade.params,
+      docsConnectionEpoch: 'docs.restored-connection',
+    })
+    await act(async () => mounted.reload())
+    expect(pending).toHaveLength(11)
+    await act(async () => view?.selectTab('discover'))
+    await select(catalogEntry)
+    await clickTab('docs')
+    expect(restored.signal?.aborted).toBe(true)
+    await act(async () => restored.respond(article(restored.params.docsConnectionEpoch, '# Installed only')))
+    expect(body()).toBeUndefined()
+    expect(docs()?.querySelector('a')).not.toBeNull()
+    expect(pending).toHaveLength(11)
+  } finally {
+    replyToSurfaces?.(Response.json({ surfaces: [] }))
+    await act(async () => mounted.dispose())
+    document.documentElement.lang = previousLanguage
+    fetcher.mockRestore()
+  }
 })
 
 it('coalesces pending-review reads and rejects a response invalidated in flight', async () => {

@@ -23,6 +23,15 @@ describe('supervisorHostFacade.validateModelSwitch', () => {
   it('leaves session preset admission to its worker, while keeping deployment-only checks scoped', () => {
     expect(() => host.validatePresetSwitch('review')).toThrow('presets.allowed')
     expect(host.validatePresetSwitch('review', 'bundle-session').view).toBe('review')
+    expect(() =>
+      host.validateModelSwitch(
+        { slot: 'primary', route: 'runtime-only', model: 'cloud-model' },
+        'bundle-session',
+      ),
+    ).not.toThrow()
+    expect(() =>
+      host.validateModelSwitch({ slot: 'primary', route: 'runtime-only', model: 'cloud-model' }),
+    ).toThrow('not declared')
   })
 
   it('refuses an undeclared model on an account route by code, without quoting the route', () => {

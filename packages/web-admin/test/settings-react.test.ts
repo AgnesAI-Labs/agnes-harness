@@ -201,6 +201,7 @@ it('operates the React settings pane and account dialog without losing native fo
     effect: 'new-sessions',
   }
   const save = vi.fn(async () => snapshot)
+  let blocked = true
   const controller = createSettingsController({
     client: {
       config: {
@@ -219,10 +220,21 @@ it('operates the React settings pane and account dialog without losing native fo
         }),
       },
     } as unknown as Client,
+    beforeOpen: () => blocked,
     onSaved: vi.fn(async () => undefined),
     onError: vi.fn(),
   })
   try {
+    await act(async () => {
+      history.pushState(null, '', '/?settings=model/add-account')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(controller.isOpen()).toBe(false)
+    await act(async () => {
+      history.replaceState(null, '', '/?settings=models')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    blocked = false
     await controller.open()
     expect(dialog.querySelectorAll('.config-account')).toHaveLength(1)
     expect(dialog.querySelector('#config-accounts .config-account-select')).toBeTruthy()

@@ -782,6 +782,9 @@ describe('L1 replay corpus', () => {
       // which one a case gets is the one thing the drivers below disagree about, and a `provider`
       // set here would be overridden by the kill path and would silently override the wire path.
       const common: Omit<TestHostOptions, 'script' | 'provider'> = {
+        // Replay scripts and credit assertions describe the main turn, not an unscripted title call.
+        // Match the isolated driver above; session-title accounting has its own integration tests.
+        disableSessionTitle: true,
         // Installation files require one-call review even when a recipe allows ordinary edits.
         dataDir: scratch(undefined),
         workspaceRoot: cwd,
@@ -922,6 +925,10 @@ describe('L1 replay corpus', () => {
             why(),
           ).toContain(type)
         if (f.expect.creditsAbove !== undefined) {
+          expect(
+            r.events.filter((e) => e.type === 'x/host/title-cost'),
+            why(),
+          ).toHaveLength(0)
           const credits = r.events
             .filter((e) => e.type === 'cost/ledger')
             .reduce((n, e) => n + ((e.data as { credits?: number } | null)?.credits ?? 0), 0)

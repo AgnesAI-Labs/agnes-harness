@@ -234,7 +234,14 @@ setInterval(()=>{},1000);`,
         signal: starting.signal,
       })
       try {
-        const descendant = await vi.waitFor(() => Number(readFileSync(pidFile, 'utf8')), { timeout: 5000 })
+        const descendant = await vi.waitFor(
+          () => {
+            const pid = Number(readFileSync(pidFile, 'utf8'))
+            expect(pid).toBeGreaterThan(0)
+            return pid
+          },
+          { timeout: 5000 },
+        )
         expect(descendant).toBeGreaterThan(0)
         starting.abort()
         await new Promise((done) => setTimeout(done, 100))

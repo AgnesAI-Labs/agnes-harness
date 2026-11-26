@@ -9,7 +9,7 @@ const runtime = {
   guard() {},
   notify() {
     if (this.state === 'preparing') return
-    process.send({ state: this.state, error: this.error })
+    process.send({ state: this.state, error: this.error, errorCode: this.errorCode })
   },
 }
 let resume
@@ -37,6 +37,12 @@ process.on('message', (message) => {
       throw Object.assign(new Error('Permission denied'), { code: 'EPERM' })
     }
   if (message === 'prepare') launcher.prepare(runtime)
+  if (message === 'check')
+    void launcher
+      .check(runtime)
+      .then(() => process.send({ checked: true, checkedState: runtime.state, errorCode: runtime.errorCode }))
+  if (message === 'launch')
+    void launcher.launch().catch((error) => process.send({ launchError: error.code ?? error.name }))
   if (message === 'continue') resume?.()
   if (message === 'replace-lock') {
     const info = JSON.parse(readFileSync(join(import.meta.dirname, 'plugin/src/browser-artifacts.json')))

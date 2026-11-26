@@ -54,7 +54,8 @@ type Journal = {
 }
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
 const TREE = /^sha256-[a-f0-9]{64}$/
-const journalPath = (s: PackageStore) => join(s.profileDir, '.agnes-package-transaction.json')
+const journalPath = (s: Pick<PackageStore, 'profileDir'>) =>
+  join(s.profileDir, '.agnes-package-transaction.json')
 export const previousPackageDir = (s: Pick<PackageStore, 'dataDir' | 'profile'>, id: string) =>
   join(dirname(packageDir(s.dataDir, s.profile, id)), `.previous-${snapshotHash(id)}`)
 function fail(reason: string, path?: string): never {
@@ -71,6 +72,10 @@ function present(path: string): boolean {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
     throw error
   }
+}
+
+export function hasPackageTransaction(store: Pick<PackageStore, 'profileDir'>): boolean {
+  return present(journalPath(store))
 }
 function tree(path: string): string | null {
   return present(path) ? hashDirectory(path, { exclude: [] }) : null

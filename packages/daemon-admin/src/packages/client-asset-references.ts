@@ -7,6 +7,7 @@ import {
   CLIENT_RESOURCE_MAX_FILE_BYTES,
   CLIENT_RESOURCE_MAX_TOTAL_BYTES,
 } from '@agnes/package-manager'
+import { UI_COMPONENT_MODULE_BYTES } from '@agnes/protocol/intelligent-ui'
 import { init as initModuleLexer, parse as parseModule } from 'es-module-lexer'
 export const SERVABLE = new Set(CLIENT_ASSET_EXTENSIONS.map((extension) => `.${extension}`))
 export function cleanRelative(path: string): string | undefined {
@@ -62,6 +63,7 @@ async function referencedAssets(path: string, bytes: Buffer): Promise<string[]> 
 export async function collectSnapshotFiles(
   packageDirectory: string,
   roots: readonly string[],
+  purpose: 'document' | 'isolated-component' = 'document',
 ): Promise<Map<string, Buffer> | null> {
   let canonicalRoot: string
   try {
@@ -70,6 +72,8 @@ export async function collectSnapshotFiles(
     return null
   }
   const queue = [...new Set(roots)]
+  const isolated = purpose === 'isolated-component'
+  if (isolated && (queue.length !== 1 || !/\.(?:js|mjs)$/.test(queue[0] ?? ''))) return null
   const files = new Map<string, Buffer>()
   let total = 0
   let codeTotal = 0
@@ -87,21 +91,26 @@ export async function collectSnapshotFiles(
     } catch {
       return null
     }
-    if (
-      !info.isFile() ||
-      info.size >
-        (/\.(?:js|mjs|css|map)$/.test(path) ? CLIENT_MAX_FILE_BYTES : CLIENT_RESOURCE_MAX_FILE_BYTES)
-    )
-      return null
+    const limit = isolated
+      ? UI_COMPONENT_MODULE_BYTES
+      : /\.(?:js|mjs|css|map)$/.test(path)
+        ? CLIENT_MAX_FILE_BYTES
+        : CLIENT_RESOURCE_MAX_FILE_BYTES
+    if (!info.isFile() || info.size > limit) return null
     const bytes = await readFile(target)
-    if (
-      bytes.length >
-      (/\.(?:js|mjs|css|map)$/.test(path) ? CLIENT_MAX_FILE_BYTES : CLIENT_RESOURCE_MAX_FILE_BYTES)
-    )
-      return null
+    if (bytes.length > limit) return null
+    if (isolated) {
+      if (!bytes.length) return null
+      const source = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+      await initModuleLexer
+      // Renderer source is a self-contained leaf, not an ESM dependency graph.
+      if (parseModule(source)[0].some((item) => item.d !== -2)) return null
+      return new Map([[path, bytes]])
+    }
     total += bytes.length
     if (/\.(?:js|mjs|css|map)$/.test(path)) codeTotal += bytes.length
     if (total > CLIENT_RESOURCE_MAX_TOTAL_BYTES || codeTotal > CLIENT_MAX_TOTAL_BYTES) return null
+    if (files.size >= 4096) return null
     files.set(path, bytes)
     queue.push(...(await referencedAssets(path, bytes)))
   }
