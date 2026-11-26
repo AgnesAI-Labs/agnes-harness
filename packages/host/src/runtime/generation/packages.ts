@@ -9,7 +9,6 @@ import {
   type RuntimePluginSnapshot,
   sameGenerationSourceIdentity,
 } from '@agnes/package-manager'
-import type { RuntimeTarget } from '@agnes/plugin-runtime/host'
 import type { Host } from '../lifecycle/host.js'
 
 type Served = ReadonlyMap<string, Readonly<{ snapshot: PluginGenerationSnapshot; host: Host }>>
@@ -155,7 +154,7 @@ function isPresetOnlySource(source: Readonly<RuntimePluginSnapshot>): boolean {
  */
 export function selectGenerationSources(
   available: readonly Readonly<RuntimePluginSnapshot>[],
-  target: RuntimeTarget,
+  target: Parameters<RuntimePluginCatalogue['select']>[0],
   packages: ResolvedProfile['packages'],
 ): readonly Readonly<RuntimePluginSnapshot>[] {
   const selected = new Map(
