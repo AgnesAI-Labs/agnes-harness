@@ -153,6 +153,37 @@ describe('testkit', () => {
       await host.close()
     }
   })
+  it('opens a package preset the same way when it is named and when it is the default', async () => {
+    const dataDir = tmp()
+    const { host } = await createTestHost({
+      dataDir,
+      presets: {
+        chtd: {
+          name: 'chtd',
+          extends: 'standard',
+          disclosure: 'standard',
+          model: { route: { primary: { route: 'default', model: 'm1' } } },
+        },
+      },
+      profileInputs: {
+        user: { name: 'fixture-profile', presets: { default: 'chtd', allowed: ['chtd'] } },
+      },
+    })
+    try {
+      const implicit = await host.createSession({ cwd: dataDir, permission: 'default' })
+      expect(implicit.preset.name).toBe('chtd')
+      expect(implicit.preset.model.route.primary).toBe('gw')
+      expect(implicit.preset.model.id.primary).toBe('m1')
+      await implicit.close()
+      const explicit = await host.createSession({ cwd: dataDir, preset: 'chtd', permission: 'default' })
+      expect(explicit.preset.name).toBe('chtd')
+      expect(explicit.preset.model.route.primary).toBe(implicit.preset.model.route.primary)
+      expect(explicit.preset.model.id.primary).toBe(implicit.preset.model.id.primary)
+      await explicit.close()
+    } finally {
+      await host.close()
+    }
+  })
   it('selects the requested template and exposes unmet non-builtin dependencies instead of using local-dev', async () => {
     // The enterprise template's connectors are all in the builtin set, so since the builtin
     // exemption they no longer count as unmet; what is still refused is a package the build does
