@@ -27,7 +27,17 @@ const universalCompletion = [
 const batchRatioAfter =
   /(\d+)\s*(?:\/|of|out of)\s*(\d+)\s*(?:((?:sub)?(?:tasks?|agents?)|items?|jobs?|children|steps?|checks?|tests?|files?|(?:项|个)?(?:子?任务|子代理|工作|步骤|检查|测试))\s*)?(?:(?:are|were|have\s+been)\s+)?(?:completed?|done|finished|succeeded|已完成|完成)/giu
 const batchRatioBefore =
-  /(?:已(?:经)?|共)?完成(?:了)?\s*(\d+)\s*\/\s*(\d+)(?:\s*((?:项|个)?(?:子?任务|子代理|任务|步骤|检查|测试)))?/giu
+  /(?:已(?:经)?|共|总共|一共|累计)?完成(?:了)?\s*(\d+)\s*\/\s*(\d+)(?:\s*((?:项|个)?(?:子?任务|子代理|任务|步骤|检查|测试)))?/giu
+const batchRatioBeforeEn =
+  /\b(?:completed?|finished|done(?:\s+with)?)\s+(\d+)\s*(?:\/|of|out of)\s*(\d+)(?:\s+((?:sub)?(?:tasks?|agents?)|items?|jobs?|children|steps?|checks?|tests?|files?))?\b/giu
+const batchCountBeforeEn =
+  /\b(?:completed?|finished)\s+(?:all\s+)?(\d+)\s+((?:sub)?(?:tasks?|agents?)|items?|jobs?|children)\b/giu
+const batchCountAfterEn =
+  /(?<![/\d.])\b(\d+)\s+((?:sub)?(?:tasks?|agents?)|items?|jobs?|children)\s+(?:(?:are|were|have\s+been|now|already|successfully)\s+)*(?:completed?|done|finished|succeeded)\b/giu
+const batchCountBeforeZh =
+  /(?:已(?:经)?|共|总共|一共|累计)?完成(?:了)?\s*(\d+)\s*(?:个\s*(?:子?任务|子代理|工作)|项(?:\s*(?:子?任务|子代理|工作))?(?!\s*(?:步骤|检查|测试|文件)))/gu
+const batchCountAfterZh =
+  /(?<![/\d.])(\d+)\s*(?:个\s*(?:子?任务|子代理|工作)|项(?:\s*(?:子?任务|子代理|工作))?(?!\s*(?:步骤|检查|测试|文件)))\s*(?:已(?:经)?|均已?|都已?|全部|顺利)?(?:完成|结束|搞定)/gu
 const nonBatchUnit = /^(?:steps?|checks?|tests?|files?|(?:项|个)?(?:步骤|检查|测试))$/iu
 const batchHint = /\b(?:all|total|overall|batch)\b|全部|总共|整批/iu
 
@@ -41,7 +51,9 @@ function checkRatioMatches(
   const prose = clause.replace(/[*_`]/g, '').replace(/\s+/g, ' ')
   const uniqueTasks = [...new Map(refs.map((r) => [r.task.taskId, r.task])).values()]
   const hasBatchHint = batchHint.test(prose)
-  const check = (match: RegExpExecArray, numRaw: string, denRaw: string, unit: string | undefined) => {
+  const ratioSpans: Array<[number, number]> = []
+  const checkRatio = (match: RegExpExecArray, numRaw: string, denRaw: string, unit: string | undefined) => {
+    ratioSpans.push([match.index, match.index + match[0].length])
     if (negated(prose.slice(0, match.index))) return
     const num = Number(numRaw)
     const den = Number(denRaw)
@@ -56,8 +68,29 @@ function checkRatioMatches(
     if (unit && nonBatchUnit.test(unit.trim()) && !hasBatchHint && total > 0 && !snapshotHasUnit(unit)) return
     if (num !== settled || den !== total) errors.push({ code: 'FALSE_COMPLETION_CLAIM', detail: match[0] })
   }
-  for (const m of prose.matchAll(batchRatioAfter)) check(m, m[1] as string, m[2] as string, m[3])
-  for (const m of prose.matchAll(batchRatioBefore)) check(m, m[1] as string, m[2] as string, m[3])
+  for (const m of prose.matchAll(batchRatioAfter)) checkRatio(m, m[1] as string, m[2] as string, m[3])
+  for (const m of prose.matchAll(batchRatioBefore)) checkRatio(m, m[1] as string, m[2] as string, m[3])
+  for (const m of prose.matchAll(batchRatioBeforeEn)) checkRatio(m, m[1] as string, m[2] as string, m[3])
+
+  const overlapsRatio = (start: number, end: number) => ratioSpans.some(([s, e]) => start < e && end > s)
+  const checkCountOnly = (match: RegExpExecArray, numRaw: string) => {
+    const start = match.index
+    const end = start + match[0].length
+    if (overlapsRatio(start, end)) return
+    if (negated(prose.slice(0, start))) return
+    const num = Number(numRaw)
+    if (uniqueTasks.length > 0 && !hasBatchHint) {
+      const subSettled = uniqueTasks.filter((t) => t.status === 'completed' || t.status === 'idle').length
+      if (num === subSettled || num === settled) return
+      errors.push({ code: 'FALSE_COMPLETION_CLAIM', detail: match[0] })
+      return
+    }
+    if (num !== settled) errors.push({ code: 'FALSE_COMPLETION_CLAIM', detail: match[0] })
+  }
+  for (const m of prose.matchAll(batchCountBeforeEn)) checkCountOnly(m, m[1] as string)
+  for (const m of prose.matchAll(batchCountAfterEn)) checkCountOnly(m, m[1] as string)
+  for (const m of prose.matchAll(batchCountBeforeZh)) checkCountOnly(m, m[1] as string)
+  for (const m of prose.matchAll(batchCountAfterZh)) checkCountOnly(m, m[1] as string)
 }
 
 function snapshotHasUnit(unit: string) {
@@ -81,7 +114,7 @@ function completionChecks(text: string, snapshot: RecapFactSnapshot, errors: Vio
 }
 
 const negative =
-  /(?:\b(?:not|never|neither|cannot|can't|isn't|aren't|hasn't|haven't)(?:\s+(?:yet|be|say|claim|that|been))*\s*|(?:没有|并非|并未|并不|未能|尚未|还没|不是|不能说|未|没)\s*)$/iu
+  /(?:\b(?:not|never|neither|cannot|can't|isn't|aren't|wasn't|weren't|hasn't|haven't|didn't|doesn't|don't)(?:\s+(?:yet|be|say|claim|that|been|all))*\s*|(?:没有|并非|并未|并不|未能|尚未|还没|不是|不能说|未|没)\s*)$/iu
 function negated(before: string) {
   return negative.test(before)
 }
@@ -150,11 +183,121 @@ function statusChecks(line: string, refs: Mention[], errors: Violation[], seen: 
 
 const nonSubjectBeforeRef =
   /(?:\b(?:in|from|of|about|for|into|on)\s+(?:the\s+)?(?:(?:logs?|output|messages?|lines?|quotes?|text)\s+(?:of|for|from)\s+)?|(?:来自|关于|在)\s*)$/iu
-const directAfterRef =
-  /^\s*[\]\x60)'"]*\s*(?:[:：—–-]\s*|(?:(?:is|was|are|were|has|have|remains?|seems?\s+to\s+be)\s+(?:now\s+|already\s+|currently\s+|still\s+|successfully\s+|fully\s+|not\s+|never\s+|yet\s+)*|(?:already|now|currently|still|successfully|fully|just|not|never)\s+)+|(?:(?:当前|目前)?(?:状态)?(?:为|是)|已经|现已|正在|仍在|仍|已|都|均|也|还是|是|并未|尚未|没有|并非|不是|未|没)\s*)*$/iu
 const directModifierBeforeRef = /^\s*(?:的\s*)?(?:(?:sub)?(?:task|agent)|child|子任务|子代理)?\s*[[\x60]*$/iu
 const metaExplanationCue =
   /\b(?:means?|translates?(?:\s+to|\s+as)?|translation|quoted?|log(?:ged|s)?|printed|output)\b|意思是|含义|翻译|日志/iu
+
+const EN_DIRECT_LINK_TOKENS = new Set([
+  'is',
+  'was',
+  'are',
+  'were',
+  'has',
+  'have',
+  'been',
+  'be',
+  'remains',
+  'remain',
+  'seems',
+  'seem',
+  'to',
+  'now',
+  'already',
+  'currently',
+  'still',
+  'successfully',
+  'fully',
+  'just',
+  'not',
+  'never',
+  'yet',
+  "isn't",
+  "aren't",
+  "wasn't",
+  "weren't",
+  "hasn't",
+  "haven't",
+])
+
+const ZH_DIRECT_LINK_TOKENS = [
+  '当前状态为',
+  '目前状态为',
+  '当前状态是',
+  '目前状态是',
+  '状态为',
+  '状态是',
+  '当前为',
+  '当前是',
+  '目前为',
+  '目前是',
+  '当前',
+  '目前',
+  '已经',
+  '现已',
+  '正在',
+  '仍在',
+  '还是',
+  '并未',
+  '尚未',
+  '没有',
+  '并非',
+  '不是',
+  '仍',
+  '已',
+  '都',
+  '均',
+  '也',
+  '是',
+  '为',
+  '未',
+  '没',
+] as const
+
+const MAX_DIRECT_LINK_CHARS = 80
+const MAX_DIRECT_LINK_TOKENS = 8
+
+/** Bounded O(n) check that `between` only contains a direct copula/adverb link from a ref to a status word. */
+function isDirectAfterRef(between: string): boolean {
+  if (between.length > MAX_DIRECT_LINK_CHARS) return false
+  let rest = between.replace(/^[\s\]`)'"》」』”’）]+/u, '').trim()
+  if (!rest) return true
+  if (rest === ':' || rest === '：' || rest === '—' || rest === '–' || rest === '-' || rest === '->') {
+    return true
+  }
+  rest = rest.replace(/^(?:[:：—–-]|->)\s*/u, '').trim()
+  if (!rest) return true
+  if (/^[a-z'\s]+$/iu.test(rest)) {
+    const tokens = rest.toLowerCase().split(/\s+/)
+    return tokens.length <= MAX_DIRECT_LINK_TOKENS && tokens.every((tok) => EN_DIRECT_LINK_TOKENS.has(tok))
+  }
+  let pos = 0
+  for (let steps = 0; steps < MAX_DIRECT_LINK_TOKENS && pos < rest.length; steps++) {
+    while (pos < rest.length && /\s/u.test(rest[pos] as string)) pos++
+    if (pos >= rest.length) return true
+    const matched = ZH_DIRECT_LINK_TOKENS.find((tok) => rest.startsWith(tok, pos))
+    if (!matched) return false
+    pos += matched.length
+  }
+  while (pos < rest.length && /\s/u.test(rest[pos] as string)) pos++
+  return pos >= rest.length
+}
+
+const ordinaryLeadingNonAssertiveEn =
+  /(?:^|\s)(?:if|whether|when|whenever|once|unless|until|before|after|while|assuming|suppose|supposing|provided|should|in\s+case(?:\s+that)?|check|verify|confirm|validate|inspect|ensure|make\s+sure|see|determine|test|ask|find\s+out|wait\s+for|tell\s+me|let\s+me\s+know)\b/iu
+const ordinaryLeadingQuestionEn =
+  /^\s*(?:is|are|was|were|has|have|did|does|do|can|could|will|would|should)\s+$/iu
+const ordinaryLeadingNonAssertiveZh =
+  /(?:如果|若|假如|假设|要是|一旦|除非|只要|当|等到|等|待|直到|是否|有没有|检查|核查|核实|确认|验证|查看|排查|判断|看看|看下|看一下|确保|等待|问一下|告诉我|请先)/u
+const ordinaryTrailingNonAssertive =
+  /^\s*(?:(?:了)?\s*(?:吗|么|呢|的话|之后|以后|后|时|再|才|就)(?:[\s。！？，,.!?]|$)|or\s+not\b)/iu
+
+function isNonAssertiveOrdinaryClause(clause: string, leading: string, afterMatch: string): boolean {
+  if (/[?？]$/u.test(clause.trimEnd())) return true
+  if (ordinaryTrailingNonAssertive.test(afterMatch)) return true
+  if (ordinaryLeadingQuestionEn.test(leading)) return true
+  if (ordinaryLeadingNonAssertiveEn.test(leading) || ordinaryLeadingNonAssertiveZh.test(leading)) return true
+  return false
+}
 
 function stripNonAssertiveSpans(text: string, knownIds: ReadonlySet<string>): string {
   // Remove fenced code blocks and markdown blockquotes.
@@ -175,21 +318,25 @@ function validateOrdinaryReply(text: string, snapshot: RecapFactSnapshot): Valid
   const violations: Violation[] = []
   const knownIds = new Set(snapshot.subtasks.map((task) => task.taskId))
   const cleaned = stripNonAssertiveSpans(text, knownIds)
-  for (const clause of cleaned.split(/[\n;；。！？,，]|(?<=[.!?])\s+|\s+(?:but|however)\s+|但是|但/iu)) {
+  for (const clause of cleaned.split(
+    /\n+|[,，;；]|(?<=[。！？])|(?<=[.!?])\s+|\s+(?:but|however)\s+|但是|但/iu,
+  )) {
     const refs = mentions(clause, snapshot.subtasks)
     if (refs.length === 0) continue
     for (const [status, pattern] of statuses) {
       for (const match of clause.matchAll(pattern)) {
         if (refs.some((r) => match.index >= r.start && match.index < r.end)) continue
         const before = clause.slice(0, match.index)
+        const afterMatch = clause.slice(match.index + match[0].length)
         const previous = refs.filter((r) => r.end <= match.index)
         if (previous.length > 0) {
           const owner = previous.at(-1) as Mention
           const between = clause.slice(owner.end, match.index)
-          if (!directAfterRef.test(between)) continue
+          if (!isDirectAfterRef(between)) continue
           const owners = collectConjunctionOwners(clause, previous, owner)
           const leading = clause.slice(0, owners[0]?.start ?? owner.start)
           if (nonSubjectBeforeRef.test(leading)) continue
+          if (isNonAssertiveOrdinaryClause(clause, leading, afterMatch)) continue
           for (const { task } of owners) {
             const denied = negated(before)
             const matches = task.status === status || (task.status === 'idle' && status === 'completed')
@@ -201,6 +348,8 @@ function validateOrdinaryReply(text: string, snapshot: RecapFactSnapshot): Valid
         const owner = refs[0] as Mention
         const between = clause.slice(match.index + match[0].length, owner.start)
         if (!directModifierBeforeRef.test(between) || metaExplanationCue.test(clause)) continue
+        const leading = clause.slice(0, match.index)
+        if (isNonAssertiveOrdinaryClause(clause, leading, clause.slice(owner.end))) continue
         const denied = negated(before)
         const matches =
           owner.task.status === status || (owner.task.status === 'idle' && status === 'completed')
@@ -218,10 +367,11 @@ const missingAfter =
   /^\s*[\x60)'"\]]*\s*(?:(?:is|was|has|remains)\s+)?(?:missing|expected|(?:not|never)\s+(?:been\s+)?(?:generated|created|written|produced)|(?:尚未|未)(?:生成|写入)|缺失)/iu
 const declaredFile = /\b(?:created|wrote|generated|produced|artifact|file|path)\s*[:=]?\s*$/iu
 const namedFile = /^(?:README|Makefile|Dockerfile|LICENSE|NOTICE)$/u
-const bareUrlPattern = /(?<![\w.-])(?:https?:\/\/|mailto:)[^\s<>()[\]"'`\u3000-\u303f\uff00-\uffef]+/giu
-// Take a whole quoted path or link target before looking for ordinary unquoted file tokens.
+const urlSchemePattern = /(?<![\w.-])(?:https?:\/\/|mailto:)/giu
+const urlHardStop = /[\s<>[\]"'`\u3000-\u303f\uff00-\uffef]/u
+// Take a whole quoted path or link target (including balanced parentheses in URLs) before unquoted tokens.
 const pathTokens =
-  /!?\[[^\]\n]*\]\(\s*(?:<([^>\n]+)>|([^\s)]+))(?:\s+"[^"]*")?\s*\)|^\s*\[[^\]\n]+\]:\s*<?([^\s>]+)>?|[\x60"]([^\x60"\n]+)[\x60"]|\b(?:README|Makefile|Dockerfile|LICENSE|NOTICE)\b(?![./])|(?<![\w./\\-])(?:(?:[A-Za-z]:)?[/\\]|[\p{L}\p{N}_.@~+-]+[/\\])[\p{L}\p{N}_.@~%+\\/-]+|(?<![\w.-])[\p{L}\p{N}_@+-]*\.[\p{L}][\p{L}\p{N}_.+-]*/gu
+  /!?\[[^\]\n]*\]\(\s*(?:<([^>\n]+)>|([^\s()]+(?:\([^\s()]*\)[^\s()]*)*))(?:\s+"[^"]*")?\s*\)|^\s*\[[^\]\n]+\]:\s*<?([^\s>]+)>?|[\x60"]([^\x60"\n]+)[\x60"]|\b(?:README|Makefile|Dockerfile|LICENSE|NOTICE)\b(?![./])|(?<![\w./\\-])(?:(?:[A-Za-z]:)?[/\\]|[\p{L}\p{N}_.@~+-]+[/\\])[\p{L}\p{N}_.@~%+\\/-]+|(?<![\w.-])[\p{L}\p{N}_@+-]*\.[\p{L}][\p{L}\p{N}_.+-]*/gu
 const webUrl = /^(?:https?|mailto):/iu
 const webDomainOrTicker =
   /^(?:[\p{L}\p{N}-]+\.)+(?:com|org|net|io|cn|gov|edu|co|ai|news|tv|uk|jp|hk|sg|de|fr|[A-Z])$/u
@@ -231,10 +381,28 @@ const rootedPath = /^(?:[A-Za-z]:[/\\]|\/|\.\.?\/)/u
 type UrlSpan = { start: number; end: number; text: string }
 function findBareUrls(line: string): UrlSpan[] {
   const spans: UrlSpan[] = []
-  for (const match of line.matchAll(bareUrlPattern)) {
-    const text = match[0].replace(/[.,!?;:]+$/u, '')
-    if (!text) continue
-    spans.push({ start: match.index, end: match.index + text.length, text })
+  let lastEnd = 0
+  for (const match of line.matchAll(urlSchemePattern)) {
+    const start = match.index
+    if (start < lastEnd) continue
+    let i = start + match[0].length
+    let parenDepth = 0
+    while (i < line.length) {
+      const ch = line[i] as string
+      if (urlHardStop.test(ch)) break
+      if (ch === '(') {
+        parenDepth++
+      } else if (ch === ')') {
+        if (parenDepth === 0) break
+        parenDepth--
+      }
+      i++
+    }
+    const raw = line.slice(start, i)
+    const text = raw.replace(/[.,!?;:]+$/u, '')
+    if (!text || text.length <= match[0].length) continue
+    lastEnd = start + text.length
+    spans.push({ start, end: lastEnd, text })
   }
   return spans
 }
@@ -350,23 +518,41 @@ const HARD_EXIT_VIOLATIONS = new Set([
 type RecapScope = 'recap' | 'delegation' | 'ordinary'
 
 const requestedChildRecap = [
-  /^(?:please\s+)?(?:recap|summari[sz]e|review)\s+(?:(?:all|my|our|the|these|current)\s+)*(?:subtasks?|subagents?)(?:\s+(?:status|results?|outcomes?))?[.?!]?$/iu,
+  /^(?:please\s+)?(?:use\s+subagent_recap\s+(?:to\s+)?)?(?:recap|summari[sz]e|review)\s+(?:(?:all|my|our|the|these|current)\s+)*(?:subtasks?|subagents?)(?:\s+(?:status|results?|outcomes?))?[.?!]?$/iu,
   /^(?:are|have|did)\s+(?:(?:all|both|my|our|the|these)\s+)+(?:subtasks?|subagents?)\s+(?:been\s+)?(?:complete[d]?|done|finished|succeed(?:ed)?)[.?!]?$/iu,
-  /^(?:请|帮我)?(?:回顾|总结|汇总)(?:一下|当前|所有|这些)*(?:子任务|子代理)(?:的)?(?:状态|结果|进度)?[。？！]?$/u,
+  /^(?:请|帮我)?(?:调用\s*subagent_recap\s*(?:来|以)?\s*)?(?:回顾|总结|汇总)(?:一下|当前|所有|全部|这些)*(?:子任务|子代理)(?:的)?(?:状态|结果|进度)?[。？！]?$/u,
   /^(?:现在)?(?:所有|全部)?(?:子任务|子代理)(?:都|均|已经|已)*(?:完成|结束)(?:了)?(?:吗|没有)?[。？！?]?$/u,
 ]
 
-const singleChildRecapEn =
-  /^Use subagent_recap\b.*?\b(?:childKey\s*[:=]?\s*["'`]?([^\s"'`,.)）]+)|subagent\s+([^\s"'`,]+?)\.?)(?:\s|\)|$)/iu
-const singleChildRecapZh =
-  /^请调用\s*subagent_recap.*?(?:childKey\s*[:：=]?\s*["'`]?([^\s"'`,)）]+)|子代理\s*([^\s"'`，。]+))/u
+const enRecapPromptPrefix = /^Use\s+subagent_recap\b/iu
+const enChildKeyArg = /\bchildKey\s*[:=]?\s*(?:(["'`])([^"'`\s]+)\1|([^\s"'`,)）]+))/iu
+const enSubagentTarget = /\bsubagent\s+(?:(["'`])([^"'`\s]+)\1|([^\s"'`,)）]+))/iu
+const zhRecapPromptPrefix = /^请调用\s*subagent_recap\b/u
+const zhChildKeyArg = /childKey\s*[:：=]?\s*(?:(["'`「『“])([^"'`」』”\s]+)["'`」』”]|([^\s"'`，。,)）]+))/u
+const zhSubagentTarget =
+  /子代理(?:\s+(?:(["'`「『“])([^"'`」』”\s]+)["'`」』”]|([^\s"'`，。,)）]+))|(["'`「『“])([^"'`」』”\s]+)["'`」』”])/u
+
+function cleanUnquotedTarget(raw: string | undefined): string | undefined {
+  const cleaned = raw?.replace(/[.,;:!?。，；：！？]+$/u, '').trim()
+  return cleaned || undefined
+}
 
 function singleChildTargetFromPrompt(input: string): string | undefined {
   const trimmed = input.trim()
-  const en = singleChildRecapEn.exec(trimmed)
-  if (en) return en[1] ?? en[2]
-  const zh = singleChildRecapZh.exec(trimmed)
-  if (zh) return zh[1] ?? zh[2]
+  if (enRecapPromptPrefix.test(trimmed)) {
+    const key = enChildKeyArg.exec(trimmed)
+    if (key) return key[2] ?? cleanUnquotedTarget(key[3])
+    const sub = enSubagentTarget.exec(trimmed)
+    if (sub) return sub[2] ?? cleanUnquotedTarget(sub[3])
+    return undefined
+  }
+  if (zhRecapPromptPrefix.test(trimmed)) {
+    const key = zhChildKeyArg.exec(trimmed)
+    if (key) return key[2] ?? cleanUnquotedTarget(key[3])
+    const sub = zhSubagentTarget.exec(trimmed)
+    if (sub) return sub[2] ?? sub[5] ?? cleanUnquotedTarget(sub[3])
+    return undefined
+  }
   return undefined
 }
 
@@ -376,16 +562,14 @@ async function inspectRecapTurn(
 ): Promise<{ scope: RecapScope; targetChildKey?: string; triggerText: string }> {
   const [trigger] = await parent.scan({ fromSeq: turnStartSeq, toSeq: turnStartSeq, lane: parent.lane })
   const input = messageText((trigger?.data as { content?: AssistantMessage['content'] } | undefined)?.content)
-  const promptTarget = singleChildTargetFromPrompt(input)
-  let scope: RecapScope = promptTarget ? 'recap' : 'ordinary'
+  const trimmedInput = input.trim()
+  const promptTarget = singleChildTargetFromPrompt(trimmedInput)
   const storage = parent.d.log.storage
-  if (
-    scope === 'ordinary' &&
-    requestedChildRecap.some((pattern) => pattern.test(input.trim())) &&
+  const explicitFullTreePrompt =
+    !promptTarget &&
     hasChildControl(storage) &&
-    ((await storage.listByParent(parent.key)).length > 0 || externalChildren(parent.key).length > 0)
-  )
-    scope = 'recap'
+    requestedChildRecap.some((pattern) => pattern.test(trimmedInput))
+  let scope: RecapScope = promptTarget || explicitFullTreePrompt ? 'recap' : 'ordinary'
 
   let sawRecapTool = false
   let sawFullTreeRecap = false
@@ -414,11 +598,15 @@ async function inspectRecapTurn(
       }
     }
   }
-  const targetChildKey = sawRecapTool
-    ? !sawFullTreeRecap && toolTargets.size === 1
-      ? [...toolTargets][0]
-      : undefined
+  // User intent pins the validation scope: an explicit full-tree request is never narrowed by a single-child tool call,
+  // and an explicit single-child prompt keeps its requested target even without a subagent_recap tool call.
+  const targetChildKey = explicitFullTreePrompt
+    ? undefined
     : promptTarget
+      ? promptTarget
+      : sawRecapTool && !sawFullTreeRecap && toolTargets.size === 1
+        ? [...toolTargets][0]
+        : undefined
   return { scope, ...(targetChildKey ? { targetChildKey } : {}), triggerText: input }
 }
 
@@ -470,10 +658,25 @@ export async function guardSessionRecapExit(
     )
   if (effectiveScope !== 'recap' && (!ids.length || (!knownChild && !recapClaim))) return { text: replyText }
 
-  const snapshot = await buildRecapFactSnapshot(parent, {
-    ...(effectiveScope === 'recap' && targetChildKey ? { childKey: targetChildKey } : {}),
-    locale,
-  })
+  let snapshot: RecapFactSnapshot
+  try {
+    snapshot = await buildRecapFactSnapshot(parent, {
+      ...(effectiveScope === 'recap' && targetChildKey ? { childKey: targetChildKey } : {}),
+      locale,
+    })
+  } catch (error) {
+    if (
+      !options.childKey &&
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === 'E_CHILD_AMBIGUOUS'
+    ) {
+      snapshot = await buildRecapFactSnapshot(parent, { locale })
+    } else {
+      throw error
+    }
+  }
   const { violations } =
     effectiveScope === 'ordinary'
       ? validateOrdinaryReply(replyText, snapshot)

@@ -6,10 +6,50 @@ import { padLine } from './component.js'
 import { tt } from './locale-extended.js'
 import { oneLine } from './session-commands.js'
 import { displayWidth } from './terminal.js'
-import { latestPlan, type PlanStep } from './views/special-card.js'
+import { type PlanStep, planSteps } from './views/special-card.js'
 
 const MAX_REQUEST = 200
 const MAX_HISTORY_PAGES = 10
+const PLAN_TOOLS = new Set(['update_plan', 'todo'])
+
+type ToolNode = Extract<UINode, { kind: 'tool' }>
+type ResolvedPlan =
+  | { kind: 'steps'; steps: PlanStep[] }
+  | { kind: 'truncated' }
+  | { kind: 'cleared' }
+  | { kind: 'none' }
+
+function latestPlanNode(nodes: readonly UINode[]): ToolNode | undefined {
+  return nodes.findLast((n): n is ToolNode => n.kind === 'tool' && PLAN_TOOLS.has(n.name))
+}
+
+function isExplicitlyEmptyPlan(raw: string | undefined): boolean {
+  if (!raw) return false
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const list = parsed?.items ?? parsed?.plan ?? parsed?.steps
+    return Array.isArray(list) && list.length === 0
+  } catch {
+    return false
+  }
+}
+
+async function resolvePlanNode(session: TuiApp['session'], node: ToolNode): Promise<ResolvedPlan> {
+  const fromPreview = planSteps(node)
+  if (fromPreview?.length) return { kind: 'steps', steps: fromPreview }
+  if (isExplicitlyEmptyPlan(node.argsPreview)) return { kind: 'cleared' }
+  if (typeof session.readToolDetail === 'function') {
+    const detail = await attempt(() => session.readToolDetail(node.seq, node.resultSeq))
+    const args = detail?.call?.args
+    if (args !== undefined) {
+      const fullJson = JSON.stringify(args)
+      const fromDetail = planSteps({ ...node, argsPreview: fullJson })
+      if (fromDetail?.length) return { kind: 'steps', steps: fromDetail }
+      if (isExplicitlyEmptyPlan(fullJson)) return { kind: 'cleared' }
+    }
+  }
+  return { kind: 'truncated' }
+}
 
 /** The last thing the user asked: one inert line, cut at 200 characters. System-injected inputs are not requests. */
 export function lastRequest(nodes: readonly UINode[]): string | undefined {
@@ -58,21 +98,26 @@ async function resolveEarlierFacts(
   session: TuiApp['session'],
   opening: UIOpeningResult,
   initialRequest: string | undefined,
-  initialPlan: PlanStep[] | undefined,
-): Promise<{ request: string | undefined; plan: PlanStep[] | undefined }> {
+  initialPlanNode: ToolNode | undefined,
+): Promise<{ request: string | undefined; plan: ResolvedPlan }> {
   let request = initialRequest
-  let plan = initialPlan
-  if ((request && plan) || !opening.history?.hasEarlier) return { request, plan }
-  if (typeof session.projectUIHistory !== 'function') return { request, plan }
-  let cursor: UIHistoryCursor | undefined = opening.history.cursor
-  for (let pageIndex = 0; pageIndex < MAX_HISTORY_PAGES && cursor && (!request || !plan); pageIndex++) {
-    const page = await attempt(() => session.projectUIHistory(cursor as UIHistoryCursor))
-    if (!page) break
-    if (!request) request = lastRequest(page.nodes)
-    if (!plan) plan = latestPlan({ ...opening.timeline, nodes: page.nodes })?.steps
-    if (!page.hasEarlier) break
-    cursor = page.cursor
+  let planNode = initialPlanNode
+  if (
+    (!request || !planNode) &&
+    opening.history?.hasEarlier &&
+    typeof session.projectUIHistory === 'function'
+  ) {
+    let cursor: UIHistoryCursor | undefined = opening.history.cursor
+    for (let pageIndex = 0; pageIndex < MAX_HISTORY_PAGES && cursor && (!request || !planNode); pageIndex++) {
+      const page = await attempt(() => session.projectUIHistory(cursor as UIHistoryCursor))
+      if (!page) break
+      if (!request) request = lastRequest(page.nodes)
+      if (!planNode) planNode = latestPlanNode(page.nodes)
+      if (!page.hasEarlier) break
+      cursor = page.cursor
+    }
   }
+  const plan: ResolvedPlan = planNode ? await resolvePlanNode(session, planNode) : { kind: 'none' }
   return { request, plan }
 }
 
@@ -102,17 +147,22 @@ export async function recapSlash(app: TuiApp): Promise<SlashResult> {
   rows.push(['recap.session', oneLine(title ? `${title} (${s.id})` : s.id)])
   if (opening && timeline) {
     rows.push(['recap.turns', formatTurnsValue(opening, locale)])
-    const { request, plan: steps } = await resolveEarlierFacts(
+    const { request, plan } = await resolveEarlierFacts(
       s,
       opening,
       lastRequest(timeline.nodes),
-      latestPlan(timeline)?.steps,
+      latestPlanNode(timeline.nodes),
     )
     if (request) rows.push(['recap.request', request])
-    if (steps?.length) {
-      const doing = steps.find((step) => step.status === 'doing')
-      const done = steps.filter((step) => step.status === 'done').length
-      rows.push(['recap.plan', `${done}/${steps.length}${doing ? ` · ${oneLine(doing.text)}` : ''}`])
+    if (plan.kind === 'steps') {
+      const doing = plan.steps.find((step) => step.status === 'doing')
+      const done = plan.steps.filter((step) => step.status === 'done').length
+      rows.push(['recap.plan', `${done}/${plan.steps.length}${doing ? ` · ${oneLine(doing.text)}` : ''}`])
+    } else if (plan.kind === 'truncated') {
+      rows.push([
+        'recap.plan',
+        locale === 'zh-CN' ? '最新计划已截断（无法解析）' : 'latest plan truncated / unavailable',
+      ])
     }
   }
   if (changes?.files.length) rows.push(['recap.files', String(changes.files.length)])

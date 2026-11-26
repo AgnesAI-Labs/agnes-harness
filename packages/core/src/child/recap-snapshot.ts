@@ -38,8 +38,61 @@ type Pending = NonNullable<SubtaskFactRecord['approvalPending']>
 
 type ExternalEntry = {
   ownerKey: string
+  providerId: string
+  rawId: string
   listing: ChildAgentListing
   taskId: string
+}
+
+function ambiguousChildError(targetChildKey: string, candidates: readonly ExternalEntry[]): Error {
+  const names = candidates.map((entry) => entry.taskId).join(', ')
+  return Object.assign(
+    new Error(`Ambiguous childKey "${targetChildKey}" matches multiple external subtasks: ${names}`),
+    {
+      code: 'E_CHILD_AMBIGUOUS',
+      childKey: targetChildKey,
+      candidates: candidates.map((entry) => entry.taskId),
+    },
+  )
+}
+
+function assignExternalTaskIds(
+  rawExternal: ReadonlyArray<{ ownerKey: string; listing: ChildAgentListing }>,
+  localIds: ReadonlySet<string>,
+): ExternalEntry[] {
+  const entries = rawExternal.map(({ ownerKey, listing }) => ({
+    ownerKey,
+    providerId: listing.providerId,
+    rawId: listing.id,
+    listing,
+    level: 0,
+    taskId: listing.id,
+  }))
+  for (let pass = 0; pass < 4; pass++) {
+    const counts = new Map<string, number>()
+    for (const entry of entries) counts.set(entry.taskId, (counts.get(entry.taskId) ?? 0) + 1)
+    let changed = false
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i] as (typeof entries)[number]
+      const collides = (counts.get(entry.taskId) ?? 0) > 1 || localIds.has(entry.taskId)
+      if (!collides) continue
+      changed = true
+      entry.level++
+      if (entry.level === 1) entry.taskId = `${entry.providerId}:${entry.rawId}`
+      else if (entry.level === 2) entry.taskId = `${entry.ownerKey}::${entry.providerId}:${entry.rawId}`
+      else if (entry.level === 3)
+        entry.taskId = `external:${JSON.stringify([entry.ownerKey, entry.providerId, entry.rawId])}`
+      else entry.taskId = `external:${JSON.stringify([entry.ownerKey, entry.providerId, entry.rawId])}#${i}`
+    }
+    if (!changed) break
+  }
+  return entries.map(({ ownerKey, providerId, rawId, listing, taskId }) => ({
+    ownerKey,
+    providerId,
+    rawId,
+    listing,
+    taskId,
+  }))
 }
 
 function localSubtreeKeys(records: readonly ChildTaskRecord[], rootChildKey: string): Set<string> {
@@ -78,24 +131,7 @@ async function children(parent: SessionImpl, descendants = false, targetChildKey
     }
   }
   const localIds = new Set(records.map((r) => r.childKey))
-  const idCounts = new Map<string, number>()
-  const providerIdCounts = new Map<string, number>()
-  for (const { listing } of rawExternal) {
-    idCounts.set(listing.id, (idCounts.get(listing.id) ?? 0) + 1)
-    const qualified = `${listing.providerId}:${listing.id}`
-    providerIdCounts.set(qualified, (providerIdCounts.get(qualified) ?? 0) + 1)
-  }
-  const external: ExternalEntry[] = rawExternal.map(({ ownerKey, listing }) => {
-    const collides = (idCounts.get(listing.id) ?? 0) > 1 || localIds.has(listing.id)
-    if (!collides) return { ownerKey, listing, taskId: listing.id }
-    const byProvider = `${listing.providerId}:${listing.id}`
-    const providerCollides = (providerIdCounts.get(byProvider) ?? 0) > 1 || localIds.has(byProvider)
-    return {
-      ownerKey,
-      listing,
-      taskId: providerCollides ? `${ownerKey}::${byProvider}` : byProvider,
-    }
-  })
+  const external = assignExternalTaskIds(rawExternal, localIds)
 
   if (!targetChildKey) return { records, external }
 
@@ -107,9 +143,13 @@ async function children(parent: SessionImpl, descendants = false, targetChildKey
     }
   }
   const exactExternal = external.filter((x) => x.taskId === targetChildKey)
-  if (exactExternal.length > 0) return { records: [], external: exactExternal }
-  const byListingId = external.filter((x) => x.listing.id === targetChildKey)
-  if (byListingId.length === 1) return { records: [], external: byListingId }
+  if (exactExternal.length === 1) return { records: [], external: exactExternal }
+  if (exactExternal.length > 1) throw ambiguousChildError(targetChildKey, exactExternal)
+  const qualifiedOrRaw = external.filter(
+    (x) => x.rawId === targetChildKey || `${x.providerId}:${x.rawId}` === targetChildKey,
+  )
+  if (qualifiedOrRaw.length === 1) return { records: [], external: qualifiedOrRaw }
+  if (qualifiedOrRaw.length > 1) throw ambiguousChildError(targetChildKey, qualifiedOrRaw)
   return { records: [], external: [] }
 }
 
@@ -233,7 +273,13 @@ async function verifyArtifacts(
   if (recordedCount === 0) {
     return {
       artifacts: [],
-      verification: { recordedCount: 0, verifiedCount: 0, missingCount: 0, unverifiableCount: 0 },
+      verification: {
+        recordedCount: 0,
+        verifiedCount: 0,
+        missingCount: 0,
+        nonFileCount: 0,
+        unverifiableCount: 0,
+      },
     }
   }
   if (!stat) {
@@ -243,6 +289,7 @@ async function verifyArtifacts(
         recordedCount,
         verifiedCount: 0,
         missingCount: 0,
+        nonFileCount: 0,
         unverifiableCount: recordedCount,
         errorCodes: ['STAT_UNAVAILABLE'],
       },
@@ -250,13 +297,14 @@ async function verifyArtifacts(
   }
   const artifacts: SubtaskArtifactRef[] = []
   let missingCount = 0
+  let nonFileCount = 0
   let unverifiableCount = 0
   const codes = new Set<string>()
   for (const [abs, ref] of paths) {
     try {
       const entry = await stat(abs)
       if (entry?.kind === 'file') artifacts.push(ref)
-      else missingCount++
+      else nonFileCount++
     } catch (error) {
       if (isMissingError(error)) {
         missingCount++
@@ -272,6 +320,7 @@ async function verifyArtifacts(
       recordedCount,
       verifiedCount: artifacts.length,
       missingCount,
+      nonFileCount,
       unverifiableCount,
       ...(codes.size > 0 ? { errorCodes: [...codes].sort() } : {}),
     },
@@ -378,7 +427,13 @@ function externalTask(
     executionState: child.executionState ?? (status === 'starting' ? 'creating' : status),
     summaryText: previewOutput(child.text ?? '', taskId),
     artifacts: [],
-    artifactVerification: { recordedCount: 0, verifiedCount: 0, missingCount: 0, unverifiableCount: 0 },
+    artifactVerification: {
+      recordedCount: 0,
+      verifiedCount: 0,
+      missingCount: 0,
+      nonFileCount: 0,
+      unverifiableCount: 0,
+    },
     ...stateFacts(status, `[${providerId}/unknown] Failed`),
     updatedAt: child.lastHeartbeatAt ?? now,
   }

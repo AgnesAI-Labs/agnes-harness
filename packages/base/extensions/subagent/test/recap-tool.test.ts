@@ -107,4 +107,86 @@ describe('subagent_recap tool (#23)', () => {
     expect(missing.isError).toBe(true)
     expect(missing.details).toMatchObject({ code: 'E_CHILD_NOT_FOUND', childKey: 'unknown/child' })
   })
+
+  it('forwards childKey directly to Core recap, preserves Core scoped markdown, and surfaces E_CHILD_AMBIGUOUS (#21, #13)', async () => {
+    const scopedSnap = {
+      ...sampleSnapshot(),
+      subtasks: sampleSnapshot().subtasks.slice(0, 1),
+      counts: {
+        total: 1,
+        completed: 1,
+        running: 0,
+        waitingApproval: 0,
+        paused: 0,
+        disconnected: 0,
+        failed: 0,
+        cancelled: 0,
+      },
+      hasIncompleteWork: false,
+      targetChildKey: 'root/alpha',
+    }
+    const recap = vi.fn(async (opts?: { childKey?: string }) => {
+      if (opts?.childKey === 'p:x') {
+        throw Object.assign(new Error('Ambiguous childKey "p:x"'), { code: 'E_CHILD_AMBIGUOUS' })
+      }
+      return {
+        snapshot: scopedSnap,
+        markdown: '## Runtime ledger facts\nCORE_SCOPED_MARKDOWN',
+        allowedArtifactPaths: ['alpha.md'],
+        hasIncompleteWork: false,
+      }
+    })
+    const ctx = { subagent: { recap } } as unknown as ToolContext
+    const res = await subagentRecapTool.execute({ childKey: 'root/alpha' }, ctx)
+    expect(recap).toHaveBeenCalledWith({ childKey: 'root/alpha' })
+    expect(res.isError).toBeUndefined()
+    expect(JSON.stringify(res.content)).toContain('CORE_SCOPED_MARKDOWN')
+
+    const amb = await subagentRecapTool.execute({ childKey: 'p:x' }, ctx)
+    expect(amb.isError).toBe(true)
+    expect(amb.details).toMatchObject({ code: 'E_CHILD_AMBIGUOUS', childKey: 'p:x' })
+  })
+
+  it('fallback scoping preserves mixed verified + EIO/non-file/missing notes and localizes zh-CN blockers (#21, #34)', async () => {
+    const snapshot = {
+      ...sampleSnapshot(),
+      locale: 'zh-CN' as const,
+      subtasks: [
+        {
+          taskId: 'root/mixed',
+          ownerKey: 'root',
+          label: 'Mixed artifacts',
+          status: 'paused' as const,
+          executionState: 'paused' as const,
+          summaryText: 'Half done',
+          resumable: true,
+          blockerReason: 'Execution paused',
+          nextStep: 'Resume from the checkpoint with subagent_resume.',
+          artifacts: [{ path: 'ok.md', kind: 'file' as const, verified: true }],
+          artifactVerification: {
+            recordedCount: 4,
+            verifiedCount: 1,
+            missingCount: 1,
+            nonFileCount: 1,
+            unverifiableCount: 1,
+            errorCodes: ['EIO'],
+          },
+          updatedAt: 1_700_000_000_000,
+        } as RecapFactSnapshot['subtasks'][number],
+      ],
+      allowedArtifactPaths: ['ok.md'],
+    }
+    const { ctx } = makeCtx(snapshot)
+    const res = await subagentRecapTool.execute({ childKey: 'root/mixed' }, ctx)
+    expect(res.isError).toBeUndefined()
+    const markdown = (res.structured as { markdown: string }).markdown
+    expect(markdown).toContain('-> ok.md')
+    expect(markdown).toContain('另有 1 项写入无法复核（文件系统检查失败 (EIO)）')
+    expect(markdown).toContain('另有 1 项已记录路径为目录或非普通文件')
+    expect(markdown).toContain('另有 1 项已记录写入当前不存在（ENOENT）')
+    expect(markdown).toContain('| 已暂停 (paused) | 已暂停 (paused) |')
+    expect(markdown).toContain('执行已暂停')
+    expect(markdown).toContain('可使用 subagent_resume 从检查点恢复。')
+    expect(markdown).toContain('可恢复 (resumable: true)')
+  })
 })

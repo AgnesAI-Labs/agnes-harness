@@ -477,7 +477,7 @@ export interface ToolContext {
       status: import('./child-agent.js').ChildAgentStatus
       executionState: import('./child-control.js').ChildExecutionState
     }>
-    recap?(): Promise<{
+    recap?(opts?: { childKey?: string }): Promise<{
       snapshot: import('./child-control.js').RecapFactSnapshot
       markdown: string
       allowedArtifactPaths: readonly string[]

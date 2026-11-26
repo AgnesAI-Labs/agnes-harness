@@ -450,6 +450,109 @@ describe('session slash commands', () => {
     )
     expect(authRows[tt('recap.turns', 'en')]).toBe('10')
     expect(fastHistory).not.toHaveBeenCalled()
+
+    // When the tail window has a newer plan whose argsPreview is truncated, never fall back to an obsolete older plan.
+    const truncatedLatestPlan = {
+      kind: 'tool',
+      id: 'p-latest-cut',
+      seq: 95,
+      resultSeq: 96,
+      name: 'update_plan',
+      toolUseId: 'p-latest-cut',
+      status: 'completed',
+      summary: 'plan updated',
+      argsPreview: '{"plan":[{"step":"new step","status":"in_progr',
+    }
+    const cutOpening = {
+      timeline: {
+        turns: [{ turn: 42 }],
+        nodes: [
+          { kind: 'user', id: 'u42', seq: 92, content: [{ type: 'text', text: 'deploy v2' }] },
+          truncatedLatestPlan,
+        ],
+      },
+      history: { hasEarlier: true, cursor: { cut: 96, beforeIndex: 10 }, startIndex: 10, totalNodes: 15 },
+    }
+    const obsoleteHistory = vi.fn(async () => ({
+      sessionId: 'cur',
+      generation: 1,
+      cut: 96,
+      startIndex: 0,
+      totalNodes: 15,
+      hasEarlier: false,
+      turns: [],
+      nodes: [earlierPlan],
+    }))
+
+    // 1) Without readToolDetail (or if detail fetch fails): reports truncated plan, does NOT show obsolete earlierPlan
+    const cutTextEn =
+      (
+        await runSlash(
+          appWith(client, {
+            projectUIOpening: vi.fn(async () => cutOpening),
+            projectUIHistory: obsoleteHistory,
+            workspaceChanges: vi.fn(async () => ({ files: [] })),
+          }),
+          '/recap',
+        )
+      ).text ?? ''
+    const cutRowsEn = Object.fromEntries(
+      cutTextEn.split('\n').map((row) => row.split(/ {2,}/) as [string, string]),
+    )
+    expect(obsoleteHistory).not.toHaveBeenCalled()
+    expect(cutRowsEn[tt('recap.plan', 'en')]).toBe('latest plan truncated / unavailable')
+    expect(cutTextEn).not.toContain('implement')
+
+    const cutTextZh =
+      (
+        await runSlash(
+          appWith(
+            client,
+            {
+              projectUIOpening: vi.fn(async () => cutOpening),
+              projectUIHistory: obsoleteHistory,
+              workspaceChanges: vi.fn(async () => ({ files: [] })),
+            },
+            { locale: 'zh-CN' },
+          ),
+          '/recap',
+        )
+      ).text ?? ''
+    const cutRowsZh = Object.fromEntries(
+      cutTextZh.split('\n').map((row) => row.split(/ {2,}/) as [string, string]),
+    )
+    expect(cutRowsZh[tt('recap.plan', 'zh-CN')]).toBe('最新计划已截断（无法解析）')
+
+    // 2) With readToolDetail: recovers the full newer plan directly instead of showing the obsolete older plan
+    const readToolDetail = vi.fn(async () => ({
+      call: {
+        args: {
+          plan: [
+            { step: 'verify', status: 'completed' },
+            { step: 'deploy v2', status: 'in_progress' },
+            { step: 'monitor', status: 'pending' },
+          ],
+        },
+      },
+    }))
+    const recoveredText =
+      (
+        await runSlash(
+          appWith(client, {
+            projectUIOpening: vi.fn(async () => cutOpening),
+            projectUIHistory: obsoleteHistory,
+            readToolDetail,
+            workspaceChanges: vi.fn(async () => ({ files: [] })),
+          }),
+          '/recap',
+        )
+      ).text ?? ''
+    const recoveredRows = Object.fromEntries(
+      recoveredText.split('\n').map((row) => row.split(/ {2,}/) as [string, string]),
+    )
+    expect(readToolDetail).toHaveBeenCalledWith(95, 96)
+    expect(obsoleteHistory).not.toHaveBeenCalled()
+    expect(recoveredRows[tt('recap.plan', 'en')]).toBe('1/3 · deploy v2')
   })
 
   it('/jobs pins displayed indices per session across evictions, supports explicit IDs and clips wide chars (#11, #34)', async () => {

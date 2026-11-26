@@ -151,9 +151,9 @@ export function capabilityToolContext(manifest: ExtensionManifest, context: Tool
         : {}),
       ...(caps.subagent === true && context.subagent?.recap
         ? {
-            recap: () => {
+            recap: (opts?: { childKey?: string }) => {
               if (caps.subagent !== true) refuse(id, 'subagent')
-              return context.subagent.recap!()
+              return context.subagent.recap!(opts)
             },
           }
         : {}),
