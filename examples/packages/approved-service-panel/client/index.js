@@ -36,7 +36,8 @@ function ServiceVersion({ ctx }) {
   else if (result?.readiness !== readiness || result.binding !== binding)
     status = text('Reading the backend version…', '正在读取后端版本…')
   else
-    status = result.version === null ? text('Service unavailable.', '服务不可用。') : `backend ${result.version}`
+    status =
+      result.version === null ? text('Service unavailable.', '服务不可用。') : `backend ${result.version}`
   return h('section', { 'aria-label': title }, h('h2', null, title), h('p', { role: 'status' }, status))
 }
 

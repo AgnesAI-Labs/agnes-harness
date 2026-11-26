@@ -12,8 +12,12 @@
         "export": "runtime",
         "apiRange": "^5.0.0",
         "runtime": "in-process",
-        "inject": ["services"],
-        "capabilities": { "ui": true }
+        "inject": [
+          "services"
+        ],
+        "capabilities": {
+          "ui": true
+        }
       }
     ],
     "clientDescriptors": [
@@ -28,7 +32,10 @@
         "tabs": [
           {
             "id": "service-version",
-            "title": { "en": "Service version", "zh-CN": "服务版本" },
+            "title": {
+              "en": "Service version",
+              "zh-CN": "服务版本"
+            },
             "order": -30,
             "slot": "workbench.panel",
             "view": "page",
@@ -50,6 +57,8 @@
         }
       }
     },
-    "provides": ["ui"]
+    "provides": [
+      "ui"
+    ]
   }
 }
