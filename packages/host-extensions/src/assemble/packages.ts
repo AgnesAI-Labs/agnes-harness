@@ -109,7 +109,11 @@ function checkRuntimeMetadata(
   }
   return metadata
 }
-/** Load executable plugin exports only from a PackageManager-owned immutable snapshot directory. */
+/**
+ * Load plugin rows and named data exports from a PackageManager-owned immutable snapshot.
+ * `agnes.plugins` is still the only way to install an executable row. A package that only exports
+ * `presets` is imported when its manifest names a module entry.
+ */
 export async function loadRuntimePackage(
   source: Readonly<RuntimePluginSnapshot>,
   loader: { import(file: string): Promise<Record<string, unknown>> },
@@ -120,6 +124,7 @@ export async function loadRuntimePackage(
   const loaded = await loadPackagePlugins({
     snapshot: source.snapshot,
     generation: source.generation,
+    importDataExports: snapshotDeclaresModuleEntry(source.snapshot.directory),
     async importModule(snapshot) {
       entry = packageEntry(snapshot.packageId, snapshot.directory)
       try {
@@ -140,20 +145,43 @@ export async function loadRuntimePackage(
     if (moduleFailure && error?.detail?.reason === 'module-import') throw moduleFailure
     throw error
   })
-  if (!loaded.length) return undefined
-  if (!namespace || !entry) throw new Error('runtime plugin loader did not return a module namespace')
+  if (!namespace || !entry) {
+    if (!loaded.length) return undefined
+    throw new Error('runtime plugin loader did not return a module namespace')
+  }
   const module = readNamedExports(source.snapshot.packageId, entry, namespace as Record<string, unknown>, [])
-  module.plugins = Object.freeze(
-    loaded.map((plugin) =>
-      Object.freeze({
-        declaration: plugin.declaration,
-        entry: plugin.entry,
-        candidate: plugin.candidate,
-        snapshotDigest: source.snapshot.integrity,
-      }),
-    ),
-  )
+  if (loaded.length) {
+    module.plugins = Object.freeze(
+      loaded.map((plugin) =>
+        Object.freeze({
+          declaration: plugin.declaration,
+          entry: plugin.entry,
+          candidate: plugin.candidate,
+          snapshotDigest: source.snapshot.integrity,
+        }),
+      ),
+    )
+  }
   return Object.freeze({ source, module })
+}
+
+/** True when package.json names an entry. Missing exports/main stays unloaded, so static bundles are not executed. */
+function snapshotDeclaresModuleEntry(directory: string): boolean {
+  let pkg: { exports?: unknown; main?: unknown }
+  try {
+    pkg = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')) as {
+      exports?: unknown
+      main?: unknown
+    }
+  } catch {
+    return false
+  }
+  if (typeof pkg.exports === 'string') return pkg.exports.length > 0
+  if (pkg.exports && typeof pkg.exports === 'object' && !Array.isArray(pkg.exports)) {
+    const dot = (pkg.exports as Record<string, unknown>)['.']
+    if (typeof dot === 'string' && dot.length > 0) return true
+  }
+  return typeof pkg.main === 'string' && pkg.main.length > 0
 }
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>

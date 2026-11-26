@@ -35,6 +35,11 @@ export type LoadPackagePluginsInput = Readonly<{
   snapshot: RuntimeSnapshot
   generation: number
   importModule: PackagePluginModuleLoader['importModule']
+  /**
+   * Import the package entry even when it declares no plugin rows, so named data exports such as
+   * `presets` can be read. This never installs a plugin row.
+   */
+  importDataExports?: boolean
 }>
 
 export type RuntimePluginSnapshot = Readonly<{
@@ -310,7 +315,9 @@ export async function loadPackagePlugins(
   if (!Number.isSafeInteger(input.generation) || input.generation < 1) stateFailure('generation')
   await assertSnapshotTreeAsync(input.snapshot, 'snapshot-stale')
   const { declarations } = preflightMetadata(input)
-  if (!declarations.length) return Object.freeze([])
+  // No plugin row means no executable installation. Data exports are imported only when the caller
+  // asks; a declarative package stays unread.
+  if (!declarations.length && input.importDataExports !== true) return Object.freeze([])
   const declarationSnapshot = canonical(declarations)
 
   let imported: Readonly<Record<string, unknown>> | undefined

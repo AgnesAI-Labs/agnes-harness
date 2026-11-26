@@ -1285,6 +1285,62 @@ describe('assemble', () => {
     }
   })
 
+  it('mounts a preset from a snapshot package that exports no plugins', async () => {
+    const vendor = '@acme/preset-only-assemble'
+    const directory = mkdtempSync(join(tmpdir(), 'agnes-preset-only-assemble-'))
+    dirs.push(directory)
+    writeFileSync(
+      join(directory, 'package.json'),
+      `${JSON.stringify({ name: vendor, version: '1.0.0', exports: './index.js' })}\n`,
+    )
+    writeFileSync(join(directory, 'index.js'), 'export const marker = true\n')
+    const snapshot: RuntimeSnapshot = Object.freeze({
+      snapshotId: `sha256-${'1'.repeat(64)}`,
+      profile: 'local-dev',
+      packageId: vendor,
+      version: '1.0.0',
+      integrity: `sha256-${'2'.repeat(64)}`,
+      treeIntegrity: hashDirectory(directory, { exclude: [] }),
+      capabilityHash: 'capability',
+      directory,
+      contributions: Object.freeze([]),
+    })
+    const profile = await resolveProfile(
+      {
+        builtin: 'local-dev',
+        lock: {
+          packages: {
+            ...lockPkgs,
+            [vendor]: { version: '1.0.0', integrity: snapshot.integrity, trust: 'trusted', enabled: true },
+          },
+        },
+        user: {
+          name: 'local-dev',
+          provider: { package: '@agnes/ai', routes: [ROUTE] },
+          packages: [{ id: vendor, source: 'test' }],
+          presets: { default: 'chtd', allowed: ['chtd'] },
+        },
+      },
+      env,
+    )
+    const a = await assemble(
+      profile,
+      deps(allModules(), {
+        runtimePluginSnapshots: [{ snapshot, generation: 1, trusted: true }],
+        extensionLoader: {
+          import: async () => ({
+            presets: { chtd: { name: 'chtd', extends: 'base', disclosure: 'standard' } },
+          }),
+        },
+      }),
+    )
+    try {
+      expect(a.pluginTree.root.get('preset:chtd', false)).toMatchObject({ name: 'chtd' })
+    } finally {
+      await a.rollback.unwind()
+    }
+  })
+
   it('normalizes each runtime plugin export once while building its verified row claim', async () => {
     const vendor = '@acme/metadata-once'
     const directory = mkdtempSync(join(tmpdir(), 'agnes-runtime-plugin-once-'))
@@ -1328,6 +1384,74 @@ describe('assemble', () => {
 
     expect(loaded?.module.plugins).toHaveLength(1)
     expect(reads).toBe(1)
+  })
+
+  it('reads presets from a snapshot package that declares no plugins', async () => {
+    const vendor = '@acme/preset-only'
+    const directory = mkdtempSync(join(tmpdir(), 'agnes-preset-only-'))
+    dirs.push(directory)
+    writeFileSync(
+      join(directory, 'package.json'),
+      `${JSON.stringify({ name: vendor, version: '1.0.0', exports: './index.js' })}\n`,
+    )
+    writeFileSync(join(directory, 'index.js'), 'export const marker = true\n')
+    const snapshot: RuntimeSnapshot = Object.freeze({
+      snapshotId: `sha256-${'a'.repeat(64)}`,
+      profile: 'local-dev',
+      packageId: vendor,
+      version: '1.0.0',
+      integrity: `sha256-${'b'.repeat(64)}`,
+      treeIntegrity: hashDirectory(directory, { exclude: [] }),
+      capabilityHash: 'capability',
+      directory,
+      contributions: Object.freeze([]),
+    })
+    let imported = 0
+    const loaded = await loadRuntimePackage(
+      { snapshot, generation: 1, trusted: true },
+      {
+        import: async () => {
+          imported += 1
+          return { presets: { chtd: { name: 'chtd', disclosure: 'standard' } } }
+        },
+      },
+    )
+    expect(imported).toBe(1)
+    expect(loaded?.module.presets?.chtd).toMatchObject({ name: 'chtd' })
+    expect(loaded?.module.plugins).toBeUndefined()
+  })
+
+  it('does not import a snapshot package that declares neither plugins nor a module entry', async () => {
+    const vendor = '@acme/static-bundle'
+    const directory = mkdtempSync(join(tmpdir(), 'agnes-static-bundle-'))
+    dirs.push(directory)
+    writeFileSync(
+      join(directory, 'package.json'),
+      `${JSON.stringify({ name: vendor, version: '1.0.0' })}\n`,
+    )
+    const snapshot: RuntimeSnapshot = Object.freeze({
+      snapshotId: `sha256-${'c'.repeat(64)}`,
+      profile: 'local-dev',
+      packageId: vendor,
+      version: '1.0.0',
+      integrity: `sha256-${'d'.repeat(64)}`,
+      treeIntegrity: hashDirectory(directory, { exclude: [] }),
+      capabilityHash: 'capability',
+      directory,
+      contributions: Object.freeze([]),
+    })
+    let imported = 0
+    const loaded = await loadRuntimePackage(
+      { snapshot, generation: 1, trusted: true },
+      {
+        import: async () => {
+          imported += 1
+          return { presets: { hidden: { name: 'hidden' } } }
+        },
+      },
+    )
+    expect(imported).toBe(0)
+    expect(loaded).toBeUndefined()
   })
 
   it('rejects a non-builtin transport without an immutable runtime snapshot before loading it', async () => {
