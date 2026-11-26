@@ -75,7 +75,7 @@ export function supervisorHostFacade(
     validatePresetSwitch(name: string, sessionKey?: string): ResolvedPreset {
       if (!sessionKey && !profile.presets.allowed.includes(name))
         throw new HostError('E_PRESET_UNSUPPORTED', `preset ${name} is not in presets.allowed`, {
-          detail: { preset: name },
+          detail: { reason: 'preset-not-allowed', preset: name },
         })
       return { view: name, doc: {} as PresetDoc, chain: [], hash: '' } as unknown as ResolvedPreset
     },

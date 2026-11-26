@@ -13,7 +13,7 @@ import {
 import { PINNED_SEAM_KINDS } from '@agnes/extension-api/seams'
 import { type CommandRule, checkCommandRule } from '@agnes/host-common/command-policy'
 import { HostError } from '@agnes/host-common/errors'
-import { selectionAllowed } from '@agnes/host-common/presets/admission'
+import { presetNameAllowed, selectionAllowed } from '@agnes/host-common/presets/admission'
 import {
   assertRecipeName,
   DEFAULT_PERMISSION,
@@ -133,6 +133,21 @@ type HardRequirements = {
  * core runs on) - two different projections of the one resolved preset, and a caller holding only
  * one of them cannot run both halves of this check.
  */
+export function assertSelectionAllowed(
+  profile: ResolvedProfile,
+  name: string,
+  permission: Permission | undefined,
+): void {
+  if (!selectionAllowed(profile, name, permission))
+    throw new HostError('E_PRESET_UNSUPPORTED', `preset ${name} is not in presets.allowed`, {
+      detail: {
+        source: name,
+        capability: 'preset',
+        ...(presetNameAllowed(profile, name) ? {} : { reason: 'preset-not-allowed' }),
+      },
+    })
+}
+
 export function checkPresetHardRequirements(
   profile: ResolvedProfile,
   a: Assembled,
@@ -144,8 +159,7 @@ export function checkPresetHardRequirements(
       detail: { source: name, ...detail },
     })
   }
-  if (!selectionAllowed(profile, name, resolved.permission))
-    unsupported('is not in presets.allowed', { capability: 'preset' })
+  assertSelectionAllowed(profile, name, resolved.permission)
 
   // hard requirements, checked against what this deployment can actually provide
   const doc = resolved.doc as HardRequirements
@@ -391,10 +405,7 @@ export async function createSession(
     ...(opts.defaultPermission !== undefined ? { defaultPermission: opts.defaultPermission } : {}),
   })
   const name = selection.name
-  if (!selectionAllowed(profile, name, selection.permission ?? selection.fallback))
-    throw new HostError('E_PRESET_UNSUPPORTED', `preset ${name} is not in presets.allowed`, {
-      detail: { source: name, capability: 'preset' },
-    })
+  assertSelectionAllowed(profile, name, selection.permission ?? selection.fallback)
   const preset = await sessionPresetForOpen(profile, a, name, opts.key ?? opts.binding?.sessionKey, selection)
 
   // 2 hard requirements, checked against what this deployment can actually provide.

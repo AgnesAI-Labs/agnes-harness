@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import type { Kernel, WorkspaceInvocationPort } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
-import { presetNameAllowed, selectionAllowed } from '@agnes/host-common/presets/admission'
+import { presetNameAllowed } from '@agnes/host-common/presets/admission'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { canonicalJson, sha256hex } from '@agnes/host-common/profile/canonical'
@@ -53,6 +53,7 @@ import { createCompositionHost } from '../profile/composition-runtime.js'
 import { trackHostComposition } from '../profile/composition-tracking.js'
 import { resolveSessionCapabilities } from '../profile/session-capabilities.js'
 import {
+  assertSelectionAllowed,
   type CreateSessionOptions,
   checkPresetHardRequirements,
   createSession as openSession,
@@ -538,10 +539,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             ...(o.defaultPermission !== undefined ? { defaultPermission: o.defaultPermission } : {}),
           })
           const presetName = selection.name
-          if (!selectionAllowed(profile, presetName, selection.permission ?? selection.fallback))
-            throw new HostError('E_PRESET_UNSUPPORTED', `preset ${presetName} is not in presets.allowed`, {
-              detail: { source: presetName, capability: 'preset' },
-            })
+          assertSelectionAllowed(profile, presetName, selection.permission ?? selection.fallback)
           checkPresetHardRequirements(
             profile,
             a,

@@ -21,7 +21,20 @@ describe('supervisorHostFacade.validateModelSwitch', () => {
   })
 
   it('leaves session preset admission to its worker, while keeping deployment-only checks scoped', () => {
-    expect(() => host.validatePresetSwitch('review')).toThrow('presets.allowed')
+    let presetRefusal: unknown
+    try {
+      host.validatePresetSwitch('review')
+    } catch (error) {
+      presetRefusal = error
+    }
+    expect(presetRefusal).toMatchObject({
+      code: 'E_PRESET_UNSUPPORTED',
+      detail: { reason: 'preset-not-allowed', preset: 'review' },
+    })
+    expect(publicRejectionRpc(presetRefusal)?.data).toEqual({
+      code: 'E_PRESET_UNSUPPORTED',
+      reason: 'preset-not-allowed',
+    })
     expect(host.validatePresetSwitch('review', 'bundle-session').view).toBe('review')
     expect(() =>
       host.validateModelSwitch(
