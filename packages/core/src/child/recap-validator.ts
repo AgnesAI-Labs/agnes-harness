@@ -13,6 +13,7 @@ import {
   renderTruthBase,
 } from './recap-formatter.js'
 import { buildRecapFactSnapshot } from './recap-snapshot.js'
+import { checkTableCompletionCounts } from './recap-table.js'
 import { ownedChildTree } from './sessions.js'
 
 type Violation = { code: string; detail: string }
@@ -41,70 +42,6 @@ const batchCountAfterZh =
 const nonBatchUnit = /^(?:steps?|checks?|tests?|files?|(?:项|个)?(?:步骤|检查|测试))$/iu
 const nonBatchUnitBefore = /(?:\b(?:steps?|checks?|tests?|files?)|步骤|检查|测试|文件)\s*$/iu
 const batchHint = /\b(?:all|total|overall|batch)\b|全部|总共|整批/iu
-const tableSeparatorRow = /^\s*\|?\s*:?-{2,}:?(?:\s*\|\s*:?-{2,}:?)+\s*\|?\s*$/u
-const tableStatusColumn = /^(?:status|executionState|状态|执行态)$/iu
-const tableCompletionLabel =
-  /^(?:(?:(?:all|total|overall|batch)\s+)?(?:(?:sub-?)?(?:tasks?|agents?)|items?|jobs?|children)\s+(?:completed?|finished|done)(?:\s+count)?|(?:(?:all|total|overall|batch)\s+)?(?:completed?|finished|done)\s+(?:(?:sub-?)?(?:tasks?|agents?)|items?|jobs?|children)(?:\s+count)?|(?:(?:all|total|overall|batch)\s+)?(?:completed?|finished)|(?:总|总计|共|累计)?(?:已(?:经)?|全部)?完成(?:的)?(?:子?任务|子代理|工作)?(?:数|数量|总数|进度)?|(?:子?任务|子代理|工作)(?:已)?完成(?:数|数量|总数|进度)?)$/iu
-const tableRatioValue =
-  /^(\d+)\s*(?:\/|of|out\s+of)\s*(\d+)(?:\s*((?:sub-?)?(?:tasks?|agents?)|items?|jobs?|children|steps?|checks?|tests?|files?|(?:项|个)?(?:子?任务|子代理|工作|步骤|检查|测试)))?\.?$/iu
-const tableCountValue =
-  /^(\d+)(?:\s*(?:(?:sub-?)?(?:tasks?|agents?)|items?|jobs?|children|(?:个\s*(?:子?任务|子代理|工作)|项(?:\s*(?:子?任务|子代理|工作))?(?!\s*(?:步骤|检查|测试|文件)))))?\.?$/iu
-
-function checkTableCompletionCounts(
-  text: string,
-  snapshot: RecapFactSnapshot,
-  settled: number,
-  total: number,
-  errors: Violation[],
-) {
-  const checkCell = (label: string, value: string) => {
-    const ratio = tableRatioValue.exec(value)
-    if (ratio) {
-      if (ratio[3] && nonBatchUnit.test(ratio[3].trim())) return
-      if (Number(ratio[1]) !== settled || Number(ratio[2]) !== total)
-        errors.push({ code: 'FALSE_COMPLETION_CLAIM', detail: `${label}: ${value}` })
-      return
-    }
-    const count = tableCountValue.exec(value)
-    if (count && Number(count[1]) !== settled)
-      errors.push({ code: 'FALSE_COMPLETION_CLAIM', detail: `${label}: ${value}` })
-  }
-  const lines = text.split('\n')
-  let headers: string[] | undefined
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] as string
-    if (tableSeparatorRow.test(line)) continue
-    const nextSep = tableSeparatorRow.test(lines[i + 1] ?? '')
-    const trimmed = line.trim()
-    if (!trimmed.includes('|') || (!trimmed.startsWith('|') && !headers && !nextSep)) {
-      headers = undefined
-      continue
-    }
-    const stripped = trimmed.replace(/^\||\|$/g, '')
-    const cells = stripped.split('|').map((c) => c.replace(/[*_`]/g, '').trim())
-    if (cells.length < 2) {
-      headers = undefined
-      continue
-    }
-    if (nextSep) {
-      headers = cells
-      continue
-    }
-    if (mentions(line, snapshot.subtasks).length > 0) continue
-    for (let col = 0; col < cells.length; col++) {
-      const header = headers?.[col] ?? ''
-      const cell = cells[col] as string
-      if (header && cell && tableCompletionLabel.test(header)) checkCell(header, cell)
-      if (
-        col < cells.length - 1 &&
-        tableCompletionLabel.test(cell) &&
-        !tableCompletionLabel.test(header) &&
-        !tableStatusColumn.test(header)
-      )
-        checkCell(cell, cells[col + 1] as string)
-    }
-  }
-}
 
 function checkRatioMatches(
   clause: string,
@@ -177,7 +114,13 @@ function completionChecks(text: string, snapshot: RecapFactSnapshot, errors: Vio
     const refs = mentions(clause, snapshot.subtasks)
     checkRatioMatches(clause, refs, settled, total, errors)
   }
-  checkTableCompletionCounts(text, snapshot, settled, total, errors)
+  checkTableCompletionCounts(
+    text,
+    settled,
+    total,
+    (cell) => mentions(cell, snapshot.subtasks).length > 0,
+    errors,
+  )
 }
 
 const negative =
@@ -304,14 +247,15 @@ const ordinaryTrailingNonAssertive =
   /^\s*(?:(?:了)?\s*(?:吗|么|呢|的话|之后|以后|后|时|再|才|就)(?:[\s。！？，,.!?]|$)|or\s+not\b)/iu
 const ordinaryMarkdownPrefix =
   /^(?:\s*(?:>+\s*|(?:[-*+•]|(?:\(\d+\)|\d+[.)]))\s+(?:\[[ xX]\]\s+)?|#{1,6}\s+))+/u
-const ordinaryDeclarativeSubjectEn =
-  /^(?:i|i'm|i've|i'd|i'll|he|she|it|this|that|here|there|confirmed|verified|checked|validated|already|happy|pleased|glad|able|writing|we\s+(?:are|were|have|had|can|could|will|would|did|do|ran|executed|checked|confirmed|verified|validated|just|already)|we're|we've|we'd|we'll)\b/iu
 const ordinaryPurposeTailEn =
   /\b(?:in\s+order\s+)?to\s+(?:confirm|verify|check|validate|inspect|ensure|see|determine|make\s+sure|find\s+out)(?:\s+(?:that|whether|if))?\s*$/iu
-const ordinaryFillerOnlyEn = /^(?:just|only|also|simply|merely|and|or|then|so)$/iu
-const ordinaryDeclarativeSubjectZh = /^(?:我(?:们(?!应该|应当|应|需要|需|要))?|本人|目前|现已|已经|已|经)/u
+const ordinaryImperativeHeadEn =
+  /^(?:(?:and|or|then|next|first|also|just|always|please|kindly)\s+)*(?:(?:please|kindly|let's|let\s+us|try\s+to|remember\s+to|be\s+sure\s+to|make\s+sure\s+to|don't\s+forget\s+to)\s+|(?:you|we|one)\s+(?:should|must|need\s+to|have\s+to|ought\s+to|may\s+want\s+to|might\s+want\s+to)\s+)?(?:run|re-?run|execute|check|verify|confirm|validate|inspect|use|call|invoke|trigger|start|open|read|review|audit|test|query|poll|watch|monitor|scan|look|search|grep|fetch|retry|wait|follow|apply|send|click|press|visit|compare|diff|ping|probe|tail|list|show)\b/iu
+const ordinaryCopulaEn = /\b(?:is|are|was|were|am)\b/iu
 const ordinaryPurposeTailZh =
   /(?:以|来|以便|为了|用于|用来)\s*(?:检查|核查|核实|确认|验证|查看|排查|判断|确保)(?!了)\s*$/u
+const ordinaryImperativeHeadZh =
+  /^(?:(?:请|麻烦|先|请先|记得|务必|需要|需|要|应该|应当|应|建议|试着|尝试|再|去|你(?:们)?(?:应该|应当|应|需要|需|要)|我们(?:应该|应当|应|需要|需|要))\s*)*(?:运行|执行|调用|使用|查看|检查(?!结果|报告|日志|数据|状态)|核查(?!结果|报告|日志|数据|状态)|排查|测试(?!结果|报告|日志|数据|状态)|跑|触发|打开|读取|拉取|查询|轮询|等待|重试|对比|核对)/u
 
 function isNonAssertiveOrdinaryClause(clause: string, leading: string, afterMatch: string): boolean {
   if (/[?？]$/u.test(clause.trimEnd()) || ordinaryTrailingNonAssertive.test(afterMatch)) return true
@@ -331,17 +275,14 @@ function isNonAssertiveOrdinaryClause(clause: string, leading: string, afterMatc
   const enPurpose = ordinaryPurposeTailEn.exec(norm)
   if (enPurpose && enPurpose.index > 0) {
     const head = norm.slice(0, enPurpose.index).trim()
-    if (
-      head &&
-      !ordinaryFillerOnlyEn.test(head) &&
-      !ordinaryDeclarativeSubjectEn.test(head) &&
-      !/\b(?:is|are|was|were|am|has|have|had)\s+(?:happy|pleased|glad|able|ready|writing|confirming)\b/iu.test(
-        head,
-      )
-    )
-      return true
+    if (head && ordinaryImperativeHeadEn.test(head) && !ordinaryCopulaEn.test(head)) return true
   }
-  return ordinaryPurposeTailZh.test(norm) && !ordinaryDeclarativeSubjectZh.test(norm)
+  const zhPurpose = ordinaryPurposeTailZh.exec(norm)
+  if (zhPurpose && zhPurpose.index > 0) {
+    const head = norm.slice(0, zhPurpose.index).trim()
+    if (head && ordinaryImperativeHeadZh.test(head)) return true
+  }
+  return false
 }
 
 function stripNonAssertiveSpans(text: string, knownIds: ReadonlySet<string>): string {
@@ -599,6 +540,11 @@ const promptClauses = (input: string) =>
     .map((c) => c.trim())
     .filter(Boolean)
 
+const explanatoryQuestionBefore =
+  /(?:\b(?:how\s+(?:does|do|did|to|can|could|should|would|is|are|will)\b|where\s+(?:does|do|did|is|are|can|to)\b|why\s+(?:does|do|did|is|are|would)\b|(?:explain|describe)\s+(?:how|why|where|what|when)\b|(?:what|which)\s+(?:command|button|action|tool|function|method|module|file|endpoint|option|flag|step|way|mechanism|docs?|documentation)\b|(?:docs?|documentation|guide|manual|readme|codebase|implementation|source|cli|ui)\s+(?:say|says|explain|explains|describe|describes|document|documents|show|shows|handle|handles|implement|implements)\b)|(?:如何|怎么(?:样|去|来|办)?|怎样|在哪(?:里|儿)?|为何|为什么|原理|机制|用法|哪个(?:命令|按钮|工具|函数|模块|文件|入口|方式)|什么(?:命令|按钮|工具|方式|机制)|文档(?:里|中)?(?:如何|怎么|怎样|说|写|说明|介绍)))/iu
+const positiveTargetJoin =
+  /^\s*["'`」』”\]]*\s*(?:and|or|&|as\s+well\s+as|plus|和|与|以及|及|、|跟|或|或者)\s*(?:(?:sub-?task|sub-?agent|child|task|子任务|子代理|任务)\s*)*["'`「『“[]*$/iu
+
 function hasAffirmativeFullTreePrompt(input: string): boolean {
   for (const clause of promptClauses(input)) {
     for (const pattern of requestedChildRecap) {
@@ -607,6 +553,7 @@ function hasAffirmativeFullTreePrompt(input: string): boolean {
       const before = clause.slice(0, m.index)
       if (
         !fullTreeNegationBefore.test(before) &&
+        !explanatoryQuestionBefore.test(before) &&
         !metaLocationBefore.test(before) &&
         !metaModifierAfter.test(clause.slice(m.index + m[0].length))
       )
@@ -630,17 +577,29 @@ function naturalSingleTargetFromPrompt(input: string, knownIds: readonly string[
       }
     }
     if (!hits.length) continue
+    hits.sort((a, b) => a.start - b.start)
     for (const vm of clause.matchAll(recapClauseVerb)) {
+      const beforeVerb = clause.slice(0, vm.index)
+      if (fullTreeNegationBefore.test(beforeVerb) || explanatoryQuestionBefore.test(beforeVerb)) continue
       const verbEnd = vm.index + vm[0].length
-      if (fullTreeNegationBefore.test(clause.slice(0, vm.index))) continue
-      if (
-        hits.some(
-          (h) =>
-            (h.start >= verbEnd && directTargetBridge.test(clause.slice(verbEnd, h.start))) ||
-            (h.end <= vm.index && /把\s*["'`「『“]?$/u.test(clause.slice(0, h.start))),
-        )
+      const firstAfter = hits.findIndex(
+        (h) => h.start >= verbEnd && directTargetBridge.test(clause.slice(verbEnd, h.start)),
       )
-        for (const h of hits) matched.add(h.id)
+      const firstBa =
+        firstAfter >= 0
+          ? -1
+          : hits.findIndex((h) => h.end <= vm.index && /把\s*["'`「『“]?$/u.test(clause.slice(0, h.start)))
+      const startIdx = firstAfter >= 0 ? firstAfter : firstBa
+      if (startIdx < 0) continue
+      const limit = firstAfter >= 0 ? clause.length : vm.index
+      let prev = hits[startIdx] as (typeof hits)[number]
+      matched.add(prev.id)
+      for (let i = startIdx + 1; i < hits.length && (hits[i] as (typeof hits)[number]).end <= limit; i++) {
+        const next = hits[i] as (typeof hits)[number]
+        if (!positiveTargetJoin.test(clause.slice(prev.end, next.start))) break
+        matched.add(next.id)
+        prev = next
+      }
     }
   }
   return matched.size === 1 ? [...matched][0] : undefined
@@ -657,7 +616,13 @@ function singleChildTargetFromPrompt(input: string, knownIds: readonly string[] 
     return pickTarget(zhChildKeyArg.exec(trimmed) ?? zhSubagentTarget.exec(trimmed))
   if (!recapVerbCue.test(trimmed)) return undefined
   const key = zhChildKeyArg.exec(trimmed) ?? enChildKeyArg.exec(trimmed)
-  return key ? pickTarget(key) : naturalSingleTargetFromPrompt(trimmed, knownIds)
+  if (key) {
+    const beforeKey = trimmed.slice(0, key.index)
+    return explanatoryQuestionBefore.test(beforeKey) || fullTreeNegationBefore.test(beforeKey)
+      ? undefined
+      : pickTarget(key)
+  }
+  return naturalSingleTargetFromPrompt(trimmed, knownIds)
 }
 
 function renderAmbiguousTargetNotice(

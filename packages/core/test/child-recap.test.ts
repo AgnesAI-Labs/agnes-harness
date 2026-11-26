@@ -450,8 +450,12 @@ describe('child recap', () => {
       'Run the checks to confirm that root/alpha is completed.',
       'Execute tests to verify that root/alpha is completed.',
       '- Run the checks to confirm that root/alpha is completed.',
+      'Please run the checks to confirm that root/alpha is completed.',
+      'Use subagent_recap to verify that root/alpha is completed.',
+      'Inspect the ledger to confirm that root/alpha is completed.',
       '运行检查以确认 root/alpha 是否完成。',
       '运行检查以确认 root/alpha 已完成。',
+      '执行测试以验证 root/alpha 已完成。',
       '- 请核查 root/alpha 是否已完成。',
       `root/alpha ${'is now already currently '.repeat(120)} pending completed`,
     ]
@@ -472,9 +476,15 @@ describe('child recap', () => {
       'Confirmed that root/alpha is completed.',
       '- I confirm that root/alpha is completed.',
       'I am happy to confirm that root/alpha is completed.',
+      'The team is proud to confirm that root/alpha is completed.',
+      'Management is happy to confirm that root/alpha is completed.',
+      'QA confirmed that root/alpha is completed.',
+      'Our engineers ran tests to confirm that root/alpha is completed.',
       '我确认 root/alpha 已完成。',
       '我可以确认 root/alpha 已完成。',
       '已确认 root/alpha 已完成。',
+      '团队确认 root/alpha 已完成。',
+      '管理层很自豪地确认 root/alpha 已完成。',
     ]) {
       const guarded = await guardSessionRecapExit(b.parent, badReply, triggerSeq, 'ordinary')
       expect(guarded.event).toBeDefined()
@@ -581,6 +591,9 @@ describe('child recap', () => {
       'two paused. 已完成：20 个任务',
       'two paused. 共完成 2 项',
       'two paused.\n| Metric | Count |\n| --- | --- |\n| Tasks completed | 20/20 |',
+      'two paused.\n| Metric | Count | Example task |\n| --- | --- | --- |\n| Tasks completed | 20/20 | one |',
+      'two paused.\n| Example task | Metric | Count |\n| --- | --- | --- |\n| one | Tasks completed | 20/20 |',
+      'two paused.\n| 指标 | 数值 | 示例任务 |\n| --- | --- | --- |\n| 已完成任务 | 20/20 | one |',
       'two paused.\n| Metric | Count |\n| --- | --- |\n| Completed tasks | 20 of 20 |',
       'two paused.\n| 指标 | 数值 |\n| --- | --- |\n| 已完成任务 | 20/20 |',
       'two paused.\n| 指标 | 数值 |\n| --- | --- |\n| 已完成 | 20 |',
@@ -602,6 +615,36 @@ describe('child recap', () => {
     expect(validateRecapOutput('one completed. two paused. Completed: 1.', partialSnap).valid).toBe(true)
     expect(validateRecapOutput('one completed. two paused. Completed: 20.5s.', partialSnap).valid).toBe(true)
     expect(validateRecapOutput('one completed. two paused. Completed: 1.5 MB.', partialSnap).valid).toBe(true)
+    expect(
+      validateRecapOutput(
+        'one completed. two paused. Test suite results:\n| Test suite | Completed | Total |\n| --- | --- | --- |\n| Unit tests | 20 | 20 |',
+        partialSnap,
+      ).valid,
+    ).toBe(true)
+    expect(
+      validateRecapOutput(
+        'one completed. two paused.\n| Suite | Completed | Total |\n| --- | --- | --- |\n| Integration checks | 12 | 12 |',
+        partialSnap,
+      ).valid,
+    ).toBe(true)
+    expect(
+      validateRecapOutput(
+        'one 已完成，two 已暂停。测试结果：\n| 测试套件 | 已完成 | 总数 |\n| --- | --- | --- |\n| 单元测试 | 20 | 20 |',
+        partialSnap,
+      ).valid,
+    ).toBe(true)
+    expect(
+      validateRecapOutput(
+        'one completed. two paused.\n| Metric | Count | Example task |\n| --- | --- | --- |\n| Tasks completed | 1/2 | one |',
+        partialSnap,
+      ).valid,
+    ).toBe(true)
+    expect(
+      validateRecapOutput(
+        'one completed. two paused.\n| Task | Status | Completed |\n| --- | --- | --- |\n| one | completed | 5 |',
+        partialSnap,
+      ).valid,
+    ).toBe(true)
     expect(
       validateRecapOutput(
         'one completed. two paused.\n| Metric | Count |\n| --- | --- |\n| Tasks completed | 1/2 |\n| Completed tasks | 1 of 2 |\n| Tests passed | 20/20 |\n| Completed | 20.5s |\n| Completed | 1.5 MB |',
@@ -881,17 +924,131 @@ describe('child recap', () => {
       expect(guarded.text).not.toContain('root/beta')
     }
 
-    // Pure codebase/documentation meta question remains ordinary scope.
-    const metaDocSeq = await b.append(
-      b.parent.key,
-      'user/message',
-      { content: [{ type: 'text', text: 'Summarize all subtasks documentation in this codebase.' }] },
-      { origin: 'user' },
-    )
-    const metaReply = 'All subtasks are documented in README.md.'
-    const metaGuarded = await guardSessionRecapExit(b.parent, metaReply, metaDocSeq)
-    expect(metaGuarded.event).toBeUndefined()
-    expect(metaGuarded.text).toBe(metaReply)
+    // Pure codebase/documentation and mechanism/how-to questions remain ordinary scope,
+    // and ledger-visible tool calls never override full-tree intent or excluded-sibling single-task scope.
+    const scopedLog = await batch()
+    try {
+      await scopedLog.task('root/alpha', 'completed')
+      await scopedLog.task('root/beta', 'waiting_approval')
+      let logTurn = 0
+      const appendParentTurn = async (prompt: string, toolChildKey?: string) => {
+        const promptRes = await scopedLog.parent.d.log.append([
+          scopedLog.parent.ev(
+            'user/message',
+            { kind: 'prompt', content: [{ type: 'text', text: prompt }] },
+            { origin: 'principal' },
+          ),
+        ])
+        const seq = promptRes.firstSeq
+        if (toolChildKey !== undefined) {
+          const turn = ++logTurn
+          const toolUseId = `recap-log-${turn}`
+          await scopedLog.parent.d.log.append([
+            scopedLog.parent.ev('turn/start', { turn, trigger: 'prompt' }),
+            scopedLog.parent.ev('step/start', { turn, step: 1 }),
+            scopedLog.parent.ev(
+              'tool/call',
+              {
+                ordinal: 0,
+                toolUseId,
+                name: 'subagent_recap',
+                args: toolChildKey ? { childKey: toolChildKey } : {},
+              },
+              { origin: 'model' },
+            ),
+            scopedLog.parent.ev(
+              'tool/result',
+              {
+                toolUseId,
+                content: [],
+                isError: false,
+                enforcement: { level: 'full', scope: [] },
+                authz: { decisionId: 'n/a' },
+              },
+              { origin: 'tool:subagent_recap' },
+            ),
+            scopedLog.parent.ev('step/end', { turn, step: 1 }),
+            scopedLog.parent.ev('turn/end', { reason: 'completed', lastAssistantSeq: null }),
+          ])
+        }
+        return seq
+      }
+
+      for (const [prompt, reply] of [
+        [
+          'Summarize all subtasks documentation in this codebase.',
+          'All subtasks are documented in README.md.',
+        ],
+        ['How does the current implementation summarize all subtasks?', 'The CLI groups the rows by status.'],
+        ['How does the documentation say to recap root/beta?', 'Use the Recap action in the child row.'],
+        ['How does the documentation explain recapping root/beta?', 'Open the child row and click Recap.'],
+        ['How do I recap root/beta?', 'Click Recap on the row.'],
+        ['Where does the code summarize all subtasks?', 'See packages/core/src/child/recap-formatter.ts.'],
+        ['Explain how to recap root/beta.', 'Invoke subagent_recap with its childKey.'],
+        ['当前实现如何汇总所有子任务？', 'CLI 按状态分组展示子任务。'],
+        ['怎么回顾 root/beta？', '点击该行的回顾按钮即可。'],
+      ] as const) {
+        const seq = await appendParentTurn(prompt)
+        const guarded = await guardSessionRecapExit(scopedLog.parent, reply, seq)
+        expect(guarded.event).toBeUndefined()
+        expect(guarded.text).toBe(reply)
+      }
+
+      // Ledger-visible single-child tool call cannot narrow an explicit full-tree request (even with doc links).
+      const linkedFullSeq = await appendParentTurn(
+        'Summarize all subtasks and include links to their documentation.',
+        'root/alpha',
+      )
+      const linkedTools = await scopedLog.parent.scan({
+        type: 'tool/call',
+        fromSeq: linkedFullSeq,
+        toSeq: scopedLog.parent.lastSeq,
+        lane: scopedLog.parent.lane,
+      })
+      expect(linkedTools.map((row) => (row.data as { args?: { childKey?: string } }).args?.childKey)).toEqual(
+        ['root/alpha'],
+      )
+      const linkedFullGuarded = await guardSessionRecapExit(
+        scopedLog.parent,
+        'All subtasks completed.',
+        linkedFullSeq,
+      )
+      expect(linkedFullGuarded.event).toBeDefined()
+      expect(linkedFullGuarded.text).toContain('root/beta')
+
+      // Explicitly excluded sibling stays out of single-task scope even when the model mistakenly called subagent_recap on it.
+      for (const prompt of [
+        'Only recap root/alpha.',
+        'Only recap root/alpha instead of root/beta.',
+        'Only recap root/alpha rather than root/beta.',
+        'Only recap root/alpha excluding root/beta.',
+        'Only recap root/alpha except root/beta.',
+        'Only recap root/alpha, not root/beta.',
+        '只回顾 root/alpha 而不是 root/beta',
+        '只回顾 root/alpha 排除 root/beta',
+        '只回顾 root/alpha 不要 root/beta',
+      ]) {
+        const seq = await appendParentTurn(prompt, 'root/beta')
+        const observedTools = await scopedLog.parent.scan({
+          type: 'tool/call',
+          fromSeq: seq,
+          toSeq: scopedLog.parent.lastSeq,
+          lane: scopedLog.parent.lane,
+        })
+        expect(
+          observedTools.map((row) => (row.data as { args?: { childKey?: string } }).args?.childKey),
+        ).toEqual(['root/beta'])
+        const okScoped = await guardSessionRecapExit(scopedLog.parent, 'All subtasks completed.', seq)
+        expect(okScoped.event).toBeUndefined()
+        expect(okScoped.text).toBe('All subtasks completed.')
+        const badScoped = await guardSessionRecapExit(scopedLog.parent, 'root/alpha failed.', seq)
+        expect(badScoped.event).toBeDefined()
+        expect(badScoped.text).toContain('root/alpha')
+        expect(badScoped.text).not.toContain('root/beta')
+      }
+    } finally {
+      await scopedLog.parent.close()
+    }
 
     // Explicit ambiguous single-child target never falls back to a full-tree recap or leaks unrelated siblings.
     const releaseAmbiguous = [
