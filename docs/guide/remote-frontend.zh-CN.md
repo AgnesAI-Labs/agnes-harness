@@ -4,6 +4,10 @@
 
 [文档](../README.zh-CN.md) · [安装](install.zh-CN.md) · [插件](packages.zh-CN.md) · [凭据](credentials.zh-CN.md)
 
+云端工作台的 WebSocket 握手等待上限为 20 秒，与本地云端网关一致。本地工作台仍保留 SDK 默认的 3 秒上限。该配置只调整握手等待，不取消鉴权、凭证过期检查或底座准入校验。SDK 调用方可通过正整数 `transport.connectTimeoutMs` 配置自己的 WebSocket 握手预算。
+
+本地工作台文档允许向其创建的隔离网关精确 origin 发出 owner-info 发现和恢复请求。管理页面保留独立策略，任意远端地址不会加入本地文档的连接白名单。
+
 本指南适用于提供**设置 → 高级 → 云端连接**的 Harness 部署。请向部署方获取两端配套的 Harness 构建和兼容的云端插件包。本文所述集成使用 Harness Extension API `5.23.0`。
 
 本地工作台（A）提供浏览器界面并管理本地凭证。远程 Harness（B）管理云端会话、工作区、模型、工具和审批。仅 B 需要云端插件。工作台同时支持一个云端连接。

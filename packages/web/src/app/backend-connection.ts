@@ -14,7 +14,12 @@ export function createBackendConnection(wsUrl: string | undefined) {
     wsUrl,
     client: createClient({
       sessionRestoreHistory: 'none',
-      transport: { kind: 'ws', url: wsUrl ?? '', protocols: ['agnes-v1'] },
+      transport: {
+        kind: 'ws',
+        url: wsUrl ?? '',
+        protocols: ['agnes-v1'],
+        ...(remote ? { connectTimeoutMs: 20_000 } : {}),
+      },
       // Public-owner publication explicitly delegates B's workbench authority. Authenticated remote
       // WSS is a separate transport and cannot be selected through this publication handshake.
       auth: { kind: 'local' },

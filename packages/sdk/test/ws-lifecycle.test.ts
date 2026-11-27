@@ -47,22 +47,29 @@ class Socket implements WebSocketLike {
   }
 }
 afterEach(() => vi.useRealTimers())
-it('uses the default 3000ms handshake deadline and removes all listeners after closing', async () => {
-  vi.useFakeTimers()
-  const socket = new Socket()
-  const closed = vi.fn()
-  const pending = wsTransport({ url: 'ws://127.0.0.1/', socketFactory: () => socket })({
-    onMessage() {},
-    onClose: closed,
-  }).catch((error: unknown) => error)
-  await vi.advanceTimersByTimeAsync(2999)
-  expect(closed).not.toHaveBeenCalled()
-  await vi.advanceTimersByTimeAsync(1)
-  expect(closed).toHaveBeenCalledOnce()
-  expect(await pending).toBeInstanceOf(TransportClosed)
-  expect(socket.count()).toBe(0)
-  expect(vi.getTimerCount()).toBe(0)
-})
+it.each([undefined, 20_000])(
+  'bounds the handshake (%s) and removes all listeners after closing',
+  async (connectTimeoutMs) => {
+    vi.useFakeTimers()
+    const socket = new Socket()
+    const closed = vi.fn()
+    const pending = wsTransport({
+      url: 'ws://127.0.0.1/',
+      socketFactory: () => socket,
+      ...(connectTimeoutMs === undefined ? {} : { connectTimeoutMs }),
+    })({
+      onMessage() {},
+      onClose: closed,
+    }).catch((error: unknown) => error)
+    await vi.advanceTimersByTimeAsync((connectTimeoutMs ?? 3000) - 1)
+    expect(closed).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(closed).toHaveBeenCalledOnce()
+    expect(await pending).toBeInstanceOf(TransportClosed)
+    expect(socket.count()).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+  },
+)
 it('uses default 30-second ping intervals, resets on pong, and closes after two unanswered windows', async () => {
   vi.useFakeTimers()
   const socket = new Socket()

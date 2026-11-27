@@ -24,6 +24,8 @@ export type TransportOption =
       url: string
       tls?: { ca?: string; rejectUnauthorized?: boolean }
       protocols?: string[]
+      /** Positive millisecond budget for the WebSocket handshake; defaults to 3000. */
+      connectTimeoutMs?: number
     }
 
 // `reconnected` fires once the connection and every attached session are recovered after

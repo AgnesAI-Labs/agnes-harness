@@ -11,6 +11,7 @@ import {
   withRemoteFrontend,
 } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
+import { createBackendConnection } from '../src/app/backend-connection.js'
 import {
   bindCloudCredential,
   bumpCloudCredentialGeneration,
@@ -27,6 +28,7 @@ import {
   forgetRemoteAccess,
   remoteTransportOrigin,
 } from '../src/remote-authorization.js'
+import * as remoteFrontend from '../src/remote-frontend.js'
 import {
   backendResourceUrl,
   needsRemoteFrontendReload,
@@ -35,6 +37,70 @@ import {
   remoteFrontendFetch,
   selectedRemoteOrigin,
 } from '../src/remote-frontend.js'
+
+it.each([false, true])(
+  'keeps the local handshake bound while allowing a delayed cloud upgrade (remote=%s)',
+  async (remote) => {
+    vi.useFakeTimers()
+    const sockets: Socket[] = []
+    class Socket {
+      readyState = 0
+      bufferedAmount = 0
+      sent: string[] = []
+      listeners = new Map<string, Set<(event: object) => void>>()
+      constructor() {
+        sockets.push(this)
+      }
+      addEventListener(type: string, listener: (event: object) => void) {
+        const listeners = this.listeners.get(type) ?? new Set()
+        listeners.add(listener)
+        this.listeners.set(type, listeners)
+      }
+      removeEventListener(type: string, listener: (event: object) => void) {
+        this.listeners.get(type)?.delete(listener)
+      }
+      emit(type: string) {
+        for (const listener of this.listeners.get(type) ?? []) listener({})
+      }
+      send(value: string) {
+        this.sent.push(value)
+      }
+      close() {
+        this.readyState = 3
+        this.emit('close')
+      }
+    }
+    vi.stubGlobal('WebSocket', Socket)
+    vi.spyOn(remoteFrontend, 'selectedRemoteOrigin').mockReturnValue(
+      remote ? 'https://cloud.fixture' : undefined,
+    )
+    vi.spyOn(remoteFrontend, 'frontendBackendIdentity').mockReturnValue('cloud-fixture')
+    const { client } = createBackendConnection('ws://127.0.0.1:4321/')
+    const pending = client.initialize().catch(() => undefined)
+    try {
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(sockets).toHaveLength(1)
+      const socket = sockets[0]
+      if (!socket) throw new Error('WebSocket was not created')
+      if (remote) {
+        expect(socket.readyState).toBe(0)
+        socket.readyState = 1
+        socket.emit('open')
+        await vi.advanceTimersByTimeAsync(0)
+        expect(socket.sent.map((value) => JSON.parse(value).method)).toContain('initialize')
+      } else {
+        expect(socket.readyState).toBe(3)
+        expect(socket.sent).toEqual([])
+      }
+    } finally {
+      await client.close()
+      await pending
+      vi.unstubAllGlobals()
+      vi.restoreAllMocks()
+      vi.useRealTimers()
+    }
+  },
+)
 
 it('discovers a managed sandbox with only a credential reference and rejects unsafe or old discovery replies', async () => {
   const credentialRef = 'secret://generic/11111111-1111-1111-1111-111111111111'

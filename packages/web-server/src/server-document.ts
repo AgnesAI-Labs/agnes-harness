@@ -92,7 +92,7 @@ export function createWebDocumentResponder(options: {
             )
             .replace(
               /connect-src ([^;]+)/,
-              'connect-src $1 blob:',
+              `connect-src $1 ${options.frameOrigin} blob:`,
             )}; img-src 'self' blob: https://cos-agent-default.agnes-ai.cn https://cos-agent-default.agnes-ai.com; frame-src 'self' blob: ${options.frameOrigin}`
         : contentSecurityPolicy
     // This page's explicit backend selection grants only that exact HTTP(S)/WS(S) origin.

@@ -52,6 +52,7 @@ it('serves the same isolated preview bootstraps from local and cloud page origin
     expect(adminPage.headers.get('content-security-policy')).not.toMatch(/connect-src [^;]*blob:/)
     const cloudOrigin = /data-cloud-origin="([^"]+)"/u.exec(html)?.[1]
     if (!cloudOrigin) throw Error('missing isolated origin')
+    expect(adminPage.headers.get('content-security-policy')).not.toContain(cloudOrigin)
     const nonces = new Set()
     for (const origin of [web.url, cloudOrigin]) {
       for (const [path, frame] of [
@@ -195,6 +196,16 @@ it('admits only the explicitly selected backend origin in a remote page CSP', as
     if (!isolated) throw Error('missing isolated origin')
     isolatedOrigin = isolated
     expect(new URL(isolated).origin).not.toBe(web.url)
+    // Owner discovery/recovery fetches owner-info through this exact isolated gateway.
+    // Admitting frames alone does not admit the owner's cross-origin fetch.
+    for (const document of [local, trusted]) {
+      const connect = /(?:^|;)\s*connect-src ([^;]+)/u
+        .exec(document.headers.get('content-security-policy') ?? '')?.[1]
+        ?.split(/\s+/u)
+      expect(connect).toContain(isolated)
+      expect(connect).not.toContain('https://computer-b:8443')
+      expect(connect).not.toContain('*')
+    }
     const remote = await fetch(`${isolated}${selected}`)
     expect(remote.status).toBe(200)
     const csp = remote.headers.get('content-security-policy') ?? ''

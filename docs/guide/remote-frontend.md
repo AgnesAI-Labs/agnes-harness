@@ -4,6 +4,10 @@ English | [简体中文](remote-frontend.zh-CN.md)
 
 [Documentation](../README.md) · [Installation](install.md) · [Plugins](packages.md) · [Credentials](credentials.md)
 
+Cloud workbench WebSocket handshakes use a 20-second connection budget to match the local cloud gateway. Local workbench connections retain the SDK's 3-second default. This changes only the upgrade wait; authentication, credential expiry and backend admission remain required. SDK callers can set a positive `transport.connectTimeoutMs` for their own WebSocket transport.
+
+The local workbench document permits owner-info discovery and recovery requests to its exact isolated gateway origin. Management documents retain their separate policy; arbitrary remote origins are not added to the local document's connection allowlist.
+
 This guide applies to Harness deployments that provide **Settings → Advanced → Cloud connection**. Obtain matching Harness builds for both ends and the compatible cloud plugin archive from your deployment operator. The integration described here uses Harness Extension API `5.23.0`.
 
 The local workbench (A) serves the browser UI and manages local credentials. The remote Harness (B) owns cloud sessions, workspaces, models, tools and approvals. Only B needs the cloud plugin. The workbench supports one cloud connection at a time.
