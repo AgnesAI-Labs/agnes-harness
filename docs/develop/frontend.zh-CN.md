@@ -5,9 +5,34 @@
 
 [文档导航](../README.zh-CN.md) · [插件生命周期](../guide/packages.zh-CN.md)
 
-做完本教程，你会在工作台里看到自己的面板，完成一次版本更新，并确认停用后新会话使用内置界面、旧会话保留原版本。先理解生命周期，再把版本文字替换成岗位需要的内容。
+使用 [client-panel/v1](../../examples/packages/client-panel/v1/package.json) 示例学习声明和实现浏览器贡献。测试载入示例后，它会在 `workbench.panel` 位置显示版本文字。这与在 Host 中通过 `ctx.slots` 注册槽位是两条不同的路径。
 
-复用 [client-panel/v1](../../examples/packages/client-panel/v1/package.json)。它在已有的工作台视图位置 `workbench.panel` 追加版本文字，不替换侧栏，v2 用于验证页面更新。它是浏览器贡献路径，不是普通 Host `ctx.slots` 的 slot 注册。
+官方工作台只会载入两类原生 JavaScript 和 CSS：当前 AGH 版本随包发布并验证过的客户端，以及通过[应用采用或呈现角色选择](../extend/applications.zh-CN.md)单独批准的确切客户端。随包发布的导航、对话及输入框、目标、交互和交付物客户端无需另行批准。安装、信任并启用第三方插件不会批准其原生界面。工具、后端服务、配置和可读的会话历史仍遵循各自原有的权限。Intelligent UI 渲染器继续在隔离的 iframe 中运行。
+
+## 声明由宿主渲染的插件入口
+
+已安装、受信任且启用的插件可以在 `package.json` 的 `agnes.plugins` 条目上声明 `uiEntries`。用它展示简短的功能说明，或打开该条目的配置。AGH 渲染入口和内容，不加载插件的浏览器模块或样式表。
+
+```json
+{
+  "export": "archive",
+  "uiEntries": [
+    {
+      "id": "archive-settings",
+      "placement": "settings",
+      "title": { "en": "Session archive", "zh-CN": "会话归档" },
+      "markdown": { "en": "Choose **Configure** to set archive options." },
+      "configure": true
+    }
+  ]
+}
+```
+
+示例只列出与入口相关的字段。`settings` 对应「设置 → 扩展」；`sidebar` 对应左侧扩展菜单；`workbench.right` 和 `workbench.bottom` 分别对应工作台右侧和底部停靠区。由宿主决定排序和折叠。`icon` 可以省略，或使用共享图标名。提供 `title.en`；其他语言没有译文时使用英文。至少提供 `markdown` 或 `configure: true`。入口 Markdown 显示链接标签和图片替代文本，不打开链接或加载图片。「配置」只打开声明所在的插件条目，仍遵循原有配置权限。
+
+每条插件声明最多包含 8 个入口，每包最多 32 个。入口 ID 在同一插件条目内唯一，以小写字母开头，最多 64 字符，只接受小写字母、数字、点和短横线。每种语言的标题最多 80 字符，Markdown 最多 2,048 字符。旧插件不必修改，其原生入口不会自动迁移或获准执行。要展示实时会话内容或提供会话操作，请使用 [Intelligent UI](intelligent-ui-web.zh-CN.md)。
+
+调试声明式入口时，请先把插件装成受管包。可编辑的 `workspace:` 和 `local:` 插件保持原有行为，不发布这类入口。
 
 ## 声明和代码
 
@@ -59,9 +84,11 @@ node agnes.mjs package inspect file:./examples/packages/client-panel/v1
 node agnes.mjs install file:./examples/packages/client-panel/v1
 ```
 
-使用预览摘要完成 trust、enable，然后打开同一实例 Web 并新建会话，应看到 v1 字样。通过 Web 管理或 TUI 更新到 `file:./examples/packages/client-panel/v2`，完成其信任与启用后再新建会话检查 v2；返回第一个会话核对 profile 贡献也跟随当前激活显示 v2。最后 disable，确认新增视图立即撤销，管理导航保持可用。
+使用预览显示的摘要信任并启用示例。在官方工作台打开插件详情，确认原生界面显示为未获准，工作台不会显示示例的版本文字。插件的后端状态仍按实际操作显示。
 
-包 desired=enabled、后端 web row ready 和本页面成功加载是不同阶段。浏览器未打开、脚本/CSS 读取失败、槽位越权或 apply 抛错都可能导致前端失败；查看逐行实际状态，不仅看包级 enabled。
+要体验单独批准，安装 [Deliverables Gallery](../../examples/community/deliverables-gallery/README.md)。在**设置 → 应用**中审阅并采用该应用，或选择它提供的交付物角色。打开有交付物的会话即可看到已获准的界面。批准只覆盖所审阅的客户端和版本，不覆盖插件的其他客户端。如果变更使批准失效，请重新审阅。已在当前标签页运行过旧界面时，请重新加载该标签页以清除旧代码。
+
+如果无法通过已采用的界面打开设置，请在工作台地址上打开 `/?admin`，或运行 `agh app clear`。恢复官方界面不会修改会话固定版本或删除会话数据。
 
 ## 验证
 

@@ -770,3 +770,20 @@ it('bounds targeted shutdown by the protocol default despite an already cancelle
     vi.useRealTimers()
   }
 })
+
+it('notifies turn completion as a detached read-only observer even after execution cancellation', async () => {
+  const { engine, port } = setup()
+  const input = { turn: 2, reason: 'aborted' as const, endSeq: 17 }
+  const received: unknown[] = []
+  engine.on(
+    'turn_end',
+    (payload, context) => {
+      expect(context.signal.aborted).toBe(false)
+      received.push(payload)
+      throw Error('exporter unavailable')
+    },
+    { source: 'test/usage', trust: 'trusted' },
+  )
+  await expect(port.turnEnd(input)).resolves.toBeUndefined()
+  expect(received).toEqual([input])
+})

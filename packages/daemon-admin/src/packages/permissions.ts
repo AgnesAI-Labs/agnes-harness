@@ -72,9 +72,8 @@ export function localPackageAdminAuthority(
 }
 
 /**
- * The workbench reads skin and client-module rosters over its ordinary loopback Web connection,
- * which has no package-administration grant. These reads mutate nothing and carry no filesystem
- * path, so the Web audience is granted exactly the two roster methods.
+ * The workbench reads presentation rosters over its ordinary loopback Web connection, which
+ * has no package-administration grant. These exact reads mutate nothing and carry no filesystem path.
  *
  * Deliberately NOT granted, even though their declared permission is the same `packages.read`:
  * `skins.read` and `clientModules.read` (those belong to the launcher's private Node connection),
@@ -87,7 +86,12 @@ export const localWebSkinReadAuthority: PackageAdminAuthorityResolver = (context
         principalId: context.conn.principalId,
         clientId: context.conn.clientId,
         permissions: ['packages.read'],
-        methods: ['_agnes/v1/skins.list', '_agnes/v1/clientModules.list', '_agnes/v1/applications.get'],
+        methods: [
+          '_agnes/v1/skins.list',
+          '_agnes/v1/clientModules.list',
+          '_agnes/v1/clientModules.uiEntries',
+          '_agnes/v1/applications.get',
+        ],
       }
     : undefined
 

@@ -14,13 +14,13 @@
         "runtime": "in-process",
         "metadata": {
           "displayName": "Service-backed panel example",
-          "summary": "Demonstrates a workbench panel reading a plugin service through the restricted browser bridge.",
-          "description": "Demonstrates a workbench panel reading a plugin service through the restricted browser bridge.",
+          "summary": "Legacy native service panel fixture. Service approval does not load the panel.",
+          "description": "Tests the restricted browser bridge with workbench.panel. Approval to call panel.version does not grant native UI admission or load this legacy panel.",
           "locales": {
             "zh-CN": {
               "displayName": "服务面板示例",
-              "summary": "演示工作台面板如何通过受限浏览器桥接读取插件服务。",
-              "description": "演示工作台面板如何通过受限浏览器桥接读取插件服务。"
+              "summary": "旧版原生服务面板测试 fixture。批准服务调用不会加载面板。",
+              "description": "用于测试 workbench.panel 的受限浏览器桥接。批准调用 panel.version 不等于原生界面准入，也不会加载这个旧版面板。"
             }
           }
         }
@@ -34,13 +34,13 @@
     ],
     "metadata": {
       "displayName": "Service-backed panel example",
-      "summary": "Demonstrates a workbench panel reading a plugin service through the restricted browser bridge.",
-      "description": "Demonstrates a workbench panel reading a plugin service through the restricted browser bridge.",
+      "summary": "Legacy native service panel fixture. Service approval does not load the panel.",
+      "description": "Tests the restricted browser bridge with workbench.panel. Approval to call panel.version does not grant native UI admission or load this legacy panel.",
       "locales": {
         "zh-CN": {
           "displayName": "服务面板示例",
-          "summary": "演示工作台面板如何通过受限浏览器桥接读取插件服务。",
-          "description": "演示工作台面板如何通过受限浏览器桥接读取插件服务。"
+          "summary": "旧版原生服务面板测试 fixture。批准服务调用不会加载面板。",
+          "description": "用于测试 workbench.panel 的受限浏览器桥接。批准调用 panel.version 不等于原生界面准入，也不会加载这个旧版面板。"
         }
       }
     },

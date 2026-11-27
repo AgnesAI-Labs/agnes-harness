@@ -1,8 +1,7 @@
 /** @vitest-environment happy-dom */
 import { Context } from '@agnes/cordis'
-import type { ApplicationState } from '@agnes/protocol'
+import type { ApplicationState, SkinChoice, SkinListResult } from '@agnes/protocol'
 import { LocaleService } from '@agnes/web-client'
-import { SKIN_STORAGE_KEY } from '@agnes/web-foundation/skin'
 import { createRegionRenderer, SettingsOptionSelect } from '@agnes/web-ui'
 import { act } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -25,18 +24,29 @@ const app: ApplicationState = {
   },
   effective: { id: 'a', presentation: { skin: 'acme' } },
 }
-const row = {
-  id: 'acme',
-  name: 'Acme',
-  packageName: 'a',
-  cssUrl: '/skins/acme/skin.css',
-  css: 'body { --application-test: 1 }',
+const bindingDigest = 'd'.repeat(64)
+const row = { id: 'acme', name: 'Acme', packageId: 'a', version: '1.0.0', bindingDigest }
+const cssUrl = `/skins/${bindingDigest}/acme/skin.css`
+const selected = {
+  id: row.id,
+  kind: 'application',
+  bindingDigest,
+  cssUrl,
+  css: 'body { background-image: url("assets/paper.webp"); list-style-image: url("/skins/acme/assets/old.webp") }',
   tokens: { '--agnes-brand-primary': { light: '#123456', dark: '#654321' } },
+} satisfies NonNullable<SkinListResult['selected']>
+const roster: SkinListResult = {
+  profile: 'local-dev',
+  revision: 1,
+  choice: { kind: 'application' },
+  skins: [row],
+  selected: null,
 }
+const painted = () => document.documentElement.style.getPropertyValue('--agnes-brand-primary')
 const stops: (() => void)[] = []
 afterEach(() => {
-  projectApplication(undefined)
   window.dispatchEvent(new Event('pagehide'))
+  projectApplication(undefined)
   for (const off of stops.splice(0)) off()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
@@ -44,7 +54,18 @@ afterEach(() => {
   document.body.replaceChildren()
   history.replaceState({}, '', '/')
 })
-async function controller(skins = [row] as (Omit<typeof row, 'css'> & { css?: string })[]) {
+async function controller(
+  listSkins: () => Promise<unknown>,
+  options: {
+    backendIdentity?(): string
+    selectSkin?(
+      profile: string,
+      revision: number,
+      choice: SkinChoice,
+      isCurrent: () => boolean,
+    ): Promise<void>
+  } = {},
+) {
   document.body.innerHTML = '<div id="skin-option-items"></div><div id="select-host"></div>'
   const host = document.getElementById('select-host')
   if (!host) throw new Error('missing host')
@@ -59,110 +80,111 @@ async function controller(skins = [row] as (Omit<typeof row, 'css'> & { css?: st
   return createAppearanceController({
     locale: new LocaleService(ctx, 'en'),
     profile: () => 'local-dev',
-    listSkins: async () => ({ revision: 'one', skins }),
+    backendIdentity: options.backendIdentity ?? (() => 'local'),
+    listSkins,
+    selectSkin: options.selectSkin ?? (async () => undefined),
   })
 }
-it.each(['skin-first', 'application-first', 'runtime-ready'])(
-  'applies and synchronously revokes application CSS/tokens with %s arrival',
-  async (order) => {
-    const css = vi.spyOn(CSSStyleSheet.prototype, 'replaceSync')
-    if (order === 'application-first') projectApplication(app)
-    const available = order === 'runtime-ready' ? [] : [row]
-    const c = await controller(available)
-    const frameworkSheets = [...document.adoptedStyleSheets]
-    await c.skins.refresh()
-    if (order !== 'application-first') projectApplication(app)
-    if (order === 'runtime-ready') {
-      expect(document.documentElement.style.getPropertyValue('--agnes-brand-primary')).toBe('')
-      available.push(row)
-      window.dispatchEvent(new CustomEvent('agnes:plugins-invalidated'))
-      await vi.waitFor(() =>
-        expect(document.documentElement.style.getPropertyValue('--agnes-brand-primary')).toBe('#123456'),
-      )
-    }
-    expect(document.documentElement.style.getPropertyValue('--agnes-brand-primary')).toBe('#123456')
-    expect(css).toHaveBeenCalledWith(expect.stringContaining(row.css))
-    projectApplication({ ...app, status: 'unresolved', effective: null, reason: 'disabled' })
-    expect(document.documentElement.style.getPropertyValue('--agnes-brand-primary')).toBe('')
-    expect(document.adoptedStyleSheets).toEqual(frameworkSheets)
-    expect(localStorage.getItem(SKIN_STORAGE_KEY)).toBeNull()
-  },
-)
-it('ignores late application CSS after revoke while preserving the explicit user skin', async () => {
-  let finish: ((response: Response) => void) | undefined
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(
-      () =>
-        new Promise<Response>((resolve) => {
-          finish = resolve
-        }),
-    ),
-  )
-  const { css: _css, ...remote } = row
-  const c = await controller([remote])
-  const frameworkSheets = [...document.adoptedStyleSheets]
-  await c.skins.refresh()
-  projectApplication(app)
-  expect(finish).toBeDefined()
-  localStorage.setItem('agnes-skin-preference', 'user')
-  localStorage.setItem(
-    SKIN_STORAGE_KEY,
-    JSON.stringify({
-      version: 1,
-      id: 'user',
-      revision: 'one',
-      css: '',
-      tokens: { '--agnes-brand-primary': { light: '#abcdef', dark: '#abcdef' } },
-    }),
-  )
-  projectApplication({ ...app, status: 'unresolved', effective: null })
-  expect(document.documentElement.style.getPropertyValue('--agnes-brand-primary')).toBe('#abcdef')
-  await act(async () => {
-    finish?.(new Response('body { --late-application-css: 1 }', { headers: { 'Content-Type': 'text/css' } }))
-  })
-  expect(document.documentElement.style.getPropertyValue('--agnes-brand-primary')).toBe('#abcdef')
-  expect(document.adoptedStyleSheets).toEqual(frameworkSheets)
-  expect(localStorage.getItem('agnes-skin-preference')).toBe('user')
-})
 
-it('keeps the chosen skin across a missing roster and restores it when the skin returns', async () => {
-  const available = [row]
-  const c = await controller(available)
-  await c.skins.refresh()
-  const select = document.getElementById('skin-select') as HTMLSelectElement
-  await act(async () => {
-    select.value = 'acme'
-    select.dispatchEvent(new Event('change', { bubbles: true }))
-  })
-  await vi.waitFor(() => expect(localStorage.getItem('agnes-skin-preference')).toBe('acme'))
-  const painted = () => document.documentElement.style.getPropertyValue('--agnes-brand-primary')
-  expect(painted()).toBe('#123456')
-  // Generation swap or truly removed: the roster has no skin. Display falls back, the choice stays.
-  available.length = 0
+it('paints only a daemon-selected application skin and clears it synchronously when adoption changes', async () => {
+  const css = vi.spyOn(CSSStyleSheet.prototype, 'replaceSync')
+  let current = roster
+  const c = await controller(async () => current)
+  const framework = [...document.adoptedStyleSheets]
   await c.skins.refresh()
   expect(painted()).toBe('')
-  expect(localStorage.getItem('agnes-skin-preference')).toBe('acme')
-  // The skin is present again: applied again without the user doing anything.
-  available.push(row)
-  window.dispatchEvent(new CustomEvent('agnes:plugins-invalidated'))
+  current = { ...roster, selected }
+  projectApplication(app)
   await vi.waitFor(() => expect(painted()).toBe('#123456'))
-  expect(localStorage.getItem('agnes-skin-preference')).toBe('acme')
-  expect(JSON.parse(localStorage.getItem(SKIN_STORAGE_KEY) ?? '{}').id).toBe('acme')
+  expect(css).toHaveBeenCalledWith(expect.stringContaining(`/skins/${bindingDigest}/acme/assets/paper.webp`))
+  expect(css).toHaveBeenCalledWith(expect.stringContaining(`/skins/${bindingDigest}/acme/assets/old.webp`))
+  localStorage.setItem('agnes-theme', 'dark')
+  window.dispatchEvent(new Event('agnes:theme-changed'))
+  expect(painted()).toBe('#654321')
+  current = { ...roster, selected: null }
+  projectApplication({ ...app, status: 'unresolved', effective: null, reason: 'disabled' })
+  expect(painted()).toBe('')
+  expect(document.adoptedStyleSheets).toEqual(framework)
+  expect(localStorage.getItem('agnes-skin')).toBeNull()
 })
-it('does not bring a skin back after the user chose the built-in look', async () => {
-  const available = [row]
-  const c = await controller(available)
+
+it('discards a late skin reply after switching backends', async () => {
+  let backend = 'A'
+  let resolve!: (value: SkinListResult) => void
+  const promise = new Promise<SkinListResult>((done) => {
+    resolve = done
+  })
+  const c = await controller(async () => (backend === 'A' ? promise : roster), {
+    backendIdentity: () => backend,
+  })
+  const old = c.skins.refresh()
+  backend = 'B'
+  c.skins.invalidate()
   await c.skins.refresh()
-  const select = document.getElementById('skin-select') as HTMLSelectElement
-  for (const value of ['acme', '']) {
-    await act(async () => {
-      select.value = value
-      select.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-  }
-  await vi.waitFor(() => expect(localStorage.getItem('agnes-skin-preference')).toBe('none'))
+  resolve({ ...roster, selected })
+  await old
+  expect(painted()).toBe('')
+})
+
+it('ignores old browser data, bare URL IDs and an old protocol response', async () => {
+  history.replaceState({}, '', '/?skin=acme')
+  localStorage.setItem('agnes-skin-preference', 'acme')
+  const stale = { ...selected, css: 'body { --stale-skin-test: 1 }' }
+  localStorage.setItem(
+    'agnes-skin',
+    JSON.stringify({
+      version: 1,
+      id: stale.id,
+      revision: 'old',
+      css: stale.css,
+      tokens: stale.tokens,
+    }),
+  )
+  let current: unknown = roster
+  const css = vi.spyOn(CSSStyleSheet.prototype, 'replaceSync')
+  const c = await controller(async () => current)
+  const frameworkSheets = [...document.adoptedStyleSheets]
   await c.skins.refresh()
-  expect(localStorage.getItem(SKIN_STORAGE_KEY)).toBeNull()
-  expect(document.documentElement.style.getPropertyValue('--agnes-brand-primary')).toBe('')
+  expect(painted()).toBe('')
+  current = { revision: 'old', skins: [{ ...row, ...stale }] }
+  await c.skins.refresh()
+  expect(painted()).toBe('')
+  expect(document.adoptedStyleSheets).toEqual(frameworkSheets)
+  expect(css).not.toHaveBeenCalledWith(expect.stringContaining('--stale-skin-test'))
+})
+
+it.each(['query', 'legacy'] as const)('keeps the host appearance with the %s none override', async (kind) => {
+  if (kind === 'query') history.replaceState({}, '', '/?skin=none')
+  else localStorage.setItem('agnes-skin-preference', 'none')
+  const c = await controller(async () => ({ ...roster, revision: 0, selected }))
+  await c.skins.refresh()
+  expect(painted()).toBe('')
+})
+
+it('submits the exact roster identity and revision through the effect; AGH default suppresses the app skin', async () => {
+  let current: SkinListResult = { ...roster, selected }
+  const save = vi.fn(
+    async (_profile: string, revision: number, choice: SkinChoice, _current: () => boolean) => {
+      current = {
+        ...current,
+        revision: revision + 1,
+        choice,
+        selected: choice.kind === 'skin' ? { ...selected, kind: 'manual' } : null,
+      }
+    },
+  )
+  const c = await controller(async () => current, { selectSkin: save })
+  await c.skins.refresh()
+  const picker = document.querySelector<HTMLSelectElement>('#skin-select')
+  if (!picker) throw new Error('missing skin picker')
+  picker.value = bindingDigest
+  picker.dispatchEvent(new Event('change', { bubbles: true }))
+  await vi.waitFor(() => expect(picker.value).toBe(bindingDigest))
+  expect(save).toHaveBeenCalledWith('local-dev', 1, { kind: 'skin', bindingDigest }, expect.any(Function))
+  picker.value = ''
+  picker.dispatchEvent(new Event('change', { bubbles: true }))
+  expect(painted()).toBe('')
+  await vi.waitFor(() => expect(picker.value).toBe(''))
+  expect(save).toHaveBeenCalledWith('local-dev', 2, { kind: 'none' }, expect.any(Function))
+  expect(localStorage.getItem('agnes-skin-preference')).toBeNull()
 })

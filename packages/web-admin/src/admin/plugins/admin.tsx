@@ -3,6 +3,7 @@ import { type PluginAdminOptions, PluginAdminPage } from './admin/page.js'
 export type { PluginAdminOptions, PluginAdminViewContext } from './admin/page.js'
 export type { PluginPageSurface } from './admin/surface.js'
 export { pluginNotice } from './admin/views.js'
+export { PluginRowConfiguration } from './config-panel.js'
 /** What the workbench lends a plugin controller; a page surface adds only where to draw. */
 export type PluginAdminSources = Omit<PluginAdminOptions, 'surface'>
 

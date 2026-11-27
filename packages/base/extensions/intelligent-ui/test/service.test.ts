@@ -345,6 +345,18 @@ function fixture(
     },
   }
 }
+function registerUiTools(service: () => IntelligentUiInstance): ToolDef[] {
+  const tools: ToolDef[] = []
+  extensionFactoryOf(intelligentUi)({
+    providers: { register: () => () => {}, bindOwn: async () => service() },
+    registerProjection: () => () => {},
+    registerTool: (tool: ToolDef) => {
+      tools.push(tool)
+      return () => {}
+    },
+  } as unknown as ExtensionAPI)
+  return tools
+}
 async function opened() {
   const f = fixture()
   await f.service().render({ surface: surface() }, signal)
@@ -353,16 +365,8 @@ async function opened() {
 
 describe('preset surface contract and ledger lifecycle', () => {
   it('offers compact UI tools, loads full contracts on demand and keeps nested execution validation', async () => {
-    const tools: ToolDef[] = []
     const f = fixture()
-    extensionFactoryOf(intelligentUi)({
-      providers: { register: () => () => {}, bindOwn: async () => f.service() },
-      registerProjection: () => () => {},
-      registerTool: (tool: ToolDef) => {
-        tools.push(tool)
-        return () => {}
-      },
-    } as unknown as ExtensionAPI)
+    const tools = registerUiTools(f.service)
     expect(tools.map((tool) => tool.name)).toEqual([
       'ui_guide',
       'ui_render',
@@ -511,6 +515,53 @@ describe('preset surface contract and ledger lifecycle', () => {
     const submit = tools.find((tool) => tool.name === 'ui_submit')!.parameters
     expect(validateAgainst(submit, { surfaceId: 'reconcile', answers: { choice: 'yes' } }).ok).toBe(true)
     expect(validateAgainst(submit, { surfaceId: 'reconcile', answers: { choice: 42 } }).ok).toBe(false)
+  })
+  it('refuses a new card at the live limit without publishing or reserving its id', async () => {
+    const f = fixture()
+    const tools = registerUiTools(f.service)
+    const render = tools.find((tool) => tool.name === 'ui_render')
+    const close = tools.find((tool) => tool.name === 'ui_close')
+    if (!render || !close) throw new Error('Expected the ui_render and ui_close tools to be registered')
+    const ctx = fakeToolContext()
+    for (let i = 0; i < 16; i++) {
+      const card = { ...surface(), id: `card-${i}`, title: `Card ${i}` }
+      expect(await render.execute({ surface: card }, ctx)).toMatchObject({ details: { surface: card } })
+    }
+
+    const read = () => f.service().read({ sessionId: 'session' }, signal)
+    const before = await read()
+    expect(before.surfaces).toHaveLength(16)
+    const beforeBytes = JSON.stringify(before)
+    const ledgerBytes = JSON.stringify(f.rows)
+    const input = { surface: { ...bound(), id: 'next-card' } }
+    const unexpected = rpcError('SEMANTIC_REJECTED', { code: 'UI_LIMIT' })
+    f.source(async () => {
+      throw unexpected
+    })
+
+    await expect(f.service().render(input, signal)).rejects.toStrictEqual(unexpected)
+    expect(await render.execute(input, ctx)).toStrictEqual({
+      isError: true,
+      content: [
+        { type: 'text', text: expect.stringMatching(/maximum number of open cards.*Close a card.*retry/i) },
+      ],
+      structured: { code: 'UI_LIMIT', published: false },
+    })
+    const duplicate = { surface: { ...surface(), id: 'card-0' } }
+    await expect(render.execute(duplicate, ctx)).rejects.toMatchObject({ data: { code: 'UI_STALE' } })
+    expect(JSON.stringify(await read())).toBe(beforeBytes)
+    expect(JSON.stringify(f.rows)).toBe(ledgerBytes)
+
+    expect(await close.execute({ surfaceId: 'card-0', expectedRevision: 1 }, ctx)).toMatchObject({
+      details: { surfaceId: 'card-0', status: 'closed' },
+    })
+    await expect(render.execute(input, ctx)).rejects.toBe(unexpected)
+    f.source(async (request) => resolved(request))
+    expect(await render.execute(input, ctx)).toMatchObject({ details: { surface: input.surface } })
+    expect((await read()).surfaces.map(({ surface }) => surface.id)).toEqual([
+      ...before.surfaces.slice(1).map(({ surface }) => surface.id),
+      'next-card',
+    ])
   })
   it('retains a root definition reached recursively after inlining', () => {
     const schema = Type.Module({
@@ -1233,15 +1284,7 @@ describe('bound UI data sources', () => {
     'returns %s from surface tools without publishing or swallowing resolver errors',
     async (code) => {
       const f = fixture()
-      const tools: ToolDef[] = []
-      extensionFactoryOf(intelligentUi)({
-        providers: { register: () => () => {}, bindOwn: async () => f.service() },
-        registerProjection: () => () => {},
-        registerTool: (tool: ToolDef) => {
-          tools.push(tool)
-          return () => {}
-        },
-      } as unknown as ExtensionAPI)
+      const tools = registerUiTools(f.service)
       f.source(async (input) => ({ ...resolved(input, false), ok: false, code }))
       await expect(f.service().render({ surface: bound() }, signal)).rejects.toMatchObject({
         data: { code },

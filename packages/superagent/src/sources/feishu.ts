@@ -389,17 +389,3 @@ export function registerFeishu(host: SourceHost, link: FeishuLink) {
     run: (signal: AbortSignal) => runFeishu(context, link, signal),
   }
 }
-/**
- * Registers the Feishu Source kind on its configured CLI and starts its loops. The returned function stops them, waits for them
- * to end and unregisters the kind.
- */
-export function startFeishu(host: SourceHost, link: FeishuLink): () => Promise<void> {
-  const registered = registerFeishu(host, link)
-  const controller = new AbortController()
-  const running = registered.run(controller.signal)
-  return async () => {
-    controller.abort()
-    await running
-    registered.unregister()
-  }
-}

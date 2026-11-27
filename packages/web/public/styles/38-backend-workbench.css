@@ -1,0 +1,121 @@
+@layer app {
+  body[data-agnes-region="app"][data-agh-backend-frame="cloud"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  body[data-agh-backend-frame="cloud"] > #app-root > .sidebar,
+  body[data-agh-backend-frame="cloud"] .sidebar-backdrop,
+  body[data-agh-backend-frame="cloud"] .sidebar-toggle {
+    display: none;
+  }
+  body[data-agh-active-backend="cloud"] > #app-root > #main-content {
+    display: none !important;
+  }
+  #sessions:has(> .backend-session-tabs) {
+    display: flex;
+    overflow: hidden;
+  }
+  .backend-session-tabs {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+  }
+  .backend-session-tabs > .ant-tabs-nav {
+    flex: none;
+    margin-bottom: var(--s8);
+  }
+  .backend-session-tabs > .ant-tabs-nav .ant-tabs-nav-list {
+    width: 100%;
+  }
+  .backend-session-tabs > .ant-tabs-nav .ant-tabs-tab {
+    flex: 1;
+    justify-content: center;
+    padding-block: var(--s8);
+  }
+  .backend-session-tabs > .ant-tabs-nav .ant-tabs-tab-btn {
+    width: 100%;
+  }
+  .backend-session-tabs > :is(.ant-tabs-content-holder, .ant-tabs-body-holder) {
+    min-height: 0;
+    overflow: auto;
+    scrollbar-gutter: stable;
+  }
+  .backend-tab-label {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .backend-session-native {
+    display: grid;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  .backend-session-group {
+    position: relative;
+    margin-bottom: var(--s12);
+  }
+  .backend-session-group .session-conversations {
+    height: auto;
+  }
+  .backend-session-group > .agh-disclosure > .agh-disclosure-summary {
+    width: 100%;
+    padding-inline-end: var(--s32);
+  }
+  .backend-session-group > .agh-tooltip-anchor:has(> .backend-group-create) {
+    position: absolute;
+    top: 0;
+    right: 0;
+  }
+  .backend-group-create {
+    position: static;
+  }
+  .backend-session-count,
+  .backend-group-hint {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-caption);
+  }
+  .backend-group-summary {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+    flex-wrap: wrap;
+  }
+  .backend-connection-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    font-size: var(--font-size-caption);
+  }
+  .backend-group-hint,
+  .backend-group-error {
+    padding: var(--s8);
+    overflow-wrap: anywhere;
+  }
+  .backend-cloud-stage {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    height: 100dvh;
+  }
+  .backend-workbench-frame {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+  .backend-cloud-menu {
+    display: none;
+    position: absolute;
+    top: var(--s8);
+    left: var(--s8);
+    z-index: 1;
+  }
+  @media (max-width: 900px) {
+    .backend-cloud-menu {
+      display: inline-flex;
+    }
+  }
+}

@@ -266,8 +266,9 @@ export async function executedNotes(
   s: SessionImpl,
   name: string,
   o: { unconsumed?: { parentEffectId?: string | undefined } },
-  resultRow: EventInput | undefined,
+  resultRows: readonly EventInput[],
 ): Promise<EventInput[]> {
+  const resultRow = resultRows.find((row) => row.type === 'tool/result')
   if (!o.unconsumed || !resultRow) return []
   const data = resultRow.data as { content: unknown; isError: boolean }
   return [

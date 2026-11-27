@@ -29,6 +29,7 @@ function entryTarget(value: unknown): string | undefined {
 }
 
 const SECRET_FILE = /^(\.env(\..*)?|.*\.pem|.*\.key|id_rsa.*|id_ed25519.*)$/
+const MACOS_METADATA = /(?:^|\/)(?:\._[^/]*|\.DS_Store|__MACOSX)(?:\/|$)/
 
 /** Files npm itself would publish from the folder (`files`, .npmignore, .gitignore), validated defensively. */
 async function packlist(source: string): Promise<string[]> {
@@ -66,7 +67,7 @@ async function packlist(source: string): Promise<string[]> {
       'E_EXT_LOAD',
       `Refusing to pack likely secret files: ${secrets.join(', ')}. Remove them from package.json "files" or add them to .npmignore. See docs/guide/packages.md#sharing`,
     )
-  return paths as string[]
+  return (paths as string[]).filter((path) => !MACOS_METADATA.test(path))
 }
 
 /** Bundle third-party dependencies, retain Host SDK imports, then validate the distributable tree. */

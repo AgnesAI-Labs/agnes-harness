@@ -5,6 +5,7 @@ import type {
   ChildEnginesSaveParams,
   ClientModuleEffectCallParams,
   ClientModuleServiceCallParams,
+  DaemonNotice,
   PackageCatalogGetParams,
   PackageCatalogListParams,
   PackageDisableParams,
@@ -25,14 +26,18 @@ import type {
   PluginTreeApplyParams,
   PluginTreeRollbackParams,
   SessionGenerationMigrationParams,
+  SkinSelectParams,
 } from '@agnes/protocol'
 import {
+  CLOUD_AUTHORIZATION_TIMEOUT_MS,
   httpRpcError,
   METHODS,
   normalizeRpcError,
   type RpcError,
   validatePackageAdminCall,
+  validatePackageCatalogSnapshotVersion,
 } from '@agnes/protocol'
+import type { AdminCloudAuthorize } from '@agnes/protocol/gen/app-server'
 import type {
   ClientModuleEffectCallResult,
   ClientModuleServiceCallResult,
@@ -43,9 +48,12 @@ import { localPipeFactories } from '../src/boot/pipe-factory.js'
 import type { LocalBackend } from './backend.js'
 import { channelRelay } from './channel-relay.js'
 import { localClientExamples } from './client-examples.js'
+import { cloudAuthorizationRelay, shareCloudAuthorization } from './cloud-authorization.js'
+import { createCloudGateway } from './cloud-gateway.js'
 import { contextAdmin } from './context-admin.js'
 import { doctorAdmin } from './doctor-admin.js'
 import { launchFailure } from './launch-failure.js'
+import { createPackageDocsBridge } from './package-docs.js'
 import { pluginStreamProxy } from './plugin-stream-proxy.js'
 import { profileServiceRelay } from './profile-service-relay.js'
 
@@ -123,14 +131,16 @@ export function localPackageAdmin(
       auth: { kind: 'local' },
       journal: memoryJournal(clientId),
     })
+  const docsBridge = createPackageDocsBridge(open)
+  const openAdmin = () => docsBridge.bind(open())
   // A replaced daemon connection is a new connection: the daemon enrolls roster subscribers per
   // connection, so a live subscription has to prove itself again on the new one.
   let rosterSubscribed = false
   const client = backend.link
-    ? backend.link.client(open, (next) => {
+    ? backend.link.client(openAdmin, (next) => {
         if (rosterSubscribed) void next.clientModules.list(backend.scope.profile).catch(() => undefined)
       })
-    : open()
+    : openAdmin()
   let ready: Promise<unknown> | undefined
   const initialize = () =>
     (ready ??= client.initialize().catch((error: unknown) => {
@@ -138,8 +148,60 @@ export function localPackageAdmin(
       throw error
     }))
   const examples = localClientExamples(backend, client, initialize)
+  const cloudGateway = createCloudGateway(new URL(origin).origin)
+  const cloudLifetime = new AbortController()
+  const authorizeCloud = shareCloudAuthorization(async (input: AdminCloudAuthorize, signal) => {
+    const deadline = Date.now() + CLOUD_AUTHORIZATION_TIMEOUT_MS + 5_000
+    if (backend.link && !(await backend.link.ensure())) throw Error('cloud authorization unavailable')
+    // Listen for revocations before a dedicated connection can issue a grant.
+    await client.initialize()
+    signal.throwIfAborted()
+    // The RPC signal cancels the SDK wait. Closing this dedicated connection also cancels the
+    // daemon handler's lifecycle signal without interrupting unrelated admin calls.
+    const exchange = open()
+    const stop = () => void exchange.close().catch(() => undefined)
+    signal.addEventListener('abort', stop, { once: true })
+    try {
+      await exchange.initialize()
+      signal.throwIfAborted()
+      const timeoutMs = deadline - Date.now()
+      if (timeoutMs <= 0) throw Error('cloud authorization unavailable')
+      return await exchange.request('_agnes/v1/admin.cloud.authorize', input, { timeoutMs, signal })
+    } finally {
+      signal.removeEventListener('abort', stop)
+      await exchange.close().catch(() => undefined)
+    }
+  })
+  const handleCloudAuthorization = cloudAuthorizationRelay(
+    origin,
+    (input, signal) => authorizeCloud(input, AbortSignal.any([signal, cloudLifetime.signal])),
+    (origin, result, binding) =>
+      cloudGateway.register(
+        origin,
+        result,
+        (signal) => authorizeCloud(binding, AbortSignal.any([signal, cloudLifetime.signal])),
+        binding.credentialRef,
+      ),
+  )
+  const stopCloudNotices =
+    client.on?.('notice', (payload) => {
+      const notice = payload as DaemonNotice | undefined
+      if (notice?.kind !== 'credential_deleted' || typeof notice.detail?.id !== 'string') return
+      handleCloudAuthorization.revokeCredential(notice.detail.id)
+      cloudGateway.revokeCredential(notice.detail.id)
+    }) ?? (() => {})
+  const stopCloudConnection =
+    client.on?.('connectionStateChanged', (state) => {
+      if (state !== 'reconnecting' && state !== 'closed') return
+      // A notice may have been lost. No existing grant or exchange survives that gap.
+      handleCloudAuthorization.revokeAll()
+      cloudGateway.revokeAll()
+    }) ?? (() => {})
   // createAdminSurface validates each schema before dispatching this fixed typed mapping.
-  const invoke = async (action: AdminSurfaceAction, params: unknown): Promise<unknown> => {
+  const invoke = async (
+    action: Exclude<AdminSurfaceAction, 'docs/get'>,
+    params: unknown,
+  ): Promise<unknown> => {
     await initialize()
     switch (action) {
       case 'application/get':
@@ -162,6 +224,8 @@ export function localPackageAdmin(
           '_agnes/v1/applications.clear',
           params as import('@agnes/protocol').ApplicationClearParams,
         )
+      case 'skins/select':
+        return client.request('_agnes/v1/skins.select', params as SkinSelectParams)
       case 'candidates/list':
         return client.request(
           '_agnes/v1/plugins.candidates.list',
@@ -204,13 +268,25 @@ export function localPackageAdmin(
         )
 
       case 'catalog/list': {
-        const { includeCommunity, ...legacy } = params as PackageCatalogListParams
+        const { communityVersion, includeCommunity, ...query } = params as PackageCatalogListParams
         const features = (await client.initialize()).features ?? []
-        return client.packages.catalog.list(
-          features.includes('packages.community-discovery.v1') && includeCommunity !== undefined
-            ? { ...legacy, includeCommunity }
-            : legacy,
-        )
+        const version =
+          communityVersion === 3 && features.includes('packages.community-discovery.v3')
+            ? 3
+            : communityVersion !== undefined && features.includes('packages.community-discovery.v2')
+              ? 2
+              : undefined
+        const result = await client.packages.catalog.list({
+          ...query,
+          ...(version !== undefined
+            ? { communityVersion: version }
+            : includeCommunity !== undefined && features.includes('packages.community-discovery.v1')
+              ? { includeCommunity }
+              : {}),
+        })
+        if (version !== undefined && !validatePackageCatalogSnapshotVersion(result, version))
+          throw new Error('The backend returned an invalid community catalog projection.')
+        return result
       }
       case 'catalog/get':
         return client.packages.catalog.get(params as PackageCatalogGetParams)
@@ -276,6 +352,7 @@ export function localPackageAdmin(
     }
   }
   const surface = createAdminSurface({
+    docs: docsBridge.docs,
     backendFeatures: async () => (await client.initialize()).features ?? [],
     credentials: {
       async call(action, input) {
@@ -448,6 +525,7 @@ export function localPackageAdmin(
     (input) => client.request('_agnes/v1/admin.telemetry', input),
   )
   return {
+    cloudGateway,
     doctor: async () => {
       await initialize()
       return client.request('_agnes/v1/doctor.run', {})
@@ -465,6 +543,7 @@ export function localPackageAdmin(
     planCommand: (input: import('@agnes/protocol').AppServerParams<'_agnes/v1/admin.plan'>) =>
       client.request('_agnes/v1/admin.plan', input),
     handle: async (request: IncomingMessage, response: ServerResponse) =>
+      (await handleCloudAuthorization(request, response)) ||
       (await handleDoctor(request, response)) ||
       (await handleContext(request, response)) ||
       (await surface.handle(request, response)),
@@ -472,8 +551,8 @@ export function localPackageAdmin(
      * Bytes for one `/skins/...` path, for the Web launcher's same-origin asset route.
      *
      * It rides the launcher's existing private package-admin connection rather than opening a second
-     * one. The daemon owns path authority and answers only for its enabled+trusted roster; a miss and
-     * a refusal are the same `null` here, which the HTTP layer turns into a 404 (design §22).
+     * one. The daemon serves only the current selection. A miss and a refusal
+     * both become `null` here, which the HTTP layer turns into a 404.
      */
     async readSkin(pathname: string): Promise<Uint8Array | null> {
       try {
@@ -485,19 +564,14 @@ export function localPackageAdmin(
         return null
       }
     },
-    /**
-     * Bytes for one `/plugins/...` path, for the Web launcher's same-origin asset route.
-     *
-     * Same shape as `readSkin`: it rides the same private package-admin connection, the daemon owns
-     * path authority and answers only for its enabled+trusted roster snapshots, and a miss, a
-     * refusal and an unreachable daemon are the one same `null`, which the HTTP layer turns into a
-     * 404.
-     */
-    async readClientModule(pathname: string): Promise<Uint8Array | null> {
+    async readClientModule(
+      pathname: string,
+      purpose: Parameters<typeof client.clientModules.read>[2],
+    ): Promise<Uint8Array | null> {
       try {
         await initialize()
-        const result = await client.clientModules.read(backend.scope.profile, pathname)
-        return result.found ? new Uint8Array(Buffer.from(result.base64, 'base64')) : null
+        const result = await client.clientModules.read(backend.scope.profile, pathname, purpose)
+        return result.found ? Buffer.from(result.base64, 'base64') : null
       } catch {
         // An unreachable or refusing daemon is an unavailable asset, not a launcher failure.
         return null
@@ -687,6 +761,11 @@ export function localPackageAdmin(
       return true
     },
     async close(): Promise<void> {
+      docsBridge.close()
+      stopCloudConnection()
+      stopCloudNotices()
+      cloudLifetime.abort()
+      cloudGateway.close()
       surface.close()
       await client.close()
     },

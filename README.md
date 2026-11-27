@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+For deployments with cloud connection support, see the [cloud workbench integration preview](docs/guide/remote-frontend.md).
+
 <p align="center">
   <img src="docs/assets/readme/banner.png" alt="Agnes Harness, a pluggable agent harness for Forward Deployed Engineering. The four roles are LLM as the brain, Agnes Sys1 as the cerebellum, Harness as the memory, and MHS as the body." width="100%" />
 </p>

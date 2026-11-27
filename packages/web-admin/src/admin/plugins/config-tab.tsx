@@ -16,7 +16,7 @@ export function PluginConfigTab({
   docs,
   settingsSummary,
 }: {
-  /** The plugin's own description and documentation link, when it has either. */
+  /** The plugin's documentation, mounted only while its tab is selected. */
   docs?: ReactNode
   context: AdminContext
   id: string
@@ -32,6 +32,7 @@ export function PluginConfigTab({
   const [configOpened, setConfigOpened] = useState(false)
   const { profile, clientId } = context
   const api = useMemo(() => new PluginConfigApi({ profile, clientId }), [profile, clientId])
+  if (tab === 'docs' && !docs) setTab('details')
   return (
     <Tabs
       id={`plugin-config-tab-${encodeURIComponent(id)}`}
@@ -87,7 +88,13 @@ export function PluginConfigTab({
             ]
           : []),
         ...(docs
-          ? [{ key: 'docs', label: <span data-testid="plugin-docs-tab">{t('docs')}</span>, children: docs }]
+          ? [
+              {
+                key: 'docs',
+                label: <span data-testid="plugin-docs-tab">{t('docs')}</span>,
+                children: tab === 'docs' ? docs : undefined,
+              },
+            ]
           : []),
       ]}
     />

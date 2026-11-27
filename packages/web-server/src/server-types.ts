@@ -12,6 +12,16 @@ export type ClientModuleAssetResolution = string | Uint8Array | null
 export type PluginRebuiltEvent = Readonly<{ packageId: string; revision: string }>
 
 export type WebServerOptions = {
+  /** Scoped sandbox transport, installed only on the isolated cloud listener. No local owner routes. */
+  cloudGateway?: {
+    handleHttp(request: IncomingMessage, response: ServerResponse): Promise<boolean>
+    handleUpgrade(
+      request: IncomingMessage,
+      socket: import('node:stream').Duplex,
+      head: Buffer,
+    ): Promise<boolean>
+    close(): void
+  }
   /** Optional authenticated stream gateway. Its daemon-owned adapter validates subject and current authority. */
   pluginStreams?: {
     handleHttp(request: IncomingMessage, response: ServerResponse): Promise<boolean>
@@ -61,7 +71,10 @@ export type WebServerOptions = {
    * only method, the three-MIME allowlist and headers. A miss and a refusal are the same null, which
    * this route turns into the same 404 the skin route uses.
    */
-  clientModuleAsset?: (pathname: string) => ClientModuleAssetResolution | Promise<ClientModuleAssetResolution>
+  clientModuleAsset?: (
+    pathname: string,
+    purpose: AppServerParams<'_agnes/v1/clientModules.read'>['purpose'],
+  ) => ClientModuleAssetResolution | Promise<ClientModuleAssetResolution>
   /**
    * Optional launcher-owned subscription to daemon roster rebuilds.  The static server only fans
    * these safe `{ packageId, revision }` hints out over same-origin SSE; it neither watches package

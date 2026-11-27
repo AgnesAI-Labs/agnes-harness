@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { JournalIdentity, JournalResult } from '@agnes/daemon-foundation/local/ports'
 import { MemoryJournal } from '@agnes/daemon-foundation/local/ports'
-import type { JsonRpcMessage } from '@agnes/daemon-foundation/rpc'
+import { isResponse, type JsonRpcMessage } from '@agnes/daemon-foundation/rpc'
 import { MemorySessionPrincipalOwnership } from '@agnes/daemon-foundation/storage/session-ownership'
 import type { HostSession } from '@agnes/host'
 import { describe, expect, it, vi } from 'vitest'
@@ -691,33 +691,28 @@ describe('submit admission and journal', () => {
       const secondHold = new Promise<void>((resolve) => {
         releaseSecond = resolve
       })
-      let secondStarted!: () => void
-      const started = new Promise<void>((resolve) => {
-        secondStarted = resolve
-      })
+      let secondStarted = false
       let releaseLast!: () => void
       const lastHold = new Promise<void>((resolve) => {
         releaseLast = resolve
       })
-      let lastStarted!: () => void
-      const last = new Promise<void>((resolve) => {
-        lastStarted = resolve
-      })
+      let lastStarted = false
       const paused = mode === 'cancel' || mode === 'fail'
-      let turns = 0
       const h = await openTestHost({
         provider: {
           models: () => inner.models(),
           async *infer(req, options) {
-            if (req.kind !== 'summary') {
-              turns++
-              if (turns === 1) await hold
-              if (turns === 4) {
-                lastStarted()
+            if (req.kind === 'inference') {
+              const input = req.messages
+                .findLast((message) => message.role === 'user')
+                ?.content.find((block) => block.type === 'text')?.text
+              if (input === 'A') await hold
+              if (input === 'D') {
+                lastStarted = true
                 await lastHold
               }
-              if (turns === 2 && paused) {
-                secondStarted()
+              if (input === 'B' && paused) {
+                secondStarted = true
                 options.signal.addEventListener('abort', releaseSecond, { once: true })
                 try {
                   if (!options.signal.aborted) await secondHold
@@ -788,7 +783,7 @@ describe('submit admission and journal', () => {
           mode === 'background' ? { reason: 'completed' } : { result: { stopReason: 'end_turn' } },
         )
         if (paused) {
-          await started
+          await vi.waitFor(() => expect(secondStarted).toBe(true))
           if (mode === 'cancel')
             await ep.handle({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } })
           else releaseSecond()
@@ -810,22 +805,32 @@ describe('submit admission and journal', () => {
         if (paused) {
           expect(core.latest('inbox')).toMatchObject({ items: [{ content: [{ type: 'text', text: 'C' }] }] })
         } else expect(core.latest('inbox')).toMatchObject({ items: [] })
-        let settled = false
-        const next = ep
-          .handle({
-            jsonrpc: '2.0',
-            id: 32,
-            method: 'session/prompt',
-            params: { sessionId, prompt: [{ type: 'text', text: 'D' }] },
+        let reply: { message: JsonRpcMessage | undefined } | undefined
+        const sendNext = () =>
+          ep
+            .handle({
+              jsonrpc: '2.0',
+              id: 32,
+              method: 'session/prompt',
+              params: { sessionId, prompt: [{ type: 'text', text: 'D' }] },
+            })
+            .then((message) => (reply = { message }))
+        let next = sendNext()
+        // The final turn/end can be visible while the continuation still owns prompt admission.
+        // Retry that explicit refusal and surface any other early reply in the assertion below.
+        await expect
+          .poll(() => {
+            const message = reply?.message
+            if (message && isResponse(message) && message.error?.data.code === 'SESSION_BUSY') {
+              reply = undefined
+              next = sendNext()
+            }
+            return lastStarted || reply !== undefined
           })
-          .then((result) => {
-            settled = true
-            return result
-          })
-        await last
-        expect(settled).toBe(false)
+          .toBe(true)
+        expect(reply, 'the next prompt must stay pending while inference is held').toBeUndefined()
         releaseLast()
-        expect(await next).toMatchObject({ result: { stopReason: 'end_turn' } })
+        expect((await next).message).toMatchObject({ result: { stopReason: 'end_turn' } })
         expect((await core.scan({ type: 'user/message', limit: 10 })).at(-1)?.data).toMatchObject({
           content: [{ type: 'text', text: 'D' }],
         })
@@ -861,6 +866,7 @@ describe('submit admission and journal', () => {
         created.mockRestore()
       }
     },
+    45_000,
   )
 
   it('releases prompt admission before the model turn so in-turn input is not blocked', async () => {

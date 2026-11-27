@@ -4,7 +4,6 @@ import {
   homeNavigation,
   type LocaleService,
   resolveHomeEntry,
-  type UiExtensionContext,
   withoutOwnerOnly,
 } from '@agnes/web-client'
 import {
@@ -13,10 +12,16 @@ import {
   createRegionRenderer,
   preserveRouteParams,
   RegionErrorBoundary,
+  type SnapshotSource,
   UiLocaleProvider,
   type UiLocaleSource,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useSyncExternalStore } from 'react'
+import { backendFrame } from '../backends/frame-context.js'
+import { isDraftRoute, skillsWorkspaceId } from '../backends/local-route.js'
+import { localLocationUrl } from '../backends/local-workbench-bus.js'
+import { pluginUiEntries } from '../declarative-ui/entries.js'
+import { PluginUiContent, returnPluginUiFocus } from '../declarative-ui/presentation.js'
 import { ChannelDialogHost } from './channel-dialog.js'
 import { isBuiltinHomeEntry } from './entries.js'
 import { useWorkLaunchQuiet, workLaunch } from './work-launch.js'
@@ -40,8 +45,8 @@ export type HomePageData = Readonly<{
   startDraft(prompt?: string): void
   /** What this browser has loaded of each plugin, for the plugins page's run state. */
   plugins?: Pick<PluginAdminSources, 'actualSlots' | 'runtime'> & {
-    /** The workspace whose skills and MCP servers the page lists. */
-    workspaceId?(): string | undefined
+    /** Undefined selects profile skills, null waits for selection, and false marks an unresolved scope. */
+    skillsWorkspace?: SnapshotSource<string | undefined | null | false>
   }
 }>
 
@@ -97,26 +102,53 @@ export function HomePageHost({
 }) {
   useSyncExternalStore(homeEntries.subscribe, homeEntries.getSnapshot)
   const requested = useSyncExternalStore(homeNavigation.subscribe, homeNavigation.getSnapshot)
+  const { sidebar } = useSyncExternalStore(pluginUiEntries.subscribe, pluginUiEntries.getSnapshot)
+  const priorSidebar = useRef(sidebar)
+  useEffect(() => {
+    const closed = priorSidebar.current
+    priorSidebar.current = sidebar
+    if (
+      closed &&
+      !sidebar &&
+      !pluginUiEntries.isCurrent(closed.entry) &&
+      document.activeElement === document.body
+    )
+      returnPluginUiFocus(closed.trigger, document.getElementById('sidebar-toggle'))
+  }, [sidebar])
   const entry = requestedHomeEntry()
   // A synchronous unload/reload can be batched into one render. A new registration owns a new
   // component lifetime even when it reuses the same ID and component function.
   const mounted = useRef({ entry, version: 0 })
   if (mounted.current.entry !== entry) mounted.current = { entry, version: mounted.current.version + 1 }
   const quiet = useWorkLaunchQuiet()
-  const active = quiet ? undefined : entry?.id
+  const active = sidebar ? 'declarative:sidebar' : quiet ? undefined : entry?.id
   useEffect(() => onActive(active), [active, onActive])
-  if (!entry) return null
-  const Page = entry.component
-  const context: UiExtensionContext = {
-    t: (key, vars) => locale.t(key, vars),
-    data: isBuiltinHomeEntry(entry) ? data : pluginPageData(data),
-    ...(requested?.selection === undefined ? {} : { selection: requested.selection }),
-  }
+  const Page = entry?.component
   return (
     <UiLocaleProvider source={source}>
-      <RegionErrorBoundary key={`${entry.id}:${mounted.current.version}`} region={`home-page-${entry.id}`}>
-        <Page context={context} />
-      </RegionErrorBoundary>
+      {entry && Page && (
+        <RegionErrorBoundary key={`${entry.id}:${mounted.current.version}`} region={`home-page-${entry.id}`}>
+          <Page
+            context={{
+              t: (key, vars) => locale.t(key, vars),
+              data: isBuiltinHomeEntry(entry) ? data : pluginPageData(data),
+              ...(requested?.selection === undefined ? {} : { selection: requested.selection }),
+            }}
+          />
+        </RegionErrorBoundary>
+      )}
+      {sidebar && (
+        <article className="home-page declarative-ui-sidebar-page">
+          <PluginUiContent
+            key={sidebar.entry.key}
+            entry={sidebar.entry}
+            onBack={() => {
+              pluginUiEntries.close('sidebar')
+              returnPluginUiFocus(sidebar.trigger, document.getElementById('sidebar-toggle'))
+            }}
+          />
+        </article>
+      )}
     </UiLocaleProvider>
   )
 }
@@ -185,6 +217,8 @@ export function bindHomeRouting(): () => void {
   let restoring = false
   const readLocation = () => {
     const params = new URLSearchParams(location.search)
+    if (!backendFrame() && params.has('remote')) return
+    pluginUiEntries.close('sidebar')
     const page = params.get('page')
     restoring = true
     try {
@@ -210,8 +244,10 @@ export function bindHomeRouting(): () => void {
     const requested = homeNavigation.getSnapshot()
     // App defaults are transient presentation, not explicit URL/user choices.
     if ((requested?.selection as { applicationDefault?: string } | undefined)?.applicationDefault) return
-    const url = new URL(location.href)
+    pluginUiEntries.close('sidebar')
+    const url = localLocationUrl()
     const before = url.href
+    const scopedSkills = skillsWorkspaceId(url.searchParams)
     const tab = (requested?.selection as { tab?: unknown } | undefined)?.tab
     // A page opened inside a page (`view=…`) belongs to that page and tab; another one starts at its top.
     if (
@@ -226,8 +262,11 @@ export function bindHomeRouting(): () => void {
     else url.searchParams.delete('pagePackage')
     if (requested && typeof tab === 'string') url.searchParams.set('tab', tab)
     else url.searchParams.delete('tab')
+    // A plain tab click neither creates a scoped link nor carries that scope to another page.
+    if (!isDraftRoute(url.searchParams) && scopedSkills !== skillsWorkspaceId(url.searchParams))
+      url.searchParams.delete('workspaceId')
     const address = preserveRouteParams(url)
-    if (new URL(address, location.href).href !== before) history.pushState(null, '', address)
+    if (new URL(address, url.origin).href !== before) history.pushState(null, '', address)
   })
   window.addEventListener('popstate', readLocation)
   return () => {

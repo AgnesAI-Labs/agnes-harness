@@ -14,6 +14,7 @@ it('serves an opaque-origin document that can run a page but reach nothing', () 
   expect(csp).not.toContain('allow-same-origin')
   expect(csp).not.toContain('allow-top-navigation')
   expect(directives['default-src']).toBe("'none'")
+  expect(directives['script-src']).toBe("'unsafe-inline' data:")
   // No network: nothing can be fetched or posted, and only bytes the page carries can be shown.
   expect(directives['connect-src']).toBe("'none'")
   expect(directives['form-action']).toBe("'none'")

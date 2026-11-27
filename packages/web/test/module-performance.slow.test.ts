@@ -29,6 +29,8 @@ it.skipIf(!process.env.AGH_WEB_MODULE_PERFORMANCE_OUTPUT)(
       const target: ReadyClientModule = {
         packageId: 'synthetic-panel',
         revision: 'v1',
+        documentAdmission: { kind: 'release', bindingDigest: 'd'.repeat(64) },
+        contentDigest: `sha256-${'c'.repeat(64)}`,
         entryUrl: '/synthetic/panel.js',
         styleUrls: ['/synthetic/panel.css'],
         slots: [],

@@ -1,6 +1,7 @@
 import { copyFile, mkdir, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { stripVTControlCharacters } from 'node:util'
+import type { AuthoringCandidate } from '@agnes/protocol'
 import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, settled, translated } from './quality.js'
@@ -105,6 +106,18 @@ async function usable(page: Page, info: TestInfo, name: string) {
         issues.push(`${label}: target ${Math.round(width)}×${Math.round(height)}`)
       const scrollable = (axis: 'x' | 'y') => {
         for (let parent = target.parentElement; parent; parent = parent.parentElement) {
+          if (
+            axis === 'x' &&
+            parent.classList.contains('ant-tabs-nav-wrap') &&
+            (parent.classList.contains('ant-tabs-nav-wrap-ping-left') ||
+              parent.classList.contains('ant-tabs-nav-wrap-ping-right') ||
+              Boolean(
+                parent.parentElement?.querySelector(
+                  '.ant-tabs-nav-operations:not(.ant-tabs-nav-operations-hidden)',
+                ),
+              ))
+          )
+            return true
           const style = getComputedStyle(parent)
           if (
             /auto|scroll/.test(axis === 'x' ? style.overflowX : style.overflowY) &&
@@ -256,14 +269,30 @@ for (const [locale, theme] of [
       )
       const created = (await toolResult(authoring, 'plugin_helper_create'))?.content[0]
       if (created?.type !== 'text') throw new Error('The fixture candidate must be created')
-      const candidate = JSON.parse(created.text) as { candidateId: string; packageId: string }
+      const candidate = JSON.parse(created.text) as AuthoringCandidate
+      const candidateStatus = () =>
+        client.request('_agnes/v1/plugins.candidates.show', {
+          profile: 'local-dev',
+          candidateId: candidate.candidateId,
+        })
       await promptOnDemand(
         `call plugin_helper_install ${JSON.stringify({ action: 'test', proposalId: candidate.candidateId })}`,
       )
+      const { tests } = await candidateStatus()
+      expect(tests, tests?.output ?? 'Missing candidate test receipt').toMatchObject({
+        state: 'passed',
+        hash: candidate.candidateHash,
+      })
+      expect(tests?.count).toBeGreaterThan(0)
       await promptOnDemand(
         'call plugin_helper_install ' +
           JSON.stringify({ action: 'commit', proposalId: candidate.candidateId }),
       )
+      expect(await candidateStatus()).toMatchObject({
+        state: 'review',
+        candidateHash: candidate.candidateHash,
+        reviewHash: expect.stringMatching(/^sha256-[0-9a-f]{64}$/),
+      })
       await prompt(session, 'call write {"path":"review notes.ts","content":"export const result = 42\\n"}')
       await prompt(session, '/goal --max-rounds 1 Review the delivery')
       expect((await client.apis()).profile.models).toEqual(
@@ -278,7 +307,8 @@ for (const [locale, theme] of [
       // Traverse every wizard step with a real loopback account.
       const catalog = (await client.config.test({ providerId: 'deepseek' })).models
       const model = catalog[0]?.id
-      if (!model) throw new Error('The installed provider must declare a fixture model')
+      const modelLabel = catalog[0]?.name ?? model
+      if (!model || !modelLabel) throw new Error('The installed provider must declare a fixture model')
       const { startProviderFixture } = await import('../acceptance/provider-fixture.js')
       const provider = await startProviderFixture('NARROW_READY', undefined, model)
       try {
@@ -370,7 +400,7 @@ for (const [locale, theme] of [
         await expect(page.getByTestId('workbench-right-toggle')).toHaveAttribute('aria-expanded', 'false')
         for (const viewport of [auditViewport]) {
           await page.setViewportSize(viewport)
-          await expect(page.locator('#model')).toContainText(model)
+          await expect(page.locator('#model')).toContainText(modelLabel)
           await expect(page.locator('#model')).toBeEnabled()
           await expect(page.locator('#composer-hint')).not.toHaveText(
             name(

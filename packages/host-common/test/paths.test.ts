@@ -16,16 +16,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { isHostError } from '../src/errors.js'
 import { initializeHome, initializeHomeLocked } from '../src/home-initialize.js'
 import { homeLayout, inspectHome } from '../src/home-layout.js'
-import {
-  agnesHome,
-  cacheDir,
-  dataDir,
-  fileSecretsDir,
-  hasLegacySessionsDb,
-  inDataDir,
-  legacySessionsDbPath,
-  ownStateRoots,
-} from '../src/paths.js'
+import { agnesHome, cacheDir, dataDir, fileSecretsDir, inDataDir, ownStateRoots } from '../src/paths.js'
 
 const roots: string[] = []
 const scratch = (): string => {
@@ -127,30 +118,6 @@ describe('dataDir, cacheDir and inDataDir', () => {
 
   it('inDataDir joins inside dataDir, not inside the home root', () => {
     expect(inDataDir('/srv/agnes', 'sessions.db')).toBe(join('/srv/agnes', 'data', 'sessions.db'))
-  })
-})
-
-describe('legacy session database detection', () => {
-  it('is not found when nothing sits at the home root', () => {
-    const home = scratch()
-    expect(hasLegacySessionsDb(home)).toBe(false)
-  })
-
-  it('is found when a database sits directly under the home root, and never touches it', () => {
-    const home = scratch()
-    const legacy = legacySessionsDbPath(home)
-    expect(legacy).toBe(join(home, 'sessions.db'))
-    writeFileSync(legacy, 'not-actually-sqlite-but-detection-does-not-care')
-    expect(hasLegacySessionsDb(home)).toBe(true)
-    // Detection only: the file this test wrote is still exactly what this test wrote.
-    expect(readFileSync(legacy, 'utf8')).toBe('not-actually-sqlite-but-detection-does-not-care')
-  })
-
-  it('is not fooled by a database that already lives under data/, only by one at the root', () => {
-    const home = scratch()
-    mkdirSync(dataDir(home), { recursive: true })
-    writeFileSync(join(dataDir(home), 'sessions.db'), 'current')
-    expect(hasLegacySessionsDb(home)).toBe(false)
   })
 })
 

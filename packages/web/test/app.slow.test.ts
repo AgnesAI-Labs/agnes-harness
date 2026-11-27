@@ -12,9 +12,18 @@ import type {
   UIProjectionUpdate,
   UITimeline,
 } from '@agnes/protocol'
-import { attachmentLink, FILE_UPLOAD_PATH, MAX_FRAME_BYTES } from '@agnes/protocol'
+import {
+  attachmentLink,
+  FILE_UPLOAD_PATH,
+  MAX_FRAME_BYTES,
+  REMOTE_FRONTEND_INFO,
+  REMOTE_FRONTEND_KEY_VERSION,
+  REMOTE_FRONTEND_WS,
+  remoteFrontendSessionPath,
+} from '@agnes/protocol'
 import type { InitializeInfo, LedgerEvent } from '@agnes/sdk/browser'
-import { act } from 'react'
+import type { ClientContext, DshSlotProps } from '@agnes/web-client'
+import { act, createElement, type ReactNode, useEffect, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createBrowserFixture } from './fresh-browser-fixture.js'
@@ -34,7 +43,7 @@ async function renderUI(work: () => void | Promise<void>): Promise<void> {
   }
 }
 
-async function bootApp(): Promise<void> {
+async function bootApp(entry: 'app' | 'cloud-bootstrap' = 'app'): Promise<void> {
   // Reload hints are independent of each case's admin/upload HTTP fixtures.
   const fetcher = globalThis.fetch
   vi.stubGlobal(
@@ -47,7 +56,8 @@ async function bootApp(): Promise<void> {
     }),
   )
   await renderUI(async () => {
-    await import('../src/app.js')
+    if (entry === 'cloud-bootstrap') await import('../src/bootstrap.js')
+    else await import('../src/app.js')
     if (!releaseRuntime || !mountRelease) throw new Error('Client modules did not start')
     await mountRelease()
   })
@@ -57,6 +67,20 @@ const sdk = vi.hoisted(() => ({
   createClient: vi.fn(),
   memoryJournal: vi.fn(() => ({})),
 }))
+const moduleImports = vi.hoisted(() => ({
+  load: undefined as ((url: string) => Promise<unknown>) | undefined,
+}))
+vi.mock('../src/client-modules/reconcile.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/client-modules/reconcile.js')>()
+  return {
+    ...actual,
+    createReconciler: (options: Parameters<typeof actual.createReconciler>[0]) =>
+      actual.createReconciler({
+        ...options,
+        ...(moduleImports.load ? { importer: moduleImports.load } : {}),
+      }),
+  }
+})
 const initialized = async (): Promise<InitializeInfo> => ({
   agnesVersion: '0.1.0',
   capabilities: {},
@@ -459,6 +483,7 @@ afterEach(async () => {
     configurationCallback.saved = undefined
     selectionController.open = undefined
     sdk.createClient.mockReset()
+    moduleImports.load = undefined
     vi.resetModules()
     vi.clearAllMocks()
     binding.loadWebSession.mockReset()
@@ -2389,6 +2414,437 @@ describe('web session selection', () => {
     )
   })
 
+  it.each([
+    { catalogState: 'ready', sidebarReady: true, slowModels: false, startNew: true, launch: 'none' },
+    { catalogState: 'ready', sidebarReady: false, slowModels: false, startNew: true, launch: 'none' },
+    { catalogState: 'empty', sidebarReady: true, slowModels: false, startNew: true, launch: 'none' },
+    { catalogState: 'ready', sidebarReady: true, slowModels: true, startNew: true, launch: 'none' },
+    { catalogState: 'ready', sidebarReady: false, slowModels: false, startNew: false, launch: 'none' },
+    ...(['read-only', 'invalid-loop', 'invalid-preset', 'invalid-bundle', 'superseded'] as const).map(
+      (launch) =>
+        ({
+          catalogState: 'ready',
+          sidebarReady: true,
+          slowModels: true,
+          startNew: true,
+          launch,
+        }) as const,
+    ),
+  ] as const)(
+    'initializes a cloud frame through bootstrap (catalog=$catalogState, sidebarReady=$sidebarReady, slowModels=$slowModels, startNew=$startNew, launch=$launch)',
+    async ({ catalogState, sidebarReady, slowModels, startNew, launch }) => {
+      installPublicFixture()
+      const remote = 'https://8443-fixture.ap-shanghai.tencentags.com'
+      const parentOrigin = 'http://localhost:4177'
+      const path = remoteFrontendSessionPath(
+        `${(Date.now() + 3600000).toString(36)}.${'a'.repeat(22)}.${'b'.repeat(43)}`,
+      )
+      const { backendFrameSource } = await import('../src/backends/workbench-state.js')
+      history.replaceState(null, '', backendFrameSource(remote, startNew ? '' : undefined))
+      if (slowModels) {
+        const address = new URL(location.href)
+        address.searchParams.set('prompt', 'prefilled URL prompt')
+        if (launch !== 'none') address.searchParams.set('preset', 'read-only')
+        if (launch === 'invalid-loop') address.searchParams.set('loop', 'missing@1')
+        if (launch === 'invalid-preset') address.searchParams.set('preset', 'missing')
+        if (launch === 'invalid-bundle') address.searchParams.set('bundle', 'missing#bundle')
+        history.replaceState(null, '', address)
+      }
+      const meta = document.querySelector<HTMLMetaElement>('#agnes-config')
+      if (!meta) throw new Error('missing cloud configuration')
+      Object.assign(meta.dataset, { backendFrame: 'cloud', remote, parentOrigin })
+      const parent = {
+        postMessage: vi.fn((message: { kind: string; requestId?: string }) => {
+          if (message.kind !== 'authorization-request') return
+          window.dispatchEvent(
+            new MessageEvent('message', {
+              source: parent as unknown as Window,
+              origin: parentOrigin,
+              data: {
+                type: 'agh.backend.frame/v1',
+                kind: 'authorization',
+                requestId: message.requestId,
+                remote,
+                path,
+                proxied: true,
+              },
+            }),
+          )
+        }),
+      }
+      const parentProperty = vi.spyOn(window, 'parent', 'get').mockReturnValue(parent as unknown as Window)
+      const nativeFetch = window.fetch
+      const NativeSocket = window.WebSocket
+      const catalog = deferred<Response>()
+      const modelRead = deferred<void>()
+      let modelReads = 0
+      const model = { route: 'fixture-cloud', id: 'cloud-model' }
+      const alternative = { route: 'fixture-cloud', id: 'cloud-alternative' }
+      const demo = { route: 'demo', id: 'demo-model' }
+      const requests: string[] = []
+      const serviceInputs: unknown[] = []
+      window.fetch = vi.fn<typeof fetch>(async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : String(input), location.href)
+        requests.push(url.href)
+        if (!url.pathname.startsWith(`${path}/`)) throw new Error('unscoped cloud request')
+        const resource = url.pathname.slice(path.length)
+        if (resource === REMOTE_FRONTEND_INFO)
+          return Response.json({
+            version: REMOTE_FRONTEND_KEY_VERSION,
+            access: 'key-owner',
+            wsPath: REMOTE_FRONTEND_WS,
+            instanceId: 'fixture-instance',
+          })
+        if (resource === '/api/client-modules/profile') {
+          const request = input instanceof Request ? input : new Request(url, init)
+          serviceInputs.push(await request.json())
+          return (await catalog.promise).clone()
+        }
+        if (resource === '/admin/api/loops') return Response.json({ revision: 0, defaults: {}, loops: [] })
+        if (resource === '/admin/api/model-adapters') return Response.json({ modelAdapters: [] })
+        if (resource === '/admin/api/runtime')
+          return Response.json({
+            providers: [],
+            bundles: [],
+            presets: [{ id: 'workspace-write', isDefault: true }],
+            permissions: [
+              { id: 'workspace-write', isDefault: true },
+              { id: 'read-only', isDefault: false },
+            ],
+            localPluginFolders: { home: '/synthetic/plugins', workspace: '/workspace/data/.agh/plugins' },
+          })
+        if (resource === '/admin/api/bundles') return Response.json({ catalog: [] })
+        if (resource === '/plugins/changes')
+          return Response.json({ epoch: 'fixture', cursor: 0, reset: false, events: [] })
+        return Response.json({ available: false })
+      })
+      vi.stubGlobal('fetch', window.fetch)
+      // Replace only loading the synthetic module's bytes; roster admission, scoped services and slots are real.
+      moduleImports.load = async () => ({
+        apply(ctx: ClientContext) {
+          const query = () => ctx.profile.services.query('fixture.models.list', {})
+          function CloudCatalog({
+            actions,
+          }: {
+            actions: {
+              setCatalog(models: readonly (typeof model)[] | undefined): void
+              renderDefault(): ReactNode
+            }
+          }) {
+            const [loaded, setLoaded] = useState(false)
+            useEffect(() => {
+              let active = true
+              actions.setCatalog([])
+              void query().then((value) => {
+                if (active) {
+                  actions.setCatalog((value as { models: (typeof model)[] }).models)
+                  setLoaded(true)
+                }
+              })
+              return () => {
+                active = false
+                actions.setCatalog(undefined)
+              }
+            }, [actions.setCatalog])
+            return createElement(
+              'span',
+              { 'data-testid': 'fixture-cloud-models', 'data-loaded': loaded },
+              actions.renderDefault(),
+            )
+          }
+          return ctx.slots.inject('conversation.input.model.catalog', () =>
+            ctx.slots.register(
+              { name: 'conversation.input.model.catalog', id: 'fixture-cloud-catalog', priority: 40 },
+              (props: DshSlotProps) => {
+                expect(props.owner).toMatchObject({ remote: true })
+                return createElement(CloudCatalog, {
+                  actions: props.actions as Parameters<typeof CloudCatalog>[0]['actions'],
+                })
+              },
+            ),
+          )
+        },
+      })
+      const client = {
+        initialize: vi.fn(initialized),
+        on: vi.fn(),
+        close: vi.fn(async () => undefined),
+        request: vi.fn(async () => undefined),
+        apis: vi.fn(async () => {
+          if (slowModels && (++modelReads === 1 || launch === 'none')) await modelRead.promise
+          return { profile: { models: [demo, model, alternative] } }
+        }),
+        config: {
+          get: vi.fn(async () => ({
+            configured: true,
+            profile: 'cloud-fixture',
+            accounts: [],
+            provider: { route: demo.route, model: demo.id },
+          })),
+          providers: vi.fn(async () => ({ providers: [] })),
+        },
+        workspace: {
+          list: vi.fn(async () => ({
+            items: [
+              {
+                path: '/workspace/data',
+                name: 'data',
+                workspaceId: 'a'.repeat(64),
+                available: true,
+                lastUsedAt: null,
+                sessionCount: 0,
+              },
+            ],
+          })),
+        },
+        session: {
+          groups: vi.fn(async () => ({ ready: sidebarReady, items: [] })),
+          activity: vi.fn(async () => ({ items: [] })),
+          list: vi.fn(async () => ({ items: [] })),
+          new: vi.fn(),
+          load: vi.fn(),
+        },
+        clientModules: {
+          list: vi.fn(async () => ({
+            revision: 'cloud-r1',
+            modules: [],
+            statuses: [],
+            rows: [
+              {
+                rowId: 'web:cloud-fixture',
+                packageId: 'cloud-fixture',
+                moduleName: 'cloud-fixture',
+                clientId: 'catalog',
+                revision: 'r1',
+                enabled: true,
+                phase: 'ready',
+                documentAdmission: { kind: 'release', bindingDigest: 'd'.repeat(64) },
+                contentDigest: `sha256-${'c'.repeat(64)}`,
+                entryUrl: '/plugins/cloud-fixture/r1/index.js',
+                styleUrls: [],
+                slots: ['conversation.input.model.catalog'],
+                extIds: [],
+                services: ['fixture.models.list'],
+                slotCatalogVersion: 'dsh-client-slots/v1',
+                binding: {
+                  owner: 'web:cloud-fixture',
+                  packageId: 'cloud-fixture',
+                  integrity: 'r1',
+                  profileId: 'cloud-fixture',
+                  activationId: 'r1',
+                  lifetime: 'profile',
+                  availability: 'active',
+                },
+              },
+            ],
+          })),
+        },
+      }
+      sdk.createClient.mockReturnValue(client)
+      try {
+        await bootApp('cloud-bootstrap')
+        await vi.waitFor(() =>
+          expect(serviceInputs).toContainEqual({
+            rowId: 'web:cloud-fixture',
+            service: 'fixture.models.list',
+            input: {},
+          }),
+        )
+        expect(document.body.dataset.aghBackendFrame).toBe('cloud')
+        expect(sdk.createClient.mock.calls.at(-1)?.[0]).toMatchObject({
+          transport: {
+            kind: 'ws',
+            url: `${location.origin.replace(/^http/u, 'ws')}${path}${REMOTE_FRONTEND_WS}`,
+          },
+        })
+        expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(true)
+        await vi.waitFor(() => expect(document.getElementById('model')?.textContent).not.toContain(demo.id))
+        expect(client.session.new).not.toHaveBeenCalled()
+        if (slowModels) {
+          await vi.waitFor(() =>
+            expect((document.getElementById('prompt') as HTMLTextAreaElement)?.disabled).toBe(false),
+          )
+          expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe(
+            'prefilled URL prompt',
+          )
+          editPrompt('draft retained while the model list is loading')
+          expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
+          expect(client.session.new).not.toHaveBeenCalled()
+          if (launch === 'none') modelRead.resolve()
+        }
+        await renderUI(async () =>
+          catalog.resolve(
+            Response.json({ output: { models: catalogState === 'ready' ? [model, alternative] : [] } }),
+          ),
+        )
+        await vi.waitFor(() =>
+          expect(
+            document.querySelector('[data-testid="fixture-cloud-models"]')?.getAttribute('data-loaded'),
+          ).toBe('true'),
+        )
+        await vi.waitFor(() =>
+          expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
+        )
+        if (slowModels)
+          expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe(
+            'draft retained while the model list is loading',
+          )
+        if (launch !== 'none') {
+          // The contributed catalog can finish while the first model read is still stalled.
+          await vi.waitFor(() => expect(modelReads).toBeGreaterThan(1))
+          await vi.waitFor(() =>
+            expect((document.getElementById('new') as HTMLButtonElement).disabled).toBe(false),
+          )
+          expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(true)
+          expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
+          expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
+          submit('must not create before validating launch choices')
+          expect(client.session.new).not.toHaveBeenCalled()
+          if (launch === 'superseded') {
+            // A new user-owned draft cancels the launch, including its pending read-only choice.
+            document.getElementById('new')?.click()
+            await vi.waitFor(() =>
+              expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
+            )
+            modelRead.resolve()
+            await vi.waitFor(() => expect(modelReads).toBeGreaterThan(2))
+            expect(document.querySelector('[data-permission-label]')?.textContent).toContain('可修改工作区')
+          } else {
+            modelRead.resolve()
+            if (launch.startsWith('invalid-')) {
+              await vi.waitFor(() =>
+                expect(document.querySelector('.agh-notification-message[role="alert"]')).not.toBeNull(),
+              )
+              submit('invalid launch must remain blocked after the request finishes')
+              expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
+              expect(client.session.new).not.toHaveBeenCalled()
+              // Recovery is an explicit new draft, not silently ignoring the rejected URL choices.
+              document.getElementById('new')?.click()
+              await vi.waitFor(() =>
+                expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
+              )
+              editPrompt('new draft after rejected launch')
+              expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false)
+              return
+            }
+            await vi.waitFor(() =>
+              expect(document.querySelector('[data-permission-label]')?.textContent).toContain('只读'),
+            )
+            const fresh = session('read-only-cloud', async () => idleTimeline('read-only-cloud', demo))
+            client.session.new.mockResolvedValue(fresh)
+            binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
+              session: selected,
+              offPermission: vi.fn(),
+            }))
+            submit('launch parameters have now been validated')
+            await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalled())
+            expect(client.session.new).toHaveBeenCalledWith(
+              expect.objectContaining({ permission: 'read-only' }),
+            )
+            expect(fresh.setModel).toHaveBeenCalledWith(
+              expect.objectContaining({ route: model.route, model: model.id }),
+            )
+            return
+          }
+        }
+        editPrompt('cloud draft without pressing plus')
+        await vi.waitFor(() =>
+          expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(
+            catalogState !== 'ready',
+          ),
+        )
+        expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(
+          catalogState !== 'ready',
+        )
+        if (catalogState === 'ready') {
+          // A cloud draft must select a listed cloud model, rather than silently creating a demo session.
+          expect(document.querySelector('[data-model-label]')?.textContent).toContain(model.id)
+          if (sidebarReady && !slowModels) {
+            for (let draft = 0; draft < 2; draft++) {
+              document.getElementById('new')?.click()
+              await vi.waitFor(() =>
+                expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
+              )
+              expect(document.querySelector('[data-model-label]')?.textContent).toContain(model.id)
+              editPrompt('a new draft keeps a permitted default without refreshing the catalog')
+              expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false)
+            }
+          }
+          expect((document.getElementById('composer-attach') as HTMLButtonElement).disabled).toBe(false)
+          document.getElementById('model')?.click()
+          await openModelList()
+          expect(modelMenu().textContent).toContain(model.id)
+          expect(modelMenu().textContent).not.toContain(demo.id)
+          modelMenu().querySelector<HTMLElement>('[role="option"]')?.click()
+          await vi.waitFor(() =>
+            expect(document.getElementById('model')?.getAttribute('aria-label')).toContain(model.id),
+          )
+          await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
+        }
+        expect(document.querySelector('[data-testid="first-run-guide"]')).toBeNull()
+        expect(new URL(location.href).searchParams.get('new')).toBe('1')
+        expect(requests.every((url) => new URL(url).origin === location.origin)).toBe(true)
+        expect(client.session.new).not.toHaveBeenCalled()
+        expect(binding.loadWebSession).not.toHaveBeenCalled()
+        if (catalogState === 'ready' && !sidebarReady && startNew) {
+          const fresh = session('fresh-cloud', async () => idleTimeline('fresh-cloud', demo))
+          client.session.new.mockResolvedValue(fresh)
+          binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
+            session: selected,
+            offPermission: vi.fn(),
+          }))
+          submit('send with the listed cloud model instead of the backend demo default')
+          await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalled())
+          expect(fresh.setModel).toHaveBeenCalledWith(
+            expect.objectContaining({
+              slot: 'primary',
+              route: model.route,
+              model: model.id,
+            }),
+          )
+          expect(fresh.setModel.mock.invocationCallOrder[0]).toBeLessThan(
+            fresh.prompt.mock.invocationCallOrder[0] ?? 0,
+          )
+        }
+        if (catalogState === 'ready' && sidebarReady && !slowModels) {
+          document.getElementById('model')?.click()
+          await openModelList()
+          modelMenu().querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
+          await vi.waitFor(() =>
+            expect(document.querySelector('[data-model-label]')?.textContent).toContain(alternative.id),
+          )
+          document.getElementById('new')?.click()
+          await vi.waitFor(() =>
+            expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
+          )
+          expect(document.querySelector('[data-model-label]')?.textContent).toContain(alternative.id)
+          const legacy = session('legacy-demo', async () => idleTimeline('legacy-demo', demo))
+          binding.loadWebSession.mockResolvedValue({ session: legacy, offPermission: vi.fn() })
+          await selectionController.open?.('legacy-demo')
+          await vi.waitFor(() =>
+            expect(document.querySelector('[data-model-label]')?.textContent).toBe(demo.id),
+          )
+          editPrompt('legacy model requires an explicit switch')
+          await vi.waitFor(() =>
+            expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true),
+          )
+          expect(document.body.textContent).toContain('这个会话原来的模型已不可用。')
+          expect(legacy.setModel).not.toHaveBeenCalled()
+          document.getElementById('model')?.click()
+          await openModelList()
+          expect(modelMenu().textContent).toContain(model.id)
+          expect(modelMenu().textContent).not.toContain(demo.id)
+        }
+      } finally {
+        modelRead.resolve()
+        catalog.resolve(Response.json({ output: { models: [] } }))
+        window.fetch = nativeFetch
+        window.WebSocket = NativeSocket
+        parentProperty.mockRestore()
+      }
+    },
+  )
+
   // A draft names its workspace in the address, so a refresh (which keeps `?new=1`) restores it
   // without asking again; without one it reuses the most recent available workspace.
   it.each([
@@ -2457,6 +2913,13 @@ describe('web session selection', () => {
     )
     expect(dialog.open).toBe(false)
     if (!search.includes('new=1')) return
+    await vi.waitFor(() => {
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
+      expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false)
+      expect((document.getElementById('composer-attach') as HTMLButtonElement).disabled).toBe(false)
+    })
+    // Entering the draft prepares controls without creating a durable session or sending a turn.
+    expect(sdk.createClient.mock.results.at(-1)?.value.session.new).not.toHaveBeenCalled()
     expect(new URL(location.href).searchParams.get('workspaceId')).toBe(
       expected === 'linked' ? linked : 'a'.repeat(64),
     )
@@ -3360,7 +3823,12 @@ describe('image composer submissions', () => {
     await vi.waitFor(() =>
       expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false),
     )
-    expect(document.querySelector('.composer-image-preview img')).toBeNull()
+    // Local preview remains available; the text-only model still receives the file reference below.
+    await vi.waitFor(() =>
+      expect(document.querySelector('.composer-image-preview img')?.getAttribute('src')).toBe(
+        'blob:old-image',
+      ),
+    )
     expect(document.getElementById('composer-attach')?.getAttribute('aria-disabled')).toBe('false')
     submit('')
     await vi.waitFor(() =>

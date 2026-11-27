@@ -13,13 +13,13 @@
         "runtime": "in-process",
         "metadata": {
           "displayName": "Multiple panels example",
-          "summary": "Demonstrates two independently owned workbench panels from one plugin package.",
-          "description": "Demonstrates two independently owned workbench panels from one plugin package.",
+          "summary": "Native workbench.panel fixture row.",
+          "description": "The primary fixture row declares workbench.panel. The official workbench does not load this native panel.",
           "locales": {
             "zh-CN": {
               "displayName": "多面板示例",
-              "summary": "演示一个插件包如何提供两个各自归属明确的工作台面板。",
-              "description": "演示一个插件包如何提供两个各自归属明确的工作台面板。"
+              "summary": "原生 workbench.panel 测试 fixture 行。",
+              "description": "fixture 的第一行声明 workbench.panel。官方工作台不会加载此原生面板。"
             }
           }
         }
@@ -31,13 +31,13 @@
         "runtime": "in-process",
         "metadata": {
           "displayName": "Multiple panels example",
-          "summary": "Demonstrates two independently owned workbench panels from one plugin package.",
-          "description": "Demonstrates two independently owned workbench panels from one plugin package.",
+          "summary": "Native ui:sidebar fixture row.",
+          "description": "The secondary fixture row declares ui:sidebar. The official workbench does not load this native sidebar panel.",
           "locales": {
             "zh-CN": {
               "displayName": "多面板示例",
-              "summary": "演示一个插件包如何提供两个各自归属明确的工作台面板。",
-              "description": "演示一个插件包如何提供两个各自归属明确的工作台面板。"
+              "summary": "原生 ui:sidebar 测试 fixture 行。",
+              "description": "fixture 的第二行声明 ui:sidebar。官方工作台不会加载此原生侧栏面板。"
             }
           }
         }
@@ -55,13 +55,13 @@
     ],
     "metadata": {
       "displayName": "Multiple panels example",
-      "summary": "Demonstrates two independently owned workbench panels from one plugin package.",
-      "description": "Demonstrates two independently owned workbench panels from one plugin package.",
+      "summary": "Native UI fixture for workbench.panel and ui:sidebar.",
+      "description": "The two fixture rows declare workbench.panel and ui:sidebar, respectively. The official workbench does not load these native panels.",
       "locales": {
         "zh-CN": {
           "displayName": "多面板示例",
-          "summary": "演示一个插件包如何提供两个各自归属明确的工作台面板。",
-          "description": "演示一个插件包如何提供两个各自归属明确的工作台面板。"
+          "summary": "原生 workbench.panel 和 ui:sidebar 测试 fixture。",
+          "description": "fixture 的两行分别声明 workbench.panel 和 ui:sidebar。官方工作台不会加载这两个原生面板。"
         }
       }
     },

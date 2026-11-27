@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { resolve } from 'node:path'
+import { resolve, sep } from 'node:path'
 import type { NodeClient, Session } from '@agnes/sdk'
 import { expect } from './fixtures.js'
 
@@ -22,7 +22,7 @@ export async function command(client: NodeClient) {
   return { profile: 'local-dev', clientId: await client.clientId(), commandId: randomUUID() }
 }
 export async function install(client: NodeClient, directory: string) {
-  const source = { type: 'file' as const, ref: `file:${resolve(directory)}` }
+  const source = { type: 'file' as const, ref: `file:${resolve(directory).split(sep).join('/')}` }
   const { preview } = await complete(
     client,
     await client.packages.inspect({ ...(await command(client)), source }),

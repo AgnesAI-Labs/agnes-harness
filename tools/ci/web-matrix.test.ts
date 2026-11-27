@@ -33,6 +33,12 @@ it('packs every canonical selector once into sixteen Mac pairs and six Linux tri
     widths: '375',
     timeoutMinutes: 10,
   })
+  expect(matrices.linux.include.find((group: { id: string }) => group.id === 'batch-2')?.batches[0]).toEqual({
+    id: 'main-13',
+    args: ['v3-navigation.spec.ts'],
+    widths: '',
+    timeoutMinutes: 15,
+  })
 })
 
 it('refuses missing, repeated or unknown batch references and unsafe selector changes', () => {

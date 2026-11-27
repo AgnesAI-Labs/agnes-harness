@@ -53,6 +53,13 @@ describe('closed-network backend compilers', () => {
       ]),
     )
     expect(confined.indexOf('--tmpfs')).toBeGreaterThan(confined.lastIndexOf('--bind'))
+    const online = bwrapConfine(['true'], { ...options, networkAllow: ['*'] })
+    expect(online).not.toContain('--unshare-net')
+    expect(online.slice(0, 4)).toEqual(['bwrap', '--ro-bind', '/', '/'])
+    expect(online).toEqual(expect.arrayContaining(['--bind', '/work/proj', '/work/proj', '--tmpfs']))
+    expect(bwrapConfine(['true'], { ...options, networkAllow: ['*'], network: 'deny' })).toContain(
+      '--unshare-net',
+    )
     const full = bwrapConfine(['true'], { ...options, fullAccess: true, allowPaths: ['/'], network: 'allow' })
     expect(full.slice(0, 4)).toEqual(['bwrap', '--bind', '/', '/'])
     expect(full.lastIndexOf('/')).toBeLessThan(full.indexOf('--dev'))
@@ -83,6 +90,18 @@ describe('closed-network backend compilers', () => {
     expect(nested.filter((part) => part === '--tmpfs')).toHaveLength(1)
     expect(nested).toEqual(expect.arrayContaining(['--tmpfs', '/installation/profiles', '--remount-ro']))
     expect(nested).not.toContain('/installation/profiles/local-dev')
+    const fileMask = bwrapConfine(['true'], {
+      ...options,
+      fullAccess: true,
+      allowPaths: ['/'],
+      denyPaths: ['/installation/cloud-key'],
+      fileDenyPaths: ['/installation/cloud-key'],
+    })
+    expect(fileMask).toEqual(expect.arrayContaining(['--ro-bind', '/dev/null', '/installation/cloud-key']))
+    expect(fileMask).not.toContain('--tmpfs')
+    expect(() => bwrapConfine(['true'], { ...options, fileDenyPaths: ['/not-denied'] })).toThrow(
+      /file mask must name a denied path/,
+    )
   })
 
   it('rejects lexical aliases, controls, NUL argv and unsafe writable kernel trees', () => {
@@ -103,6 +122,9 @@ describe('closed-network backend compilers', () => {
     'refuses a host allowlist instead of silently opening the network',
     (confine) => {
       expect(() => confine(['true'], { ...options, networkAllow: ['api.example.com'] })).toThrow(
+        /E_SANDBOX_NETWORK_ALLOWLIST_UNSUPPORTED/,
+      )
+      expect(() => confine(['true'], { ...options, networkAllow: ['*', 'api.example.com'] })).toThrow(
         /E_SANDBOX_NETWORK_ALLOWLIST_UNSUPPORTED/,
       )
     },
@@ -136,6 +158,7 @@ describe('closed-network backend compilers', () => {
       '(allow mach-lookup (global-name "com.apple.trustd.agent") (global-name "com.apple.trustd"))'
     for (const backend of [SEATBELT_BACKEND, SEATBELT_COMPAT_BACKEND]) {
       expect(backend.confine(['true'], { ...options, network: 'allow' })[2]).toContain(trust)
+      expect(backend.confine(['true'], { ...options, networkAllow: ['*'] })[2]).toContain(trust)
       expect(backend.confine(['true'], options)[2]).not.toContain('mach-lookup')
     }
   })

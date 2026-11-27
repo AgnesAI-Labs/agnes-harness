@@ -9,6 +9,7 @@ import { parseSemver } from '@agnes/extension-api'
 import { AGH_DIR } from '@agnes/protocol'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { checkGlibc } from '../../../tools/native/check-glibc.mjs'
+import { buildPdfPreview, copyPdfPreviewNotice } from '../../../tools/pdf-preview-build.mjs'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { productionWebOptions } from '../../../tools/web-build-options.mjs'
 import { clientPlatformExternals } from '../../../tools/web-client-externals.mjs'
@@ -179,7 +180,7 @@ export async function buildLocalWeb(webOut: string): Promise<readonly BuildResul
       admin: '@agnes/web-admin/admin/plugins/admin',
       resources: join(repoPackages, 'resource-control-web', 'src', 'admin.tsx'),
       // 独立页（/admin/plugins、/admin/resources）的宿主入口；设置弹窗里嵌的是上面三个模块。
-      'admin-standalone': join(repoPackages, 'web', 'src', 'admin', 'plugins', 'standalone.ts'),
+      'admin-standalone': '@agnes/web-admin/admin/plugins/standalone',
       'resources-standalone': join(repoPackages, 'resource-control-web', 'src', 'standalone.ts'),
     },
     outdir: webOut,
@@ -328,20 +329,20 @@ export async function buildLocalWeb(webOut: string): Promise<readonly BuildResul
     join(webOut, 'style.css'),
     `\n${inCssLayer(`${core}\n${light}\n${dark}`, 'vendor')}\n${overrides}`,
   )
+  metafiles.push(await buildPdfPreview(webOut))
   await collectThirdPartyNotices(webRoot, webOut, metafiles)
+  await copyPdfPreviewNotice(webOut)
   return metafiles
 }
 
-async function buildLocal(out: string, nativeOutput?: string, versionOverride?: string): Promise<void> {
+async function buildLocal(
+  out: string,
+  { version, payloadVersion, distribution }: ReturnType<typeof resolveBuildMetadata>,
+  nativeOutput?: string,
+): Promise<void> {
   const webOut = join(out, 'web')
   await mkdir(join(out, 'native'), { recursive: true })
   await copyRipgrep(out)
-  const { version: packageVersion } = JSON.parse(await readFile(join(cliRoot, 'package.json'), 'utf8'))
-  const declaredVersion = typeof packageVersion === 'string' ? packageVersion : '0.0.0'
-  const workspaceBuild = versionOverride === undefined && declaredVersion === '0.0.0'
-  const payloadVersion = versionOverride ?? declaredVersion
-  const version = workspaceBuild ? PUBLIC_PACKAGE_VERSION : payloadVersion
-  const distribution = process.env.AGNES_BUILD_DISTRIBUTION?.trim() || (workspaceBuild ? 'dev' : 'npm')
   await copyBundledPlugins(out, payloadVersion)
   await copyBundledExamples(out, payloadVersion)
   const defines = await runtimeDefines(version, distribution)
@@ -388,16 +389,23 @@ async function buildLocal(out: string, nativeOutput?: string, versionOverride?: 
   await buildLocalWeb(webOut)
 }
 
-function parseBuildArgs(args: readonly string[]): { out?: string; version?: string } {
-  let out: string | undefined
-  let version: string | undefined
+const BUILD_DISTRIBUTIONS = ['dev', 'npm', 'sea', 'desktop'] as const
+type BuildDistribution = (typeof BUILD_DISTRIBUTIONS)[number]
+type BuildArgs = { out?: string; version?: string; distribution?: BuildDistribution }
+
+function isBuildDistribution(value: string | undefined): value is BuildDistribution {
+  return BUILD_DISTRIBUTIONS.some((distribution) => distribution === value)
+}
+
+export function parseBuildArgs(args: readonly string[]): BuildArgs {
+  const parsed: BuildArgs = {}
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
     if (arg === '--output-dir') {
       const value = args[index + 1]
       if (value === undefined || !isAbsolute(value))
         throw new Error('Expected --output-dir with an absolute directory')
-      out = value
+      parsed.out = value
       index += 1
       continue
     }
@@ -405,23 +413,70 @@ function parseBuildArgs(args: readonly string[]): { out?: string; version?: stri
       const value = args[index + 1]
       if (value === undefined || !parseSemver(value))
         throw new Error('Expected --version with a SemVer version')
-      version = value
+      parsed.version = value
       index += 1
       continue
     }
-    throw new Error('Expected --output-dir with an absolute directory')
+    if (arg === '--distribution') {
+      const value = args[index + 1]
+      if (!isBuildDistribution(value))
+        throw new Error('Expected --distribution with dev, npm, sea or desktop')
+      parsed.distribution = value
+      index += 1
+      continue
+    }
+    throw new Error(`Unexpected build argument: ${arg}`)
   }
-  return { ...(out === undefined ? {} : { out }), ...(version === undefined ? {} : { version }) }
+  return parsed
+}
+
+export function resolveBuildMetadata({
+  declaredVersion,
+  versionOverride,
+  distributionOverride,
+  envDistribution,
+}: {
+  declaredVersion: string
+  versionOverride?: string | undefined
+  distributionOverride?: BuildDistribution | undefined
+  envDistribution?: string | undefined
+}) {
+  const workspaceBuild = versionOverride === undefined && declaredVersion === '0.0.0'
+  const payloadVersion = versionOverride ?? declaredVersion
+  const trimmedEnv = envDistribution?.trim()
+  const environmentDistribution =
+    isBuildDistribution(trimmedEnv) && (workspaceBuild || trimmedEnv !== 'dev') ? trimmedEnv : undefined
+  return {
+    version: workspaceBuild ? PUBLIC_PACKAGE_VERSION : payloadVersion,
+    payloadVersion,
+    distribution: distributionOverride ?? environmentDistribution ?? (workspaceBuild ? 'dev' : 'npm'),
+  }
+}
+
+export function resolveBuildTarget(args: BuildArgs, declaredVersion: string, envDistribution?: string) {
+  return {
+    out: args.out ?? join(cliRoot, 'dist', 'local'),
+    ...resolveBuildMetadata({
+      declaredVersion,
+      versionOverride: args.version,
+      distributionOverride: args.distribution,
+      envDistribution,
+    }),
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const parsed = parseBuildArgs(process.argv.slice(2))
-  const out = parsed.out ?? join(cliRoot, 'dist', 'local')
+  const { version: packageVersion } = JSON.parse(await readFile(join(cliRoot, 'package.json'), 'utf8'))
+  const declaredVersion = typeof packageVersion === 'string' ? packageVersion : '0.0.0'
+  const { out, ...metadata } = resolveBuildTarget(
+    parsed,
+    declaredVersion,
+    process.env.AGNES_BUILD_DISTRIBUTION,
+  )
   const transaction = await beginRuntimeDirectory(out)
   try {
-    await withBuiltSystemRuntime(repoPackages, (native) =>
-      buildLocal(transaction.staging, native, parsed.version),
-    )
+    await withBuiltSystemRuntime(repoPackages, (native) => buildLocal(transaction.staging, metadata, native))
     if (process.platform === 'linux') checkGlibc(transaction.staging) // guards-allow-platform: Linux distribution ABI gate.
     await transaction.commit()
     process.stdout.write(`built local launch output at ${out}\n`)

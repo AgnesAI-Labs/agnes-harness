@@ -152,6 +152,7 @@
 
 ### 凭据
 
+- `_agnes/v1/admin.cloud.authorize`
 - `_agnes/v1/admin.credentials.list`
 - `_agnes/v1/admin.credentials.create`
 - `_agnes/v1/admin.credentials.set`
@@ -209,6 +210,7 @@
 - `_agnes/v1/packages.catalog.list`
 - `_agnes/v1/packages.catalog.get`
 - `_agnes/v1/packages.provenance`
+- `_agnes/v1/packages.docs.get`
 - `_agnes/v1/packages.sourcePolicy`
 - `_agnes/v1/packages.skillImport`
 - `_agnes/v1/applications.get`
@@ -235,8 +237,11 @@
 
 - `_agnes/v1/skins.list`
 - `_agnes/v1/skins.read`
+- `_agnes/v1/skins.select`
 - `_agnes/v1/clientModules.list`
 - `_agnes/v1/clientModules.read`
+- `_agnes/v1/clientModules.uiEntries`
+- `_agnes/v1/clientModules.frontendPublication`
 - `_agnes/v1/clientModules.callService`
 - `_agnes/v1/clientModules.callEffect`
 

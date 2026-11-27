@@ -15,6 +15,10 @@ import { powerShellCommand } from '../../src/adapters/powershell-command.js'
 import * as powerShellFiles from '../../src/adapters/powershell-file.js'
 import { expandShell } from '../../src/sandbox-seam.js'
 
+// Native spawn is acknowledged before PowerShell enters the script. Cold shells took up to
+// 29 seconds on the hosted runner; a job receipt alone does not prove script entry.
+const SHELL_COMPLETION_MS = 45_000
+
 describe.skipIf(process.platform !== 'win32')('Windows configured job shells', () => {
   it('cleans a real command tree even when another job reports a cleanup error', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'agh-shutdown-error-'))
@@ -115,7 +119,7 @@ describe.skipIf(process.platform !== 'win32')('Windows configured job shells', (
       vi.stubEnv('LOCALAPPDATA', 'C:\\synthetic\\local appdata')
       const exec = createExec({ windowsNodeExecutable: process.execPath, windowsPowerShell: shell })
       const jobs = new ShellJobs()
-      const base = fakeToolContext({ cwd: tmpdir(), timeoutMs: 20000 })
+      const base = fakeToolContext({ cwd: tmpdir(), timeoutMs: SHELL_COMPLETION_MS + 10_000 })
       const ctx = { ...base, platform: { ...base.platform, shell: 'powershell' as const } }
       ctx.sandbox.openProcess = (request) =>
         exec.openProcess!(
@@ -141,7 +145,7 @@ describe.skipIf(process.platform !== 'win32')('Windows configured job shells', (
         const receipt = await run(command, extra)
         const id = (receipt.details as { jobId: string }).jobId
         expect(typeof id, JSON.stringify(receipt)).toBe('string')
-        const terminal = await jobs.wait(ctx, id, 15000)
+        const terminal = await jobs.wait(ctx, id, SHELL_COMPLETION_MS)
         expect(terminal.status, JSON.stringify(terminal)).not.toBe('running')
         const before = jobs.list(ctx).map((job) => job.id)
         const result = await tool.execute({ command, ...extra }, ctx)
@@ -272,13 +276,13 @@ describe.skipIf(process.platform !== 'win32')('Windows configured job shells', (
           ctx.signal = new AbortController().signal
           const readerSignal = ctx.signal
           const waitStarted = performance.now()
-          const done = await jobs.wait(ctx, id, 15000)
+          const done = await jobs.wait(ctx, id, SHELL_COMPLETION_MS)
           record('wait-returned')
           if (done.status !== 'completed' || done.stdout !== 'survived') {
             console.error(
               'AGH_WINDOWS_BACKGROUND_WAIT',
               JSON.stringify({
-                waitRequestedMs: 15000,
+                waitRequestedMs: SHELL_COMPLETION_MS,
                 waitElapsedMs: Math.round(performance.now() - waitStarted),
                 jobId: id,
                 sameJobId: done.id === id,
@@ -325,10 +329,13 @@ describe.skipIf(process.platform !== 'win32')('Windows configured job shells', (
         await jobs.kill(ctx, (running.details as { jobId: string }).jobId)
         const foreground = new AbortController()
         ctx.signal = foreground.signal
-        const cancelling = run("Write-Output 'cancel-ready'; Start-Sleep -Seconds 60", { timeoutMs: 15000 })
+        const cancelling = run("Write-Output 'cancel-ready'; Start-Sleep -Seconds 60", {
+          timeoutMs: SHELL_COMPLETION_MS + 5_000,
+          timeoutToBackground: false,
+        })
         await expect
           .poll(() => jobs.list(ctx).find((job) => job.stdout.includes('cancel-ready'))?.status, {
-            timeout: 10000,
+            timeout: SHELL_COMPLETION_MS,
           })
           .toBe('running')
         foreground.abort()
@@ -340,6 +347,6 @@ describe.skipIf(process.platform !== 'win32')('Windows configured job shells', (
         vi.unstubAllEnvs()
       }
     },
-    90000,
+    360_000,
   )
 })

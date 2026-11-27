@@ -36,6 +36,18 @@ function missing(reason: string): SandboxCapabilities {
 
 /** This demo runs Linux containers; a reachable Windows daemon is not enough. */
 export function probeDocker(signal?: AbortSignal): Promise<SandboxCapabilities> {
+  const started = performance.now()
+  const unavailable = (reason: string, stage: string, detail: Record<string, string | number | null> = {}) =>
+    missing(
+      `${reason} [docker-probe ${JSON.stringify({ stage, elapsedMs: Math.round(performance.now() - started), ...detail })}]`,
+    )
+  const errno = (error: unknown) => {
+    const code = (error as { code?: unknown } | null)?.code
+    return typeof code === 'string' &&
+      ['ENOENT', 'EACCES', 'EPERM', 'EMFILE', 'ENFILE', 'ENOMEM', 'EAGAIN', 'ENOSYS'].includes(code)
+      ? code
+      : 'unknown'
+  }
   return new Promise((resolve) => {
     let settled = false
     const finish = (capabilities: SandboxCapabilities) => {
@@ -49,27 +61,27 @@ export function probeDocker(signal?: AbortSignal): Promise<SandboxCapabilities> 
         stdio: ['ignore', 'pipe', 'ignore'],
         windowsHide: true,
       })
-    } catch {
-      finish(missing('docker CLI is not available'))
+    } catch (error) {
+      finish(unavailable('docker CLI is not available', 'spawn-throw', { errno: errno(error) }))
       return
     }
     const output = { text: '', truncated: false }
     capture(child.stdout, 64, output)
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
-      finish(missing('docker CLI is not available'))
+      finish(unavailable('docker CLI is not available', 'timeout'))
     }, 5_000)
     const onAbort = () => {
       child.kill('SIGKILL')
-      finish(missing('docker CLI is not available'))
+      finish(unavailable('docker CLI is not available', 'aborted'))
     }
     signal?.addEventListener('abort', onAbort, { once: true })
-    child.on('error', () => {
+    child.on('error', (error) => {
       clearTimeout(timer)
       signal?.removeEventListener('abort', onAbort)
-      finish(missing('docker CLI is not available'))
+      finish(unavailable('docker CLI is not available', 'spawn-error', { errno: errno(error) }))
     })
-    child.on('close', (code) => {
+    child.on('close', (code, exitSignal) => {
       clearTimeout(timer)
       signal?.removeEventListener('abort', onAbort)
       finish(
@@ -81,10 +93,20 @@ export function probeDocker(signal?: AbortSignal): Promise<SandboxCapabilities> 
               available: true,
               enforcement: { level: 'partial' as const, scope: ['network', 'process'] as const },
             })
-          : missing(
+          : unavailable(
               code === 0
                 ? 'this Docker sandbox requires a Linux container daemon'
                 : 'docker CLI or daemon is not available',
+              'close',
+              {
+                exitCode: typeof code === 'number' && Number.isInteger(code) ? code : null,
+                signal:
+                  exitSignal === null
+                    ? 'none'
+                    : ['SIGTERM', 'SIGKILL', 'SIGINT', 'SIGABRT', 'SIGSEGV', 'SIGBREAK'].includes(exitSignal)
+                      ? exitSignal
+                      : 'other',
+              },
             ),
       )
     })

@@ -2,7 +2,7 @@ export type { ApplicationWorkbenchText } from '../gen/ts/extension-manifest.js'
 export type { DecisionPresentation, InputDeliverer, ToolPresentation } from '../gen/ts/session-v1.js'
 // jcs is the shared strict RFC 8785 serializer for SDK/daemon signature bytes; it does not replace core request hashing.
 export { type ValidatedRequestMedia, validateRequestMedia } from './request-media.js'
-export { readSessionTitle, SESSION_TITLE_EVENT, SessionTitleRecord } from './session-title.js'
+export * from './session-title.js'
 export {
   isSkillBundleIgnored,
   isSkillBundleMarker,
@@ -420,115 +420,6 @@ export type {
   ToolSchema,
 } from '../gen/ts/model.js'
 export type {
-  AuthoringApproveParams,
-  AuthoringCandidate,
-  AuthoringCandidateList,
-  AuthoringCandidateSummary,
-  AuthoringCreateParams,
-  AuthoringFile,
-  AuthoringOrigin,
-  AuthoringProvenance,
-  AuthoringRejectParams,
-  AuthoringShowParams,
-  AuthoringSubmitParams,
-  AuthoringTestParams,
-  AuthoringTests,
-  AuthoringWriteParams,
-  ClientModuleEffectCallParams,
-  ClientModuleListParams,
-  ClientModuleListResult,
-  ClientModuleReadParams,
-  ClientModuleReadResult,
-  ClientModuleRosterRow,
-  ClientModuleServiceCallParams,
-  ContributionBinding,
-  ExternalPackageDescriptor,
-  McpImportPreview,
-  PackageActivationRequest,
-  PackageActivationTrust,
-  PackageAdminContext,
-  PackageAdminError,
-  PackageAdminPermission,
-  PackageBlocker,
-  PackageBundledOrigin,
-  PackageCapabilityDiff,
-  PackageCatalogDescriptor,
-  PackageCatalogGetParams,
-  PackageCatalogListParams,
-  PackageCatalogPage,
-  PackageContributionSummary,
-  PackageDisableParams,
-  PackageEnableParams,
-  PackageInspectParams,
-  PackageInstalledDescriptor,
-  PackageInstallParams,
-  PackageListParams,
-  PackageListResult,
-  PackageOperation,
-  PackageOperationCancelParams,
-  PackageOperationGetParams,
-  PackageOperationReceipt,
-  PackagePinsInspectParams,
-  PackagePinsInspectResult,
-  PackagePinsReleaseParams,
-  PackagePinsReleaseResult,
-  PackagePresentation,
-  PackagePreview,
-  PackageProvenance,
-  PackageProvenanceParams,
-  PackageRemoveParams,
-  PackageRollbackParams,
-  PackageRollbackTarget,
-  PackageSource,
-  PackageSourcePolicy,
-  PackageTrustDecision,
-  PackageTrustParams,
-  PackageTrustWorkspaceParams,
-  PackageTrustWorkspaceResult,
-  PackageUntrustParams,
-  PackageUpdateParams,
-  PackageWarning,
-  PluginConfigAudit,
-  PluginConfigEntry,
-  PluginConfigGetParams,
-  PluginConfigSaveParams,
-  PluginConfigSaveResult,
-  PluginConfigSnapshot,
-  PluginConfigValidateParams,
-  PluginConfigValidation,
-  PluginGenerationStatus,
-  PluginPublicationReport,
-  PluginPublicationStatusResult,
-  PluginTreeApplyParams,
-  PluginTreeApplyResult,
-  PluginTreeArtifact,
-  PluginTreeRollbackParams,
-  PluginTreeRollbackResult,
-  PluginTreeView,
-  RuntimePinDescriptor,
-  RuntimePinReleaseResult,
-  SessionGenerationMigrationParams,
-  SessionGenerationMigrationResult,
-  SkillEnvironmentRequirement,
-  SkillImportParams,
-  SkillImportResult,
-  SkinListResult,
-  SkinReadParams,
-  SkinReadResult,
-} from '../gen/ts/package-admin.js'
-export {
-  ApplicationAdoptParams,
-  ApplicationClearParams,
-  ApplicationConfigSnapshot,
-  ApplicationPreview,
-  ApplicationPreviewParams,
-  ApplicationSelection,
-  ApplicationState,
-  PresentationRoleSelection,
-  PresentationRoleSelections,
-  PresentationRoleState,
-} from '../gen/ts/package-admin.js'
-export type {
   PluginStreamClose,
   PluginStreamGrant,
   PluginStreamOpen,
@@ -759,6 +650,7 @@ export { CURRENT_V, listMigrations, normalize, registerMigration, supportedVersi
 export * from './model.js'
 export * from './model-slots.js'
 export * from './package-admin.js'
+export * from './package-admin-dtos.js'
 export {
   automaticPermissionDecision,
   isPermissionPurpose,
@@ -786,17 +678,14 @@ export {
   validateReferenceSelections,
 } from './references.js'
 export * from './refinement.js'
+export * from './remote-frontend.js'
 export * from './resource-control.js'
 export * from './runtime-admin.js'
 export * from './runtime-target-artifact.js'
 export * from './schedules.js'
 export * from './sequence.js'
 export { validateExtensionCall, validateExtensionCallError, validateServiceCapability } from './services.js'
-export {
-  ARTIFACT_REGISTERED_EVENT,
-  SESSION_ARTIFACT_ROOT_EVENT_TYPES,
-  sessionArtifactRoots,
-} from './session-artifacts.js'
+export * from './session-artifacts.js'
 export * from './session-capabilities.js'
 export {
   parseAgentRef,

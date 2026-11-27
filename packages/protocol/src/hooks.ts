@@ -18,6 +18,7 @@ export const HOOK_EVENTS = [
   'subagent_start',
   'subagent_end',
   'format_deviation',
+  'turn_end',
   'shutdown',
 ] as const
 export type HookEvent = (typeof HOOK_EVENTS)[number]

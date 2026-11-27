@@ -1,4 +1,19 @@
-import type { EventEnvelope } from '@agnes/protocol'
+import { applicationWorkText, type EventEnvelope } from '@agnes/protocol'
+
+/** A short label from the first visible user input, without opening a conversation. */
+export function sidebarPromptTitle(events: readonly EventEnvelope[]): string | undefined {
+  for (const event of events) {
+    if (event.type !== 'user/message' || sidebarMessageTime(event) === undefined) continue
+    const { content } = event.data as { content: { type: string; text?: string }[] }
+    const text = content
+      .filter((block) => block.type === 'text' && typeof block.text === 'string')
+      .map((block) => block.text)
+      .join('\n')
+    const display = applicationWorkText(text).text
+    return display.trim() ? Array.from(display).slice(0, 56).join('') : undefined
+  }
+  return undefined
+}
 
 /** Mirrors the visible-message cases in Core's UI projection, without depending on its private state. */
 export function sidebarMessageTime(event: EventEnvelope): number | undefined {

@@ -339,6 +339,7 @@ describe('tools phase', () => {
     // commit carries the counter as a cell beside its rows.
     expect(types.slice(i + 3)).toEqual([
       'effect/intent',
+      'x/core/tool-dispatch',
       'tool/result',
       'effect/settled',
       'verifier/signal',

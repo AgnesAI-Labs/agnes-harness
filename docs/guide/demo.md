@@ -42,19 +42,19 @@ Expand the tool record and check the name, input, and structured output of `demo
 
 ## Demo 2: adapt the workbench to a role
 
-Follow the [frontend panel tutorial](../develop/frontend.md) to load `client-panel/v1`. Web should show `Agnes client module demo · v1`. After updating, trusting, and enabling v2, create a new session to check its version text. Disable the package and create another session to confirm the built-in sidebar returns; retained sessions keep their original modules.
+Follow the [frontend tutorial](../develop/frontend.md) to install, trust, and enable `client-panel/v1`. This is a legacy workbench slot fixture. The official Web workbench reports that its native UI is not admitted, does not show `Agnes client module demo · v1`, and keeps its built-in interface.
 
-This example occupies a singleton sidebar slot and replaces the built-in sidebar. Keep a terminal available so you can disable it if needed. The automated demo checks the roster, and component tests check mounting/unmounting. Inspect the appearance in a browser yourself.
+For a positive example, follow [Build a presentation plugin](../extend/presentations.md). Preview the exact interface role and approve it explicitly; ordinary plugin installation does not replace a role.
 
-**Build on it:** Replace the version label with the information and actions that matter for the role, respecting declared slots and the frontend lifecycle.
+**Build on it:** Use a scoped, approved entry for the role's information and actions. Test cleanup and revocation as well as display.
 
 <a id="演示三把界面接到后端服务"></a>
 
 ## Demo 3: connect the interface to a backend service
 
-Follow the [full-stack tutorial](../develop/fullstack.md). In an isolated trial profile, configure service capability, install, trust, and enable the combined package, then create a new session before refreshing the panel.
+Follow the [full-stack tutorial](../develop/fullstack.md) in an isolated `local-dev` profile. Install, trust, and enable the tutorial package from source. Then preview and explicitly adopt its application. Installation alone does not admit the native page.
 
-The panel shows `backend 1.0.0` when it receives the backend query result. After update and trust/enable, use a new session to check both frontend and backend versions. After rollback, verify the hashes and trust/enable the restored version before creating a new session. Disable/remove excludes the package from new bindings; retained sessions keep their pinned code, subject to current authorization.
+Open **Service version** in a new session's workbench. The page shows `backend 1.0.0` when it receives the read-only query result. Clear the application to remove the tab and keep the official workbench. The tutorial describes the separate versioned fixtures for update and rollback tests.
 
 **Build on it:** Start with a read-only status page and gradually connect your business services. Writes need their own effects, command identity, and authorization design; do not reuse a read-only query declaration for them.
 
@@ -62,7 +62,9 @@ The panel shows `backend 1.0.0` when it receives the backend query result. After
 
 ## Run locally without a model account
 
-Complete the [build prerequisites](install.md). Run from the source root; if the full build already exists, start with the second command. The script is an optional process probe; rebuild and verify against your checkout. Its profile-level roster and live service update checks do not demonstrate session-pinned upgrades. Use the [hot-upgrade demo](../../examples/demos/hot-upgrade/README.md) to check retained-session behavior.
+Complete the [build prerequisites](install.md). Use the three browser tutorials above for current offline acceptance. Use the [hot-upgrade demo](../../examples/demos/hot-upgrade/README.md) to check retained sessions.
+
+The optional process probe below includes legacy profile-roster expectations that predate native UI admission. It is not a pass criterion for this tutorial or for session-pinned upgrades.
 
 ```sh
 pnpm --filter @agnes/cli build:local

@@ -9,8 +9,15 @@ describe('hooks', () => {
   // the hooks runner read this table and nothing else pins it. The expected object is written from
   // the decision table, not copied back out of hooks.json, or the assertion proves only itself.
   it('the five-tuple table matches the decision table cell for cell', () => {
-    expect(HOOK_EVENTS).toHaveLength(16)
+    expect(HOOK_EVENTS).toHaveLength(17)
     expect(HOOK_TABLE).toEqual({
+      turn_end: {
+        mode: 'parallel',
+        category: 'observe',
+        failPolicy: 'open',
+        timeoutMs: 1000,
+        replayOnResume: false,
+      },
       session_start: {
         mode: 'parallel',
         category: 'observe',

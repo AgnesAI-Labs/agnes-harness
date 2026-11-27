@@ -14,6 +14,7 @@ import {
   sha256hex,
 } from '@agnes/host'
 import { createClient, memoryJournal } from '@agnes/sdk'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { afterEach, expect, it, vi } from 'vitest'
 import { type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
@@ -264,7 +265,7 @@ it.each(['due', 'run-now'] as const)(
   async (mode) => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-legacy-schedule-'))
     cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
-    mkdirSync(join(dir, 'chats'))
+    createPrivateDirectorySync(join(dir, 'chats'))
     const legacy = nativeRealpathSync(join(dir, 'chats'))
     writeFileSync(join(legacy, 'report.md'), 'old report')
     const profile = buildProfile(dir)
@@ -474,7 +475,7 @@ it.each(['committed', 'opened'] as const)(
     )
     const dir = mkdtempSync(join(tmpdir(), 'agnes-legacy-recover-owner-'))
     cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
-    mkdirSync(join(dir, 'chats'))
+    createPrivateDirectorySync(join(dir, 'chats'))
     const legacy = nativeRealpathSync(join(dir, 'chats'))
     writeFileSync(join(legacy, 'report.md'), 'old report')
     const profile = buildProfile(dir)

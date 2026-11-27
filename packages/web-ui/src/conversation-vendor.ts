@@ -35,6 +35,7 @@ export {
   ConversationToolCard,
   toolOutcome,
 } from './conversation/messages.js'
+export { StaticPluginMarkdown } from './conversation/plugin-markdown.js'
 export {
   type ConversationNode,
   type ConversationProjection,

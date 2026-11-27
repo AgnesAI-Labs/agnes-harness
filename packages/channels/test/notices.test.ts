@@ -62,6 +62,11 @@ describe('noticeText', () => {
       detail: { profile: 'default', principal: { id: 'operator', org: 'local' } },
       at: 't',
     },
+    {
+      kind: 'credential_deleted',
+      detail: { id: 'secret://generic/11111111-1111-1111-1111-111111111111' },
+      at: 't',
+    },
   ] satisfies DaemonNotice[])('suppresses noisy $kind notices', (notice) => {
     expect(noticeText(notice)).toBeNull()
   })

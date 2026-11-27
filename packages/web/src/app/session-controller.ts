@@ -4,6 +4,9 @@ import { createLiveProjection } from '@agnes/web-conversation/live-projection'
 import type { KnownSessionModel } from '@agnes/web-conversation/presentation'
 import { preserveRouteParams, reportSuccess } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
+import { skillsWorkspaceId } from '../backends/local-route.js'
+import { localLocationUrl } from '../backends/local-workbench-bus.js'
+import { measurePreparation } from '../preparation-timing.js'
 import { forkTitle } from '../session-actions.js'
 import { bindWebSession, loadWebSession } from '../session-binding.js'
 import { sessionPermissionLevel } from '../session-permission.js'
@@ -160,28 +163,30 @@ export function createSessionController(
       context.clientModules.session.setReadiness('connecting', id)
       if (!options.created) void context.readOnlyController.preview(id, epoch).catch(() => undefined)
       const workspaceHint = context.sessionRows.find((row) => row.sessionId === id)?.cwd
-      const binding = options.created
-        ? bindWebSession(options.created, permission)
-        : await loadWebSession(
-            (sessionId, options) =>
-              context.client.session.open(sessionId, {
-                ...options,
-                ...(workspaceHint ? { cwd: workspaceHint } : {}),
-              }),
-            id,
-            permission,
-            {
-              signal: bindingOwner.loadingSignal(epoch),
-              onPermissionRequestRegistered: (off) => bindingOwner.loadingPermission(epoch, off),
-            },
-          )
+      const binding = await measurePreparation('session_open', async () =>
+        options.created
+          ? bindWebSession(options.created, permission)
+          : loadWebSession(
+              (sessionId, options) =>
+                context.client.session.open(sessionId, {
+                  ...options,
+                  ...(workspaceHint ? { cwd: workspaceHint } : {}),
+                }),
+              id,
+              permission,
+              {
+                signal: bindingOwner.loadingSignal(epoch),
+                onPermissionRequestRegistered: (off) => bindingOwner.loadingPermission(epoch, off),
+              },
+            ),
+      )
       if (!bindingOwner.attach(epoch, binding)) return
       const loaded = binding.session
       // Admission establishes execution identity; the first authoritative opening replaces the preview
       // on screen. A late preview must not downgrade this.
       context.clientModules.session.setSession(loaded.id, 'connecting')
       // Controls need only the admitted session: read them alongside the opening, apply them after it.
-      const controls = context.readSessionControls(loaded)
+      const controls = measurePreparation('session_controls', () => context.readSessionControls(loaded))
       controls.catch(() => undefined)
       context.sessionIsolation = undefined
       void Promise.resolve()
@@ -197,7 +202,10 @@ export function createSessionController(
         .catch(() => undefined)
       context.sessionControls = undefined
       context.moduleSessionId = loaded.id
-      await context.clientModules.reconciler.reconcileNow()
+      // The SDK's authorized projection can load while admitted UI assets are prepared. The
+      // renderer buffers it until mount; neither read grants execution to an unadmitted module.
+      const rosterReady = context.clientModules.reconciler.reconcileNow()
+      rosterReady.catch(() => undefined)
       if (!context.sessionBinding.isCurrent(epoch)) {
         binding.offPermission?.()
         return
@@ -226,7 +234,8 @@ export function createSessionController(
         context.selectedWorkspace =
           context.workspaceRows.find((entry) => entry.path === workspacePath) ??
           (options.workspace?.path === workspacePath ? options.workspace : undefined)
-      const url = new URL(location.href)
+      const url = localLocationUrl()
+      if (!skillsWorkspaceId(url.searchParams)) url.searchParams.delete('workspaceId')
       // Launch parameters describe a draft; replaying them would replace this session on refresh.
       for (const key of ['new', 'bundle', 'preset', 'loop', 'prompt']) url.searchParams.delete(key)
       url.searchParams.set('session', id)
@@ -304,7 +313,7 @@ export function createSessionController(
         },
       })
       bindingOwner.watch(epoch, liveProjection)
-      await liveProjection.start()
+      await Promise.all([rosterReady, measurePreparation('session_projection', () => liveProjection.start())])
       // A read lost while the opening was out (a dropped connection) is made again, as before.
       const applyControls = await controls.catch(() => context.readSessionControls(loaded))
       // The readiness render below paints the applied controls in the same task.

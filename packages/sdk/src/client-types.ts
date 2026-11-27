@@ -24,6 +24,8 @@ export type TransportOption =
       url: string
       tls?: { ca?: string; rejectUnauthorized?: boolean }
       protocols?: string[]
+      /** Positive millisecond budget for the WebSocket handshake; defaults to 3000. */
+      connectTimeoutMs?: number
     }
 
 // `reconnected` fires once the connection and every attached session are recovered after
@@ -52,7 +54,16 @@ export type CreateClientOptions = {
   auth?: AuthOption
   clientId?: string
   journal?: JournalStore
-  timeouts?: { request?: number; initialize?: number; claim?: number; loadIdle?: number; loadHard?: number }
+  /** Milliseconds. History load timeouts accept integers from 1 to 2,147,483,647. */
+  timeouts?: {
+    request?: number
+    initialize?: number
+    claim?: number
+    /** Time to admit a session and start verification, when supported by the daemon. */
+    loadPreparation?: number
+    loadIdle?: number
+    loadHard?: number
+  }
   locale?: string
   bufferLimit?: number
   claimStrict?: boolean

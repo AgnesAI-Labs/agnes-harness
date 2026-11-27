@@ -6,6 +6,11 @@ import { PUBLIC_PACKAGE_NAME, PUBLIC_PACKAGE_VERSION, publishableManifest } from
 const devOnly =
   /^(?:vitest|@vitest\/.*|tsx|typescript|@types\/.*|@biomejs\/.*|@playwright\/.*|@axe-core\/.*|eslint|@eslint\/.*|prettier|ts-node|happy-dom)$/
 
+// esbuild can retain the compile-time typeof check as `true ? "npm" : void 0`.
+const telemetryDistribution =
+  /^function telemetryRuntime\(\s*distribution,\s*compiled\s*=\s*\{\s*version:[^,}]+,\s*distribution:\s*([^,}]+),?\s*\}\s*\)/m
+const npmDistribution = /^(?:"npm"|true\s*\?\s*"npm"\s*:\s*void\s+0)$/
+
 export async function packageFiles(root: string): Promise<Map<string, Buffer>> {
   const files = new Map<string, Buffer>()
   const paths: string[] = []
@@ -60,6 +65,9 @@ export function guardPackedFiles(files: ReadonlyMap<string, Buffer>, triple: str
     'dist/agnes.mjs',
     'dist/daemon.mjs',
     'dist/worker.mjs',
+    'dist/agnes-main.mjs',
+    'dist/daemon-main.mjs',
+    'dist/worker-main.mjs',
     'dist/authoring-sdk.mjs',
     'dist/authoring-sdk-exports.json',
     'dist/prebuilds/index.json',
@@ -87,6 +95,10 @@ export function guardPackedFiles(files: ReadonlyMap<string, Buffer>, triple: str
     'dist/bundled-plugins/skill-helper/LICENSE',
   ])
     required(path)
+  const daemon = files.get('dist/daemon-main.mjs')?.toString() ?? ''
+  const distribution = telemetryDistribution.exec(daemon)?.[1]?.trim() ?? ''
+  if (!npmDistribution.test(distribution))
+    throw new Error('Expected compiled npm telemetry distribution in dist/daemon-main.mjs')
   if (triple.startsWith('darwin') || triple.startsWith('linux')) required('dist/native/pty-relay')
   if (triple.startsWith('darwin')) {
     required('dist/native/macos-process-identity')

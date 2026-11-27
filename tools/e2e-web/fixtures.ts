@@ -1,17 +1,23 @@
-import { test as base, expect } from '@playwright/test'
+import { test as base, expect, type Page } from '@playwright/test'
 import { testCertificatePath } from './oauth-fixture.js'
 import { isolatedRuntime, type Runtime } from './runtime.js'
 
-export const test = base.extend<{
+/** All local surfaces mount directly in the top-level document; only Cloud B uses an isolated frame. */
+export const root = base.extend<{
   runtime: Runtime
+  runtimeSetup: NonNullable<Parameters<typeof isolatedRuntime>[1]> & {
+    prepare?: (runtime: Runtime) => Promise<void>
+  }
   browserHealth: undefined
   expectedBrowserErrors: string[]
 }>({
+  runtimeSetup: [{}, { option: true }],
   // biome-ignore lint/correctness/noEmptyPattern: Playwright inspects the destructured fixture dependencies.
   expectedBrowserErrors: async ({}, use) => {
     await use([])
   },
-  runtime: async ({ page, screenshot }, use, info) => {
+  runtime: async ({ page, screenshot, runtimeSetup }, use, info) => {
+    const { prepare, ...options } = runtimeSetup
     const runtime = await isolatedRuntime(
       info.title.startsWith('guided first run zh-CN') ? 'installed' : 'root',
       {
@@ -27,12 +33,24 @@ export const test = base.extend<{
         realModel:
           info.title.startsWith('application permission switch') ||
           (info.title.startsWith('agent launch sweep') && process.env.AGH_REAL_AGENT_SWEEP === '1'),
+        ...options,
       },
     )
     try {
+      await prepare?.(runtime)
       await runtime.start()
       // UI specs own their navigation and screen assertions; SDK flows do not boot a second client.
-      await use(runtime)
+      await use({
+        ...runtime,
+        cli: async (args) => {
+          if (args[0] === 'daemon' && args[1] === 'stop') info.setTimeout(Math.max(info.timeout, 120_000))
+          return runtime.cli(args)
+        },
+        restart: async (entry) => {
+          info.setTimeout(Math.max(info.timeout, 120_000))
+          await runtime.restart(entry)
+        },
+      })
     } finally {
       try {
         try {
@@ -121,4 +139,5 @@ export const test = base.extend<{
     { auto: true },
   ],
 })
+export const test = root
 export { expect }

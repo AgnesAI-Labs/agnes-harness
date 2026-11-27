@@ -231,7 +231,8 @@ function childEnvironment(): NodeJS.ProcessEnv {
 export const defaultExec: ExecFn = (command, args, opts) =>
   runIsolatedCommand(command, args, {
     ...opts,
-    env: childEnvironment(),
+    // macOS bsdtar otherwise serializes file metadata as extra AppleDouble entries.
+    env: { ...childEnvironment(), ...(command === 'tar' ? { COPYFILE_DISABLE: '1' } : {}) },
     timeoutMs: 120_000,
     maxOutputBytes: MAX_JSON,
     windowsBatch: command === 'npm' ? 'argv-proxy' : 'script',

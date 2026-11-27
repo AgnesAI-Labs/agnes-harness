@@ -378,12 +378,42 @@ describe('main', () => {
     expect(createHostImpl).not.toHaveBeenCalled()
   })
 
-  it('runs a whole one-shot turn and returns its exit code', async () => {
-    const dir = scratch()
-    const h = harness(dir)
-    expect(await main(['-p', 'hello'], h.io, h.boot)).toBe(0)
-    expect(h.out()).toBe('main says hi\n')
-  })
+  it.each([false, true, 'throws'])(
+    'runs a whole one-shot turn and returns its exit code (timing=%s)',
+    async (timing) => {
+      const dir = scratch()
+      const h = harness(dir)
+      if (timing) h.io.env.AGH_TIMING = '1'
+      let hostClosed = false
+      const createHost = h.boot.createHostImpl
+      if (!createHost) throw new Error('missing fixture host factory')
+      h.boot.createHostImpl = async (...args) => {
+        const host = await createHost(...args)
+        const close = host.close.bind(host)
+        vi.spyOn(host, 'close').mockImplementation(async () => {
+          await close()
+          hostClosed = true
+        })
+        return host
+      }
+      if (timing === 'throws') {
+        const write = h.io.stderr.write
+        vi.spyOn(h.io.stderr, 'write').mockImplementation((...args) => {
+          if (String(args[0]).startsWith('agh-timing ')) throw new Error('synthetic diagnostic write failure')
+          return write.apply(h.io.stderr, args)
+        })
+      }
+      expect(await main(['-p', 'hello'], h.io, h.boot)).toBe(0)
+      expect(h.out()).toBe('main says hi\n')
+      expect(hostClosed).toBe(true)
+      const marks = [...h.err().matchAll(/^agh-timing (\S+) (\d+\.\d)$/gm)]
+      expect(marks.map((mark) => mark[1])).toEqual(
+        timing === true ? ['boot-close-enter', 'boot-close-leave'] : [],
+      )
+      const times = marks.map((mark) => Number(mark[2]))
+      expect([...times].sort((a, b) => a - b)).toEqual(times)
+    },
+  )
 
   it('a --model the profile does not carry ends in one fixed line, not a JSON-RPC stack', async () => {
     const dir = scratch()

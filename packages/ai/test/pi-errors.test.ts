@@ -430,7 +430,11 @@ describe('timeouts and cancellation', () => {
         'fetch',
         async () =>
           new Response(null, {
-            headers: { 'x-request-id': 'req-stall', 'set-cookie': 'sid=never-recorded' },
+            headers: {
+              'x-request-id': 'req-stall',
+              'x-oneapi-request-id': 'oneapi-stall',
+              'set-cookie': 'sid=never-recorded',
+            },
           }),
       )
       const stall: StreamImpl = (_model, _context, options) =>
@@ -456,8 +460,8 @@ describe('timeouts and cancellation', () => {
             retryable: true,
             response: {
               status: 200,
-              headers: { 'x-request-id': 'req-stall' },
-              headerNames: ['set-cookie', 'x-request-id'],
+              headers: { 'x-oneapi-request-id': 'oneapi-stall', 'x-request-id': 'req-stall' },
+              headerNames: ['set-cookie', 'x-oneapi-request-id', 'x-request-id'],
             },
           },
         ])

@@ -14,6 +14,7 @@ import { resolveDoctorProfile } from '../src/commands/doctor-profile.js'
 import { firstRunText, startupFailure } from '../src/commands/first-run-locales.js'
 import { ensureLocalBackend, type LocalBackend } from './backend.js'
 import { createDaemonLink, type DaemonLink } from './daemon-link.js'
+import { startFrontendPublication } from './frontend-publication.js'
 import { localOAuthAdmin } from './oauth-admin.js'
 import { localPackageAdmin } from './package-admin.js'
 import { localResourceAdmin } from './resource-admin.js'
@@ -128,20 +129,6 @@ export function handleLaunchHealth(request: IncomingMessage, response: ServerRes
   return true
 }
 
-function waitForSignal(signals: NodeJS.EventEmitter): Promise<NodeJS.Signals> {
-  return new Promise((resolve) => {
-    const onSignal = (signal: NodeJS.Signals): void => {
-      signals.removeListener('SIGINT', onSigint)
-      signals.removeListener('SIGTERM', onSigterm)
-      resolve(signal)
-    }
-    const onSigint = (): void => onSignal('SIGINT')
-    const onSigterm = (): void => onSignal('SIGTERM')
-    signals.once('SIGINT', onSigint)
-    signals.once('SIGTERM', onSigterm)
-  })
-}
-
 /**
  * Run the local Web command using the CLI-owned shared daemon bootstrap.
  *
@@ -161,6 +148,7 @@ export async function runWebCommand(
   const ensure = io.ensureBackend ?? ensureLocalBackend
   const makeServer = io.createServer ?? createWebServer
   const env = io.env ?? process.env
+  let publication: Awaited<ReturnType<typeof startFrontendPublication>> | undefined
   const home = parsed.home ?? agnesHome(env)
   try {
     if (!io.ensureBackend) initializeHome(home, parsed.profile ?? 'local-dev')
@@ -202,6 +190,15 @@ export async function runWebCommand(
   let resourceAdmin: ReturnType<typeof localResourceAdmin> | undefined
   let oauthAdmin: ReturnType<typeof localOAuthAdmin> | undefined
   let mounts: Awaited<ReturnType<typeof fetchSurfaceMountProxy>> | undefined
+  const signals = io.signals ?? process
+  let stop!: () => void
+  const stopping = new Promise<void>((resolve) => {
+    stop = resolve
+  })
+  // A process-group signal can arrive again when the parent launcher forwards it.
+  // Keep both handlers installed from bootstrap through resource cleanup.
+  signals.on('SIGINT', stop)
+  signals.on('SIGTERM', stop)
   try {
     backend = await ensure({
       ...(io.env ? { env: io.env } : {}),
@@ -219,7 +216,7 @@ export async function runWebCommand(
       ;(io.write ?? ((text: string) => process.stdout.write(text)))(
         'Daemon ready; Web UI disabled by composition.\n',
       )
-      await waitForSignal(io.signals ?? process)
+      await stopping
       return
     }
     if (!backend.web)
@@ -262,6 +259,7 @@ export async function runWebCommand(
     mounts = await fetchSurfaceMountProxy(linked)
     web = await makeServer({
       root: resources.webRoot,
+      cloudGateway: adminHandler.cloudGateway,
       pluginStreams: adminHandler.pluginStreams,
       historySearch: adminHandler.historySearch,
       triggers: adminHandler.triggers,
@@ -282,7 +280,7 @@ export async function runWebCommand(
       // `/plugins/*` client module bytes follow the same rule: the daemon resolves
       // from its immutable snapshots over the same private connection; the launcher never touches
       // the package store itself.
-      clientModuleAsset: (pathname: string) => adminHandler.readClientModule(pathname),
+      clientModuleAsset: (pathname, purpose) => adminHandler.readClientModule(pathname, purpose),
       // The daemon's roster invalidation is bridged to a separate same-origin SSE stream. This only
       // reloads browser modules; it never restarts the daemon/worker runtime.
       subscribePluginEvents: (listener) => adminHandler.subscribeClientModuleEvents(listener),
@@ -304,16 +302,24 @@ export async function runWebCommand(
       surfaceMountsReady: mounts.ready,
     })
     io.onWebServerReady?.(web)
+    if (!io.ensureBackend)
+      publication = await startFrontendPublication(
+        linked,
+        origin,
+        (status) => (io.write ?? ((text: string) => process.stdout.write(text)))(`${status}\n`),
+        () => daemonLink.backend().web?.url ?? '',
+      )
     const report = io.ensureBackend ? { status: 'ok' as const } : await adminHandler.doctor()
     ;(io.write ?? ((text: string) => process.stdout.write(text)))(
       `${web.url}/\n${firstRunText(env, 'home')}: ${backend.scope.home}\n${firstRunText(env, 'profile')}: ${backend.scope.profile}\n${firstRunText(env, 'doctor')}: ${firstRunText(env, report.status)} — agh doctor\n`,
     )
-    await waitForSignal(io.signals ?? process)
+    await stopping
   } catch (error) {
     const message = startupFailure(error, env)
     if (message) throw Object.assign(new Error(message), { code: (error as { code: string }).code })
     throw error
   } finally {
+    await publication?.close().catch(() => undefined)
     // First, so a reconnect in flight is cancelled and cannot hold shutdown open.
     await link?.close().catch(() => undefined)
     await web?.close().catch(() => undefined)
@@ -322,5 +328,7 @@ export async function runWebCommand(
     await oauthAdmin?.close().catch(() => undefined)
     await mounts?.close().catch(() => undefined)
     await backend?.closeClient().catch(() => undefined)
+    signals.off('SIGINT', stop)
+    signals.off('SIGTERM', stop)
   }
 }

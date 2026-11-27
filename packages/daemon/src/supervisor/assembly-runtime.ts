@@ -48,6 +48,8 @@ import { createRuntimePinCoordinator } from './publication/runtime-pin-coordinat
 import { publishProbedRuntimeTarget } from './publication/runtime-target-publisher.js'
 import { createManagementSkillImports } from './skill-install-requests.js'
 
+declare const AGNES_VERSION: string | undefined
+
 const DAEMON_SURFACE_API_VERSION = '1.0.0'
 export async function initializeRuntime(
   state: AssemblyBase & StoresState & WorkersState & DispatchState,
@@ -108,6 +110,7 @@ export async function initializeRuntime(
                 ? {
                     community: (profile: string) =>
                       profile === o.profile.name ? community.read() : undefined,
+                    ...(typeof AGNES_VERSION === 'string' ? { agnesVersion: AGNES_VERSION } : {}),
                   }
                 : {}),
               ...(o.packageRuntime.catalog ? { catalog: o.packageRuntime.catalog } : {}),
@@ -131,6 +134,7 @@ export async function initializeRuntime(
                       join(o.config.dataDir, 'daemon', 'client-modules'),
                     profile,
                   ),
+                activationEpoch: () => pool.businessWorker()?.generation,
                 runtimeArtifacts: () =>
                   runtimeArtifactsFromStore(runtimeStore, pool.businessWorker()?.generation),
               }),

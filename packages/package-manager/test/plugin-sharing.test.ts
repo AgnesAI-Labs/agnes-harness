@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, expect, it } from 'vitest'
+import { createPackageManager, emptyLock, writeLock } from '../src/index.js'
 import { inspectStaged } from '../src/inspect.js'
 import { packPlugin } from '../src/plugin-pack.js'
 import { fetchSource, parseSource } from '../src/sources.js'
@@ -169,6 +170,58 @@ function plugin(root: string, extra: Record<string, unknown> = {}): string {
 const listing = (archive: string) =>
   execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' }).split(/\r?\n/).filter(Boolean)
 
+it.each([false, true])(
+  'reads only the published Docs after the author directory is removed (Chinese: %s)',
+  async (chinese) => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-sharing-docs-'))
+    roots.push(root)
+    const agnesDocs = { en: 'docs/notes.en.md', 'zh-CN': 'docs/notes.zh-CN.md' }
+    const source = plugin(root, {
+      agnesDocs,
+      agnes: { plugins: [{ id: 'ext:lean/main', apiRange: '^5.0.0', export: 'main' }] },
+      files: ['dist', agnesDocs.en, ...(chinese ? [agnesDocs['zh-CN']] : [])],
+    })
+    mkdirSync(join(source, 'docs'))
+    writeFileSync(join(source, agnesDocs.en), '# Shared documentation')
+    writeFileSync(join(source, agnesDocs['zh-CN']), '# 发布说明')
+    const archive = await packPlugin(source, join(root, 'shared.tgz'))
+    const names = listing(archive)
+    expect(names).toContain(`package/${agnesDocs.en}`)
+    expect(names.includes(`package/${agnesDocs['zh-CN']}`)).toBe(chinese)
+    rmSync(source, { recursive: true })
+    const profile = 'local-dev'
+    const agnesVersion = '0.1.0'
+    const profileDir = join(root, 'profiles', profile)
+    mkdirSync(profileDir, { recursive: true })
+    writeLock(profileDir, {
+      ...emptyLock(profile, agnesVersion),
+      resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
+      seams: Object.fromEntries(
+        ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((name) => [
+          name,
+          { provider: 'local' },
+        ]),
+      ),
+    })
+    const manager = createPackageManager({ dataDir: root, cwd: root, agnesVersion })
+    const bundled = parseSource('file:./shared.tgz')
+    const preview = await manager.inspect(profileDir, bundled)
+    expect(preview.blockers).toEqual([])
+    const entry = await manager.install(profileDir, bundled, { expectedIntegrity: preview.integrity })
+    await expect(
+      manager.documentation(profileDir, {
+        id: 'lean-tool',
+        expectedIntegrity: entry.integrity,
+        locale: 'zh-CN',
+      }),
+    ).resolves.toEqual({
+      found: true,
+      locale: chinese ? 'zh-CN' : 'en',
+      markdown: chinese ? '# 发布说明' : '# Shared documentation',
+    })
+  },
+)
+
 it('ships only npm-packlist files: package.json "files" and .gitignore are honored', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agh-lean-pack-'))
   roots.push(root)
@@ -178,12 +231,18 @@ it('ships only npm-packlist files: package.json "files" and .gitignore are honor
   writeFileSync(join(source, 'src', 'index.ts'), 'export const main = 1')
   writeFileSync(join(source, 'test', 'x.test.ts'), '')
   writeFileSync(join(source, 'NOTES.md'), 'private')
+  writeFileSync(join(source, 'dist', '._index.js'), 'AppleDouble metadata')
+  writeFileSync(join(source, 'dist', '.DS_Store'), 'Finder metadata')
+  mkdirSync(join(source, 'dist', '__MACOSX'))
+  writeFileSync(join(source, 'dist', '__MACOSX', 'index.js'), 'archive metadata')
   const archive = await packPlugin(source, join(root, 'lean.tgz'))
   const names = listing(archive)
   expect(names).toContain('package/package.json')
   expect(names).toContain('package/dist/.agnes-packed-entry.mjs')
   expect(names).toContain('package/dist/index.js')
   expect(names.filter((name) => /\/(src|test)\/|NOTES/.test(name))).toEqual([])
+  expect(names.every((name) => name === 'package/' || name.startsWith('package/'))).toBe(true)
+  expect(names.filter((name) => /(^|\/)(\._[^/]*|\.DS_Store|__MACOSX)(\/|$)/.test(name))).toEqual([])
   const receiver = join(root, 'friend')
   await fetchSource(parseSource('file:' + archive.split(sep).join('/')), receiver, { cwd: root })
   expect((await import(pathToFileURL(join(receiver, 'dist', '.agnes-packed-entry.mjs')).href)).main()).toBe(1)

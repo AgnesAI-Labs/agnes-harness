@@ -220,6 +220,24 @@ describe('recovery after an interrupted grant', () => {
     expect(original()).toBe(before)
   })
 
+  it.each(['EACCES', 'EPERM'])(
+    'identifies a denied ACL setup (%s) without changing permissions',
+    async (code) => {
+      const before = original()
+      const { authority } = aclHost(world)
+      const denied = Object.assign(new Error('private native detail'), { code })
+      world.ntfs.beforeApply = () => {
+        throw denied
+      }
+      await expect(authority.acquire(writeLease(world.workspace))).rejects.toMatchObject({
+        code: 'E_ACL_ACCESS_DENIED',
+        cause: denied,
+      })
+      expect(workspaceRecords()).toMatchObject([{ state: 'revoked', issues: [{ code }] }])
+      expect(original()).toBe(before)
+    },
+  )
+
   it('a grant whose native call did not answer in time needs attention, however the tree reads', async () => {
     const before = original()
     const { authority } = aclHost(world)

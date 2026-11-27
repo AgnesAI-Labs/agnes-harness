@@ -1,16 +1,22 @@
-import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { type AdminSurfaceAction, createAdminSurface } from '@agnes/daemon-admin/packages/admin-surface'
+import type { CommunitySnapshot } from '@agnes/daemon-admin/packages/community-discovery'
 import {
   createPackageAdminService,
   FilePackageOperationStore,
+  localPackageAdminAuthority,
   scopedPackageProfileDirectory,
 } from '@agnes/daemon-admin/packages/index'
 import { createTestHost } from '@agnes/host/testkit'
 import { createPackageManager, emptyLock, packageDir, readLock, writeLock } from '@agnes/package-manager'
 import type {
+  PackageAdminContext,
+  PackageCatalogListParams,
+  PackageCatalogPage,
+  PackageDocsGetParams,
   PackageInspectParams,
   PackageInstallParams,
   PackageListParams,
@@ -32,6 +38,10 @@ it.each([false, true])(
     cpSync(new URL('../../package-manager/test/fixtures/pkg-a', import.meta.url), join(root, 'candidate'), {
       recursive: true,
     })
+    const manifestPath = join(root, 'candidate', 'package.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    writeFileSync(manifestPath, JSON.stringify({ ...manifest, agnesDocs: { en: 'README.md' } }))
+    writeFileSync(join(root, 'candidate', 'README.md'), '# Installed fixture')
     writeFileSync(
       join(root, 'candidate', 'index.ts'),
       "throw new Error('install must not execute this entry')",
@@ -47,7 +57,25 @@ it.each([false, true])(
       ),
       policySnapshot: { capabilityCeiling: ['tools'], workspacePackages: 'require-project-trust' },
     })
-    const manager = createPackageManager({ dataDir: root, cwd: root, agnesVersion: '0.1.0' })
+    const pinned = (sha: string) =>
+      ({ type: 'git', ref: `git:https://github.com/acme/plugin.git#${sha.repeat(40)}` }) as const
+    const first = { version: '1.0.0', source: pinned('a') }
+    const second = { version: '2.0.0', source: pinned('b') }
+    const inspectedGit: string[] = []
+    const manager = createPackageManager({
+      dataDir: root,
+      cwd: root,
+      agnesVersion: '0.1.0',
+      sourceAdapters: [
+        {
+          type: 'git',
+          fetch(source) {
+            inspectedGit.push(source.ref)
+            return Promise.reject(new Error('The test stops at the Git acquisition boundary.'))
+          },
+        },
+      ],
+    })
     const service = () =>
       createPackageAdminService({
         manager,
@@ -55,11 +83,27 @@ it.each([false, true])(
         operations: new FilePackageOperationStore(join(root, 'operations')),
         ...(communityEnabled
           ? {
-              community: () => ({
-                state: 'pending' as const,
+              agnesVersion: '2.2.0-rc.2+local',
+              community: (): CommunitySnapshot => ({
+                state: 'ready',
                 error: null,
-                items: [],
-                totalReported: 0,
+                items: [
+                  {
+                    id: 'acme/plugin',
+                    fullName: 'acme/plugin',
+                    description: '',
+                    versions: [
+                      { ...first, aghEngine: { kind: 'range', range: '^5.0.0' } },
+                      {
+                        ...second,
+                        provides: ['ui', 'skills'],
+                        publishTimestamp: 1,
+                        aghEngine: { kind: 'range', range: '>=2.2.0-rc.1 <3.0.0' },
+                      },
+                    ],
+                  },
+                ],
+                totalReported: 1,
                 lastSuccessAt: null,
                 nextAttemptAt: null,
               }),
@@ -85,6 +129,8 @@ it.each([false, true])(
       switch (action) {
         case 'list':
           return client.packages.list(params as PackageListParams)
+        case 'catalog/list':
+          return client.packages.catalog.list(params as PackageCatalogListParams)
         case 'provenance':
           return client.request('_agnes/v1/packages.provenance', params as PackageProvenanceParams)
         case 'source-policy':
@@ -105,6 +151,11 @@ it.each([false, true])(
       clientId: 'admin-web',
       invoke,
       backendFeatures: async () => (await client.initialize()).features ?? [],
+      docs: {
+        epoch: async () => 'test-current-connection',
+        isCurrent: (epoch) => epoch === 'test-current-connection',
+        get: (params, _epoch, signal) => client.request('_agnes/v1/packages.docs.get', params, { signal }),
+      },
     })
     let cookie = ''
     const post = (action: string, body: unknown) =>
@@ -126,9 +177,19 @@ it.each([false, true])(
     }
     try {
       const info = await client.initialize()
-      expect(info.features?.includes('packages.community-discovery.v2') ?? false).toBe(communityEnabled)
-      const negotiatedContext = await (await fetch(`${origin}/admin/plugins/api/context`)).json()
-      expect(negotiatedContext.features.includes('packages.community-discovery.v2')).toBe(communityEnabled)
+      const catalogFeatures = ['packages.community-discovery.v2', 'packages.community-discovery.v3']
+      expect(info.features).toContain('packages.docs.v1')
+      for (const feature of catalogFeatures)
+        expect(info.features?.includes(feature) ?? false).toBe(communityEnabled)
+      const headers = { 'X-Agnes-Package-Docs': '1' }
+      const negotiatedContext = (await (
+        await fetch(`${origin}/admin/plugins/api/context`, { headers })
+      ).json()) as PackageAdminContext
+      const overview = await (await fetch(`${origin}/admin/plugins/api/overview`, { headers })).json()
+      expect(
+        negotiatedContext.features?.filter((feature) => feature.startsWith('packages.community-discovery.')),
+      ).toEqual(communityEnabled ? catalogFeatures : [])
+      expect(overview.context.features).toEqual(negotiatedContext.features)
       expect(await client.packages.list({ profile: 'local-dev' })).toEqual({ packages: [] })
       const login = await post('session', { token: 'local-lifecycle-test-token' })
       cookie = login.headers.get('set-cookie')?.split(';')[0] ?? ''
@@ -136,6 +197,46 @@ it.each([false, true])(
       expect(await context.json()).toMatchObject({ readOnly: false })
       const source = { type: 'file' as const, ref: 'file:./candidate' }
       const identity = { profile: 'local-dev', clientId: 'admin-web' }
+      const legacyPage = await post('catalog/list', { profile: identity.profile, includeCommunity: true })
+      expect(legacyPage.status).toBe(200)
+      expect(await legacyPage.json()).toEqual({ items: [], nextCursor: null })
+      for (const communityVersion of [2, 3] as const) {
+        const response = await post('catalog/list', { profile: identity.profile, communityVersion })
+        expect(response.status).toBe(200)
+        const page = (await response.json()) as PackageCatalogPage
+        expect(page.items).toEqual([])
+        expect(page.nextCursor).toBeNull()
+        if (!communityEnabled) {
+          expect(page).not.toHaveProperty('communityIndex')
+          continue
+        }
+        const versions = page.communityIndex?.items[0]?.versions
+        if (communityVersion === 2) {
+          expect(versions).toEqual([first, second])
+        } else {
+          expect(versions).toEqual([
+            { ...first, compatibility: { kind: 'incompatible', range: '^5.0.0' } },
+            {
+              ...second,
+              provides: ['ui', 'skills'],
+              publishTimestamp: 1,
+              compatibility: { kind: 'declared-compatible', range: '>=2.2.0-rc.1 <3.0.0' },
+            },
+          ])
+          const selected = versions?.find((version) => version.version === '2.0.0')
+          if (!selected) throw new Error('missing selected package version')
+          expect(inspectedGit).toEqual([])
+          const inspection = await post('inspect', {
+            ...identity,
+            commandId: 'inspect-community-pin',
+            source: selected.source,
+          })
+          expect(inspection.status).toBe(200)
+          expect((await completed((await inspection.json()) as PackageOperationReceipt)).state).toBe('failed')
+          expect(inspectedGit).toEqual([second.source.ref])
+          expect(await client.packages.list({ profile: identity.profile })).toEqual({ packages: [] })
+        }
+      }
       const previewResponse = await post('inspect', { ...identity, commandId: 'preview-1', source })
       expect(previewResponse.status).toBe(200)
       const preview = await completed((await previewResponse.json()) as PackageOperationReceipt)
@@ -162,6 +263,50 @@ it.each([false, true])(
       expect(await client.packages.list({ profile: 'local-dev' })).toMatchObject({
         packages: [{ id: 'acme/pkg-a', trusted: false }],
       })
+      expect(negotiatedContext).toMatchObject({
+        docsConnectionEpoch: 'test-current-connection',
+        features: expect.arrayContaining(['packages.docs.v1']),
+      })
+      const docsParams: PackageDocsGetParams = {
+        profile: identity.profile,
+        id: 'acme/pkg-a',
+        expectedIntegrity: preview.preview.integrity,
+        locale: 'zh-CN',
+      }
+      const docsResponse = await post('docs/get', {
+        ...docsParams,
+        docsConnectionEpoch: negotiatedContext.docsConnectionEpoch,
+      })
+      expect(docsResponse.status).toBe(200)
+      await expect(docsResponse.json()).resolves.toEqual({
+        found: true,
+        locale: 'en',
+        markdown: '# Installed fixture',
+        docsConnectionEpoch: negotiatedContext.docsConnectionEpoch,
+      })
+      for (const patch of [{ expectedIntegrity: `sha256-${'a'.repeat(64)}` }, { id: 'not-installed' }])
+        await expect(
+          client.request('_agnes/v1/packages.docs.get', { ...docsParams, ...patch }),
+        ).resolves.toEqual({ found: false })
+      await expect(
+        client.request('_agnes/v1/packages.docs.get', { ...docsParams, profile: 'another-profile' }),
+      ).rejects.toMatchObject({ rpc: { data: { code: 'CAPABILITY_DENIED' } } })
+      const denied = createClient({
+        transport: {
+          kind: 'inproc',
+          endpoint: createLocalEndpoint(host, {
+            packageAdmin: { service: service(), authority: localPackageAdminAuthority(['packages.install']) },
+          }),
+        },
+        auth: { kind: 'local' },
+      })
+      try {
+        await expect(denied.request('_agnes/v1/packages.docs.get', docsParams)).rejects.toMatchObject({
+          rpc: { data: { code: 'CAPABILITY_DENIED' } },
+        })
+      } finally {
+        await denied.close()
+      }
       const provenance = await (await post('provenance', { profile: 'local-dev', id: 'acme/pkg-a' })).json()
       expect(provenance).toMatchObject({
         sourceKind: 'local-folder',

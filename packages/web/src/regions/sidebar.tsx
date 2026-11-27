@@ -19,6 +19,10 @@ import {
 import type { ReactNode } from 'react'
 import { useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
+import { BackendSelector } from '../backend-selector.js'
+import { selectSidebarBackend, sidebarCommand, useSidebarProjection } from '../backends/sidebar-projection.js'
+import { BackendSessionGroups } from '../backends/workbench-groups.js'
+import { workbenchCatalog } from '../backends/workbench-locale.js'
 import { SessionNavigation } from '../navigation.js'
 import { sidebarGrouping } from '../sidebar-grouping.js'
 import { ApplicationSwitch } from './application-switch.js'
@@ -58,6 +62,7 @@ export function SidebarDshFrame({
   dependencies: SidebarDependencies
   profileApprovals?: ReactNode
 }) {
+  const projection = useSidebarProjection()
   const identity = useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
   const grouping = useSyncExternalStore(sidebarGrouping.subscribe, sidebarGrouping.getSnapshot)
   const brand = applicationBrand(document.documentElement.lang)
@@ -68,18 +73,69 @@ export function SidebarDshFrame({
       state={state}
       {...(running ? { running } : {})}
       {...(marks ? { marks } : {})}
-      actions={actions}
-      dependencies={dependencies}
+      actions={
+        projection
+          ? {
+              ...actions,
+              newSession: (workspace) =>
+                projection.active === 'local'
+                  ? actions?.newSession?.(workspace)
+                  : sidebarCommand('cloud', { kind: 'new' }),
+              openSettings: () => sidebarCommand('local', { kind: 'settings', section: 'model' }),
+              addWorkspace: () =>
+                projection.active === 'local'
+                  ? actions?.addWorkspace?.()
+                  : sidebarCommand('cloud', { kind: 'workspace' }),
+            }
+          : actions
+      }
+      dependencies={
+        projection
+          ? {
+              ...dependencies,
+              renderLeadingNavigation: () => null,
+              renderNavigation: (options) => (
+                <BackendSessionGroups
+                  {...projection}
+                  language={document.documentElement.lang}
+                  t={(key) =>
+                    workbenchCatalog[document.documentElement.lang === 'zh-CN' ? 'zh-CN' : 'en'][key]
+                  }
+                  select={(backend, sessionId) =>
+                    sessionId
+                      ? sidebarCommand(backend, { kind: 'session', sessionId })
+                      : selectSidebarBackend(backend)
+                  }
+                  localNavigation={
+                    <div className="backend-session-native">
+                      {dependencies.renderLeadingNavigation?.(options)}
+                      {dependencies.renderNavigation(options)}
+                    </div>
+                  }
+                  command={sidebarCommand}
+                  configure={() => sidebarCommand('local', { kind: 'settings', section: 'cloud-connection' })}
+                />
+              ),
+            }
+          : dependencies
+      }
       slots={{
         entries: (
-          <HomeEntriesNav t={dependencies.translate} onSelect={() => handle.current?.close()}>
+          <HomeEntriesNav
+            t={dependencies.translate}
+            onSelect={() => {
+              if (projection?.active === 'cloud') selectSidebarBackend('local')
+              handle.current?.close()
+            }}
+          >
             {profileApprovals}
           </HomeEntriesNav>
         ),
         search: <SessionSearchButton t={dependencies.translate} />,
         // The grouped view puts 置顶 / 项目 / 临时会话 inside the list and the list tools on the 项目
         // heading: a null label tells the shell not to print a heading row it does not own.
-        sectionLabel: grouping === 'workspace' ? null : <SessionListLabel t={dependencies.translate} />,
+        sectionLabel:
+          projection || grouping === 'workspace' ? null : <SessionListLabel t={dependencies.translate} />,
         sessionTools: <SessionListTools t={dependencies.translate} />,
         brandMark: (
           <SlotOutlet
@@ -99,7 +155,12 @@ export function SidebarDshFrame({
             fallback={<span className="brand-wordmark-text">{brand.name}</span>}
           />
         ),
-        panellist: outlet('sidebar.panellist'),
+        panellist: (
+          <>
+            {!projection && <BackendSelector />}
+            {outlet('sidebar.panellist')}
+          </>
+        ),
         footerAction: outlet('sidebar.footer.action'),
         settings: outlet('sidebar.settings'),
         workspaces: (
@@ -150,16 +211,17 @@ export function mountSidebarRegion(
       priority: 0,
       children: DSH_SIDEBAR_CHILDREN,
     },
-    () =>
-      SidebarDshFrame({
-        handle,
-        state,
-        running,
-        marks,
-        ...(options.actions === undefined ? {} : { actions: options.actions }),
-        dependencies: sidebarDependencies,
-        profileApprovals: options.profileApprovals,
-      }),
+    () => (
+      <SidebarDshFrame
+        handle={handle}
+        state={state}
+        running={running}
+        marks={marks}
+        {...(options.actions === undefined ? {} : { actions: options.actions })}
+        dependencies={sidebarDependencies}
+        profileApprovals={options.profileApprovals}
+      />
+    ),
   )
   const removeBuiltin = registry.register(
     { name: SIDEBAR_SLOT as string, id: 'builtin-sidebar', owner: '@agnes/web-sidebar', priority: 0 },

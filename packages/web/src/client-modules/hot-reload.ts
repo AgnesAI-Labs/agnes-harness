@@ -22,7 +22,7 @@ function changes(value: unknown): Changes {
 
 /** One request/reload queue per page. Close cancels I/O and prevents any new work. */
 export function startPluginHotReload(options: {
-  reconciler: ClientReconciler
+  reconciler: Pick<ClientReconciler, 'reload'>
   fetch?: typeof globalThis.fetch
   url?: string
   intervalMs?: number

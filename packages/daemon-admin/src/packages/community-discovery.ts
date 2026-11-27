@@ -1,11 +1,12 @@
 import { lstat, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { type PackageCatalogPage, validatePackageAdminData } from '@agnes/protocol'
 import { replaceFileAtomicSync } from '@agnes/system-node'
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
+import { type CommunitySnapshot, isCommunitySnapshot } from './community-catalog.js'
 import { COMMUNITY_INDEX_URL, indexedCommunityPlugins } from './community-index.js'
 
-export type CommunitySnapshot = NonNullable<PackageCatalogPage['communityIndex']>
+export type { CommunitySnapshot } from './community-catalog.js'
+
 type Repository = CommunitySnapshot['items'][number]
 const PERIOD = 6 * 60 * 60 * 1000
 const MAX_BYTES = 2 * 1024 * 1024
@@ -93,7 +94,7 @@ export async function openCommunityDiscovery(options: {
       configError = true
     }
   }
-  const fingerprint = `index-v4|${COMMUNITY_INDEX_URL}`
+  const fingerprint = `index-v5|${COMMUNITY_INDEX_URL}`
   const path = join(options.directory, 'community-discovery-cache.json')
   let snapshot: CommunitySnapshot = {
     state: enabled ? 'pending' : 'disabled',
@@ -108,17 +109,12 @@ export async function openCommunityDiscovery(options: {
       const raw = (await boundedFile(path, MAX_CACHE_BYTES)) as {
         version?: number
         fingerprint?: string
-        snapshot?: CommunitySnapshot
+        snapshot?: unknown
       }
       if (
-        raw.version === 4 &&
-        raw.fingerprint === fingerprint &&
-        raw.snapshot &&
-        validatePackageAdminData('PackageCatalogPage', {
-          items: [],
-          nextCursor: null,
-          communityIndex: raw.snapshot,
-        }).ok &&
+        ((raw.version === 4 && raw.fingerprint === `index-v4|${COMMUNITY_INDEX_URL}`) ||
+          (raw.version === 5 && raw.fingerprint === fingerprint)) &&
+        isCommunitySnapshot(raw.snapshot, raw.version) &&
         (!raw.snapshot.lastSuccessAt || Date.parse(raw.snapshot.lastSuccessAt) <= now()) &&
         (!raw.snapshot.nextAttemptAt || Number.isFinite(Date.parse(raw.snapshot.nextAttemptAt)))
       ) {
@@ -138,7 +134,7 @@ export async function openCommunityDiscovery(options: {
   let failures = 0
   const controller = new AbortController()
   const persist = async (value: CommunitySnapshot) => {
-    const data = JSON.stringify({ version: 4, fingerprint, snapshot: value })
+    const data = JSON.stringify({ version: 5, fingerprint, snapshot: value })
     if (Buffer.byteLength(data) > MAX_CACHE_BYTES) throw new SyncFailure('storage')
     // The profile directory is already private; cache loss on power failure is recoverable.
     replaceFileAtomicSync(path, data)

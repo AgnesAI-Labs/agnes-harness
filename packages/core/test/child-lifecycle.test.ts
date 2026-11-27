@@ -1078,12 +1078,12 @@ it('reopens a cold paused role ancestor through its pinned composition without c
     { models: () => [catalogue()] },
   )
 
-  const openRoleIn = (hostKernel: Kernel, failNext: () => boolean, count: { reopens: number }) => ({
+  const openRoleIn = (hostKernel: () => Kernel, failNext: () => boolean, count: { reopens: number }) => ({
     list: async () => [roleRef],
     resolve: async (parent: SessionImpl) => ({
       role: roleRef,
       open: async (key: string, options: Parameters<Kernel['session']>[1]) => {
-        const s = await hostKernel.session(key, {
+        const s = await hostKernel().session(key, {
           ...options,
           preset: rolePreset,
           policyDigest: 'role-policy-digest',
@@ -1113,7 +1113,7 @@ it('reopens a cold paused role ancestor through its pinned composition without c
     reopen: async (key: string, options: Parameters<Kernel['session']>[1]) => {
       count.reopens += 1
       if (failNext()) throw new CoreError('E_UNSUPPORTED', 'injected role reopen failure')
-      return hostKernel.session(key, {
+      return hostKernel().session(key, {
         ...options,
         preset: rolePreset,
         policyDigest: 'role-policy-digest',
@@ -1121,13 +1121,27 @@ it('reopens a cold paused role ancestor through its pinned composition without c
     },
   })
 
-  const firstRoleKernel = kernel({ storage, provider, preset: rolePreset })
   const count = { reopens: 0 }
+  let firstRoleKernel!: Kernel
+  firstRoleKernel = kernel({
+    storage,
+    provider,
+    preset: rolePreset,
+    childRoles: openRoleIn(
+      () => firstRoleKernel,
+      () => false,
+      count,
+    ),
+  })
   const firstRootKernel = kernel({
     storage,
     provider,
     preset: rootPreset,
-    childRoles: openRoleIn(firstRoleKernel, () => false, count),
+    childRoles: openRoleIn(
+      () => firstRoleKernel,
+      () => false,
+      count,
+    ),
   })
   const root1 = await firstRootKernel.session('role-tree-root', sessionOpts)
   const roleHandle = await root1.d.children.createWithKind!('spawn', {
@@ -1140,20 +1154,22 @@ it('reopens a cold paused role ancestor through its pinned composition without c
   })
   await roleHandle.run('role parent')
   const roleSession = firstRoleKernel.get(roleHandle.key)!
-  // Grandchild G under role R (different preset & policyDigest from root!) with narrow toolFilter.
-  const grand = await roleSession.d.children.create({
+  // Nested role grandchild G under role R (different preset & policyDigest from root!) with narrow toolFilter.
+  const grand = await roleSession.d.children.createWithKind!('spawn', {
     parent: roleSession.key,
     cwd: '/w',
     input: 'grandchild work',
+    role: roleRef.ref,
     resident: true,
     toolFilter: { allow: ['read_only'] },
   })
   await grand.run('grandchild work')
-  // Second grandchild G2 whose retained authority is forged to root's authority (with valid self-digest).
-  const forged = await roleSession.d.children.create({
+  // Second nested role grandchild G2 whose retained authority is forged to root's authority (with valid self-digest).
+  const forged = await roleSession.d.children.createWithKind!('spawn', {
     parent: roleSession.key,
     cwd: '/w',
     input: 'forged grandchild',
+    role: roleRef.ref,
     resident: true,
     toolFilter: { allow: ['read_only'] },
   })
@@ -1195,12 +1211,26 @@ it('reopens a cold paused role ancestor through its pinned composition without c
   await firstRoleKernel.close()
 
   let injectReopenFail = true
-  const secondRoleKernel = kernel({ storage, provider, preset: rolePreset })
+  let secondRoleKernel!: Kernel
+  secondRoleKernel = kernel({
+    storage,
+    provider,
+    preset: rolePreset,
+    childRoles: openRoleIn(
+      () => secondRoleKernel,
+      () => injectReopenFail,
+      count,
+    ),
+  })
   const secondRootKernel = kernel({
     storage,
     provider,
     preset: rootPreset,
-    childRoles: openRoleIn(secondRoleKernel, () => injectReopenFail, count),
+    childRoles: openRoleIn(
+      () => secondRoleKernel,
+      () => injectReopenFail,
+      count,
+    ),
   })
   try {
     const root2 = await secondRootKernel.session('role-tree-root', { ...sessionOpts, writerRunId: 'r2' })
@@ -1279,12 +1309,12 @@ it('refuses a forged-authority cold grandchild when direct parent is reopened on
   const provider = Object.assign(fakeProvider([textTurn('r1'), textTurn('g1')]), {
     models: () => [catalogue()],
   })
-  const makeRoles = (hostKernel: Kernel) => ({
+  const makeRoles = (hostKernel: () => Kernel) => ({
     list: async () => [roleRef],
     resolve: async (parent: SessionImpl) => ({
       role: roleRef,
       open: async (key: string, options: Parameters<Kernel['session']>[1]) => {
-        const s = await hostKernel.session(key, { ...options, preset: rolePreset, policyDigest: 'p-role' })
+        const s = await hostKernel().session(key, { ...options, preset: rolePreset, policyDigest: 'p-role' })
         await s.append([
           s.ev(
             ROLE_DELEGATION,
@@ -1308,10 +1338,11 @@ it('refuses a forged-authority cold grandchild when direct parent is reopened on
       },
     }),
     reopen: async (key: string, options: Parameters<Kernel['session']>[1]) =>
-      hostKernel.session(key, { ...options, preset: rolePreset, policyDigest: 'p-role' }),
+      hostKernel().session(key, { ...options, preset: rolePreset, policyDigest: 'p-role' }),
   })
-  const rk1 = kernel({ storage, provider, preset: rolePreset })
-  const k1 = kernel({ storage, provider, preset: rootPreset, childRoles: makeRoles(rk1) })
+  let rk1!: Kernel
+  rk1 = kernel({ storage, provider, preset: rolePreset, childRoles: makeRoles(() => rk1) })
+  const k1 = kernel({ storage, provider, preset: rootPreset, childRoles: makeRoles(() => rk1) })
   const root1 = await k1.session('forged-root', sessionOpts)
   const role = await root1.d.children.createWithKind!('spawn', {
     parent: root1.key,
@@ -1322,10 +1353,11 @@ it('refuses a forged-authority cold grandchild when direct parent is reopened on
   })
   await role.run('role')
   const roleSession = rk1.get(role.key)!
-  const forged = await roleSession.d.children.create({
+  const forged = await roleSession.d.children.createWithKind!('spawn', {
     parent: roleSession.key,
     cwd: '/w',
     input: 'forged',
+    role: roleRef.ref,
     resident: true,
   })
   await forged.run('forged')
@@ -1344,8 +1376,9 @@ it('refuses a forged-authority cold grandchild when direct parent is reopened on
   await k1.close()
   await rk1.close()
 
-  const rk2 = kernel({ storage, provider, preset: rolePreset })
-  const k2 = kernel({ storage, provider, preset: rootPreset, childRoles: makeRoles(rk2) })
+  let rk2!: Kernel
+  rk2 = kernel({ storage, provider, preset: rolePreset, childRoles: makeRoles(() => rk2) })
+  const k2 = kernel({ storage, provider, preset: rootPreset, childRoles: makeRoles(() => rk2) })
   try {
     const root2 = await k2.session('forged-root', { ...sessionOpts, writerRunId: 'r2' })
     await expect(
@@ -1439,12 +1472,12 @@ it('does not prematurely reject continuing a cold grandchild using root steer ca
     fakeProvider([textTurn('role turn 1'), textTurn('grand turn 1'), textTurn('grand turn 2')]),
     { models: () => [catalogue()] },
   )
-  const makeRoles = (hostKernel: Kernel) => ({
+  const makeRoles = (hostKernel: () => Kernel) => ({
     list: async () => [roleRef],
     resolve: async (parent: SessionImpl) => ({
       role: roleRef,
       open: async (key: string, options: Parameters<Kernel['session']>[1]) => {
-        const s = await hostKernel.session(key, { ...options, preset: rolePreset, policyDigest: 'p-steer' })
+        const s = await hostKernel().session(key, { ...options, preset: rolePreset, policyDigest: 'p-steer' })
         await s.append([
           s.ev(
             ROLE_DELEGATION,
@@ -1468,17 +1501,24 @@ it('does not prematurely reject continuing a cold grandchild using root steer ca
       },
     }),
     reopen: async (key: string, options: Parameters<Kernel['session']>[1]) =>
-      hostKernel.session(key, { ...options, preset: rolePreset, policyDigest: 'p-steer' }),
+      hostKernel().session(key, { ...options, preset: rolePreset, policyDigest: 'p-steer' }),
   })
 
   // Setup: root has NO steer, direct role parent HAS steer.
-  const rk1 = kernel({ storage, provider, preset: rolePreset, loops: steerLoops })
+  let rk1!: Kernel
+  rk1 = kernel({
+    storage,
+    provider,
+    preset: rolePreset,
+    loops: steerLoops,
+    childRoles: makeRoles(() => rk1),
+  })
   const k1 = kernel({
     storage,
     provider,
     preset: rootPreset,
     loops: noSteerLoops,
-    childRoles: makeRoles(rk1),
+    childRoles: makeRoles(() => rk1),
   })
   const root1 = await k1.session('het-steer-root', sessionOpts)
   const role = await root1.d.children.createWithKind!('spawn', {
@@ -1490,10 +1530,11 @@ it('does not prematurely reject continuing a cold grandchild using root steer ca
   })
   await role.run('role parent')
   const roleSession = rk1.get(role.key)!
-  const grand = await roleSession.d.children.create({
+  const grand = await roleSession.d.children.createWithKind!('spawn', {
     parent: roleSession.key,
     cwd: '/w',
     input: 'grandchild work',
+    role: roleRef.ref,
     resident: true,
   })
   await grand.run('grandchild work')
@@ -1501,13 +1542,20 @@ it('does not prematurely reject continuing a cold grandchild using root steer ca
   await rk1.close()
 
   // Positive case: root lacks steer, reopened direct role parent HAS steer -> continue succeeds!
-  const rk2 = kernel({ storage, provider, preset: rolePreset, loops: steerLoops })
+  let rk2!: Kernel
+  rk2 = kernel({
+    storage,
+    provider,
+    preset: rolePreset,
+    loops: steerLoops,
+    childRoles: makeRoles(() => rk2),
+  })
   const k2 = kernel({
     storage,
     provider,
     preset: rootPreset,
     loops: noSteerLoops,
-    childRoles: makeRoles(rk2),
+    childRoles: makeRoles(() => rk2),
   })
   try {
     const root2 = await k2.session('het-steer-root', { ...sessionOpts, writerRunId: 'r2' })
@@ -1525,13 +1573,20 @@ it('does not prematurely reject continuing a cold grandchild using root steer ca
   }
 
   // Negative case: reopened direct role parent ALSO lacks steer -> refused with LOOP_CONTROL_UNSUPPORTED.
-  const rk3 = kernel({ storage, provider, preset: rolePreset, loops: noSteerLoops })
+  let rk3!: Kernel
+  rk3 = kernel({
+    storage,
+    provider,
+    preset: rolePreset,
+    loops: noSteerLoops,
+    childRoles: makeRoles(() => rk3),
+  })
   const k3 = kernel({
     storage,
     provider,
     preset: rootPreset,
     loops: noSteerLoops,
-    childRoles: makeRoles(rk3),
+    childRoles: makeRoles(() => rk3),
   })
   try {
     const root3 = await k3.session('het-steer-root', { ...sessionOpts, writerRunId: 'r3' })

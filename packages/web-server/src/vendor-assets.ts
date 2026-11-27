@@ -9,6 +9,7 @@ export const VENDOR_ENTRY_NAMES = new Set([
   'antd-en-us',
   'antd-zh-cn',
   'conversation',
+  'pdf-preview',
   'x',
   'cordis',
   'web-client',

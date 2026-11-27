@@ -1,4 +1,5 @@
 import { decisionLocaleCatalog } from './decision.js'
+import { documentPreviewLocaleCatalog } from './document-preview.js'
 import type { LocaleCatalog } from './index.js'
 import { judgmentCostLocaleCatalog } from './judgment-cost.js'
 import { turnErrorLocaleCatalog } from './turn-error.js'
@@ -10,6 +11,7 @@ import { turnErrorLocaleCatalog } from './turn-error.js'
 export const conversationLocaleCatalog: LocaleCatalog = {
   en: {
     ...judgmentCostLocaleCatalog.en,
+    ...documentPreviewLocaleCatalog.en,
     'accounts.keepEditing': 'Keep editing',
     'accounts.discardAction': 'Discard changes',
     'accounts.or': 'Or',
@@ -323,13 +325,6 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'turnactions.billingPartial': ' · partially known',
     'turnactions.creditsPartial': ' · partial',
     'turnactions.inherited': 'Inherited history',
-    'doc.preview.unavailable': '{kind} resource {reason}',
-    'doc.reason.unauthorized': 'not authorized',
-    'doc.reason.unavailable': 'unavailable',
-    'doc.kind.image': 'Image',
-    'doc.kind.pdf': 'PDF',
-    'doc.imageFallback': 'Document image',
-    'doc.pdfFallback': 'PDF document',
     'runtime.lostOutput': 'Output interrupted; at least {count} characters not saved',
     'runtime.compactionFallback': 'Context compacted {range}',
     'accounts.disable': 'Disable',
@@ -410,6 +405,7 @@ export const conversationLocaleCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     ...judgmentCostLocaleCatalog['zh-CN'],
+    ...documentPreviewLocaleCatalog['zh-CN'],
     'accounts.keepEditing': '继续编辑',
     'accounts.discardAction': '放弃更改',
     'accounts.or': '或者',
@@ -720,13 +716,6 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'turnactions.billingPartial': ' · 已知部分',
     'turnactions.creditsPartial': ' · 部分',
     'turnactions.inherited': '继承历史',
-    'doc.preview.unavailable': '{kind}资源{reason}',
-    'doc.reason.unauthorized': '未获授权',
-    'doc.reason.unavailable': '不可用',
-    'doc.kind.image': '图片',
-    'doc.kind.pdf': 'PDF ',
-    'doc.imageFallback': '文档图片',
-    'doc.pdfFallback': 'PDF 文档',
     'runtime.lostOutput': '输出中断，至少 {count} 字未保存',
     'runtime.compactionFallback': '已整理上下文 {range}',
     'accounts.disable': '停用',

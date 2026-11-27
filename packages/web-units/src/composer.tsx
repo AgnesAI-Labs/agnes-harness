@@ -79,6 +79,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onDraftChange,
     onError,
     onModelSelect,
+    onModelCatalogChange,
     onAuxiliaryRead,
     onAuxiliarySelect,
     onModelSettingsChange,
@@ -602,7 +603,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   pendingCount={pendingCount}
                   hint={imageHint}
                   disabled={view.sending}
-                  imagesAllowed={policy.supported}
                   onRemove={removeImage}
                   t={t}
                 />
@@ -656,6 +656,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                       state={pickerState(view)}
                       onError={onError}
                       onSelect={onModelSelect}
+                      {...(onModelCatalogChange ? { onCatalogChange: onModelCatalogChange } : {})}
                       {...(onAuxiliaryRead ? { onAuxiliaryRead } : {})}
                       {...(onAuxiliarySelect ? { onAuxiliarySelect } : {})}
                       {...(onModelSettingsChange ? { onSettingsChange: onModelSettingsChange } : {})}

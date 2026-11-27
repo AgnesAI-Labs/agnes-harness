@@ -685,10 +685,6 @@ export function runtimePinBlockers(s: RuntimeSnapshotStore, packageId: string): 
   return references.length ? [{ code: 'generation', references }] : []
 }
 
-export function listRuntimePinsStore(s: RuntimeSnapshotStore): RuntimePin[] {
-  const { state, verified } = readVerifiedState(s)
-  return Object.values(state.pins).map((pin) => pinView(s, state, pin, verified.get(pin.snapshotId)))
-}
 export async function listRuntimePinsStoreAsync(
   s: RuntimeSnapshotStore,
   lock?: Lockfile,

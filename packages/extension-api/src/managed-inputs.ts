@@ -13,7 +13,6 @@ export type ManagedInputReason =
   | 'eligible'
   | 'busy'
   | 'questionOpen'
-  | 'legacySourceUnknown'
   | 'recoveryUnverified'
   | 'receiptUnknown'
   | 'pairingChanged'
@@ -40,8 +39,6 @@ export interface ManagedInputAdmission {
     | { readonly kind: 'ownerMessage'; readonly receiptId: string }
     /** The platform writes a fixed continuation sentence, after checking the turn that ended at `turnEndSeq`. */
     | { readonly kind: 'recoveryContinuation'; readonly turnEndSeq: number }
-    /** Text whose origin the platform cannot verify: it is held for the owner to decide and never runs on its own. */
-    | { readonly kind: 'legacyOwnerMessage'; readonly text: string; readonly originalInbox: string | null }
 }
 
 /** Fields every input state carries. `inputId` equals the admission `key`; `version` rises on every change. */
@@ -63,11 +60,10 @@ interface ManagedInputStateFields {
  * - `needsOwner`: delivery cannot be shown to be right (receipt unknown or not this service's, pairing changed,
  *   grant revoked, start gates failing); the owner decides in the Web.
  * - `waitingQuestion`: the session has an unanswered question; the platform holds the input and moves it on.
- * - `recoveryUnknown`: a `legacyOwnerMessage`, or a `recoveryContinuation` that failed its checks; the owner decides.
- * - `legacySend`: the key only exists in the old `send` ledger; `delivery` says whether that message was found.
- * - `absent`: the platform knows no such key. `historyCoverage` is `complete` for every session the service still
- *   manages, since a managed session's input and send records are never pruned by time; `partial` is reserved for an
- *   input history the platform cannot vouch for and is not returned today.
+ * - `recoveryUnknown`: a `recoveryContinuation` that failed its checks; the owner decides.
+ * - `absent`: the platform has no admission for this key. `historyCoverage` is `complete` for every session the
+ *   service still manages because admission records are never pruned by time. `partial` is reserved for a
+ *   history the platform cannot vouch for and is not returned today.
  */
 export type ManagedInputResult =
   | ({
@@ -84,5 +80,4 @@ export type ManagedInputResult =
       readonly turn: number
       readonly seq: number
     } & ManagedInputStateFields)
-  | { readonly state: 'legacySend'; readonly delivery: 'consumed' | 'pending' | 'unknown' }
   | { readonly state: 'absent'; readonly historyCoverage: 'complete' | 'partial' }

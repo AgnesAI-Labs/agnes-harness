@@ -8,6 +8,8 @@ export default defineConfig({
   testDir: '../../packages',
   // The shared components, and the Superagent panel as the page serves it (its stylesheet under the page CSP).
   testMatch: [
+    '**/web-server/test/deliverable-previews.spec.ts',
+    '**/web-server/test/pdf-preview.spec.ts',
     '**/web-ui/test/button-contrast.spec.ts',
     '**/web-ui/test/primitives.spec.ts',
     '**/web-ui/test/switch.spec.ts',

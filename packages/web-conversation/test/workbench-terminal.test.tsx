@@ -7,9 +7,15 @@ import { fireEvent, within } from '@testing-library/dom'
 import { act } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, expect, it, vi } from 'vitest'
+import type { WorkbenchContext } from '../src/workbench/context.js'
 import { workbenchLocaleCatalog } from '../src/workbench/locales.js'
 import { sessionCount } from '../src/workbench/tab-counts.js'
 import { TerminalPanel } from '../src/workbench/terminal-panel.js'
+import {
+  readTerminalShell,
+  rememberTerminalShell,
+  terminalShellScope,
+} from '../src/workbench/terminal-preferences.js'
 import { TerminalView } from '../src/workbench/terminal-view.js'
 
 const job = (patch: Partial<SessionJob> = {}): SessionJob => ({
@@ -27,7 +33,7 @@ const job = (patch: Partial<SessionJob> = {}): SessionJob => ({
   ...patch,
 })
 const hosts: HTMLElement[] = []
-function mount(jobs = [job()], selection?: unknown) {
+function mount(jobs = [job()], selection?: unknown, terminalBackend?: WorkbenchContext['terminalBackend']) {
   const jobsControl = vi.fn(
     async (input: { operation: string; shell?: 'zsh' | 'bash' | 'pwsh'; jobId?: string }) => {
       if (input.operation === 'open') {
@@ -61,13 +67,13 @@ function mount(jobs = [job()], selection?: unknown) {
   const host = document.createElement('div')
   document.body.append(host)
   hosts.push(host)
-  const render = (next: unknown) =>
+  const render = (next: unknown, environment = terminalBackend) =>
     renderRegion(
       host,
       <TerminalPanel
         context={{
           t: createCatalogTranslator(workbenchLocaleCatalog, 'zh-CN'),
-          data: { session, disabled: false },
+          data: { session, disabled: false, terminalBackend: environment },
           selection: next,
         }}
       />,
@@ -81,11 +87,37 @@ afterEach(() => {
     host.remove()
   }
   localStorage.clear()
+  vi.restoreAllMocks()
 })
 const click = (node: Element | null) => {
   if (!node) throw new Error('Missing control')
   flushSync(() => fireEvent.click(node))
 }
+
+it.each([
+  ['linux', 'bash'],
+  ['win32', 'pwsh'],
+  ['darwin', 'zsh'],
+] as const)(
+  'uses the %s cloud terminal default without inheriting the local shell',
+  async (platform, shell) => {
+    localStorage.setItem('agnes.workbench.terminal.shell', shell === 'pwsh' ? 'bash' : 'pwsh')
+    const { host, jobsControl } = mount([], undefined, {
+      platform,
+      remoteOrigin: 'https://cloud.example.com',
+    })
+    await vi.waitFor(() =>
+      expect(host.querySelector('[data-testid=terminal-new]')?.getAttribute('aria-label')).toContain(
+        `(${shell})`,
+      ),
+    )
+    click(host.querySelector('[data-testid=terminal-new]'))
+    await vi.waitFor(() =>
+      expect(jobsControl).toHaveBeenCalledWith({ operation: 'open', shell, columns: 100, rows: 30 }),
+    )
+    expect(localStorage.getItem('agnes.workbench.terminal.shell')).toBe(shell === 'pwsh' ? 'bash' : 'pwsh')
+  },
+)
 async function menu(tab: Element, keyboard = false) {
   flushSync(() =>
     keyboard ? fireEvent.keyDown(tab, { key: 'F10', shiftKey: true }) : fireEvent.contextMenu(tab),
@@ -98,6 +130,66 @@ async function menu(tab: Element, keyboard = false) {
   })
   return within(popup as unknown as HTMLElement)
 }
+
+it.each([
+  ['local-linux', 'linux', 'bash'],
+  ['local-windows', 'win32', 'pwsh'],
+  ['cloud-unknown', undefined, undefined],
+] as const)(
+  'keeps execution preferences for %s independent of the browser and legacy shell',
+  async (backend, platform, expected) => {
+    vi.spyOn(navigator, 'platform', 'get').mockReturnValue('Win32')
+    localStorage.setItem('agnes.workbench.terminal.shell', 'zsh')
+    const { host, jobsControl } = mount([], undefined, { backend, platform, remoteOrigin: undefined })
+    click(host.querySelector('[data-testid=terminal-new]'))
+    await vi.waitFor(() => expect(jobsControl).toHaveBeenCalledOnce())
+    expect(jobsControl).toHaveBeenCalledWith({
+      operation: 'open',
+      ...(expected ? { shell: expected } : {}),
+      columns: 100,
+      rows: 30,
+    })
+    expect(localStorage.getItem('agnes.workbench.terminal.shell')).toBe('zsh')
+  },
+)
+
+it.each(['backend', 'platform'] as const)(
+  'persists only accepted shells for the current %s',
+  async (change) => {
+    const start = { backend: 'cloud-a', remoteOrigin: 'https://cloud.example.com', platform: 'linux' }
+    const scope = terminalShellScope(start.remoteOrigin, start.platform, start.backend)
+    rememberTerminalShell('zsh', scope)
+    const { host, jobsControl, render } = mount([], undefined, start)
+    jobsControl.mockRejectedValueOnce(new Error('fixture shell unavailable'))
+    const actions = await menu(host.querySelector('[data-testid=terminal-new]') as HTMLElement)
+    click(actions.getByRole('menuitem', { name: /pwsh/ }))
+    await vi.waitFor(() =>
+      expect(host.querySelector('[data-testid=terminal-new]')?.hasAttribute('disabled')).toBe(false),
+    )
+    expect(jobsControl).toHaveBeenCalledOnce()
+    expect(readTerminalShell(scope, 'linux')).toBe('zsh')
+    let finish!: () => void
+    jobsControl.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve({ output: { ok: true } })
+        }),
+    )
+    const choices = await menu(host.querySelector('[data-testid=terminal-new]') as HTMLElement)
+    click(choices.getByRole('menuitem', { name: /bash/ }))
+    const destination =
+      change === 'backend' ? { ...start, backend: 'cloud-b' } : { ...start, platform: 'darwin' }
+    await act(async () => render(undefined, destination))
+    await act(async () => finish())
+    expect(readTerminalShell(scope, 'linux')).toBe('zsh')
+    const nextScope = terminalShellScope(destination.remoteOrigin, destination.platform, destination.backend)
+    expect(readTerminalShell(nextScope, destination.platform)).toBe(change === 'backend' ? 'bash' : 'zsh')
+    const accepted = await menu(host.querySelector('[data-testid=terminal-new]') as HTMLElement)
+    click(accepted.getByRole('menuitem', { name: /pwsh/ }))
+    await vi.waitFor(() => expect(readTerminalShell(nextScope, destination.platform)).toBe('pwsh'))
+    expect(readTerminalShell(scope, 'linux')).toBe('zsh')
+  },
+)
 
 it('opens no terminal until asked, lists Agent jobs read-only, retains completed output until removal and supports shell menus', async () => {
   localStorage.setItem('agnes.workbench.terminal.shell', 'zsh')

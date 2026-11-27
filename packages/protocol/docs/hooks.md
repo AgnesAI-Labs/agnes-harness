@@ -19,6 +19,7 @@ Generated from schema/hooks.json by tools/gen-docs.ts. Do not edit by hand.
 | `subagent_start` | emit | observe | open | 200 | no |
 | `subagent_end` | emit | observe | open | 200 | no |
 | `format_deviation` | parallel | observe | open | 500 | no |
+| `turn_end` | parallel | observe | open | 1000 | no |
 | `shutdown` | parallel | observe | open | 1000 | no |
 
 ## payload and return
@@ -40,4 +41,5 @@ Generated from schema/hooks.json by tools/gen-docs.ts. Do not edit by hand.
 | `subagent_start` | `childKey`, `kind`, `budget` | `void` |
 | `subagent_end` | `childKey`, `outcome`, `credits` | `void` |
 | `format_deviation` | `rule`, `model`, `sampleHash` | `void` |
+| `turn_end` | `turn`, `reason`, `endSeq` | `void` |
 | `shutdown` | `reason` | `void` |

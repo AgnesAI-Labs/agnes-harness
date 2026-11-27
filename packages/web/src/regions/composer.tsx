@@ -23,6 +23,7 @@ import { flushSync } from 'react-dom'
 import { loadHeadsUp } from '../heads-up.js'
 import { HeadsUpNote } from '../heads-up-view.js'
 import { ModelPickerControl } from '../model-picker.js'
+import { selectedRemoteOrigin } from '../remote-frontend.js'
 import { loadReplySuggestion } from '../reply-suggestion.js'
 import { VoiceComposerButtons } from '../voice/composer-buttons.js'
 import { ApplicationComposerContext, ApplicationWorkActions } from '../workbench/application-actions.js'
@@ -139,7 +140,21 @@ export function mountComposerRegion(
     ...COMPOSER_DEPENDENCIES,
     ModelPicker: function ComposerModelPicker(props) {
       useSyncExternalStore(locale.subscribe, locale.getSnapshot)
-      return <ModelPickerControl {...props} t={(key, vars) => locale.t(key, vars)} />
+      return (
+        <SlotOutlet
+          name="conversation.input.model.catalog"
+          props={{
+            owner: { draft: !registry.sessionId, remote: Boolean(selectedRemoteOrigin()) },
+            value: props.state,
+            actions: {
+              select: props.onSelect,
+              setCatalog: props.onCatalogChange,
+              renderDefault: () => <ModelPickerControl {...props} t={(key, vars) => locale.t(key, vars)} />,
+            },
+          }}
+          fallback={<ModelPickerControl {...props} t={(key, vars) => locale.t(key, vars)} />}
+        />
+      )
     },
     loadHint: (scope, signal) => {
       // The same finished-turn edge that asks for a reply suggestion also asks for the heads-up.

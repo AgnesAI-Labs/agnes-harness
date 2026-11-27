@@ -25,8 +25,10 @@ export async function packNpxPackage(stage: string): Promise<{ stage: string; tr
       dist,
       '--version',
       PUBLIC_PACKAGE_VERSION,
+      '--distribution',
+      'npm',
     ],
-    { stdio: 'inherit', cwd: repo },
+    { stdio: 'inherit', cwd: repo, env: { ...process.env, AGNES_BUILD_DISTRIBUTION: 'npm' } },
   )
   await publishNativeLayout(dist, triple)
   await preparePackPayload(stage, repo)

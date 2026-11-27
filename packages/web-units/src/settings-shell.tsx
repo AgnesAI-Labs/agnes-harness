@@ -59,9 +59,11 @@ function NavigationIcon({ name }: { name: string }) {
 function SettingsRegistryNavigation({
   store,
   translate,
+  extensionNavigation,
 }: {
   store: SettingsNavigationStore
   translate?: ((key: string) => string) | undefined
+  extensionNavigation?: ReactNode
 }) {
   const { entries, selected } = useSyncExternalStore(store.subscribe, store.snapshot)
   const advanced = useAdvancedSettings()
@@ -115,6 +117,7 @@ function SettingsRegistryNavigation({
         <SettingsDshHost name="settings.onboarding" />
         <SettingsDshHost name="settings.action" />
         {groups.filter((group) => !advancedSettings(group[0]?.group ?? '')).map(renderGroup)}
+        {extensionNavigation}
       </div>
       {advanced && (
         <div id="settings-advanced" data-testid="settings-advanced">
@@ -217,10 +220,14 @@ export function SettingsShell({
   store,
   translate,
   sectionPages,
+  extensionNavigation,
+  extensionPage,
 }: {
   store?: SettingsNavigationStore | undefined
   translate?: ((key: string) => string) | undefined
   sectionPages?: ReactNode
+  extensionNavigation?: ReactNode
+  extensionPage?: ReactNode
 }) {
   const t = translate ?? ((key: string) => key)
   return (
@@ -240,7 +247,11 @@ export function SettingsShell({
             </Button>
             <SettingsDshHost name="settings.close" />
           </div>
-          <SettingsRegistryNavigation store={store} translate={translate} />
+          <SettingsRegistryNavigation
+            store={store}
+            translate={translate}
+            extensionNavigation={extensionNavigation}
+          />
         </aside>
       ) : (
         <SettingsLegacyRail translate={translate} slots />
@@ -271,6 +282,7 @@ export function SettingsShell({
         >
           {sectionPages}
         </section>
+        {extensionPage}
       </div>
     </form>
   )

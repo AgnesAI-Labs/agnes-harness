@@ -2,9 +2,14 @@ import { createProvider, NullContractStore, PiAdapter } from '@agnes/ai'
 import { type RefinementModelOption, validateAgainst } from '@agnes/protocol'
 import { RefinementModelId } from '@agnes/protocol/gen/agnes-v1'
 
+/** Profiles saved before gateway selection used this address, independent of the current allowlist. */
+export const LEGACY_REFINEMENT_BASE_URL = 'https://api.llm.sg/v1'
+
 /** The review gateways available to this deployment, in default-first order. */
 export const REFINEMENT_ENDPOINTS: readonly [string, ...string[]] = Object.freeze([
-  'https://api.llm.sg/v1',
+  LEGACY_REFINEMENT_BASE_URL,
+  'https://api.agnes-ai.cn/v1',
+  'https://apihub.agnes-ai.com/v1',
 ] as const)
 export const DEFAULT_REFINEMENT_BASE_URL = REFINEMENT_ENDPOINTS[0]
 

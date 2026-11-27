@@ -1,10 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import { dirname, extname, relative, resolve, sep } from 'node:path'
 import { build } from 'esbuild'
-import { assertClientExternals } from '../../../tools/web-client-externals.mjs'
+import { assertClientExternals, clientImportMap } from '../../../tools/web-client-externals.mjs'
 
 /** Validate every declared client entry, including prebuilt payloads copied without bundling. */
-export async function checkPackagedClientModules(root: string): Promise<void> {
+export async function checkPackagedClientModules(root: string, webHtml?: string): Promise<void> {
   const manifest = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'))
   for (const descriptor of manifest.agnes?.clientDescriptors ?? []) {
     const path = resolve(root, descriptor.path)
@@ -21,7 +21,7 @@ export async function checkPackagedClientModules(root: string): Promise<void> {
       write: false,
       logLevel: 'silent',
     })
-    assertClientExternals(result.metafile)
+    assertClientExternals(result.metafile, clientImportMap(webHtml))
     // Descriptor resources are not ESM imports: esbuild cannot discover them. Check the
     // shipped tree, including relative URLs in JS/CSS and glTF buffer/image dependencies.
     const base = dirname(path)

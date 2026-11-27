@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { constants } from 'node:fs'
+import { constants, existsSync } from 'node:fs'
 import { open, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AdminTelemetryParams, TelemetrySettings } from '@agnes/protocol/gen/app-server'
@@ -10,8 +10,31 @@ export const DEFAULT_TELEMETRY_ENDPOINT = 'https://agh-telemetry.agnes-ai.cn'
 const DEFAULTS: TelemetrySettings = { analyticsEnabled: true, traceUploadEnabled: true }
 const OFF: TelemetrySettings = { analyticsEnabled: false, traceUploadEnabled: false }
 const UUID_V4 = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i
+const TRUE_ENV_VALUE = /^(1|true)$/i
+const FALSE_ENV_VALUE = /^(0|false)$/i
+const AUTOMATION_ENV_KEYS = ['GITHUB_ACTIONS', 'GITLAB_CI', 'BUILDKITE', 'TF_BUILD', 'CNB', 'CONTAINER']
 
-export function telemetryEnvironment(env: NodeJS.ProcessEnv, allowInTest = false) {
+function defaultIsLinuxContainer(): boolean {
+  const linux = process.platform === 'linux' // guards-allow-platform: Linux container marker files disable default telemetry in ephemeral containers.
+  return linux && (existsSync('/.dockerenv') || existsSync('/run/.containerenv'))
+}
+
+function isAutomationEnvironment(env: NodeJS.ProcessEnv): boolean {
+  return (
+    TRUE_ENV_VALUE.test(env.CI?.trim() ?? '') ||
+    TRUE_ENV_VALUE.test(env.VITEST?.trim() ?? '') ||
+    AUTOMATION_ENV_KEYS.some((key) => {
+      const value = env[key]?.trim()
+      return !!value && !FALSE_ENV_VALUE.test(value)
+    })
+  )
+}
+
+export function telemetryEnvironment(
+  env: NodeJS.ProcessEnv,
+  allowInTest = false,
+  isContainer: () => boolean = defaultIsLinuxContainer,
+) {
   let endpoint: URL | undefined
   const candidate = (env.AGH_TELEMETRY_ENDPOINT ?? DEFAULT_TELEMETRY_ENDPOINT).trim()
   if (/^https?:\/\//i.test(candidate)) {
@@ -22,10 +45,11 @@ export function telemetryEnvironment(env: NodeJS.ProcessEnv, allowInTest = false
       // An invalid destination disables both network paths.
     }
   }
+  const override = env.AGH_TELEMETRY_DISABLED?.trim() ?? ''
   const disabledByEnv =
-    /^(1|true)$/i.test(env.AGH_TELEMETRY_DISABLED ?? '') ||
     env.DO_NOT_TRACK === '1' ||
-    (!allowInTest && (env.CI === 'true' || env.VITEST === 'true'))
+    TRUE_ENV_VALUE.test(override) ||
+    (!FALSE_ENV_VALUE.test(override) && !allowInTest && (isAutomationEnvironment(env) || isContainer()))
   return { endpoint, disabledByEnv, endpointConfigured: endpoint !== undefined }
 }
 

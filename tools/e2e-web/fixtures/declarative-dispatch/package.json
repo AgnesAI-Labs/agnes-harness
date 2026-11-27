@@ -1,0 +1,111 @@
+{
+  "name": "@agnes-e2e/declarative-dispatch",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "private": true,
+  "exports": "./index.mjs",
+  "agnes": {
+    "metadata": {
+      "displayName": "Dispatch handbook",
+      "summary": "Offline examples for preparing a dispatch.",
+      "description": "Find dispatch instructions and configure the secondary intake queue."
+    },
+    "provides": [
+      "ui"
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:e2e/dispatch-primary",
+        "path": "./agnes.client.json"
+      }
+    ],
+    "plugins": [
+      {
+        "export": "primary",
+        "id": "ext:e2e/dispatch-primary",
+        "apiRange": "^5.0.0",
+        "config": {
+          "name": "Primary intake"
+        },
+        "configSchema": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      {
+        "export": "secondary",
+        "id": "ext:e2e/dispatch-secondary",
+        "apiRange": "^5.0.0",
+        "config": {
+          "name": "Secondary dispatch"
+        },
+        "configSchema": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "uiEntries": [
+          {
+            "id": "overview",
+            "placement": "settings",
+            "title": {
+              "en": "Dispatch settings"
+            },
+            "markdown": {
+              "en": "Set the name of the secondary dispatch queue."
+            },
+            "configure": true
+          },
+          {
+            "id": "start",
+            "placement": "sidebar",
+            "title": {
+              "en": "Dispatch start"
+            },
+            "markdown": {
+              "en": "Check which deliveries are ready."
+            }
+          },
+          {
+            "id": "reference",
+            "placement": "workbench.right",
+            "title": {
+              "en": "Dispatch reference"
+            },
+            "markdown": {
+              "en": "Look up the receiving team first."
+            }
+          },
+          {
+            "id": "checklist",
+            "placement": "workbench.bottom",
+            "title": {
+              "en": "Dispatch checklist"
+            },
+            "markdown": {
+              "en": "Confirm the dispatch has a destination."
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

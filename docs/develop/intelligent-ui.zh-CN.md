@@ -90,6 +90,8 @@ Schema 声明结构限制并导出 `X_AGNES_UI_LIMITS`；后台与渲染器还�
 
 写入前校验整体投影容量，不能只校验单个 surface。render/update 超出容量时拒绝操作并保留前一个 revision。读取分页可以减少条目以满足字节限制。即使移出有界投影缓存，命令身份与关闭 surface 的墓碑仍保留在 ledger 中。重启后从回执事实重建近期接纳窗口；并发接纳串行化。同一命令的重试不消耗新的命令额度。过载返回现有 `OVERLOADED` RPC 拒绝和重试提示，不创建业务执行。
 
+如果会话中已有 16 张未关闭的卡片，`ui_render` 会拒绝有效的新卡片，不解析其数据源，也不写入任何事实。工具返回 `isError: true`，并附带 `structured: { code: 'UI_LIMIT', published: false }`。现有卡片保持不变。关闭一张不再需要的卡片，再用同一个 surface ID 重试。服务仍抛出 `SEMANTIC_REJECTED`，其中 `data.code` 为 `UI_LIMIT`。
+
 ### 财务 surface 示例
 
 以下是完整 surface 值。金额保持精确的整数美元分，展示标签说明单位。
@@ -210,7 +212,7 @@ Host 会话桥解析数据源。官方插件调用该函数并追加审计事实
 
 | 时机 | 行为 |
 | --- | --- |
-| `ui_render` / `ui_update` | 先解析每一个绑定。第一处失败拒绝整次写入，什么都不落盘。空数组是合法数据。落盘的 surface 是绑定。 |
+| `ui_render` / `ui_update` | 检查会话状态后，在发布前解析所有绑定。遇到第一个数据源拒绝时停止发布。空数组是合法数据。落盘的 surface 保留绑定。 |
 | `ui.read` | 视图替换已就绪的结果，并附上 `sources[dataKey]`。一个键失败只降级该组件，兄弟组件照常渲染。持久记录仍是绑定。 |
 | `_agnes/v1/ui.refresh` | 与 `ui.read` 相同的已认证转发。重新查询，返回 `UiSurfaceRecord`，`surface.revision` 不变，不写 surface 事实。已关闭的 surface 返回 `UI_CLOSED`。`received`、`pending-approval` 或 `executing` 返回 `UI_BUSY`。 |
 | 动作执行 | 只重查该动作依赖的键：`from: "data"`，以及经组件 `dataKey` 追溯的 `from: "selection"` 或 `"row"`。这些键上的数据源被禁用或失去信任时，动作被拒绝。未被使用的数据源不阻挡动作。 |
@@ -333,7 +335,7 @@ Fact-chain 与 trace 展示 surface id/revision 和归属、received 命令/acto
 
 模块导出 `renderers` 对象，键为声明的完整 kind。函数接收 `(mount, props, api)`，可返回清理函数或其 Promise。`@agnes/web-client` 导出 `IntelligentUiRenderer` 与 `IntelligentUiRendererApi` 类型。API 仅有 `emitAction(id)`、`readTheme()`（`light`/`dark`）和 `readLocale()`（`en`/`zh-CN`）。action id 必须同时在组件 `actionIds` 与 surface `actions` 中；宿主调用现有 surface 的确认、工具及审批路径。组件不能提交 input、row、工具名，也没有会话或服务访问接口。
 
-自定义模块沿用现有安装审阅、能力摘要、信任、不可变资源和会话 generation 名册。入口必须是自包含 ESM（不超过 262,144 字节），不允许运行时 import、slots、services 或外部样式。代码在独立 opaque-origin iframe 中运行，`sandbox="allow-scripts"` 与该文档的 CSP 禁止 fetch/网络资源、表单和嵌套 frame。宿主不将其 import 到自己的页面。渲染器只拥有自身 frame 的 mount；使用 `textContent` 展示文字，提供语义标签、键盘可操作控件、可见焦点，并在卸载时清理资源。manifest 的 keyboard 要求是作者与审阅者的责任，不等于自动无障碍认证。
+自定义模块沿用现有安装审阅、能力摘要、信任、不可变资源和会话 generation 名册。入口必须是自包含 ESM（不超过 262,144 字节），不允许运行时 import、slots、services 或外部样式。工作台通过当前后端连接读取锁定版本的模块文本，再将源码发送给 `/__agnes/ui-frame` 的独立 opaque-origin iframe。iframe 地址不含会话凭据。代码在 `sandbox="allow-scripts"` 下运行，独立的 CSP 禁止 fetch/网络资源、表单和嵌套 frame。渲染器只拥有自身 frame 的 mount；使用 `textContent` 展示文字，提供语义标签、键盘可操作控件、可见焦点，并在卸载时清理资源。manifest 的 keyboard 要求是作者与审阅者的责任，不等于自动无障碍认证。
 
 模型只输出数据组件：`id`、命名空间 `kind`、`dataKey`、`fallback`、`actionIds`（可选 `title`）；props 位于 `surface.data[dataKey]`。后台 `validIntelligentSurface(surface, declarations)` 从持久会话 generation 取得声明，在持久化前按本地同步 JSON Schema 校验 props，核对声明的原文 fallback，并拒绝未知或不唯一的 kind。不能替换为当前安装版本。限制：每模块最多 16 项声明；Schema 最多 16,384 字节、深度 16；props 不超过声明的上限（1–16,384 字节）；fallback 为 1–4,096 字符；继续遵守现有 surface 字节、深度与组件数量上限。Schema 不得加载远程引用或异步执行。
 

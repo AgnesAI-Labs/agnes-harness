@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { evaluateSemverRange } from '../src/host.js'
 import { API_VERSION, checkApiRange, isExtensionError, parseSemver, satisfiesApiRange } from '../src/index.js'
 
 describe('parseSemver', () => {
@@ -96,6 +97,19 @@ describe('supported API subset boundary cases', () => {
   ])('%s admits %s: %s', (range, version, expected) => {
     expect(satisfiesApiRange(range, version)).toBe(expected)
   })
+  it('distinguishes an unsupported range from a valid nonmatch with the same API grammar', () => {
+    const version = parseSemver('1.2.3-rc.2+build.4')
+    expect(version).not.toBeNull()
+    expect(evaluateSemverRange('>=1.2.3-rc.1 <2.0.0', version)).toBe('match')
+    expect(evaluateSemverRange('>=1.0.0 <2.0.0', version)).toBe('no-match')
+    expect(evaluateSemverRange('^1.2', null)).toBe('unavailable')
+    for (const unsupported of ['>=9.0.0 || *', '1.0.0 - 2.0.0', '^1.x', '> 1.2.3', 'latest']) {
+      expect(evaluateSemverRange(unsupported, version)).toBe('unsupported')
+      expect(evaluateSemverRange(unsupported, null)).toBe('unsupported')
+      expect(() => checkApiRange({ id: 'agnes/test', apiRange: unsupported }, '1.2.3')).toThrow(/E_API_RANGE/)
+    }
+  })
+
   it('rejects unsafe or malformed versions and accepts valid build metadata', () => {
     for (const v of ['9007199254740992.0.0', '01.0.0', '1.0.0-01', '1.0.0-a..b', '1.0.0+'])
       expect(parseSemver(v)).toBeNull()
@@ -111,8 +125,9 @@ describe('supported API subset boundary cases', () => {
 })
 
 describe('5.x major API', () => {
-  it('admits ^5 ranges and refuses every ^4 range at the 5.22.0 API', () => {
-    expect(API_VERSION).toBe('5.22.0')
+  it('admits ^5 ranges and refuses every ^4 range at the 5.23.0 API', () => {
+    expect(API_VERSION).toBe('5.23.0')
+
     for (const range of ['^5.0.0', '^5.0', '>=5.0.0 <6.0.0', '5.*'])
       expect(satisfiesApiRange(range), range).toBe(true)
     for (const range of ['^4.0.0', '^4.0', '4.*']) expect(satisfiesApiRange(range), range).toBe(false)

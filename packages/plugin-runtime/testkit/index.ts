@@ -198,15 +198,3 @@ export function createVerifiedTestRoot(options: VerifiedTestRootOptions = {}): V
     },
   })
 }
-
-export {
-  childAgentConformance,
-  compactionConformance,
-  loopConformance,
-  modelAdapterConformance,
-  persistenceConformance,
-  runProviderConformance,
-  sandboxConformance,
-  toolPolicyConformance,
-  toolRuntimeConformance,
-} from '@agnes/extension-api/testkit'

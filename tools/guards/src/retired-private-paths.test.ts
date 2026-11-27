@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { listSourceFiles, repoRoot, SOURCE_EXTENSIONS } from './repo.js'
@@ -44,7 +45,9 @@ function privateImports(file: string, source: string): string[] {
 
 describe('retired implementation private paths', () => {
   // This intentionally reads every module, including tests/scripts; allow CI load beyond 5 seconds.
-  it('rejects reintroducing imports of retired modules, including tests and build scripts', () => {
+  it('rejects reintroducing imports of retired modules, including tests and build scripts', async ({
+    signal,
+  }) => {
     expect(retired.size).toBeGreaterThan(0)
     const files = listSourceFiles(
       ['packages', 'tools', 'examples'].map((dir) => join(root, dir)),
@@ -53,11 +56,21 @@ describe('retired implementation private paths', () => {
       },
     )
     expect(files.length, 'no modules found, so the repository guard checked nothing').toBeGreaterThan(100)
-    const errors = files.flatMap((file) => {
-      const path = relative(root, file)
-      return privateImports(path, readFileSync(file, 'utf8')).map((target) => `${path} imports ${target}`)
-    })
-    expect(errors).toEqual([])
+    const errors = new Array<string[]>(files.length)
+    let next = 0
+    // Keep cold filesystem reads bounded and concurrent without omitting any module. The test's
+    // own cancellation signal also stops outstanding reads if its unchanged deadline expires.
+    await Promise.all(
+      Array.from({ length: 32 }, async () => {
+        for (let index = next++; index < files.length; index = next++) {
+          const file = files[index]!
+          const path = relative(root, file)
+          const source = await readFile(file, { encoding: 'utf8', signal })
+          errors[index] = privateImports(path, source).map((target) => `${path} imports ${target}`)
+        }
+      }),
+    )
+    expect(errors.flat()).toEqual([])
   }, 15_000)
 
   it.each([

@@ -10,7 +10,7 @@ import {
 import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { PackageError } from './errors.js'
 import { exampleParentBlockers } from './example-parent.js'
-import { inspectVerifiedTree } from './inspect.js'
+import { type InspectedUiEntry, inspectVerifiedTree } from './inspect.js'
 import { canonical, capabilityHash, freezeData, readStaticJson, snapshotHash } from './integrity.js'
 import { reviewedContributionsMatch } from './inventory-client-compatibility.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
@@ -39,6 +39,8 @@ export type InstalledPackage = Readonly<{
   trusted: boolean
   enabled: boolean
   provides?: readonly AgnesPluginProvide[]
+  /** Static annotations from the current verified tree, not lock or runtime snapshot fields. */
+  uiEntries?: readonly InspectedUiEntry[]
   /** The installed tree is the optional plugin this AGH ships (see provenBundledOrigin). */
   bundledOrigin?: PackageBundledOrigin
   contributions: readonly PackageContributionSummary[]
@@ -113,6 +115,7 @@ type VerifiedPackageDirectory = {
   capabilityHash: string
   blockers: readonly PackageBlocker[]
   provides?: readonly AgnesPluginProvide[]
+  uiEntries?: readonly InspectedUiEntry[]
   bundledOrigin?: PackageBundledOrigin
 }
 export type InventoryVerificationCache = Map<string, VerifiedPackageDirectory>
@@ -237,6 +240,7 @@ export function verifyHashedPackageDirectory(
     capabilityHash: hash,
     blockers: checked.preview.blockers,
     ...(checked.preview.provides === undefined ? {} : { provides: checked.preview.provides }),
+    ...(checked.uiEntries ? { uiEntries: checked.uiEntries } : {}),
     ...(checked.preview.bundledOrigin ? { bundledOrigin: checked.preview.bundledOrigin } : {}),
   })
   if (key && cache) {
@@ -345,6 +349,7 @@ function* inventoryReadSteps(
     let provenance = entry.provenance
     let hash = capabilityHash(entry)
     let provides: readonly AgnesPluginProvide[] | undefined
+    let uiEntries: readonly InspectedUiEntry[] | undefined
     let bundledOrigin: PackageBundledOrigin | undefined
     if (entry.contributions === undefined || entry.treeIntegrity === undefined)
       blockers.push({ code: 'unknown-contribution', references: ['static-inventory-migration-required'] })
@@ -377,6 +382,7 @@ function* inventoryReadSteps(
       if (entry.trust !== 'builtin') enforceSourceConfiguration(sourceConfig, provenance)
       hash = verified.capabilityHash
       provides = verified.provides
+      uiEntries = verified.uiEntries
       bundledOrigin = verified.bundledOrigin
       blockers.push(
         ...verified.blockers.filter(
@@ -421,6 +427,7 @@ function* inventoryReadSteps(
       trusted,
       enabled: entry.state.enabled,
       ...(provides === undefined ? {} : { provides }),
+      ...(uiEntries === undefined ? {} : { uiEntries }),
       ...(bundledOrigin ? { bundledOrigin } : {}),
       contributions: entry.contributions ?? [],
       blockers,
@@ -466,7 +473,7 @@ export function readInventoryAsync(
  */
 export function stableInventoryRows(packages: readonly InstalledPackage[]): readonly (Omit<
   InstalledPackage,
-  'directory' | 'verifiedRollbackTarget' | 'localFailure' | 'localReloadRequired'
+  'directory' | 'verifiedRollbackTarget' | 'localFailure' | 'localReloadRequired' | 'uiEntries'
 > & {
   verifiedRollbackTarget: Readonly<{
     version: string
@@ -483,6 +490,7 @@ export function stableInventoryRows(packages: readonly InstalledPackage[]): read
         verifiedRollbackTarget: rollback,
         localFailure: _failure,
         localReloadRequired: _pending,
+        uiEntries: _uiEntries,
         ...p
       }) => ({
         ...p,

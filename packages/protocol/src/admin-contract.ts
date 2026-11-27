@@ -2,11 +2,16 @@ import type { TSchema } from '@sinclair/typebox'
 import { inspectJsonData } from './json-data.js'
 import { type ValidationResult, validateAgainst } from './validate.js'
 
+export const PLUGIN_UI_ENTRIES_MAX_BYTES = 512 * 1024
+
 /** Per-contract read budgets; effect parameters and ordinary responses stay at 1 MiB. */
 export function adminPayloadBudget(name: string, side: 'params' | 'result' = 'result'): number {
   if (side === 'params') return 1048576
   if (name === 'PackageCatalogPage' || name === '_agnes/v1/packages.catalog.list') return 8 * 1024 * 1024
   if (name === '_agnes/v1/clientModules.read') return 44739244 + 1024
+  if (name === '_agnes/v1/clientModules.uiEntries' || name === 'PluginUiEntriesResult')
+    return PLUGIN_UI_ENTRIES_MAX_BYTES
+  if (name === '_agnes/v1/skins.read') return 2796204 + 1024
   return 1048576
 }
 

@@ -3,6 +3,7 @@
 // (native/process-restricted.h); the Host resumes it only after proving it is in that Job.
 import { randomBytes } from 'node:crypto'
 import { windowsCommand } from '../runtime/windows-command.mjs'
+import { windowsEnvironmentNamesEqual } from './index.js'
 import { windowsDetachedCommand, windowsDetachedEnvironment } from './process-detached.js'
 import { windowsWriteSid } from './windows-acl.js'
 
@@ -98,6 +99,22 @@ export function restrictedLaunch(
   confinement: WindowsConfinement,
   parentEnv: NodeJS.ProcessEnv,
 ): RestrictedLaunch {
+  return {
+    ...windowsJobLaunch(argv, cwd, env, windowsBatch, parentEnv),
+    writeSids: [...confinement.writeSids],
+    isolationSid: isolationSid(),
+    readOnly: confinement.mode === 'read-only',
+  }
+}
+
+/** Shared encoding for ordinary and restricted targets; both stay suspended until Job assignment. */
+export function windowsJobLaunch(
+  argv: readonly string[],
+  cwd: string,
+  env: Readonly<Record<string, string>>,
+  windowsBatch: 'script' | 'argv-proxy',
+  parentEnv: NodeJS.ProcessEnv,
+): Pick<RestrictedLaunch, 'application' | 'commandLine' | 'environment'> {
   const command = windowsCommand(argv, cwd, env, windowsBatch)
   const [application, ...rest] = command.argv
   if (!application) throw invalid('Windows command resolved to nothing')
@@ -106,10 +123,7 @@ export function restrictedLaunch(
   return {
     application,
     commandLine,
-    environment: windowsDetachedEnvironment(env, parentEnv),
-    writeSids: [...confinement.writeSids],
-    isolationSid: isolationSid(),
-    readOnly: confinement.mode === 'read-only',
+    environment: windowsDetachedEnvironment(env, parentEnv, windowsEnvironmentNamesEqual),
   }
 }
 

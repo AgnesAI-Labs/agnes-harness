@@ -9,6 +9,8 @@ import {
 } from '@agnes/web-ui'
 import { Approval } from '@agnes/web-units'
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { authorizeRemoteFrontend } from '../../../packages/web/src/remote-authorization.js'
+import { backendResourceUrl } from '../../../packages/web/src/remote-frontend.js'
 import { Dock } from '../../../packages/web/src/workbench/dock.js'
 import {
   financeRecord as baseFinanceRecord,
@@ -158,6 +160,11 @@ const locale = new LocaleService(new Context(), language)
 locale.register(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
 const source = createDocumentLocaleSource({ [INTELLIGENT_UI_NAMESPACE]: intelligentUiCatalog })
 const client = new IntelligentUiClient('session-finance', server, sessionStorage)
+const cloudRemote =
+  customMode === 'cloud-ready' ? 'https://8443-fixture.ap-shanghai.tencentags.com' : undefined
+if (cloudRemote) {
+  await authorizeRemoteFrontend(cloudRemote, new AbortController().signal, fetch)
+}
 let version = 0,
   target: ReturnType<UiPlacementBinding['target']>
 const listeners = new Set<() => void>()
@@ -167,15 +174,29 @@ const binding: UiPlacementBinding = {
         customModules: {
           theme: new ThemeService(new Context(), 'light'),
           subscribe: () => () => {},
+          ...(cloudRemote
+            ? { resolveUrl: (url: string) => backendResourceUrl(url, cloudRemote, location.origin) }
+            : {}),
           list: async () => [
             {
               rowId: 'web:finance',
               moduleName: 'finance',
+              packageId: 'finance',
               enabled: true,
               phase: customMode === 'blocked' ? ('blocked' as const) : ('ready' as const),
               revision: 'reviewed',
               contentDigest: `sha256-${'a'.repeat(64)}`,
-              entryUrl: '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/reviewed/diff.mjs',
+              rendererDataUrl:
+                '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/reviewed/diff.mjs?agnes_ui_source=1',
+              binding: {
+                owner: 'web:finance',
+                packageId: 'finance',
+                profileId: 'local-dev',
+                integrity: 'reviewed',
+                activationId: 'archived',
+                lifetime: 'session',
+                availability: 'history-only',
+              },
               intelligentComponents: [customDeclaration],
             },
           ],

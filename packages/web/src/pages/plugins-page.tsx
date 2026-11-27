@@ -1,9 +1,13 @@
 import { resolvePluginMetadata } from '@agnes/protocol'
+import { PluginRowConfiguration } from '@agnes/web-admin/admin/plugins/admin'
 import { sessionStartUrl } from '@agnes/web-admin/settings/runtime-panels'
 import type { UiExtensionContext } from '@agnes/web-client'
 import { createComputerUsePaneController } from '@agnes/web-conversation/computer-use-pane'
-import { Button, Count, Icon, IconButton, Menu, Tabs, useUiText } from '@agnes/web-ui'
-import { useEffect, useMemo, useState } from 'react'
+import { Banner, Button, Count, Icon, IconButton, Menu, Tabs, useUiText } from '@agnes/web-ui'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { skillsWorkspaceId } from '../backends/local-route.js'
+import { matchesUiConfiguration, pluginUiConfiguration } from '../declarative-ui/configuration.js'
+import { pluginUiLabels } from '../declarative-ui/presentation.js'
 import { ChannelsPanel } from './channels.js'
 import type { HomePageData } from './host.js'
 import { HomePageFrame } from './page-frame.js'
@@ -22,6 +26,8 @@ import { ReviewTab } from './plugins/review-tab.js'
 import { openPlugins, PLUGIN_TABS, type PluginTab, pluginsRoute } from './plugins/route.js'
 import { SkillInstallDialog } from './plugins/skill-import.js'
 import { useCapabilitySummaries } from './plugins/summaries.js'
+
+const noSkillsWorkspace = { subscribe: () => () => undefined, getSnapshot: () => undefined }
 
 /** Drafts waiting for review, for the tab's number while another tab is showing. */
 function usePendingReviews(api: PluginView['api']) {
@@ -94,14 +100,47 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
   const data = context.data as HomePageData
   const { t } = useUiText(PLUGINS_PAGE_NAMESPACE, pluginsPageCatalog)
   const route = pluginsRoute(context.selection)
+  const workspace = data.plugins?.skillsWorkspace ?? noSkillsWorkspace
+  const sessionWorkspace = useSyncExternalStore(workspace.subscribe, workspace.getSnapshot)
+  const skillsWorkspace = skillsWorkspaceId(new URLSearchParams(location.search)) ?? sessionWorkspace
   const sources = useCandidateSources(data)
   const { host, view, sourceImport, closeSourceImport } = usePluginAdmin({
     ...data.plugins,
     candidateSessionTitle: sources.sessionTitle,
     candidateSessionTurnTime: sources.sessionTurnTime,
   })
+  const configure = useSyncExternalStore(pluginUiConfiguration.subscribe, pluginUiConfiguration.getSnapshot)
+  const admin = configure ? view?.state.context : undefined
+  const installed = configure && view?.state.installed.find(({ id }) => id === configure.target.packageId)
+  const configurable =
+    configure &&
+    admin?.permissions.includes('packages.read') &&
+    matchesUiConfiguration(configure.target, admin.profile, installed) &&
+    configure.isCurrent()
+  const exactRow = useMemo(
+    () =>
+      configure && {
+        rowId: configure.target.rowId,
+        isCurrent: () => pluginUiConfiguration.getSnapshot() === configure && configure.isCurrent(),
+        onMissing: () => {
+          if (pluginUiConfiguration.getSnapshot() === configure) pluginUiConfiguration.set(undefined)
+        },
+      },
+    [configure],
+  )
+  const rejected = Boolean(
+    configure && view && !view.state.loading && (!configurable || view.state.connection !== 'connected'),
+  )
+  const configBack = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (rejected) exactRow?.onMissing()
+    else if (exactRow) configBack.current?.focus({ preventScroll: true })
+  }, [rejected, exactRow])
   const summaries = useCapabilitySummaries(view?.api, data, t)
-  usePageProgress(!!view && view.state.loading && view.state.connection === 'loading')
+  usePageProgress(
+    (route.tab === 'skills' && skillsWorkspace === null) ||
+      (!!view && view.state.loading && view.state.connection === 'loading'),
+  )
   // A capability that moved to settings: its old link opens the page there, once. A link the app
   // starts with mounts this page before the workbench has finished starting, so wait for that.
   const moved = route.settings
@@ -177,13 +216,16 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
     </span>
   )
   const body = (tab: PluginTab) =>
-    tab !== route.tab ? null : tab === 'channels' ? (
+    tab !== route.tab || (tab === 'skills' && skillsWorkspace === null) ? null : tab === 'skills' &&
+      skillsWorkspace === false ? (
+      <Banner tone="error">{t('resource.failed')}</Banner>
+    ) : tab === 'channels' ? (
       <ChannelsPanel data={data} />
     ) : tab === 'skills' || tab === 'mcp' ? (
       <ResourcesTab
         tab={tab}
         t={t}
-        workspaceId={data.plugins?.workspaceId?.()}
+        workspaceId={tab === 'skills' && typeof skillsWorkspace === 'string' ? skillsWorkspace : undefined}
         canSave={view?.canEffect('packages.activate') ?? false}
         packageRevision={view?.state.externalPackages}
         packageName={(id) => {
@@ -205,6 +247,33 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
     ) : (
       <MarketTab view={view} t={t} />
     )
+  if (configure && exactRow && route.tab === 'plugins' && !rejected) {
+    return (
+      <>
+        <div ref={host} hidden />
+        <HomePageFrame
+          id="plugins"
+          title={installed && admin ? view?.nameOf(installed) : configure.entry.packageId}
+          breadcrumb={
+            <Button ref={configBack} appearance="ghost" htmlType="button" onClick={exactRow.onMissing}>
+              {pluginUiLabels().back}
+            </Button>
+          }
+        >
+          {configurable && admin ? (
+            <PluginRowConfiguration
+              key={configure.entry.key}
+              context={admin}
+              packageId={configure.target.packageId}
+              target={exactRow}
+            />
+          ) : (
+            <p role="status">{t('resource.loading')}</p>
+          )}
+        </HomePageFrame>
+      </>
+    )
+  }
   return (
     <>
       {/* The controller draws nothing here; it needs a connected node to own while it lives. */}

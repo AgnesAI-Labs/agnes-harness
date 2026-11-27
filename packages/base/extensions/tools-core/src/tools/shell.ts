@@ -5,11 +5,13 @@ import { runShellJob } from '../../../jobs/src/shell.js'
 import { failureCode, toolFailure } from '../guards/feedback.js'
 import { guardedCommandResult } from '../guards/output.js'
 import {
+  commandNetworkNote,
   DEADLINE_ADVICE,
   deadlineStop,
   deadlineWait,
   packageListsNote,
   shellGuidance,
+  shellSetupAdvice,
   timeoutGuidance,
 } from '../shell-guidance.js'
 import { ShellParams } from './schemas.js'
@@ -18,6 +20,18 @@ export { SHELL_SENTINEL }
 
 // Used only when the host states no default, so an older host keeps the default it always had.
 const DEFAULT_FOREGROUND_MS = 120_000
+
+/** Catch a literal attachment argument in the first Get-Content, including an assignment. */
+function powerShellAttachmentPath(command: string): string | undefined {
+  const head = /^\s*(?:\$\w+\s*=\s*)?Get-Content[ \t]+/iu.exec(command)
+  if (!head) return undefined
+  const pathArg = command
+    .slice(head[0].length)
+    .replace(/^(?:(?:-Raw|-LiteralPath|-Path|-Encoding[ \t]+[\w-]+)[ \t]+)*/iu, '')
+  return /^(?:\([ \t]*)?(["']?)(session-file:\/\/[1-9][0-9]*\/[1-9][0-9]*)\1(?=$|[\s,;|)])/u.exec(
+    pathArg,
+  )?.[2]
+}
 
 export function createShellTool(jobs?: ShellJobs, observationMs?: number) {
   if (
@@ -44,6 +58,15 @@ export function createShellTool(jobs?: ShellJobs, observationMs?: number) {
       commandArg: 'command',
     },
     async execute(args, ctx): Promise<ToolResult> {
+      if (ctx.platform.shell === 'powershell' && (args.shell === undefined || args.shell === 'pwsh')) {
+        const path = powerShellAttachmentPath(args.command)
+        if (path)
+          return toolFailure(
+            ctx,
+            'SHELL_ATTACHMENT_REFERENCE',
+            `Use read with path ${JSON.stringify(path)} and page with offset and limit. For PowerShell processing, use read with the same path and save_to set to a new workspace file, then pass the saved path to Get-Content.`,
+          )
+      }
       if (jobs && (ctx.platform.shell === 'posix' || ctx.sandbox.openProcess)) {
         const result = await runShellJob(jobs, args, ctx, observationMs)
         const details = result.details
@@ -94,7 +117,8 @@ export function createShellTool(jobs?: ShellJobs, observationMs?: number) {
         return toolFailure(
           ctx,
           failureCode(e, 'SHELL_START_FAILED'),
-          `command could not be started (${failureCode(e, 'SHELL_START_FAILED')}); check the selected interpreter and cwd with available file tools; choose an allowed command or ask the user to adjust access.`,
+          shellSetupAdvice(e) ??
+            `command could not be started (${failureCode(e, 'SHELL_START_FAILED')}); check the selected interpreter and cwd with available file tools; choose an allowed command or ask the user to adjust access.`,
         )
       }
       const parts: string[] = shellGuidance(ctx, args.command, r.stoppedProcesses)
@@ -102,6 +126,8 @@ export function createShellTool(jobs?: ShellJobs, observationMs?: number) {
       if (r.stderr) parts.push(`[stderr]\n${r.stderr.replace(/\n$/, '')}`)
       const packageLists = packageListsNote(r.stdout, r.stderr)
       if (packageLists) parts.push(packageLists)
+      const networkNote = commandNetworkNote(ctx, r.stdout, r.stderr)
+      if (networkNote) parts.push(networkNote)
       // An executor that reports nothing (a third-party seam) still has the kernel's cut-off behind it,
       // so only then is a killed-looking result that took the whole limit read as the timeout it was.
       const timedOut = r.timedOut ?? (r.code < 0 && Date.now() - startedAt >= timeoutMs)

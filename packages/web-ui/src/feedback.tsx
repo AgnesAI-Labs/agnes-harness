@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { fallbackT } from './locales/index.js'
 import { Toast } from './overlay-toast.js'
 import { Banner } from './ui/banner.js'
 import { Button } from './ui/button.js'
@@ -63,6 +64,11 @@ export function actionable(result: OperationFeedback): boolean {
 }
 /** Pure queue policy. The shell retains the operation-id set across route changes. */
 export function enqueueFeedback(snapshot: FeedbackSnapshot, result: OperationFeedback): FeedbackSnapshot {
+  if (result.outcome === 'unknown' || result.outcome === 'error')
+    return {
+      ...snapshot,
+      notices: [...snapshot.notices.filter((item) => item.scope !== result.scope), result],
+    }
   if (result.outcome !== 'success') return snapshot
   return {
     /* Repeating one control replaces what is still waiting for it instead of queuing behind it:
@@ -110,16 +116,25 @@ export function FeedbackHost({
   onDismiss(id: string): void
 }) {
   const current = snapshot.queue[0]
-  const notices = snapshot.notices.map((result) => (
-    <StatusMessage
-      key={result.scope}
-      kind="notice"
-      data-testid="operation-notice"
-      action={result.effect && 'action' in result.effect ? result.effect.action : undefined}
-    >
-      {result.effect?.message}
-    </StatusMessage>
-  ))
+  const notices = snapshot.notices.map((result) => {
+    const dismissible = result.outcome === 'unknown' || result.outcome === 'error'
+    return (
+      <StatusMessage
+        key={result.scope}
+        kind={result.outcome === 'error' ? 'error' : 'notice'}
+        data-testid="operation-notice"
+        action={
+          dismissible
+            ? { label: fallbackT('ui.dismiss'), onSelect: () => resolveFeedback(result.scope) }
+            : result.effect && 'action' in result.effect
+              ? result.effect.action
+              : undefined
+        }
+      >
+        {dismissible ? result.message : result.effect?.message}
+      </StatusMessage>
+    )
+  })
   return (
     <>
       {current && (

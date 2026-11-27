@@ -145,7 +145,9 @@ local-dev 默认允许 PATH 上的 stdio `node`、`npx`、`python`、`python3`�
 
 ## 配置并验证
 
-AGH 会把空输入 schema，以及缺少 `type` 但含对象约束的 schema，规范为 `type: "object"`。真正的非对象或非法根只跳过该工具，并在目录中显示 `invalid-schema` 原因；同一服务器的其他工具仍可使用。
+远端 MCP 工具的输入 schema 根节点必须描述对象。AGH 会把空 schema，以及缺少 `type` 但含对象约束的 schema，规范为 `type: "object"`。未声明 `$schema` 时，按 JSON Schema 2020-12 处理。若显式声明，只接受 `https://json-schema.org/draft/2020-12/schema` 或 `http://json-schema.org/draft-07/schema`，末尾可带 `#`。AGH 不根据关键字推断版本，也不在版本之间转换。
+
+AGH 会严格、同步地校验工具参数，不进行类型转换、不填入默认值，也不从网络获取 schema。支持的格式为 `uri` 和 `date-time`；`x-mcp-native` 仅作为注解接受，不影响校验。无效或不受支持的输入 schema 只会导致对应工具被跳过，目录通常会显示 `invalid-schema`。本地校验通过不代表模型供应商一定接受该 schema。
 
 Web 设置的 MCP 页面可查看服务、连接与工具目录。需要手动配置 stdio、HTTP 或 SSE 服务时，可使用命令行；`MCP_URL` 应是你已审核并可访问的 MCP endpoint，不是普通网页或模型 Base URL：
 

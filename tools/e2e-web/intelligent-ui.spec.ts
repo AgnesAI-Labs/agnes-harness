@@ -3,25 +3,32 @@ import { expect, test } from '@playwright/test'
 
 // Runs current production UI against a fake App Server. Backend tool authorization and
 // finance business validation belong to the parallel plugin acceptance suite.
-let fixture: ChildProcess, url: string
+let fixture: ChildProcess, url: string, cloudUrl: string, cloudPrefix: string
 test.beforeAll(async () => {
   fixture = spawn(process.execPath, ['tools/e2e-web/serve-intelligent-ui-fixture.mjs'], {
     stdio: ['ignore', 'pipe', 'pipe'],
   })
-  url = await new Promise<string>((resolve, reject) => {
-    let output = '',
-      errors = ''
-    fixture.stdout?.on('data', (chunk) => {
-      output += String(chunk)
-      const found = output.match(/http:\/\/127\.0\.0\.1:\d+/)
-      if (found) resolve(found[0])
-    })
-    fixture.stderr?.on('data', (chunk) => {
-      errors += String(chunk)
-    })
-    fixture.once('error', reject)
-    fixture.once('exit', (code) => reject(new Error(`Intelligent UI fixture exited ${code}: ${errors}`)))
-  })
+  const started = await new Promise<{ url: string; cloudUrl: string; cloudPrefix: string }>(
+    (resolve, reject) => {
+      let output = '',
+        errors = ''
+      fixture.stdout?.on('data', (chunk) => {
+        output += String(chunk)
+        const found = output.match(
+          /(http:\/\/127\.0\.0\.1:\d+) cloud=(http:\/\/127\.0\.0\.1:\d+) prefix=(\S+)/,
+        )
+        if (found) resolve({ url: found[1]!, cloudUrl: found[2]!, cloudPrefix: found[3]! })
+      })
+      fixture.stderr?.on('data', (chunk) => {
+        errors += String(chunk)
+      })
+      fixture.once('error', reject)
+      fixture.once('exit', (code) => reject(new Error(`Intelligent UI fixture exited ${code}: ${errors}`)))
+    },
+  )
+  url = started.url
+  cloudUrl = started.cloudUrl
+  cloudPrefix = started.cloudPrefix
 })
 test.afterAll(async () => {
   if (!fixture || fixture.exitCode !== null) return
@@ -148,15 +155,38 @@ for (const locale of ['en', 'zh-CN'])
     expect(errors).toEqual([])
   })
 
-for (const mode of ['ready', 'blocked', 'error'])
+for (const mode of ['ready', 'cloud-ready', 'blocked', 'error'])
   test(`reviewed custom renderer preserves fallback and the normal action flow (${mode})`, async ({
     page,
   }) => {
-    await page.goto(`${url}/?custom=${mode}&locale=en`)
-    await page.getByTestId('intelligent-ui-inline').getByTestId('ui-expand').click()
-    const card = page.getByTestId('intelligent-ui-panel')
+    const blockedRequests: string[] = []
+    const modulePath = '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/reviewed/diff.mjs'
+    const rendererDataPath = `${modulePath}?agnes_ui_source=1`
+    const moduleRequests: string[] = []
+    page.on('request', (request) => {
+      if (request.url().includes(modulePath)) moduleRequests.push(request.url())
+    })
+    await page.context().route('https://csp-blocked.invalid/**', (route) => {
+      blockedRequests.push(route.request().url())
+      return route.fulfill({ status: 200, body: '' })
+    })
+    if (mode === 'cloud-ready') {
+      await page.goto(`${cloudUrl}/`)
+      const unproxiedStatus = await page.evaluate(async (path) => {
+        const res = await fetch(path)
+        return res.status
+      }, rendererDataPath)
+      expect(unproxiedStatus).toBe(404)
+      moduleRequests.length = 0
+      await page.goto(`${url}/?host=cloud&locale=en`)
+    } else {
+      await page.goto(`${url}/?custom=${mode}&locale=en`)
+    }
+    const rootScope = mode === 'cloud-ready' ? page.frameLocator('[data-testid="cloud-stage"]') : page
+    await rootScope.getByTestId('intelligent-ui-inline').getByTestId('ui-expand').click()
+    const card = rootScope.getByTestId('intelligent-ui-panel')
     await expect(card.getByTestId('ui-table-differences')).toBeVisible()
-    if (mode !== 'ready') {
+    if (mode !== 'ready' && mode !== 'cloud-ready') {
       await expect(card.getByTestId('ui-custom-fallback-custom')).toContainText(
         'Review the preset differences table.',
       )
@@ -166,11 +196,18 @@ for (const mode of ['ready', 'blocked', 'error'])
       for (const action of await actions.all()) await expect(action).toBeEnabled()
       return
     }
+    await expect(card.getByTestId('ui-custom-frame-custom')).toHaveAttribute('src', '/__agnes/ui-frame')
     const frame = card.frameLocator('[data-testid="ui-custom-frame-custom"]')
     await expect(frame.getByText('Delta cents: 250')).toBeVisible()
+    await expect(frame.getByText('Delta cents: 250')).toHaveAttribute('data-nonce-visible', 'false')
+    expect(moduleRequests).toEqual([
+      `${mode === 'cloud-ready' ? cloudUrl + cloudPrefix : url}${rendererDataPath}`,
+    ])
+    expect(blockedRequests).toEqual([])
     expect(
       await frame.locator('body').evaluate(() => ({
         fetch: typeof fetch,
+        path: location.pathname + location.search,
         parentReadable: (() => {
           try {
             return !!parent.document
@@ -179,7 +216,7 @@ for (const mode of ['ready', 'blocked', 'error'])
           }
         })(),
       })),
-    ).toEqual({ fetch: 'undefined', parentReadable: false })
+    ).toEqual({ fetch: 'undefined', parentReadable: false, path: '/__agnes/ui-frame' })
     await frame.getByRole('button', { name: 'Review adjustments' }).focus()
     await frame.getByRole('button', { name: 'Review adjustments' }).press('Enter')
     await expect(card.getByTestId('ui-confirmation')).toBeVisible()

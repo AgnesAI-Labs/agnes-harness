@@ -55,6 +55,7 @@ export type SettingsControllerOptions = {
   client: Client
   onSaved(snapshot: ConfigSnapshot): Promise<void>
   onError(error: unknown): void
+  beforeOpen?(): boolean
   /** The dialog has just opened; its host owns the URL. */
   onOpen?(): void
   /** The dialog was open and has just closed, by any route. */
@@ -1023,7 +1024,13 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   updateButtons()
 
   const open = (): Promise<void> => {
-    if (opening || !ui.dialog.isConnected || !ui.models.isConnected) return opening ?? Promise.resolve()
+    if (
+      options.beforeOpen?.() ||
+      (opening && ui.dialog.open) ||
+      !ui.dialog.isConnected ||
+      !ui.models.isConnected
+    )
+      return opening ?? Promise.resolve()
     if (!ui.dialog.open) {
       const active = document.activeElement
       focusReturn = focusable(active) ? active : null

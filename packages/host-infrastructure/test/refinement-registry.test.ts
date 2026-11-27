@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 const lockFault = vi.hoisted(() => ({
   open: undefined as undefined | (() => void),
   write: undefined as undefined | (() => void),
+  rename: undefined as undefined | (() => void),
 }))
 vi.mock('node:fs', async (original) => {
   const fs = await original<typeof import('node:fs')>()
@@ -30,6 +31,10 @@ vi.mock('node:fs', async (original) => {
     writeFileSync: (...args: Parameters<typeof fs.writeFileSync>) => {
       if (typeof args[0] === 'number') lockFault.write?.()
       return fs.writeFileSync(...args)
+    },
+    renameSync: (...args: Parameters<typeof fs.renameSync>) => {
+      lockFault.rename?.()
+      return fs.renameSync(...args)
     },
   }
 })
@@ -56,7 +61,7 @@ const tempDir = () => {
   return dir
 }
 afterEach(() => {
-  lockFault.open = lockFault.write = undefined
+  lockFault.open = lockFault.write = lockFault.rename = undefined
   vi.restoreAllMocks()
   Object.defineProperty(process, 'platform', { value: nativePlatform })
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
@@ -698,6 +703,27 @@ describe('RefinementRegistry', () => {
       registry.update((draft) => draft.paragraphs.push(paragraph({ id: 'p2' })), registry.read().revision)
       expect(registry.read().paragraphs.map((entry) => entry.id)).toEqual(['p1', 'p2'])
       expect(elapsed()).toBe(200)
+      expect(existsSync(lockOf(dir))).toBe(false)
+    })
+
+    it('retries Windows sharing errors during atomic replacement and preserves the prior revision on failure', () => {
+      const { dir } = make()
+      const registry = new RefinementRegistry(dir, '/work/a', clockAt(), options)
+      registry.update((draft) => draft.paragraphs.push(paragraph()), registry.read().revision)
+      const elapsed = simulatedWait('win32')
+      lockFault.rename = () => {
+        if (elapsed() < 100) throw Object.assign(new Error('destination in use'), { code: 'EPERM' })
+      }
+      registry.update((draft) => draft.paragraphs.push(paragraph({ id: 'p2' })), registry.read().revision)
+      const previous = registry.read()
+      expect(previous.paragraphs.map((entry) => entry.id)).toEqual(['p1', 'p2'])
+      const started = elapsed()
+      lockFault.rename = () => {
+        throw Object.assign(new Error('destination still in use'), { code: 'EPERM' })
+      }
+      expect(() => registry.update(() => {}, previous.revision)).toThrow('destination still in use')
+      expect(elapsed() - started).toBe(options.lockWaitMs)
+      expect(registry.read()).toEqual(previous)
       expect(existsSync(lockOf(dir))).toBe(false)
     })
 

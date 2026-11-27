@@ -18,6 +18,7 @@ export function apply(ctx: ClientContext) {
           theme: ctx.theme,
           list: (sessionId) => ctx.presentation.listComponents?.(sessionId) ?? Promise.resolve([]),
           subscribe: (listener) => ctx.presentation.subscribeComponents?.(listener) ?? (() => {}),
+          resolveUrl: (url) => ctx.presentation.resolveResourceUrl?.(url) ?? url,
         },
         revealInline: () => ctx.presentation.revealConversation?.(),
         approval: () => ctx.presentation.focusApproval?.(),

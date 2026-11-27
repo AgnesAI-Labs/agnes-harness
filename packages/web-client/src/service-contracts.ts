@@ -29,6 +29,7 @@ export type ClientImageLoader = Readonly<{
 export type ClientDocumentResource = Readonly<{
   artifact: ClientImageArtifact
   kind: ClientDocumentKind
+  /** UTF-8 text for text kinds; authorized base64 bytes for PDF rasterization. */
   content?: string
   url?: string
   release(): void
@@ -40,6 +41,10 @@ export type ClientDocumentLoader = Readonly<{
       laneId: string
       kind: ClientDocumentKind
       artifact: ClientImageArtifact
+      /** Display filename only; never substitutes for the authorized artifact reference. */
+      name?: string
+      /** Exact durable present call/result used to resolve immutable HTML sibling snapshots. */
+      source?: { callSeq?: number; resultSeq?: number; surfaceId?: string }
     }>,
   ): Promise<ClientDocumentResource>
 }>
@@ -49,6 +54,7 @@ export type ClientServiceCaller = (
   sessionId: string,
   name: string,
   input: Record<string, unknown>,
+  signal: AbortSignal,
 ) => Promise<unknown>
 
 export type ClientEffectCaller = (

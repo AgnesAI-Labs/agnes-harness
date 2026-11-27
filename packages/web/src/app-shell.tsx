@@ -9,6 +9,10 @@ import {
 import type { ReactNode } from 'react'
 import { renderAppDialogs } from './app-dialogs.js'
 import { AppNotice, ConnectionBar, ReadOnlyNotice } from './app-notices.js'
+import { backendFrame } from './backends/frame-context.js'
+import { isLocalWorkbenchHost } from './backends/local-workbench-bus.js'
+import { CloudWorkbenchStage } from './backends/workbench.js'
+import { ClientUiPreparation } from './client-ui-preparation.js'
 import { SessionReport, SessionViews } from './regions/session-views.js'
 
 /** The elements AppShell renders for controller-owned regions to mount into. */
@@ -117,6 +121,7 @@ export function AppShell({ children, hosts }: { children?: ReactNode; hosts?: Pa
             aria-labelledby="view-chat"
             data-agnes-region="conversation"
           ></div>
+          <ClientUiPreparation />
           <aside
             ref={hold('trace')}
             id="trace-panel"
@@ -151,6 +156,11 @@ export function AppShell({ children, hosts }: { children?: ReactNode; hosts?: Pa
         ></section>
         <div ref={hold('composer')} id="composer-mount"></div>
       </main>
+      {isLocalWorkbenchHost() && !backendFrame() && (
+        <RegionErrorBoundary region="cloud-workbench">
+          <CloudWorkbenchStage />
+        </RegionErrorBoundary>
+      )}
 
       <div id="agnes-overlay-container" className="agnes-overlay-root">
         <div ref={hold('newSession')} id="new-session-root" className="agnes-overlay-root"></div>

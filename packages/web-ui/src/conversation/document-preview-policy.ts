@@ -46,8 +46,7 @@ function safeFragment(value: string): string | undefined {
  * removed, so a document cannot create scripts or network fetches in the workbench realm.
  */
 export function sanitizeDocumentHtml(source: string): DocumentFragment {
-  const template = document.createElement('template')
-  template.innerHTML = source
+  const template = documentHtmlTemplate(source)
   const result = document.createDocumentFragment()
 
   const appendNode = (parent: DocumentFragment | HTMLElement, node: Node): void => {
@@ -61,7 +60,7 @@ export function sanitizeDocumentHtml(source: string): DocumentFragment {
       if (sourceElement.textContent) parent.append(document.createTextNode(sourceElement.textContent))
       return
     }
-    const target = document.createElement(sourceElement.tagName.toLowerCase())
+    const target = documentHtmlElement(sourceElement.tagName.toLowerCase())
     for (const attribute of Array.from(sourceElement.attributes)) {
       const name = attribute.name.toLowerCase()
       if (name.startsWith('on') || name === 'style' || name === 'src' || name === 'srcset') continue
@@ -89,4 +88,16 @@ export function documentResourceUrl(value: string | undefined): string | undefin
   } catch {
     return undefined
   }
+}
+
+/** Parse without executing scripts or loading subresources; callers must keep authored nodes detached. */
+export function documentHtmlTemplate(source: string): HTMLTemplateElement {
+  const template = document.createElement('template')
+  template.innerHTML = source
+  return template
+}
+
+/** Element factory for the allowlisted sanitizer. */
+export function documentHtmlElement(tagName: string): HTMLElement {
+  return document.createElement(tagName)
 }

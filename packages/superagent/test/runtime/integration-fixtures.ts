@@ -225,8 +225,12 @@ export function ownerCalls(client: () => any) {
       return saved
     },
     /** Calls a panel service of the plugin row, as the panel does. */
-    async service(service: string, input: Record<string, unknown> = {}) {
-      const result = await client().extensions.callScoped({ extension: EXTENSION, service, input })
+    async service(service: string, input: Record<string, unknown> = {}, timeoutMs?: number) {
+      const result = await client().call(
+        '_agnes/v1/extension.callScoped',
+        { extension: EXTENSION, service, input },
+        timeoutMs === undefined ? undefined : { timeoutMs },
+      )
       return result.output as Record<string, unknown>
     },
     exists: (id: string) =>

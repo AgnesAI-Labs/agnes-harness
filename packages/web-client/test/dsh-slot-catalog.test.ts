@@ -14,23 +14,23 @@ import {
 } from '../src/index.js'
 
 describe('DSH client slot catalog', () => {
-  it('freezes the 63 generated keys and their kind/scope counts', () => {
+  it('freezes the 64 generated keys and their kind/scope counts', () => {
     expect(DSH_SLOT_CATALOG_VERSION).toBe('dsh-client-slots/v1')
     expect(DSH_SLOT_COUNTS).toEqual({
-      total: 63,
-      public: 62,
+      total: 64,
+      public: 63,
       hostOnly: 1,
-      single: 30,
+      single: 31,
       list: 19,
       keyed: 11,
       chain: 3,
       root: 27,
       session: 33,
-      sessionMaybe: 3,
+      sessionMaybe: 4,
     })
-    expect(DSH_SLOT_NAMES).toHaveLength(63)
-    expect(DSH_RUNTIME_SUPPORTED_SLOT_NAMES).toHaveLength(62)
-    expect(new Set(DSH_SLOT_NAMES).size).toBe(63)
+    expect(DSH_SLOT_NAMES).toHaveLength(64)
+    expect(DSH_RUNTIME_SUPPORTED_SLOT_NAMES).toHaveLength(63)
+    expect(new Set(DSH_SLOT_NAMES).size).toBe(64)
     expect(DSH_PUBLIC_SLOT_NAMES).not.toContain('root')
     expect(getDshSlotDefinition('root')).toMatchObject({
       kind: 'single',
@@ -50,6 +50,10 @@ describe('DSH client slot catalog', () => {
     expect(getDshSlotDefinition('sidebar.right.tab.document')?.parent).toBe('sidebar.right.pane.tab')
     expect(getDshSlotDefinition('conversation.composer')?.scope).toBe('session')
     expect(getDshSlotDefinition('conversation.composer.bar')?.scope).toBe('session-maybe')
+    expect(getDshSlotDefinition('conversation.input.model.catalog')).toMatchObject({
+      scope: 'session-maybe',
+      fallback: 'host',
+    })
   })
 
   it('separates the DSH component namespace from protocol data slots', () => {

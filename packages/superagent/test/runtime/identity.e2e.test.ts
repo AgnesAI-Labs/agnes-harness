@@ -51,6 +51,7 @@ it('a worker session commits and pushes as the agent through its CLI, never with
       },
     })
     const calls = ownerCalls(() => daemon.client)
+    const windows = process.platform === 'win32'
     await platformStateReady(join(root, 'agh'))
     mkdirSync(stateDir, { recursive: true })
     await calls.disable()
@@ -74,9 +75,12 @@ it('a worker session commits and pushes as the agent through its CLI, never with
       await worker.followUp(tool(marker, name, args), { commandId: `identity-${marker}` })
       return ((await answered(marker)).toolResult ?? '').replace(/<\/?untrusted[^>]*>/g, '')
     }
-    const run = (marker: string, command: string) => call(marker, 'shell', { command })
+    const shell = (command: string) => ({
+      command,
+      ...(windows ? { timeoutMs: 60_000, timeoutToBackground: false } : {}),
+    })
+    const run = (marker: string, command: string) => call(marker, 'shell', shell(command))
     // A session's shell is sh, and Windows PowerShell on Windows.
-    const windows = process.platform === 'win32'
     const sees = windows
       ? [
           'echo "gh=$((Get-Command gh).Source)"',
@@ -146,11 +150,18 @@ it('a worker session commits and pushes as the agent through its CLI, never with
     expect(await call('id-probe', ENV_PROBE_TOOL, {})).toContain(`unknown tool ${ENV_PROBE_TOOL}`)
     await daemon.restart()
     expect(records()).toHaveLength(2)
-    // Until Superagent has reconciled the worker after the restart, its hook refuses the worker's tools.
+    await until('Superagent runtime ready after the restart', async () => {
+      const state = await calls.service('superagent.state').catch(() => undefined)
+      const health = state?.health as { runtime?: { state: string } } | undefined
+      return health?.runtime?.state === 'ready' || undefined
+    })
+    // The app can report ready before lifecycle reconciliation has released the worker's tool hook.
     let attempt = 0
     const again = await until('the worker shell after the restart', async () => {
       const text = await run(`id-again-${++attempt}`, sees.join('\n'))
-      return text.includes('gh=') ? text : undefined
+      if (/Superagent (?:is starting;|has not reconciled this session)/.test(text)) return undefined
+      expect(text, 'the restored worker shell ran').toContain('gh=')
+      return text
     })
     expect(again).toContain(`gh=${join(stateDir, 'worker-bin', 'gh')}`)
     expect(again).toContain('token=unset/unset')
@@ -180,7 +191,7 @@ it('a worker session commits and pushes as the agent through its CLI, never with
       sessionKey: 'owner-plain',
       permission: 'full-access',
     })
-    await plain.followUp(tool('id-plain', 'shell', { command: sees.join('\n') }), {
+    await plain.followUp(tool('id-plain', 'shell', shell(sees.join('\n'))), {
       commandId: 'identity-id-plain',
     })
     const plainOut = (await answered('id-plain')).toolResult ?? ''
@@ -198,4 +209,4 @@ it('a worker session commits and pushes as the agent through its CLI, never with
     await remote.close()
     rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
-}, 400_000)
+}, 480_000)

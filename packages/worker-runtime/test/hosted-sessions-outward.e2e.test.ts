@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { ecosystem as baseEcosystem } from '@agnes/base'
+import { ecosystem as baseEcosystem, sandboxImplementation, sandboxWorkspaceProbe } from '@agnes/base'
 import type { ToolDef } from '@agnes/extension-api'
 import type { ExtensionAPI, ExtensionFactory } from '@agnes/extension-api/host'
 import type { ApprovalRequest } from '@agnes/extension-api/seams'
+import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
+import { createSandboxSeam } from '@agnes/host-infrastructure/sandbox-seam'
 import type { InferenceEvent } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
 import { realHosted } from './real-hosted.js'
@@ -52,8 +54,24 @@ it('a managed full-access session asks a person for git push and a declared outw
   const asked: ApprovalRequest[] = []
   const t = await realHosted({
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    execution: {
+      platform: createPlatform(),
+      sandboxSeam: createSandboxSeam(),
+      presets: {
+        standard: {
+          name: 'standard',
+          extends: 'base',
+          disclosure: 'standard',
+          sandbox: { level: 'L0', required: false, on_unavailable: 'allow' },
+        },
+      },
+    },
     packages: {
-      '@agnes/base': { ecosystem: { ...baseEcosystem, 'agnes/tools-core': declaringTodoOutward } },
+      '@agnes/base': {
+        ecosystem: { ...baseEcosystem, 'agnes/tools-core': declaringTodoOutward },
+        sandboxImplementation,
+        sandboxWorkspaceProbe,
+      },
     },
     // Nobody answers, so a question parks the turn instead of being answered by the test double.
     seams: {
@@ -75,7 +93,7 @@ it('a managed full-access session asks a person for git push and a declared outw
       // managed-tool
       call('todo', PLAN),
       // ordinary-push
-      call('shell', { command: PUSH }),
+      call('shell', { command: process.platform === 'win32' ? `${PUSH}; exit $LASTEXITCODE` : PUSH }),
       done,
     ],
   })

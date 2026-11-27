@@ -6,73 +6,86 @@ English | [简体中文](fullstack.zh-CN.md)
 
 [Documentation](../README.md) · Prerequisites: [Backend](backend.md) and [frontend](frontend.md)
 
-Connect the interface and backend so a panel displays the version returned by a service. Then verify updates, rollback, and revoked access. This provides a starting point for a read-only business status panel.
-
-Reuse [client-service-panel/v1](../../examples/packages/client-service-panel/v1/package.json). **The same trusted Cordis row registers a query service and declares its browser module.** The browser makes a constrained call through a same-origin BFF.
-
-<a id="结构与调用链"></a>
-
-## Structure and call chain
-
-```text
-package.json
-  agnes.plugins → runtime named export (backend Cordis row)
-  agnes.clientDescriptors → agnes.client.json with the same rowId
-extensions/main/index.mjs
-  runtime.apply(ctx) → ctx.services.register(panel.version)
-extensions/main/client/index.js
-  ctx.agnes.services.call('panel.version', {}) → display the version
-```
-
-Browser Context → current client row's service allow-list → local same-origin BFF → daemon identity/state checks → worker/Host row-service authorization → handler.
-
-`ctx.provide()` publishes a Cordis dependency only in its local Context; it does not automatically become a remote service. Backend rows register Host-constrained services through `ctx.services.register()`. Do not create a second browser SDK/daemon socket to bypass the BFF.
+Run [the approved service panel](../../examples/packages/approved-service-panel/package.json) in the official Web workbench. You will review the application, open its tab in a real session, and see `backend 1.0.0` from a read-only query. The example uses synthetic data and does not need a provider account.
 
 <a id="运行前显式配置能力上限"></a>
 
-## Configure the capability ceiling before running
+## Start an isolated workbench
 
-Current local-dev and enterprise templates include `services`. Older or custom profiles must admit it explicitly in `policy.capabilityCeiling`; preserve their other entries and deployment restrictions. Package trust does not grant this capability. In an isolated instance, verify the resolved ceiling before installing the example. If you change startup profile policy, stop and restart that instance after its tasks finish.
-
-After startup, inspect, install, trust, and enable:
+Build the [local distribution](../guide/install.md#get-the-source). Start Web from the built source checkout with a fresh home and workspace:
 
 ```sh
-node agnes.mjs package inspect file:./examples/packages/client-service-panel/v1
-node agnes.mjs install file:./examples/packages/client-service-panel/v1
+export AGH_SOURCE="$PWD"
+export AGH_HOME="$(mktemp -d /tmp/agh-service-panel.XXXXXX)"
+export AGH_HOME="$(cd "$AGH_HOME" && pwd -P)"
+export AGNES_PROFILE=local-dev
+export AGH_DEMO_WORKSPACE="$(mktemp -d /tmp/agh-service-panel-work.XXXXXX)"
+printf 'AGH_SOURCE=%s\nAGH_HOME=%s\nWorkspace=%s\n' "$AGH_SOURCE" "$AGH_HOME" "$AGH_DEMO_WORKSPACE"
+mise exec -- node agnes.mjs serve --cwd "$AGH_DEMO_WORKSPACE" --port 4198
 ```
 
-Use the actual preview hashes for trust/enable, following [plugin management](../guide/packages.md).
+Use the printed loopback URL in a separate browser profile. The stock `local-dev` profile admits `services`. If a custom deployment excludes it, stop rather than widening policy for this tutorial.
 
+## Install, then review the application
+
+1. In a second terminal, replace the two path examples below with the exact printed values, then install from source. The tutorial package is not listed automatically in the market. Keep this terminal for cleanup.
+
+   ```sh
+   export AGH_SOURCE='/absolute/path/to/agnes-harness'
+   export AGH_HOME='/tmp/agh-service-panel.your-suffix'
+   export AGNES_PROFILE=local-dev
+   cd "$AGH_SOURCE"
+   mise exec -- node agnes.mjs plugins add "$AGH_SOURCE/examples/packages/approved-service-panel"
+   ```
+
+2. Review the source, integrity, and capabilities before confirming installation, trust, and enablement. The backend can now run, but the official workbench does not load the native client or show its tab. Package trust is separate from native UI admission.
+3. Open the workbench in your isolated browser. In the first-run guide, choose **Demo** and select the temporary workspace you created.
+4. Open **Settings → Application**. Preview the tutorial candidate. It uses the official **Agnes Harness** name because it declares no brand. Open **Technical details** and check that `packageId` is `@agnes-examples/approved-service-panel`, the version is `1.0.0`, and the source and integrity match the install review.
+5. Check that `declaration.workbench.tabs` contains one `page` tab pointing to `@agnes-examples/approved-service-panel#service-version`. Check that `replacedRoles` is empty. The example does not change the official home, navigation, skin, or default agent. Choose **Adopt** only if the preview matches. This uses the profile's single application selection, so do not try it in a profile with an application you want to keep.
+
+## Read the result in a session
+
+1. In a new conversation, send a harmless prompt such as `Show the service panel tutorial`. Wait for the Demo reply. The session must be created after the package is enabled so its backend generation includes the example.
+2. Open **Workbench** on the right and select **Service version**. Look under **More** if the tab is folded. The page displays `backend 1.0.0` after the session becomes ready and the backend answers.
+3. Reload the page with the same conversation selected and reopen the tab if needed. Then create a second Demo conversation and switch between the two. The page waits for the selected session and reads again. When a session is not usable, the page must not display a result from another session.
+
+<a id="结构与调用链"></a>
 <a id="后端与前端各声明一次"></a>
 
-## Declare both sides
+## Follow the call in the source
 
-In the [package manifest](../../examples/packages/client-service-panel/v1/package.json), `agnes.plugins` declares the backend row and `agnes.clientDescriptors` binds the [client descriptor](../../examples/packages/client-service-panel/v1/extensions/main/agnes.client.json) to the same row. `client.services` lists only the service names the browser may call. Host still verifies that the row actually registered the service and permits access from the current session.
-
-The [backend entry](../../examples/packages/client-service-panel/v1/extensions/main/index.mjs) defines `panel.version` using `ctx.services.register`, with `kind: query`, input/output schemas, timeout, and maximum result bytes. Its handler returns the example version. The [browser entry](../../examples/packages/client-service-panel/v1/extensions/main/client/index.js) calls `ctx.agnes.services.call('panel.version', {})` without receiving a Host grant or daemon credentials.
-
-Calls require a current session. After enabling the plugin, configure a model in Web and create a new session bound to the published version. Refresh the page with that session selected so apply runs with a session ready. The example queries only once during apply. Without a session it displays `unavailable` and does not automatically retry when a session is later selected. This is a limitation of the minimal example; real applications should refresh according to the session lifecycle.
-
-Success displays `backend 1.0.0`. After updating, trusting, and enabling v2, create a new session and check that both frontend and backend report `2.0.0`; the v1 session retains its original code. A frontend v2 label alone does not prove a backend switch.
+- The [package manifest](../../examples/packages/approved-service-panel/package.json) declares one backend Cordis row. `agnes.clientDescriptors` attaches the [profile client descriptor](../../examples/packages/approved-service-panel/client/agnes.client.json) to the same `rowId`. The workbench tab points to the descriptor's `homeEntries` page. It does not declare a global slot or an interface replacement.
+- The [backend entry](../../examples/packages/approved-service-panel/index.mjs) registers `approved.panel.version` with `ctx.services.register()`. The session query accepts an empty object, returns a version string in an object, and has a timeout and result size limit. It makes no writes and accesses no external system. `ctx.provide()` alone only publishes a local Cordis dependency.
+- The [page](../../examples/packages/approved-service-panel/client/index.js) calls `ctx.agnes.services.call('approved.panel.version', {})` through the same-origin browser relay. Its descriptor allows only that service name. The daemon checks the admitted row and service owner before the Host checks the selected session and invokes the handler. The page receives neither daemon credentials nor a Host grant.
+- The page subscribes to session readiness and contribution availability. It only reads in a ready session and only displays a result for the same readiness and availability snapshots. When the tab unmounts, its subscriptions and pending result are discarded.
 
 <a id="失败与清理"></a>
 
-## Failure and cleanup
+## Restore the official interface
 
-A missing backend row in the selected generation, a closed browser row, denied current authorization, or a missing allow-list entry or current session must refuse service calls. The frontend displays unavailable. Ordinary plugin installation code cannot grant itself `services`.
+If a ready session reports **Service unavailable**, check that the example is still enabled and adopted. If the session predates installation, start a new session rather than changing the old session's generation.
 
-Disable/remove stops new sessions from binding the contribution; retained sessions keep their backend code and matching browser modules. This does not bypass current authorization checks. After rollback, verify the preview hashes and explicitly trust/enable the restored version, then use a new session to check it. Rollback does not undo external business data changes. See [hot reload](../extend/hot-reload.md) for explicit migration and snapshot retention. Do not turn this query into a write while retaining `kind: query`. Services with side effects need separate effect, command-identity, and authorization contracts.
+In the isolated browser, open `/?admin` at the printed origin and choose **Restore official interface**. Return to the conversation and reload if prompted. The tab disappears and the official workbench remains. Clearing removes the application selection and any explicit interface choices in that profile. It neither disables the package nor changes saved sessions. The recovery URL itself grants no permissions.
+
+If Web cannot open, clear from the second terminal. If you already used **Restore official interface**, skip the clear command. Keep the isolated home exported and disable the plugin separately:
+
+```sh
+mise exec -- node agnes.mjs app clear --profile local-dev
+mise exec -- node agnes.mjs plugins disable @agnes-examples/approved-service-panel
+```
+
+Press Ctrl-C in the first terminal to stop `serve`. In the second terminal, stop the isolated daemon with `mise exec -- node agnes.mjs daemon stop`.
+
+If Web startup reports a different daemon origin, stop only this isolated home's daemon and retry the original `serve` command. Do not change trust or edit admission settings to make the example appear. See [application adoption and recovery](../extend/applications.md) for the full contract.
 
 <a id="验证命令"></a>
 
-## Verification commands
+## Check the legacy service fixtures
+
+The [v1](../../examples/packages/client-service-panel/v1/package.json) and [v2](../../examples/packages/client-service-panel/v2/package.json) packages are separate fixtures for backend versions, session pins, and revocation. They do not supply an adoptable page and ordinary installation does not admit their native UI in the official workbench. Their API and lifecycle tests remain useful:
 
 ```sh
-pnpm exec vitest run tools/public-docs/examples.test.ts packages/host/test/assemble/dynamic-client-extension.test.ts packages/daemon-admin/test/client-modules.test.ts --maxWorkers=1
+mise exec -- node tools/toolchain/run.mjs exec vitest run tools/public-docs/examples.test.ts packages/host/test/assemble/dynamic-client-extension.test.ts packages/daemon-admin/test/client-modules.test.ts --maxWorkers=1
 ```
 
-This combination covers example modules, Host assembly/revocation, and daemon browser-call boundaries. [web-workbench.mjs](../../tools/acceptance/web-workbench.mjs) is an optional acceptance program for the full browser → BFF → daemon → worker → Host path. Recorded versions and coverage are listed separately in [verification](../maintainers/verification.md).
-
-Source: [Host dynamic client extensions](../../packages/host/src/runtime/assemble/extension-rows.ts), [dynamic assembly tests](../../packages/host/test/assemble/dynamic-client-extension.test.ts), [ClientContext service gates](../../packages/web-client/src/client-module.ts).
-
-[Profile services and durable notifications](profile-services.md) support operations outside a conversation.
+Those tests exercise fixture registration and authorization. They do not replace the real-browser steps above. For operations outside a conversation, see [profile services and durable notifications](profile-services.md).

@@ -1,5 +1,7 @@
+import { dirname } from 'node:path'
 import type { SandboxCapabilities } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
+import { privateStateFiles } from '@agnes/host-common/paths'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import {
   type compileWorkspacePolicy,
@@ -8,7 +10,7 @@ import {
   type SandboxStaticConfig,
 } from '@agnes/host-common/workspace-policy'
 import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
-import { sandboxReadPaths } from '@agnes/host-infrastructure/sandbox-read-paths'
+import { sandboxFileMasks, sandboxReadPaths } from '@agnes/host-infrastructure/sandbox-read-paths'
 import { SandboxReadinessManager } from '@agnes/host-infrastructure/sandbox-readiness-manager'
 import {
   bindStartupSandboxProvider,
@@ -141,6 +143,12 @@ export function createReadinessManager(
       shell: adapters.platform.shell(),
       options: {
         ...plan.backendOptions,
+        ...(adapters.platform.os === 'linux'
+          ? sandboxFileMasks(
+              plan.backendOptions.denyPaths,
+              privateStateFiles({ home: dirname(dirname(deps.profileDir)) }),
+            )
+          : {}),
         get readPaths() {
           return adapters.platform.os === 'linux' && plan.staticConfig.access !== 'full-access'
             ? sandboxReadPaths(plan.backendOptions.denyPaths)

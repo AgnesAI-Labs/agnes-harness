@@ -16,6 +16,7 @@ import { initializeHome } from '@agnes/host'
 import type { PackageOperationReceipt } from '@agnes/protocol'
 import { type Client, createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
+import { sourceTranspileCache } from '../../../../tools/test-fixtures/source-transpile-cache.mjs'
 import { Store } from '../../src/app/store.js'
 import { SettingsSchema } from '../../src/policy.js'
 import { daemonTransport, hostFloor, readOwner, socketDirectoryOf } from '../fixtures/daemon-harness.js'
@@ -33,6 +34,7 @@ const PACKAGE = '@agnes/superagent'
 const ROW = 'ext:agnes.superagent/main'
 const EXTENSION = `plugin/${createHash('sha256').update(ROW).digest('hex').slice(0, 16)}`
 const STEP_MS = 60_000
+const WORKER_STARTUP_MS = 120_000
 const TICKET = 't-e2e'
 
 async function bounded<T>(promise: Promise<T>, label: string, ms = STEP_MS): Promise<T> {
@@ -48,8 +50,8 @@ async function bounded<T>(promise: Promise<T>, label: string, ms = STEP_MS): Pro
     clearTimeout(timer)
   }
 }
-async function until<T>(read: () => Promise<T | undefined>, label: string): Promise<T> {
-  const deadline = Date.now() + STEP_MS
+async function until<T>(read: () => Promise<T | undefined>, label: string, ms = STEP_MS): Promise<T> {
+  const deadline = Date.now() + ms
   for (;;) {
     const value = await read()
     if (value !== undefined) return value
@@ -68,8 +70,9 @@ function writeProfile(root: string) {
     join(root, 'profiles', PROFILE, 'profile.yaml'),
     JSON.stringify({
       name: PROFILE,
+      cacheDir: sourceTranspileCache(),
       computerUse: { enabled: false },
-      limits: { 'worker.startup_ms': 120_000 },
+      limits: { 'worker.startup_ms': WORKER_STARTUP_MS },
       adapters: { secrets: { kind: 'file', path: join(root, 'secrets') } },
       provider: {
         package: '@agnes/ai',
@@ -225,13 +228,17 @@ it('the panel module is rostered and its services answer a seeded GitHub ticket 
 
     const operation = async (receipt: PackageOperationReceipt) => {
       let last: unknown
-      return until(async () => {
-        const result = await client.packages.operation.get(receipt)
-        last = result
-        if (['failed', 'cancelled', 'rolled-back'].includes(result.state))
-          throw new Error(`package ${result.operation}: ${JSON.stringify(result.error)}`)
-        return result.state === 'completed' ? result : undefined
-      }, `package ${receipt.operationId}`).catch((error: unknown) => {
+      return until(
+        async () => {
+          const result = await client.packages.operation.get(receipt)
+          last = result
+          if (['failed', 'cancelled', 'rolled-back'].includes(result.state))
+            throw new Error(`package ${result.operation}: ${JSON.stringify(result.error)}`)
+          return result.state === 'completed' ? result : undefined
+        },
+        `package ${receipt.operationId}`,
+        WORKER_STARTUP_MS,
+      ).catch((error: unknown) => {
         // Where the operation stopped: its stage, state and packages.
         throw new Error(`${String(error)}\nlast state: ${JSON.stringify(last)?.slice(0, 4000)}`, {
           cause: error,
@@ -289,7 +296,7 @@ it('the panel module is rostered and its services answer a seeded GitHub ticket 
       binding: { lifetime: 'profile' },
     })
     if (!row?.entryUrl) throw new Error('installed browser entry unavailable')
-    const asset = await client.clientModules.read(PROFILE, row.entryUrl)
+    const asset = await client.clientModules.read(PROFILE, row.entryUrl, 'document')
     if (!asset.found) throw new Error('installed browser bytes unavailable')
     expect(Buffer.from(asset.base64, 'base64').toString()).toBe(
       readFileSync(join(payloadDirectory, 'src', 'client.js'), 'utf8'),
@@ -298,7 +305,7 @@ it('the panel module is rostered and its services answer a seeded GitHub ticket 
     const [styleUrl, ...extra] = row.styleUrls ?? []
     expect({ styleUrl: !!styleUrl, extra }).toEqual({ styleUrl: true, extra: [] })
     if (!styleUrl) throw new Error('panel stylesheet not rostered')
-    const sheet = await client.clientModules.read(PROFILE, styleUrl)
+    const sheet = await client.clientModules.read(PROFILE, styleUrl, 'document')
     if (!sheet.found) throw new Error('installed panel stylesheet unavailable')
     expect(Buffer.from(sheet.base64, 'base64').toString()).toBe(
       readFileSync(new URL('../../../superagent-ui/src/superagent.css', import.meta.url), 'utf8'),

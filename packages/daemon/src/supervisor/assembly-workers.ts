@@ -1,12 +1,13 @@
 import { collectPackageSkillFiles } from '@agnes/base'
 import { RUN_PROGRESS_EVENT_TYPES } from '@agnes/base/schedule'
+import type { SessionLister } from '@agnes/daemon-foundation/local/ports'
 import { CompositeTargetStore } from '@agnes/daemon-foundation/storage/composite-target-store'
 import {
   SessionPreferencesStore,
   withSessionPreferences,
 } from '@agnes/daemon-foundation/storage/session-preferences'
 import { MemorySidebarSessions } from '@agnes/daemon-foundation/storage/sidebar-memory'
-import { SidebarSessions } from '@agnes/daemon-foundation/storage/sidebar-sessions'
+import { SidebarSessions, withSessionPromptTitles } from '@agnes/daemon-foundation/storage/sidebar-sessions'
 import { APPROVAL_TICKET_EVENT_TYPES, indexApprovalTicket } from '@agnes/daemon-rpc/local/methods/agnes'
 import { PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
 import { createFeedbackOwner, type FeedbackOwner } from '@agnes/host'
@@ -38,6 +39,21 @@ import { WorkerPool } from './worker-pool.js'
 interface WorkerFeedbackOwner {
   bind: FeedbackOwner['bind']
   close: FeedbackOwner['close']
+}
+
+/** Keep list decoration and its shutdown owner together. */
+function ownSessionLister(
+  lifetime: AssemblyLifetime,
+  rawLister: SessionLister,
+  preferences: SessionPreferencesStore,
+  sessionFactRead: AssemblyBase['o']['sessionFactRead'],
+) {
+  const lister = withSessionPromptTitles(
+    withSessionPreferences(rawLister, preferences),
+    sessionFactRead ? (key, query) => sessionFactRead(key)(query) : undefined,
+  )
+  lifetime.own({ stop: () => lister.close(), dispose: () => lister.close() })
+  return lister
 }
 
 /** A managed session and its lineage open with outward command rules on, from every opener. */
@@ -259,7 +275,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
   lifetime.own({ dispose: () => sidebarSessions.close() })
   const rawLister = o.ports?.lister ?? supervisorLister(supervisorRegistry, workspaces)
 
-  const lister = withSessionPreferences(rawLister, preferences)
+  const lister = ownSessionLister(lifetime, rawLister, preferences, sessionFactRead)
 
   return {
     feedbackOwner,

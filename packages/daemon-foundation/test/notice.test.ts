@@ -3,6 +3,35 @@ import { LocalEndpoint } from '../src/local/endpoint.js'
 import { NoticeSink } from '../src/local/notice.js'
 
 describe('NoticeSink', () => {
+  it('sends a deleted credential reference only to initialized local owner connections', async () => {
+    const endpoints = Array.from(
+      { length: 5 },
+      () => new LocalEndpoint({ clock: () => 0, principalId: 'local' }),
+    )
+    for (const ep of endpoints) {
+      ep.conn.initialized = true
+      ep.conn.authKind = 'local'
+      ep.conn.credentialKind = 'local'
+      ep.conn.localListener = 'unix'
+    }
+    endpoints[1]!.conn.localListener = 'web'
+    endpoints[2]!.conn.initialized = false
+    endpoints[3]!.conn.authKind = 'jwt'
+    endpoints[4]!.conn.bundledApp = true
+    const sink = new NoticeSink({
+      clock: () => 0,
+      endpoints: () => endpoints.map((ep) => ({ ep, conn: ep.conn })),
+    })
+    const detail = { id: 'secret://generic/11111111-1111-1111-1111-111111111111' }
+    sink.emit('credential_deleted', { detail })
+    expect(endpoints.map((ep) => ep.pending().events)).toEqual([1, 1, 0, 0, 0])
+    for (const ep of endpoints.slice(0, 2))
+      expect((await ep.notifications[Symbol.asyncIterator]().next()).value).toMatchObject({
+        method: '_agnes/v1/daemon.notice',
+        params: { kind: 'credential_deleted', detail },
+      })
+  })
+
   it('routes decision invalidations only to initialized local readers of the matching profile and principal', () => {
     const endpoints = Array.from(
       { length: 7 },

@@ -1,4 +1,5 @@
 import type { LocaleCatalog } from '@agnes/web-ui'
+import { communityReleaseCatalog } from './community-release-locale.js'
 import { externalCompatibilityCatalog } from './external-compatibility-locale.js'
 
 export const PLUGINS_PAGE_NAMESPACE = '@agnes/web/plugins-page'
@@ -210,6 +211,7 @@ export const pluginsPageCatalog: LocaleCatalog = {
     'community.about': 'About this plugin',
     'community.author': 'Author',
     'community.version': 'Version',
+    ...communityReleaseCatalog.en,
     'community.issues': 'Open issues and PRs',
     'community.language': 'Language',
     'community.license': 'License',
@@ -327,7 +329,6 @@ export const pluginsPageCatalog: LocaleCatalog = {
     'market.installed': 'Installed',
     'market.update': 'Update',
     'market.details': 'Details for {name}',
-    'market.more': 'Load more',
     'market.empty': 'Nothing to show in the catalog yet',
     'market.emptyHelp': 'Change the search, or check the catalog connection and try again.',
     'market.none': 'No matching plugins',
@@ -588,6 +589,7 @@ export const pluginsPageCatalog: LocaleCatalog = {
     'community.about': '插件介绍',
     'community.author': '作者',
     'community.version': '版本',
+    ...communityReleaseCatalog['zh-CN'],
     'community.issues': '未关闭 Issues 与 PR',
     'community.language': '开发语言',
     'community.license': '许可证',
@@ -701,7 +703,6 @@ export const pluginsPageCatalog: LocaleCatalog = {
     'market.installed': '已安装',
     'market.update': '更新',
     'market.details': '{name} 的详情',
-    'market.more': '加载更多',
     'market.empty': '目录暂时没有可显示的插件',
     'market.emptyHelp': '请调整搜索词，或确认目录连接后重试。',
     'market.none': '没有匹配的插件',

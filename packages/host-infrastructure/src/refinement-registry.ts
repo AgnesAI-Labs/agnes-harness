@@ -505,7 +505,20 @@ export class RefinementRegistry {
     const temporary = `${this.file}.${randomUUID()}.tmp`
     try {
       writeFileSync(temporary, body, { mode: 0o600, flag: 'wx' })
-      renameSync(temporary, this.file)
+      const retryUntil = Date.now() + Math.min(this.lockWaitMs, 1_000)
+      const windows = createPlatform().os === 'win32'
+      for (;;) {
+        try {
+          renameSync(temporary, this.file)
+          break
+        } catch (error) {
+          // A Windows reader or scanner can temporarily deny replacement of the target.
+          const code = (error as NodeJS.ErrnoException).code
+          if (!windows || !['EPERM', 'EACCES', 'EBUSY'].includes(code ?? '') || Date.now() >= retryUntil)
+            throw error
+          sleep(LOCK_POLL_MS)
+        }
+      }
     } finally {
       try {
         unlinkSync(temporary)

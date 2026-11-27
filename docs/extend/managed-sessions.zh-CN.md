@@ -106,9 +106,8 @@ const again = await init.sessions.inputResult(sessionId, { key: 'task-42:owner:1
 | --- | --- | --- |
 | `ownerMessage` | 从不传入。给出[渠道事件](channel-targets.zh-CN.md#回执)的 `receiptId`。 | 按宿主记下的回执取出原文。回执必须属于你的服务和主人当前的配对，一张回执只准入一次。 |
 | `recoveryContinuation` | 从不传入。给出 `turnEndSeq`，即已结束回合的 seq。 | 核对该回合是最后一个、以取消或失败结束、之后没有新的回合开始；通过则提交固定的英文句子 "Continue the interrupted turn without treating this recovery as a new owner decision."，否则为 `recoveryUnknown`。 |
-| `legacyOwnerMessage` | 以 `text` 传入，另带 `originalInbox: string \| null`。 | 来源无法认证，结果一律是 `recoveryUnknown`；只有主人在 Web 上选择“投递”，原文才会执行。 |
 
-结果是下列状态之一。除 `legacySend` 与 `absent` 外，都带 `inputId`（等于 `key`）、`version`（每次变化加一）、`reason` 和 `reviewLocation`。
+结果是下列状态之一。除 `absent` 外，都带 `inputId`（等于 `key`）、`version`（每次变化加一）、`reason` 和 `reviewLocation`。
 
 | `state` | 含义 | 该怎么做 |
 | --- | --- | --- |
@@ -118,11 +117,10 @@ const again = await init.sessions.inputResult(sessionId, { key: 'task-42:owner:1
 | `retained` | 保留不投：主人在 Web 上选了保留或丢弃，或会话已归档。终态。 | 完成。 |
 | `needsOwner` | 无法证明可投：回执查不到或不属于你、配对已变、授权已撤，或开会话检查不通过（准入时与提交时都查）。原因为 `ownerDiscarded` 时，表示已提交的输入在平台之外被移出会话收件箱，原文为主人保留。 | 通知主人，不要重试；由主人在 Web 上处置。 |
 | `waitingQuestion` | 会话有未答的问题。平台持有输入，问题关闭后自动往下推进。 | 通知主人并等待。 |
-| `recoveryUnknown` | `legacyOwnerMessage`，或校验不过的 `recoveryContinuation`。 | 通知主人；由主人在 Web 上处置。 |
-| `legacySend` | key 只出现在旧 `send` 台账。`delivery` 为 `consumed`、`pending` 或 `unknown`。 | `consumed` 是终态；否则以 `legacyOwnerMessage` 重新提交。 |
-| `absent` | 平台不知道这个 key。你的服务仍在托管的会话，`historyCoverage` 一律为 `complete`：受管会话的输入与发送记录不按时间清理。`partial` 为保留值，目前不会返回。 | `complete` 时准入；若日后返回 `partial`，只发通知。 |
+| `recoveryUnknown` | 校验不过的 `recoveryContinuation`。 | 通知主人；由主人在 Web 上处置。 |
+| `absent` | 没有使用该 key 的准入记录。`send` 使用独立的幂等记录。你的服务仍在托管的会话，`historyCoverage` 一律为 `complete`：受管输入的准入记录不按时间清理。`partial` 为保留值，目前不会返回。 | `complete` 时可以准入新输入；若日后返回 `partial`，只发通知。 |
 
-`reason` 取 `eligible`、`busy`、`questionOpen`、`legacySourceUnknown`、`recoveryUnverified`、`receiptUnknown`、`pairingChanged`、`grantRevoked`、`sessionArchived`、`ownerRetained`、`ownerDiscarded` 之一（`ownerDiscarded` 配 `retained` 表示主人已丢弃，配 `needsOwner` 表示在平台之外被移除）。只当文字显示，取值可增。`reviewLocation` 是 `/?session=<sessionId>&ownerInput=<inputId>`，主人在 Web 上的这个页面查看原文、来源和历史并作决定。页面上的决定（投递、保留、丢弃，以及对停放的渠道回执重投或丢弃）经 `_agnes/v1/managedInput.get` 与 `_agnes/v1/managedInput.decide`，二者只接受主人自己的 Web 页面。经 Unix 套接字连接的本地 SDK 客户端以 `CAPABILITY_DENIED` 拒绝；插件的客户端模块、主页页面和工作台面板经 Web 交给它们的接口调用时同样被拒绝。限制：插件代码与页面运行在同一页面中，改写页面 WebSocket、自开连接或绕过 SDK 对象的代码拦不住。
+`reason` 取 `eligible`、`busy`、`questionOpen`、`recoveryUnverified`、`receiptUnknown`、`pairingChanged`、`grantRevoked`、`sessionArchived`、`ownerRetained`、`ownerDiscarded` 之一（`ownerDiscarded` 配 `retained` 表示主人已丢弃，配 `needsOwner` 表示在平台之外被移除）。只当文字显示，取值可增。`reviewLocation` 是 `/?session=<sessionId>&ownerInput=<inputId>`，主人在 Web 上的这个页面查看原文、来源和历史并作决定。页面上的决定（投递、保留、丢弃，以及对停放的渠道回执重投或丢弃）经 `_agnes/v1/managedInput.get` 与 `_agnes/v1/managedInput.decide`，二者只接受主人自己的 Web 页面。经 Unix 套接字连接的本地 SDK 客户端以 `CAPABILITY_DENIED` 拒绝；插件的客户端模块、主页页面和工作台面板经 Web 交给它们的接口调用时同样被拒绝。限制：插件代码与页面运行在同一页面中，改写页面 WebSocket、自开连接或绕过 SDK 对象的代码拦不住。
 
 主人不需要链接也能找到等其处理的内容。一旦有内容等待，Web 主页侧栏会出现带计数的 **主人输入** 入口。其页面跨会话、无需任何 key 地列出：处于 `needsOwner` 或 `recoveryUnknown` 的输入、开会话检查读不到而被持有的输入、一分钟内没有完成准入的 `queued` 记录，以及所有停放的渠道回执（可在页面上重投或丢弃）。它读取 `_agnes/v1/managedInput.list`，同样只接受主人自己的 Web 页面。
 

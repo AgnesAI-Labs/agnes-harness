@@ -66,6 +66,7 @@ export function openClientServices(
   const {
     o,
     lock,
+    notices,
 
     workspaceCatalog,
     activationBarrier,
@@ -231,6 +232,7 @@ export function openClientServices(
   void workspaceGrants?.prune().catch(() => undefined)
   const appServerAdmin = createAppServerAdmin({
     triggerSession: triggerSessions.create,
+    onCredentialDeleted: (id) => notices.emit('credential_deleted', { detail: { id } }),
     credentialConfigurations: async () => {
       if (!runtimeStore) throw new Error('credential reference inspection unavailable')
       return runtimeStore.credentialConfigurations()

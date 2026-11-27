@@ -13,6 +13,20 @@ import { SessionBindingOwner } from '../src/app/session-owner.js'
 vi.mock('@agnes/web-conversation/live-projection', () => ({ createLiveProjection: vi.fn() }))
 vi.mock('../src/app-notices.js', () => ({ appReadOnly: { show: vi.fn(), clear: vi.fn() } }))
 
+it('keeps launch preparation locked to its own binding and ignores a late release from another draft', () => {
+  const owner = new SessionBindingOwner()
+  owner.begin()
+  const oldRelease = owner.holdPreparation()
+  expect(owner.preparing).toBe(true)
+  owner.begin()
+  expect(owner.preparing).toBe(false)
+  const currentRelease = owner.holdPreparation()
+  oldRelease()
+  expect(owner.preparing).toBe(true)
+  currentRelease()
+  expect(owner.preparing).toBe(false)
+})
+
 it.each(['before', 'after'])(
   'hands the preview to the formal opening when it finishes %s admission',
   async (timing) => {

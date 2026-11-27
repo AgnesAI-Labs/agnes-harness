@@ -1,9 +1,10 @@
 import type { ClientContext } from '@agnes/web-client'
 import { Button, IconButton, Menu, SettingsInput, Tabs } from '@agnes/web-ui'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { browserAddress } from './browser-address.js'
 import { BrowserClient, type BrowserPage } from './browser-client.js'
 import { BrowserInteraction } from './browser-interaction.js'
-import { browserCatalog } from './browser-locales.js'
+import { browserCatalog, browserErrorKey } from './browser-locales.js'
 import { BrowserScreen, type BrowserScreenHandle, type HumanControl } from './browser-screen.js'
 
 export function apply(ctx: ClientContext) {
@@ -45,6 +46,10 @@ export function apply(ctx: ClientContext) {
       return () => interaction.close()
     }, [interaction, state.sessionId, hasPages])
     const releaseControl = useCallback(() => setControl(undefined), [])
+    const showScreenError = useCallback((message: string) => {
+      const key = browserErrorKey(message)
+      setError(key ? t(key) : message)
+    }, [])
     const [events, setEvents] = useState<{ seq: number; kind: string; detail: string }[]>([])
     const screen = useRef<BrowserScreenHandle>(null)
     const preferred = control?.pageId ?? selected
@@ -52,6 +57,24 @@ export function apply(ctx: ClientContext) {
     // A user's selected tab stays put while the model works in another tab.
     const selectPage = (pageId: string) => setSelected(pageId)
     const pageId = page?.pageId
+    const lockError = state.error?.startsWith('Browser install lock ') ? state.error : undefined
+    const runtimeError = state.incompatible
+      ? t('sessionIncompatible')
+      : state.cleanupRequired
+        ? t('cleanupUnconfirmed')
+        : (lockError ??
+          (state.state === 'failed' ? t(browserErrorKey(state.errorCode) ?? 'startupFailed') : ''))
+    // Only a confirmed pre-page launch failure can be submitted again in this session.
+    const canRetryLaunch =
+      state.enabled &&
+      state.state === 'failed' &&
+      state.errorCode === 'LAUNCH_FAILED' &&
+      !state.cleanupRequired &&
+      !page
+    const canOpen =
+      !busy &&
+      !state.incompatible &&
+      (canRetryLaunch || (state.state === 'ready' && (!state.pagesUnavailable || !!page)))
     const target = useRef(pageId)
     target.current = pageId
     const taking = useRef(false)
@@ -81,7 +104,7 @@ export function apply(ctx: ClientContext) {
             setEvents((events) => [...events, ...value.events].slice(-20))
           }
         } catch {
-          /* Connection errors are shown by the main session refresh. */
+          /* Recent errors refresh again in the background. */
         } finally {
           pending = false
         }
@@ -101,18 +124,9 @@ export function apply(ctx: ClientContext) {
       try {
         return await client.effect(name, input)
       } catch (error) {
-        const code = (error as { code?: string })?.code
-        setError(
-          code === 'PROTECTED_TARGET'
-            ? t('protectedTarget')
-            : code === 'INVALID_URL'
-              ? t('invalidUrl')
-              : code === 'FILE_DENIED'
-                ? t('fileDenied')
-                : code === 'UNSUPPORTED_FILE'
-                  ? t('unsupportedFile')
-                  : String(error),
-        )
+        const failure = error as { code?: string; data?: { code?: string } } | null
+        const key = browserErrorKey(failure?.data?.code ?? failure?.code)
+        setError(t(key ?? (failure?.data?.code ? 'actionUnavailable' : 'actionStatusUnavailable')))
         return undefined
       } finally {
         setBusy(false)
@@ -191,12 +205,18 @@ export function apply(ctx: ClientContext) {
           className="agh-browser-address"
           onSubmit={(event) => {
             event.preventDefault()
-            if (busy || state.state !== 'ready') return
-            if (page) {
-              screen.current?.interact({ type: 'navigate', url: address })
+            if (!canOpen) return
+            const url = browserAddress(address)
+            if (!url) {
+              setError(t('invalidUrl'))
               return
             }
-            void effect('browser.open', { url: address }).then((reply) => {
+            setError('')
+            if (page) {
+              screen.current?.interact({ type: 'navigate', url })
+              return
+            }
+            void effect('browser.open', { url }).then((reply) => {
               if (reply && typeof reply.result.pageId === 'string') selectPage(reply.result.pageId)
             })
           }}
@@ -215,16 +235,11 @@ export function apply(ctx: ClientContext) {
           <SettingsInput
             value={address}
             aria-label={t('address')}
-            placeholder="http://127.0.0.1:5173/"
+            placeholder={t('addressPlaceholder')}
             onChange={(event) => setAddress(event.currentTarget.value)}
           />
           {(!page || address !== page.url) && (
-            <IconButton
-              name="arrow-right"
-              label={t('open')}
-              htmlType="submit"
-              disabled={busy || state.state !== 'ready'}
-            />
+            <IconButton name="arrow-right" label={t('open')} htmlType="submit" disabled={!canOpen} />
           )}
           {page && (
             <>
@@ -260,18 +275,17 @@ export function apply(ctx: ClientContext) {
             </>
           )}
         </form>
-        {(error || state.error) && <p role="alert">{error || state.error}</p>}
-        {state.pagesUnavailable && <p role={page ? 'alert' : 'status'}>{t('pagesUnavailable')}</p>}
-        {state.error?.includes('Browser install lock ') && (
+        {(runtimeError || error) && <p role="alert">{runtimeError || error}</p>}
+        {lockError && !state.incompatible && (
           <section>
             <Button onClick={() => setShowRecovery((shown) => !shown)}>{t('lockHelp')}</Button>
             {showRecovery && (
               <div>
                 <p>{t('lockRecovery')}</p>
-                <pre>{state.error}</pre>
+                <pre>{lockError}</pre>
                 <Button
                   onClick={() => {
-                    void navigator.clipboard.writeText(`${t('lockRecovery')}\n${state.error}`).then(
+                    void navigator.clipboard.writeText(`${t('lockRecovery')}\n${lockError}`).then(
                       () => setCopiedRecovery(true),
                       () => setError(t('copyFailed')),
                     )
@@ -283,33 +297,9 @@ export function apply(ctx: ClientContext) {
             )}
           </section>
         )}
-        {client.pendingEffect() && (
-          <Button
-            disabled={busy}
-            onClick={() => {
-              const pending = client.pendingEffect()
-              if (!pending) return
-              void effect(pending.service, pending.input).then((reply) => {
-                if (!reply) return
-                if (pending.service === 'browser.open' && typeof reply.result.pageId === 'string')
-                  selectPage(reply.result.pageId)
-                if (pending.service === 'browser.control')
-                  setControl(
-                    pending.input.mode === 'human'
-                      ? {
-                          operationId: reply.operationId,
-                          pageId: String(pending.input.pageId),
-                          controlEpoch: Number(reply.result.controlEpoch),
-                        }
-                      : undefined,
-                  )
-              })
-            }}
-          >
-            {t('checkAction')}
-          </Button>
-        )}
         {!page ? (
+          !error &&
+          !runtimeError &&
           !state.pagesUnavailable && <p>{t(state.state === 'preparing' ? 'preparing' : 'empty')}</p>
         ) : (
           <>
@@ -324,7 +314,7 @@ export function apply(ctx: ClientContext) {
               actualSize={actualSize && fixedSize}
               fixedSize={fixedSize}
               t={t}
-              onError={setError}
+              onError={showScreenError}
               onRequestControl={takeControl}
               onControlLost={releaseControl}
             />

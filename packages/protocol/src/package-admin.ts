@@ -1,7 +1,14 @@
-import type { TSchema } from '@sinclair/typebox'
 import * as P from '../gen/ts/package-admin.js'
 import { adminPayloadBudget, checkAdminData as check, contract } from './admin-contract.js'
 import type { ValidationResult } from './validate.js'
+
+export { PLUGIN_UI_ENTRIES_MAX_BYTES } from './admin-contract.js'
+export { type PackageAdminDataName, validatePackageAdminData } from './package-admin-data.js'
+export { validatePackageCatalogSnapshotVersion } from './package-catalog.js'
+
+export const PACKAGE_DOCS_CONTEXT_HEADER = 'X-Agnes-Package-Docs'
+export const PACKAGE_DOCS_FEATURE = 'packages.docs.v1'
+export const PACKAGE_DOCS_MAX_BYTES = 65_536
 
 /** Browser client-module slots currently backed by a real Web host outlet. */
 export const WEB_CLIENT_MODULE_SLOT_NAMES = Object.freeze([
@@ -24,6 +31,7 @@ export const WEB_CLIENT_MODULE_SLOT_NAMES = Object.freeze([
   'conversation.input.dock',
   'conversation.input.left',
   'conversation.input.model',
+  'conversation.input.model.catalog',
   'conversation.input.overlay',
   'conversation.input.permission',
   'conversation.input.plan',
@@ -92,6 +100,7 @@ const DSH_RUNTIME_SUPPORTED_SLOT_NAMES = new Set([
   'conversation.input.dock',
   'conversation.input.left',
   'conversation.input.model',
+  'conversation.input.model.catalog',
   'conversation.input.overlay',
   'conversation.input.permission',
   'conversation.input.plan',
@@ -265,6 +274,23 @@ export function projectClientModuleRows(result: P.ClientModuleListResult): P.Cli
       }
       if (source.packageId !== undefined) row.packageId = source.packageId
       if (source.revision !== undefined) row.revision = source.revision
+      const admission = source.documentAdmission
+      if (admission && /^[a-f0-9]{64}$/.test(admission.bindingDigest)) {
+        if (admission.kind === 'release' && !('presentationRevision' in admission))
+          row.documentAdmission = { kind: admission.kind, bindingDigest: admission.bindingDigest }
+        if (
+          admission.kind === 'approved-presentation' &&
+          Number.isSafeInteger(admission.presentationRevision) &&
+          admission.presentationRevision >= 0
+        ) {
+          row.documentAdmission = {
+            kind: admission.kind,
+            bindingDigest: admission.bindingDigest,
+            presentationRevision: admission.presentationRevision,
+          }
+        }
+      }
+      if (source.rendererDataUrl !== undefined) row.rendererDataUrl = source.rendererDataUrl
       if (source.entryUrl !== undefined) row.entryUrl = source.entryUrl
       if (source.styleUrls !== undefined) row.styleUrls = [...source.styleUrls]
       if (source.slots !== undefined) row.slots = [...source.slots]
@@ -429,6 +455,12 @@ export const PACKAGE_ADMIN_METHODS = Object.freeze({
     'read',
     'packages.read',
   ),
+  '_agnes/v1/packages.docs.get': contract(
+    P.PackageDocsGetParams,
+    P.PackageDocsGetResult,
+    'read',
+    'packages.read',
+  ),
   '_agnes/v1/packages.sourcePolicy': contract(
     P.PackageListParams,
     P.PackageSourcePolicy,
@@ -436,11 +468,10 @@ export const PACKAGE_ADMIN_METHODS = Object.freeze({
     'packages.read',
   ),
   '_agnes/v1/packages.list': contract(P.PackageListParams, P.PackageListResult, 'read', 'packages.read'),
-  // Skins are derived from the installed-package inventory: the request reuses PackageListParams and
-  // the read permission rather than adding a permission that would ripple into the authorization surface.
+  // Candidate discovery does not authorize stylesheet data.
   '_agnes/v1/skins.list': contract(P.PackageListParams, P.SkinListResult, 'read', 'packages.read'),
-  // One skin file's bytes. The path is a same-origin URL path, never a filesystem path, and the
-  // daemon answers only for ids its enabled+trusted roster claims (design §22).
+  '_agnes/v1/skins.select': contract(P.SkinSelectParams, P.SkinConfigSnapshot, 'effect', 'packages.activate'),
+  // This launcher-only read serves files of the currently effective exact selection.
   '_agnes/v1/skins.read': contract(P.SkinReadParams, P.SkinReadResult, 'read', 'packages.read'),
   // A session selector resolves the immutable roster pinned with its backend generation.
   '_agnes/v1/clientModules.list': contract(
@@ -449,11 +480,23 @@ export const PACKAGE_ADMIN_METHODS = Object.freeze({
     'read',
     'packages.read',
   ),
+  '_agnes/v1/clientModules.uiEntries': contract(
+    P.PackageListParams,
+    P.PluginUiEntriesResult,
+    'read',
+    'packages.read',
+  ),
   // One client-module file's bytes from the daemon-managed immutable snapshot. The path is a
   // same-origin URL path, never a filesystem path; miss and refusal share one negative answer.
   '_agnes/v1/clientModules.read': contract(
     P.ClientModuleReadParams,
     P.ClientModuleReadResult,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/clientModules.frontendPublication': contract(
+    P.PackageListParams,
+    P.FrontendPublicationOwnerResult,
     'read',
     'packages.read',
   ),
@@ -631,211 +674,6 @@ export function canAccessPackageAdmin(
   )
 }
 
-// Written out explicitly, rather than derived as `keyof typeof DATA_SCHEMAS`, for the same reason
-// MethodName is in methods.ts: once the object literal grows past a certain size, tsc's declaration
-// emit hits TS7056 ("inferred type ... exceeds the maximum length the compiler will serialize"). An
-// explicit `Record<PackageAdminDataName, TSchema>` annotation gives tsc a short type reference instead.
-export type PackageAdminDataName =
-  | 'PresentationRoleSelection'
-  | 'PresentationRoleSelections'
-  | 'PresentationRoleState'
-  | 'ApplicationSelection'
-  | 'ApplicationConfigSnapshot'
-  | 'ApplicationPreviewParams'
-  | 'ApplicationPreview'
-  | 'ApplicationState'
-  | 'ApplicationAdoptParams'
-  | 'ApplicationClearParams'
-  | 'PluginConfigGetParams'
-  | 'PluginConfigValidateParams'
-  | 'PluginConfigSaveParams'
-  | 'PluginConfigEntry'
-  | 'PluginConfigAudit'
-  | 'PluginConfigSnapshot'
-  | 'PluginConfigValidation'
-  | 'PluginConfigSaveResult'
-  | 'AuthoringFile'
-  | 'AuthoringOrigin'
-  | 'AuthoringTests'
-  | 'AuthoringCandidate'
-  | 'AuthoringCandidateList'
-  | 'AuthoringCandidateSummary'
-  | 'AuthoringProvenance'
-  | 'AuthoringShowParams'
-  | 'AuthoringCreateParams'
-  | 'AuthoringWriteParams'
-  | 'AuthoringTestParams'
-  | 'AuthoringSubmitParams'
-  | 'AuthoringApproveParams'
-  | 'AuthoringRejectParams'
-  | 'PackageAdminPermission'
-  | 'PackageSource'
-  | 'PackageContributionSummary'
-  | 'PackageCapabilityDiff'
-  | 'PackageBlocker'
-  | 'PackageBundledOrigin'
-  | 'PackageWarning'
-  | 'PackageProvenanceParams'
-  | 'PackageSourcePolicy'
-  | 'PackageProvenance'
-  | 'PluginCapabilities'
-  | 'PackagePreview'
-  | 'PackagePresentation'
-  | 'ContributionBinding'
-  | 'PackageTrustDecision'
-  | 'PackageActivationTrust'
-  | 'PackageActivationRequest'
-  | 'PackageRollbackTarget'
-  | 'PackageAdminContext'
-  | 'PackageInstalledDescriptor'
-  | 'PackageCatalogDescriptor'
-  | 'PackageAdminError'
-  | 'PackageOperationReceipt'
-  | 'PackageOperation'
-  | 'PackageCatalogPage'
-  | 'PluginGenerationStatus'
-  | 'PluginPublicationReport'
-  | 'PluginPublicationStatusResult'
-  | 'SessionGenerationMigrationParams'
-  | 'SessionGenerationMigrationResult'
-  | 'PackageListResult'
-  | 'PackageCatalogListParams'
-  | 'PackageCatalogGetParams'
-  | 'PackageListParams'
-  | 'PackageInspectParams'
-  | 'PackageInstallParams'
-  | 'PackageTrustParams'
-  | 'PackageUntrustParams'
-  | 'PackageEnableParams'
-  | 'PackageDisableParams'
-  | 'PackageRollbackParams'
-  | 'PackageRemoveParams'
-  | 'PackageUpdateParams'
-  | 'PackageOperationGetParams'
-  | 'PackageOperationCancelParams'
-  | 'RuntimePinDescriptor'
-  | 'RuntimePinReleaseResult'
-  | 'PackagePinsInspectParams'
-  | 'PackagePinsInspectResult'
-  | 'PackagePinsReleaseParams'
-  | 'PackagePinsReleaseResult'
-  | 'PackageTrustWorkspaceParams'
-  | 'PackageTrustWorkspaceResult'
-  | 'SkillImportParams'
-  | 'SkillImportResult'
-  | 'PluginTreeArtifact'
-  | 'PluginTreeApplyParams'
-  | 'PluginTreeRollbackParams'
-  | 'PluginTreeView'
-  | 'PluginTreeApplyResult'
-  | 'PluginTreeRollbackResult'
-  | 'ClientModuleRosterRow'
-  | 'ClientModuleEffectCallParams'
-const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
-  PresentationRoleSelection: P.PresentationRoleSelection,
-  PresentationRoleSelections: P.PresentationRoleSelections,
-  PresentationRoleState: P.PresentationRoleState,
-  ApplicationSelection: P.ApplicationSelection,
-  ApplicationConfigSnapshot: P.ApplicationConfigSnapshot,
-  ApplicationPreviewParams: P.ApplicationPreviewParams,
-  ApplicationPreview: P.ApplicationPreview,
-  ApplicationState: P.ApplicationState,
-  ApplicationAdoptParams: P.ApplicationAdoptParams,
-  ApplicationClearParams: P.ApplicationClearParams,
-
-  PluginConfigGetParams: P.PluginConfigGetParams,
-  PluginConfigValidateParams: P.PluginConfigValidateParams,
-  PluginConfigSaveParams: P.PluginConfigSaveParams,
-  PluginConfigEntry: P.PluginConfigEntry,
-  PluginConfigAudit: P.PluginConfigAudit,
-  PluginConfigSnapshot: P.PluginConfigSnapshot,
-  PluginConfigValidation: P.PluginConfigValidation,
-  PluginConfigSaveResult: P.PluginConfigSaveResult,
-  AuthoringFile: P.AuthoringFile,
-  AuthoringOrigin: P.AuthoringOrigin,
-  AuthoringTests: P.AuthoringTests,
-  AuthoringCandidate: P.AuthoringCandidate,
-  AuthoringCandidateList: P.AuthoringCandidateList,
-  AuthoringCandidateSummary: P.AuthoringCandidateSummary,
-  AuthoringProvenance: P.AuthoringProvenance,
-  AuthoringShowParams: P.AuthoringShowParams,
-  AuthoringCreateParams: P.AuthoringCreateParams,
-  AuthoringWriteParams: P.AuthoringWriteParams,
-  AuthoringTestParams: P.AuthoringTestParams,
-  AuthoringSubmitParams: P.AuthoringSubmitParams,
-  AuthoringApproveParams: P.AuthoringApproveParams,
-  AuthoringRejectParams: P.AuthoringRejectParams,
-
-  PackageAdminPermission: P.PackageAdminPermission,
-  PackageSource: P.PackageSource,
-  PackageContributionSummary: P.PackageContributionSummary,
-  PackageCapabilityDiff: P.PackageCapabilityDiff,
-  PackageBlocker: P.PackageBlocker,
-  PackageBundledOrigin: P.PackageBundledOrigin,
-  PackageWarning: P.PackageWarning,
-  PackageProvenanceParams: P.PackageProvenanceParams,
-  PackageSourcePolicy: P.PackageSourcePolicy,
-  PackageProvenance: P.PackageProvenance,
-  PluginCapabilities: P.PluginCapabilities,
-  PackagePreview: P.PackagePreview,
-  PackagePresentation: P.PackagePresentation,
-  ContributionBinding: P.ContributionBinding,
-  PackageTrustDecision: P.PackageTrustDecision,
-  PackageActivationTrust: P.PackageActivationTrust,
-  PackageActivationRequest: P.PackageActivationRequest,
-  PackageRollbackTarget: P.PackageRollbackTarget,
-  PackageAdminContext: P.PackageAdminContext,
-  PackageInstalledDescriptor: P.PackageInstalledDescriptor,
-  PackageCatalogDescriptor: P.PackageCatalogDescriptor,
-  PackageAdminError: P.PackageAdminError,
-  PackageOperationReceipt: P.PackageOperationReceipt,
-  PackageOperation: P.PackageOperation,
-  PackageCatalogPage: P.PackageCatalogPage,
-  PluginGenerationStatus: P.PluginGenerationStatus,
-  PluginPublicationReport: P.PluginPublicationReport,
-  PluginPublicationStatusResult: P.PluginPublicationStatusResult,
-  SessionGenerationMigrationParams: P.SessionGenerationMigrationParams,
-  SessionGenerationMigrationResult: P.SessionGenerationMigrationResult,
-  PackageListResult: P.PackageListResult,
-  PackageCatalogListParams: P.PackageCatalogListParams,
-  PackageCatalogGetParams: P.PackageCatalogGetParams,
-  PackageListParams: P.PackageListParams,
-  PackageInspectParams: P.PackageInspectParams,
-  PackageInstallParams: P.PackageInstallParams,
-  PackageTrustParams: P.PackageTrustParams,
-  PackageUntrustParams: P.PackageUntrustParams,
-  PackageEnableParams: P.PackageEnableParams,
-  PackageDisableParams: P.PackageDisableParams,
-  PackageRollbackParams: P.PackageRollbackParams,
-  PackageRemoveParams: P.PackageRemoveParams,
-  PackageUpdateParams: P.PackageUpdateParams,
-  PackageOperationGetParams: P.PackageOperationGetParams,
-  PackageOperationCancelParams: P.PackageOperationCancelParams,
-  RuntimePinDescriptor: P.RuntimePinDescriptor,
-  RuntimePinReleaseResult: P.RuntimePinReleaseResult,
-  PackagePinsInspectParams: P.PackagePinsInspectParams,
-  PackagePinsInspectResult: P.PackagePinsInspectResult,
-  PackagePinsReleaseParams: P.PackagePinsReleaseParams,
-  PackagePinsReleaseResult: P.PackagePinsReleaseResult,
-  PackageTrustWorkspaceParams: P.PackageTrustWorkspaceParams,
-  PackageTrustWorkspaceResult: P.PackageTrustWorkspaceResult,
-  SkillImportParams: P.SkillImportParams,
-  SkillImportResult: P.SkillImportResult,
-  PluginTreeArtifact: P.PluginTreeArtifact,
-  PluginTreeApplyParams: P.PluginTreeApplyParams,
-  PluginTreeRollbackParams: P.PluginTreeRollbackParams,
-  PluginTreeView: P.PluginTreeView,
-  PluginTreeApplyResult: P.PluginTreeApplyResult,
-  PluginTreeRollbackResult: P.PluginTreeRollbackResult,
-  ClientModuleRosterRow: P.ClientModuleRosterRow,
-  ClientModuleEffectCallParams: P.ClientModuleEffectCallParams,
-}
-export function validatePackageAdminData(
-  name: PackageAdminDataName,
-  value: unknown,
-): ValidationResult<unknown> {
-  return check(DATA_SCHEMAS[name], value, adminPayloadBudget(name))
-}
 export function validatePackageAdminCall(
   name: PackageAdminMethodName,
   side: 'params' | 'result',

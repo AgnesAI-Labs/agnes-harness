@@ -67,6 +67,27 @@ afterEach(() => {
 })
 
 describe('createClient', () => {
+  it('keeps display-label opt-in explicit on session.list without changing ordinary requests', async () => {
+    const f = fakeEndpoint({
+      initialize: fakeEndpoint({}).initialize,
+      '_agnes/v1/session.list': () => ({ items: [] }),
+    })
+    const c = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    try {
+      await c.session.list()
+      await c.session.list({ includePromptTitles: true })
+      await c.session.list({ includePromptTitles: false })
+      expect(
+        f.calls.filter((call) => call.method === '_agnes/v1/session.list').map((call) => call.params),
+      ).toEqual([{}, { includePromptTitles: true }, { includePromptTitles: false }])
+    } finally {
+      await c.close()
+    }
+  })
   it('returns to idle after a failed first handshake and can initialize again', async () => {
     let attempts = 0
     const f = fakeEndpoint({

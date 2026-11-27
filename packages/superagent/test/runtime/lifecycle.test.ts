@@ -622,9 +622,11 @@ describe('disable', () => {
     // The wind-down ends while a state read is in flight: the read answers from before it.
     const { state } = adapter
     const began = Date.now()
+    let windDownJobCreated = false
     adapter.state = async (id) => {
       const read = await state(id)
-      if (Date.now() - began >= 600 && sessions.get(id)!.jobs === 0) {
+      if (!windDownJobCreated && Date.now() - began >= 600 && sessions.get(id)!.jobs === 0) {
+        windDownJobCreated = true
         sessions.get(id)!.jobs = 1
         windDown()
       }

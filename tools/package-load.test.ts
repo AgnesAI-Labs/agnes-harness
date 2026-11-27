@@ -4,10 +4,10 @@ import { createFixture } from './package-load/fixture.js'
 import { assertBudget, budgets, measure, type Sample } from './package-load/metrics.js'
 import { assertTamperRefused, runPackageLoad } from './package-load/run.js'
 
-it('executes the real package-load benchmark path at smoke scale and refuses warm/fresh tampering', async () => {
+it('gates real package loading, native client consent and tampering at smoke scale', async () => {
   const f = await createFixture({ packages: 1, files: 1, bytesPerFile: 32 })
   try {
-    const { results } = await runPackageLoad(f, 0)
+    const { results } = await runPackageLoad(f, 0, { checkWithoutConsent: true })
     expect(Object.keys(results).sort()).toEqual(
       Object.keys(budgets)
         .filter((key) => key !== 'surfaceChanged')

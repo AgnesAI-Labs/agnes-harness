@@ -6,15 +6,14 @@ import type { ComposerAttachment } from './image-files.js'
 /**
  * A draft image shows as a thumbnail once its bytes are local: pasted images carry them inline,
  * uploaded ones arrive as a resource link whose `previewUrl` was made from the picked file.
- * `imagesAllowed` mirrors the composer's upload decision — when the model takes no image input the
- * same file is sent as an ordinary file, so it keeps the file row even though its bytes are local.
+ * Previewing those local bytes does not depend on whether the model accepts image input. The
+ * attachment's original block still determines how it is sent.
  */
-const showsThumbnail = (attachment: ComposerAttachment, imagesAllowed: boolean): boolean =>
+const showsThumbnail = (attachment: ComposerAttachment): boolean =>
   !!attachment.previewUrl &&
   (attachment.type === 'image' ||
-    (imagesAllowed &&
-      (attachment.mimeType?.startsWith('image/') === true ||
-        (attachment.type === 'resource_link' && !!attachment.attachment?.image))))
+    attachment.mimeType?.startsWith('image/') === true ||
+    (attachment.type === 'resource_link' && !!attachment.attachment?.image))
 
 /** Draft attachments above the writing area; the list is the live region for adds and removals. */
 export function ComposerAttachmentList({
@@ -23,7 +22,6 @@ export function ComposerAttachmentList({
   pendingCount,
   hint,
   disabled,
-  imagesAllowed,
   onRemove,
   t,
 }: {
@@ -32,8 +30,6 @@ export function ComposerAttachmentList({
   pendingCount: number
   hint: string
   disabled: boolean
-  /** Whether the selected model takes image input; a file the model reads as a file stays a file. */
-  imagesAllowed: boolean
   onRemove(id: string): void
   t: ComposerDependencies['translate']
 }) {
@@ -45,7 +41,7 @@ export function ComposerAttachmentList({
         <div className="composer-image-preview-list" aria-label={hint} aria-live="polite">
           {uploads}
           {attachments.map((attachment, index) => {
-            const previewSrc = showsThumbnail(attachment, imagesAllowed) ? attachment.previewUrl : undefined
+            const previewSrc = showsThumbnail(attachment) ? attachment.previewUrl : undefined
             // Inline images carry no file name; the other blocks name the file.
             const fileName = attachment.type === 'image' ? undefined : attachment.name
             return (

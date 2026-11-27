@@ -36,6 +36,7 @@ import {
   signOutMcpOAuth,
   summarizeMcpOAuth,
 } from '@agnes/resource-control-runtime'
+import { authorizeCloudConnection } from './cloud-authorization.js'
 import { type CredentialConfiguration, savedCredentialConfigurations } from './credential-references.js'
 import { createCredentialAdmin } from './credentials.js'
 import { createWebhookService, type TriggerSessionInput } from './webhooks/service.js'
@@ -63,6 +64,7 @@ export function createAppServerAdmin(options: {
   >
   triggerSession?(input: TriggerSessionInput): Promise<void>
   credentialConfigurations?(): Promise<CredentialConfiguration[]>
+  onCredentialDeleted?(id: string): void
   plan?(input: AdminPlanParams): Promise<{ active: boolean; text: string }>
   workspaces(): Promise<{ items: { path: string; available: boolean }[] }>
   /** One MCP server definition of a profile, or undefined when there is none. */
@@ -162,6 +164,7 @@ export function createAppServerAdmin(options: {
   const genericCredentials = createCredentialAdmin({
     home: options.home,
     dataDir: options.dataDir,
+    ...(options.onCredentialDeleted ? { onDeleted: options.onCredentialDeleted } : {}),
     writableStore: async () => {
       const config = (await options.resolveProfile()).adapters.secrets
       return (
@@ -196,6 +199,10 @@ export function createAppServerAdmin(options: {
     observeTriggerSession: triggers.observeSession,
     triggers: triggers.handle,
     credentials: genericCredentials.call,
+    authorizeCloud: (
+      input: import('@agnes/protocol/gen/app-server').AdminCloudAuthorize,
+      signal?: AbortSignal,
+    ) => authorizeCloudConnection(input, credentials, options.fetchImpl, signal),
     bundles: () => composition.bundles(),
     saveBundles: (input: AdminBundlesSave) => composition.saveBundles(input),
     composition: (preset?: string) => composition.dump(preset),

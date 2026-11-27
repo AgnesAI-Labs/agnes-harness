@@ -3,6 +3,7 @@ import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type BuildResult, build } from 'esbuild'
+import { buildPdfPreview, copyPdfPreviewNotice } from '../../../tools/pdf-preview-build.mjs'
 import { buildPresentations } from '../../../tools/presentation-build.mjs'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { productionWebOptions } from '../../../tools/web-build-options.mjs'
@@ -53,7 +54,7 @@ export async function buildWeb(
         resources: '@agnes/resource-control-web/admin',
         // 独立页宿主入口：设置弹窗里嵌的是 admin / resources（模块，由 app.ts 动态 import 后手动挂载）；
         // /admin/plugins 与 /admin/resources 两个整页加载这两个入口，由它们自己完成凭据交换与挂载。
-        'admin-standalone': join(root, 'src', 'admin', 'plugins', 'standalone.ts'),
+        'admin-standalone': '@agnes/web-admin/admin/plugins/standalone',
         'resources-standalone': '@agnes/resource-control-web/standalone',
       },
       outdir: out,
@@ -203,7 +204,9 @@ export async function buildWeb(
     join(out, 'style.css'),
     `\n${inCssLayer(`${core}\n${light}\n${dark}`, 'vendor')}\n${overrides}`,
   )
+  metafiles.push(await buildPdfPreview(out))
   await collectThirdPartyNotices(root, out, metafiles)
+  await copyPdfPreviewNotice(out)
   return metafiles
 }
 

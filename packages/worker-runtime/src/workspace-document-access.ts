@@ -31,9 +31,10 @@ export async function assertDocumentPath(scope: DocumentReadScope | undefined, a
   }
   if (scope.root !== legacy || !inside(legacy, abs)) throw denied()
   const identity = await lstat(legacy, { bigint: true })
+  const expected = scope.legacyDirectoryIdentity
   if (
-    !scope.legacyDirectoryIdentity ||
-    `${identity.dev}:${identity.ino}` !== scope.legacyDirectoryIdentity ||
+    expected !== `${identity.dev}:${identity.ino}` ||
+    !identity.isDirectory() ||
     identity.isSymbolicLink() ||
     (await realpath(legacy)) !== legacy
   )

@@ -50,12 +50,15 @@ export function fakeGhCommand(
 }
 
 /**
- * A prepare command that runs `source`, a Node module written to `<path>.mjs`: `node '<path>.mjs'`, which `sh` and
- * PowerShell both read the same way.
+ * A prepare command that runs a fixture module with the known Node executable.
  */
 export function nodePrepare(path: string, source: string): string {
-  writeFileSync(`${path}.mjs`, source)
-  return `node '${path}.mjs'`
+  const script = `${path}.mjs`
+  writeFileSync(script, source)
+  const psQuote = (value: string) => `'${value.replaceAll("'", "''")}'`
+  return windows
+    ? `& ${psQuote(process.execPath)} ${psQuote(script)}`
+    : `exec ${shellQuote(process.execPath)} ${shellQuote(script)}`
 }
 
 /** A command at `path` that prints `text` and exits with 0. */

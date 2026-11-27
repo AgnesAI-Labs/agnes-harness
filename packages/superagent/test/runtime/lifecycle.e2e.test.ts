@@ -20,7 +20,7 @@ const cleanups: (() => Promise<unknown> | unknown)[] = []
 afterAll(stopAllDaemons)
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
-})
+}, 90_000)
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 async function until<T>(label: string, probe: () => Promise<T> | T, ms = 60_000): Promise<NonNullable<T>> {

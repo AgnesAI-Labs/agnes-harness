@@ -11,6 +11,7 @@ export interface PluginRuntimeState {
   readonly packageId: string
   readonly revision: string | undefined
   readonly phase: PluginRuntimePhase
+  readonly reason?: 'native-ui-not-admitted'
   readonly error?: PluginRuntimeError
 }
 
@@ -66,6 +67,7 @@ function copyState(state: PluginRuntimeState): PluginRuntimeState {
     packageId: state.packageId,
     revision: state.revision,
     phase: state.phase,
+    ...(state.reason === undefined ? {} : { reason: state.reason }),
     ...(state.error === undefined
       ? {}
       : { error: { ...state.error, ...(state.error.roles ? { roles: [...state.error.roles] } : {}) } }),
@@ -84,7 +86,11 @@ export class RuntimeStatusStore {
   }
 
   delete(key: string): void {
+    const previous = this.#states.get(key)
+    if (!previous) return
     this.#states.delete(key)
+    for (const listener of [...this.#listeners])
+      listener({ packageId: previous.packageId, revision: undefined, phase: 'idle' })
   }
 
   subscribe(listener: (state: PluginRuntimeState) => void): () => void {

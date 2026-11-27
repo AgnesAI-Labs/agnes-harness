@@ -244,7 +244,7 @@ for (const version of ['5.1', '7'] as const)
         const started = await answered('session.jobs.control run', () =>
           session.jobsRun(command, { timeoutMs }),
         )
-        return { id: started.id, done: () => settled(session, started.id) }
+        return { id: started.id, done: () => settled(session, started.id, timeoutMs + 30_000) }
       }
       const timeline = async (session: Session) => JSON.stringify(await session.projectUI())
       const shellCall = (args: Record<string, unknown>) => `call shell ${JSON.stringify(args)}`
@@ -258,7 +258,10 @@ for (const version of ['5.1', '7'] as const)
         expect(shell.stdout).toContain(`ps=${version === '5.1' ? 5 : 7} 中文`)
         const facts = join(daemon.workspace, `argv-${version}.json`)
         const args = ['中文 空格', 'two  spaces', '$literal', '-not-an-option']
-        const result = await (await job(session, `'输入 中文' | ${node('argv.cjs', facts, ...args)}`)).done()
+        // Starting both PowerShell and Node can be slow on the loaded Windows runner.
+        const result = await (
+          await job(session, `'输入 中文' | ${node('argv.cjs', facts, ...args)}`, 120_000)
+        ).done()
         expect(result, JSON.stringify(result)).toMatchObject({ status: 'failed', code: 7 })
         expect(result.stdout).toContain(`stdout 中文 ${args.join('|')}`)
         const recorded = await readJson<{ args: string[]; input: string; temp: string; cwd: string }>(facts)
@@ -266,7 +269,7 @@ for (const version of ['5.1', '7'] as const)
         expect(recorded.input.replace(/\r?\n$/, '')).toBe('输入 中文')
         expect(recorded.temp.startsWith(join(daemon.tempRoot, 'lease-'))).toBe(true)
         expect(realpathSync.native(recorded.cwd)).toBe(daemon.workspace)
-      })
+      }, 240_000)
 
       it('writes the workspace and its private temp and nothing outside; read-only writes nowhere', async () => {
         const write = await newSession()

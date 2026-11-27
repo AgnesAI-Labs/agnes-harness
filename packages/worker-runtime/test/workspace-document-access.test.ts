@@ -257,6 +257,12 @@ it('rejects a running legacy scope after same-path replacement by another real d
   try {
     expect((await readWorkspace(root, 'note', authority)).text).toBe('original')
     await expect(
+      readWorkspace(root, 'note', {
+        stat: authority.stat,
+        readScope: { ...readScope, legacyDirectoryIdentity: `${identity.dev + 3n}:${identity.ino}` },
+      }),
+    ).rejects.toBeDefined()
+    await expect(
       readWorkspace(root, 'note', { stat: authority.stat, readScope: { root, legacyManagedRoot: root } }),
     ).rejects.toBeDefined()
     await rename(root, join(home, 'original'))

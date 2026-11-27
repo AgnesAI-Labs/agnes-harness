@@ -436,11 +436,6 @@ async function summarize(
   }
 }
 
-// Levels at or below 'low' would not free up any more of the summary budget for text after
-// reasoning than a 'low' retry already would, so a max_tokens-cap cutoff at one of these is not
-// retried — it would just repeat the same outcome.
-const LOW_OR_BELOW_THINKING: ReadonlySet<ThinkingLevel> = new Set(['off', 'minimal', 'low'])
-
 /**
  * Runs one summary request; if it fails specifically because it hit the max_tokens cap while
  * reasoning, retries exactly once at the lowest thinking level. Any other failure, a retry that
@@ -470,7 +465,19 @@ export async function summarizeWithRetry(
     return summarize(s, plan, { ...segment, nodes, wide: false }, calls, target, prefix, undefined, signal)
   }
   if (first.cause !== 'summary stopped at the max_tokens cap') return first
-  const configured = s.preset.model.thinking.compaction
-  if (configured !== undefined && LOW_OR_BELOW_THINKING.has(configured)) return first
+  // Match summaryRequest's effective level; a low retry cannot reduce one already at low or below.
+  const thinking = s.preset.model.thinking.compaction ?? prefix.samplingParams?.thinking
+  if (thinking === 'off' || thinking === 'minimal' || thinking === 'low') return first
+  const record = resolvedModelRecord(s.d.provider, target)
+  const levels = record?.thinkingLevelMap
+  if (
+    !record?.reasoning ||
+    !levels ||
+    !('low' in levels) ||
+    !Object.hasOwn(levels, 'low') ||
+    typeof levels.low !== 'string' ||
+    !levels.low.trim()
+  )
+    return first
   return summarize(s, plan, segment, calls, target, prefix, 'low', signal)
 }

@@ -1,4 +1,4 @@
-import type { PrincipalsSeam } from '@agnes/core'
+import type { PrincipalsSeam } from '@agnes/extension-api/seams'
 import type { SeamFactory } from '../../../src/seam-init.js'
 
 /**

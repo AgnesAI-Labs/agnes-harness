@@ -6,11 +6,13 @@ import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initializeHome } from '@agnes/host'
 import type { PackageOperationReceipt } from '@agnes/protocol'
-import { createClient, memoryJournal } from '@agnes/sdk'
+import { createClient, memoryJournal, type NodeClient } from '@agnes/sdk'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { expect, it } from 'vitest'
+import { windowsTestHostEnv } from '../../../tools/test-fixtures/windows-host-env.mjs'
 import { stopDaemon } from '../src/supervisor/control.js'
 import { childDaemonTransport } from './child-daemon-transport.js'
+import { configureSourceWorkerProfile } from './source-transpile-cache.js'
 
 async function deadline<T>(promise: Promise<T>, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -26,13 +28,14 @@ async function deadline<T>(promise: Promise<T>, label: string): Promise<T> {
   }
 }
 
-it('enables single and multiple client contributions and retains their roster after cold restart', async () => {
+it('keeps single and multiple client descriptors blocked by plain trust across a cold restart', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'agnes-client-restart-')))
   const home = join(root, 'home')
   const workspace = join(root, 'workspace')
   await mkdir(workspace)
   createPrivateDirectorySync(home)
   initializeHome(home, 'local-dev')
+  configureSourceWorkerProfile(home)
   const start = async () => {
     const child = spawn(
       process.execPath,
@@ -44,7 +47,12 @@ it('enables single and multiple client contributions and retains their roster af
         workspace,
       ],
       {
-        env: { PATH: process.env.PATH, TMPDIR: tmpdir(), AGH_HOME: home },
+        env: {
+          ...windowsTestHostEnv(join(root, 'windows-user')),
+          PATH: process.env.PATH,
+          TMPDIR: tmpdir(),
+          AGH_HOME: home,
+        },
         stdio: ['ignore', 'ignore', 'pipe'],
       },
     )
@@ -79,7 +87,7 @@ it('enables single and multiple client contributions and retains their roster af
     }
   }
   let daemon: Awaited<ReturnType<typeof start>> | undefined
-  let client: ReturnType<typeof createClient> | undefined
+  let client: NodeClient | undefined
   const connect = async () => {
     if (!daemon) throw new Error('daemon missing')
     const connected = createClient({
@@ -116,6 +124,7 @@ it('enables single and multiple client contributions and retains their roster af
       }
       throw new Error('package operation timed out')
     }
+    const installed: { id: string; integrity: string; count: number }[] = []
     for (const count of [1, 2]) {
       const name = `@acme/client-${count}`
       const directory = join(root, `client-${count} #%中文`)
@@ -175,12 +184,37 @@ it('enables single and multiple client contributions and retains their roster af
         }),
       )
       await complete(await admin.enable({ ...(await command()), id: name }))
+      installed.push({ id: name, integrity: preview.integrity, count })
     }
-    const roster = (await client.clientModules.list('local-dev')).rows.filter((row) =>
-      row.packageId?.startsWith('@acme/client-'),
-    )
-    expect(roster).toHaveLength(3)
-    expect(roster.every((row) => row.phase === 'ready')).toBe(true)
+    const expectBackendWithoutNativeUi = async (connected: NodeClient) => {
+      const { packages } = await connected.packages.list({ profile: 'local-dev' })
+      const roster = await connected.clientModules.list('local-dev')
+      for (const { id, integrity, count } of installed) {
+        expect(packages.find((item) => item.id === id)).toMatchObject({
+          trusted: true,
+          desired: 'enabled',
+          actual: 'running',
+          actualIntegrity: integrity,
+        })
+        expect(roster.rows.filter((row) => row.packageId === id)).toEqual([])
+        expect(roster.modules.filter((module) => module.packageId === id)).toEqual([])
+        expect(roster.statuses.filter((status) => status.packageId === id)).toMatchObject(
+          Array.from({ length: count }, () => ({
+            packageId: id,
+            installedRevision: integrity,
+            state: 'blocked',
+            reason: 'native-ui-not-admitted',
+          })),
+        )
+        for (let index = 0; index < count; index++) {
+          const path = `/plugins/${id}/${encodeURIComponent(integrity)}/panel${index}/client.js`
+          expect(await connected.clientModules.read('local-dev', path, 'document')).toEqual({
+            found: false,
+          })
+        }
+      }
+    }
+    await expectBackendWithoutNativeUi(client)
     await client.close()
     client = undefined
     await daemon.close()
@@ -188,11 +222,7 @@ it('enables single and multiple client contributions and retains their roster af
     daemon = await start()
     client = await connect()
     await client.session.new({ cwd: workspace })
-    expect(
-      (await client.clientModules.list('local-dev')).rows.filter((row) =>
-        row.packageId?.startsWith('@acme/client-'),
-      ),
-    ).toEqual(roster)
+    await expectBackendWithoutNativeUi(client)
   } finally {
     await client?.close()
     await daemon?.close()

@@ -14,6 +14,8 @@ AGH can execute tools, write files, and connect to external systems. Model text,
 
 Managed chat folders do not grant extra file or command permissions. Previous chats can access documents in their original folder only through a verified session binding (including trusted forks and compatible scheduled runs). Workspace documents and references still recheck session authority and reject traversal and symlinks; private installation state remains protected. Current and previous chat folders do not share files. Binary files retain metadata-only preview behavior.
 
+At startup, Agnes Harness can refresh a managed chat folder’s filesystem device number after verifying the registered directory inode and ownership. A current chat folder’s root marker must be a regular file on the same filesystem, with a single link and its original ID and nonce. While the daemon is running, both the device number and inode must match the verified identity.
+
 ## Three kinds of trust
 
 | Boundary | Meaning | What it does not establish |
