@@ -61,6 +61,7 @@ import {
   webUnitsLocaleCatalog,
 } from '@agnes/web-units/shell'
 import { traceCatalog } from '@agnes/web-units/trace-locale'
+import { beginClientUiPreparation } from '../client-ui-preparation.js'
 import { LoopPicker } from '../loop-picker.js'
 import { businessAgentSuggestions } from '../pages/business-agents.js'
 import { saveRefinementEntry } from '../refine-save.js'
@@ -181,6 +182,7 @@ export async function startClientModules(options: {
   /** Voice for the composer and transcript; built from `agnes` when omitted, `false` turns it off. */
   voice?: VoiceController | false | undefined
 }): Promise<ClientModulesRuntime> {
+  const preparation = beginClientUiPreparation()
   const ctx = new Context()
   const presentation: PresentationHost = {
     resolveResourceUrl: (url) => backendResourceUrl(url),
@@ -356,8 +358,12 @@ export async function startClientModules(options: {
         const attached = { ...handle, dispose() {} }
         conversationView = attached
         handle.setEmptyStateVisible(emptyVisible)
+        preparation.mounted('conversation', true)
         return () => {
-          if (conversationView === attached) conversationView = undefined
+          if (conversationView === attached) {
+            conversationView = undefined
+            preparation.mounted('conversation', false)
+          }
         }
       },
       transcript: {
@@ -433,6 +439,7 @@ export async function startClientModules(options: {
         handle.restoreAttachmentBlocks(composerAttachments)
         handle.restoreDraftReferences(composerReferences)
         if (composerState) handle.render(composerState)
+        preparation.mounted('composer', true)
         return () => {
           if (composerView !== attached) return
           composerDraft = handle.getDraft()
@@ -440,6 +447,7 @@ export async function startClientModules(options: {
           composerAttachments = handle.getAttachmentBlocks()
           composerReferences = handle.getDraftReferences()
           composerView = undefined
+          preparation.mounted('composer', false)
         }
       },
     }
@@ -586,12 +594,15 @@ export async function startClientModules(options: {
         },
       } satisfies TranscriptRegionMount)
     : transcript
-  const reconciler = createReconciler({
-    ctx,
-    locale,
-    source: options.rosterSource ?? { list: async () => ({ revision: '', modules: [], statuses: [] }) },
-    removeOwner: (packageId) => registry.removeOwner(packageId),
-  })
+  const reconciler = preparation.track(
+    createReconciler({
+      ctx,
+      locale,
+      source: options.rosterSource ?? { list: async () => ({ revision: '', modules: [], statuses: [] }) },
+      removeOwner: (packageId) => registry.removeOwner(packageId),
+    }),
+    options.rosterSource,
+  )
   return {
     ctx,
     registry,
@@ -628,6 +639,7 @@ export async function startClientModules(options: {
       // own and therefore must still be released after all pane roots have been withdrawn.
       settingsPane?.dispose()
       await ctx.fiber.dispose()
+      preparation.dispose()
     },
   }
 }

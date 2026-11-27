@@ -44,6 +44,7 @@ import { backendFrameStartup, installBackendFrameBridge } from './backends/frame
 import { backendFrame, requestDiagnosticBackend } from './backends/frame-context.js'
 import { localLocationUrl, localStartupSearchParams } from './backends/local-workbench-bus.js'
 import { ComposerDrafts, switchComposerDraft } from './composer-drafts.js'
+import { measurePreparation, readPreparationLists } from './preparation-timing.js'
 import { frontendBackendIdentity } from './remote-frontend.js'
 import '@agnes/web-admin/settings/registry'
 import type {
@@ -561,7 +562,7 @@ const appSessionContext: AppSessionContext = {
     sessionControls = value
   },
   get sessionPending() {
-    return sessionPending
+    return sessionPending || sessionBinding.preparing
   },
   set sessionPending(value: typeof sessionPending) {
     sessionPending = value
@@ -1118,10 +1119,9 @@ async function refreshSessionCatalog(): Promise<void> {
   loopCatalogPending = !newSessionCatalog
   renderControls()
   try {
-    const [catalog, runtime] = await Promise.all([
-      loadNewSessionCatalog(fetch, false),
-      loadRuntimeCatalog().catch(() => undefined),
-    ])
+    const [catalog, runtime] = await measurePreparation('session_catalog', () =>
+      Promise.all([loadNewSessionCatalog(fetch, false), loadRuntimeCatalog().catch(() => undefined)]),
+    )
     if (generation !== sessionCatalogGeneration) return
     newSessionCatalog = catalog
     runtimeCatalog = runtime
@@ -1724,6 +1724,7 @@ async function beginNewDraft(
   showWorkspacePicker = true,
   workspace?: WorkspaceEntry,
   supersedeSessionLoad = false,
+  initialPrompt?: string,
 ): Promise<void> {
   if (submissions.sending || (sessionPending && !(supersedeSessionLoad && sessionBinding.targetId))) return
   pluginUiEntries.close('sidebar')
@@ -1739,7 +1740,6 @@ async function beginNewDraft(
   const { binding: epoch, previous } = sessionBinding.begin()
   references.clear()
   if (previous.session && knownSessionModel) rememberWebComposer({ model: knownSessionModel })
-  const inherited = selectionFromMemory(runtimeModels, accountProvider)
   const stop = previous.stop
   moduleSessionId = undefined
   clientModules.session.setSession(undefined)
@@ -1753,7 +1753,7 @@ async function beginNewDraft(
   draftPermission = undefined
   draftBundles = []
   pendingSessionKey = crypto.randomUUID()
-  knownSessionModel = inherited.model ? modelDefaults(inherited.model) : undefined
+  knownSessionModel = defaultDraftModel()
   syncDraftPermission()
   permissionRefreshPending = false
   initialPermissionPending = undefined
@@ -1768,6 +1768,7 @@ async function beginNewDraft(
   url.hash = settingsHash
   history.replaceState(null, '', preserveRouteParams(url))
   topbarRuntime.setTaskTitle(t('app.newSession.defaultTitle'))
+  if (initialPrompt) composerRuntime.setDraft(initialPrompt)
   render()
   if (!selectedWorkspace?.available && showWorkspacePicker) workspaceController.open(true)
   else composerRuntime.focus()
@@ -1779,20 +1780,7 @@ async function beginNewDraft(
   const catalogReady = (async () => {
     await refreshSessionCatalog()
     if (sessionBinding.isCurrent(epoch) && draftingNew && !draftModelExplicit && !draftModelSettingsEdited) {
-      const adminModel = newSessionCatalog && defaultModelAdapter(newSessionCatalog.defaults)
-      const preferred = adminModel
-        ? runtimeModels.find(
-            (model) =>
-              model.id === adminModel.model &&
-              newSessionCatalog?.modelAdapters.some(
-                (adapter) =>
-                  adapter.id === adminModel.id &&
-                  adapter.version === adminModel.version &&
-                  adapter.models.some((entry) => entry.id === model.id && entry.route === model.route),
-              ),
-          )
-        : undefined
-      if (preferred) knownSessionModel = modelDefaults(preferred)
+      knownSessionModel = defaultDraftModel()
     }
   })().catch((error: unknown) => {
     cleanupError = error
@@ -1829,16 +1817,32 @@ function selectComposerDraft(id?: string, options: { preserve?: boolean; carry?:
 }
 let modelReadGeneration = 0
 let modelAppliedGeneration = 0
+/** All draft entry points use the same permitted defaults; an existing session keeps its own model. */
+function defaultDraftModel(): KnownSessionModel | undefined {
+  const models = runtimeModels.filter((model) => modelCatalogSource.available(runtimeModels, model))
+  const remembered = selectionFromMemory(models, accountProvider).model
+  const admin = newSessionCatalog && defaultModelAdapter(newSessionCatalog.defaults)
+  const preferred =
+    admin &&
+    models.find(
+      (model) =>
+        model.id === admin.model &&
+        newSessionCatalog?.modelAdapters.some(
+          (adapter) =>
+            adapter.id === admin.id &&
+            adapter.version === admin.version &&
+            adapter.models.some((entry) => entry.id === model.id && entry.route === model.route),
+        ),
+    )
+  const chosen = preferred ?? remembered ?? (modelCatalogSource.active() ? models[0] : undefined)
+  return chosen ? modelDefaults(chosen) : undefined
+}
 async function refreshModels(catalogReady?: Promise<void>): Promise<ModelPickerOption[]> {
   const generation = ++modelReadGeneration
-  const apis = await client.apis()
+  const apis = await measurePreparation('models', () => client.apis())
   // Start the model read immediately; defaults and labels must settle before selection is applied.
   await catalogReady
-  const models = modelCatalogSource.visible(
-    namedModels(apis.profile.models ?? [], configuredAccounts ?? []),
-    knownSessionModel,
-    !!sessionBinding.session,
-  )
+  const models = modelCatalogSource.visible(namedModels(apis.profile.models ?? [], configuredAccounts ?? []))
   if (generation > modelAppliedGeneration) {
     modelAppliedGeneration = generation
     runtimeModels = models
@@ -1850,25 +1854,7 @@ async function refreshModels(catalogReady?: Promise<void>): Promise<ModelPickerO
       !modelChangePending &&
       !permissionChangePending
     ) {
-      const next = selectionFromMemory(runtimeModels, accountProvider)
-      const adminDefault = newSessionCatalog && defaultModelAdapter(newSessionCatalog.defaults)
-      const preferred = adminDefault
-        ? models.find(
-            (model) =>
-              model.id === adminDefault.model &&
-              newSessionCatalog?.modelAdapters.some(
-                (adapter) =>
-                  adapter.id === adminDefault.id &&
-                  adapter.version === adminDefault.version &&
-                  adapter.models.some((entry) => entry.id === model.id && entry.route === model.route),
-              ),
-          )
-        : undefined
-      knownSessionModel = preferred
-        ? modelDefaults(preferred)
-        : next.model
-          ? modelDefaults(next.model)
-          : undefined
+      knownSessionModel = defaultDraftModel()
       syncDraftPermission()
     }
     renderControls()
@@ -2241,7 +2227,7 @@ onHistoryNavigation(() => {
   })
 })
 async function refreshModelConfiguration(): Promise<void> {
-  const snapshot = await pluginUiConnection.readProfile()
+  const snapshot = await measurePreparation('profile', () => pluginUiConnection.readProfile())
   accountProvider = snapshot.provider
   configuredAccounts = snapshot.accounts
   const catalogReady = refreshSessionCatalog()
@@ -2313,7 +2299,7 @@ const startup = backendFrameStartup(async () => {
   if (!wsUrl) throw new Error(t('app.ws.unavailable'))
   // A first connection that fails never reports `closed`; the page may hold a stale daemon address.
   try {
-    runtimePlatform = (await client.initialize()).platform
+    runtimePlatform = (await measurePreparation('connection', () => client.initialize())).platform
   } catch (error) {
     if (!intentionalClose) reconnect.start()
     throw error
@@ -2321,7 +2307,7 @@ const startup = backendFrameStartup(async () => {
   setConnection('connected')
   reconnect.reset()
   void workspaceController.refreshPicker()
-  const snapshot = await pluginUiConnection.readProfile()
+  const snapshot = await measurePreparation('profile', () => pluginUiConnection.readProfile())
   accountProvider = snapshot.provider
   profileName = snapshot.profile
   void skinGroup.refresh()
@@ -2334,7 +2320,7 @@ const startup = backendFrameStartup(async () => {
     () => ({ status: 'fulfilled' as const }),
     (reason: unknown) => ({ status: 'rejected' as const, reason }),
   )
-  const [workspaces, sessions] = await Promise.allSettled([client.workspace.list(), list()])
+  const [workspaces, sessions] = await readPreparationLists(client.workspace, list)
   if (workspaces.status === 'fulfilled') {
     workspaceController.apply(workspaces.value)
     // A link that names a workspace selects it, unless the reader has already chosen one.
@@ -2400,17 +2386,17 @@ const startup = backendFrameStartup(async () => {
     !homeNavigation.getSnapshot() &&
     !currentAddress.get('session') &&
     needsFirstRun(snapshot)
-  // A user selection made while startup was loading owns the current view.
-  if (!sessionBinding.isCurrent(startupSelection)) return
   const selected = currentAddress.get('session')
   // A link can restore a draft underneath a home page or the settings dialog.
   const startNew = currentAddress.get('new') === '1'
   if (startNew && !currentAddress.has('settings') && !homeNavigation.getSnapshot()) {
-    await awaitModels()
-    if (!sessionBinding.isCurrent(startupSelection)) return
     requestNewSession()
     sessionPending = false
-    await beginNewDraft(configured)
+    const draftReady = beginNewDraft(configured, undefined, false, requestedPrompt || undefined)
+    const draftSelection = sessionBinding.capture()
+    const finishPreparation = sessionBinding.holdPreparation()
+    await Promise.all([draftReady, awaitModels()])
+    if (!sessionBinding.isCurrent(draftSelection) || !draftingNew) return
     if (requestedLoop) {
       const match = newSessionCatalog?.loops.find((entry) => `${entry.id}@${entry.version}` === requestedLoop)
       if (!match) throw new Error(settingsText('notAllowed'))
@@ -2440,7 +2426,7 @@ const startup = backendFrameStartup(async () => {
         throw new Error(settingsText('bundleUnavailable'))
       draftBundles = requestedBundles
     }
-    if (requestedPrompt) composerRuntime.setDraft(requestedPrompt)
+    finishPreparation()
     renderControls()
     await firstRun.initialize(snapshot, true)
     showModelNotice()
@@ -2465,13 +2451,16 @@ const startup = backendFrameStartup(async () => {
       renderControls()
     }
   } else if (first && !startNew) await open(first.sessionId)
-  else if (empty || startNew) {
-    await awaitModels()
-    if (!sessionBinding.isCurrent(startupSelection)) return
+  else if (
+    empty ||
+    startNew ||
+    (backendFrame() && !currentAddress.has('settings') && !homeNavigation.getSnapshot())
+  ) {
     // Finishing or skipping the guide already starts a draft. Its Host catalogs must not
     // delay account setup; that draft still waits for the same catalogs before submission.
     if (!guided) {
-      if (startNew) sessionPending = false
+      if (backendFrame() && !startNew) requestNewSession()
+      if (startNew || (backendFrame() && !sessionBinding.targetId)) sessionPending = false
       await beginNewDraft(
         configured && !startupSection && !startupTerminal && !startupMoved && !homeNavigation.getSnapshot(),
       )

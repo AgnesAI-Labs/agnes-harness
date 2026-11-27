@@ -56,6 +56,8 @@ export interface ClientRoster {
 
 /** Roster source contract, implemented by the SDK client. */
 export interface RosterSource {
+  /** Readiness hint for host loading UI only; never grants module execution authority. */
+  available?(): boolean
   /** Profile, session and selection generation of the current query scope. */
   identity?(): string
   /** Publish roster-derived facts only after the reconciler accepts this query. */
@@ -138,6 +140,7 @@ export interface PackageState {
 }
 
 export interface ClientReconciler {
+  /** Wait for the current selection's latest read, joining an in-flight read when identity matches. */
   reconcileNow(): Promise<void>
   /** Expire in-flight authority without reading or changing mounted rows. */
   retirePending(): void

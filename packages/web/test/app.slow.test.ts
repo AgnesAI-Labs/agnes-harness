@@ -2415,12 +2415,24 @@ describe('web session selection', () => {
   })
 
   it.each([
-    { catalogState: 'ready', sidebarReady: true },
-    { catalogState: 'ready', sidebarReady: false },
-    { catalogState: 'empty', sidebarReady: true },
+    { catalogState: 'ready', sidebarReady: true, slowModels: false, startNew: true, launch: 'none' },
+    { catalogState: 'ready', sidebarReady: false, slowModels: false, startNew: true, launch: 'none' },
+    { catalogState: 'empty', sidebarReady: true, slowModels: false, startNew: true, launch: 'none' },
+    { catalogState: 'ready', sidebarReady: true, slowModels: true, startNew: true, launch: 'none' },
+    { catalogState: 'ready', sidebarReady: false, slowModels: false, startNew: false, launch: 'none' },
+    ...(['read-only', 'invalid-loop', 'invalid-preset', 'invalid-bundle', 'superseded'] as const).map(
+      (launch) =>
+        ({
+          catalogState: 'ready',
+          sidebarReady: true,
+          slowModels: true,
+          startNew: true,
+          launch,
+        }) as const,
+    ),
   ] as const)(
-    'initializes a cloud frame through bootstrap (catalog=$catalogState, sidebarReady=$sidebarReady)',
-    async ({ catalogState, sidebarReady }) => {
+    'initializes a cloud frame through bootstrap (catalog=$catalogState, sidebarReady=$sidebarReady, slowModels=$slowModels, startNew=$startNew, launch=$launch)',
+    async ({ catalogState, sidebarReady, slowModels, startNew, launch }) => {
       installPublicFixture()
       const remote = 'https://8443-fixture.ap-shanghai.tencentags.com'
       const parentOrigin = 'http://localhost:4177'
@@ -2428,7 +2440,16 @@ describe('web session selection', () => {
         `${(Date.now() + 3600000).toString(36)}.${'a'.repeat(22)}.${'b'.repeat(43)}`,
       )
       const { backendFrameSource } = await import('../src/backends/workbench-state.js')
-      history.replaceState(null, '', backendFrameSource(remote, ''))
+      history.replaceState(null, '', backendFrameSource(remote, startNew ? '' : undefined))
+      if (slowModels) {
+        const address = new URL(location.href)
+        address.searchParams.set('prompt', 'prefilled URL prompt')
+        if (launch !== 'none') address.searchParams.set('preset', 'read-only')
+        if (launch === 'invalid-loop') address.searchParams.set('loop', 'missing@1')
+        if (launch === 'invalid-preset') address.searchParams.set('preset', 'missing')
+        if (launch === 'invalid-bundle') address.searchParams.set('bundle', 'missing#bundle')
+        history.replaceState(null, '', address)
+      }
       const meta = document.querySelector<HTMLMetaElement>('#agnes-config')
       if (!meta) throw new Error('missing cloud configuration')
       Object.assign(meta.dataset, { backendFrame: 'cloud', remote, parentOrigin })
@@ -2455,7 +2476,11 @@ describe('web session selection', () => {
       const nativeFetch = window.fetch
       const NativeSocket = window.WebSocket
       const catalog = deferred<Response>()
+      const modelRead = deferred<void>()
+      let modelReads = 0
       const model = { route: 'fixture-cloud', id: 'cloud-model' }
+      const alternative = { route: 'fixture-cloud', id: 'cloud-alternative' }
+      const demo = { route: 'demo', id: 'demo-model' }
       const requests: string[] = []
       const serviceInputs: unknown[] = []
       window.fetch = vi.fn<typeof fetch>(async (input, init) => {
@@ -2482,7 +2507,10 @@ describe('web session selection', () => {
             providers: [],
             bundles: [],
             presets: [{ id: 'workspace-write', isDefault: true }],
-            permissions: [{ id: 'workspace-write', isDefault: true }],
+            permissions: [
+              { id: 'workspace-write', isDefault: true },
+              { id: 'read-only', isDefault: false },
+            ],
             localPluginFolders: { home: '/synthetic/plugins', workspace: '/workspace/data/.agh/plugins' },
           })
         if (resource === '/admin/api/bundles') return Response.json({ catalog: [] })
@@ -2528,7 +2556,7 @@ describe('web session selection', () => {
             ctx.slots.register(
               { name: 'conversation.input.model.catalog', id: 'fixture-cloud-catalog', priority: 40 },
               (props: DshSlotProps) => {
-                expect(props.owner).toMatchObject({ remote: true, draft: true })
+                expect(props.owner).toMatchObject({ remote: true })
                 return createElement(CloudCatalog, {
                   actions: props.actions as Parameters<typeof CloudCatalog>[0]['actions'],
                 })
@@ -2542,9 +2570,17 @@ describe('web session selection', () => {
         on: vi.fn(),
         close: vi.fn(async () => undefined),
         request: vi.fn(async () => undefined),
-        apis: vi.fn(async () => ({ profile: { models: [model] } })),
+        apis: vi.fn(async () => {
+          if (slowModels && (++modelReads === 1 || launch === 'none')) await modelRead.promise
+          return { profile: { models: [demo, model, alternative] } }
+        }),
         config: {
-          get: vi.fn(async () => ({ configured: true, profile: 'cloud-fixture', accounts: [] })),
+          get: vi.fn(async () => ({
+            configured: true,
+            profile: 'cloud-fixture',
+            accounts: [],
+            provider: { route: demo.route, model: demo.id },
+          })),
           providers: vi.fn(async () => ({ providers: [] })),
         },
         workspace: {
@@ -2622,9 +2658,24 @@ describe('web session selection', () => {
           },
         })
         expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(true)
+        await vi.waitFor(() => expect(document.getElementById('model')?.textContent).not.toContain(demo.id))
         expect(client.session.new).not.toHaveBeenCalled()
+        if (slowModels) {
+          await vi.waitFor(() =>
+            expect((document.getElementById('prompt') as HTMLTextAreaElement)?.disabled).toBe(false),
+          )
+          expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe(
+            'prefilled URL prompt',
+          )
+          editPrompt('draft retained while the model list is loading')
+          expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
+          expect(client.session.new).not.toHaveBeenCalled()
+          if (launch === 'none') modelRead.resolve()
+        }
         await renderUI(async () =>
-          catalog.resolve(Response.json({ output: { models: catalogState === 'ready' ? [model] : [] } })),
+          catalog.resolve(
+            Response.json({ output: { models: catalogState === 'ready' ? [model, alternative] : [] } }),
+          ),
         )
         await vi.waitFor(() =>
           expect(
@@ -2634,6 +2685,68 @@ describe('web session selection', () => {
         await vi.waitFor(() =>
           expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false),
         )
+        if (slowModels)
+          expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe(
+            'draft retained while the model list is loading',
+          )
+        if (launch !== 'none') {
+          // The contributed catalog can finish while the first model read is still stalled.
+          await vi.waitFor(() => expect(modelReads).toBeGreaterThan(1))
+          await vi.waitFor(() =>
+            expect((document.getElementById('new') as HTMLButtonElement).disabled).toBe(false),
+          )
+          expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(true)
+          expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
+          expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
+          submit('must not create before validating launch choices')
+          expect(client.session.new).not.toHaveBeenCalled()
+          if (launch === 'superseded') {
+            // A new user-owned draft cancels the launch, including its pending read-only choice.
+            document.getElementById('new')?.click()
+            await vi.waitFor(() =>
+              expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
+            )
+            modelRead.resolve()
+            await vi.waitFor(() => expect(modelReads).toBeGreaterThan(2))
+            expect(document.querySelector('[data-permission-label]')?.textContent).toContain('可修改工作区')
+          } else {
+            modelRead.resolve()
+            if (launch.startsWith('invalid-')) {
+              await vi.waitFor(() =>
+                expect(document.querySelector('.agh-notification-message[role="alert"]')).not.toBeNull(),
+              )
+              submit('invalid launch must remain blocked after the request finishes')
+              expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
+              expect(client.session.new).not.toHaveBeenCalled()
+              // Recovery is an explicit new draft, not silently ignoring the rejected URL choices.
+              document.getElementById('new')?.click()
+              await vi.waitFor(() =>
+                expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
+              )
+              editPrompt('new draft after rejected launch')
+              expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false)
+              return
+            }
+            await vi.waitFor(() =>
+              expect(document.querySelector('[data-permission-label]')?.textContent).toContain('只读'),
+            )
+            const fresh = session('read-only-cloud', async () => idleTimeline('read-only-cloud', demo))
+            client.session.new.mockResolvedValue(fresh)
+            binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
+              session: selected,
+              offPermission: vi.fn(),
+            }))
+            submit('launch parameters have now been validated')
+            await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalled())
+            expect(client.session.new).toHaveBeenCalledWith(
+              expect.objectContaining({ permission: 'read-only' }),
+            )
+            expect(fresh.setModel).toHaveBeenCalledWith(
+              expect.objectContaining({ route: model.route, model: model.id }),
+            )
+            return
+          }
+        }
         editPrompt('cloud draft without pressing plus')
         await vi.waitFor(() =>
           expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(
@@ -2644,21 +2757,86 @@ describe('web session selection', () => {
           catalogState !== 'ready',
         )
         if (catalogState === 'ready') {
+          // A cloud draft must select a listed cloud model, rather than silently creating a demo session.
+          expect(document.querySelector('[data-model-label]')?.textContent).toContain(model.id)
+          if (sidebarReady && !slowModels) {
+            for (let draft = 0; draft < 2; draft++) {
+              document.getElementById('new')?.click()
+              await vi.waitFor(() =>
+                expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
+              )
+              expect(document.querySelector('[data-model-label]')?.textContent).toContain(model.id)
+              editPrompt('a new draft keeps a permitted default without refreshing the catalog')
+              expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false)
+            }
+          }
           expect((document.getElementById('composer-attach') as HTMLButtonElement).disabled).toBe(false)
           document.getElementById('model')?.click()
           await openModelList()
           expect(modelMenu().textContent).toContain(model.id)
+          expect(modelMenu().textContent).not.toContain(demo.id)
           modelMenu().querySelector<HTMLElement>('[role="option"]')?.click()
           await vi.waitFor(() =>
             expect(document.getElementById('model')?.getAttribute('aria-label')).toContain(model.id),
           )
+          await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
         }
         expect(document.querySelector('[data-testid="first-run-guide"]')).toBeNull()
         expect(new URL(location.href).searchParams.get('new')).toBe('1')
         expect(requests.every((url) => new URL(url).origin === location.origin)).toBe(true)
         expect(client.session.new).not.toHaveBeenCalled()
         expect(binding.loadWebSession).not.toHaveBeenCalled()
+        if (catalogState === 'ready' && !sidebarReady && startNew) {
+          const fresh = session('fresh-cloud', async () => idleTimeline('fresh-cloud', demo))
+          client.session.new.mockResolvedValue(fresh)
+          binding.bindWebSession.mockImplementation((selected: SessionDouble) => ({
+            session: selected,
+            offPermission: vi.fn(),
+          }))
+          submit('send with the listed cloud model instead of the backend demo default')
+          await vi.waitFor(() => expect(fresh.prompt).toHaveBeenCalled())
+          expect(fresh.setModel).toHaveBeenCalledWith(
+            expect.objectContaining({
+              slot: 'primary',
+              route: model.route,
+              model: model.id,
+            }),
+          )
+          expect(fresh.setModel.mock.invocationCallOrder[0]).toBeLessThan(
+            fresh.prompt.mock.invocationCallOrder[0] ?? 0,
+          )
+        }
+        if (catalogState === 'ready' && sidebarReady && !slowModels) {
+          document.getElementById('model')?.click()
+          await openModelList()
+          modelMenu().querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
+          await vi.waitFor(() =>
+            expect(document.querySelector('[data-model-label]')?.textContent).toContain(alternative.id),
+          )
+          document.getElementById('new')?.click()
+          await vi.waitFor(() =>
+            expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
+          )
+          expect(document.querySelector('[data-model-label]')?.textContent).toContain(alternative.id)
+          const legacy = session('legacy-demo', async () => idleTimeline('legacy-demo', demo))
+          binding.loadWebSession.mockResolvedValue({ session: legacy, offPermission: vi.fn() })
+          await selectionController.open?.('legacy-demo')
+          await vi.waitFor(() =>
+            expect(document.querySelector('[data-model-label]')?.textContent).toBe(demo.id),
+          )
+          editPrompt('legacy model requires an explicit switch')
+          await vi.waitFor(() =>
+            expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true),
+          )
+          expect(document.body.textContent).toContain('这个会话原来的模型已不可用。')
+          expect(legacy.setModel).not.toHaveBeenCalled()
+          document.getElementById('model')?.click()
+          await openModelList()
+          expect(modelMenu().textContent).toContain(model.id)
+          expect(modelMenu().textContent).not.toContain(demo.id)
+        }
       } finally {
+        modelRead.resolve()
         catalog.resolve(Response.json({ output: { models: [] } }))
         window.fetch = nativeFetch
         window.WebSocket = NativeSocket

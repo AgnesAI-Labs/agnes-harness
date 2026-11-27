@@ -18,32 +18,21 @@ export function contributedModelCatalog(changed?: () => void) {
       }
     },
     active: () => contributed !== undefined,
-    available: (models: readonly ModelPickerOption[], selected: { route: string; id: string } | undefined) =>
-      !selected || models.some((model) => model.route === selected.route && model.id === selected.id),
-    visible(
-      base: ModelPickerOption[],
-      selected: { route: string; id: string } | undefined,
-      hasSession: boolean,
-    ) {
+    available(models: readonly ModelPickerOption[], selected: { route: string; id: string } | undefined) {
+      if (!selected) return contributed === undefined
+      const matches = (model: ModelPickerOption) => model.route === selected.route && model.id === selected.id
+      return models.some(matches) && (contributed === undefined || contributed.some(matches))
+    },
+    visible(base: ModelPickerOption[]) {
       setLocalComposerModels(base)
       if (contributed === undefined) return base
       // A UI catalog may supply only entitled IDs and labels. Keep the same backend model's
       // declared capabilities; never borrow capacity or effort levels from a different route.
       const records = new Map(base.map((model) => [JSON.stringify([model.route, model.id]), model]))
-      const visible = contributed.map((model) => ({
+      return contributed.map((model) => ({
         ...records.get(JSON.stringify([model.route, model.id])),
         ...model,
       }))
-      const legacy =
-        hasSession && selected
-          ? base.filter(
-              (model) =>
-                model.route === selected.route &&
-                model.id === selected.id &&
-                !contributed?.some((entry) => entry.route === model.route && entry.id === model.id),
-            )
-          : []
-      return [...visible, ...legacy]
     },
   }
 }

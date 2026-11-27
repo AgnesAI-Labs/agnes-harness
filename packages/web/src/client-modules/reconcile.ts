@@ -68,11 +68,14 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
   const statuses = new RuntimeStatusStore()
   const navigation = createRosterNavigation(locale)
   let generation = 0
+  let disposed = false
   const startedExceptions = new Map<string, ReadyClientModule>()
   let reloadRequired = false
   let blockedPackages = new Set<string>()
   ctx.effect(() => () => {
+    disposed = true
     generation++
+    latestRead?.replace()
     for (const state of packages.values()) state.attempt?.abort()
     navigation.retain(new Set())
   })
@@ -475,6 +478,36 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
   // Queries may overlap; only the newest request in the same selection may commit. Planning
   // is ordered, while each module keeps its independent lifecycle/loading queue.
   let planning: Promise<void> = Promise.resolve()
+  let latestRead:
+    | {
+        identity: string | undefined
+        request: number
+        pending: boolean
+        work: Promise<void>
+        replaced: Promise<void>
+        replace(): void
+      }
+    | undefined
+
+  async function awaitLatest(read: NonNullable<typeof latestRead>): Promise<void> {
+    for (;;) {
+      try {
+        await Promise.race([read.work, read.replaced])
+      } catch (error) {
+        if (!disposed && latestRead === read && read.request === generation) throw error
+      }
+      if (disposed) return
+      if (latestRead === read) {
+        // The caller of an abandoned selection uses its own binding guard. It need not start
+        // an authority read for the next selection merely to finish cleanup of this one.
+        if (read.identity !== source.identity?.() || read.request === generation) return
+        // A push may revoke a read before its coalesced replacement starts. Do not report ready.
+        await read.replaced
+        if (disposed) return
+      }
+      if (latestRead) read = latestRead
+    }
+  }
   function commitRoster(
     request: number,
     identity: string | undefined,
@@ -525,8 +558,19 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
     return request
   }
 
-  function runDiff(reload?: ReloadHint): Promise<void> {
+  function runDiff(reload?: ReloadHint, join = false): Promise<void> {
+    if (disposed) return Promise.resolve()
     const identity = source.identity?.()
+    // Readiness callers may share the same in-flight authority read. Invalidation and reload
+    // always retire pending work and reread; they must not reuse a possibly revoked grant.
+    if (
+      join &&
+      identity !== undefined &&
+      latestRead?.pending &&
+      latestRead.identity === identity &&
+      latestRead.request === generation
+    )
+      return awaitLatest(latestRead)
     const request = retirePending()
     const planned = Promise.resolve()
       .then(() => source.list())
@@ -534,14 +578,31 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
         (roster) => commitRoster(request, identity, roster, reload),
         () => commitRoster(request, identity, undefined),
       )
-    return planned.then(async (waits) => {
+    const work = planned.then(async (waits) => {
       await Promise.allSettled(waits)
     })
+    let replace = () => {}
+    const replaced = new Promise<void>((resolve) => {
+      replace = resolve
+    })
+    const read = { identity, request, pending: true, work, replaced, replace }
+    const previous = latestRead
+    latestRead = read
+    previous?.replace()
+    void work.then(
+      () => {
+        read.pending = false
+      },
+      () => {
+        read.pending = false
+      },
+    )
+    return awaitLatest(read)
   }
 
   return {
     retirePending,
-    reconcileNow: () => runDiff(),
+    reconcileNow: () => runDiff(undefined, true),
     invalidate: () => runDiff(),
     reload: (packageId, revision) => runDiff({ packageId, revision }),
     snapshot() {

@@ -5,6 +5,7 @@ import { projectApplication } from '../application.js'
 import type { ClaimResolver } from '../client-modules/boot.js'
 import { readyRosterModules } from '../client-modules/reconcile/roster.js'
 import type { RosterSource } from '../client-modules/reconcile.js'
+import { measurePreparation } from '../preparation-timing.js'
 
 /** The workbench receives execution authority only from its selected backend's current roster. */
 export function createBrowserClientRoster(
@@ -22,6 +23,7 @@ export function createBrowserClientRoster(
   let online = false
   let connectionEpoch = 0
   const source: RosterSource = {
+    available: () => online && Boolean(scope().profile),
     identity() {
       const { profile, sessionId, generation } = scope()
       return JSON.stringify([profile, sessionId, generation, connectionEpoch])
@@ -38,8 +40,10 @@ export function createBrowserClientRoster(
       if (!profile) return { revision: '', modules: [], statuses: [] }
       if (!online) throw new Error('Client module roster unavailable')
       const [roster, application] = await Promise.all([
-        client.clientModules.list(profile, sessionId),
-        client.request('_agnes/v1/applications.get', { profile }).catch(() => undefined),
+        measurePreparation('client_roster', () => client.clientModules.list(profile, sessionId)),
+        measurePreparation('application', () =>
+          client.request('_agnes/v1/applications.get', { profile }),
+        ).catch(() => undefined),
       ])
       const modules = readyRosterModules(roster.rows ?? [], profile).filter(
         ({ documentAdmission }) =>

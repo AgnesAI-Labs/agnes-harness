@@ -11,6 +11,19 @@ export class SessionBindingOwner {
   private permission: (() => void) | undefined
   private projection: LiveProjection | undefined
   private loading: AbortController | undefined
+  private preparation: { binding: SessionBinding } | undefined
+
+  get preparing(): boolean {
+    return this.preparation?.binding === this.binding
+  }
+  /** Keep creation and sending locked until this selection's launch choices are validated. */
+  holdPreparation(): () => void {
+    const hold = { binding: this.binding }
+    this.preparation = hold
+    return () => {
+      if (this.preparation === hold) this.preparation = undefined
+    }
+  }
 
   get targetId(): string | undefined {
     return this.binding.sessionId ?? this.selected?.id
@@ -49,6 +62,7 @@ export class SessionBindingOwner {
     previous: ReturnType<SessionBindingOwner['release']>
   } {
     this.binding = { generation: this.binding.generation + 1, ...(sessionId ? { sessionId } : {}) }
+    this.preparation = undefined
     const previous = this.release(this.binding)
     this.loading = new AbortController()
     return { binding: this.binding, previous }

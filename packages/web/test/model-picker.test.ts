@@ -845,28 +845,30 @@ it('lets the popover hug its content and aligns model and session rows in fixed 
   )
 })
 
-it('keeps contributed cloud catalogs isolated, preserves backend capabilities and a running legacy selection', async () => {
+it('keeps contributed catalogs isolated and preserves capabilities without adding unlisted session models', async () => {
   const cloud = contributedModelCatalog(),
     local = contributedModelCatalog()
   const native = [...models]
   const remote = [{ route: 'cloud-primary', id: 'cloud-a' }]
   cloud.set(remote)
   remote[0]!.id = 'mutated-after-publication'
-  expect(cloud.visible(native, currentModel, false)).toEqual([{ route: 'cloud-primary', id: 'cloud-a' }])
-  expect(cloud.visible(native, currentModel, true)).toEqual([
-    { route: 'cloud-primary', id: 'cloud-a' },
-    currentModel,
-  ])
-  expect(local.visible(native, currentModel, false)).toBe(native)
+  expect(cloud.visible(native)).toEqual([{ route: 'cloud-primary', id: 'cloud-a' }])
+  expect(cloud.available(native, currentModel)).toBe(false)
+  expect(cloud.available(native, undefined)).toBe(false)
+  expect(local.visible(native)).toBe(native)
+  expect(local.available(native, currentModel)).toBe(true)
+  expect(local.available(native, undefined)).toBe(true)
   cloud.set([])
-  expect(cloud.visible(native, undefined, false)).toEqual([])
+  expect(cloud.visible(native)).toEqual([])
+  expect(cloud.available(native, currentModel)).toBe(false)
   cloud.set(undefined)
-  expect(cloud.visible(native, undefined, false)).toBe(native)
+  expect(cloud.visible(native)).toBe(native)
   cloud.set([
     { route: currentModel.route, id: currentModel.id, label: 'Cloud models' },
     { route: 'another-cloud', id: currentModel.id },
   ])
-  const visible = cloud.visible(native, currentModel, true)
+  const visible = cloud.visible(native)
+  expect(cloud.available(visible, currentModel)).toBe(true)
   expect(visible).toEqual([
     { ...currentModel, label: 'Cloud models' },
     { route: 'another-cloud', id: currentModel.id },

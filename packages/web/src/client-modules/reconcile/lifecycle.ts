@@ -5,6 +5,7 @@ import type {
   PluginRuntimePhase,
   RuntimeErrorStage,
 } from '@agnes/web-foundation/client-modules/runtime-status'
+import { measurePreparation } from '../../preparation-timing.js'
 import { validateCatalogContract } from './catalog.js'
 import type {
   ClientModuleCache,
@@ -179,11 +180,15 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
           Promise.resolve().then(() => {
             if (!shouldStart()) throw new Error('obsolete client module')
             context.beginImport(rowId, target)
-            return withTimeout(importer(target.entryUrl), timeouts.import, `import ${rowId}`)
+            return measurePreparation('client_script', () =>
+              withTimeout(importer(target.entryUrl), timeouts.import, `import ${rowId}`),
+            )
           }),
           Promise.resolve().then(async () => {
             if (!shouldStart()) throw new Error('obsolete client styles')
-            const prepared = await prepareStyles(target, timeouts.styles, signal)
+            const prepared = await measurePreparation('client_styles', () =>
+              prepareStyles(target, timeouts.styles, signal),
+            )
             if (!current()) {
               prepared.dispose()
               throw new Error('obsolete client styles')

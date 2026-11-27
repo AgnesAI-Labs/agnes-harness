@@ -1609,6 +1609,220 @@ describe('client reconciler（WC10 前端状态机）', () => {
     warn.mockRestore()
   })
 
+  it.each(['replace', 'withdraw'] as const)(
+    'readiness follows the latest authority read while a slow module is %s',
+    async (change) => {
+      const h = await harness()
+      stubPlugin(h.ctx, h)
+      const firstRead = latch(),
+        importing = latch(),
+        finishImport = latch()
+      let reads = 0
+      let current = roster([mod('conversation', 'v1')])
+      const reconciler = createReconciler({
+        ctx: h.ctx,
+        source: {
+          identity: () => 'same-backend-and-selection',
+          list: async () => {
+            if (++reads === 1) await firstRead.wait
+            return current
+          },
+        },
+        importer: async (url) => {
+          importing.release()
+          await finishImport.wait
+          return h.importer(url)
+        },
+      })
+      let ready = false
+      const old = reconciler.reconcileNow().then(() => {
+        ready = true
+      })
+      await vi.waitFor(() => expect(reads).toBeGreaterThan(0))
+      if (change === 'withdraw') current = roster([])
+      // Invalidation must reread even though the identity matches. A readiness waiter must follow it.
+      const latest = reconciler.invalidate()
+      try {
+        if (change === 'replace') await importing.wait
+        firstRead.release()
+        if (change === 'replace') {
+          await new Promise((resolve) => setTimeout(resolve, 0))
+          expect(ready).toBe(false)
+          expect(reconciler.snapshot().get('conversation')?.phase).toBe('loading')
+        }
+        finishImport.release()
+        await Promise.all([old, latest])
+        expect(ready).toBe(true)
+        expect(h.loaded.filter((value) => value === 'apply:conversation')).toHaveLength(
+          change === 'replace' ? 1 : 0,
+        )
+      } finally {
+        firstRead.release()
+        finishImport.release()
+        await Promise.allSettled([old, latest])
+        await h.ctx.fiber.dispose()
+      }
+    },
+  )
+
+  it.each(['resolve', 'reject'] as const)(
+    'moves readiness to the new roster before an obsolete read can %s',
+    async (outcome) => {
+      const h = await harness()
+      stubPlugin(h.ctx, h)
+      const started = latch(),
+        oldRead = latch(),
+        latestRead = latch()
+      const commit = vi.fn()
+      let reads = 0
+      const reconciler = createReconciler({
+        ctx: h.ctx,
+        source: {
+          identity: () => 'same-selection',
+          commit,
+          list: async () => {
+            if (++reads === 1) {
+              started.release()
+              await oldRead.wait
+              if (outcome === 'reject') throw new Error('obsolete request failure')
+              return roster([mod('revoked', 'v1')])
+            }
+            await latestRead.wait
+            return roster([])
+          },
+        },
+        importer: h.importer,
+      })
+      let ready = false
+      const initial = reconciler.reconcileNow().then(() => {
+        ready = true
+      })
+      await started.wait
+      // A push revokes the old authority before its replacement is scheduled.
+      reconciler.retirePending()
+      const latest = reconciler.invalidate()
+      try {
+        await vi.waitFor(() => expect(reads).toBe(2))
+        expect(ready).toBe(false)
+        latestRead.release()
+        await latest
+        await vi.waitFor(() => expect(ready).toBe(true))
+        expect(commit).toHaveBeenCalledTimes(1)
+        expect(h.loaded).toEqual([])
+        // A late success or failure cannot publish the revoked grant or undo readiness.
+        oldRead.release()
+        await initial
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(commit).toHaveBeenCalledTimes(1)
+        expect(h.loaded).toEqual([])
+      } finally {
+        oldRead.release()
+        latestRead.release()
+        await Promise.allSettled([initial, latest])
+        await h.ctx.fiber.dispose()
+      }
+    },
+  )
+
+  it('does not grant readiness between push revocation and the replacement read', async () => {
+    const h = await harness()
+    const old = latch(),
+      started = latch()
+    let reads = 0,
+      ready = false
+    const reconciler = createReconciler({
+      ctx: h.ctx,
+      source: {
+        identity: () => 'same-selection',
+        list: async () => {
+          if (++reads === 1) {
+            started.release()
+            await old.wait
+          }
+          return roster([])
+        },
+      },
+    })
+    const initial = reconciler.reconcileNow().then(() => {
+      ready = true
+    })
+    try {
+      await started.wait
+      reconciler.retirePending()
+      old.release()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(ready).toBe(false)
+      await reconciler.invalidate()
+      await initial
+      expect(ready).toBe(true)
+    } finally {
+      old.release()
+      await h.ctx.fiber.dispose()
+      await initial
+    }
+  })
+
+  it('releases readiness waiters on disposal without waiting for a stalled network request', async () => {
+    const h = await harness()
+    const old = latch(),
+      started = latch()
+    const list = vi.fn(async () => {
+      started.release()
+      await old.wait
+      return roster([mod('late', 'v1')])
+    })
+    const reconciler = createReconciler({ ctx: h.ctx, source: { list }, importer: h.importer })
+    const initial = reconciler.reconcileNow()
+    try {
+      await started.wait
+      await h.ctx.fiber.dispose()
+      await initial
+      await reconciler.reconcileNow()
+      expect(list).toHaveBeenCalledTimes(1)
+      old.release()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(h.loaded).toEqual([])
+    } finally {
+      old.release()
+      await h.ctx.fiber.dispose()
+    }
+  })
+
+  it('joins readiness reads for one identity but still rereads and refuses a revoked module', async () => {
+    const h = await harness()
+    stubPlugin(h.ctx, h)
+    const importing = latch(),
+      finish = latch()
+    let current = roster([mod('conversation', 'v1')])
+    const list = vi.fn(async () => current)
+    const reconciler = createReconciler({
+      ctx: h.ctx,
+      source: { identity: () => 'same-selection', list },
+      importer: async (url) => {
+        importing.release()
+        await finish.wait
+        return h.importer(url)
+      },
+    })
+    const first = reconciler.reconcileNow()
+    await importing.wait
+    const joined = reconciler.reconcileNow()
+    expect(list).toHaveBeenCalledTimes(1)
+    current = roster([])
+    const revoked = reconciler.invalidate()
+    try {
+      await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2))
+      finish.release()
+      await Promise.all([first, joined, revoked])
+      expect(h.loaded).not.toContain('apply:conversation')
+      expect(reconciler.snapshot().get('conversation')?.phase).toBe('idle')
+    } finally {
+      finish.release()
+      await Promise.allSettled([first, joined, revoked])
+      await h.ctx.fiber.dispose()
+    }
+  })
+
   it('loading 中被移出名册：in-flight 挂载完成后 fiber 被 dispose，恰好一次', async () => {
     const h = await harness()
     const disposed: string[] = []
