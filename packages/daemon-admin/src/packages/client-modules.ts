@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, stat } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { mkdir, open } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import { clientModuleRowIdForContribution } from '@agnes/daemon-foundation/composite-desired'
 import { type CompositionPatch, CompositionSessionStore, compositionModuleAllowed } from '@agnes/host'
 import {
   CLIENT_MAX_TOTAL_BYTES,
+  CLIENT_RESOURCE_MAX_FILE_BYTES,
   CLIENT_RESOURCE_MAX_TOTAL_BYTES,
   clientReleaseEvidence,
   hashDirectoryAsync,
@@ -71,6 +73,8 @@ import type { PackageActivationObservation } from './handler.js'
 
 export const CLIENT_MODULE_RETENTION_MS = 30 * 60 * 1000
 export const CLIENT_MODULE_SNAPSHOT_QUOTA_BYTES = 256 * 1024 * 1024
+const MAX_BATCH_READS = 32
+const MAX_BATCH_BYTES = CLIENT_RESOURCE_MAX_FILE_BYTES
 
 type ClientContribution = NonNullable<
   Extract<InstalledPackage['contributions'][number], { kind: 'extension' }>['client']
@@ -163,6 +167,10 @@ type Reconciled = {
   state: ProfileState
   checkCurrent(includePresentation: boolean): Promise<ObservationStatus>
 }
+
+type ReadInput = ClientRegistryInput & Pick<ClientModuleReadParams, 'path' | 'purpose'>
+type PendingRead = { input: ReadInput; resolve(result: ClientModuleReadResult): void }
+type ReadBatch = { input: ReadInput; reads: PendingRead[]; tail: Promise<void> | undefined }
 
 export type ClientModuleRegistry = Readonly<{
   list(input: ClientRegistryInput): Promise<ClientModuleListResult>
@@ -516,16 +524,9 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
   if (options.changed) listeners.add(options.changed)
   const lastRevision = new Map<string, string>()
   const tails = new Map<string, Promise<void>>()
-  const assetPreparations = new Map<
-    string,
-    {
-      inventory: InstalledInventory
-      archiveId: string | undefined
-      directory: string
-      tail: Promise<void> | undefined
-      promise: Promise<Reconciled>
-    }
-  >()
+  const queuedReads = new Map<string, ReadBatch>()
+  const pendingReads = new Set<PendingRead>()
+  let closed = false
   const inputs = new Map<string, Parameters<ClientModuleRegistry['list']>[0]>()
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
   const resourceFailures = new Map<string, boolean>()
@@ -559,6 +560,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
     tails.set(profile, queued)
     await previous
     try {
+      if (closed) throw new Error('Client module registry is closed')
       return await task()
     } finally {
       release()
@@ -567,6 +569,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
   }
 
   const scheduleExpiry = (profile: string, state: ProfileState): void => {
+    if (closed) return
     const current = timers.get(profile)
     if (current) clearTimeout(current)
     timers.delete(profile)
@@ -585,6 +588,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         if (!remembered) return
         void serialize(profile, async () => {
           const inventory = await remembered.refreshInventory()
+          if (closed) return
           const fresh = { ...remembered, inventory }
           inputs.set(profile, fresh)
           await reconcile(fresh, true)
@@ -1225,11 +1229,157 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
     return undefined
   }
 
+  const settleRead = (read: PendingRead, result?: ClientModuleReadResult): void => {
+    if (pendingReads.delete(read)) read.resolve(result ?? { found: false })
+  }
+
+  const readBytes = async (root: string, path: string, { file, packageId, revision }: SelectedAsset) => {
+    const snapshot = await verifySnapshot(root, packageId, revision)
+    const recorded = snapshot?.manifest.files.find((item) => item.path === file.path)
+    if (!sameAsset(recorded, file)) return
+    const resolved = resolveClientModuleAsset(root, path)
+    if (!resolved) return
+    const handle = await open(resolved, constants.O_RDONLY | constants.O_NONBLOCK)
+    try {
+      const info = await handle.stat()
+      if (!info.isFile() || info.size !== file.bytes) return
+      // Read one byte past the expected end without an unbounded allocation if the file grew.
+      const buffer = Buffer.allocUnsafe(file.bytes + 1)
+      let size = 0
+      while (size < buffer.length) {
+        const { bytesRead } = await handle.read(buffer, size, buffer.length - size, size)
+        if (!bytesRead) break
+        size += bytesRead
+      }
+      if (size !== file.bytes) return
+      const bytes = buffer.subarray(0, size)
+      if (digest(bytes) === file.sha256) return bytes
+    } finally {
+      await handle.close()
+    }
+  }
+
+  const readBatch = async (reads: readonly PendingRead[], prepared: Reconciled): Promise<void> => {
+    const ready: { read: PendingRead; bytes: Buffer; approved: boolean }[] = []
+    let buffered = 0
+    const complete = async (): Promise<boolean> => {
+      if (closed) return false
+      if (!ready.length) return true
+      const freshness = await prepared.checkCurrent(ready.some(({ approved }) => approved))
+      if (closed || freshness === 'runtime-changed') return false
+      for (const { read, bytes, approved } of ready) {
+        if (!approved || freshness === 'current')
+          settleRead(read, { found: true, base64: bytes.toString('base64') })
+        else settleRead(read)
+      }
+      ready.length = 0
+      buffered = 0
+      return true
+    }
+    for (const read of reads) {
+      if (closed) return
+      const { input } = read
+      let selected: SelectedAsset | undefined
+      let approved = false
+      let retained = false
+      let root: string
+      try {
+        root = options.snapshotDirectory(input.profile, input.profileDirectory)
+        const visible = options.composition?.(input.profile)
+        const rows = new Set(
+          filterRoster(prepared.roster, visible)
+            .rows?.filter((row) => !input.archive || historicalContribution(row))
+            .map(({ rowId }) => rowId),
+        )
+        for (const grant of prepared.assets) {
+          if (grant.purpose !== input.purpose || !rows.has(grant.rowId)) continue
+          const { packageId, revision } = grant
+          const file = grant.files.find(({ path }) => route(packageId, revision, path) === input.path)
+          if (!file) continue
+          selected = { file, packageId, revision }
+          approved = grant.admission.kind === 'native' && grant.admission.source === 'approved-presentation'
+          if (!approved) break
+        }
+        if (!selected && input.purpose === 'document') {
+          selected = await retainedAsset(input, prepared.state, visible)
+          retained = selected !== undefined
+        }
+      } catch {
+        continue
+      }
+      if (!selected || closed) continue
+      if ((retained || buffered + selected.file.bytes > MAX_BATCH_BYTES) && !(await complete())) return
+      const bytes = await readBytes(root, input.path, selected).catch(() => undefined)
+      if (!bytes || closed) continue
+      if (retained) {
+        if (
+          (await prepared.checkCurrent(false)) === 'current' &&
+          !closed &&
+          (selected.expiresAt === undefined || clock().getTime() < selected.expiresAt)
+        )
+          settleRead(read, { found: true, base64: bytes.toString('base64') })
+      } else {
+        ready.push({ read, bytes, approved })
+        buffered += bytes.length
+      }
+    }
+    await complete()
+  }
+
+  const queueRead = (read: PendingRead): void => {
+    const { input } = read
+    const { profile } = input
+    const queued = queuedReads.get(profile)
+    if (
+      !input.archive &&
+      queued?.input.inventory === input.inventory &&
+      queued.input.profileDirectory === input.profileDirectory &&
+      queued.input.sessionId === input.sessionId &&
+      Boolean(queued.input.presentation) === Boolean(input.presentation) &&
+      queued.tail === tails.get(profile)
+    ) {
+      queued.reads.push(read)
+      if (queued.reads.length === MAX_BATCH_READS) queuedReads.delete(profile)
+      return
+    }
+    const reads = [read]
+    void serialize(profile, async () => {
+      if (queuedReads.get(profile)?.reads === reads) queuedReads.delete(profile)
+      try {
+        await pruneGenerationAssets(input)
+        if (closed) return
+        inputs.set(profile, input)
+        const prepared = await reconcile(input, true)
+        await readBatch(reads, prepared)
+      } finally {
+        for (const member of reads) settleRead(member)
+      }
+    }).catch(() => undefined)
+    // Only callers adjacent at the profile's queue tail may share this preparation.
+    if (!input.archive) queuedReads.set(profile, { input, reads, tail: tails.get(profile) })
+  }
+
+  const readGeneration = async (
+    input: ReadInput,
+    generationId: string,
+    path: string,
+  ): Promise<ClientModuleReadResult> => {
+    if (input.archive) return { found: false }
+    await serialize(input.profile, () => pruneGenerationAssets(input))
+    if (closed) return { found: false }
+    const selected = await generationInput(input, generationId)
+    if (closed) {
+      selected.registry.close()
+      return { found: false }
+    }
+    return selected.registry.read({ ...selected.input, path: `/plugins/${path}`, purpose: input.purpose })
+  }
+
   return {
     list: async (input) => {
-      await pruneGenerationAssets(input)
-      inputs.set(input.profile, input)
       return serialize(input.profile, async () => {
+        await pruneGenerationAssets(input)
+        inputs.set(input.profile, input)
         const pin = input.sessionId
           ? new RuntimeGenerationSnapshotStore(input.profileDirectory).session(input.sessionId)
           : undefined
@@ -1288,109 +1438,37 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         emitResourceFailure(input)
         throw error
       }),
-    read: async (input) => {
-      try {
-        const generationPath = /^\/plugins\/generations\/([a-f0-9-]{36})\/(.+)$/.exec(input.path)
-        if (generationPath?.[1] && generationPath[2]) {
-          if (input.archive) return { found: false }
-          await serialize(input.profile, () => pruneGenerationAssets(input))
-          const selected = await generationInput(input, generationPath[1])
-          return await selected.registry.read({
-            ...selected.input,
-            path: `/plugins/${generationPath[2]}`,
-            purpose: input.purpose,
-          })
-        }
-        const prior = assetPreparations.get(input.profile)
-        let preparation: Promise<Reconciled>
-        if (
-          prior?.inventory === input.inventory &&
-          prior.archiveId === input.archive?.id &&
-          prior.directory === input.profileDirectory &&
-          prior.tail === tails.get(input.profile)
-        )
-          preparation = prior.promise
-        else {
-          preparation = serialize(input.profile, async () => {
-            await pruneGenerationAssets(input)
-            inputs.set(input.profile, input)
-            return reconcile(input, true)
-          })
-          const pending = {
-            inventory: input.inventory,
-            archiveId: input.archive?.id,
-            directory: input.profileDirectory,
-            tail: tails.get(input.profile),
-            promise: preparation,
-          }
-          assetPreparations.set(input.profile, pending)
-          const clear = () => {
-            if (assetPreparations.get(input.profile) === pending) assetPreparations.delete(input.profile)
-          }
-          preparation.then(clear, clear)
-        }
-        const prepared = await preparation
-        return await serialize(input.profile, async (): Promise<ClientModuleReadResult> => {
-          const root = options.snapshotDirectory(input.profile, input.profileDirectory)
-          const visible = options.composition?.(input.profile)
-          const rows = new Set(
-            filterRoster(prepared.roster, visible)
-              .rows?.filter((row) => !input.archive || historicalContribution(row))
-              .map(({ rowId }) => rowId),
-          )
-          let selected: SelectedAsset | undefined
-          let approved = false
-          for (const grant of prepared.assets) {
-            if (grant.purpose !== input.purpose || !rows.has(grant.rowId)) continue
-            const { packageId, revision } = grant
-            const file = grant.files.find(({ path }) => route(packageId, revision, path) === input.path)
-            if (!file) continue
-            selected = { file, packageId, revision }
-            approved = grant.admission.kind === 'native' && grant.admission.source === 'approved-presentation'
-            if (!approved) break
-          }
-          if (!selected && input.purpose === 'document')
-            selected = await retainedAsset(input, prepared.state, visible)
-          if (!selected) return { found: false }
-          const { file, packageId, revision } = selected
-          const snapshot = await verifySnapshot(root, packageId, revision)
-          if (
-            !sameAsset(
-              snapshot?.manifest.files.find((item) => item.path === file.path),
-              file,
+    read: (input) => {
+      if (closed) return Promise.resolve({ found: false })
+      return new Promise<ClientModuleReadResult>((resolve) => {
+        const read = { input, resolve }
+        pendingReads.add(read)
+        try {
+          const generation = /^\/plugins\/generations\/([a-f0-9-]{36})\/(.+)$/.exec(input.path)
+          if (generation?.[1] && generation[2])
+            void readGeneration(input, generation[1], generation[2]).then(
+              (result) => settleRead(read, result),
+              () => settleRead(read),
             )
-          )
-            return { found: false }
-          const resolved = resolveClientModuleAsset(root, input.path)
-          if (!resolved) return { found: false }
-          const info = await stat(resolved)
-          if (!info.isFile() || info.size !== file.bytes) return { found: false }
-          const bytes = await readFile(resolved)
-          if (
-            bytes.length !== file.bytes ||
-            digest(bytes) !== file.sha256 ||
-            (await prepared.checkCurrent(approved)) !== 'current'
-          )
-            return { found: false }
-          if (selected.expiresAt !== undefined && clock().getTime() >= selected.expiresAt)
-            return { found: false }
-          return { found: true, base64: bytes.toString('base64') }
-        })
-      } catch {
-        return { found: false }
-      }
+          else queueRead(read)
+        } catch {
+          settleRead(read)
+        }
+      })
     },
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
     close() {
+      closed = true
+      for (const read of pendingReads) settleRead(read)
       generations.close()
       for (const timer of timers.values()) clearTimeout(timer)
       timers.clear()
       inputs.clear()
       resourceFailures.clear()
-      assetPreparations.clear()
+      queuedReads.clear()
       listeners.clear()
     },
   }
