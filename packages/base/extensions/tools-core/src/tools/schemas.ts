@@ -5,6 +5,8 @@ import { Type } from '@sinclair/typebox'
 // no host-dependent defaults, and no properties beyond the ones listed.
 const Path = Type.String({ minLength: 1, maxLength: 4096 })
 
+export const MemoryDeleteParams = Type.Object({ path: Path }, { additionalProperties: false })
+
 export const MemoryRecallParams = Type.Object(
   {
     query: Type.String({ minLength: 1 }),

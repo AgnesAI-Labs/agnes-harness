@@ -112,7 +112,13 @@ async function runWriteOrRecall(options: {
   writesOff?: boolean
   isReadOnly?: boolean
 }) {
-  const seen: { errorName?: string; hasMemory?: boolean; hasReplace?: boolean; recallResult?: unknown } = {}
+  const seen: {
+    errorName?: string
+    hasMemory?: boolean
+    hasReplace?: boolean
+    hasRemove?: boolean
+    recallResult?: unknown
+  } = {}
   const errors = new WeakMap<object, MemorySource>()
   const memory: MemorySession = {
     root: '/w/memory',
@@ -128,6 +134,9 @@ async function runWriteOrRecall(options: {
           errors.set(error, options.proof === 'wrong call' ? { ...source, toolUseId: 'other' } : source)
           throw error
         }
+      },
+      remove: async () => {
+        throw new Error('provider remove called')
       },
       replaceExact: async () => {
         throw new Error('provider replace called')
@@ -168,6 +177,7 @@ async function runWriteOrRecall(options: {
   registry.add(
     memoryTool(async (_args, ctx) => {
       seen.hasMemory = ctx.memory !== undefined
+      seen.hasRemove = ctx.fs.remove !== undefined
       seen.hasReplace = ctx.fs.replaceExact !== undefined
       if (options.query !== undefined && ctx.memory) {
         seen.recallResult = await ctx.memory.recall({ query: options.query })
@@ -252,18 +262,22 @@ describe('ToolContext.fs.replaceExact', () => {
     })
   })
 
-  it.each(['MEMORY_HUMAN_EDITED', 'MEMORY_PARAGRAPH_EDITED', 'MEMORY_PREFERENCE_CONFLICT'])(
-    'treats %s as a pre-effect refusal without parking the session',
-    async (code) => {
-      const { result, runState } = await runWriteOrRecall({ writeErrorCode: code, proof: 'matching' })
-      expect(result).toMatchObject({
-        isError: true,
-        code: 'TOOL_REJECTED_BEFORE_EFFECT',
-        structured: { effect: 'none', code },
-      })
-      expect(runState).not.toBe('parked')
-    },
-  )
+  it.each([
+    'MEMORY_HUMAN_EDITED',
+    'MEMORY_PARAGRAPH_EDITED',
+    'MEMORY_PREFERENCE_CONFLICT',
+    'MEMORY_TOPIC_REFERENCED',
+    'MEMORY_NOT_FOUND',
+    'MEMORY_DELETE_UNSUPPORTED',
+  ])('treats %s as a pre-effect refusal without parking the session', async (code) => {
+    const { result, runState } = await runWriteOrRecall({ writeErrorCode: code, proof: 'matching' })
+    expect(result).toMatchObject({
+      isError: true,
+      code: 'TOOL_REJECTED_BEFORE_EFFECT',
+      structured: { effect: 'none', code },
+    })
+    expect(runState).not.toBe('parked')
+  })
 
   it.each([
     ['MEMORY_HIDDEN_PARAGRAPHS', 'untrusted provider'],
@@ -282,6 +296,7 @@ describe('ToolContext.fs.replaceExact', () => {
     const read = await runWriteOrRecall({ ...options, isReadOnly: true })
     expect(read.seen.recallResult).toMatchObject({ hits: [{ text: 'hit:pnpm' }] })
     expect(read.seen.hasReplace).toBe(false)
+    expect(read.seen.hasRemove).toBe(false)
     expect(read.result).not.toMatchObject({ isError: true })
     const write = await runWriteOrRecall(options)
     expect(write.seen.hasMemory).toBe(false)

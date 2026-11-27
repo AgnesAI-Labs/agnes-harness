@@ -8,6 +8,7 @@ export type MemorySource = Readonly<import('@agnes/protocol/gen/app-server').Mem
 export type MemoryFile = Readonly<import('@agnes/protocol/gen/app-server').MemoryFile>
 /** The exact file candidate, never an injected context contribution. */
 export type MemoryProposal = Readonly<{
+  operation?: 'write' | 'delete'
   path: string
   baseHash: string
   newHash: string
@@ -56,6 +57,8 @@ export type MemoryFilePort = Readonly<{
    * write takes the same review, approval and compare-and-swap path as `write`.
    */
   replaceExact?(path: string, oldText: string, newText: string): Promise<void>
+  /** Delete an agent-authored workspace memory topic. Only available for memory files. */
+  remove?(path: string): Promise<void>
   /**
    * Optional since 5.23.0. Read-only search over what this tool call may read.
    */
@@ -177,6 +180,8 @@ export interface MemorySession {
   inspect(): Promise<MemoryInspection>
   configure(settings: Partial<MemorySettings>): Promise<MemoryInspection>
   readFile(path: string): Promise<MemoryFile>
+  /** Owner deletion of one topic at its exact stored revision. Optional since 5.25.0. */
+  deleteFile?(path: string, baseHash: string, options?: Readonly<{ actor?: string }>): Promise<void>
   /** Always a human edit (editor or memory-page action). `options` optional since 5.23.0. */
   editFile(
     path: string,

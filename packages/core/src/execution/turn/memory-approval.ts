@@ -71,18 +71,20 @@ export async function approveMemoryFile(
 ): Promise<MemoryApprovalResult> {
   // Checked before any decision: full access would otherwise allow the write automatically.
   if (await memoryWritesOff(session)) return { status: 'rejected' }
+  const deleting = proposal.operation === 'delete'
+  const revision = `${deleting ? 'delete:' : ''}${proposal.baseHash}:${proposal.newHash}`
   const asked = {
     requestId: session.d.ids.requestId(),
     kind: 'tool' as const,
     ...(proposal.source.toolUseId ? { toolUseId: proposal.source.toolUseId } : {}),
-    summary: 'Review memory file change',
+    summary: deleting ? 'Delete memory topic' : 'Review memory file change',
     risk: 'always' as const,
-    bindingHash: proposal.newHash,
-    scope: `memory:${proposal.baseHash}:${proposal.newHash}`,
+    bindingHash: deleting ? sha256Hex(revision) : proposal.newHash,
+    scope: `memory:${revision}`,
     approval: {
       reviewerRequirement: 'human' as const,
       grantConstraints: 'once' as const,
-      subjectRevision: sha256Hex(`${proposal.baseHash}:${proposal.newHash}`),
+      subjectRevision: sha256Hex(revision),
     },
     options: ['allowed-once', 'rejected'] as Array<'allowed-once' | 'rejected'>,
     deadline: new Date(session.d.clock() + session.preset.approval.timeoutMs).toISOString(),
@@ -93,6 +95,7 @@ export async function approveMemoryFile(
     'memory',
     operationId,
     {
+      ...(deleting ? { operation: 'delete' } : {}),
       path: proposal.path,
       baseHash: proposal.baseHash,
       newHash: proposal.newHash,

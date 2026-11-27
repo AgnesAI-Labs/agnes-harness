@@ -203,6 +203,9 @@ describe('durable tool dispatch state', () => {
     'unanswered',
     'prior-write',
     'prior-protected-write',
+    'prior-protected-delete',
+    'referenced-delete',
+    'committed-delete',
     'published-denial',
     'published-marker-refusal',
     'published-before-delegating',
@@ -216,13 +219,20 @@ describe('durable tool dispatch state', () => {
     async (mode) => {
       const committed = new Map<string, string>()
       const published = mode.startsWith('published-')
-      const protectedError = Object.assign(new Error('protected'), { code: 'MEMORY_HUMAN_EDITED' })
+      const protectedError = Object.assign(new Error('protected'), {
+        code: mode.endsWith('-delete') ? 'MEMORY_TOPIC_REFERENCED' : 'MEMORY_HUMAN_EDITED',
+      })
       let received: unknown
       const memory: MemorySession = {
         root: '/w/memory',
         snapshot: async () => undefined,
         files: (fallback, source, _signal, approve) => ({
           ...fallback,
+          async remove() {
+            if (mode === 'committed-delete')
+              throw Object.assign(new Error('metadata'), { code: 'MEMORY_COMMITTED_METADATA_FAILED' })
+            throw protectedError
+          },
           async write(path, content) {
             if (path !== '/w/memory/MEMORY.md') return fallback.write(path, content)
             if (published) {
@@ -268,7 +278,11 @@ describe('durable tool dispatch state', () => {
                 code: 'MEMORY_APPROVAL_REJECTED',
                 effect: 'none',
               })
-            if (mode === 'prior-write' || mode === 'prior-protected-write')
+            if (
+              mode === 'prior-write' ||
+              mode === 'prior-protected-write' ||
+              mode === 'prior-protected-delete'
+            )
               await ctx.fs.write('/w/other', 'earlier effect')
             if (mode === 'parallel')
               await Promise.all([
@@ -276,7 +290,8 @@ describe('durable tool dispatch state', () => {
                 ctx.fs.write('/w/memory/MEMORY.md', 'Synthetic preference'),
               ])
             try {
-              await ctx.fs.write('/w/memory/MEMORY.md', 'Synthetic preference')
+              if (mode.endsWith('-delete')) await ctx.fs.remove!('/w/memory/topic.md')
+              else await ctx.fs.write('/w/memory/MEMORY.md', 'Synthetic preference')
             } catch (error) {
               received = error
               if (mode !== 'cloned') throw error
@@ -322,7 +337,7 @@ describe('durable tool dispatch state', () => {
       })
       try {
         await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
-        const safe = mode === 'rejected' || mode === 'unanswered'
+        const safe = mode === 'rejected' || mode === 'unanswered' || mode === 'referenced-delete'
         expect(
           await opened.session.run({ until: 'turn-end', signal: new AbortController().signal }),
         ).toMatchObject({ reason: safe ? 'completed' : 'parked' })
@@ -334,7 +349,12 @@ describe('durable tool dispatch state', () => {
             ? {
                 structured: {
                   effect: 'none',
-                  code: mode === 'rejected' ? 'MEMORY_APPROVAL_REJECTED' : 'MEMORY_APPROVAL_UNANSWERED',
+                  code:
+                    mode === 'referenced-delete'
+                      ? 'MEMORY_TOPIC_REFERENCED'
+                      : mode === 'rejected'
+                        ? 'MEMORY_APPROVAL_REJECTED'
+                        : 'MEMORY_APPROVAL_UNANSWERED',
                 },
               }
             : {}),
@@ -365,7 +385,8 @@ describe('durable tool dispatch state', () => {
         expect(committed.get('/w/memory/MEMORY.md')).toBe(
           mode === 'parallel' ? 'approved candidate' : published ? 'Synthetic preference' : undefined,
         )
-        const priorWrite = mode === 'prior-write' || mode === 'prior-protected-write'
+        const priorWrite =
+          mode === 'prior-write' || mode === 'prior-protected-write' || mode === 'prior-protected-delete'
         expect(committed.get('/w/other')).toBe(priorWrite ? 'earlier effect' : undefined)
         if (priorWrite)
           expect(received).toMatchObject({

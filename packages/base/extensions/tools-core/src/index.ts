@@ -4,6 +4,7 @@ import { type ShellJobs, standaloneShellJobs } from '../../jobs/src/registry.js'
 import { type LspSessions, standaloneLsp } from '../../lsp/src/registry.js'
 import { type FileChangeRecorder, fileChangeReceipt } from './file-change.js'
 import { createEditTool, editTool } from './tools/edit.js'
+import { memoryDeleteTool } from './tools/memory-delete.js'
 import { memoryRecallTool } from './tools/memory-recall.js'
 import { readTool } from './tools/read.js'
 import { createShellTool, shellTool } from './tools/shell.js'
@@ -18,6 +19,7 @@ export const TOOLS_CORE: readonly ToolDef[] = [
   shellTool,
   todoTool,
   memoryRecallTool,
+  memoryDeleteTool,
 ]
 
 // The placeholder the shell tool puts at the head of its argv, re-exported so the deployment's
@@ -45,6 +47,7 @@ export function createToolsCoreExtension(
         createShellTool(jobs, observationMs),
         todoTool,
         memoryRecallTool,
+        memoryDeleteTool,
       ]
       const disposers = tools.map((t) => plugin.tools.register(t))
       disposers.push(

@@ -16,6 +16,9 @@
       "path": "../lexical-search"
     },
     {
+      "path": "../protocol"
+    },
+    {
       "path": "../system-node"
     }
   ]

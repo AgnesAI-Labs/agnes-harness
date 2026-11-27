@@ -73,3 +73,9 @@ Extension API 5.23.0 新增可选的只读 `MemoryFilePort.recall?(query)`（仅
 官方 **remembering** Skill 是通过公开 Skills 服务注册的官方运行时贡献，指导普通文件工具，不建立逐条记忆管理 API。AGENTS.md 与权威知识源优先，会话历史仍由 session-query 搜索。上限、编辑与隐私见[用户指南](../guide/memory.zh-CN.md)，生命周期见[插件注册](quickstart.zh-CN.md)。
 
 `open` 应保持轻量；可选的 `close()` 在会话工作排空或管理操作结束后释放延迟打开的资源。
+
+## 删除工作区记忆主题（5.25.0）
+
+所有者可通过可选方法 `MemorySession.deleteFile(path, baseHash)` 删除指定版本的 Markdown 主题文件。记忆管理请求接受 `{ cwd, deleteFile: { path, baseHash } }`，并返回更新后的文件列表及设置。删除前须从原始 `MEMORY.md` 中移除对该主题的所有引用，包括隐藏段落和已保存段落中的链接。
+
+智能体工具 `memory_delete` 接受主题文件名或其在工作区记忆目录内的绝对路径。文件提供程序会保护索引、隐藏内容、托管标记及人工编写的内容。在 ask 模式下，审核者会看到删除的差异。删除成功后，本轮的读取、列表和检索立即隐藏该主题，下一轮采用更新后的注入快照。

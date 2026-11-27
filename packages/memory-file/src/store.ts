@@ -15,7 +15,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { MemoryEffectAdmission, MemoryFile, MemorySettings, MemorySource } from '@agnes/extension-api'
@@ -24,6 +24,7 @@ import {
   defaults,
   fault,
   file,
+  hash,
   isPreExistingMatch,
   MemoryFault,
   type PreservedSlice,
@@ -32,8 +33,12 @@ import {
   validateContent,
   validateRemovalContent,
 } from './content.js'
+import { syncTopicDirectory, unlinkTopic } from './delete-topic.js'
+import { MetaStore } from './meta.js'
 import { applyParagraphRemovalsWithSlices, verifiedSingleParagraphRemoval } from './paragraphs.js'
 import { isMemoryName, missing, name, safe } from './paths.js'
+import { forgetProvenance } from './provenance.js'
+import { topicLinks } from './topic-links.js'
 
 const MAX_FILE_BYTES = 1024 * 1024
 export const MAX_FILES = 128
@@ -42,9 +47,6 @@ export class FileCountLimit extends MemoryFault {
     super('MEMORY_CONSOLIDATION_REQUIRED')
   }
 }
-const topicLinks =
-  /\]\(([^)\s]+\.md)(?:#[^)\s]*)?(?:\s+"[^"]*")?\)|\[\[([^\]#]+\.md)(?:#[^\]]*)?\]\]|^\[[^\]]+\]:\s*(\S+\.md)(?:#\S*)?/gm
-
 function removalSlices(
   before: MemoryFile,
   candidate: MemoryFile,
@@ -65,15 +67,10 @@ function validateTopicLinks(
   files: readonly MemoryFile[],
   slices?: readonly PreservedSlice[],
 ) {
-  const prior = slices
-    ? Array.from(before.content.matchAll(topicLinks), (match) => ({
-        start: match.index,
-        end: match.index + match[0].length,
-      }))
-    : []
-  for (const match of candidate.content.matchAll(topicLinks)) {
-    if (slices && isPreExistingMatch(match.index, match.index + match[0].length, slices, prior)) continue
-    const target = name(match[1] ?? match[2] ?? match[3] ?? '')
+  const prior = slices ? [...topicLinks(before.content)] : []
+  for (const link of topicLinks(candidate.content)) {
+    if (slices && isPreExistingMatch(link.start, link.end, slices, prior)) continue
+    const target = name(link.target)
     if (target !== candidate.path && files.some((entry) => entry.path === target)) continue
     throw fault('MEMORY_MISSING_TOPIC')
   }
@@ -316,6 +313,83 @@ export class MemoryStore {
       )
     })
   }
+  async deleteFile(
+    path: string,
+    baseHash: string,
+    source: MemorySource,
+    agentMode: false | 'ask' | 'auto',
+    prepare: (before: MemoryFile, candidate: MemoryFile) => () => void,
+    signal?: AbortSignal,
+    admission?: MemoryEffectAdmission,
+    onPreCommitRefusal?: (error: unknown) => never,
+  ): Promise<void> {
+    await this.locked(
+      async () => {
+        const assertActive = () => {
+          signal?.throwIfAborted()
+          admission?.assertActive()
+        }
+        await admission?.verify()
+        assertActive()
+        const absolute = join(this.root, path)
+        const validate = () => {
+          name(path)
+          safe(this.protectedRoot, absolute)
+          if (path.toLowerCase() === 'memory.md') throw fault('MEMORY_SCOPE_DENIED')
+          const config = this.configuration()
+          if (agentMode && config.mode === 'off') throw fault('MEMORY_DISABLED')
+          if (agentMode && config.mode !== agentMode) throw fault('MEMORY_POLICY_CHANGED')
+          if (this.fileSize(path) === undefined) throw fault('MEMORY_NOT_FOUND')
+          const before = this.read(path, true)
+          if (before.hash !== baseHash) throw fault('MEMORY_CONFLICT')
+          const all = this.files('commit', true)
+          // Bind metadata to the actual on-disk spelling on case-insensitive filesystems.
+          if (!all.some((entry) => entry.path === path)) throw fault('MEMORY_CONFLICT')
+          for (const link of topicLinks(this.read('MEMORY.md').content))
+            if (link.target.toLowerCase() === path.toLowerCase()) throw fault('MEMORY_TOPIC_REFERENCED')
+          return { all, after: prepare(before, file(path, '')) }
+        }
+        let checked: ReturnType<typeof validate>
+        try {
+          checked = validate()
+        } catch (error) {
+          onPreCommitRefusal?.(error)
+          throw error
+        }
+        assertActive()
+        forgetProvenance(new MetaStore(this), path)
+        await unlinkTopic(
+          absolute,
+          (tombstone) => {
+            const content = this.readText(basename(tombstone), MAX_FILE_BYTES, 'MEMORY_CONFLICT', true)
+            return content !== undefined && hash(content) === baseHash
+          },
+          assertActive,
+        )
+        let failed = false
+        for (const publish of [
+          () => syncTopicDirectory(absolute),
+          () => this.atomic(join(this.root, 'writer.json'), JSON.stringify(source)),
+          () => {
+            const acknowledged = { ...(this.acknowledged() ?? hashes(checked.all)) }
+            delete acknowledged[path]
+            this.acknowledge(acknowledged)
+          },
+          checked.after,
+        ]) {
+          try {
+            await publish()
+          } catch {
+            failed = true
+          }
+        }
+        if (failed) throw fault('MEMORY_COMMITTED_METADATA_FAILED')
+      },
+      signal,
+      onPreCommitRefusal,
+    )
+  }
+
   async commit(
     candidate: MemoryFile,
     baseHash: string,

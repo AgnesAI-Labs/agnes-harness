@@ -71,3 +71,9 @@ Extension API 5.23.0 adds optional read-only `MemoryFilePort.recall?(query)` (ex
 - Reject common credential-like content and document the detector's limits. Keep candidates, indices, topic text and echoed memory out of diagnostics/telemetry. Preserve only structural counts/sizes and writer identity. Do not reinterpret persisted memory as authorization.
 
 The official **remembering** Skill is an official runtime registration through the public Skills service, guiding ordinary file tools rather than creating a separate memory-entry API. AGENTS.md and authoritative knowledge-base facts override learned preferences; session-query remains the conversation-history search. See the [user guide](../guide/memory.md) for limits, privacy and editor semantics, and [plugin registration](quickstart.md) for lifecycle contracts.
+
+## Workspace topic deletion (5.25.0)
+
+The optional owner operation `MemorySession.deleteFile(path, baseHash)` removes one flat Markdown topic at its reviewed revision. The admin memory request accepts `{ cwd, deleteFile: { path, baseHash } }` and returns a refreshed inspection. Remove every reference to the topic from the stored `MEMORY.md` first, including links in hidden or saved paragraphs.
+
+The agent tool `memory_delete` accepts a flat topic name or its absolute path in the workspace memory directory. The file provider protects the index, hidden content, managed markers and human-authored blocks. In ask mode the reviewer sees the deletion diff. Successful deletion immediately withdraws the topic from this turn’s reads, listings and recall. The next turn receives the refreshed injected snapshot.

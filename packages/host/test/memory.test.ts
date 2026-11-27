@@ -15,6 +15,7 @@ import { memoryCollector } from '@agnes/observability/testkit'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { InferenceEvent, JsonValue, RequestBody } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
+import { manageMemory } from '../src/runtime/memory/admin.js'
 import { baseSeamFactories, createTestHost } from '../testkit/index.js'
 
 const homes: string[] = []
@@ -903,6 +904,85 @@ it('i01: a consumed automatic memory grant cannot commit after a workspace permi
   } finally {
     release()
     await run?.catch(() => undefined)
+    await host.close()
+  }
+})
+
+it('deletes topics through the registered tool and owner admin operation', async () => {
+  const home = await realpath(await mkdtemp(join(tmpdir(), 'agh-memory-delete-')))
+  homes.push(home)
+  const workspace = join(home, 'workspace')
+  await mkdir(workspace)
+  const root = fileMemoryRoots(home, workspace).root
+  const topic = join(root, 'prefs.md')
+  const { host } = await createTestHost({
+    dataDir: home,
+    workspaceRoot: workspace,
+    disableSessionTitle: true,
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    packages: { '@agnes/base': { plugins } },
+    approval: async () => ({
+      verdict: 'allowed-once',
+      answeredBy: { id: 'human', org: 'local', role: 'user', deptPath: [], attrs: {} },
+    }),
+    script: [
+      () => call('write', { path: topic, content: 'use quartz' }),
+      () => call('write', { path: join(root, 'MEMORY.md'), content: '[[prefs.md]]' }),
+      // Disclose the deferred tool before executing it.
+      () => call('memory_delete', { path: 'prefs.md' }),
+      () => call('memory_delete', { path: 'prefs.md' }),
+      () => call('read', { path: join(root, 'MEMORY.md') }),
+      () =>
+        call('edit', {
+          path: join(root, 'MEMORY.md'),
+          edits: [{ oldText: '[[prefs.md]]', newText: 'Index' }],
+        }),
+      () => call('memory_delete', { path: topic }),
+      () => done,
+    ],
+  })
+  try {
+    const memory = host.memory(workspace, 'owner')
+    if (!memory) throw new Error('Memory unavailable')
+    await memory.configure({ mode: 'auto' })
+    const session = await host.createSession({ cwd: workspace })
+    await session.enqueue('next-turn', {
+      actor: session.d.actor,
+      content: [{ type: 'text', text: 'Consolidate memory.' }],
+    })
+    await session.run({ until: 'turn-end', signal: AbortSignal.timeout(30000) })
+    const rows = (await session.scan({ type: 'tool/result', limit: 10 })).map((row) => row.data)
+    expect(rows).toHaveLength(7)
+    expect(rows[3], JSON.stringify(rows)).toMatchObject({
+      isError: true,
+      structured: { code: 'MEMORY_TOPIC_REFERENCED' },
+    })
+    expect(JSON.stringify(rows[6]), JSON.stringify(rows)).toContain('Deleted memory topic')
+    expect((await memory.inspect()).files.map((f) => f.path)).not.toContain('prefs.md')
+    const saved = await memory.editFile('owner.md', 'owner topic', (await memory.readFile('owner.md')).hash)
+    const request = { cwd: workspace, deleteFile: { path: saved.path, baseHash: saved.hash } }
+    const open = () => host.memory(workspace, 'owner')!
+    for (const extra of [
+      { settings: {} },
+      { saved: { action: 'list' as const } },
+      { file: 'owner.md' },
+      { content: '' },
+      { baseHash: saved.hash },
+    ])
+      await expect(manageMemory(open(), { ...request, ...extra })).rejects.toMatchObject({
+        data: { reason: 'MEMORY_INVALID_REQUEST' },
+      })
+    await expect(
+      manageMemory(open(), { ...request, deleteFile: { ...request.deleteFile, path: 'mEmOrY.md' } }),
+    ).rejects.toMatchObject({ data: { reason: 'MEMORY_INVALID_REQUEST' } })
+    const { deleteFile: _unsupported, ...legacy } = open()
+    await expect(manageMemory(legacy, request)).rejects.toMatchObject({
+      data: { reason: 'MEMORY_DELETE_UNSUPPORTED' },
+    })
+    const { inspection } = await manageMemory(open(), request)
+    expect(inspection.files.map((f) => f.path)).not.toContain(saved.path)
+    await memory.close?.()
+  } finally {
     await host.close()
   }
 })

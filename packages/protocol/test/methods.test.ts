@@ -42,6 +42,14 @@ function errorsOf(r: ReturnType<typeof validateMethod>): ValidationError[] {
 }
 
 describe('methods (I1 set)', () => {
+  it('accepts a standalone memory deletion and preserves legacy memory management', () => {
+    const method = '_agnes/v1/admin.memory'
+    const deleteFile = { path: 'prefs.md', baseHash: '0'.repeat(64) }
+    for (const request of [{ cwd: '.' }, { cwd: '.', file: 'prefs.md' }, { cwd: '.', deleteFile }])
+      expect(validateMethod(method, 'params', request).ok).toBe(true)
+    expect(validateMethod(method, 'params', { cwd: '.', deleteFile, settings: {} }).ok).toBe(false)
+  })
+
   it('accepts profile decision invalidation and refuses decision payloads on that notice', () => {
     const notice = {
       kind: 'decisions_changed',

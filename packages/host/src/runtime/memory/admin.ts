@@ -15,6 +15,16 @@ export async function manageMemory(
 ) {
   if (!memory) throw rpcError('SEMANTIC_REJECTED', { reason: 'MEMORY_PROVIDER_UNAVAILABLE' })
   try {
+    if (input.deleteFile) {
+      if (
+        ['settings', 'saved', 'file', 'content', 'baseHash'].some((key) => Object.hasOwn(input, key)) ||
+        input.deleteFile.path.toLowerCase() === 'memory.md'
+      )
+        throw rpcError('INVALID_PARAMS', { reason: 'MEMORY_INVALID_REQUEST' })
+      if (!memory.deleteFile) throw rpcError('SEMANTIC_REJECTED', { reason: 'MEMORY_DELETE_UNSUPPORTED' })
+      await memory.deleteFile(input.deleteFile.path, input.deleteFile.baseHash)
+      return { inspection: await memory.inspect() }
+    }
     if (input.settings && (input.content !== undefined || input.file !== undefined))
       throw rpcError('INVALID_PARAMS', { reason: 'MEMORY_INVALID_REQUEST' })
     if (input.saved && (input.settings || input.content !== undefined || input.file !== undefined))

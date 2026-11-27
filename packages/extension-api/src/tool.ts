@@ -363,6 +363,8 @@ export interface ToolContext {
      * for managed memory files and may refuse any other path.
      */
     replaceExact?(path: string, oldText: string, newText: string): Promise<void>
+    /** Delete an agent-authored workspace memory topic. Only available for memory files. */
+    remove?(path: string): Promise<void>
   }
   readonly net: {
     fetch(url: string, init?: FetchInit): Promise<Response>

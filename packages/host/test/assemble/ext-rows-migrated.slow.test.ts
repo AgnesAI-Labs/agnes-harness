@@ -52,6 +52,7 @@ const SUPPLIED: Record<string, string[]> = {
     'tool:shell',
     'tool:todo',
     'tool:memory_recall',
+    'tool:memory_delete',
     'hook:shutdown',
   ],
   'agnes/tools-search': ['tool:grep', 'tool:find', 'tool:ls'],

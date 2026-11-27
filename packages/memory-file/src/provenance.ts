@@ -71,6 +71,16 @@ export function readProvenance(meta: MetaStore): Provenance {
   return { version: 1, files: {} }
 }
 
+export function forgetProvenance(meta: MetaStore, path: string): void {
+  if (!meta.has(FILENAME)) return
+  const data = meta.readJson<unknown>(FILENAME)
+  if (!object(data) || data.version !== 1 || !object(data.files)) throw fault('MEMORY_INVALID_METADATA')
+  if (Object.hasOwn(data.files, path)) {
+    delete data.files[path]
+    meta.writeJson(FILENAME, data)
+  }
+}
+
 export const blockVersion = (block: Identity): string =>
   `${block.blockHash}:${block.textHash ?? block.blockHash}`
 

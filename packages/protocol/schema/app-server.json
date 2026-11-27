@@ -681,6 +681,30 @@
               }
             },
             {
+              "const": "MEMORY_TOPIC_REFERENCED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "memoryTopicReferenced"
+              }
+            },
+            {
+              "const": "MEMORY_NOT_FOUND",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "memoryNotFound"
+              }
+            },
+            {
+              "const": "MEMORY_DELETE_UNSUPPORTED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.rejected",
+                "copy": "memoryDeleteUnsupported"
+              }
+            },
+            {
               "const": "MEMORY_MISSING_TOPIC",
               "x-public-error": {
                 "rpc": "SEMANTIC_REJECTED",
@@ -3291,10 +3315,49 @@
         },
         "saved": {
           "$ref": "#/$defs/SavedParagraphRequest"
+        },
+        "deleteFile": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.md$"
+            },
+            "baseHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": ["path", "baseHash"],
+          "additionalProperties": false
         }
       },
       "required": ["cwd"],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "not": {
+        "anyOf": [
+          {
+            "type": "object",
+            "required": ["deleteFile", "settings"]
+          },
+          {
+            "type": "object",
+            "required": ["deleteFile", "saved"]
+          },
+          {
+            "type": "object",
+            "required": ["deleteFile", "file"]
+          },
+          {
+            "type": "object",
+            "required": ["deleteFile", "content"]
+          },
+          {
+            "type": "object",
+            "required": ["deleteFile", "baseHash"]
+          }
+        ]
+      }
     },
     "SavedParagraphRequest": {
       "description": "A person's management of saved task experience paragraphs in the workspace memory index: list them, renew one's review date, withdraw one (cut from the file and recorded so the same content is not saved back automatically or by the model) or convert one to ordinary memory (markers taken off, text kept). Every action except list names the paragraph.",
@@ -4499,6 +4562,36 @@
       "zh-CN": {
         "reason": "所需后端不可用。",
         "action": "请检查配置和兼容性。"
+      }
+    },
+    "memoryTopicReferenced": {
+      "en": {
+        "reason": "MEMORY.md still links to this topic.",
+        "action": "Remove its links from the index first."
+      },
+      "zh-CN": {
+        "reason": "MEMORY.md 仍引用此主题。",
+        "action": "请先从索引中移除相关链接。"
+      }
+    },
+    "memoryNotFound": {
+      "en": {
+        "reason": "The memory topic file was not found.",
+        "action": "Refresh the memory file list."
+      },
+      "zh-CN": {
+        "reason": "找不到此记忆主题文件。",
+        "action": "请刷新记忆文件列表。"
+      }
+    },
+    "memoryDeleteUnsupported": {
+      "en": {
+        "reason": "This provider does not support deleting memory topics.",
+        "action": "Use a provider that supports topic deletion."
+      },
+      "zh-CN": {
+        "reason": "当前提供程序不支持删除记忆主题。",
+        "action": "请使用支持删除主题的提供程序。"
       }
     },
     "conflict": {

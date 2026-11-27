@@ -63,6 +63,7 @@ describe('tools-core manifest', () => {
       'shell',
       'todo',
       'memory_recall',
+      'memory_delete',
     ])
   })
 

@@ -19,7 +19,7 @@ export type AuditEntry = Readonly<{
   seq: number
   at: string
   path: string
-  action: 'commit' | 'refused'
+  action: 'commit' | 'refused' | 'delete'
   code?: string
   origin: 'agent' | 'host' | 'human'
   actor: string

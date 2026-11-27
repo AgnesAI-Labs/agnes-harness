@@ -31,6 +31,7 @@ export function memoryAdmission(
         result.authorization.epoch !== context.epoch ||
         !current?.consumption ||
         current.invalidation ||
+        (subject?.operation ?? 'write') !== (binding.operation ?? 'write') ||
         subject?.path !== binding.path ||
         subject.baseHash !== binding.baseHash ||
         subject.newHash !== binding.newHash ||

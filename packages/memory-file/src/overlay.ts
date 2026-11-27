@@ -48,7 +48,9 @@ function survivingFiles(
   const files: MemoryFile[] = []
   for (const path of paths) {
     let entry = pinned.get(path)
-    if (!entry && workspace?.withdrawn.has(path)) continue
+    // An explicitly deleted topic stays absent even if recreated before the next read.
+    // A previously observed truncation retains its pinned empty-file view.
+    if (workspace?.withdrawn.has(path) && entry?.bytes !== 0) continue
     const own = workspace?.own.get(path)
     const size = store.fileSize(path)
     if (size === undefined) {

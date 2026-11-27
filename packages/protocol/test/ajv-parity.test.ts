@@ -8729,7 +8729,31 @@ const AppSamples: Record<string, Sample> = {
     invalid: [null],
     note: 'Exporter settings and health',
   },
-  AdminMemoryParams: { valid: { cwd: '/tmp' }, invalid: [null], note: 'File memory boundary shape' },
+  AdminMemoryParams: {
+    valid: { cwd: '/tmp', deleteFile: { path: 'prefs.md', baseHash: 'e'.repeat(64) } },
+    invalid: [
+      null,
+      ...['settings', 'saved', 'file', 'content', 'baseHash'].map((field) => ({
+        cwd: '/tmp',
+        deleteFile: { path: 'prefs.md', baseHash: 'e'.repeat(64) },
+        [field]: (
+          {
+            settings: {},
+            saved: { action: 'list' },
+            file: 'prefs.md',
+            content: '',
+            baseHash: 'e'.repeat(64),
+          } as Record<string, unknown>
+        )[field],
+      })),
+      ...[
+        { path: '../prefs.md', baseHash: 'e'.repeat(64) },
+        { path: 'prefs.md', baseHash: 'invalid' },
+        { path: 'prefs.md', baseHash: 'e'.repeat(64), cascade: true },
+      ].map((deleteFile) => ({ cwd: '/tmp', deleteFile })),
+    ],
+    note: 'Deletion requires one flat topic and one exact revision, exclusively.',
+  },
   AdminMemoryResult: {
     valid: {
       workspaces: [],

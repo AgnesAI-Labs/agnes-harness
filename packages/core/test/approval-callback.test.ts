@@ -1,3 +1,4 @@
+import { sha256Hex } from '@agnes/core-common/request/hash'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { DecisionSnapshot, ToolMeta } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
@@ -75,55 +76,71 @@ const answer = (
   )
 
 describe('durable tool decisions', () => {
-  it('withdraws a memory candidate when its delivery signal is cancelled', async () => {
-    const controller = new AbortController()
-    const h = await openSession({
-      provider: fakeProvider([]),
-      seams: fakeSeams({
-        approval: {
-          ask: async (request) => {
-            controller.abort('stopped')
-            return { ticket: 'detached-memory', expiresAt: request.deadline }
+  it.each([undefined, 'write', 'delete'] as const)(
+    'withdraws a cancelled %s memory candidate bound to the reviewed operation',
+    async (operation) => {
+      const baseHash = 'a'.repeat(64),
+        newHash = 'b'.repeat(64)
+      const deleting = operation === 'delete'
+      const revision = `${deleting ? 'delete:' : ''}${baseHash}:${newHash}`
+      const controller = new AbortController()
+      const h = await openSession({
+        provider: fakeProvider([]),
+        seams: fakeSeams({
+          approval: {
+            ask: async (request) => {
+              expect(request).toMatchObject({
+                summary: deleting ? 'Delete memory topic' : 'Review memory file change',
+                scope: 'memory:' + revision,
+                bindingHash: deleting ? sha256Hex(revision) : newHash,
+                approval: { subjectRevision: sha256Hex(revision) },
+              })
+              controller.abort('stopped')
+              return { ticket: 'detached-memory', expiresAt: request.deadline }
+            },
           },
-        },
-      }),
-    })
-    try {
-      const tool: { name: string; meta: ToolMeta } = shellTool()
-      expect(
-        await approveMemoryFile(
-          h.session,
-          {
-            path: 'MEMORY.md',
-            baseHash: 'a'.repeat(64),
-            newHash: 'b'.repeat(64),
-            diff: 'synthetic change',
-            source: { sessionKey: h.session.key, turn: 1, toolUseId: 'write-memory' },
-          },
-          { name: tool.name, meta: tool.meta },
-          0,
-          controller.signal,
-        ),
-      ).toEqual({ status: 'unanswered', reason: 'stopped' })
-      const [decision] = await h.session.decisions.list()
-      expect(decision?.result).toMatchObject({ reason: 'stopped', code: 'stopped' })
-      expect(decision?.consumption).toBeNull()
-      if (!decision) throw new Error('missing memory decision')
-      await expect(
-        h.session.decideApproval({
-          command: {
-            handle: decision.handle,
-            revision: decision.revision,
-            commandId: 'late-memory',
-            response: { option: 'allowed-once', value: null },
-          },
-          context: { actor, category: 'human', authorize() {} },
         }),
-      ).rejects.toThrow('NOT_PENDING')
-    } finally {
-      await h.session.close()
-    }
-  })
+      })
+      try {
+        const tool: { name: string; meta: ToolMeta } = shellTool()
+        expect(
+          await approveMemoryFile(
+            h.session,
+            {
+              ...(operation ? { operation } : {}),
+              path: 'topic.md',
+              baseHash,
+              newHash,
+              diff: 'synthetic change',
+              source: { sessionKey: h.session.key, turn: 1, toolUseId: 'write-memory' },
+            },
+            { name: tool.name, meta: tool.meta },
+            0,
+            controller.signal,
+          ),
+        ).toEqual({ status: 'unanswered', reason: 'stopped' })
+        const [decision] = await h.session.decisions.list()
+        expect(decision?.result).toMatchObject({ reason: 'stopped', code: 'stopped' })
+        if (deleting) expect(decision?.request.spec.subject).toHaveProperty('operation', 'delete')
+        else expect(decision?.request.spec.subject).not.toHaveProperty('operation')
+        expect(decision?.consumption).toBeNull()
+        if (!decision) throw new Error('missing memory decision')
+        await expect(
+          h.session.decideApproval({
+            command: {
+              handle: decision.handle,
+              revision: decision.revision,
+              commandId: 'late-memory',
+              response: { option: 'allowed-once', value: null },
+            },
+            context: { actor, category: 'human', authorize() {} },
+          }),
+        ).rejects.toThrow('NOT_PENDING')
+      } finally {
+        await h.session.close()
+      }
+    },
+  )
   it('rejects a memory candidate without asking when the opening input turned memory writes off', async () => {
     let asked = 0
     const h = await openSession({

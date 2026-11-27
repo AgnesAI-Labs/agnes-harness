@@ -221,7 +221,13 @@ describe('edit on a memory file that hides paragraphs', () => {
     expect(text).toContain('edit 1 was applied')
     expect(text).toContain(`edit 2 failed (${code})`)
     expect(text).toContain('edit 3 was not attempted')
-    expect(text).toContain('managed paragraphs')
+    const recovery = {
+      MEMORY_APPROVAL_REJECTED: 'before retrying edits 2, 3',
+      MEMORY_HUMAN_EDITED: 'update it on the Memory page',
+      MEMORY_PARAGRAPH_EDITED: 'leave human changes intact',
+      MEMORY_PREFERENCE_CONFLICT: 'update it on the Memory page',
+    } as const
+    expect(text).toContain(recovery[code as keyof typeof recovery])
   })
 
   it.each([

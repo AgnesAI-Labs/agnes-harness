@@ -126,6 +126,9 @@ it('renders schema-owned rejection reasons and actions in both locales without t
     'BUDGET_EXCEEDED',
     'PLUGIN_TEST_REJECTED',
     'E_PACKAGE_BLOCKED',
+    'MEMORY_TOPIC_REFERENCED',
+    'MEMORY_NOT_FOUND',
+    'MEMORY_DELETE_UNSUPPORTED',
   ]) {
     const error = { data: { code, publicReason: 'private reason', userAction: 'private action' } }
     const en = appServerErrorMessage(error, 'en')

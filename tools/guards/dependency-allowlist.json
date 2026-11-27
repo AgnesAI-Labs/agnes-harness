@@ -360,7 +360,12 @@
     "@agnes/error-sanitization",
     "@agnes/system-node"
   ],
-  "@agnes/memory-file": ["@agnes/extension-api", "@agnes/lexical-search", "@agnes/system-node"],
+  "@agnes/memory-file": [
+    "@agnes/extension-api",
+    "@agnes/lexical-search",
+    "@agnes/protocol",
+    "@agnes/system-node"
+  ],
   "@agnes/deliverables-ui": ["@agnes/web-client", "@agnes/web-ui"],
   "@agnes/document-reader": [],
   "@agnes/jev-loop": [],

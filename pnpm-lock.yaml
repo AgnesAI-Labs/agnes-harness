@@ -1331,13 +1331,12 @@ importers:
       '@agnes/lexical-search':
         specifier: workspace:*
         version: link:../lexical-search
-      '@agnes/system-node':
-        specifier: workspace:*
-        version: link:../system-node
-    devDependencies:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@agnes/system-node':
+        specifier: workspace:*
+        version: link:../system-node
 
   packages/model-adapters:
     dependencies:

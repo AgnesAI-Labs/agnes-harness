@@ -8,8 +8,17 @@ type Binding = Readonly<{ topic: string; topicHash: string }>
 type LinkState = Readonly<{ status: 'missing' | 'valid' | 'corrupt'; bindings: Map<string, Binding> }>
 const filename = 'links.json'
 const digest = /^[0-9a-f]{64}$/u
-const link =
-  /\]\(([^)\s]+\.md)(?:#[^)\s]*)?(?:\s+"[^"]*")?\)|\[\[([^\]#]+\.md)(?:#[^\]]*)?\]\]|^\[[^\]]+\]:\s*(\S+\.md)(?:#\S*)?/gu
+export function* topicLinks(content: string) {
+  const links =
+    /\]\(([^)\s]+\.md)(?:#[^)\s]*)?(?:\s+"[^"]*")?\)|\[\[([^\]#]+\.md)(?:#[^\]]*)?\]\]|^\[[^\]]+\]:\s*(\S+\.md)(?:#\S*)?/gimu
+  for (const match of content.matchAll(links)) {
+    yield {
+      target: match[1] ?? match[2] ?? match[3]!,
+      start: match.index,
+      end: match.index + match[0].length,
+    }
+  }
+}
 
 function readLinkState(meta: MetaStore): LinkState {
   const data = meta.readJson<{ version?: unknown; bindings?: unknown }>(filename)
@@ -50,7 +59,7 @@ function* summaries(content: string) {
   for (const line of content.matchAll(/[^\n]*\n|[^\n]+$/gu)) {
     const text = line[0].replace(/\r?\n$/u, '')
     const topics = new Set<string>()
-    for (const match of text.matchAll(link)) topics.add(match[1] ?? match[2] ?? match[3]!)
+    for (const { target } of topicLinks(text)) topics.add(target)
     if (topics.size) {
       const key = hash(text.trim().toLowerCase().replace(/\s+/gu, ' '))
       yield { key, text, topics, start: line.index, end: line.index + line[0].length }

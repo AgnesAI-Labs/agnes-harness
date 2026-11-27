@@ -12,10 +12,8 @@
   "dependencies": {
     "@agnes/extension-api": "workspace:*",
     "@agnes/lexical-search": "workspace:*",
+    "@agnes/protocol": "workspace:*",
     "@agnes/system-node": "workspace:*"
-  },
-  "devDependencies": {
-    "@agnes/protocol": "workspace:*"
   },
   "license": "Apache-2.0",
   "agnes": {

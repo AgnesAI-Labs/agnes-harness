@@ -24,7 +24,8 @@
               "edit",
               "shell",
               "todo",
-              "memory_recall"
+              "memory_recall",
+              "memory_delete"
             ]
           },
           "hooks": [

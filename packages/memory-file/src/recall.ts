@@ -62,6 +62,7 @@ function recall(
 }
 
 export type RetrievalHandle = Readonly<{
+  refreshIndex(ctx: ViewContext): void
   rebuildIndex(
     meta: MetaStore,
     files: readonly MemoryFile[],
@@ -114,6 +115,9 @@ export function registerRetrieval(pipeline: MemoryPipeline): RetrievalHandle {
     indexes.clear()
   })
   const handle: RetrievalHandle = Object.freeze({
+    refreshIndex(ctx) {
+      indexFor(ctx.meta).committed(liveDocuments(pipeline, ctx, ctx.meta.store.configuration()))
+    },
     rebuildIndex(meta, files, views, settings) {
       const docs = readDocuments(files, views, settings)
       const index = indexFor(meta)

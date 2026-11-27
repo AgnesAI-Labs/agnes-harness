@@ -460,6 +460,30 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
         clock,
       })
     },
+    async deleteFile(path, baseHash, options) {
+      const source = { sessionKey: input.sessionKey, turn: 0 }
+      await store.deleteFile(
+        path,
+        baseHash,
+        source,
+        false,
+        commitHooks(
+          pipeline,
+          {
+            origin: 'human',
+            actor: options?.actor?.trim() || 'human',
+            path,
+            via: 'edit',
+            layer: 'workspace',
+            source,
+          },
+          (now) => viewCtx(now, store.configuration(), true),
+          clock,
+          undefined,
+          'delete',
+        ),
+      )
+    },
     async editFile(path, content, baseHash, options) {
       const leaf = name(path)
       const actor = options?.actor?.trim() || 'human'

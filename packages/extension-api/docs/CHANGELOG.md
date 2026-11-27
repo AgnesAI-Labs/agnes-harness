@@ -2,6 +2,10 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.25.0
+
+Memory sessions may expose owner topic deletion by revision. Agent file ports and tool contexts may expose memory-only removal, with deletion proposals explicitly bound to the operation.
+
 ## 5.24.0
 
 - `MemoryParagraphList.content?` gives callers the full stored index from the same read as the listed paragraphs and hash. The Host uses it to check visibility across marker boundaries in both memory layers.

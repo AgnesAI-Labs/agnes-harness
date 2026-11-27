@@ -1,35 +1,8 @@
+import { annotations } from '@agnes/protocol/memory-expiry'
 import type { NextExpiryProvider, ViewFilter } from './pipeline.js'
 import type { HideRange } from './view.js'
 
-const annotation = /^<!--\s*expires_at:/u
-const iso = /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(Z|[+-]\d{2}:?\d{2})?)?$/u
-
-function expiryTime(value: string): number {
-  const match = iso.exec(value)
-  if (!match) return NaN
-  const [, date, time, zone] = match
-  // Date.parse normalizes February 30 and other impossible dates. Reject those too.
-  const midnight = new Date(`${date}T00:00:00Z`)
-  if (!Number.isFinite(midnight.getTime()) || !midnight.toISOString().startsWith(`${date}T`)) return NaN
-  return time ? Date.parse(`${date}T${time}${zone ?? 'Z'}`) : midnight.getTime()
-}
-
-export function* annotations(content: string) {
-  let pending: { start: number; expiresAt: number }[] = []
-  for (const line of content.matchAll(/[^\n]*\n|[^\n]+$/gu)) {
-    const text = line[0].trim()
-    if (!text) {
-      for (const item of pending) yield { ...item, end: line.index }
-      pending = []
-      continue
-    }
-    const match = annotation.exec(text)
-    if (match && text.indexOf('-->') === text.length - 3) {
-      pending.push({ start: line.index, expiresAt: expiryTime(text.slice(match[0].length, -3).trim()) })
-    }
-  }
-  for (const item of pending) yield { ...item, end: content.length }
-}
+export { annotations }
 
 export const expiryViewFilter: ViewFilter = (entry, ctx) => {
   const ranges: HideRange[] = []

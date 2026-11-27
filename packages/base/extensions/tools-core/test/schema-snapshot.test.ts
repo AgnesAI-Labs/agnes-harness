@@ -26,7 +26,7 @@ describe('tool schema snapshots', () => {
     // A snapshot file for a tool that no longer exists would keep passing on its own, and a tool
     // with no snapshot file would simply not be checked.
     expect(TOOLS_CORE.map((t) => t.name).sort()).toEqual(
-      ['read', 'write', 'edit', 'shell', 'todo', 'memory_recall'].sort(),
+      ['read', 'write', 'edit', 'shell', 'todo', 'memory_recall', 'memory_delete'].sort(),
     )
   })
 

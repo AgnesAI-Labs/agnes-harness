@@ -200,6 +200,36 @@ const PUBLIC_ERROR_COPY = {
       "action": "请检查配置和兼容性。"
     }
   },
+  "memoryTopicReferenced": {
+    "en": {
+      "reason": "MEMORY.md still links to this topic.",
+      "action": "Remove its links from the index first."
+    },
+    "zh-CN": {
+      "reason": "MEMORY.md 仍引用此主题。",
+      "action": "请先从索引中移除相关链接。"
+    }
+  },
+  "memoryNotFound": {
+    "en": {
+      "reason": "The memory topic file was not found.",
+      "action": "Refresh the memory file list."
+    },
+    "zh-CN": {
+      "reason": "找不到此记忆主题文件。",
+      "action": "请刷新记忆文件列表。"
+    }
+  },
+  "memoryDeleteUnsupported": {
+    "en": {
+      "reason": "This provider does not support deleting memory topics.",
+      "action": "Use a provider that supports topic deletion."
+    },
+    "zh-CN": {
+      "reason": "当前提供程序不支持删除记忆主题。",
+      "action": "请使用支持删除主题的提供程序。"
+    }
+  },
   "conflict": {
     "en": {
       "reason": "The resource changed.",
@@ -605,6 +635,9 @@ export const PUBLIC_ERROR_CONTRACT = {
   "MEMORY_INVALID_METADATA": { rpc: "INVALID_PARAMS", messageKey: "appServer.errors.invalidParams", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["invalidParams"], reasons: {  } },
   "MEMORY_INVALID_REQUEST": { rpc: "INVALID_PARAMS", messageKey: "appServer.errors.invalidParams", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["invalidParams"], reasons: {  } },
   "MEMORY_INVALID_SETTINGS": { rpc: "INVALID_PARAMS", messageKey: "appServer.errors.invalidParams", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["invalidParams"], reasons: {  } },
+  "MEMORY_TOPIC_REFERENCED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["memoryTopicReferenced"], reasons: {  } },
+  "MEMORY_NOT_FOUND": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["memoryNotFound"], reasons: {  } },
+  "MEMORY_DELETE_UNSUPPORTED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["memoryDeleteUnsupported"], reasons: {  } },
   "MEMORY_MISSING_TOPIC": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["rejected"], reasons: {  } },
   "MEMORY_POLICY_CHANGED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.conflict", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["conflict"], reasons: {  } },
   "MEMORY_PROVIDER_UNAVAILABLE": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },

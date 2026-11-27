@@ -1,0 +1,14 @@
+{
+  "additionalProperties": false,
+  "type": "object",
+  "properties": {
+    "path": {
+      "minLength": 1,
+      "maxLength": 4096,
+      "type": "string"
+    }
+  },
+  "required": [
+    "path"
+  ]
+}

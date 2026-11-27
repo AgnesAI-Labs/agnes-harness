@@ -5,6 +5,7 @@ const titles: Record<string, readonly [string, string]> = {
   shell: ['Run command', '运行命令'],
   bash: ['Run command', '运行命令'],
   read: ['Read', '读取'],
+  memory_delete: ['Delete memory topic', '删除记忆主题'],
   memory_recall: ['Search memory', '搜索记忆'],
   write: ['Write', '写入'],
   edit: ['Edit', '编辑'],

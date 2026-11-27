@@ -45,6 +45,10 @@ const MEMORY_PRE_EFFECT_REFUSALS: Readonly<Record<string, string>> = {
   MEMORY_POLICY_CHANGED: 'Memory policy changed before the write',
   MEMORY_CONSOLIDATION_REQUIRED: 'The write exceeds the memory limits',
   MEMORY_SECRET_LIKE_CONTENT: 'The proposed content may contain a secret',
+  MEMORY_TOPIC_REFERENCED:
+    'This memory topic is still referenced in MEMORY.md (possibly in a hidden or saved paragraph). Remove the link first, or ask the user to remove it on the Memory page.',
+  MEMORY_NOT_FOUND: 'The memory topic file was not found.',
+  MEMORY_DELETE_UNSUPPORTED: 'Memory topic deletion is not supported by this provider.',
   MEMORY_MISSING_TOPIC: 'A referenced memory topic is missing',
   MEMORY_SCOPE_DENIED: 'The path is outside the writable memory scope',
   MEMORY_INVALID_SETTINGS: 'Memory settings are invalid',
@@ -638,6 +642,7 @@ export function buildToolContext(
           : run(),
       refuseMemory,
     )
+  const remove = files.remove?.bind(files)
   const replaceExact = files.replaceExact?.bind(files)
   return effects.bind({
     ...(call.sideCall ? { sideCall: effects.guard(call.sideCall, ['invoke']) } : {}),
@@ -660,6 +665,7 @@ export function buildToolContext(
       list: (path) => files.list(path),
       stat: (path) => files.stat(path),
       ...(files.revision ? { revision: (path: string) => files.revision!(path) } : {}),
+      ...(remove ? { remove: (path: string) => write(() => remove(path)) } : {}),
       ...(replaceExact
         ? {
             replaceExact: (path: string, oldText: string, newText: string) =>
