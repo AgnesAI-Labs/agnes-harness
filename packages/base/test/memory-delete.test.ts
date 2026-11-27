@@ -4,7 +4,7 @@ import { normalizeWorkspacePath } from '../extensions/tools-core/src/paths.js'
 import { memoryDeleteTool } from '../extensions/tools-core/src/tools/memory-delete.js'
 import { fakeToolContext } from '../testkit/tool-context.js'
 
-it('forgets the observed revision after successful removal', async () => {
+it('preserves the workspace file observation when deleting a same-named memory topic', async () => {
   const ctx = fakeToolContext()
   const path = 'prefs.md'
   const abs = normalizeWorkspacePath(path, ctx.cwd).abs
@@ -12,7 +12,7 @@ it('forgets the observed revision after successful removal', async () => {
   const remove = vi.fn(async () => {})
   const result = await memoryDeleteTool.execute({ path }, { ...ctx, fs: { ...ctx.fs, remove } })
   expect(remove).toHaveBeenCalledWith(path)
-  expect(observedVersion(ctx.session.key, abs)).toBeUndefined()
+  expect(observedVersion(ctx.session.key, abs)).toBe('before')
   expect(result.content[0]).toMatchObject({ text: expect.stringContaining('immediately hidden') })
 })
 

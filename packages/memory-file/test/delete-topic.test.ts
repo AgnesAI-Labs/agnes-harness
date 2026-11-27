@@ -1,17 +1,20 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { existsSync, writeFileSync } from 'node:fs'
+import { link, mkdir, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { MemoryApprovalResult, MemoryFilePort, MemoryProposal } from '@agnes/extension-api'
 import { afterEach, expect, it, vi } from 'vitest'
 import { hash } from '../src/content.js'
+import { unlinkTopic } from '../src/delete-topic.js'
 import {
+  fileMemoryRoots,
   inspectMemoryConsistency,
   isMemoryPreEffectRefusal,
   openMemory,
   rebuildMemoryIndex,
 } from '../src/index.js'
-import { MetaStore } from '../src/meta.js'
+import { MemoryStore } from '../src/store.js'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -44,7 +47,8 @@ async function setup() {
   const path = join(session.root, 'prefs.md')
   const index = join(session.root, 'MEMORY.md')
   const json = async (name: string) => JSON.parse(await readFile(join(session.root, name), 'utf8'))
-  return { session, path, index, source, port, json }
+  const { protectedRoot } = fileMemoryRoots(home, home)
+  return { session, path, index, source, port, json, store: new MemoryStore(protectedRoot, session.root) }
 }
 
 it('deletes an empty file with exact CAS, records its owner and preserves other acknowledgements', async () => {
@@ -81,16 +85,30 @@ it('deletes an empty file with exact CAS, records its owner and preserves other 
 it('checks inline, wiki and reference links in the raw index, including hidden and managed text', async () => {
   const { session, index } = await setup()
   const before = await session.editFile('prefs.md', 'body', hash(''))
-  for (const link of ['[link](PREFS.MD#x "title")', '[[pREFs.md#section]]', '[doc]: Prefs.md#title']) {
+  const links = [
+    '[link](prefs.md)',
+    '[link](./prefs.md#x "title")',
+    '[link](<prefs.md>)',
+    "[link](<./prefs.md#x> 'title')",
+    '[[prefs.md]]',
+    '[[./prefs.md#section|summary]]',
+    '[[./prefs.md|alias]]',
+    '[doc]: prefs.md',
+    ' [doc]: ./prefs.md',
+    '  [doc]: <prefs.md>',
+    '   [doc]: <./prefs.md#title>',
+  ]
+  for (const link of [...links, '\uFEFF   [doc]: <./prefs.md>']) {
+    await session.editFile('MEMORY.md', link, (await session.readFile('MEMORY.md')).hash)
     const raw =
       '<!-- refinement:r1234567890 -->\n<!-- expires_at: 2001-01-01 -->\n' +
       link +
       '\n<!-- /refinement:r1234567890 -->'
-    await writeFile(index, raw)
+    await writeFile(index, link.startsWith('\uFEFF') ? link : raw)
     await expect(session.deleteFile!('prefs.md', before.hash)).rejects.toMatchObject({
       code: 'MEMORY_TOPIC_REFERENCED',
     })
-    expect(await readFile(index, 'utf8')).toBe(raw)
+    expect(await readFile(index, 'utf8')).toContain(link)
   }
 })
 
@@ -105,28 +123,124 @@ it('permits owner deletion and index reconciliation while the store is over the 
   expect((await readdir(session.root)).filter((n) => n.endsWith('.md'))).toHaveLength(129)
 })
 
-it('restores a raced replacement when the tombstone hash differs, with prior attribution already removed', async () => {
-  const { session, path, port } = await setup()
+it('uses file identity for differently cased index links', async () => {
+  const { session, path, index } = await setup()
+  await writeFile(path, 'first')
+  const alternate = join(session.root, 'Prefs.md')
+  await writeFile(index, '[[Prefs.md]]')
+  if (existsSync(alternate)) {
+    await expect(session.deleteFile!('prefs.md', hash('first'))).rejects.toMatchObject({
+      code: 'MEMORY_TOPIC_REFERENCED',
+    })
+  } else {
+    await writeFile(alternate, 'distinct')
+    await session.deleteFile!('prefs.md', hash('first'))
+    expect(await readFile(alternate, 'utf8')).toBe('distinct')
+  }
+})
+
+it('restores a raced replacement on mismatch without changing provenance', async () => {
+  const { session, path, port, json } = await setup()
   await port().write(path, 'original')
-  const write = MetaStore.prototype.writeJson
-  vi.spyOn(MetaStore.prototype, 'writeJson').mockImplementation(function (
-    this: MetaStore,
-    filename,
-    value,
+  const prior = await json('meta/provenance.json')
+  const atomic = MemoryStore.prototype.atomic
+  vi.spyOn(MemoryStore.prototype, 'atomic').mockImplementation(function (
+    this: MemoryStore,
+    target,
+    content,
     verify,
   ) {
-    write.call(this, filename, value, verify)
-    if (filename === 'provenance.json') {
-      expect(JSON.parse(readFileSync(this.pathOf(filename), 'utf8')).files).not.toHaveProperty('prefs.md')
-      writeFileSync(path, 'replacement')
-    }
+    atomic.call(this, target, content, verify)
+    if (target.endsWith('delete-intent.json')) writeFileSync(path, 'replacement')
   })
   await expect(session.deleteFile!('prefs.md', hash('original'))).rejects.toMatchObject({
     code: 'MEMORY_CONFLICT',
   })
   expect(await readFile(path, 'utf8')).toBe('replacement')
+  expect(await json('meta/provenance.json')).toEqual(prior)
   expect((await readdir(session.root)).filter((n) => n.endsWith('.del.tmp'))).toEqual([])
   await expect(port(2).remove!('prefs.md')).rejects.toMatchObject({ code: 'MEMORY_HUMAN_EDITED' })
+})
+
+it.each(['missing', 'reclaimed', 'restoring'])(
+  'recovers an interrupted move on the next read (%s)',
+  async (state) => {
+    const reclaimed = state === 'reclaimed'
+    const { session, path } = await setup()
+    const id = randomUUID()
+    const tombstone = `${path}.${id}.del.tmp`
+    const intent = join(session.root, 'delete-intent.json')
+    await writeFile(path, 'original')
+    await writeFile(intent, JSON.stringify({ path: 'prefs.md', id }))
+    await rename(path, tombstone)
+    if (reclaimed) await writeFile(path, 'reclaimed')
+    if (state === 'restoring') await link(tombstone, path)
+    expect((await session.readFile('prefs.md')).content).toBe(reclaimed ? 'reclaimed' : 'original')
+    expect(existsSync(intent)).toBe(false)
+    if (reclaimed) expect(await readFile(tombstone, 'utf8')).toBe('original')
+    else expect(existsSync(tombstone)).toBe(false)
+  },
+)
+
+it('keeps the same-turn read available while an approved removal rolls back', async () => {
+  const { session, path, port } = await setup()
+  const reader = port()
+  await reader.write(path, 'original')
+  await session.configure({ mode: 'ask' })
+  const cancellation = new Error('approval withdrawn')
+  let during: Promise<Uint8Array> | undefined
+  const deletePort = port(1, async () => ({
+    status: 'approved',
+    admission: {
+      async verify() {},
+      assertActive() {
+        if (!existsSync(path)) {
+          during = reader.read(path)
+          throw cancellation
+        }
+      },
+    },
+  }))
+  await expect(deletePort.remove!(path)).rejects.toBe(cancellation)
+  expect((await during)?.toString()).toBe('original')
+  expect(await readFile(path, 'utf8')).toBe('original')
+  expect((await reader.read(path)).toString()).toBe('original')
+})
+
+it('retries a busy tombstone verification before committing', async () => {
+  const { path, store } = await setup()
+  await writeFile(path, 'original')
+  let busy = true
+  await store.locked(() =>
+    unlinkTopic(
+      store,
+      'prefs.md',
+      () => {
+        if (busy) {
+          busy = false
+          throw Object.assign(new Error('busy'), { code: 'EBUSY' })
+        }
+        return true
+      },
+      () => {},
+      () => {},
+    ),
+  )
+  expect(existsSync(path)).toBe(false)
+})
+
+it('rejects a non-Markdown symlink to an agent-authored topic', async ({ skip }) => {
+  const { session, path, port } = await setup()
+  await port().write(path, 'original')
+  const alias = join(session.root, 'alias')
+  try {
+    await symlink(path, alias)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EPERM') return skip()
+    throw error
+  }
+  await expect(port().remove!(alias)).rejects.toMatchObject({ code: 'MEMORY_SCOPE_DENIED' })
+  expect(await readFile(path, 'utf8')).toBe('original')
 })
 
 it.each(['flat', 'absolute'])(

@@ -13,7 +13,7 @@ export type TurnReadState = Readonly<{
   baseRanges: ReadonlyMap<string, readonly HideRange[]>
   readViews: ReadonlyMap<string, MemoryView>
   agent: ReadonlyMap<string, MemoryFile>
-  invalidIndexLimits?: MemorySettings
+  invalidIndexLimits?: MemorySettings | undefined
   revision: string
   validityRev: string | null
   userValidityRev: string | null
@@ -51,6 +51,10 @@ function survivingFiles(
     // An explicitly deleted topic stays absent even if recreated before the next read.
     // A previously observed truncation retains its pinned empty-file view.
     if (workspace?.withdrawn.has(path) && entry?.bytes !== 0) continue
+    if (store.provisionallyDeleted(path)) {
+      if (entry) files.push(entry)
+      continue
+    }
     const own = workspace?.own.get(path)
     const size = store.fileSize(path)
     if (size === undefined) {
@@ -145,13 +149,16 @@ export function resolveReadOverlay(turn: TurnReadState, live: LiveOverlayInputs)
     validity: live.validity,
     meta: live.meta,
   }
+  const ownIndex = turn.own.get('MEMORY.md')
+  const capturedLimits =
+    turn.invalidIndexLimits && !(ownIndex && files.includes(ownIndex)) ? turn.invalidIndexLimits : undefined
   const ws = rebuildLayer(
     turn.baseRanges,
     turn.readViews,
     wsCtx,
     live.pipeline,
     new Map(turn.files.map((entry) => [entry.path, entry])),
-    turn.invalidIndexLimits && !turn.own.has('MEMORY.md') ? 'MEMORY.md' : undefined,
+    capturedLimits ? 'MEMORY.md' : undefined,
   )
   const userCtx: ViewContext = {
     ...wsCtx,
@@ -176,6 +183,7 @@ export function resolveReadOverlay(turn: TurnReadState, live: LiveOverlayInputs)
 
   return {
     ...turn,
+    invalidIndexLimits: capturedLimits,
     files,
     baseRanges: ws.ranges,
     readViews: ws.views,

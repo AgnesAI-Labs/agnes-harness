@@ -572,13 +572,14 @@ export async function inspectMemoryConsistency(
     }
   }
   const index = state.files.find((entry) => entry.path === 'MEMORY.md')
+  const injectedIndex =
+    snap.own.size && index
+      ? buildView(index, state.baseRanges.get(index.path) ?? [], 'note', formatLifecycleOmission).content
+      : snap.noteViewContent
   const res = await inspectConsistency({
     pipeline,
     context: ctx,
-    injectedIndex:
-      snap.own.size && index
-        ? buildView(index, state.baseRanges.get(index.path) ?? [], 'note', formatLifecycleOmission).content
-        : snap.noteViewContent,
+    injectedIndex,
     readViews: state.readViews,
     ...(retrieval
       ? {
@@ -597,8 +598,8 @@ export async function inspectMemoryConsistency(
     safeChunks(entry, buildIndexView(entry, pipeline.collectHideRanges(entry, ctx))).map(keyOf),
   )
   const indexIds = retrieval ? retrieval.inspectIndexedChunks(meta).map(keyOf) : []
-  const noteIds = snap.noteViewContent
-    ? snap.noteViewContent
+  const noteIds = injectedIndex
+    ? injectedIndex
         .split('\n')
         .filter(Boolean)
         .map((line) => hash(line))

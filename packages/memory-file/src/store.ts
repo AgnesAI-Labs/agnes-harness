@@ -6,6 +6,7 @@ import {
   existsSync,
   fstatSync,
   fsyncSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readdirSync,
@@ -33,13 +34,21 @@ import {
   validateContent,
   validateRemovalContent,
 } from './content.js'
-import { syncTopicDirectory, unlinkTopic } from './delete-topic.js'
+import {
+  finishTopicDeletion,
+  hasDeleteIntent,
+  provisionalTopic,
+  recoverTopic,
+  retryBusy,
+  unlinkTopic,
+} from './delete-topic.js'
 import { MetaStore } from './meta.js'
 import { applyParagraphRemovalsWithSlices, verifiedSingleParagraphRemoval } from './paragraphs.js'
 import { isMemoryName, missing, name, safe } from './paths.js'
 import { forgetProvenance } from './provenance.js'
-import { topicLinks } from './topic-links.js'
+import { resolveTopic, topicLinks } from './topic-links.js'
 
+const heldLocks = new Set<string>()
 const MAX_FILE_BYTES = 1024 * 1024
 export const MAX_FILES = 128
 export class FileCountLimit extends MemoryFault {
@@ -62,16 +71,19 @@ function removalSlices(
 }
 
 function validateTopicLinks(
+  root: string,
   before: MemoryFile,
   candidate: MemoryFile,
   files: readonly MemoryFile[],
   slices?: readonly PreservedSlice[],
 ) {
   const prior = slices ? [...topicLinks(before.content)] : []
+  const listed = new Map(files.map((entry) => [entry.path, entry]))
   for (const link of topicLinks(candidate.content)) {
     if (slices && isPreExistingMatch(link.start, link.end, slices, prior)) continue
-    const target = name(link.target)
-    if (target !== candidate.path && files.some((entry) => entry.path === target)) continue
+    const target = resolveTopic(root, link.target, listed)
+    if (target && target.path !== candidate.path) continue
+    name(link.target.toLowerCase())
     throw fault('MEMORY_MISSING_TOPIC')
   }
 }
@@ -83,11 +95,32 @@ export class MemoryStore {
     private readonly layer: 'workspace' | 'user' = 'workspace',
   ) {}
 
+  provisionallyDeleted(path: string): boolean {
+    return provisionalTopic(this.root) === path
+  }
+  // Reads are synchronous. Take the same SQLite lock before replaying an abandoned intent.
+  private recoverBeforeRead(): void {
+    if (heldLocks.has(this.root) || !hasDeleteIntent(this.root)) return
+    const db = this.lockDatabase()
+    try {
+      try {
+        db.exec('BEGIN EXCLUSIVE')
+      } catch (error) {
+        if ([5, 6].includes((error as { errcode?: number }).errcode ?? 0)) throw fault('MEMORY_BUSY')
+        throw error
+      }
+      recoverTopic(this)
+      db.exec('COMMIT')
+    } finally {
+      db.close()
+    }
+  }
   ensure(): void {
     safe(this.protectedRoot, this.root)
     mkdirSync(this.root, { recursive: true, mode: 0o700 })
   }
   private readText(path: string, limit: number, limitCode: string, requireUtf8 = false): string | undefined {
+    this.recoverBeforeRead()
     const absolute = join(this.root, path)
     safe(this.protectedRoot, absolute)
     let fd: number | undefined
@@ -120,6 +153,7 @@ export class MemoryStore {
   }
   fileSize(path: string): number | undefined {
     name(path)
+    this.recoverBeforeRead()
     const absolute = join(this.root, path)
     safe(this.protectedRoot, absolute)
     try {
@@ -131,6 +165,7 @@ export class MemoryStore {
   }
   files(purpose: 'view' | 'commit' = 'view', allowOverCount = false): MemoryFile[] {
     safe(this.protectedRoot, this.root)
+    this.recoverBeforeRead()
     if (!existsSync(this.root)) return []
     const userView = this.layer === 'user' && purpose === 'view'
     const paths = readdirSync(this.root, { withFileTypes: true })
@@ -261,6 +296,13 @@ export class MemoryStore {
       rmSync(temporary, { force: true })
     }
   }
+  private lockDatabase(): DatabaseSync {
+    const path = join(this.root, 'commit.sqlite')
+    safe(this.protectedRoot, path)
+    const db = new DatabaseSync(path)
+    chmodSync(path, 0o600)
+    return db
+  }
   /** SQLite owns the lock across processes and releases it on crash; no stale PID markers. */
   async locked<T>(
     action: () => T | Promise<T>,
@@ -269,10 +311,7 @@ export class MemoryStore {
   ): Promise<T> {
     signal?.throwIfAborted()
     this.ensure()
-    const path = join(this.root, 'commit.sqlite')
-    safe(this.protectedRoot, path)
-    const db = new DatabaseSync(path)
-    chmodSync(path, 0o600)
+    const db = this.lockDatabase()
     const deadline = performance.now() + 5000
     try {
       db.exec('PRAGMA busy_timeout=0')
@@ -293,6 +332,8 @@ export class MemoryStore {
         }
       }
       try {
+        heldLocks.add(this.root)
+        if (hasDeleteIntent(this.root)) await retryBusy(() => recoverTopic(this))
         const value = action()
         const result = value instanceof Promise ? await value : value
         db.exec('COMMIT')
@@ -300,6 +341,8 @@ export class MemoryStore {
       } catch (error) {
         db.exec('ROLLBACK')
         throw error
+      } finally {
+        heldLocks.delete(this.root)
       }
     } finally {
       db.close()
@@ -340,14 +383,17 @@ export class MemoryStore {
           if (agentMode && config.mode === 'off') throw fault('MEMORY_DISABLED')
           if (agentMode && config.mode !== agentMode) throw fault('MEMORY_POLICY_CHANGED')
           if (this.fileSize(path) === undefined) throw fault('MEMORY_NOT_FOUND')
+          const identity = lstatSync(absolute, { bigint: true })
           const before = this.read(path, true)
           if (before.hash !== baseHash) throw fault('MEMORY_CONFLICT')
           const all = this.files('commit', true)
           // Bind metadata to the actual on-disk spelling on case-insensitive filesystems.
           if (!all.some((entry) => entry.path === path)) throw fault('MEMORY_CONFLICT')
+          const listed = new Map(all.map((entry) => [entry.path, entry]))
           for (const link of topicLinks(this.read('MEMORY.md').content))
-            if (link.target.toLowerCase() === path.toLowerCase()) throw fault('MEMORY_TOPIC_REFERENCED')
-          return { all, after: prepare(before, file(path, '')) }
+            if (resolveTopic(this.root, link.target, listed)?.path === path)
+              throw fault('MEMORY_TOPIC_REFERENCED')
+          return { all, identity, after: prepare(before, file(path, '')) }
         }
         let checked: ReturnType<typeof validate>
         try {
@@ -357,18 +403,20 @@ export class MemoryStore {
           throw error
         }
         assertActive()
-        forgetProvenance(new MetaStore(this), path)
         await unlinkTopic(
-          absolute,
-          (tombstone) => {
+          this,
+          path,
+          (tombstone, identity) => {
+            if (identity.dev !== checked.identity.dev || identity.ino !== checked.identity.ino) return false
             const content = this.readText(basename(tombstone), MAX_FILE_BYTES, 'MEMORY_CONFLICT', true)
             return content !== undefined && hash(content) === baseHash
           },
           assertActive,
+          () => forgetProvenance(new MetaStore(this), path),
         )
         let failed = false
         for (const publish of [
-          () => syncTopicDirectory(absolute),
+          () => finishTopicDeletion(this.root),
           () => this.atomic(join(this.root, 'writer.json'), JSON.stringify(source)),
           () => {
             const acknowledged = { ...(this.acknowledged() ?? hashes(checked.all)) }
@@ -433,7 +481,7 @@ export class MemoryStore {
           .reduce((n, entry) => n + entry.bytes, candidate.bytes)
         if (bytes > config.totalMaxBytes) throw fault('MEMORY_CONSOLIDATION_REQUIRED')
       }
-      if (candidate.path === 'MEMORY.md') validateTopicLinks(current, candidate, all, slices)
+      if (candidate.path === 'MEMORY.md') validateTopicLinks(this.root, current, candidate, all, slices)
       return { current, all, removal: !!slices }
     }
     const commit = () => {

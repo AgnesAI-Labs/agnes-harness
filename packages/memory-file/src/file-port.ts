@@ -1,4 +1,4 @@
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import type {
   MemoryApprovalResult,
   MemoryEffectAdmission,
@@ -14,7 +14,7 @@ import { diff, fault, file, hash, MemoryFault, validateContent } from './content
 import type { MetaStore } from './meta.js'
 import type { TurnReadState } from './overlay.js'
 import { markerLines, markerSet, paragraphTexts, parseParagraphs } from './paragraphs.js'
-import { canonical, inside, isMemoryName, type roots } from './paths.js'
+import { canonical, inside, isMemoryName, type roots, safe } from './paths.js'
 import type { CommitIntent, MemoryClock, MemoryPipeline, ViewContext } from './pipeline.js'
 import { memoryBlocks } from './provenance.js'
 import { liveDocuments } from './recall.js'
@@ -218,8 +218,10 @@ export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<T
     async remove(path) {
       let leaf: string
       try {
-        const resolved = target(isMemoryName(path) ? join(paths.root, path) : path)
-        if (resolved === undefined || resolved.toLowerCase() === 'memory.md')
+        const absolute = isMemoryName(path) ? join(paths.root, path) : resolve(workspaceRoot, path)
+        safe(paths.protectedRoot, absolute)
+        const resolved = target(absolute)
+        if (resolved !== basename(absolute) || resolved.toLowerCase() === 'memory.md')
           throw fault('MEMORY_SCOPE_DENIED')
         leaf = resolved
       } catch (error) {

@@ -1,7 +1,5 @@
 import { defineTool } from '@agnes/plugin-runtime'
 import { failureCode } from '../guards/feedback.js'
-import { observe } from '../guards/observed.js'
-import { normalizeWorkspacePath } from '../paths.js'
 import { isAttestedPreEffect } from './hidden-paragraphs.js'
 import { MemoryDeleteParams } from './schemas.js'
 
@@ -46,7 +44,6 @@ export const memoryDeleteTool = defineTool({
         ],
       }
     }
-    observe(ctx.session.key, normalizeWorkspacePath(args.path, ctx.cwd).abs, undefined)
     return {
       content: [
         {

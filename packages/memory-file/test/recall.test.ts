@@ -64,6 +64,26 @@ function fixture(validity?: MemoryValidityView, userValidity = validity, clock =
 }
 
 describe('file memory recall', () => {
+  it('promotes a valid owned index after the captured limit is raised', async () => {
+    const f = fixture()
+    await f.session.configure({ mode: 'auto' })
+    const path = join(f.root, 'MEMORY.md')
+    await f.port(0).write(path, 'older oversized index')
+    await f.session.configure({ indexMaxBytes: 5 })
+    const p = f.port(1)
+    await expect(p.read(path)).rejects.toMatchObject({ code: 'MEMORY_CONSOLIDATION_REQUIRED' })
+    await f.session.configure({ indexMaxBytes: 64 })
+    await p.write(path, 'kestrel replacement')
+    expect((await p.read(path)).toString()).toBe('kestrel replacement')
+    await p.replaceExact!(path, 'kestrel', 'sparrow')
+    expect((await p.read(path)).toString()).toBe('sparrow replacement')
+    expect((await f.recall(1, 'sparrow')).hits).toMatchObject([{ text: 'sparrow replacement' }])
+    const result = await inspectMemoryConsistency(f.session, 1)
+    expect(result.consistent).toBe(true)
+    expect(result.readIds).toEqual(result.indexIds)
+    expect(result.readIds).toEqual(result.rawFilteredIds)
+  })
+
   it('reads and recalls its own committed topic through sequential edits and deletion', async () => {
     const f = fixture()
     await f.session.configure({ mode: 'auto' })
