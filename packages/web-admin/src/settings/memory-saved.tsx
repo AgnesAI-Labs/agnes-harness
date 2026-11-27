@@ -1,6 +1,7 @@
 import type { SavedParagraph, SavedParagraphRequest } from '@agnes/protocol/gen/app-server'
 import { appServerErrorMessage, Banner, Button, SettingsBlock, SettingsItem } from '@agnes/web-ui'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { captureRequest, useRequestScope } from './async-request.js'
 import { memoryRequest } from './memory-api.js'
 import { analyzeExpiry, useDeadlineTick } from './memory-expiry.js'
 
@@ -39,6 +40,7 @@ export function SavedParagraphsBlock(
 ) {
   const { cwd, canSave, locale, t, refreshKey, indexContent } = props
   const user = props.layer === 'user'
+  const lifetime = useRequestScope(cwd)
   const [paragraphs, setParagraphs] = useState<SavedParagraph[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>()
@@ -79,20 +81,25 @@ export function SavedParagraphsBlock(
   }, [cwd, user, refreshKey, tick])
   const act = async (action: Exclude<SavedParagraphRequest['action'], 'list'>, paragraphId: string) => {
     if (busy) return
+    const request = captureRequest(lifetime)
     setBusy(true)
     setError(undefined)
     try {
-      const result = await memoryRequest({
-        cwd,
-        saved: { action, paragraphId, ...(user ? { layer: 'user' as const } : {}) },
-      })
+      const result = await memoryRequest(
+        {
+          cwd,
+          saved: { action, paragraphId, ...(user ? { layer: 'user' as const } : {}) },
+        },
+        request.signal,
+      )
+      if (!request.isCurrent()) return
       listing.current?.abort()
       setParagraphs(result.saved?.paragraphs ?? [])
       if (action !== 'renew' && !user) props.onFileChanged()
     } catch (failure) {
-      setError(errorEnvelope(failure))
+      if (request.isCurrent()) setError(errorEnvelope(failure))
     } finally {
-      setBusy(false)
+      if (request.isCurrent()) setBusy(false)
     }
   }
   if (!paragraphs.length && !error) return null

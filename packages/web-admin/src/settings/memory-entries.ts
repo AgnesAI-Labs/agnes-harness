@@ -59,6 +59,13 @@ export function memoryEntries(content: string): MemoryEntry[] {
     const text = raw.trim()
     const start = line.index + Number(line.index === 0 && content.startsWith('\uFEFF'))
     const end = line.index + raw.length
+    const markdown = content.slice(start, end).replace(/\r?\n$/u, '')
+    const quotePrefix = /^(?:[ \t]*>[ \t]?)*/u.exec(markdown)![0]
+    const quotes = quotePrefix.split('>').length - 1
+    if (fence && quotes < fence.quotes) {
+      excluded = true
+      fence = undefined
+    }
     if (!text) {
       finish()
       continue
@@ -69,17 +76,15 @@ export function memoryEntries(content: string): MemoryEntry[] {
     if (start < protectedEnd) excluded = true
 
     // A fence spanning a separator is split across provenance blocks. Neither half is actionable.
-    const markdown = content.slice(start, end).replace(/\r?\n$/u, '')
-    const delimiter = /^((?:[ \t]*>[ \t]?)*)( *)(?:(?:[-+*]|\d{1,9}[.)])([ \t]+))?(`{3,}|~{3,})(.*)$/u.exec(
-      markdown,
+    const delimiter = /^( *)(?:(?:[-+*]|\d{1,9}[.)])([ \t]+))?(`{3,}|~{3,})(.*)$/u.exec(
+      markdown.slice(quotePrefix.length),
     )
     if (fence && entry.start === start) excluded = true
     const inFence = !!fence
     if (delimiter && !comment) {
-      const [, quotePrefix, indent, listGap, run, tail] = delimiter
-      const quotes = quotePrefix!.split('>').length - 1
+      const [, indent, listGap, run, tail] = delimiter
       if (!fence) {
-        const listIndent = listGap ? markdown.indexOf(run!) - quotePrefix!.length : 0
+        const listIndent = listGap ? markdown.indexOf(run!) - quotePrefix.length : 0
         fence = { run: run!, quotes, maxIndent: listIndent + 3 }
       } else if (
         quotes === fence.quotes &&

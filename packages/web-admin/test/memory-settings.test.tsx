@@ -558,6 +558,101 @@ it('keeps the selected workspace when save permission arrives after the first re
   }
 })
 
+it.each(['failed inspection', 'late withdraw'] as const)('isolates workspaces on %s', async (scenario) => {
+  const topic = 'prefs.md'
+  const first = '/work/WorkLLM'
+  const second = '/work/second'
+  const workspaces = [first, second].map((path) => ({ path, available: true }))
+  saved = [{ id: 'ra000000001', text: 'Remember', validity: 'valid' }]
+  const requests = server(undefined, true, topic)
+  const respond = fetch
+  let finish!: () => void
+  vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+    if (url === '/api/context') return Response.json(context(workspaces))
+    const body = JSON.parse(String(init.body))
+    const response = await respond(url, init)
+    if (body.saved?.action === 'withdraw')
+      await new Promise<void>((resolve) => {
+        finish = resolve
+      })
+    if (body.cwd === first) return response
+    if (scenario === 'failed inspection') return Response.json({}, { status: 500 })
+    const result = await response.json()
+    result.inspection.root = second
+    if (result.file) result.file.content = 'Second workspace'
+    return Response.json(result)
+  })
+  const { host, unmount } = await render()
+  const button = (id: string) => host.querySelector<HTMLButtonElement>(`[data-testid="memory-${id}"]`)
+  try {
+    await act(async () => button('open')!.click())
+    expect(button('files')?.textContent).toContain(topic)
+    await act(async () =>
+      button(scenario === 'failed inspection' ? 'delete-file' : 'saved-withdraw')!.click(),
+    )
+    const workspace = host.querySelector<HTMLSelectElement>('[data-testid="memory-workspace"]')!
+    await act(async () => {
+      workspace.value = second
+      workspace.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    if (scenario === 'failed inspection') {
+      expect(requests.at(-1)).toEqual({ cwd: second })
+      expect(button('open')).toBeNull()
+      expect(button('files')).toBeNull()
+      expect(button('delete-file')).toBeNull()
+      expect(button('delete-confirm')).toBeNull()
+    } else {
+      await act(async () => button('open-index')!.click())
+      const afterSwitch = requests.length
+      await act(async () => finish())
+      expect(requests.slice(afterSwitch)).toEqual([])
+      expect(button('root')?.textContent).toBe(second)
+      expect(host.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('Second workspace')
+    }
+  } finally {
+    await unmount()
+  }
+})
+
+it('preserves the later expiry in a fall-back overlap and requires a choice for a new wall time', async () => {
+  const later = '2027-11-07T06:30:00Z'
+  const transition = Date.parse('2027-11-07T06:00:00Z')
+  const offset = vi.spyOn(Date.prototype, 'getTimezoneOffset').mockImplementation(function (this: Date) {
+    return this.getTime() < transition ? 240 : 300
+  })
+  const requests = server()
+  const { host, unmount } = await render()
+  const section = () => host.querySelector<HTMLElement>('[data-testid="memory-entries"]')!
+  const button = (label: string) =>
+    [...section().querySelectorAll('button')].find((b) => b.textContent === label)!
+  try {
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="memory-open"]')!.click())
+    const original = `<!-- expires_at: ${later} -->\nRemember`
+    await editContent(host, original)
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="memory-save"]')!.click())
+    await act(async () => button('Edit expiry').click())
+    await act(async () => button('Save').click())
+    expect(requests.filter((req) => req.content).map((req) => req.content)).toEqual([original, original])
+    await act(async () => button('Edit expiry').click())
+    const input = section().querySelector('input')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+        input,
+        '2027-11-07T01:45',
+      )
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(button('Save').disabled).toBe(true)
+    expect(button('2027-11-07T05:45:00Z')).toBeDefined()
+    await act(async () => button('2027-11-07T06:45:00Z').click())
+    await act(async () => button('Save').click())
+    expect(requests.filter((req) => req.content).at(-1)?.content).toBe(original.replace('06:30', '06:45'))
+  } finally {
+    offset.mockRestore()
+    await unmount()
+  }
+})
+
 it('re-reads memory written while settings were closed and keeps an unsaved draft', async () => {
   let stored = ''
   const reads: Record<string, unknown>[] = []

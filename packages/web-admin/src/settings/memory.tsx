@@ -37,14 +37,15 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
   const [workspaces, setWorkspaces] = useState<{ path: string; available: boolean }[]>([])
   const [cwd, setCwd] = useState('')
   const selectedCwd = useRef('')
-  const [snapshot, setSnapshot] = useState<AdminMemoryResult>()
+  const [snapshotState, setSnapshotState] = useState<{ cwd: string; result: AdminMemoryResult }>()
+  const snapshot = snapshotState?.cwd === cwd ? snapshotState.result : undefined
   const [file, setFile] = useState<MemoryFile>()
   const [content, setContent] = useState('')
   const [busy, setBusy] = useState(true)
   const [readFailed, setReadFailed] = useState(false)
   // A failed change is offered again from the group label; a failed file save shows in the editor.
   const [failedChange, setFailedChange] = useState<Request>()
-  const [confirmPath, setConfirmPath] = useState<string>()
+  const [confirmDelete, setConfirmDelete] = useState<{ cwd: string; path: string; baseHash: string }>()
   const [fileError, setFileError] = useState<unknown>()
   const [reads, setReads] = useState(0)
   // biome-ignore lint/correctness/useExhaustiveDependencies: reads is an explicit retry.
@@ -54,9 +55,11 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
     setBusy(true)
     setReadFailed(false)
     setFailedChange(undefined)
-    setConfirmPath(undefined)
+    setConfirmDelete(undefined)
     setFileError(undefined)
     setFile(undefined)
+    setContent('')
+    setSnapshotState(undefined)
     void trackPageRequest(contextRequest({}, fetch, abort.signal))
       .then(async ({ workspaces }) => {
         if (abort.signal.aborted) return
@@ -68,7 +71,7 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
         selectedCwd.current = path
         setCwd(path)
         const value = await memoryRequest({ cwd: path }, abort.signal)
-        if (!abort.signal.aborted) setSnapshot(value)
+        if (!abort.signal.aborted) setSnapshotState({ cwd: path, result: value })
       })
       .catch(() => {
         if (!abort.signal.aborted) setReadFailed(true)
@@ -76,7 +79,7 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
       .finally(() => {
         if (!abort.signal.aborted) setBusy(false)
       })
-    return () => abort.abort()
+    return () => lifetime.current?.abort()
   }, [reads, canSave])
 
   // Settings stay mounted while closed. On a later visit, re-read what an agent may have written
@@ -92,16 +95,17 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
   }, [visit])
 
   async function request(input: Request, kind: 'read' | 'change' | 'file' = 'read') {
-    if (busy) return
+    if (busy || !input.cwd || input.cwd !== selectedCwd.current) return
     const request = captureRequest(lifetime)
     setBusy(true)
+    setReadFailed(false)
     if (kind === 'change') setFailedChange(undefined)
-    setConfirmPath(undefined)
+    setConfirmDelete(undefined)
     setFileError(undefined)
     try {
       const result = await memoryRequest(input, request.signal)
       if (!request.isCurrent()) return
-      setSnapshot(result)
+      setSnapshotState({ cwd: input.cwd, result })
       if (kind !== 'read') reportSuccess('memory', fallbackT('ui.settingsSaved'))
       if (input.deleteFile && input.deleteFile.path === file?.path) {
         setFile(undefined)
@@ -152,7 +156,14 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
               const path = event.target.value
               selectedCwd.current = path
               setCwd(path)
+              lifetime.current?.abort()
+              lifetime.current = new AbortController()
+              setSnapshotState(undefined)
               setFile(undefined)
+              setContent('')
+              setConfirmDelete(undefined)
+              setFileError(undefined)
+              setFailedChange(undefined)
               void request({ cwd: path })
             }}
           >
@@ -238,22 +249,24 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
                     {t(file?.path === path ? 'opened' : 'openFile')}
                   </Button>
                   {path !== 'MEMORY.md' &&
-                    (confirmPath === path ? (
+                    (confirmDelete?.path === path ? (
                       <>
                         <Button
                           size="small"
                           data-testid="memory-delete-confirm"
                           disabled={deleteDisabled}
-                          onClick={() =>
-                            entry && void request({ cwd, deleteFile: { path, baseHash: entry.hash } }, 'file')
-                          }
+                          onClick={() => {
+                            if (confirmDelete.cwd !== cwd || snapshotState?.cwd !== cwd) return
+                            const { path, baseHash } = confirmDelete
+                            void request({ cwd: confirmDelete.cwd, deleteFile: { path, baseHash } }, 'file')
+                          }}
                         >
                           {t('confirmDelete')}
                         </Button>
                         <Button
                           size="small"
                           data-testid="memory-delete-cancel"
-                          onClick={() => setConfirmPath(undefined)}
+                          onClick={() => setConfirmDelete(undefined)}
                         >
                           {t('cancel')}
                         </Button>
@@ -263,7 +276,7 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
                         size="small"
                         data-testid="memory-delete-file"
                         disabled={deleteDisabled}
-                        onClick={() => setConfirmPath(path)}
+                        onClick={() => entry?.hash && setConfirmDelete({ cwd, path, baseHash: entry.hash })}
                       >
                         {t('deleteFile')}
                       </Button>
@@ -316,7 +329,7 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
               locale={locale}
               t={t}
               onFileChanged={() => {
-                if (file.path === 'MEMORY.md' && content === file.content)
+                if (selectedCwd.current === cwd && file.path === 'MEMORY.md' && content === file.content)
                   void request({ cwd, file: file.path })
               }}
             />

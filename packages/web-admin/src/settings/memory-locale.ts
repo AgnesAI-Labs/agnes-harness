@@ -46,6 +46,7 @@ export const memoryCatalog: LocaleCatalog = {
     'entries.delete': 'Delete entry',
     'entries.days': '+{days}d',
     'entries.local': 'Local expiry date and time',
+    'entries.overlap': 'This local time occurs twice. Choose the expiry in UTC.',
     'expiry.expired': 'Paragraphs past expiry ({count}).',
     'expiry.invalid': 'Paragraphs hidden immediately because the expiry date is invalid ({count}).',
     'expiry.restore':
@@ -133,6 +134,7 @@ export const memoryCatalog: LocaleCatalog = {
     'entries.delete': '删除条目',
     'entries.days': '+{days}天',
     'entries.local': '本地到期日期和时间',
+    'entries.overlap': '这个本地时间出现两次，请选择对应的 UTC 到期时间。',
     'expiry.expired': '已过期的段落有 {count} 段。',
     'expiry.invalid': '日期无效的段落有 {count} 段，会被立即隐藏。',
     'expiry.restore':

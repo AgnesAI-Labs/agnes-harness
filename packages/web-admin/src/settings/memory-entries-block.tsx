@@ -13,6 +13,21 @@ function utcSeconds(time: number) {
   return new Date(time).toISOString().replace(/\.\d{3}Z$/u, 'Z')
 }
 
+/** Try the UTC offsets on both sides of a possible transition, then verify the wall clock. */
+export function localExpiryCandidates(local: string) {
+  const wall = local.length === 16 ? `${local}:00` : local
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/u.test(wall)) return []
+  const time = Date.parse(wall + 'Z')
+  if (!Number.isFinite(time)) return []
+  const offsets = new Set([-1, 0, 1].map((days) => new Date(time + days * 86_400_000).getTimezoneOffset()))
+  return [...offsets]
+    .map((offset) => time + offset * 60_000)
+    .filter((candidate) => localDateTime(candidate) === wall)
+    .map(utcSeconds)
+    .filter((iso) => /^\d{4}-/u.test(iso))
+    .sort()
+}
+
 export function MemoryEntriesBlock(props: {
   content: string
   disabled: boolean
@@ -24,8 +39,9 @@ export function MemoryEntriesBlock(props: {
   const disabled = props.disabled || dirty
   const { t, locale } = useUiText('@agnes/web/memory', memoryCatalog)
   const entries = useMemo(() => memoryEntries(content), [content])
-  const [editing, setEditing] = useState<number>()
+  const [editing, setEditing] = useState<{ start: number; initialLocal: string; initialIso: string }>()
   const [local, setLocal] = useState('')
+  const [choice, setChoice] = useState('')
   const now = Date.now()
   let earliest: number | undefined
   for (const entry of entries)
@@ -34,10 +50,12 @@ export function MemoryEntriesBlock(props: {
   useDeadlineTick(earliest)
   if (!entries.length) return null
   const date = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'medium' })
-  const localTime = Date.parse(local)
-  const timestamp = Number.isFinite(localTime) ? utcSeconds(localTime) : ''
-  const valid =
-    /^\d{4}-/u.test(timestamp) && localDateTime(localTime) === (local.length === 16 ? `${local}:00` : local)
+  const candidates = localExpiryCandidates(local)
+  const initialIso =
+    editing && (editing.initialLocal === local || candidates.includes(editing.initialIso))
+      ? editing.initialIso
+      : ''
+  const timestamp = choice || initialIso || (candidates.length === 1 ? candidates[0] : '')
   return (
     <SettingsBlock label={t('entries.title')} data-testid="memory-entries">
       <p className="agnes-settings-note">{t('entries.help')}</p>
@@ -70,15 +88,22 @@ export function MemoryEntriesBlock(props: {
             <Button
               size="small"
               disabled={disabled}
-              aria-expanded={editing === entry.start}
+              aria-expanded={editing?.start === entry.start}
               onClick={() => {
-                setEditing(editing === entry.start ? undefined : entry.start)
-                setLocal(Number.isFinite(deadline) ? localDateTime(deadline) : '')
+                const initialLocal = Number.isFinite(deadline) ? localDateTime(deadline) : ''
+                const initialIso = Number.isFinite(deadline) ? utcSeconds(deadline) : ''
+                setEditing(
+                  editing?.start === entry.start
+                    ? undefined
+                    : { start: entry.start, initialLocal, initialIso },
+                )
+                setLocal(initialLocal)
+                setChoice('')
               }}
             >
               {t(entry.expiry.length ? 'entries.edit' : 'entries.set')}
             </Button>
-            {editing === entry.start && (
+            {editing?.start === entry.start && (
               <>
                 {[7, 30].map((days) => (
                   <Button
@@ -99,14 +124,34 @@ export function MemoryEntriesBlock(props: {
                   step={1}
                   disabled={disabled}
                   value={local}
-                  onChange={(event) => setLocal(event.target.value)}
+                  onChange={(event) => {
+                    setLocal(event.target.value)
+                    setChoice('')
+                  }}
                 />
+                {candidates.length > 1 && (
+                  <fieldset>
+                    <legend>{t('entries.overlap')}</legend>
+                    {candidates.map((iso) => (
+                      <Button
+                        key={iso}
+                        size="small"
+                        aria-pressed={timestamp === iso}
+                        disabled={disabled}
+                        onClick={() => setChoice(iso)}
+                      >
+                        {iso}
+                      </Button>
+                    ))}
+                  </fieldset>
+                )}
                 <Button
                   size="small"
-                  disabled={disabled || !valid}
+                  disabled={disabled || !timestamp}
                   onClick={() => {
+                    if (!timestamp) return
                     setEditing(undefined)
-                    onSave(setEntryExpiry(content, entry, timestamp))
+                    onSave(timestamp === initialIso ? content : setEntryExpiry(content, entry, timestamp))
                   }}
                 >
                   {t('save')}
