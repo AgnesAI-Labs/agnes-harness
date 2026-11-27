@@ -41,6 +41,8 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
   const snapshot = snapshotState?.cwd === cwd ? snapshotState.result : undefined
   const [file, setFile] = useState<MemoryFile>()
   const [content, setContent] = useState('')
+  const editorEpoch = useRef(0)
+  const epoch = editorEpoch.current
   const [busy, setBusy] = useState(true)
   const [readFailed, setReadFailed] = useState(false)
   // A failed change is offered again from the group label; a failed file save shows in the editor.
@@ -96,6 +98,7 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
 
   async function request(input: Request, kind: 'read' | 'change' | 'file' = 'read') {
     if (busy || !input.cwd || input.cwd !== selectedCwd.current) return
+    editorEpoch.current++
     const request = captureRequest(lifetime)
     setBusy(true)
     setReadFailed(false)
@@ -301,7 +304,10 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
                 rows={10}
                 value={content}
                 disabled={!canSave || busy}
-                onChange={(event) => setContent(event.target.value)}
+                onChange={(event) => {
+                  editorEpoch.current++
+                  setContent(event.target.value)
+                }}
               />
               <MemoryExpiryStatus content={content} memoryOff={inspection.settings.mode === 'off'} />
             </SettingsBlock>
@@ -329,7 +335,12 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
               locale={locale}
               t={t}
               onFileChanged={() => {
-                if (selectedCwd.current === cwd && file.path === 'MEMORY.md' && content === file.content)
+                if (
+                  editorEpoch.current === epoch &&
+                  selectedCwd.current === cwd &&
+                  file.path === 'MEMORY.md' &&
+                  content === file.content
+                )
                   void request({ cwd, file: file.path })
               }}
             />

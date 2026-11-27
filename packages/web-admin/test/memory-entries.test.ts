@@ -76,6 +76,13 @@ it('leaves managed, malformed, marker-adjacent, fenced and partial-expiry region
     expect(memoryEntries(text).map((entry) => entry.preview)).toEqual(['first', 'last'])
   }
   expect(memoryEntries(['~~~', '    ~~~', '', 'still inside'].join('\n'))).toEqual([])
+  for (const marker of ['- ', '* ', '+ ', '12. ', '1) ']) {
+    const indent = ' '.repeat(marker.length)
+    for (const opener of [[marker + 'item', indent + '```'], [marker + '```']]) {
+      const source = [...opener, indent + 'code', '', indent + 'more', '', 'ordinary', '', 'last'].join('\n')
+      expect(memoryEntries(source).map((entry) => entry.preview)).toEqual(['ordinary', 'last'])
+    }
+  }
   for (const quote of ['>', '> >']) {
     const source = [quote + ' ```', quote + ' code', quote, quote + ' more', '', 'ordinary', '', 'last'].join(
       '\n',

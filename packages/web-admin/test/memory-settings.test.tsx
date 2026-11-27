@@ -558,8 +558,9 @@ it('keeps the selected workspace when save permission arrives after the first re
   }
 })
 
-it.each(['failed inspection', 'late withdraw'] as const)('isolates workspaces on %s', async (scenario) => {
-  const topic = 'prefs.md'
+const isolationCases = ['failed inspection', 'late withdraw', 'topic draft'] as const
+it.each(isolationCases)('isolates memory edits on %s', async (scenario) => {
+  const topic = 'topic.md'
   const first = '/work/WorkLLM'
   const second = '/work/second'
   const workspaces = [first, second].map((path) => ({ path, available: true }))
@@ -590,6 +591,16 @@ it.each(['failed inspection', 'late withdraw'] as const)('isolates workspaces on
     await act(async () =>
       button(scenario === 'failed inspection' ? 'delete-file' : 'saved-withdraw')!.click(),
     )
+    if (scenario === 'topic draft') {
+      await act(async () => button('open-file')!.click())
+      await editContent(host, 'Unsaved topic draft')
+      const before = requests.length
+      await act(async () => finish())
+      expect(button('actions')?.textContent).toContain(topic)
+      expect(host.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('Unsaved topic draft')
+      expect(requests.slice(before)).toEqual([])
+      return
+    }
     const workspace = host.querySelector<HTMLSelectElement>('[data-testid="memory-workspace"]')!
     await act(async () => {
       workspace.value = second

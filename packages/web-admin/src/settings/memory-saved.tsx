@@ -1,6 +1,6 @@
 import type { SavedParagraph, SavedParagraphRequest } from '@agnes/protocol/gen/app-server'
 import { appServerErrorMessage, Banner, Button, SettingsBlock, SettingsItem } from '@agnes/web-ui'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { captureRequest, useRequestScope } from './async-request.js'
 import { memoryRequest } from './memory-api.js'
 import { analyzeExpiry, useDeadlineTick } from './memory-expiry.js'
@@ -40,6 +40,10 @@ export function SavedParagraphsBlock(
 ) {
   const { cwd, canSave, locale, t, refreshKey, indexContent } = props
   const user = props.layer === 'user'
+  const onFileChanged = useRef(props.onFileChanged)
+  useLayoutEffect(() => {
+    onFileChanged.current = props.onFileChanged
+  }, [props.onFileChanged])
   const lifetime = useRequestScope(cwd)
   const [paragraphs, setParagraphs] = useState<SavedParagraph[]>([])
   const [busy, setBusy] = useState(false)
@@ -95,7 +99,7 @@ export function SavedParagraphsBlock(
       if (!request.isCurrent()) return
       listing.current?.abort()
       setParagraphs(result.saved?.paragraphs ?? [])
-      if (action !== 'renew' && !user) props.onFileChanged()
+      if (action !== 'renew' && !user) onFileChanged.current()
     } catch (failure) {
       if (request.isCurrent()) setError(errorEnvelope(failure))
     } finally {

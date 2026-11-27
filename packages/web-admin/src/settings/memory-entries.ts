@@ -28,6 +28,12 @@ function commentBody(text: string, comment: boolean): CommentBody {
   return { visible: visible.trim(), comment }
 }
 
+function markdownColumns(prefix: string) {
+  let column = 0
+  for (const char of prefix) column += char === '\t' ? 4 - (column % 4) : 1
+  return column
+}
+
 /** Match provenance's blank-line boundaries, retaining offsets into the exact saved string. */
 export function memoryEntries(content: string): MemoryEntry[] {
   const markers = markerLines(content)
@@ -47,7 +53,9 @@ export function memoryEntries(content: string): MemoryEntry[] {
   const entries: MemoryEntry[] = []
   let entry: MemoryEntry | undefined
   let excluded = false
-  let fence: { run: string; quotes: number; maxIndent: number } | undefined
+  let fence: { run: string; quotes: number; listIndent: number } | undefined
+  const listIndents: number[] = []
+  let listQuotes = 0
   let comment = false
   function finish() {
     if (entry?.preview && !excluded && !fence && !comment) entries.push(entry)
@@ -62,9 +70,21 @@ export function memoryEntries(content: string): MemoryEntry[] {
     const markdown = content.slice(start, end).replace(/\r?\n$/u, '')
     const quotePrefix = /^(?:[ \t]*>[ \t]?)*/u.exec(markdown)![0]
     const quotes = quotePrefix.split('>').length - 1
-    if (fence && quotes < fence.quotes) {
-      excluded = true
+    const inner = markdown.slice(quotePrefix.length)
+    const [prefix, spaces, marker] = /^([ \t]*)((?:[-+*]|\d{1,9}[.)])[ \t]+)?/u.exec(inner)!
+    const indent = markdownColumns(spaces!)
+    if (
+      fence &&
+      (quotes < fence.quotes || (quotes === fence.quotes && inner.trim() && indent < fence.listIndent))
+    ) {
+      if (entry) excluded = true
       fence = undefined
+    }
+    if (!fence && inner.trim()) {
+      if (listQuotes !== quotes) listIndents.length = 0
+      listQuotes = quotes
+      while (listIndents.length && indent < listIndents.at(-1)!) listIndents.pop()
+      if (marker && !comment) listIndents.push(markdownColumns(prefix))
     }
     if (!text) {
       finish()
@@ -76,20 +96,17 @@ export function memoryEntries(content: string): MemoryEntry[] {
     if (start < protectedEnd) excluded = true
 
     // A fence spanning a separator is split across provenance blocks. Neither half is actionable.
-    const delimiter = /^( *)(?:(?:[-+*]|\d{1,9}[.)])([ \t]+))?(`{3,}|~{3,})(.*)$/u.exec(
-      markdown.slice(quotePrefix.length),
-    )
+    const delimiter = /^(`{3,}|~{3,})(.*)$/u.exec(inner.slice(prefix.length))
     if (fence && entry.start === start) excluded = true
     const inFence = !!fence
     if (delimiter && !comment) {
-      const [, indent, listGap, run, tail] = delimiter
+      const [, run, tail] = delimiter
       if (!fence) {
-        const listIndent = listGap ? markdown.indexOf(run!) - quotePrefix.length : 0
-        fence = { run: run!, quotes, maxIndent: listIndent + 3 }
+        fence = { run: run!, quotes, listIndent: listIndents.at(-1) ?? 0 }
       } else if (
         quotes === fence.quotes &&
-        !listGap &&
-        indent!.length <= fence.maxIndent &&
+        !marker &&
+        indent <= fence.listIndent + 3 &&
         run!.startsWith(fence.run) &&
         !tail!.trim()
       ) {
