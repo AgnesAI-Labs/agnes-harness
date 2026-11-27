@@ -1802,6 +1802,173 @@ describe('client module immutable snapshots', () => {
     },
   )
 
+  const batchFixture = (options?: Partial<Parameters<typeof createRegistry>[0]>) => {
+    const files = fixture()
+    const row = installed({ directory: files.packageDirectory })
+    const observed = inventory(row)
+    const input = {
+      profile: observed.profile,
+      profileDirectory: files.root,
+      inventory: observed,
+      actual: async () => undefined,
+      refreshInventory: async () => observed,
+    }
+    const registry = createClientModuleRegistry({ snapshotDirectory: () => files.snapshots, ...options })
+    const path = (leaf: string) => `/plugins/${row.id}/${row.entry.integrity}/dist/${leaf}`
+    const entry = { ...input, path: path('index.js') }
+    const style = { ...input, path: path('index.css') }
+    return { registry, input, entry, style }
+  }
+
+  it.each([1, 2])('shares queued checks, not late arrivals (gate %i)', async (gate) => {
+    const { registry, input, entry, style } = batchFixture()
+    let checking!: () => void
+    let release!: () => void
+    const checkingCurrent = new Promise<void>((resolve) => {
+      checking = resolve
+    })
+    const waitForRelease = new Promise<void>((resolve) => {
+      release = resolve
+    })
+
+    let freshChecks = 0
+    const refreshInventory = async () => {
+      if (++freshChecks > 2) throw new Error('The inventory observation is no longer available')
+      if (freshChecks === gate) {
+        checking()
+        await waitForRelease
+      }
+      return input.inventory
+    }
+    try {
+      await registry.list(input)
+      const first = registry.read({ ...entry, refreshInventory })
+      const wrongPurpose = registry.read({ ...entry, refreshInventory, purpose: 'isolated-component' })
+      const second = registry.read({ ...style, refreshInventory })
+      await checkingCurrent
+      const late = registry.read({ ...style, refreshInventory })
+      release()
+      expect(await Promise.all([first, wrongPurpose, second, late])).toEqual([
+        { found: true, base64: Buffer.from('export const value = "v1"\n').toString('base64') },
+        { found: false },
+        { found: true, base64: Buffer.from('.panel { color: red }\n').toString('base64') },
+        { found: false },
+      ])
+    } finally {
+      release()
+      registry.close()
+    }
+  })
+
+  it.each(['list', 'refresh', 'inventory'] as const)(
+    'does not share results across an intervening %s observation',
+    async (boundary) => {
+      const { registry, input, entry, style } = batchFixture()
+      try {
+        await registry.list(input)
+        const first = registry.read(entry)
+        const observed =
+          boundary === 'list'
+            ? registry.list(input)
+            : boundary === 'refresh'
+              ? registry.refresh(input, 'inventory')
+              : undefined
+        const last = registry.read({
+          ...style,
+          inventory: boundary === 'inventory' ? { ...style.inventory } : style.inventory,
+          refreshInventory: async () => {
+            throw new Error('New observation unavailable')
+          },
+        })
+        expect(await first).toMatchObject({ found: true })
+        if (observed) expect((await observed).modules).toHaveLength(1)
+        expect(await last).toEqual({ found: false })
+      } finally {
+        registry.close()
+      }
+    },
+  )
+
+  it.each(['runtime', 'inventory', 'close'] as const)(
+    'refuses queued bytes when %s changes during the final freshness check',
+    async (change) => {
+      let epoch = 1
+      const { registry, input, entry, style } = batchFixture({ activationEpoch: () => epoch })
+      let checking!: () => void
+      let release!: () => void
+      const checkingFinal = new Promise<void>((resolve) => {
+        checking = resolve
+      })
+      const waitForRelease = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      let prepared = false
+      const refreshInventory = async () => {
+        if (!prepared) {
+          prepared = true
+          return input.inventory
+        }
+        checking()
+        await waitForRelease
+        return change === 'inventory' ? { ...input.inventory, hash: 'changed' } : input.inventory
+      }
+      try {
+        await registry.list(input)
+        const first = registry.read({ ...entry, refreshInventory })
+        const second = registry.read({ ...style, refreshInventory })
+        await checkingFinal
+        if (change === 'close') {
+          const queued = registry.read(entry)
+          registry.close()
+          expect(await queued).toEqual({ found: false })
+          expect(await registry.read(style)).toEqual({ found: false })
+        } else {
+          if (change === 'runtime') epoch++
+          release()
+        }
+        expect(await Promise.all([first, second])).toEqual([{ found: false }, { found: false }])
+      } finally {
+        release()
+        registry.close()
+      }
+    },
+  )
+
+  it('does not let a damaged snapshot supply bytes or disqualify another verified package', async () => {
+    const files = fixture()
+    const otherFiles = fixture()
+    const row = installed({ directory: files.packageDirectory })
+    const other = { ...installed({ directory: otherFiles.packageDirectory }), id: 'acme/second' }
+    const observed = { ...inventory(row), packages: [row, other] }
+    const registry = createClientModuleRegistry({ snapshotDirectory: () => files.snapshots })
+    const input = {
+      profile: observed.profile,
+      profileDirectory: files.root,
+      inventory: observed,
+      actual: async () => undefined,
+      refreshInventory: async () => observed,
+    }
+    try {
+      await registry.list(input)
+      const refreshInventory = async () => {
+        writeFileSync(join(files.snapshots, row.id, row.entry.integrity, 'dist/index.js'), 'corrupted')
+        return observed
+      }
+      const read = (pkg: InstalledPackage) =>
+        registry.read({
+          ...input,
+          refreshInventory,
+          path: `/plugins/${pkg.id}/${pkg.entry.integrity}/dist/index.js`,
+        })
+      expect(await Promise.all([read(row), read(other)])).toEqual([
+        { found: false },
+        { found: true, base64: Buffer.from('export const value = "v1"\n').toString('base64') },
+      ])
+    } finally {
+      registry.close()
+    }
+  })
+
   it('reads the roster and module bytes from the settled inventory, and re-checks authority fresh', async () => {
     const files = fixture()
     const row = installed({
