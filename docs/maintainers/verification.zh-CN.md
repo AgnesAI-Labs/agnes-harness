@@ -71,7 +71,9 @@ heavy 层 `packages/cli/test/startup-perf.e2e.test.ts` 通过 `AGNES_LOCAL_CLI` 
 mise exec -- node tools/toolchain/run.mjs exec vitest run tools/plugin-performance.slow.test.ts --project heavy --maxWorkers=1 -t 'gates real immutable package preparation'
 ```
 
-它安装、信任并固定 20 个合成包，每包包含 200 × 1 KiB 负载文件、模块、清单和两个 32 KiB 客户端资源。三轮分别测量冷/热 inventory、不可变快照、真实 Host 包装配阶段（在 native/provider 启动前停止）、只读客户端列表/资源，以及包 IO 期间 Surface 变更事件的路由发布时间。冷读使用新的 reader 和空的 loader/client 磁盘缓存，不清空操作系统缓存。Surface 传输使用合成 SDK 响应，订阅与路由查询使用生产代码；不代表已验证 daemon IPC 或浏览器渲染。
+它安装、信任、启用并固定 20 个合成包，每包包含 200 × 1 KiB 负载文件、模块、清单和两个 32 KiB 客户端资源。三轮分别测量冷/热 inventory、不可变快照、真实 Host 包装配阶段（在 native/provider 启动前停止）、只读客户端列表/资源，以及包 IO 期间 Surface 变更事件的路由发布时间。冷读使用新的 reader 和空的 loader/client 磁盘缓存，不清空操作系统缓存。Surface 传输使用合成 SDK 响应，订阅与路由查询使用生产代码；不代表已验证 daemon IPC 或浏览器渲染。
+
+每个合成包声明一个 profile 级首页。基准向生产客户端注册表提供与实际声明精确匹配的批准观测，使只读阶段列出原生模块，并为每个包读取一个脚本和一份样式表。该观测不修改发行证据，也不持久化应用采用。单包冒烟测试在计时结束后移除批准观测，确认列表不再显示该模块，且此前返回的两个资源 URL 都被拒绝。
 
 每个样本检查 wall time（通常每阶段 10 秒、冷装配 15 秒、Surface 发布 1 秒）、事件循环间隔（250 ms）、进程峰值 RSS（1536 MiB，含准备与导入阶段的高水位）及采样 RSS 增量（256 MiB）。固定上限位于 `tools/package-load/metrics.ts`，是保守的回归预算，不是实测性能宣称。用例在预算断言前输出数据规模、机器、Node 和逐轮测量；将 `AGH_PERFORMANCE_OUTPUT` 设为仓库外路径，还会保存 `<path>.package-load.json`。调整上限前应审核同一 runner 的数据。热 loader 与普通/fresh inventory 读取仍须拒绝篡改字节。快速层 `tools/package-load.test.ts` 以单包规模验证真实路径及超预算拒绝，不表示大数据性能门已通过。
 

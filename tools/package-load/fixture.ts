@@ -5,15 +5,27 @@ import {
   activeRuntimePinId,
   createPackageManager,
   emptyLock,
+  type PackageManager,
   parseSource,
   writeLock,
 } from '../../packages/package-manager/src/index.js'
 import type { dataset } from './metrics.js'
 
-/** Uses install/trust/pin, never hand-constructed snapshot authority or the user's home. */
-export async function createFixture(size: Pick<typeof dataset, 'packages' | 'files' | 'bytesPerFile'>) {
+export type PackageLoadFixture = Readonly<{
+  home: string
+  profileDir: string
+  homePage: string
+  reader(): PackageManager
+  close(): void
+}>
+
+/** Uses the package lifecycle, never hand-constructed snapshot authority or the user's home. */
+export async function createFixture(
+  size: Pick<typeof dataset, 'packages' | 'files' | 'bytesPerFile'>,
+): Promise<PackageLoadFixture> {
   const home = mkdtempSync(join(tmpdir(), 'agh-package-load-'))
   const profileDir = join(home, 'profiles', 'local-dev')
+  const homePage = 'home'
   const reader = () =>
     createPackageManager({ dataDir: home, cwd: home, agnesVersion: '0.1.0', references: async () => [] })
   const close = () => rmSync(home, { recursive: true, force: true })
@@ -55,7 +67,14 @@ export async function createFixture(size: Pick<typeof dataset, 'packages' | 'fil
       writeFileSync(
         join(dir, 'client/agnes.client.json'),
         JSON.stringify({
-          client: { entry: './index.js', styles: ['./index.css'], services: [], projections: [] },
+          client: {
+            entry: './index.js',
+            styles: ['./index.css'],
+            lifetime: 'profile',
+            homeEntries: [{ id: homePage, placement: 'primary' }],
+            services: [],
+            projections: [],
+          },
         }),
       )
       for (let file = 0; file < size.files; file++)
@@ -69,6 +88,7 @@ export async function createFixture(size: Pick<typeof dataset, 'packages' | 'fil
         integrity: row.entry.integrity,
         capabilityHash: row.capabilityHash,
       })
+      await manager.setEnabled(profileDir, id, true, { expectedInstalledIntegrity: row.entry.integrity })
       const pinId = activeRuntimePinId({ packageId: id, integrity: row.entry.integrity })
       await manager.pinRuntimeSnapshot(profileDir, {
         pinId,
@@ -82,7 +102,7 @@ export async function createFixture(size: Pick<typeof dataset, 'packages' | 'fil
         },
       })
     }
-    return { home, profileDir, reader, close }
+    return { home, profileDir, homePage, reader, close }
   } catch (error) {
     close()
     throw error

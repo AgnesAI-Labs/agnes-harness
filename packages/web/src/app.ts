@@ -2184,7 +2184,6 @@ client.on('generationChanged', (payload) => {
 // A cold daemon reports its tree and packages in quick succession; notices that close share one read.
 const packageNotices = coalesceBurst(() => {
   scheduleClientRosterRead()
-  void skinGroup.refresh()
   broadcast('agnes:plugins-invalidated')
   void modelRefresh.request().catch(showError)
 }, 100)
