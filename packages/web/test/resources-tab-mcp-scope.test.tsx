@@ -45,6 +45,8 @@ it('keeps a profile MCP detail open when the session workspace is restored or ch
     if (input.endsWith('/mcp/list')) return lists()
     throw new Error(`Unexpected request: ${input}`)
   })
+  // Prepare the lazy controller before timing the workspace-scope behavior.
+  await import('@agnes/resource-control-web/admin')
   runtime = await mountRenderedIndex()
   root = createRoot(document.body.appendChild(document.createElement('div')))
   const render = (workspaceId?: string) =>

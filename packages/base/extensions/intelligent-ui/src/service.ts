@@ -23,7 +23,7 @@ import {
   X_AGNES_UI_LIMITS,
 } from '@agnes/protocol/gen/intelligent-ui'
 import { scanOwnUiEvents, uiCursorMac, uiSerial } from '../../../src/intelligent-ui-runtime.js'
-import { rejectUiSource } from './input-rejection.js'
+import { rejectLiveSurfaceLimit, rejectUiSource } from './input-rejection.js'
 import { type ActionRecord, foldUiEvent, initialUiState, type UiState } from './state.js'
 import { bindArguments, bounded, json, validateSurface, validateUiParameters } from './validation.js'
 
@@ -345,7 +345,7 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
           Object.values(value.surfaces).filter((item) => item.status === 'open').length >=
           X_AGNES_UI_LIMITS.liveSurfaces
         )
-          throw rpcError('SEMANTIC_REJECTED', { code: 'UI_LIMIT' })
+          rejectLiveSurfaceLimit()
         const view = await present(input.surface, signal, 'write', openSurfaceIds(value))
         if (view && !view.ok) rejectUiSource(view.code)
         const checked = await artifacts(view?.surface ?? input.surface, signal)

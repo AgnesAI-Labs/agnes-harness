@@ -199,6 +199,7 @@ for (const name of [
   'web',
   'THIRD-PARTY-NOTICES',
   'bundled-plugins',
+  'bundled-plugin-digests.json',
   'bundled-examples',
   'ripgrep',
 ])

@@ -8,10 +8,12 @@ import {
 import {
   type PluginCapabilities,
   type PluginMetadata,
+  type PluginUiEntryDeclaration,
   validatePackageAdminData,
   validatePluginMetadata,
 } from '@agnes/protocol'
 
+import { freezeData } from './integrity.js'
 import { assertCurrentPackageFormat } from './package-format.js'
 
 export type AgnesPluginRuntime = 'in-process' | 'isolated'
@@ -53,6 +55,8 @@ export interface AgnesPluginManifestEntry extends PluginConfigContract {
   readonly services?: readonly string[]
   /** What the plugin registers and which authority it needs; one shape for every package. */
   readonly capabilities?: PluginCapabilities
+  /** Host-rendered static annotations, independent of runtime contributions. */
+  readonly uiEntries?: readonly PluginUiEntryDeclaration[]
   /** Bundled packages only: contributions, lease budget, live resources and supported runtimes. */
   readonly bundled?: BundledEntryFields
 }
@@ -80,6 +84,7 @@ const ENTRY_FIELDS = new Set([
   'optionalInject',
   'services',
   'capabilities',
+  'uiEntries',
 ])
 const MAX_SERVICE_NAMES = 64
 const MAX_SERVICE_NAME_LENGTH = 128
@@ -145,6 +150,22 @@ function validRowId(value: string): boolean {
   return ROW_ID.test(value) && !value.includes('/../') && !value.endsWith('/..')
 }
 
+function parseUiEntries(index: number, value: unknown): readonly PluginUiEntryDeclaration[] {
+  const field = `entry ${index} uiEntries`
+  if (!Array.isArray(value) || value.length > 8) fail(field, 'must be an array of at most eight entries')
+  const ids = new Set<string>()
+  const entries: PluginUiEntryDeclaration[] = []
+  for (const item of value) {
+    const checked = validatePackageAdminData('PluginUiEntryDeclaration', item)
+    if (!checked.ok) fail(field, 'must satisfy the static UI entry schema')
+    const entry = checked.value as PluginUiEntryDeclaration
+    if (ids.has(entry.id)) fail(field, `duplicate ${entry.id}`)
+    ids.add(entry.id)
+    entries.push(freezeData(entry))
+  }
+  return Object.freeze(entries)
+}
+
 /** Parse the sole package.json author declaration for ordinary Cordis plugins. */
 export function parseAgnesPluginEntries(
   packageId: string,
@@ -156,6 +177,7 @@ export function parseAgnesPluginEntries(
   if (input.length > 128) fail('list', 'has too many entries')
 
   const ids = new Set<string>()
+  let uiEntryCount = 0
   const entries = input.map((value, index) => {
     if (!value || typeof value !== 'object' || Array.isArray(value))
       fail(`entry ${index}`, 'must be an object')
@@ -227,6 +249,9 @@ export function parseAgnesPluginEntries(
       if (!checked.ok) fail(`entry ${index} capabilities`, 'must satisfy the plugin capabilities schema')
       capabilities = freezeJson(raw.capabilities) as PluginCapabilities
     }
+    const uiEntries = raw.uiEntries === undefined ? undefined : parseUiEntries(index, raw.uiEntries)
+    uiEntryCount += uiEntries?.length ?? 0
+    if (uiEntryCount > 32) fail('uiEntries', 'a package can declare at most 32 entries')
     const runtimeSupports = raw.runtimeSupports
     if (
       runtimeSupports !== undefined &&
@@ -252,6 +277,7 @@ export function parseAgnesPluginEntries(
     return Object.freeze({
       ...(raw.metadata === undefined ? {} : { metadata: freezeJson(raw.metadata) as PluginMetadata }),
       ...(capabilities === undefined ? {} : { capabilities }),
+      ...(uiEntries === undefined ? {} : { uiEntries }),
       ...(bundled === undefined || Object.keys(bundled).length === 0 ? {} : { bundled }),
       export: raw.export,
       apiRange: raw.apiRange,

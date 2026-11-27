@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process'
+import { once } from 'node:events'
 import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises'
+import { request as requestHttp } from 'node:http'
 import { createServer as createNetServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -202,7 +204,10 @@ it('issues a fresh CSP style nonce for each served HTML document', async () => {
   })
   try {
     const nonceMarker = '<meta name="agnes-csp-nonce" content="__AGNES_CSP_NONCE__">'
-    await writeFile(join(root, 'index.html'), `${nonceMarker}<meta data-ws="__AGNES_WS_URL__">`)
+    await writeFile(
+      join(root, 'index.html'),
+      `${nonceMarker}<meta id="agnes-config" data-ws="__AGNES_WS_URL__">`,
+    )
     await writeFile(join(root, 'admin.html'), nonceMarker)
     await writeFile(join(root, 'resources.html'), nonceMarker)
 
@@ -230,7 +235,11 @@ it('issues a fresh CSP style nonce for each served HTML document', async () => {
       const cdn = ['https://cos-agent-default.agnes-ai.cn', 'https://cos-agent-default.agnes-ai.com']
       if (new URL(document.url).pathname === '/') {
         expect(directives['img-src']).toEqual(["'self'", 'blob:', ...cdn])
-        expect(directives['frame-src']).toEqual(["'self'", 'blob:'])
+        const cloudOrigin = /data-cloud-origin="([^"]+)"/u.exec(body)?.[1]
+        if (!cloudOrigin) throw Error('missing isolated static origin')
+        expect(new URL(cloudOrigin).hostname).toBe('127.0.0.1')
+        expect(cloudOrigin).not.toBe(server.url)
+        expect(directives['frame-src']).toEqual(["'self'", 'blob:', cloudOrigin])
         expect(directives['media-src']).toEqual(["'self'", 'blob:', ...cdn])
       } else {
         expect(directives['img-src']).toBeUndefined()
@@ -690,6 +699,7 @@ it('aborts an in-flight workspace picker when the Web server closes', async () =
 // package-manager's own suite; this case pins the HTTP half: the resolver decides what exists, and
 // the server only applies method, MIME allowlist and the shared page headers.
 it('serves skin assets through the injected resolver and 404s everything it refuses', async () => {
+  const base = `/skins/${'a'.repeat(64)}`
   const root = await mkdtemp(join(tmpdir(), 'agnes-web-skin-'))
   const stylesheet = join(root, 'skin.css')
   await writeFile(stylesheet, '.sidebar { background: #000; }\n')
@@ -708,15 +718,15 @@ it('serves skin assets through the injected resolver and 404s everything it refu
     // answer. Bytes arrive when the launcher asked another process for them (design §22), and that
     // request is inherently asynchronous, so the shape has to carry both.
     skinAsset: (pathname) => {
-      if (pathname === '/skins/midnight/skin.css') return stylesheet
-      if (pathname === '/skins/midnight/notes.txt') return notes
-      if (pathname === '/skins/aurora/assets/aurora.png') return PNG_MAGIC
-      if (pathname === '/skins/paper/skin.css') return Promise.resolve(stylesheet)
+      if (pathname === `${base}/midnight/skin.css`) return stylesheet
+      if (pathname === `${base}/midnight/notes.txt`) return notes
+      if (pathname === `${base}/aurora/assets/aurora.png`) return PNG_MAGIC
+      if (pathname === `${base}/paper/skin.css`) return Promise.resolve(stylesheet)
       return null
     },
   })
   try {
-    const served = await fetch(`http://127.0.0.1:${port}/skins/midnight/skin.css`)
+    const served = await fetch(`http://127.0.0.1:${port}${base}/midnight/skin.css`)
     expect(served.status).toBe(200)
     expect(served.headers.get('content-type')).toBe('text/css')
     expect(served.headers.get('x-content-type-options')).toBe('nosniff')
@@ -725,22 +735,34 @@ it('serves skin assets through the injected resolver and 404s everything it refu
     expect(served.headers.get('content-security-policy')).not.toContain("'nonce-")
     expect(await served.text()).toContain('background')
     // A resolver answer the MIME allowlist does not recognise is refused, not sniffed.
-    expect((await fetch(`http://127.0.0.1:${port}/skins/midnight/notes.txt`)).status).toBe(404)
+    expect((await fetch(`http://127.0.0.1:${port}${base}/midnight/notes.txt`)).status).toBe(404)
     // A path the resolver declines never reaches the static-file branch.
-    expect((await fetch(`http://127.0.0.1:${port}/skins/other/skin.css`)).status).toBe(404)
+    expect((await fetch(`http://127.0.0.1:${port}${base}/other/skin.css`)).status).toBe(404)
+    expect((await fetch(`http://127.0.0.1:${port}/skins/midnight/skin.css`, { method: 'HEAD' })).status).toBe(
+      404,
+    )
+    const request = requestHttp({
+      hostname: '127.0.0.1',
+      port,
+      path: `${base}/midnight/./skin.css`,
+      method: 'HEAD',
+    })
+    const [noncanonical] = await once(request.end(), 'response')
+    noncanonical.resume()
+    expect(noncanonical.statusCode).toBe(404)
     // Bytes carry no path of their own, so the request path names their type.
-    const bytes = await fetch(`http://127.0.0.1:${port}/skins/aurora/assets/aurora.png`)
+    const bytes = await fetch(`http://127.0.0.1:${port}${base}/aurora/assets/aurora.png`)
     expect(bytes.status).toBe(200)
     expect(bytes.headers.get('content-type')).toBe('image/png')
     expect(new Uint8Array(await bytes.arrayBuffer())).toEqual(PNG_MAGIC)
     // An async answer is awaited before the MIME decision, not treated as a miss.
-    const awaited = await fetch(`http://127.0.0.1:${port}/skins/paper/skin.css`)
+    const awaited = await fetch(`http://127.0.0.1:${port}${base}/paper/skin.css`)
     expect(awaited.status).toBe(200)
     expect(awaited.headers.get('content-type')).toBe('text/css')
     // The route is read-only.
-    expect((await fetch(`http://127.0.0.1:${port}/skins/midnight/skin.css`, { method: 'POST' })).status).toBe(
-      405,
-    )
+    expect(
+      (await fetch(`http://127.0.0.1:${port}${base}/midnight/skin.css`, { method: 'POST' })).status,
+    ).toBe(405)
   } finally {
     await server.close().catch(() => undefined)
     await rm(root, { recursive: true, force: true })
@@ -774,7 +796,12 @@ it('serves client module assets through the injected resolver and 404s everythin
     // Three answer shapes share this option: a file path, the bytes themselves, and an async
     // answer. Bytes arrive when the launcher asked the daemon for them over its private connection
     // (design WC3), and that request is inherently asynchronous, so the shape has to carry both.
-    clientModuleAsset: (pathname) => {
+    clientModuleAsset: (pathname, purpose) => {
+      if (pathname === '/plugins/demo/renderer.mjs')
+        return purpose === 'isolated-component'
+          ? new TextEncoder().encode('export const renderers = {}')
+          : null
+      if (purpose !== 'document') return null
       if (pathname === '/plugins/demo/panel.js') return entry
       if (pathname === '/plugins/demo/panel.mjs') return entry
       if (pathname === '/plugins/demo/panel.css') return styles
@@ -830,6 +857,28 @@ it('serves client module assets through the injected resolver and 404s everythin
     // An async answer is awaited before the MIME decision, not treated as a miss.
     const awaited = await fetch(`http://127.0.0.1:${port}/plugins/demo/async.js`)
     expect(awaited.status).toBe(200)
+    const renderer = `http://127.0.0.1:${port}/plugins/demo/renderer.mjs`
+    const data = await fetch(`${renderer}?agnes_ui_source=1`)
+    expect(data.status).toBe(200)
+    expect(data.headers.get('content-type')).toBe('application/json')
+    expect(data.headers.get('cache-control')).toBe('no-store')
+    expect(data.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(await data.json()).toEqual({ source: 'export const renderers = {}' })
+    const head = await fetch(`${renderer}?agnes_ui_source=1`, { method: 'HEAD' })
+    expect(head.status).toBe(200)
+    expect(await head.text()).toBe('')
+    for (const url of [
+      renderer,
+      `${renderer}?agnes_ui_frame=1`,
+      `${renderer}?agnes_ui_source=1&agnes_css_layer=app`,
+      `http://127.0.0.1:${port}/plugins/demo/panel.mjs?agnes_ui_source=1`,
+    ]) {
+      for (const method of ['GET', 'HEAD']) {
+        const refused = await fetch(url, { method })
+        expect(refused.status).toBe(404)
+        expect(refused.headers.get('cache-control')).toBe('no-store')
+      }
+    }
     expect(awaited.headers.get('content-type')).toBe('text/javascript')
     // The route is read-only.
     expect((await fetch(`http://127.0.0.1:${port}/plugins/demo/panel.js`, { method: 'POST' })).status).toBe(

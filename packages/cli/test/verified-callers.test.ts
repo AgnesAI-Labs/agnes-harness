@@ -24,7 +24,11 @@ vi.mock('@agnes/daemon/packages', async (original) => ({
 vi.mock('@agnes/system-node/windows-pipe', () => ({ connectWindowsPipe: vi.fn() }))
 vi.mock('@agnes/sdk', async (original) => ({
   ...(await original<typeof import('@agnes/sdk')>()),
-  createClient: vi.fn(() => ({ initialize: async () => {}, close: async () => {} })),
+  createClient: vi.fn(() => ({
+    initialize: async () => {},
+    close: async () => {},
+    on: () => () => {},
+  })),
 }))
 const roots: string[] = []
 afterEach(() => {

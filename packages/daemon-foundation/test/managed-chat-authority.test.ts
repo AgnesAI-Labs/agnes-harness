@@ -10,16 +10,34 @@ test('freezes legacy sources once and issues only matching bound grants', async 
   const bindings = new MemoryWorkspaceBindings()
   const old = { sessionKey: 'old', workspaceId: 'w', revision: 1, canonicalRoot: '/legacy' }
   bindings.putIfAbsent(old)
-  const authority = new ManagedChatAuthority(tables.table('managed_chat_authority'), bindings, '/legacy')
-  await authority.initialize({ bindings: [old], schedules: [{ scheduleId: 's', targetRoot: '/legacy' }] })
-  await authority.initialize({ bindings: [], schedules: [{ scheduleId: 'new', targetRoot: '/legacy' }] })
+  const open = () => new ManagedChatAuthority(tables.table('managed_chat_authority'), bindings, '/legacy')
+  const authority = open()
+  await authority.initialize({
+    bindings: [old],
+    schedules: [{ scheduleId: 's', targetRoot: '/legacy' }],
+    legacyDirectoryIdentity: '1:10',
+  })
+  const nextBoot = {
+    bindings: [],
+    schedules: [{ scheduleId: 'new', targetRoot: '/legacy' }],
+    legacyDirectoryIdentity: '2:10',
+  }
+  await authority.initialize(nextBoot)
   const grant = await authority.authorizeExisting('old')
-  expect(grant?.root).toBe('/legacy')
+  expect(grant).toMatchObject({ root: '/legacy', directoryIdentity: '1:10' })
   expect(() => assertLegacyChatReadGrant(grant)).not.toThrow()
   expect(() => assertLegacyChatReadGrant({ ...grant })).toThrow()
   expect(authority.scheduleEligible('s', '/legacy')).toBe(true)
   expect(authority.scheduleEligible('new', '/legacy')).toBe(false)
   expect(await authority.authorizeExisting('unknown')).toBeUndefined()
+  const restarted = open()
+  await restarted.initialize(nextBoot)
+  expect((await restarted.authorizeExisting('old'))?.directoryIdentity).toBe('2:10')
+  expect((await authority.authorizeExisting('old'))?.directoryIdentity).toBe('1:10')
+  expect(restarted.scheduleEligible('new', '/legacy')).toBe(false)
+  const replacement = open()
+  await replacement.initialize({ ...nextBoot, legacyDirectoryIdentity: '2:11' })
+  expect(replacement.legacyDirectoryIdentity).toBeNull()
   await tables.close()
 })
 test('scheduled pending sources cannot read before commit and interrupted runs stay denied', async () => {

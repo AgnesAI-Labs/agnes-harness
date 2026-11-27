@@ -3,6 +3,7 @@
 // Resolves symlinks so a PATH shim can point here from outside the package.
 import { spawn } from 'node:child_process'
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, realpathSync, symlinkSync } from 'node:fs'
+import { constants } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -37,7 +38,7 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   })
 }
 child.on('exit', (code, signal) => {
-  if (signal) process.exit(1)
+  if (signal) process.exit(128 + constants.signals[signal])
   process.exit(code === null ? 1 : code)
 })
 

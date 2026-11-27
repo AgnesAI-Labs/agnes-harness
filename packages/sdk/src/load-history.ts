@@ -2,9 +2,19 @@ import type { SessionLoadingParams } from '@agnes/protocol'
 import { validateMethod } from '@agnes/protocol'
 import { RequestTimeout } from './errors.js'
 
+export const MAX_TIMER_DELAY_MS = 2_147_483_647
+
+export function validateLoadTimeouts(idleMs: number, hardMs: number, preparationMs = idleMs): void {
+  if (
+    ![preparationMs, idleMs, hardMs].every((ms) => Number.isInteger(ms) && ms > 0 && ms <= MAX_TIMER_DELAY_MS)
+  )
+    throw new RangeError(`load timeouts must be integers from 1 to ${MAX_TIMER_DELAY_MS} ms`)
+}
+
 /** A long open is bounded by genuine forward progress and an independent hard deadline. */
 export async function loadHistory<T>(options: {
   sessionId: string
+  preparationMs?: number
   idleMs: number
   hardMs: number
   subscribe(fn: (method: string, params: unknown) => void): () => void
@@ -12,19 +22,16 @@ export async function loadHistory<T>(options: {
   signal?: AbortSignal
   onProgress?: (progress: SessionLoadingParams) => void
 }): Promise<T> {
-  if (![options.idleMs, options.hardMs].every((ms) => Number.isSafeInteger(ms) && ms > 0))
-    throw new RangeError('load timeouts must be positive safe integers')
+  validateLoadTimeouts(options.idleMs, options.hardMs, options.preparationMs)
   const controller = new AbortController()
   const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal
-  let idle: ReturnType<typeof setTimeout> | undefined
-  const reset = () => {
-    clearTimeout(idle)
-    idle = setTimeout(
-      () => controller.abort(new RequestTimeout('session/load (idle)', options.idleMs)),
-      options.idleMs,
-    )
-  }
-  reset()
+  const deadline = (phase: 'preparation' | 'idle', ms: number) =>
+    setTimeout(() => controller.abort(new RequestTimeout(`session/load (${phase})`, ms)), ms)
+  // Workspace admission and worker startup happen before the ledger can report progress.
+  let progressDeadline =
+    options.preparationMs === undefined
+      ? deadline('idle', options.idleMs)
+      : deadline('preparation', options.preparationMs)
   const hard = setTimeout(
     () => controller.abort(new RequestTimeout('session/load (hard)', options.hardMs)),
     options.hardMs,
@@ -43,7 +50,8 @@ export async function loadHistory<T>(options: {
     if (!moved) return
     previous = value.verifiedSeq
     phase = value.phase
-    reset()
+    clearTimeout(progressDeadline)
+    progressDeadline = deadline('idle', options.idleMs)
     try {
       options.onProgress?.(value)
     } catch {
@@ -55,7 +63,7 @@ export async function loadHistory<T>(options: {
     return await options.request(signal)
   } finally {
     active = false
-    clearTimeout(idle)
+    clearTimeout(progressDeadline)
     clearTimeout(hard)
     off()
   }

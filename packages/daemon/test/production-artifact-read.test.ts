@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ARTIFACT_READ_RPC_MAX_BYTES } from '@agnes/protocol'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import {
   createArtifactReadAuthorityPort,
   PersistentArtifactReadAuthorityIndex,
-} from '../src/local/artifact-read-authority.js'
+} from '@agnes/daemon-rpc/local/artifact-read-authority'
+import { ARTIFACT_READ_RPC_MAX_BYTES } from '@agnes/protocol'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import {
   composeProductionArtifactRead,
   composeProductionProjectedArtifactRead,

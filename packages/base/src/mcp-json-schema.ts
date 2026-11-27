@@ -2,6 +2,7 @@ import { TOOL_PARAMETERS_MAX_BYTES } from '@agnes/extension-api'
 import { inspectJsonData } from '@agnes/protocol'
 import { Kind, type TSchema, Type, TypeRegistry } from '@sinclair/typebox'
 import { Ajv2020 } from 'ajv/dist/2020.js'
+import { Ajv } from 'ajv/dist/ajv.js'
 import addFormatsModule, { type FormatsPlugin } from 'ajv-formats'
 
 const MCP_SCHEMA_KIND = 'AgnesMcpJsonSchema'
@@ -53,8 +54,23 @@ export function remoteInputSchema(value: unknown): TSchema {
   const schema = normalizeRemoteInputSchema(value)
   try {
     // Match the Host's strict synchronous extension schema policy without coercion or mutation.
-    const ajv = new Ajv2020({ strict: true, allErrors: false, validateFormats: true })
-    addFormats(ajv, ['uri'])
+    let SchemaValidator: typeof Ajv | typeof Ajv2020
+    switch (schema.$schema) {
+      case 'http://json-schema.org/draft-07/schema':
+      case 'http://json-schema.org/draft-07/schema#':
+        SchemaValidator = Ajv
+        break
+      case undefined:
+      case 'https://json-schema.org/draft/2020-12/schema':
+      case 'https://json-schema.org/draft/2020-12/schema#':
+        SchemaValidator = Ajv2020
+        break
+      default:
+        throw new Error('unsupported schema dialect')
+    }
+    const ajv = new SchemaValidator({ strict: true, allErrors: false, validateFormats: true })
+    addFormats(ajv, ['uri', 'date-time'])
+    ajv.addKeyword('x-mcp-native')
     const validate = ajv.compile(schema)
     if ('$async' in validate && validate.$async) throw new Error('async schema')
     return Type.Unsafe({

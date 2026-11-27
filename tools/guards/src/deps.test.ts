@@ -277,8 +277,6 @@ it('production source and manifests form declared, acyclic package graphs', () =
       ...(pkg.json.dependencies as Record<string, string> | undefined),
       ...(pkg.json.peerDependencies as Record<string, string> | undefined),
     }
-    // Optional Host peer supports testkit activation only, never production plugin code.
-    if (pkg.name === '@agnes/plugin-runtime') delete declared['@agnes/host']
     const edges = new Set<string>()
     sourceGraph.set(pkg.name, edges)
     manifestGraph.set(pkg.name, new Set(Object.keys(declared).filter((name) => byName.has(name))))

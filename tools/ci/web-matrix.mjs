@@ -8,7 +8,7 @@ const fail = (reason) => {
 }
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9-]*$/
 const batchKeys = ['args', 'id', 'timeoutMinutes', 'widths']
-function validateBatch(batch, nightly = false) {
+function validateBatch(batch, platform) {
   if (
     !batch ||
     Object.keys(batch).sort().join(',') !== batchKeys.join(',') ||
@@ -16,8 +16,11 @@ function validateBatch(batch, nightly = false) {
     !idPattern.test(batch.id)
   )
     fail('invalid batch identity')
+  const nightly = platform === 'nightly'
   const expectedWidths = nightly ? '' : ({ 'narrow-phone': '375', 'narrow-tablet': '768' }[batch.id] ?? '')
-  if (batch.widths !== expectedWidths || batch.timeoutMinutes !== (nightly ? 20 : 10))
+  let expectedTimeout = nightly ? 20 : 10
+  if (platform === 'linux' && batch.id === 'main-13') expectedTimeout = 15
+  if (batch.widths !== expectedWidths || batch.timeoutMinutes !== expectedTimeout)
     fail('invalid batch widths or timeout')
   if (
     !Array.isArray(batch.args) ||
@@ -57,7 +60,7 @@ export function buildMatrices(source = manifest, { nightly = false } = {}) {
       fail(`incomplete ${platform} batches`)
     const canonical = new Map()
     for (const batch of batches) {
-      validateBatch(batch)
+      validateBatch(batch, platform)
       if (canonical.has(batch.id)) fail('duplicate canonical batch id')
       canonical.set(batch.id, batch)
     }
@@ -99,7 +102,7 @@ export function buildMatrices(source = manifest, { nightly = false } = {}) {
     fail('incomplete nightly batches')
   for (let index = 0; index < nightlyIds.length; index++) {
     const batch = source.nightly[index]
-    validateBatch(batch, true)
+    validateBatch(batch, 'nightly')
     if (
       batch.id !== nightlyIds[index] ||
       JSON.stringify(batch.args) !==

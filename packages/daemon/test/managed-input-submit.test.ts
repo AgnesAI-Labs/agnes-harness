@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { RECOVERY_CONTINUATION_TEXT } from '../src/supervisor/managed-input-admission.js'
 import { ownerInputNotes } from '../src/supervisor/managed-input-notes.js'
 import { inputProgress } from '../src/supervisor/managed-input-submit.js'
 import { ownerInputTracer } from '../src/supervisor/managed-input-trace.js'
@@ -14,10 +15,10 @@ function world(over: Parameters<typeof inputWorld>[0] = {}) {
       { key, target: w.target(sessionId), input: ownerMessage(receiptId) },
       receipt(receiptId),
     )
-  const legacy = (sessionId: string, key: string, text = 'old words') =>
+  const recovery = (sessionId: string, key: string) =>
     w.engine.admit(
       w.ctx(sessionId),
-      { key, target: w.target(sessionId), input: { kind: 'legacyOwnerMessage', text, originalInbox: null } },
+      { key, target: w.target(sessionId), input: { kind: 'recoveryContinuation', turnEndSeq: 9 } },
       undefined,
     )
   const row = (sessionId: string, key: string) => w.inputs.get(owner, sessionId, key)
@@ -26,7 +27,7 @@ function world(over: Parameters<typeof inputWorld>[0] = {}) {
     for (const key of keys) await admit(sessionId, key)
     w.core.state.running.delete(sessionId)
   }
-  return { ...w, admit, legacy, row, busy }
+  return { ...w, admit, recovery, row, busy }
 }
 
 type World = ReturnType<typeof world>
@@ -327,12 +328,12 @@ describe('held owner inputs', () => {
 
   it('withdraw on revoke: held → needsOwner grantRevoked; submitted → withdrawn then needsOwner; taken → consumed', async () => {
     const w = world()
-    for (const id of ['held', 'queued', 'taken', 'legacy']) w.open(id)
+    for (const id of ['held', 'queued', 'taken', 'recovery']) w.open(id)
     await w.busy('held', 'k1')
     await w.admit('queued', 'k1')
     await w.admit('taken', 'k1')
     const message = w.core.take('taken')
-    await w.legacy('legacy', 'k1')
+    await w.recovery('recovery', 'k1')
     await w.engine.withdraw(owner, '/elsewhere')
     expect(w.row('held', 'k1')?.state).toBe('enqueued')
     await w.engine.withdraw(owner)
@@ -344,7 +345,7 @@ describe('held owner inputs', () => {
     })
     expect(w.core.state.inbox.get('queued')).toEqual([])
     expect(w.row('taken', 'k1')).toMatchObject({ state: 'consumed', consumedSeq: message?.seq })
-    expect(w.row('legacy', 'k1')?.state).toBe('recoveryUnknown')
+    expect(w.row('recovery', 'k1')?.state).toBe('recoveryUnknown')
     // A final row never moves again.
     const consumed = w.row('taken', 'k1')
     await w.engine.withdraw(owner)
@@ -359,7 +360,7 @@ describe('held owner inputs', () => {
     await w.admit('s1', 'k1')
     w.core.take('s1')
     await w.engine.advance('s1')
-    await w.legacy('s1', 'k2')
+    await w.recovery('s1', 'k2')
     await w.engine.decide('s1', 'k2', 'retain', w.row('s1', 'k2')?.version ?? 0)
     const progress = inputProgress(
       {
@@ -385,8 +386,8 @@ describe('held owner inputs', () => {
   it('decide deliver / retain / discard bumps version, records by owner, refuses a stale version and a terminal row', async () => {
     const w = world()
     w.open('s1')
-    await w.legacy('s1', 'keep')
-    await w.legacy('s1', 'drop')
+    await w.recovery('s1', 'keep')
+    await w.recovery('s1', 'drop')
     const keep = w.row('s1', 'keep')
     await expect(w.engine.decide('s1', 'keep', 'retain', (keep?.version ?? 0) + 1)).rejects.toMatchObject(
       refusedWith('OWNER_INPUT_STALE'),
@@ -424,15 +425,17 @@ describe('held owner inputs', () => {
     await expect(w.engine.decide('s1', 'blank', 'deliver', 2)).rejects.toMatchObject(
       refusedWith('OWNER_INPUT_NO_TEXT'),
     )
-    await w.legacy('s1', 'old')
+    await w.recovery('s1', 'recovery')
     w.gates.pass = false
-    expect(await w.engine.decide('s1', 'old', 'deliver', w.row('s1', 'old')?.version ?? 0)).toMatchObject({
+    expect(
+      await w.engine.decide('s1', 'recovery', 'deliver', w.row('s1', 'recovery')?.version ?? 0),
+    ).toMatchObject({
       state: 'needsOwner',
       reason: 'grantRevoked',
     })
     expect(
       w
-        .row('s1', 'old')
+        .row('s1', 'recovery')
         ?.history.slice(-2)
         .map((entry) => entry.by),
     ).toEqual(['owner', 'platform'])
@@ -447,7 +450,7 @@ describe('held owner inputs', () => {
     const last = w.core.state.submits.at(-1)
     expect(last).toMatchObject({ dedupe: false, commandId: expect.stringMatching(/:v\d+$/u) })
     expect(last?.commandId.startsWith(`${first}:v`)).toBe(true)
-    expect(w.core.state.submits.filter((s) => s.text === 'old words')).toEqual([])
+    expect(w.core.state.submits.filter((s) => s.text === RECOVERY_CONTINUATION_TEXT)).toEqual([])
   })
 
   it('sweep advances every session with work and skips the rest', async () => {

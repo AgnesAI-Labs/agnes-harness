@@ -112,11 +112,11 @@ it
       if (block)
         await vi.waitFor(
           () => expect(requests, `${driver.stderr()}\n${JSON.stringify(driver.messages)}`).toHaveLength(1),
-          { timeout: 60_000 },
+          { timeout: 120_000 }, // Includes the shared worker's cold start.
         )
       else
         await vi.waitFor(() => expect(driver.messages, driver.stderr()).toContainEqual({ stage }), {
-          timeout: 60_000,
+          timeout: 120_000,
         })
       expect(authorization).toEqual(requests.map(() => 'Bearer synthetic-batch-fixture'))
       if (stage === 'daemon' || stage === 'worker') {
@@ -202,5 +202,5 @@ it
       await rm(root, { recursive: true, force: true })
     }
   },
-  240_000,
+  420_000,
 )

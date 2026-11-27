@@ -238,6 +238,8 @@ const MASK_PROPERTIES = new Set(['mask', '-webkit-mask'])
  * 新增使用点必须同步改这里——这份摩擦是刻意的。
  */
 const DYNAMIC_CUSTOM_PROPERTIES = new Set([
+  // Measured native-sidebar width, set by backends/workbench.tsx on the iframe stage.
+  '--backend-sidebar-right',
   '--agh-segment-thumb-left', // web-ui/ui/segmented.tsx measures selection; .agh-segmented supplies initial geometry.
   '--agh-segment-thumb-width', // web-ui/ui/segmented.tsx updates the measured selection width.
   '--session-view-thumb-left', // session-views.tsx measures the selected tab; .session-tabs defines the initial geometry.

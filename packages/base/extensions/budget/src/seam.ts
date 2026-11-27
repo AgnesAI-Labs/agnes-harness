@@ -1,4 +1,4 @@
-import type { BillingSeam } from '@agnes/core'
+import type { BillingSeam } from '@agnes/extension-api/seams'
 import type { SeamFactory } from '../../../src/seam-init.js'
 
 type HistRow = {

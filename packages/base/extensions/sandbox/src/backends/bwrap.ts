@@ -55,7 +55,11 @@ export function bwrapConfine(argv: readonly string[], options: ClosedNetworkConf
     // masked leaf, so a child cannot relocate Host's private installation directories.
     ...writableAncestors.flatMap((path) => ['--bind', path, path]),
     // These mounts occur after writable binds, so a deny below an allow remains masked.
-    ...denyRoots.flatMap((path) => ['--tmpfs', path, '--remount-ro', path]),
+    ...denyRoots.flatMap((path) =>
+      policy.fileDenyPaths?.includes(path)
+        ? ['--ro-bind', '/dev/null', path]
+        : ['--tmpfs', path, '--remount-ro', path],
+    ),
     ...(policy.readPaths ? ['--dir', policy.cwd, '--remount-ro', '/'] : []),
     '--chdir',
     policy.cwd,

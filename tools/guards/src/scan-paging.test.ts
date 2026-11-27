@@ -72,8 +72,11 @@ describe('scan paging guard: fixtures', () => {
     expect(scanCalls('return this.d.log.scan(q)')).toHaveLength(1)
   })
 
-  it('refuses a stalled scanner instead of exhausting memory', () => {
-    expect(() => tokenize('<span>#{receipt.seq}</span>')).toThrow('Scanner did not advance')
+  it('advances over a bare JSX hash and still checks ledger calls inside and after JSX', () => {
+    expect(tokenize('<span>#{receipt.seq}</span>').map((t) => t.text)).toContain('#')
+    expect(
+      rules('const view = <span>#{store.scan({ toSeq: n })}</span>; store.scan({ limit: 1_001 })'),
+    ).toEqual(['unbounded', 'limit-over-page'])
   })
 })
 

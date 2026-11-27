@@ -1,4 +1,5 @@
 import type { Context } from '@agnes/cordis'
+import type { ClientModuleRosterRow } from '@agnes/protocol'
 import type { ClientContext, ModuleIdentity } from '@agnes/web-client'
 import type {
   PluginRuntimeError,
@@ -11,9 +12,7 @@ export interface ReadyClientModule {
   clientId?: string
   presentationRoleBindings?: ModuleIdentity['presentationRoleBindings']
   presentationRoles?: ModuleIdentity['presentationRoles']
-  /** Isolated Intelligent UI renderers; never imported into the workbench document. */
-  intelligentComponents?: readonly import('@agnes/protocol/gen/extension-manifest').UiComponentDeclaration[]
-  /** Stable lifecycle key for one browser row; omitted only by legacy roster producers. */
+  documentAdmission: NonNullable<ClientModuleRosterRow['documentAdmission']>
   exampleOf?: string
   pageEntry?: string
   binding?: ModuleIdentity['binding']
@@ -28,7 +27,7 @@ export interface ReadyClientModule {
   /** Required for DSH-aligned slots; omitted for the legacy Agnes slot set. */
   slotCatalogVersion?: string
   /** Digest of the daemon-verified immutable snapshot manifest. */
-  contentDigest?: string
+  contentDigest: string
   extIds: string[]
   services?: string[]
   backendOwner?: string
@@ -57,10 +56,14 @@ export interface ClientRoster {
 
 /** Roster source contract, implemented by the SDK client. */
 export interface RosterSource {
+  /** Readiness hint for host loading UI only; never grants module execution authority. */
+  available?(): boolean
   /** Profile, session and selection generation of the current query scope. */
   identity?(): string
   /** Publish roster-derived facts only after the reconciler accepts this query. */
   commit?(roster: ClientRoster): void
+  /** An imported presentation exception was withdrawn; only a new document can reset its effects. */
+  reloadRequired?(): void
   list(): Promise<ClientRoster>
 }
 
@@ -89,6 +92,7 @@ export interface PreparedClientStyles {
 export type ClientStylePreparer = (
   target: ReadyClientModule,
   timeoutMs: number,
+  signal: AbortSignal,
 ) => Promise<PreparedClientStyles>
 
 export interface ReconcilerOptions {
@@ -120,6 +124,8 @@ export interface PackageState {
   ownerRowId: string | undefined
   fiber: { dispose(): Promise<void> | void } | undefined
   styles: PreparedClientStyles | undefined
+  attempt: AbortController | undefined
+  retainsMountedDuringAttempt: boolean
   draining: Promise<void> | undefined
   /** Whether the current roster still contains this package. Used to make revocation one-shot. */
   rosterPresent: boolean
@@ -134,7 +140,10 @@ export interface PackageState {
 }
 
 export interface ClientReconciler {
+  /** Wait for the current selection's latest read, joining an in-flight read when identity matches. */
   reconcileNow(): Promise<void>
+  /** Expire in-flight authority without reading or changing mounted rows. */
+  retirePending(): void
   /** Roster invalidation hint: packages_changed requires rereading the roster. */
   invalidate(): Promise<void>
   /**

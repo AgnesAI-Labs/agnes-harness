@@ -107,6 +107,7 @@ export async function authoringSandbox(
         signal,
         timeoutMs: options.timeoutMs ?? 60_000,
         maxOutputBytes: options.maxOutputBytes ?? 16384,
+        captureStderrOnFailure: true,
       })
       return { ...result, code: 0, stderr: '', truncated: false, timedOut: false }
     },

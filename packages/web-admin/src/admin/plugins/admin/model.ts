@@ -60,6 +60,21 @@ export function asRuntimeView(state: PluginRuntimeState | undefined): RuntimeSta
   return state
 }
 
+export function runtimeOperationOutcome(
+  states: readonly PluginRuntimeState[],
+  revision: string,
+  disabled: boolean,
+): 'settled' | 'failed' | 'pending' {
+  const matching = states.filter((state) => state.revision === revision)
+  if (matching.some((state) => state.phase === 'failed')) return 'failed'
+  if (disabled) return states.every((state) => state.phase === 'idle') ? 'settled' : 'pending'
+  if (states.some((state) => state.phase === 'active' && state.revision !== revision)) return 'pending'
+  return matching.length &&
+    matching.every((state) => state.phase === 'active' || state.reason === 'native-ui-not-admitted')
+    ? 'settled'
+    : 'pending'
+}
+
 /** A release update is identified by its reserved source and bytes, even if versions coincide. */
 export function bundledUpdate(
   installed: PackageInstalledDescriptor,

@@ -70,19 +70,22 @@ export function createRosterNavigation(locale?: LocaleService) {
             ),
           )
         }
-        const selected = () => {
+        const isSelected = () => {
           const selected = homeNavigation.getSnapshot()
-          if (
-            declarations.some(
-              (entry) =>
-                entry.id === selected?.id &&
-                (!selected.pageRef || selected.pageRef === `${module.packageId}#${entry.id}`),
-            )
+          return declarations.some(
+            (entry) =>
+              entry.id === selected?.id &&
+              (!selected.pageRef || selected.pageRef === `${module.packageId}#${entry.id}`),
           )
-            open()
         }
-        cleanups.push(homeNavigation.subscribe(selected))
-        selected()
+        // The roster being planned already authorizes a selected page. Only a later open
+        // needs another read; starting one here supersedes the plan that owns this selection.
+        state.opened ||= isSelected()
+        cleanups.push(
+          homeNavigation.subscribe(() => {
+            if (isSelected()) open()
+          }),
+        )
       } catch (error) {
         remove(rowId)
         throw error

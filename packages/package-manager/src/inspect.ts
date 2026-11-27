@@ -7,6 +7,7 @@ import {
   type PackageCapabilityDiff,
   type PackageContributionSummary,
   type PackagePreview,
+  type PluginUiEntryDeclaration,
   validatePackageAdminData,
   validatePluginMetadata,
   validateSurfacePackageMetadata,
@@ -16,6 +17,7 @@ import { parseApplicationContract } from './application-contract.js'
 import { parsePackageBundleContract, preflightPackageBundles } from './bundle-contract.js'
 import { provenBundledOrigin } from './bundled-origin.js'
 import { normalizeClientContribution, resolveClientAssets } from './client-assets.js'
+import { isVerifiedPackageManifest } from './directory-digest.js'
 import { containedEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
 import { canonical, capabilityHash, freezeData, own, readStaticJson, snapshotHash } from './integrity.js'
@@ -163,6 +165,8 @@ type InspectionInput = {
   signal?: AbortSignal
 }
 
+export type InspectedUiEntry = Readonly<PluginUiEntryDeclaration & { rowId: string }>
+
 export async function inspectStaged(
   input: InspectionInput,
 ): Promise<{ preview: PackagePreview; treeIntegrity: string }> {
@@ -186,7 +190,7 @@ export async function inspectStaged(
       invalid('application-assets-changed')
   }
   checkCancelled(input.signal)
-  return result
+  return { preview: result.preview, treeIntegrity }
 }
 
 /** Internal same-round reuse only: the caller must have just hashed this directory synchronously.
@@ -194,9 +198,12 @@ export async function inspectStaged(
 export function inspectVerifiedTree(
   input: InspectionInput,
   treeIntegrity: string,
-): { preview: PackagePreview; treeIntegrity: string } {
+): { preview: PackagePreview; treeIntegrity: string; uiEntries?: readonly InspectedUiEntry[] } {
   checkCancelled(input.signal)
-  const pkg = readStaticJson(join(input.dir, 'package.json'))
+  let manifest: Buffer | undefined
+  const pkg = readStaticJson(join(input.dir, 'package.json'), (bytes) => {
+    manifest = bytes
+  })
   const contribution = (value: unknown) => checkedContribution(value)
   const fetched = input.fetched
   if (input.source.type === 'npm') {
@@ -281,6 +288,14 @@ export function inspectVerifiedTree(
       })
     invalid('plugins')
   }
+  let uiEntries: InspectedUiEntry[] | undefined
+  for (const plugin of plugins)
+    if (plugin.uiEntries?.length) {
+      uiEntries ??= []
+      for (const entry of plugin.uiEntries) uiEntries.push({ ...entry, rowId: plugin.id })
+    }
+  if (uiEntries && (!manifest || !isVerifiedPackageManifest(input.dir, treeIntegrity, manifest)))
+    throw new PackageError('E_LOCK_MISMATCH', 'plugin UI entries differ from the verified package manifest')
   if (metadata.extensions !== undefined || existsSync(join(input.dir, 'agnes.extension.json')))
     throw new PackageError(
       'E_EXT_LOAD',
@@ -528,5 +543,9 @@ export function inspectVerifiedTree(
   const result = validatePackageAdminData('PackagePreview', preview)
   if (!result.ok) invalid('preview-contract')
   checkCancelled(input.signal)
-  return { preview: freezeData(preview as PackagePreview), treeIntegrity }
+  return {
+    preview: freezeData(preview as PackagePreview),
+    treeIntegrity,
+    ...(uiEntries ? { uiEntries: freezeData(uiEntries) } : {}),
+  }
 }

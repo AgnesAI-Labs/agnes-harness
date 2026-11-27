@@ -3,7 +3,8 @@
 @layer ui {
   /* Appended after the pinned XMarkdown core and both themes. All rules stay within this root. */
   .conversation-markdown.x-markdown-light,
-  .conversation-markdown.x-markdown-dark {
+  .conversation-markdown.x-markdown-dark,
+  .plugin-docs-markdown {
     --font-size: var(--font-size-prose);
     --primary-color: var(--agnes-brand-primary);
     --primary-color-hover: var(--agnes-brand-primary);
@@ -37,12 +38,53 @@
     content: none;
   }
 
+  /* GFM task markers are read-only document content, not full-width form fields. */
+  .conversation-markdown input[type="checkbox"] {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    margin: 0 0.4em 0 0;
+    vertical-align: -0.1em;
+    cursor: default;
+  }
+
   .conversation-markdown.x-markdown-light a:focus-visible,
   .conversation-markdown.x-markdown-dark a:focus-visible,
   .conversation-markdown .code-copy:focus-visible {
     outline: var(--focus-outline);
     outline-offset: 1px;
     box-shadow: var(--focus-line);
+  }
+
+  .plugin-docs-markdown {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .plugin-docs-markdown .plugin-docs-link {
+    appearance: none;
+    display: inline-block;
+    height: auto;
+    min-height: 0;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--agnes-brand-primary);
+    cursor: pointer;
+    font: inherit;
+    overflow-wrap: anywhere;
+    text-align: start;
+    text-decoration: underline;
+    white-space: normal;
+  }
+
+  .plugin-docs-markdown .plugin-docs-link:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: 1px;
   }
 
   /* The focusable .table-scroll owns overflow and the border; tables retain native column layout.

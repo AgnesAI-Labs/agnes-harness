@@ -1,13 +1,34 @@
+import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
-import { createServer } from 'node:http'
+import { createServer, request as requestHttp } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { AdminSurfaceOptions } from '@agnes/daemon/packages'
+import {
+  CLOUD_AUTHORIZATION_PATH,
+  type PackageCatalogPage,
+  type PackageSource,
+  REMOTE_FRONTEND_INFO,
+  REMOTE_FRONTEND_WS,
+  remoteFrontendSessionPath,
+} from '@agnes/protocol'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { createCredentialAdmin } from '../../daemon-admin/src/credentials.js'
 import type { LocalBackend } from './backend.js'
 
 const mocks = vi.hoisted(() => {
-  const request = vi.fn(async () => ({ schemaVersion: 1 }))
-  const catalogList = vi.fn(async () => ({ items: [], nextCursor: null }))
+  const listeners = new Map<string, Set<(payload: unknown) => void>>()
+  const upstream = { origin: '' }
+  const request = vi.fn(
+    async (
+      _method: string,
+      _input: unknown,
+      _options?: { signal?: AbortSignal; timeoutMs?: number },
+    ): Promise<unknown> => ({
+      schemaVersion: 1,
+    }),
+  )
+  const catalogList = vi.fn(async (): Promise<PackageCatalogPage> => ({ items: [], nextCursor: null }))
   const initialize = vi.fn(async (): Promise<{ features?: string[] }> => ({}))
   const close = vi.fn(async () => undefined)
   const surfaceClose = vi.fn()
@@ -60,6 +81,8 @@ const mocks = vi.hoisted(() => {
     saveDefaults: vi.fn(async (input: unknown) => input),
   }
   return {
+    listeners,
+    upstream,
     sessionSelection,
     request,
     catalogList,
@@ -82,14 +105,30 @@ const mocks = vi.hoisted(() => {
   }
 })
 
+vi.mock('node:https', async (original) => ({
+  ...(await original<typeof import('node:https')>()),
+  request: (...args: Parameters<typeof requestHttp>) => {
+    const url = args[0] as URL
+    return requestHttp(new URL(url.pathname, mocks.upstream.origin), args[1], args[2])
+  },
+}))
+
 vi.mock('@agnes/sdk', () => ({
   unixTransport: vi.fn(),
   memoryJournal: vi.fn(() => ({})),
   createClient: vi.fn(() => ({
+    connectionState: 'connected',
+    isClosed: false,
     request: mocks.request,
     call: mocks.request,
     initialize: mocks.initialize,
     close: mocks.close,
+    on(event: string, listener: (payload: unknown) => void) {
+      const receivers = mocks.listeners.get(event) ?? new Set()
+      receivers.add(listener)
+      mocks.listeners.set(event, receivers)
+      return () => receivers.delete(listener)
+    },
     packages: {
       catalog: { list: mocks.catalogList, get: vi.fn() },
       list: vi.fn(),
@@ -126,12 +165,230 @@ vi.mock('@agnes/daemon/packages', async (original) => ({
 
 import { localPackageAdmin } from './package-admin.js'
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
 let daemonDir: string
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.listeners.clear()
   daemonDir = mkdtempSync(join(tmpdir(), 'agh-launch-admin-'))
 })
+
+it('revokes a live Cloud socket and aborts a pending authorization on a daemon credential deletion', async () => {
+  const upstream = createServer((_request, response) => response.end('authorized'))
+  const server = createServer()
+  const listen = async (server: ReturnType<typeof createServer>) => {
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('missing fixture address')
+    return `http://127.0.0.1:${address.port}`
+  }
+  mocks.upstream.origin = await listen(upstream)
+  upstream.on('upgrade', (request, socket) => {
+    const accept = createHash('sha1')
+      .update(`${request.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+      .digest('base64')
+    socket.write(
+      `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
+    )
+    socket.once('end', () => socket.destroy())
+  })
+  const origin = await listen(server)
+  const backend = {
+    scope: { daemonDir, home: daemonDir, profile: 'local-dev', scopeID: 'scope-1' },
+    socketPath: join(daemonDir, 'daemon.sock'),
+    web: { origin },
+  } as LocalBackend
+  const admin = localPackageAdmin(backend, origin)
+  const home = join(daemonDir, 'home')
+  const credentials = createCredentialAdmin({
+    home,
+    dataDir: join(home, 'data'),
+    configurations: async () => [],
+    writableStore: async () => true,
+    onDeleted(id) {
+      for (const listener of mocks.listeners.get('notice') ?? [])
+        listener({ kind: 'credential_deleted', detail: { id } })
+    },
+  })
+  const addCredential = async (label: string) =>
+    ((await credentials.call('create', { label, value: 'synthetic-credential' }, 'local')) as { id: string })
+      .id
+  const credentialRef = await addCredential('Cloud fixture')
+  const unrelated = await addCredential('Unrelated fixture')
+  const token = `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`
+  const target = 'https://8443-fixture.ap-shanghai.tencentags.com'
+  const expiresAt = Date.now() + 60_000
+  const path = remoteFrontendSessionPath(token)
+  const grant = { origin: target, token, expiresAt, trafficToken: 'synthetic-proof' }
+  const input = { credentialRef, origin: target }
+  const authorize = () =>
+    fetch(origin + CLOUD_AUTHORIZATION_PATH, {
+      method: 'POST',
+      headers: { origin, 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  server.on('request', (request, response) => {
+    void admin.handle(request, response).then((handled) => {
+      if (!handled) return admin.cloudGateway.handleHttp(request, response)
+    })
+  })
+  server.on(
+    'upgrade',
+    (request, socket, head) => void admin.cloudGateway.handleUpgrade(request, socket, head),
+  )
+  try {
+    mocks.request.mockResolvedValueOnce(grant)
+    const response = await authorize()
+    expect(await response.json()).toMatchObject({ token, proxied: true })
+    const socket = new WebSocket(origin.replace('http:', 'ws:') + path + REMOTE_FRONTEND_WS)
+    await new Promise<void>((resolve, reject) => {
+      socket.addEventListener('open', () => resolve(), { once: true })
+      socket.addEventListener('error', reject, { once: true })
+    })
+    const closed = new Promise<void>((resolve) =>
+      socket.addEventListener('close', () => resolve(), { once: true }),
+    )
+    mocks.request.mockImplementationOnce(
+      async (_method, _input, options) =>
+        new Promise((_resolve, reject) =>
+          options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true }),
+        ),
+    )
+    const pending = authorize()
+    await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledTimes(2))
+    await credentials.call('delete', { id: unrelated }, 'local')
+    expect(socket.readyState).toBe(WebSocket.OPEN)
+    expect(mocks.request.mock.lastCall?.[2]?.signal?.aborted).toBe(false)
+    await credentials.call('delete', { id: credentialRef }, 'local')
+    await closed
+    expect(await (await pending).json()).toEqual({ error: 'CONFIG_CREDENTIAL_NOT_FOUND' })
+    expect((await fetch(origin + path + REMOTE_FRONTEND_INFO)).status).toBe(401)
+  } finally {
+    await admin.close()
+    await Promise.all(
+      [server, upstream].map(
+        (server) =>
+          new Promise<void>((resolve) => {
+            server.close(() => resolve())
+            server.closeAllConnections()
+          }),
+      ),
+    )
+  }
+})
 afterEach(() => rmSync(daemonDir, { recursive: true, force: true }))
+
+it('closes the dedicated daemon connection when the browser abandons cloud authorization', async () => {
+  const server = createServer()
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('missing test listener address')
+  const origin = `http://127.0.0.1:${address.port}`
+  const backend = {
+    scope: { daemonDir, home: daemonDir, profile: 'local-dev', scopeID: 'scope-1' },
+    socketPath: join(daemonDir, 'daemon.sock'),
+    web: { url: 'ws://127.0.0.1:5000', origin, token: ['test', 'web', 'token'].join('-') },
+  } as LocalBackend
+  const admin = localPackageAdmin(backend, origin)
+  const controller = new AbortController()
+  const input = { credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111' }
+  mocks.request.mockImplementationOnce(async (_method, _input, options) => {
+    const signal = options?.signal
+    if (!signal) throw Error('missing exchange signal')
+    return new Promise((_resolve, reject) => {
+      if (signal.aborted) reject(signal.reason)
+      else signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+    })
+  })
+  server.on('request', (request, response) => void admin.handle(request, response))
+  try {
+    const request = fetch(origin + CLOUD_AUTHORIZATION_PATH, {
+      method: 'POST',
+      headers: { origin, 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+      signal: controller.signal,
+    }).catch((error: Error) => error.name)
+    await vi.waitFor(() =>
+      expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/admin.cloud.authorize', input, {
+        timeoutMs: expect.any(Number),
+        signal: expect.any(AbortSignal),
+      }),
+    )
+    const signal = mocks.request.mock.lastCall?.[2]?.signal
+    expect(signal?.aborted).toBe(false)
+    controller.abort()
+    expect(await request).toBe('AbortError')
+    await vi.waitFor(() => expect(mocks.close).toHaveBeenCalled())
+    expect(signal?.aborted).toBe(true)
+  } finally {
+    controller.abort()
+    await admin.close()
+    const stopped = new Promise<void>((resolve) => server.close(() => resolve()))
+    server.closeAllConnections()
+    await stopped
+  }
+})
+
+it('binds Docs to the initialized link rather than to the static launcher features', async () => {
+  const origin = 'http://127.0.0.1:4180'
+  const backend = {
+    scope: { daemonDir, home: daemonDir, profile: 'local-dev', scopeID: 'scope-1' },
+    socketPath: join(daemonDir, 'daemon.sock'),
+    web: { origin },
+  } as LocalBackend
+  const admin = localPackageAdmin(backend, origin)
+  const docs = mocks.createAdminSurface.mock.calls[0]?.[0].docs as AdminSurfaceOptions['docs']
+  if (!docs) throw new Error('missing Docs bridge')
+  const available = { features: ['packages.docs.v1'] }
+  const params = {
+    profile: 'local-dev',
+    id: 'acme/plugin',
+    expectedIntegrity: `sha256-${'a'.repeat(64)}`,
+    locale: 'en',
+  } as const
+  const controller = new AbortController()
+  const started = deferred<AbortSignal>()
+  const answer = deferred<unknown>()
+  try {
+    await expect(docs.epoch()).resolves.toBeUndefined()
+    mocks.initialize.mockResolvedValueOnce(available)
+    const first = await docs.epoch()
+    if (!first) throw new Error('missing supported epoch')
+    mocks.initialize.mockResolvedValueOnce(available).mockResolvedValueOnce({})
+    await expect(docs.get(params, first, controller.signal)).resolves.toBeUndefined()
+    expect(mocks.request).not.toHaveBeenCalled()
+    mocks.initialize.mockResolvedValueOnce(available).mockResolvedValueOnce(available)
+    mocks.request.mockImplementationOnce((_method, _params, options) => {
+      if (!options?.signal) throw new Error('missing request signal')
+      started.resolve(options.signal)
+      return answer.promise
+    })
+    const pending = docs.get(params, first, controller.signal)
+    const signal = await started.promise
+    expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/packages.docs.get', params, { signal })
+    for (const listener of mocks.listeners.get('connectionStateChanged') ?? []) listener('reconnecting')
+    expect(signal.aborted).toBe(true)
+    answer.resolve({ found: true, locale: 'en', markdown: 'old' })
+    await expect(pending).resolves.toBeUndefined()
+    mocks.initialize.mockResolvedValueOnce(available)
+    const second = await docs.epoch()
+    expect(second).toBeTypeOf('string')
+    expect(second).not.toBe(first)
+    expect(docs.isCurrent(first)).toBe(false)
+    await expect(docs.get(params, first, controller.signal)).resolves.toBeUndefined()
+  } finally {
+    controller.abort()
+    answer.resolve(undefined)
+    await admin.close()
+  }
+})
 
 it('advertises exactly the frozen hot-update features and forwards catalog reads to the daemon SDK', async () => {
   const backend = {
@@ -179,6 +436,65 @@ it('advertises exactly the frozen hot-update features and forwards catalog reads
   await expect(options?.backendFeatures()).resolves.toEqual([])
   await options?.invoke('catalog/list', { profile: 'local-dev', includeCommunity: true })
   expect(mocks.catalogList).toHaveBeenLastCalledWith({ profile: 'local-dev' })
+  const v2 = 'packages.community-discovery.v2'
+  const v3 = 'packages.community-discovery.v3'
+  const request = { profile: 'local-dev', query: 'example', cursor: 'page-2', limit: 25 }
+  const source: PackageSource = {
+    type: 'git',
+    ref: `git:https://github.com/example/plugin.git#${'a'.repeat(40)}`,
+  }
+  const release = { version: '1.0.0', source }
+  const snapshot = {
+    state: 'ready',
+    lastSuccessAt: null,
+    nextAttemptAt: null,
+    error: null,
+    totalReported: 1,
+    items: [
+      { id: 'example/plugin', fullName: 'example/plugin', description: 'Example', versions: [release] },
+    ],
+  } satisfies NonNullable<PackageCatalogPage['communityIndex']>
+  const legacyPage = { items: [], nextCursor: 'page-3', communityIndex: snapshot }
+  mocks.initialize.mockResolvedValueOnce({ features: [v2] })
+  mocks.catalogList.mockResolvedValueOnce(legacyPage)
+  await expect(options?.invoke('catalog/list', { ...request, communityVersion: 3 })).resolves.toEqual(
+    legacyPage,
+  )
+  expect(mocks.catalogList).toHaveBeenLastCalledWith({ ...request, communityVersion: 2 })
+
+  await options?.invoke('catalog/list', { ...request, communityVersion: 3 })
+  expect(mocks.catalogList).toHaveBeenLastCalledWith(request)
+
+  mocks.initialize.mockResolvedValueOnce({ features: [v2, v3] })
+  mocks.catalogList.mockResolvedValueOnce(legacyPage)
+  await expect(options?.invoke('catalog/list', { ...request, communityVersion: 2 })).resolves.toEqual(
+    legacyPage,
+  )
+  expect(mocks.catalogList).toHaveBeenLastCalledWith({ ...request, communityVersion: 2 })
+
+  const currentPage: PackageCatalogPage = {
+    ...legacyPage,
+    communityIndex: {
+      ...snapshot,
+      items: snapshot.items.map((row) => ({
+        ...row,
+        versions: [{ ...release, provides: ['tool'], compatibility: { kind: 'undeclared' } }],
+      })),
+    },
+  }
+  mocks.initialize.mockResolvedValueOnce({ features: [v2, v3] })
+  mocks.catalogList.mockResolvedValueOnce(currentPage)
+  await expect(options?.invoke('catalog/list', { ...request, communityVersion: 3 })).resolves.toEqual(
+    currentPage,
+  )
+  expect(mocks.catalogList).toHaveBeenLastCalledWith({ ...request, communityVersion: 3 })
+
+  mocks.initialize.mockResolvedValueOnce({ features: [v2, v3] })
+  mocks.catalogList.mockResolvedValueOnce(currentPage)
+  await expect(options?.invoke('catalog/list', { ...request, communityVersion: 2 })).rejects.toThrow(
+    'invalid community catalog projection',
+  )
+
   await options?.invoke('tree/list', { profile: 'local-dev' })
   expect(mocks.treeList).toHaveBeenCalledWith({ profile: 'local-dev' })
   await options?.invoke('tree/get', { profile: 'local-dev' })

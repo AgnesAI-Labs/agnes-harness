@@ -528,63 +528,81 @@ describe('createRunner', () => {
   })
 
   it('routes daemon notices to their session chat and broadcasts maintenance without job noise', async () => {
-    const client = createFakeClient()
-    const adapter = new FakeChannel()
-    const runner = createRunner({ adapter, cfg: config, secrets: {}, client, log: logger() })
-    await runner.start()
+    vi.useFakeTimers()
+    try {
+      const client = createFakeClient()
+      const adapter = new FakeChannel()
+      const runner = createRunner({ adapter, cfg: config, secrets: {}, client, log: logger() })
+      try {
+        await runner.start()
 
-    adapter.emit(inboundMessage)
-    adapter.emit({
-      ...inboundMessage,
-      eventId: 'event-2',
-      messageId: 'message-2',
-      chat: { id: 'chat-2', type: 'group' },
-    })
-    await vi.waitFor(() => expect(runner.cache.keys()).toHaveLength(2))
+        adapter.emit(inboundMessage)
+        adapter.emit({
+          ...inboundMessage,
+          eventId: 'event-2',
+          messageId: 'message-2',
+          chat: { id: 'chat-2', type: 'group' },
+        })
+        await vi.waitFor(() => expect(runner.cache.keys()).toHaveLength(2))
+        // Both inbound submissions occur after onSession registers their outbound routes.
+        await vi.waitFor(() =>
+          expect(client.calls.filter((call) => call.method === 'followUp')).toHaveLength(2),
+        )
 
-    client.emitNotice({
-      kind: 'resumed',
-      sessionId: 'agnes:tenant:agent:fake:group:chat-1',
-      detail: { lastStep: 7 },
-      at: '2026-09-12T00:00:00.000Z',
-    })
-    await vi.waitFor(() => expect(adapter.sent).toHaveLength(1))
-    expect(adapter.sent[0]).toMatchObject({
-      target: { chatId: 'chat-1' },
-      msg: { blocks: [{ kind: 'text', markdown: '上次停在第 7 步，已续跑' }] },
-    })
+        client.emitNotice({
+          kind: 'resumed',
+          sessionId: 'agnes:tenant:agent:fake:group:chat-1',
+          detail: { lastStep: 7 },
+          at: '2026-09-12T00:00:00.000Z',
+        })
+        await vi.waitFor(() => expect(adapter.sent).toHaveLength(1))
+        expect(adapter.sent[0]).toMatchObject({
+          target: { chatId: 'chat-1' },
+          msg: { blocks: [{ kind: 'text', markdown: '上次停在第 7 步，已续跑' }] },
+        })
 
-    client.emitNotice({
-      kind: 'job_dispatched',
-      detail: {},
-      at: '2026-09-12T00:00:01.000Z',
-    })
-    client.emitNotice({
-      kind: 'decisions_changed',
-      detail: { profile: 'default', principal: { id: 'operator', org: 'local' } },
-      at: '2026-09-12T00:00:01.000Z',
-    })
-    await new Promise((resolve) => setTimeout(resolve, 5))
-    expect(adapter.sent).toHaveLength(1)
+        client.emitNotice({
+          kind: 'job_dispatched',
+          detail: {},
+          at: '2026-09-12T00:00:01.000Z',
+        })
+        client.emitNotice({
+          kind: 'decisions_changed',
+          detail: { profile: 'default', principal: { id: 'operator', org: 'local' } },
+          at: '2026-09-12T00:00:01.000Z',
+        })
+        await vi.advanceTimersByTimeAsync(5)
+        expect(adapter.sent).toHaveLength(1)
 
-    client.emitNotice({
-      kind: 'shutting_down',
-      detail: {},
-      at: '2026-09-12T00:00:02.000Z',
-    })
-    await vi.waitFor(() => expect(adapter.sent).toHaveLength(3))
-    expect(
-      adapter.sent
-        .slice(1)
-        .map(({ target }) => target.chatId)
-        .sort(),
-    ).toEqual(['chat-1', 'chat-2'])
-    expect(adapter.sent.slice(1).map(({ msg }) => msg.blocks)).toEqual([
-      [{ kind: 'text', markdown: '服务维护中，稍后自动恢复' }],
-      [{ kind: 'text', markdown: '服务维护中，稍后自动恢复' }],
-    ])
-
-    await runner.stop()
+        client.emitNotice({
+          kind: 'shutting_down',
+          detail: {},
+          at: '2026-09-12T00:00:02.000Z',
+        })
+        await vi.advanceTimersByTimeAsync(0)
+        // Chat 2 has its first token; chat 1 must still obey the original one-message/second limit.
+        expect(adapter.sent).toHaveLength(2)
+        expect(adapter.sent[1]?.target.chatId).toBe('chat-2')
+        await vi.advanceTimersByTimeAsync(1_000)
+        await vi.waitFor(() => expect(adapter.sent).toHaveLength(3))
+        expect(
+          adapter.sent
+            .slice(1)
+            .map(({ target }) => target.chatId)
+            .sort(),
+        ).toEqual(['chat-1', 'chat-2'])
+        expect(adapter.sent.slice(1).map(({ msg }) => msg.blocks)).toEqual([
+          [{ kind: 'text', markdown: '服务维护中，稍后自动恢复' }],
+          [{ kind: 'text', markdown: '服务维护中，稍后自动恢复' }],
+        ])
+      } finally {
+        const stopping = runner.stop()
+        await vi.advanceTimersByTimeAsync(5_000)
+        await stopping
+      }
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it.each(['open', 'dispatch', 'projection', 'stream'] as const)(

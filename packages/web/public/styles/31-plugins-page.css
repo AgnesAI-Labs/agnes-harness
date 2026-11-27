@@ -243,6 +243,9 @@
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 16.875rem), 1fr));
     gap: var(--s12);
   }
+  .plugins-page-gallery-tail {
+    height: 1px;
+  }
   .community-market-actions,
   .community-market-details .community-market-topics {
     display: flex;
@@ -298,6 +301,12 @@
   .community-market-facts dd {
     margin: 0;
     overflow-wrap: anywhere;
+  }
+  .community-market-facts .community-market-verdict {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--s8);
   }
   .community-market-compatibility {
     margin-block-start: var(--s24);

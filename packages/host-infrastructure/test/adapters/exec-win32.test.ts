@@ -2,8 +2,12 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { windowsProcessStartTimeSync } from '@agnes/system-node'
+import { sealWindowsConfinement } from '@agnes/system-node/process-spawn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createExec, type ExecAdapter } from '../../src/adapters/exec.js'
+import * as powerShellFiles from '../../src/adapters/powershell-file.js'
+import * as windowsLaunchGate from '../../src/windows-acl/launch.js'
+import type { WindowsAclLaunchPermit } from '../../src/windows-acl/leases.js'
 
 const adapters: ExecAdapter[] = []
 const roots: string[] = []
@@ -34,6 +38,40 @@ function tree(marker: string) {
 }
 
 describe.skipIf(process.platform !== 'win32')('Host Windows Job execution', () => {
+  it('preserves script preparation access errors and abandons the restricted launch', async () => {
+    const { cwd } = setup()
+    const denied = Object.assign(new Error('private script could not be prepared'), { code: 'EACCES' })
+    const abandoned = vi.fn()
+    const launch = vi.spyOn(windowsLaunchGate, 'windowsLaunch').mockReturnValue({
+      confinement: sealWindowsConfinement({ mode: 'read-only', root: cwd, writeSids: [] }),
+      env: {},
+      started() {},
+      abandoned,
+    })
+    const prepare = vi.spyOn(powerShellFiles, 'preparePowerShellFile').mockImplementationOnce(() => {
+      throw denied
+    })
+    const shell = {
+      path: `${process.env.SystemRoot}/System32/WindowsPowerShell/v1.0/powershell.exe`,
+      version: '5.1.26100.1',
+      edition: 'Desktop',
+      nativeArguments: 'Legacy',
+    } as const
+    const exec = createExec({ windowsNodeExecutable: process.execPath, windowsPowerShell: shell })
+    adapters.push(exec)
+    try {
+      await expect(
+        exec.run([shell.path, '-Command', 'Write-Output SHOULD_NOT_RUN'], {
+          cwd,
+          windowsAcl: {} as WindowsAclLaunchPermit,
+        }),
+      ).rejects.toBe(denied)
+      expect(abandoned).toHaveBeenCalledOnce()
+    } finally {
+      prepare.mockRestore()
+      launch.mockRestore()
+    }
+  })
   it('lets explicit environment names override inherited names regardless of case', async () => {
     const { cwd } = setup()
     const exec = createExec({

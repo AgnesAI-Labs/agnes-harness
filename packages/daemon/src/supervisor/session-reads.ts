@@ -3,9 +3,13 @@ import { type createSqliteStorage, readStoredSessionView, type ScanRead } from '
 import {
   type EventEnvelope,
   rpcError,
+  SESSION_ARTIFACT_ROOT_EVENT_TYPES,
   type SessionRuntimeParams,
   type SessionViewParams,
+  sessionArtifactRoots,
+  validateEvent,
 } from '@agnes/protocol'
+import type { TrustedArtifactHistory } from './artifact-authority-projection.js'
 import type { WorkerPool } from './worker-pool.js'
 
 /** A recorded session's view read from the daemon's own ledger connection. */
@@ -13,6 +17,145 @@ export type SessionViewRead = (
   sessionId: string,
   options: { maxNodes?: number; signal?: AbortSignal },
 ) => Promise<unknown>
+
+const MAX_RETAINED_ARTIFACT_ROOTS = 4096
+const MAX_SINGLE_EVENT_BYTES = 16 * 1024 * 1024 + 65_536
+const MAX_SCANNED_CANDIDATE_ROWS = 250_000
+
+type RetainedArtifactRoot = {
+  ref: Readonly<{ sha256: string; mime: string; size?: number }>
+  seq: number
+  ts: string
+  id: string
+  actor: EventEnvelope['actor']
+}
+
+function compactArtifactHistoryEnvelopes(
+  laneId: string,
+  roots: Iterable<RetainedArtifactRoot>,
+): EventEnvelope[] {
+  const envelopes: EventEnvelope[] = []
+  const unsized: RetainedArtifactRoot[] = []
+  for (const entry of roots) {
+    if (entry.ref.size !== undefined) {
+      envelopes.push({
+        seq: entry.seq,
+        ts: entry.ts,
+        id: entry.id,
+        lane: laneId,
+        type: 'x/core/artifact.registered',
+        v: 1,
+        actor: entry.actor,
+        origin: 'system',
+        trust: 'trusted',
+        ignorable: true,
+        data: {
+          artifact: {
+            sha256: entry.ref.sha256,
+            size: entry.ref.size,
+            mime: entry.ref.mime,
+          },
+        },
+      } as unknown as EventEnvelope)
+    } else {
+      unsized.push(entry)
+    }
+  }
+  for (let i = 0; i < unsized.length; i += 256) {
+    const chunk = unsized.slice(i, i + 256)
+    const anchor = chunk.at(-1)
+    if (!anchor) continue
+    envelopes.push({
+      seq: anchor.seq,
+      ts: anchor.ts,
+      id: anchor.id,
+      lane: laneId,
+      type: 'tool/result',
+      v: 1,
+      actor: anchor.actor,
+      origin: 'tool:present',
+      trust: 'trusted',
+      data: {
+        toolUseId: `artifact-history-${i}`,
+        isError: false,
+        content: chunk.map(({ ref }) => ({
+          type: 'resource_link',
+          name: 'artifact',
+          uri: `artifact://${ref.sha256}`,
+          mimeType: ref.mime,
+        })),
+        enforcement: { level: 'full', scope: [] },
+        authz: { decisionId: 'n/a' },
+      },
+    } as unknown as EventEnvelope)
+  }
+  return envelopes
+}
+
+/** Bounded, read-only roots from the daemon-owned ledger; never opens a worker or writer lease. */
+export function artifactHistoryReader(
+  read: (sessionId: string) => ScanRead<EventEnvelope>,
+): TrustedArtifactHistory {
+  return Object.freeze({
+    async read(sessionId, laneId, signal) {
+      const scan = read(sessionId)
+      const seenRoots = new Map<string, RetainedArtifactRoot>()
+      let fromSeq = 1,
+        scanned = 0,
+        pages = 0
+      const check = () => {
+        if (signal.aborted) throw new Error('artifact history unavailable')
+      }
+      check()
+      const head = (await scan({ order: 'desc', limit: 1 }))[0]?.seq ?? 0
+      if (!Number.isSafeInteger(head) || head < 0) throw new Error('artifact history unavailable')
+      while (fromSeq <= head) {
+        check()
+        if (++pages % 20 === 0) await new Promise<void>((resolve) => setImmediate(resolve))
+        check()
+        const page = await scan({
+          fromSeq,
+          toSeq: head,
+          lane: laneId,
+          type: [...SESSION_ARTIFACT_ROOT_EVENT_TYPES],
+          order: 'asc',
+          limit: 100,
+        })
+        check()
+        scanned += page.length
+        if (page.length > 100 || scanned > MAX_SCANNED_CANDIDATE_ROWS)
+          throw new Error('artifact history unavailable')
+        for (const row of page) {
+          if (!Number.isSafeInteger(row.seq) || row.seq < fromSeq || row.seq > head)
+            throw new Error('artifact history unavailable')
+          fromSeq = row.seq + 1
+          if ((row.lane ?? 'main') !== laneId) continue
+          if (Buffer.byteLength(JSON.stringify(row), 'utf8') > MAX_SINGLE_EVENT_BYTES)
+            throw new Error('artifact history unavailable')
+          const checked = validateEvent(row)
+          if (!checked.ok) throw new Error('artifact history unavailable')
+          const roots = sessionArtifactRoots(checked.value as EventEnvelope)
+          if (!roots?.length) continue
+          for (const ref of roots) {
+            const identity = `${ref.sha256}:${ref.mime}`
+            const prev = seenRoots.get(identity)
+            if (!prev) {
+              seenRoots.set(identity, { ref, seq: row.seq, ts: row.ts, id: row.id, actor: row.actor })
+            } else if (prev.ref.size === undefined && ref.size !== undefined) {
+              seenRoots.set(identity, { ref, seq: row.seq, ts: row.ts, id: row.id, actor: row.actor })
+            } else if (prev.ref.size !== undefined && ref.size !== undefined && prev.ref.size !== ref.size) {
+              throw new Error('artifact history unavailable')
+            }
+            if (seenRoots.size > MAX_RETAINED_ARTIFACT_ROOTS) throw new Error('artifact history unavailable')
+          }
+        }
+        if (page.length < 100) break
+      }
+      check()
+      return compactArtifactHistoryEnvelopes(laneId, seenRoots.values())
+    },
+  })
+}
 
 /**
  * The ledger reads the daemon answers itself: fact chains always, and recorded session views when

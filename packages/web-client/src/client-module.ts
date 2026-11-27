@@ -112,9 +112,13 @@ export function clientModule(mod: ClientModule): {
         getService?.('resources', false) instanceof ClientResourceService
           ? (getService?.('resources', false) as ClientResourceService)
           : new ClientResourceService(ctx, agnes.client, session)
+      const availability = contributionAvailability(config, (off) => {
+        ctx.effect(() => off)
+      })
+      const isActive = () => availability.getSnapshot()?.availability === 'active'
       const serviceApi = Object.freeze({
         effect: async (name: string, input: Record<string, unknown>, options: { operationId: string }) => {
-          if (!agnes.effectCaller || !config.services?.includes(name) || !options.operationId)
+          if (!isActive() || !agnes.effectCaller || !config.services?.includes(name) || !options.operationId)
             throw new Error('client effect is unavailable')
           const selected = session.readiness.getSnapshot()
           if (!selected.sessionId || selected.status !== 'ready')
@@ -122,11 +126,21 @@ export function clientModule(mod: ClientModule): {
           return agnes.effectCaller(config, selected.sessionId, name, options.operationId, input)
         },
         call: async (name: string, input: Record<string, unknown>) => {
-          if (!agnes.serviceCaller || !config.services?.includes(name))
+          if (!isActive() || !agnes.serviceCaller || !config.services?.includes(name))
             throw new Error(`client service is unavailable: ${name}`)
           const sessionId = session.sessionId
           if (!sessionId) throw new Error('client service requires an active session')
-          return await agnes.serviceCaller(config, sessionId, name, input)
+          const controller = new AbortController()
+          const unsubscribe = availability.subscribe(() => {
+            if (!isActive()) controller.abort()
+          })
+          try {
+            const output = await agnes.serviceCaller(config, sessionId, name, input, controller.signal)
+            controller.signal.throwIfAborted()
+            return output
+          } finally {
+            unsubscribe()
+          }
         },
       })
       const profileCall = async (
@@ -220,9 +234,6 @@ export function clientModule(mod: ClientModule): {
           ctx.effect(() => off)
         }),
         configurable: true,
-      })
-      const availability = contributionAvailability(config, (off) => {
-        ctx.effect(() => off)
       })
       Object.defineProperty(ctx, 'sessionStreams', {
         value: scopedProfileStreams(config, availability, (off) => ctx.effect(() => off), session),

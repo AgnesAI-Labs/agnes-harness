@@ -606,7 +606,7 @@ it('derives the same records from patches as from full projections across a sess
       id: 's:side:enhanced:0',
       sessionId: 's',
       laneId: 'side',
-      source: { owner: 'agnes/deliverables', toolUseId: 'enhanced', callSeq: 22 },
+      source: { owner: 'agnes/deliverables', toolUseId: 'enhanced', callSeq: 22, resultSeq: 25 },
       turnId: 'turn-2',
       seq: 22,
       inline: false,

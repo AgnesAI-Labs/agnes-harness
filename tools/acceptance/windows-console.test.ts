@@ -17,7 +17,7 @@ function run(script: string, options: string[] = [], nodeArgs: string[] = []) {
       'utf8',
       driver,
       '--timeout',
-      '8',
+      '25',
       ...options,
       '--',
       process.execPath,
@@ -25,7 +25,7 @@ function run(script: string, options: string[] = [], nodeArgs: string[] = []) {
       '-e',
       script,
     ],
-    { encoding: 'utf8', timeout: 15_000, windowsHide: true, maxBuffer: 5 * 1024 * 1024 },
+    { encoding: 'utf8', timeout: 45_000, windowsHide: true, maxBuffer: 5 * 1024 * 1024 },
   )
   expect(result.error, `${python}: ${result.error?.message}`).toBeUndefined()
   expect(result.signal, result.stderr).toBeNull()
@@ -66,7 +66,7 @@ describe('ConPTY screen text', () => {
   })
 })
 
-describe.skipIf(!windows)('real Windows console test driver', () => {
+describe.skipIf(!windows)('real Windows console test driver', { timeout: 50_000 }, () => {
   it('provides real terminal handles, Unicode output and the actual exit code', () => {
     const result = run("console.log('终端', process.stdin.isTTY, process.stdout.isTTY); process.exitCode = 7")
     expect(result.status, result.stderr).toBe(7)
@@ -85,7 +85,7 @@ describe.skipIf(!windows)('real Windows console test driver', () => {
   })
 
   it('does not report confirmation when the expected prompt never appeared', () => {
-    const result = run("console.log('No question')", ['--expect', 'Continue? [y/N]'])
+    const result = run("console.log('No question')", ['--timeout', '3', '--expect', 'Continue? [y/N]'])
     expect(result.status).toBe(125)
     expect(result.stderr).toContain('expected prompt was not observed')
   })

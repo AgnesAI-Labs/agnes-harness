@@ -910,7 +910,7 @@ export class Session {
   }
 
   control(
-    action: 'pause' | 'resume' | 'cancel' | 'interrupt' | 'promote' | 'child-stop' | 'child-continue',
+    action: import('@agnes/protocol/gen/agnes-v1').SessionControlParams['action'],
     opts: { itemId?: string; childId?: string; text?: string; commandId?: string } = {},
   ): Promise<number> {
     return submitCommand(

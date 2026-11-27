@@ -42,4 +42,5 @@ export interface ExtensionAPI {
 // biome-ignore lint/suspicious/noConfusingVoidType: a factory may return nothing, a Disposer, or a promise of either
 export type ExtensionFactory = (agnes: ExtensionAPI) => void | Disposer | Promise<void | Disposer>
 
+export { evaluateSemverRange } from './api-range.js'
 export { sanitize } from './sanitize.js'

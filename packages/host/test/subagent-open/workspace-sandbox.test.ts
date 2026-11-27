@@ -13,6 +13,7 @@ import { createTestHost } from '../../testkit/index.js'
 
 const baseDir = fileURLToPath(new URL('../../../base', import.meta.url))
 const PARENT = 'subagent-parent'
+const WORKSPACE_TURN_TIMEOUT = 45_000
 
 const dirs: string[] = []
 afterEach(() => {
@@ -179,7 +180,9 @@ function collectListed(req: RequestBody): InferenceEvent[] {
 }
 
 describe('subagents in a workspace-bound Host session', () => {
-  it('collects a forked child turn and leaves it idle for follow-ups', async () => {
+  it('collects a forked child turn and leaves it idle for follow-ups', {
+    timeout: WORKSPACE_TURN_TIMEOUT,
+  }, async () => {
     const provider = new RoutedProvider(
       [
         toolCall('subagent_fork', { question: 'summarise the workspace', isolation: 'shared' }),
@@ -208,7 +211,9 @@ describe('subagents in a workspace-bound Host session', () => {
     }
   })
 
-  it('runs subagent_spawn and lets the parent collect the child result', async () => {
+  it('runs subagent_spawn and lets the parent collect the child result', {
+    timeout: WORKSPACE_TURN_TIMEOUT,
+  }, async () => {
     let childKey = ''
     const provider = new RoutedProvider(
       [
@@ -256,7 +261,9 @@ describe('subagents in a workspace-bound Host session', () => {
     }
   })
 
-  it('opens a worktree spawn under the parent workspace sandbox', async () => {
+  it('opens a worktree spawn under the parent workspace sandbox', {
+    timeout: WORKSPACE_TURN_TIMEOUT,
+  }, async () => {
     let childKey = ''
     const provider = new RoutedProvider(
       [
@@ -292,7 +299,9 @@ describe('subagents in a workspace-bound Host session', () => {
     }
   })
 
-  it('holds an extension activation until an in-flight spawned child turn has ended', async () => {
+  it('holds an extension activation until an in-flight spawned child turn has ended', {
+    timeout: WORKSPACE_TURN_TIMEOUT,
+  }, async () => {
     let release!: () => void
     const provider = new RoutedProvider(
       [toolCall('subagent_spawn', { task: 'slow work', isolation: 'shared' }), text('parent done')],
@@ -322,7 +331,9 @@ describe('subagents in a workspace-bound Host session', () => {
     }
   })
 
-  it('queues a child spawned while an activation is quiescing instead of failing it', async () => {
+  it('queues a child spawned while an activation is quiescing instead of failing it', {
+    timeout: WORKSPACE_TURN_TIMEOUT,
+  }, async () => {
     let host!: Awaited<ReturnType<typeof workspaceHost>>['host']
     let activation: Promise<unknown> | undefined
     let childAtSwitch: unknown

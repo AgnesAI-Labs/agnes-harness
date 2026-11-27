@@ -10,7 +10,8 @@ import { ConversationMarkdown } from '@agnes/web-ui/conversation'
  * examples such as `<tool>` whose closing tag will never arrive.
  */
 export function ChildAgentReport({ job, t }: { job: SessionJob; t: UiExtensionContext['t'] }) {
-  const running = job.status === 'running'
+  const childState = job.childStatus ?? job.status
+  const running = childState === 'running' || childState === 'starting'
   const text = job.stdout ?? ''
   return (
     <section className="workbench-child-report" aria-label={t('workbench.terminal.childOutput')}>
@@ -24,8 +25,11 @@ export function ChildAgentReport({ job, t }: { job: SessionJob; t: UiExtensionCo
         </p>
       )}
       {running ? null : (
-        <p className="workbench-child-report-foot" data-tone={job.status === 'failed' ? 'danger' : undefined}>
-          {t('workbench.terminal.status.' + job.status)}
+        <p
+          className="workbench-child-report-foot"
+          data-tone={job.status === 'failed' || childState === 'disconnected' ? 'danger' : undefined}
+        >
+          {t(`workbench.terminal.childStatus.${childState}`)}
         </p>
       )}
     </section>

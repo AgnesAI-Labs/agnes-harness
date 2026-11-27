@@ -510,6 +510,14 @@ export class WindowsExecutionAuthority {
       mutation = await native.apply({ before, grantId, writeSid })
     } catch (error) {
       await this.#settleFailedApply(entry, error)
+      if (codeOf(error) === 'EACCES' || codeOf(error) === 'EPERM')
+        throw Object.assign(
+          aclError(
+            'E_ACL_ACCESS_DENIED',
+            'Windows denied permission to set up the workspace write restriction',
+          ),
+          { cause: error },
+        )
       throw error
     }
     const change = mutation.changes.find((item) => sameIdentity(item.identity, before.identity))

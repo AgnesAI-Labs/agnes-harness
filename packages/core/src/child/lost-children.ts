@@ -1,9 +1,19 @@
+import { projectChildStatus } from '@agnes/core-child-control/child/status-projection'
 import { type ChildControlStore, hasChildControl } from '@agnes/core-child-control/child/store'
-import type { ChildTaskRecord } from '@agnes/core-child-control/child/types'
+import { type ChildTaskRecord, isTerminalChildState } from '@agnes/core-child-control/child/types'
 import type { ChildHandle } from '@agnes/core-effects/effects/tool-context'
+import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
-import { deliverChildCompletion } from './completion-notice.js'
+import { deliverChildCompletion, recoverChildCompletions } from './completion-notice.js'
+import { protectChildLeases } from './heartbeat.js'
+import {
+  appendPauseTerminalOnce,
+  canSettleColdCancelling,
+  hasLivePauseAdmission,
+  hasLivePendingPause,
+  SETTLED_PAUSE_OUTCOMES,
+} from './pause-control.js'
 import { recoverRoleChildren } from './resume-role.js'
 import { type ChildRolePort, recordedChildRole } from './roles.js'
 
@@ -37,10 +47,179 @@ export async function recoverChildren(
     resume: (childKey: string) => Promise<ChildHandle>
   },
 ): Promise<void> {
-  await recoverRoleChildren(parent, roles, here.handle, here.resume)
-  await settleLostChildren(parent, (key) => here.handle(key) || here.opening(key)).catch(
-    bestEffort(parent.d.logger, 'lost-child-settle'),
+  const store = parent.d.log.storage
+  const parentRows = hasChildControl(store) ? await store.listByParent(parent.key).catch(() => []) : []
+  const liveBefore = new Set(
+    parentRows.map((row) => row.childKey).filter((key) => here.handle(key) || here.opening(key)),
   )
+  await recoverRoleChildren(parent, roles, here.handle, here.resume)
+  await recoverChildCompletions(parent, (key) => liveBefore.has(key), parentRows).catch(
+    bestEffort(parent.d.logger, 'child-completion-recovery'),
+  )
+  const lostKeys = new Set(
+    hasChildControl(store) && store.listLostChildren
+      ? (await store.listLostChildren(parent.key).catch(() => [])).map((row) => row.childKey)
+      : [],
+  )
+  const leased = await protectChildLeases(parent, (key) => here.handle(key) || here.opening(key))
+  await settleLostChildren(
+    parent,
+    (key) => here.handle(key) || here.opening(key) || (!lostKeys.has(key) && leased(key)),
+  ).catch(bestEffort(parent.d.logger, 'lost-child-settle'))
+  await reconcilePendingPauseAdmissions(parent).catch(
+    bestEffort(parent.d.logger, 'child-pause-admission-reconcile'),
+  )
+}
+
+const PAUSE_REFUSAL_REASONS = new Set([
+  'E_UNSUPPORTED',
+  'E_RELATION',
+  'E_CHILD_NOT_FOUND',
+  'E_CHILD_CONFLICT',
+  'E_ENVELOPE',
+])
+
+type PauseControlResult = {
+  failed?: boolean
+  reason?: string
+  executionState?: string
+}
+
+async function readPauseControlResult(
+  parent: SessionImpl,
+  admissionId: string,
+): Promise<{ failed?: PauseControlResult; settled?: PauseControlResult }> {
+  let failed: PauseControlResult | undefined
+  let settled: PauseControlResult | undefined
+  for await (const rows of scanPages((query) => parent.scan(query), {
+    type: 'x/core/child-control-result',
+    lane: parent.lane,
+    toSeq: parent.lastSeq,
+  })) {
+    for (const row of rows) {
+      if (row.trust !== 'trusted') continue
+      const data = row.data as {
+        action?: string
+        admissionId?: string
+        pausePending?: boolean
+        failed?: boolean
+        reason?: string
+        executionState?: string
+      }
+      if (data.action !== 'pause' || data.admissionId !== admissionId || data.pausePending === true) continue
+      if (data.failed === true) failed = data
+      else settled = data
+    }
+  }
+  return { ...(failed ? { failed } : {}), ...(settled ? { settled } : {}) }
+}
+
+/**
+ * Reconciles `child-pause` admissions that remained `queued` when the parent closed or crashed before
+ * the child's safe-point drain settled, appending one idempotent terminal fact per `admissionId`.
+ */
+async function reconcilePendingPauseAdmissions(parent: SessionImpl): Promise<void> {
+  if (parent.closingOrClosed) return
+  const store = parent.d.log.storage
+  if (!hasChildControl(store)) return
+  type QueuedPause = {
+    admissionId: string
+    childId: string
+    actor: SessionImpl['d']['actor']
+    seq: number
+  }
+  const queued = new Map<string, QueuedPause>()
+  const settled = new Set<string>()
+  for await (const rows of scanPages((query) => parent.scan(query), {
+    type: 'x/core/control',
+    lane: parent.lane,
+    toSeq: parent.lastSeq,
+  })) {
+    for (const row of rows) {
+      if (row.trust !== 'trusted') continue
+      const data = row.data as {
+        action?: string
+        outcome?: string
+        admissionId?: string
+        childId?: string
+      }
+      if (data.action !== 'child-pause' || typeof data.admissionId !== 'string' || !data.admissionId) continue
+      if (data.outcome === 'queued' && typeof data.childId === 'string' && data.childId) {
+        queued.set(data.admissionId, {
+          admissionId: data.admissionId,
+          childId: data.childId,
+          actor: row.actor,
+          seq: row.seq,
+        })
+      } else if (typeof data.outcome === 'string' && SETTLED_PAUSE_OUTCOMES.has(data.outcome)) {
+        settled.add(data.admissionId)
+      }
+    }
+  }
+  const unresolved = [...queued.values()].filter(
+    (entry) =>
+      !settled.has(entry.admissionId) &&
+      !hasLivePendingPause(entry.childId) &&
+      !hasLivePauseAdmission(parent, entry.admissionId),
+  )
+  for (const entry of unresolved) {
+    await appendPauseTerminalOnce(parent, entry.admissionId, entry.seq + 1, async () => {
+      if (hasLivePendingPause(entry.childId) || hasLivePauseAdmission(parent, entry.admissionId)) return []
+      const recorded = await readPauseControlResult(parent, entry.admissionId)
+      const record = await store.lookupByKey(entry.childId)
+      if (recorded.failed) {
+        const reason =
+          typeof recorded.failed.reason === 'string' && recorded.failed.reason
+            ? recorded.failed.reason
+            : 'CHECKPOINT_FAILED'
+        const outcome = PAUSE_REFUSAL_REASONS.has(reason) ? 'refused' : 'uncertain'
+        return [
+          parent.controls.fact('child-pause', outcome, entry.actor, {
+            admissionId: entry.admissionId,
+            childId: entry.childId,
+            ...(record ? { executionState: record.state } : {}),
+            reason,
+          }),
+        ]
+      }
+      if (recorded.settled) {
+        const outcome = recorded.settled.executionState === 'paused' ? 'applied' : 'withdrawn'
+        return [
+          parent.controls.fact('child-pause', outcome, entry.actor, {
+            admissionId: entry.admissionId,
+            childId: entry.childId,
+            ...(outcome === 'withdrawn' && typeof recorded.settled.executionState === 'string'
+              ? { executionState: recorded.settled.executionState }
+              : {}),
+          }),
+        ]
+      }
+      const outcome: 'withdrawn' | 'uncertain' =
+        !record || isTerminalChildState(record.state) ? 'withdrawn' : 'uncertain'
+      const reason = outcome === 'withdrawn' ? 'CHILD_TERMINATED_BEFORE_PAUSE' : 'PAUSE_UNSETTLED_ON_RECOVERY'
+      return [
+        parent.controls.fact('child-pause', outcome, entry.actor, {
+          admissionId: entry.admissionId,
+          childId: entry.childId,
+          ...(record ? { executionState: record.state } : {}),
+          reason,
+        }),
+        parent.ev(
+          'x/core/child-control-result',
+          {
+            action: 'pause',
+            admissionId: entry.admissionId,
+            childKey: entry.childId,
+            status: record ? projectChildStatus(record).status : 'cancelled',
+            executionState: record?.state ?? 'cancelled',
+            failed: true,
+            reason,
+          },
+          { actor: entry.actor, ignorable: true },
+        ),
+      ]
+    })
+  }
 }
 
 /**
@@ -60,7 +239,7 @@ async function settleLostChildren(parent: SessionImpl, attached: (childKey: stri
       (await recordedChildRole(parent, record.childKey))
     )
       continue
-    const outcome = await settleSubtree(store as Settling, record, attached)
+    const outcome = await settleSubtree(parent, store as Settling, record, attached)
     if (!outcome) continue
     await deliverChildCompletion(
       parent,
@@ -77,13 +256,16 @@ async function settleLostChildren(parent: SessionImpl, attached: (childKey: stri
  * kernel, the whole subtree is left for a later run and the child stays a candidate until then.
  */
 async function settleSubtree(
+  parent: SessionImpl,
   store: Settling,
   record: ChildTaskRecord,
   attached: (childKey: string) => boolean,
 ): Promise<'failed' | 'cancelled' | null> {
+  if (record.state === 'cancelling' && !(await canSettleColdCancelling(parent, record))) return null
   for (const descendant of await store.listByParent(record.childKey)) {
     if (descendant.creationPhase !== 'committed' || !CANDIDATE.has(descendant.state)) continue
-    if (attached(descendant.childKey) || !(await settleSubtree(store, descendant, attached))) return null
+    if (attached(descendant.childKey) || !(await settleSubtree(parent, store, descendant, attached)))
+      return null
   }
   return store.settleLostChild(record.childKey, record.stateRevision)
 }

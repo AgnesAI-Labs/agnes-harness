@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import { createClient, memoryJournal } from '@agnes/sdk'
+import { windowsTestHostEnv } from '../../tools/test-fixtures/windows-host-env.mjs'
 
 export const say = (message) => console.log(message)
 export async function waitFor(read, accepts, description, timeout = 30000) {
@@ -31,10 +32,9 @@ export async function runtime(check, limits = {}) {
   // Deliberately do not inherit the operator's home, model credentials or plugin configuration.
   const env = {
     PATH: process.env.PATH,
-    ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-    ...(process.env.PATHEXT ? { PATHEXT: process.env.PATHEXT } : {}),
     TEMP: root,
     TMP: root,
+    ...windowsTestHostEnv(join(root, 'windows-user'), join(root, 'tmp')),
     HOME: root,
     TMPDIR: tmpdir(),
     AGH_TELEMETRY_DISABLED: '1',

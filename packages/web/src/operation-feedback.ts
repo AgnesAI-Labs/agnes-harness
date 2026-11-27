@@ -12,9 +12,12 @@ export function createOperationFeedback() {
   const seen = new Set<string>()
   const sink: FeedbackSink = {
     publish(result) {
-      if (result.outcome !== 'success' || seen.has(result.id)) return
+      if (seen.has(result.id)) return
+      const current = store.getSnapshot()
+      const next = enqueueFeedback(current, result)
+      if (next === current) return
       seen.add(result.id)
-      store.set(enqueueFeedback(store.getSnapshot(), result))
+      store.set(next)
     },
     resolve(scope) {
       const snapshot = store.getSnapshot()

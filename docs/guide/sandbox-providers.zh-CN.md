@@ -68,6 +68,22 @@ Linux bubblewrap 已通过 `--dev /dev` 提供隔离的最小设备树，不暴�
 
 macOS Seatbelt 配置允许网络时，还允许查找系统证书信任服务 `com.apple.trustd.agent` 和 `com.apple.trustd`。`gh` 等 Go 程序以及其他通过 Security.framework 校验服务器证书的客户端需要它们才能完成 TLS；缺少时会报 `x509: OSStatus -26276` 或 TLS 错误。登录会话中的命令查询信任代理，LaunchDaemon 下的命令查询系统信任守护进程，因此两个名称都予以授权。证书校验保持开启，不授予其他 Mach 服务。trustd 会在配置的网络规则之外，为所校验的证书下载中间证书和吊销数据，因此只有完全开放网络时才授予此查找；禁止网络和仅提供回环服务的配置不获得任何 Mach 查找。
 
+## 保留文件隔离并开放命令网络
+
+Linux bubblewrap 和 macOS Seatbelt 支持现有配置 `sandbox.network_allow: ['*']`，表示明确开放出站网络。部署侧可在相应 preset／权限覆盖文档中添加此项，同时保留原有的 `level: L1`、审批和文件写入限制；无需改为完全访问。未配置时仍默认关闭命令网络，批准一条 shell 命令不会自动放开网络。
+
+仅支持 `['*']` 或空列表；具体域名的白名单尚未实现，仍拒绝执行，不会偷偷开放全部网络。子会话继承的上限仍有效：父会话关闭网络时，子会话不能自行开放。此配置不能与 `loopback_serve` 同用，也不能绕过目标服务自己的办公网络访问策略。Windows 写限制仍采用下述独立契约，不使用此项配置。
+
+LLMSG Linux 云端镜像需要“可修改工作区”工具默认出网时，在导出的独立构建源码中、依赖安装后、`build:local` 前执行 `node integrations/llmsg/command-network.mjs /build/core`（`/build/core` 替换为实际构建源码根目录）。脚本仅给 `permission-workspace-write` 增加 `network_allow: ['*']`，保留文件隔离、工具策略和审批规则；只读权限仍拒绝未分类的 shell 命令。脚本拒绝改写 Git 工作目录、具体域名白名单或回环服务配置。普通源码构建仍默认禁网。该配置随 AGH 运行镜像打包，不需要运维调整外网、DNS、Key 或 Token；共享沙箱只有更新该镜像后才生效，已有会话保留原策略，应新建会话验收。
+
+从 GitHub 拉取分支后，单独执行旧的 `build:local` 不会自动开启云端网络。沿用 `ADD core-source.tar /build/core/` 的 Docker 构建时，把准备命令插在依赖安装与构建之间：
+
+```dockerfile
+RUN node tools/toolchain/run.mjs install --frozen-lockfile
+RUN node integrations/llmsg/command-network.mjs /build/core
+RUN node tools/toolchain/run.mjs --filter @agnes/cli build:local --output-dir /out/runtime
+```
+
 ## Windows 写限制
 
 Windows 上，`local` 对 `read-only` 和 `workspace-write` 会话的命令使用 Windows ACL 写限制：受限令牌、Low 完整性级别、NTFS ACL 授权，以及由 Host 持有的 Job Object。这是部分保护，只限制文件写入。它不是 macOS、Linux 那样完整的 L1 隔离，也不是严格的路径沙箱。需要 NTFS 工作区和可用的原生模块。
@@ -84,6 +100,12 @@ Windows 上，`local` 对 `read-only` 和 `workspace-write` 会话的命令使�
 
 写限制无法建立时拒绝启动，命令不会直接运行。常见原因：非 NTFS 卷、磁盘根目录、UNC 路径、未验证的 junction 根目录、缺少原生模块、ACL 修改失败。
 
+建立写授权需要运行 AGH 的账户对工作区和待授权对象拥有 `WRITE_DAC`、`WRITE_OWNER` 权限，普通文件修改权限并不足够。此阶段访问被拒绝时返回 `E_ACL_ACCESS_DENIED`；应选择具备所需权限的工作区，或由目录所有者检查权限。AGH 不会提权、取得所有权或自动改为不受限执行。
+
+Windows 自动选择 PowerShell 时会验证版本，并实际运行一条有限的探测命令：部署允许只读或可修改工作区时使用受限令牌；仅允许完全访问时保留普通令牌。不能加入受管 Job 或不能执行的安装会被跳过，再选择可用版本，不取消写限制。显式指定 `AGNES_POWERSHELL=7`、`5.1` 或绝对路径时不跨版本回退；实际启动不兼容时返回 `E_POWERSHELL_UNAVAILABLE`，受限启动的 attempt.reason 为 `restricted-execution-failed`，普通启动为 `execution-failed`。本机商店版 7.7 无法加入 Job，完全访问也会拒绝，以免取消和超时失效；`auto` 可选择通过探测的 5.1。改为 `auto` 或安装兼容版本后重启。探测结果在进程内缓存，选择或可执行文件变化时重新探测。
+
+所有 Windows 有限命令均在恢复执行前核验 Job 成员身份，失败时关闭尚未运行的目标；完全访问只取消文件隔离，不取消进程生命周期管理。此修复需要重新构建 Windows 原生模块及 broker，仅替换前端或 JavaScript 文件不足以生效。
+
 对工作区的副作用：
 
 - 授权会一直保留在工作区上，直到被明确移除。命令结束或会话关闭都不会移除。
@@ -95,6 +117,7 @@ Windows 上，`local` 对 `read-only` 和 `workspace-write` 会话的命令使�
 
 受限命令内部的限制：
 
+- 系统 `curl.exe` 等 Schannel 客户端可能因受限令牌无法初始化 HTTPS 凭据，报 `SEC_E_NO_CREDENTIALS`（`0x8009030e`）。这不能单独证明 DNS 或网络故障。可在相同权限下用 Node HTTPS 客户端或基于 OpenSSL 的客户端检查连通性；工具只补充该建议，不切换权限、替换命令或关闭证书校验。
 - Node 程序不能启动子进程并捕获其输出或向它输入（`stdio: 'pipe'`，`execFileSync` 和 `execSync` 默认也是这样）：启动会以 `EPERM` 失败。继承或忽略标准流的子进程可以启动，PowerShell 管道可用。
 - 只读命令没有可写的临时目录，因此 PowerShell 以受限语言模式启动：`Add-Type`、`[Console]::Out.Write` 这类 .NET 方法调用、COM 和反射会失败，cmdlet 可用。可写命令不受影响。
 - 限制只覆盖文件写入。同一 Windows 用户的受限命令之间没有进程级隔离：只读命令可以打开同时运行的可写命令的进程。

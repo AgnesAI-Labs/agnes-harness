@@ -126,7 +126,20 @@ describe('durable tool dispatch state', () => {
       },
     })
     const rows = await opened.log.scan({ fromSeq: 1, toSeq: opened.log.lastSeq })
-    const resultSeq = rows.find((row) => row.type === 'tool/result')?.seq ?? 0
+    const result = rows.find((row) => row.type === 'tool/result')
+    if (!result) throw Error('missing committed tool result')
+    expect(result.data).not.toHaveProperty('dispatchPhase')
+    const facts = rows.filter((row) => row.type === 'x/core/tool-dispatch')
+    expect(facts).toHaveLength(1)
+    expect(facts[0]).toMatchObject({
+      origin: 'system',
+      trust: 'trusted',
+      ignorable: true,
+      data: { version: 1, toolUseId: (result.data as { toolUseId: string }).toolUseId, phase: 'responded' },
+    })
+    const resultSeq = result?.seq ?? 0
+    expect(facts[0]?.seq).toBeLessThan(resultSeq)
+    expect(facts[0]?.sourceEventSeqs).toEqual(result?.sourceEventSeqs)
     // The counter the result's own commit wrote: that commit ends at or after the result row, and
     // the settlement is in it.
     const written = opened.opWrites().find((write) => write.seq >= resultSeq)
@@ -800,7 +813,12 @@ describe('durable tool dispatch state', () => {
       (row) => row.type,
     )
     // No op-mark for the approval: it commits with the intent.
-    expect(rows.slice(0, 3)).toEqual(['effect/intent', 'x/core/op-mark', 'tool/result'])
+    expect(rows.slice(0, 4)).toEqual([
+      'effect/intent',
+      'x/core/op-mark',
+      'x/core/tool-dispatch',
+      'tool/result',
+    ])
     expect(seen).toEqual([
       expect.objectContaining({
         batch: expect.objectContaining({
@@ -915,9 +933,13 @@ describe('durable tool dispatch state', () => {
     expect((await reopened.session.resume()).actions[0]?.action).toBe('unknown')
     expect(dispatches).toBe(0)
   })
-  it.each(['responded', 'rejected_before_effect'] as const)(
-    'reopens a Host %s call whose result commit failed as unknown, without redispatch',
-    async (mode) => {
+  it.each(
+    (['responded', 'rejected_before_effect'] as const).flatMap((mode) =>
+      (['resume', 'close'] as const).map((recovery) => ({ mode, recovery })),
+    ),
+  )(
+    'reopens a Host $mode call whose result commit failed with $recovery, without redispatch',
+    async ({ mode, recovery }) => {
       const storage = new MemoryStorage()
       const failing = new Proxy(storage, {
         get(target, property, receiver) {
@@ -967,8 +989,27 @@ describe('durable tool dispatch state', () => {
         ...(mode === 'responded' ? { dispatchPhase: 'may_have_sent' } : {}),
         dispatchAttempt: 1,
       })
-      expect((await reopened.session.resume()).actions[0]?.action).toBe('unknown')
+      expect(
+        (await reopened.session.resume(recovery === 'close' ? { mode: 'close' } : undefined)).actions[0]
+          ?.action,
+      ).toBe('unknown')
       expect(dispatches).toBe(mode === 'responded' ? 1 : 0)
+      const facts = await reopened.log.scan({ type: 'x/core/tool-dispatch', limit: 10 })
+      expect(facts).toHaveLength(mode === 'responded' ? 1 : 0)
+      if (mode === 'responded') {
+        const result = (await reopened.log.scan({ type: 'tool/result', limit: 10 }))[0]!
+        expect(result.data).not.toHaveProperty('dispatchPhase')
+        expect(facts[0]).toMatchObject({
+          origin: 'system',
+          trust: 'trusted',
+          ignorable: true,
+          sourceEventSeqs: result.sourceEventSeqs,
+          data: { version: 1, phase: 'may_have_sent' },
+        })
+        expect(facts[0]!.seq).toBeLessThan(result.seq)
+      }
+      await reopened.session.resume()
+      expect(await reopened.log.scan({ type: 'x/core/tool-dispatch', limit: 10 })).toEqual(facts)
       expect(
         (await reopened.log.scan({ type: 'decision/state', limit: 100 })).filter(
           (row) =>
@@ -976,7 +1017,7 @@ describe('durable tool dispatch state', () => {
             (row.data as { request: { spec: { purpose: string } } }).request.spec.purpose ===
               'unknown-outcome',
         ),
-      ).toHaveLength(1)
+      ).toHaveLength(recovery === 'close' ? 0 : 1)
       expect(preflights).toBe(1)
       await reopened.session.close()
     },

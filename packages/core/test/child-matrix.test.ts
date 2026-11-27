@@ -505,15 +505,20 @@ describe('parent close reasons and late approval', () => {
       if (state === 'closed') await child.close()
       try {
         expect((await storage.lookupByKey(child.key))?.state).toBe(state === 'closed' ? 'idle' : state)
+        const expectedState = state === 'ready' ? 'cancelled' : 'idle'
         if (cleanupFails) await expect(parent.close()).rejects.toThrow('Child instance cleanup failed')
         else await parent.close()
-        expect((await storage.lookupByKey(child.key))?.state).toBe('cancelled')
+        expect((await storage.lookupByKey(child.key))?.state).toBe(expectedState)
         expect(k.sessions.has(child.key)).toBe(false)
         expect(parent.d.children.get?.(child.key)).toBeUndefined()
         expect(childSession.closingOrClosed).toBe(true)
         expect(childSession.d.log.isClosed).toBe(true)
         expect(await parent.d.children.list?.()).toEqual([
-          expect.objectContaining({ id: child.key, status: 'cancelled', continuable: false }),
+          expect.objectContaining({
+            id: child.key,
+            status: expectedState,
+            continuable: expectedState === 'idle',
+          }),
         ])
         if (state !== 'ready')
           expect(await parent.d.children.inspect?.(child.key)).toMatchObject({ text: 'child' })
@@ -523,7 +528,7 @@ describe('parent close reasons and late approval', () => {
         if (cleanupFails) await expect(k.close()).rejects.toThrow('Child instance cleanup failed')
         else await k.close()
       }
-      expect((await storage.lookupByKey(child.key))?.state).toBe('cancelled')
+      expect((await storage.lookupByKey(child.key))?.state).toBe(state === 'ready' ? 'cancelled' : 'idle')
     },
   )
 

@@ -16,7 +16,6 @@ import {
   UI_LOCALES,
   type UiLocale,
 } from './locale-preference.js'
-import { readSkinCache } from './skin.js'
 import {
   applyFontScale,
   applyTheme,
@@ -153,30 +152,23 @@ export function bindAppearance(options: {
   return { sync }
 }
 
-/** Skin manifest entry: display and addressing information only; callers fetch stylesheet contents as needed. */
-export type SkinOption = { id: string; name: string; packageName: string }
-
-export type SkinGroupOptions = {
-  /** Skin group container, the scope containing `#skin-option-items`. */
-  scope: ParentNode
-  /** Read the current selection; the selection flow writes the cache, while this only reads it. */
-  storage: Pick<Storage, 'getItem'>
-  /**
-   * List installed skins declared by **enabled and trusted** packages only. Throw on failure so
-   * this module can display the error and retry instead of disguising it as no skins.
-   */
-  list: () => Promise<readonly SkinOption[]>
-  /**
-   * Select a skin (`null` = built-in appearance). The implementation fetches CSS, caches and applies it.
-   * Throwing means selection did not take effect; the UI reports the error and retains the previous choice.
-   */
-  select: (id: string | null) => Promise<void> | void
+export type SkinGroupView = {
+  selected: string
+  skins: readonly { value: string; name: string; packageName: string; version: string }[]
+  unavailable: boolean
 }
 
-export type SkinGroupController = { sync: () => void; refresh: () => Promise<void> }
+export type SkinGroupOptions = {
+  scope: ParentNode
+  list(): Promise<SkinGroupView>
+  select(value: string): Promise<void>
+}
 
-/** The built-in appearance value: an empty string, distinct from every valid skin id. */
+export type SkinGroupController = { sync(): void; refresh(): Promise<void>; invalidate(): void }
+
 const NO_SKIN = ''
+const APPLICATION_SKIN = 'application'
+const UNAVAILABLE_SKIN = 'unavailable'
 
 type SkinStatusProps = { status: string | null; failed: boolean; onRetry(): void }
 
@@ -191,18 +183,12 @@ function skinStatus(props: SkinStatusProps): ReactNode {
     )
   return createElement(
     'p',
-    { className: 'appearance-option-hint', hidden: props.status === null },
+    { className: 'appearance-option-hint', hidden: props.status === null, role: 'status' },
     props.status,
   )
 }
 
-/**
- * Bind the skin radio group in General → Appearance to the installed skin manifest.
- *
- * Selection **applies immediately** by calling `select`, which fetches CSS, caches and applies it.
- * This module owns no stylesheet text, so it needs neither reloads nor requests here. Manifest fetch
- * failures are **visible with retry**; selection failures retain the previous choice and report the error.
- */
+/** Render the daemon's current choice and submit explicit choices back through the host. */
 export function bindSkinGroup(options: SkinGroupOptions): SkinGroupController {
   const container = options.scope.querySelector<HTMLElement>('#skin-option-items')
   if (container === null) throw new Error('skin options container is missing')
@@ -210,25 +196,27 @@ export function bindSkinGroup(options: SkinGroupOptions): SkinGroupController {
   if (select === null) throw new Error('skin select is missing')
   let pickerLabel = tr('settings-shell.skin')
   let picker = createSelectPicker(select, { label: pickerLabel })
-  let selected = readSkinCache(options.storage)?.id ?? NO_SKIN
-  let skins: readonly SkinOption[] = []
-  let status: string | null = null
+  let view: SkinGroupView | undefined
   let failed = false
+  let selecting = false
+  let refreshing = false
+  let request = 0
+  let status: 'select-failed' | undefined
 
-  // The list is whatever is installed right now: the built-in look first, then every skin with the
-  // package it came from. A cached skin that is no longer installed falls back to the built-in look.
   const render = (): void => {
     // A late roster or selection reply cannot update a pane the host has already unmounted.
     if (!select.isConnected || !container.isConnected) return
     setSettingsSelectOptions(select, [
+      { value: APPLICATION_SKIN, label: tr('settings.appearance.applicationSkin') },
       { value: NO_SKIN, label: tr('settings.appearance.followTheme') },
-      ...skins.map((skin) => ({
-        value: skin.id,
-        label: `${skin.name} · ${tr('settings.appearance.fromPackage', { package: skin.packageName })}`,
+      ...(view?.unavailable ? [{ value: UNAVAILABLE_SKIN, label: tr('settings.appearance.savedSkin') }] : []),
+      ...(view?.skins ?? []).map((skin) => ({
+        value: skin.value,
+        label: `${skin.name} · ${tr('settings.appearance.fromPackage', { package: `${skin.packageName} ${skin.version}` })}`,
       })),
     ])
-    select.value = skins.some((skin) => skin.id === selected) ? selected : NO_SKIN
-    select.disabled = failed
+    select.value = view?.unavailable ? UNAVAILABLE_SKIN : (view?.selected ?? APPLICATION_SKIN)
+    select.disabled = !view || failed || selecting || refreshing
     const label = tr('settings-shell.skin')
     if (label !== pickerLabel) {
       picker.destroy()
@@ -236,43 +224,68 @@ export function bindSkinGroup(options: SkinGroupOptions): SkinGroupController {
       picker = createSelectPicker(select, { label })
     }
     picker.sync()
-    renderRegion(container, createElement(skinStatus, { status, failed, onRetry: () => void refresh() }))
+    const message =
+      status === 'select-failed'
+        ? tr('settings.appearance.skinNotApplied')
+        : view?.unavailable
+          ? tr('settings.appearance.skinUnavailable')
+          : null
+    renderRegion(
+      container,
+      createElement(skinStatus, { status: message, failed, onRetry: () => void refresh() }),
+    )
   }
-  select.addEventListener('change', () => choose(select.value))
 
   const sync = (): void => render()
 
   const refresh = async (): Promise<void> => {
+    if (selecting) return
+    const epoch = ++request
+    refreshing = true
+    if (view) render()
     try {
-      skins = await options.list()
-      selected = readSkinCache(options.storage)?.id ?? NO_SKIN
-      status = null
+      const next = await options.list()
+      if (epoch !== request) return
+      view = next
       failed = false
-      render()
     } catch {
-      status = null
+      if (epoch !== request) return
+      view = undefined
       failed = true
-      render()
+    }
+    refreshing = false
+    render()
+  }
+
+  const choose = async (value: string): Promise<void> => {
+    if (!view || selecting || refreshing || failed || !select.isConnected) return
+    if (value !== NO_SKIN && value !== APPLICATION_SKIN && !view.skins.some((skin) => skin.value === value))
+      return
+    request += 1
+    selecting = true
+    status = undefined
+    render()
+    try {
+      await options.select(value)
+    } catch {
+      status = 'select-failed'
+    } finally {
+      selecting = false
+      await refresh()
     }
   }
+  select.addEventListener('change', () => void choose(select.value))
 
-  const choose = (value: string): void => {
-    const previous = selected
-    selected = value
-    render()
-    void Promise.resolve(options.select(selected === NO_SKIN ? null : selected))
-      .then(() => {
-        status = null
-        render()
-      })
-      .catch(() => {
-        // Selection did not take effect: restore the previous choice instead of leaving a false selected state.
-        selected = previous
-        status = tr('settings.appearance.skinNotApplied')
-        render()
-      })
+  render()
+  return {
+    sync,
+    refresh,
+    invalidate() {
+      request += 1
+      refreshing = false
+      failed = false
+      view = undefined
+      render()
+    },
   }
-
-  // The caller triggers initial loading with `refresh` when opening the panel, avoiding requests on bind or duplicate loads.
-  return { sync, refresh }
 }

@@ -1,11 +1,14 @@
 import { externalChild } from '@agnes/core-child-control/child/directory'
 import { hasChildControl } from '@agnes/core-child-control/child/store'
 import { CoreError } from '@agnes/core-common/types'
-import type { ChildAgentListing } from '@agnes/extension-api'
+import type { ChildAgentListing, ChildTaskRecord } from '@agnes/extension-api'
 import type { Actor } from '@agnes/protocol'
 import type { SessionControlledChild } from '@agnes/protocol/gen/agnes-v1'
+import { bestEffort } from '../best-effort.js'
+import { type PendingPauseSettlement, readHumanChildState } from '../child/human-control.js'
+import { appendPauseTerminalOnce, beginPauseAdmissionSettlement } from '../child/pause-control.js'
 import { IN_PROCESS_CHILD_PROVIDER_ID } from '../child/provider.js'
-import { childBackend } from '../child/sessions.js'
+import { childBackend, ownedChildTree } from '../child/sessions.js'
 import type { SessionImpl } from '../step/session.js'
 
 const TERMINAL_CHILD = new Set(['completed', 'failed', 'cancelled'])
@@ -19,23 +22,16 @@ type ResolvedChild =
 /** Resolve by recorded ownership, never by a client-supplied key prefix or the newest generation. */
 export async function controlledChildTree(s: SessionImpl): Promise<SessionControlledChild[]> {
   const rows: SessionControlledChild[] = []
-  const visited = new Set<string>()
-  async function visit(parentId: string) {
-    if (visited.has(parentId)) return
-    visited.add(parentId)
-    const backend = childBackend(parentId)
-    for (const child of (await backend?.list()) ?? []) {
-      rows.push(await backend!.humanControlState(child.id))
-      await visit(child.id)
-    }
-  }
-  if (hasChildControl(s.d.log.storage)) await visit(s.key)
+  const storage = s.d.log.storage
+  if (hasChildControl(storage))
+    for await (const record of ownedChildTree(storage, s.key)) rows.push(await readControlledChild(s, record))
   for (const child of (await s.loopChildrenPort()?.list()) ?? []) {
     if (rows.some((row) => row.id === child.id)) continue
     rows.push({
       id: child.id,
       parentId: s.key,
       providerId: child.providerId,
+      ...(child.label ? { label: child.label } : {}),
       status: child.status,
       controls: {
         stop:
@@ -70,21 +66,44 @@ async function resolveControlledChild(s: SessionImpl, id: string): Promise<Resol
   return { kind: 'missing' }
 }
 
-async function coreControlledChild(s: SessionImpl, id: string): Promise<SessionControlledChild | undefined> {
-  if (!hasChildControl(s.d.log.storage)) return undefined
-  const visited = new Set<string>()
-  async function visit(parentId: string): Promise<SessionControlledChild | undefined> {
-    if (visited.has(parentId)) return undefined
-    visited.add(parentId)
-    const backend = childBackend(parentId)
-    for (const child of (await backend?.list()) ?? []) {
-      if (child.id === id) return backend!.humanControlState(id)
-      const nested = await visit(child.id)
-      if (nested) return nested
-    }
-    return undefined
+async function readControlledChild(s: SessionImpl, record: ChildTaskRecord) {
+  const backend = childBackend(record.parentKey)
+  return backend
+    ? backend.humanControlState(record.childKey)
+    : readHumanChildState(s, record.childKey, (row) => row.parentKey === record.parentKey, undefined, false)
+}
+
+async function ownedChildPath(s: SessionImpl, id: string) {
+  const store = s.d.log.storage
+  if (!hasChildControl(store) || id === s.key) return undefined
+  const seen = new Set([s.key])
+  const path: ChildTaskRecord[] = []
+  for (let key = id; !seen.has(key); ) {
+    seen.add(key)
+    const record = await store.lookupByKey(key)
+    if (!record) return undefined
+    path.unshift(record)
+    if (record.parentKey === s.key) return path
+    key = record.parentKey
   }
-  return visit(s.key)
+  return undefined
+}
+
+async function coreControlledChild(s: SessionImpl, id: string) {
+  const record = (await ownedChildPath(s, id))?.at(-1)
+  return record && readControlledChild(s, record)
+}
+
+async function resolveCoreBackend(s: SessionImpl, row: SessionControlledChild) {
+  const live = childBackend(row.parentId)
+  if (live) return live
+  const path = await ownedChildPath(s, row.id)
+  let backend = childBackend(s.key)
+  for (const ancestor of path?.slice(0, -1) ?? []) {
+    if (!backend) break
+    backend = childBackend(ancestor.childKey) ?? (await backend.reopenControlOwner(ancestor))
+  }
+  return path && childBackend(row.parentId)
 }
 
 async function refuse(
@@ -98,11 +117,15 @@ async function refuse(
   await s.d.log.append([s.controls.fact(name, 'refused', actor, { admissionId, childId, reason })])
 }
 
+export type ChildControlAction = 'stop' | 'continue' | 'pause' | 'resume' | 'close' | 'retain'
+
 function loopRefusal(
-  action: 'stop' | 'continue',
+  action: ChildControlAction,
   listing: ChildAgentListing,
 ): 'CONTROL_NOT_RUNNING' | 'LOOP_CONTROL_UNSUPPORTED' | undefined {
   const finished = TERMINAL_CHILD.has(listing.status)
+  if (action === 'pause' || action === 'resume' || action === 'close' || action === 'retain')
+    return 'LOOP_CONTROL_UNSUPPORTED'
   if (action === 'stop') {
     if (listing.interrupt !== true) return 'LOOP_CONTROL_UNSUPPORTED'
     if (listing.status !== 'running') return 'CONTROL_NOT_RUNNING'
@@ -113,16 +136,25 @@ function loopRefusal(
   return undefined
 }
 
+function controlErrorOutcome(error: unknown): 'refused' | 'uncertain' {
+  return error instanceof CoreError &&
+    ['E_UNSUPPORTED', 'E_RELATION', 'E_CHILD_NOT_FOUND', 'E_CHILD_CONFLICT', 'E_ENVELOPE'].includes(
+      error.code,
+    )
+    ? 'refused'
+    : 'uncertain'
+}
+
 export async function applyChildControl(
   s: SessionImpl,
   id: string,
-  action: 'stop' | 'continue',
+  action: ChildControlAction,
   actor: Actor,
   admissionId: string,
   text?: string,
 ): Promise<number> {
   if (action === 'continue' && !text?.trim()) throw new CoreError('E_ENVELOPE', 'Continue requires a message')
-  const name = action === 'stop' ? 'child-stop' : 'child-continue'
+  const name = `child-${action}`
   const resolved = await resolveControlledChild(s, id)
   if (resolved.kind === 'ambiguous') {
     await refuse(s, name, actor, admissionId, id, 'CHILD_OWNERSHIP_AMBIGUOUS')
@@ -158,10 +190,29 @@ export async function applyChildControl(
     s.controls.fact(name, 'requested', actor, { admissionId, childId: id }),
   ])
   try {
+    let pendingPause: PendingPauseSettlement | undefined
     if (resolved.kind === 'core') {
-      const backend = childBackend(resolved.row.parentId)
+      const directBackendWasLive = childBackend(resolved.row.parentId) !== undefined
+      const backend = await resolveCoreBackend(s, resolved.row)
       if (!backend) throw new CoreError('E_CHILD_NOT_FOUND', 'Child backend is not bound', { childId: id })
-      await backend.humanControl(id, action, actor, admissionId, text)
+      if (!directBackendWasLive) {
+        const verified = await backend.humanControlState(id)
+        if (!verified.controls[action]) {
+          if (action === 'continue' && (verified.controls.pause || verified.controls.retain))
+            throw new CoreError('E_UNSUPPORTED', 'Child does not support this control', {
+              control: action,
+              reason: 'LOOP_CONTROL_UNSUPPORTED',
+            })
+          throw new CoreError(
+            'E_RELATION',
+            'Child binding cannot be verified under its direct parent authority',
+            { control: action, reason: 'BINDING_AUTHORITY_MISMATCH' },
+          )
+        }
+      }
+      await backend.humanControl(id, action, actor, admissionId, text, (pending) => {
+        pendingPause = pending
+      })
     } else {
       const port = s.loopChildrenPort()
       if (!port)
@@ -174,24 +225,53 @@ export async function applyChildControl(
           throw new CoreError('E_RELATION', 'Child is no longer running', { reason: 'CONTROL_NOT_RUNNING' })
       } else await port.sendMessage(id, text ?? '', new AbortController().signal)
     }
-    await s.d.log.append([s.controls.fact(name, 'applied', actor, { admissionId, childId: id })])
-  } catch (error) {
-    await s.d.log.append([
-      s.controls.fact(
-        name,
-        error instanceof CoreError &&
-          ['E_UNSUPPORTED', 'E_RELATION', 'E_CHILD_NOT_FOUND', 'E_CHILD_CONFLICT', 'E_ENVELOPE'].includes(
-            error.code,
-          )
-          ? 'refused'
-          : 'uncertain',
-        actor,
-        {
+    if (pendingPause) {
+      const queued = await s.d.log.append([
+        s.controls.fact(name, 'queued', actor, {
           admissionId,
           childId: id,
-          reason: error instanceof CoreError ? (error.detail?.reason ?? error.code) : 'CONTROL_FAILED',
-        },
-      ),
+          pausePending: true,
+          reason: 'WAITING_SAFEPOINT',
+        }),
+      ])
+      const releaseAdmission = beginPauseAdmissionSettlement(s, admissionId)
+      void pendingPause
+        .then(
+          async (settled) => {
+            if (s.closingOrClosed) return
+            const outcome = settled.executionState === 'paused' ? 'applied' : 'withdrawn'
+            await appendPauseTerminalOnce(s, admissionId, queued.firstSeq + 1, async () => [
+              s.controls.fact(name, outcome, actor, {
+                admissionId,
+                childId: id,
+                ...(outcome === 'withdrawn' ? { executionState: settled.executionState } : {}),
+              }),
+            ])
+          },
+          async (error) => {
+            if (s.closingOrClosed) return
+            await appendPauseTerminalOnce(s, admissionId, queued.firstSeq + 1, async () => [
+              s.controls.fact(name, controlErrorOutcome(error), actor, {
+                admissionId,
+                childId: id,
+                reason:
+                  error instanceof CoreError ? (error.detail?.reason ?? error.code) : 'CHECKPOINT_FAILED',
+              }),
+            ])
+          },
+        )
+        .catch(bestEffort(s.d.logger, 'child-pause-control-fact'))
+        .finally(releaseAdmission)
+    } else {
+      await s.d.log.append([s.controls.fact(name, 'applied', actor, { admissionId, childId: id })])
+    }
+  } catch (error) {
+    await s.d.log.append([
+      s.controls.fact(name, controlErrorOutcome(error), actor, {
+        admissionId,
+        childId: id,
+        reason: error instanceof CoreError ? (error.detail?.reason ?? error.code) : 'CONTROL_FAILED',
+      }),
     ])
     throw error
   }

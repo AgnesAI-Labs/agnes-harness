@@ -195,29 +195,38 @@ export function GenerationDrainSummary({
   )
 }
 
+type KindOption = PluginKind | 'all' | 'unknown'
+
 export function KindFilter({
   value,
   onChange,
   t,
+  unknown,
 }: {
   value: PluginKind | ''
   onChange(value: PluginKind | ''): void
   t: Text
+  unknown?: { label: string; selected: boolean; select(): void } | undefined
 }) {
+  const options: { value: KindOption; label: string }[] = [
+    { value: 'all', label: t('kind.all') },
+    ...PLUGIN_KINDS.map((kind) => ({ value: kind, label: t(`kind.${kind}`) })),
+  ]
+  if (unknown) options.push({ value: 'unknown', label: unknown.label })
   return (
     <Field label={t('kind.filter')}>
-      <Select<PluginKind | 'all'>
+      <Select<KindOption>
         virtual={false}
         aria-label={t('kind.filter')}
-        value={value || 'all'}
+        value={unknown?.selected ? 'unknown' : value || 'all'}
         // The value is short (「全部」) but the options are not: let the list size to them.
         popupMatchSelectWidth={false}
         styles={{ popup: { root: { minWidth: '10rem' } } }}
-        onChange={(kind) => onChange(kind === 'all' ? '' : kind)}
-        options={[
-          { value: 'all', label: t('kind.all') },
-          ...PLUGIN_KINDS.map((kind) => ({ value: kind, label: t(`kind.${kind}`) })),
-        ]}
+        onChange={(kind) => {
+          if (kind === 'unknown') unknown?.select()
+          else onChange(kind === 'all' ? '' : kind)
+        }}
+        options={options}
       />
     </Field>
   )

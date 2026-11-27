@@ -3,7 +3,8 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable } from 'node:stream'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as system from '../src/index.js'
 import { windowsEnvironmentNamesEqual, windowsProcessStartTimeSync } from '../src/index.js'
 import {
   mergeEnvironmentLayers,
@@ -73,6 +74,85 @@ afterEach(async () => {
 })
 
 describe.skipIf(process.platform !== 'win32')('Windows process start gate', () => {
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])(
+    'handles a target outside its Job with restricted=%s, assignment refused=%s',
+    async (restricted, refused) => {
+      const realCreate = system.createWindowsProcessJob
+      let job: ReturnType<typeof realCreate> | undefined
+      let target: { pid: number; start: string } | undefined
+      let brokerAssignment = true
+      const spy = vi.spyOn(system, 'createWindowsProcessJob').mockImplementation(() => {
+        job = realCreate()
+        const owned = job
+        return {
+          assign(pid, start) {
+            // Reproduce a target outside the command Job, without changing the native artifact.
+            if (brokerAssignment) {
+              brokerAssignment = false
+              return
+            }
+            if (refused) throw Object.assign(new Error('Job assignment refused'), { code: 'EACCES' })
+            owned.assign(pid, start)
+          },
+          contains(pid, start) {
+            target = { pid, start }
+            return owned.contains?.(pid, start) ?? false
+          },
+          terminate: () => owned.terminate(),
+          terminationComplete: () => owned.terminationComplete(),
+          activeProcessCount: () => owned.activeProcessCount(),
+          close: () => owned.close(),
+        }
+      })
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const { sealWindowsConfinement } = await import('../src/process-spawn.js')
+      const pending = start([process.execPath, '-e', 'process.stdout.write("JOB_ENROLLED")'], {
+        ...(restricted
+          ? { confinement: sealWindowsConfinement({ mode: 'read-only', root: process.cwd(), writeSids: [] }) }
+          : {}),
+      })
+      try {
+        const started = Promise.race([
+          pending,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('restricted startup did not settle')), 3000)
+          }),
+        ])
+        if (refused) {
+          await expect(started).rejects.toMatchObject({ code: 'EACCES' })
+          expect(target).toBeDefined()
+          await expect.poll(() => target && windowsProcessStartTimeSync(target.pid)).toBeNull()
+          return
+        }
+        const child = await started
+        const stdout = collect(child.stdout)
+        child.stderr.resume()
+        child.stdin.end()
+        expect(await child.completion).toMatchObject({ code: 0 })
+        expect(await stdout).toBe('JOB_ENROLLED')
+      } finally {
+        clearTimeout(timer)
+        spy.mockRestore()
+        // Also reclaim the never-resumed target when this regression is run against the old gate.
+        if (target && windowsProcessStartTimeSync(target.pid) === target.start) {
+          const cleanup = realCreate()
+          try {
+            cleanup.assign(target.pid, target.start)
+            cleanup.terminate()
+          } finally {
+            cleanup.close()
+          }
+        }
+        await pending.catch(() => undefined)
+      }
+    },
+  )
+
   it('merges Windows environment names without collapsing distinct Unicode names', async () => {
     expect(windowsEnvironmentNamesEqual('Path', 'PATH')).toBe(true)
     expect(windowsEnvironmentNamesEqual('é', 'É')).toBe(true)

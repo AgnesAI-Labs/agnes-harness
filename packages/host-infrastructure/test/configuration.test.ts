@@ -290,6 +290,100 @@ it('reads a saved Kimi Coding row at the pre-1.3 default address as the current 
   expect((await (await rewrite(custom)).get()).provider?.baseUrl).toBe(custom)
 })
 
+it('retains saved Qwen credential destinations and keeps surviving model selections usable', async () => {
+  const current = 'https://token-plan.maas.qwencloudapi.com/compatible-mode/v1'
+  const legacy = 'https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1'
+  const model = 'qwen3.8-max'
+  const requests: Request[] = []
+  const request: typeof fetch = async (input, init) => {
+    requests.push(new Request(input, init))
+    return new Response(JSON.stringify({ data: [{ id: model }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+  const root = await home()
+  const service = createConfigurationService({ home: root, profile: 'local-dev', request })
+  const created = await service.save({ providerId: 'qwen', apiKey: 'qwen-test-value', model })
+  expect(created.provider?.baseUrl).toBe(current)
+  const configPath = await savedModelPath(root)
+  const stored = JSON.parse(await readFile(configPath, 'utf8')) as {
+    accounts: [{ baseUrl: string; model: string; models: { id: string; name: string }[] }]
+  }
+  const row = stored.accounts[0]
+  const retired = ['deepseek-v3.2', 'deepseek-v4-flash'] as const
+  row.models.push(...retired.map((id) => ({ id, name: id })))
+  const reload = async () => {
+    await writeFile(configPath, JSON.stringify(stored))
+    return createConfigurationService({ home: root, profile: 'local-dev', request })
+  }
+
+  const sameHostCustom = `${legacy}/custom`
+  const custom = 'https://qwen-gateway.example.test/compatible-mode/v1'
+  for (const saved of [legacy, sameHostCustom, custom]) {
+    row.baseUrl = saved
+    const reloaded = await reload()
+    expect((await reloaded.get()).provider?.baseUrl).toBe(saved)
+    expect((await reloaded.profileInput()).provider?.routes?.[0]).toMatchObject({
+      route: 'qwen',
+      api: 'openai-completions',
+      baseUrl: saved,
+      models: [{ id: model, baseUrl: saved }],
+    })
+    await expect(reloaded.test({ providerId: 'qwen' })).resolves.toMatchObject({ verified: true })
+    expect(requests.at(-1)?.url).toBe(`${saved}/models?detail=true`)
+    expect(requests.at(-1)?.headers.get('authorization')).toBe('Bearer qwen-test-value')
+  }
+
+  row.baseUrl = legacy
+  const previous = await reload()
+  const move = { providerId: 'qwen', baseUrl: current }
+  const requestsBeforeMove = requests.length
+  await expect(previous.test(move)).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_REQUIRED' })
+  await expect(previous.save({ ...move, model })).rejects.toMatchObject({
+    code: 'CONFIG_CREDENTIAL_REQUIRED',
+  })
+  expect(requests).toHaveLength(requestsBeforeMove)
+  await expect(previous.test({ ...move, apiKey: 'qwen-new-value' })).resolves.toMatchObject({
+    verified: true,
+  })
+  expect(requests.at(-1)?.url).toBe(`${current}/models?detail=true`)
+  expect(requests.at(-1)?.headers.get('authorization')).toBe('Bearer qwen-new-value')
+  expect((await previous.get()).provider?.baseUrl).toBe(legacy)
+
+  for (const id of retired) {
+    row.model = id
+    await expect((await reload()).profileInput()).rejects.toMatchObject({ code: 'CONFIG_MODEL_UNAVAILABLE' })
+  }
+})
+
+it('keeps an OpenRouter account usable when a secondary model leaves the installed catalogue', async () => {
+  const entry = getApiKeyProvider('openrouter')
+  const model = (await entry?.createAdapter())?.models('openrouter')[0]?.id
+  if (!model) throw new Error('openrouter catalogue is empty')
+  const server = await fixture(model)
+  const root = await home()
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  await service.save({
+    providerId: 'openrouter',
+    baseUrl: server.baseUrl,
+    apiKey: 'or-test-value',
+    model,
+  })
+  const configPath = await savedModelPath(root)
+  const stored = JSON.parse(await readFile(configPath, 'utf8')) as {
+    accounts: [{ models: { id: string; name: string }[] }]
+  }
+  const retired = 'bytedance-seed/seed-2.0-code'
+  stored.accounts[0].models.push({ id: retired, name: 'Seed 2.0 Code' })
+  await writeFile(configPath, JSON.stringify(stored))
+
+  const reopened = createConfigurationService({ home: root, profile: 'local-dev' })
+  const route = (await reopened.profileInput()).provider?.routes?.[0]
+  expect(route?.models?.map(({ id }) => id)).toEqual([model])
+  expect((await reopened.get()).accounts?.[0]?.models.map(({ id }) => id)).toEqual([model, retired])
+})
+
 it('keeps the payload-only provider out of the chat account form projection', async () => {
   const service = createConfigurationService({ home: await home(), profile: 'local-dev' })
   const { providers } = await service.providers()

@@ -6,6 +6,7 @@ import type { ChildTaskRecord } from '@agnes/extension-api'
 import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
 import { type ChildRolePort, type ResolvedChildRole, recordedChildRole } from './roles.js'
+import { type Checkpoint, readTrustedRetained, retainedOpenOptions } from './status.js'
 
 /** Cold role recovery uses the old pin and old authority, never current application resolution. */
 export async function resumeRoleChild(
@@ -22,12 +23,15 @@ export async function resumeRoleChild(
     session(): SessionImpl
     continued(): void
   },
+  checkpoint?: Checkpoint,
 ): Promise<ChildHandle> {
   const role = await recordedChildRole(parent, record.childKey)
   if (!role || !roles?.reopen)
     throw new CoreError('E_UNSUPPORTED', 'cross-instance child resume is not supported in this release', {
       childKey: record.childKey,
     })
+  const retained = checkpoint ?? (await readTrustedRetained(parent, record))
+  const options = retained === undefined ? undefined : retainedOpenOptions(parent, record, retained?.binding)
   const handle = await port.open({
     parent: parent.key,
     cwd: record.cwd,
@@ -36,6 +40,7 @@ export async function resumeRoleChild(
     resident: true,
     recovering: true,
     resolvedRole: { role, open: roles.reopen },
+    ...(options?.toolFilter ? { toolFilter: options.toolFilter } : {}),
   })
   const child = port.session()
   await child.d.log.fullVerified()

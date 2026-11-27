@@ -1,13 +1,16 @@
-import { hasChildControl } from '@agnes/core-child-control/child/store'
+import { hasChildControl, requireChildControl } from '@agnes/core-child-control/child/store'
 import type { ChildTaskRecord } from '@agnes/core-child-control/child/types'
 import { isTerminalChildState } from '@agnes/core-child-control/child/types'
 import { sha256Hex } from '@agnes/core-common/request/hash'
+import { scanPages } from '@agnes/core-ledger/log/scan-pages'
+import type { Inbox } from '@agnes/core-ledger/reduce/shapes'
 import type { SystemInput } from '@agnes/protocol'
 import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
 import { childResultCollected, childResultSequence } from './collected-result.js'
 import { type ChildEnd, childEnd, childFailureSuffix, clipText as clip } from './failure.js'
 import { retiredCompletionIdentity } from './idle-retirement-fact.js'
+import { childBatchCounts } from './recap-snapshot.js'
 import { recordedChildRole } from './roles.js'
 
 export const CHILD_COMPLETION_SOURCE = 'agnes/child'
@@ -73,12 +76,24 @@ export type ChildCompletionOptions = {
   end?: ChildEnd | undefined
 }
 
-/**
- * `data` is `{ childKey, status, continuable?, error?, result?, truncated?, credits? }`. `status` is the child's
- * durable terminal state, or `budget_stopped` when it failed because its turn ended on a budget or step cap.
- * `error` is `{ code, message }` of a `failed` child whose last turn ended in error; the message is
- * clipped adapter text, and the notice is enqueued untrusted.
- */
+async function batchFacts(parent: SessionImpl) {
+  const { idle, hasIncompleteWork, ...counts } = await childBatchCounts(parent)
+  const { completed, total, waitingApproval, running, paused, disconnected, failed } = counts
+  const settled = completed + idle
+  const line = `[Batch State: completed=${settled}/${total}, waiting_approval=${waitingApproval}, running=${running}, paused=${paused}, disconnected=${disconnected}, failed=${failed}]`
+  const warning = 'DO NOT report overall batch completion; unresolved subtasks remain.'
+  return {
+    suffix: hasIncompleteWork ? `\n${line}\n${warning}` : `\n${line}`,
+    data: {
+      batchState: { ...counts, completed: settled, hasIncompleteWork },
+      pendingApprovalsCount: waitingApproval,
+      activeSiblingsCount: running,
+      pausedCount: paused,
+      disconnectedCount: disconnected,
+    },
+  }
+}
+
 export async function childCompletionInput(
   parent: SessionImpl,
   record: ChildTaskRecord,
@@ -98,6 +113,8 @@ export async function childCompletionInput(
       : record.inputText.trim().split('\n', 1)[0] || record.childKey,
     MAX_LABEL_CHARS,
   )
+  const batch = await batchFacts(parent)
+  const summaryLimit = MAX_SUMMARY_CHARS - batch.suffix.length
   const result = text.trim()
   const truncated = result.length > MAX_RESULT_CHARS
   const handled = role ? `Handled by ${clip(role.title.en, MAX_LABEL_CHARS)} / 由 ${label} 处理. ` : ''
@@ -107,19 +124,21 @@ export async function childCompletionInput(
   // The result gives way first: who ended and why must fit the summary limit whole.
   const more = ' Call subagent_collect with its childKey for the full output.'
   const head = `${handled}${lead} Result:\n`
-  const room = Math.min(MAX_SUMMARY_RESULT_CHARS, MAX_SUMMARY_CHARS - head.length - more.length)
-  const summary = clip(
-    !result
-      ? `${handled}${lead}`
-      : room < 1
-        ? `${handled}${lead}${more}`
-        : `${head}${clip(result, room)}${result.length > room ? more : ''}`,
-    MAX_SUMMARY_CHARS,
-  )
+  const room = Math.min(MAX_SUMMARY_RESULT_CHARS, summaryLimit - head.length - more.length)
+  const summary =
+    clip(
+      !result
+        ? `${handled}${lead}`
+        : room < 1
+          ? `${handled}${lead}${more}`
+          : `${head}${clip(result, room)}${result.length > room ? more : ''}`,
+      summaryLimit,
+    ) + batch.suffix
   const system: SystemInput = {
     source: CHILD_COMPLETION_SOURCE,
     type: CHILD_COMPLETED,
     data: {
+      ...batch.data,
       childKey: record.childKey,
       ...(role ? { role } : {}),
       status,
@@ -144,6 +163,27 @@ export async function childCompletionInput(
     commandId:
       retiredId ?? childCompletionId(record.childKey, outcome, options.continuable ? endSeq : undefined),
   }
+}
+
+/** True when `commandId` was already queued either standalone or inside a coalesced `child-batch-completed` item. */
+async function childCompletionDelivered(parent: SessionImpl, commandId: string): Promise<boolean> {
+  for await (const rows of scanPages((query) => parent.scan(query), {
+    type: 'inbox',
+    lane: parent.lane,
+    toSeq: parent.lastSeq,
+  })) {
+    for (const row of rows) {
+      if (row.origin !== 'system' || row.trust !== 'trusted') continue
+      for (const item of (row.data as Inbox | null)?.items ?? []) {
+        if (item.origin !== 'system' || item.system?.source !== CHILD_COMPLETION_SOURCE) continue
+        if (item.commandId === commandId) return true
+        if (item.system.type !== 'child-batch-completed') continue
+        const children = (item.system.data as { children?: { commandId?: string }[] } | null)?.children
+        if (children?.some((child) => child.commandId === commandId)) return true
+      }
+    }
+  }
+  return false
 }
 
 /**
@@ -172,20 +212,189 @@ export async function deliverChildCompletion(
     },
     {
       dedupeByCommandId: true,
-      skipIf: () => childResultCollected(parent, record.childKey, commandId, resultSeq),
+      skipIf: async () =>
+        (await childResultCollected(parent, record.childKey, commandId, resultSeq)) ||
+        (await childCompletionDelivered(parent, commandId)),
     },
   )
 }
 
+/** A revision identifies one occurrence. Retried delivery dedupes, a later recurrence can wake the parent. */
+export async function deliverChildStateNotice(
+  parent: SessionImpl,
+  record: ChildTaskRecord,
+  state: 'waiting_approval' | 'disconnected' | 'paused',
+  detail?: string,
+): Promise<void> {
+  if (parent.closingOrClosed || !isBackgroundChild(parent, record)) return
+  const { childKey, stateRevision } = record
+  const batch = await batchFacts(parent)
+  const text = detail ? clip(detail, MAX_SUMMARY_RESULT_CHARS) : ''
+  const lead = `Background child ${childKey} is ${state}.${text ? ` ${text}` : ''}`
+  const summary = clip(lead, MAX_SUMMARY_CHARS - batch.suffix.length) + batch.suffix
+  const commandId = `child-state:${sha256Hex(JSON.stringify([childKey, stateRevision, state]))}`
+  const system: SystemInput = {
+    source: CHILD_COMPLETION_SOURCE,
+    type: 'child-state',
+    summary,
+    data: { ...batch.data, childKey, state, ...(text ? { detail: text } : {}) },
+  }
+  await parent.enqueue(
+    'next-turn',
+    {
+      content: [{ type: 'text', text: summary }],
+      system,
+      actor: parent.d.actor,
+      commandId,
+      kind: 'follow_up',
+      trust: 'untrusted',
+      origin: 'system',
+    },
+    {
+      dedupeByCommandId: true,
+      skipIf: async () => {
+        const current = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
+        return current?.state !== state || current.stateRevision !== stateRevision
+      },
+    },
+  )
+}
+
+type ParentCompletionIndex = {
+  deliveredIds: Set<string>
+  collectedByChild: Map<string, { commandIds: Set<string>; resultSeqs: Set<number> }>
+}
+
+/** Single-pass index of parent delivery & collection receipts, avoiding O(N^2) work during recovery. */
+async function parentCompletionIndex(parent: SessionImpl): Promise<ParentCompletionIndex> {
+  const deliveredIds = new Set<string>()
+  const collectedByChild = new Map<string, { commandIds: Set<string>; resultSeqs: Set<number> }>()
+  for await (const rows of scanPages((query) => parent.scan(query), {
+    type: ['x/core/child-result-collected', 'inbox'],
+    lane: parent.lane,
+    toSeq: parent.lastSeq,
+  })) {
+    for (const row of rows) {
+      if (row.origin !== 'system' || row.trust !== 'trusted') continue
+      if (row.type === 'x/core/child-result-collected') {
+        const value = row.data as { childKey?: string; commandId?: string; resultSeq?: number } | undefined
+        if (!value?.childKey) continue
+        let entry = collectedByChild.get(value.childKey)
+        if (!entry) {
+          entry = { commandIds: new Set(), resultSeqs: new Set() }
+          collectedByChild.set(value.childKey, entry)
+        }
+        if (typeof value.commandId === 'string' && value.commandId) entry.commandIds.add(value.commandId)
+        if (typeof value.resultSeq === 'number' && value.resultSeq > 0) entry.resultSeqs.add(value.resultSeq)
+        continue
+      }
+      for (const item of (row.data as Inbox | null)?.items ?? []) {
+        if (item.origin !== 'system' || item.system?.source !== CHILD_COMPLETION_SOURCE) continue
+        if (typeof item.commandId === 'string' && item.commandId) deliveredIds.add(item.commandId)
+        if (item.system.type !== 'child-batch-completed') continue
+        const children = (item.system.data as { children?: { commandId?: string }[] } | null)?.children
+        for (const child of children ?? []) {
+          if (typeof child.commandId === 'string' && child.commandId) deliveredIds.add(child.commandId)
+        }
+      }
+    }
+  }
+  return { deliveredIds, collectedByChild }
+}
+
+function indexedSettled(
+  index: ParentCompletionIndex,
+  childKey: string,
+  commandId: string,
+  resultSeq = 0,
+): boolean {
+  if (index.deliveredIds.has(commandId)) return true
+  const collected = index.collectedByChild.get(childKey)
+  if (!collected) return false
+  return collected.commandIds.has(commandId) || (resultSeq > 0 && collected.resultSeqs.has(resultSeq))
+}
+
+async function isTerminalRecoverySettled(
+  parent: SessionImpl,
+  record: ChildTaskRecord,
+  outcome: ChildOutcome,
+  index: ParentCompletionIndex,
+): Promise<boolean> {
+  const terminalId = childCompletionId(record.childKey, outcome)
+  if (indexedSettled(index, record.childKey, terminalId)) return true
+  const collected = index.collectedByChild.get(record.childKey)
+  const mayHaveRetiredId = outcome === 'completed' && (collected !== undefined || index.deliveredIds.size > 0)
+  const mayMatchSeq = (collected?.resultSeqs.size ?? 0) > 0
+  if (!mayHaveRetiredId && !mayMatchSeq) return false
+  const resultSeq = await childResultSequence(parent, record)
+  if (resultSeq > 0 && collected?.resultSeqs.has(resultSeq)) return true
+  if (!mayHaveRetiredId) return false
+  const retiredId = await retiredCompletionIdentity(parent, record, resultSeq)
+  return retiredId !== undefined && indexedSettled(index, record.childKey, retiredId, resultSeq)
+}
+
+async function recoverIdleChildCompletion(
+  parent: SessionImpl,
+  record: ChildTaskRecord,
+  index: ParentCompletionIndex,
+): Promise<void> {
+  if (parent.closingOrClosed || !isBackgroundChild(parent, record)) return
+  const fromSeq = (record.boundarySeq + 1) as typeof record.boundarySeq
+  const [[end], [start]] = await Promise.all([
+    parent.d.log.storage.scan(record.childKey, {
+      type: 'turn/end',
+      fromSeq,
+      order: 'desc',
+      limit: 1,
+    }),
+    parent.d.log.storage.scan(record.childKey, {
+      type: 'turn/start',
+      fromSeq,
+      order: 'desc',
+      limit: 1,
+    }),
+  ])
+  const endReason = (end?.data as { reason?: string } | undefined)?.reason
+  if (!end || end.seq <= 0 || endReason !== 'completed') return
+  const resultSeq = Math.max(start?.seq ?? 0, end.seq)
+  if (resultSeq !== end.seq) return
+  const commandId = childCompletionId(record.childKey, 'completed', end.seq)
+  if (indexedSettled(index, record.childKey, commandId, resultSeq)) return
+  await deliverChildCompletion(parent, record, 'completed', { continuable: true })
+}
+
 /** Delivers the notices a crash or a closed parent left undelivered. */
-export async function recoverChildCompletions(parent: SessionImpl): Promise<void> {
+export async function recoverChildCompletions(
+  parent: SessionImpl,
+  skip?: (childKey: string) => boolean,
+  knownRows?: readonly ChildTaskRecord[],
+): Promise<void> {
+  if (parent.closingOrClosed) return
   const storage = parent.d.log.storage
   if (!hasChildControl(storage)) return
-  const rows = await storage.listByParent(parent.key).catch(() => [])
-  for (const row of rows) {
-    if (row.creationPhase !== 'committed' || !isTerminalChildState(row.state)) continue
-    await deliverChildCompletion(parent, row, row.state as ChildOutcome).catch(
-      bestEffort(parent.d.logger, 'child-completion-recovery'),
-    )
+  const rows = knownRows ?? (await storage.listByParent(parent.key).catch(() => []))
+  const candidates = rows.filter(
+    (row) =>
+      row.creationPhase === 'committed' &&
+      !skip?.(row.childKey) &&
+      isBackgroundChild(parent, row) &&
+      (isTerminalChildState(row.state) || row.state === 'idle'),
+  )
+  if (candidates.length === 0) return
+  const index = await parentCompletionIndex(parent)
+  for (const row of candidates) {
+    if (isTerminalChildState(row.state)) {
+      const outcome = row.state as ChildOutcome
+      if (await isTerminalRecoverySettled(parent, row, outcome, index).catch(() => false)) continue
+      await deliverChildCompletion(parent, row, outcome).catch(
+        bestEffort(parent.d.logger, 'child-completion-recovery'),
+      )
+      continue
+    }
+    if (row.state === 'idle') {
+      await recoverIdleChildCompletion(parent, row, index).catch(
+        bestEffort(parent.d.logger, 'child-completion-recovery'),
+      )
+    }
   }
 }

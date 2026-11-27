@@ -2,11 +2,14 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PersistentArtifactReadAuthorityIndex } from '@agnes/daemon-rpc/local/artifact-read-authority'
 import { afterEach, describe, expect, it } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
-import { PersistentArtifactReadAuthorityIndex } from '../src/local/artifact-read-authority.js'
 import { SessionPrincipalOwnershipIndex } from '../src/storage/session-ownership.js'
-import { composeDefaultProductionProjectedArtifactRead } from '../src/supervisor/artifact-read.js'
+import {
+  composeDefaultProductionProjectedArtifactRead,
+  readChildSessionArtifactMedia,
+} from '../src/supervisor/artifact-read.js'
 
 const roots: string[] = []
 
@@ -80,6 +83,7 @@ async function fixture() {
     readTimeoutMs: 1_000,
   })
   return {
+    dataDir,
     artifactTables,
     artifactAuthority,
     ownershipTables,
@@ -224,6 +228,83 @@ describe('default durable production artifact projection', () => {
         extra: true,
       } as never),
     ).toThrow('default production artifact projection configuration is invalid')
+    await item.artifactTables.close()
+    await item.ownershipTables.close()
+  })
+
+  it('authorizes child session media reads from the child durable ledger and fails closed when revoked', async () => {
+    const item = await fixture()
+    const childKey = 'session-a/01CHILD'
+    const childEvent = {
+      seq: 9,
+      ts: '2026-09-17T00:00:00.000Z',
+      id: '01J6ZM2Q3R4S5T6V7W8X9Y0Z09',
+      lane: 'main',
+      type: 'tool/result',
+      v: 1,
+      actor: { id: 'owner-a', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+      origin: 'tool:read',
+      trust: 'trusted',
+      data: {
+        toolUseId: 't1',
+        isError: false,
+        content: [
+          {
+            type: 'resource_link',
+            uri: `artifact://${item.artifact.sha256}`,
+            mimeType: 'image/png',
+            name: 'image',
+          },
+        ],
+      },
+    }
+    const scan = (key: string) => async () => (key === childKey ? [childEvent as never] : [])
+    await expect(
+      readChildSessionArtifactMedia({
+        dataDir: item.dataDir,
+        maxArtifactBytes: 1_024,
+        sessionKey: childKey,
+        rootKey: 'session-a',
+        lane: 'main',
+        nodeSeq: 9,
+        sha256: item.artifact.sha256,
+        signal: new AbortController().signal,
+        sessionFactRead: scan,
+        stillAuthorized: () => true,
+      }),
+    ).resolves.toMatchObject({
+      sha256: item.artifact.sha256,
+      mime: 'image/png',
+      size: item.artifact.size,
+    })
+    await expect(
+      readChildSessionArtifactMedia({
+        dataDir: item.dataDir,
+        maxArtifactBytes: 1_024,
+        sessionKey: childKey,
+        rootKey: 'session-a',
+        lane: 'main',
+        nodeSeq: 9,
+        sha256: item.artifact.sha256,
+        signal: new AbortController().signal,
+        sessionFactRead: scan,
+        stillAuthorized: () => false,
+      }),
+    ).resolves.toBeUndefined()
+    await expect(
+      readChildSessionArtifactMedia({
+        dataDir: item.dataDir,
+        maxArtifactBytes: 1_024,
+        sessionKey: 'session-b/01CHILD',
+        rootKey: 'session-a',
+        lane: 'main',
+        nodeSeq: 9,
+        sha256: item.artifact.sha256,
+        signal: new AbortController().signal,
+        sessionFactRead: scan,
+        stillAuthorized: () => true,
+      }),
+    ).resolves.toBeUndefined()
     await item.artifactTables.close()
     await item.ownershipTables.close()
   })

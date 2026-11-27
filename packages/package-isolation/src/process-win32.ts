@@ -1,6 +1,6 @@
 import { startWindowsJobProcess } from '@agnes/system-node/process-spawn'
 import type { runIsolatedCommand } from './process.js'
-import { withCommandOutput } from './process-output.js'
+import { captureCommandStderr, withCommandOutput } from './process-output.js'
 
 export async function runWindowsIsolatedCommand(
   command: string,
@@ -9,7 +9,9 @@ export async function runWindowsIsolatedCommand(
 ): Promise<{ stdout: string }> {
   const controller = new AbortController()
   let failure: Error | undefined
+  let started = false
   const chunks: Buffer[] = []
+  let stderr = () => ''
   const stop = (message: string) => {
     failure ??= new Error(message)
     controller.abort()
@@ -28,13 +30,14 @@ export async function runWindowsIsolatedCommand(
       windowsBatch: options.windowsBatch ?? 'script',
       signal: controller.signal,
     })
+    started = true
     let bytes = 0
     child.stdout.on('data', (chunk: Buffer) => {
       bytes += chunk.length
       if (bytes > options.maxOutputBytes) stop('command output exceeded limit')
       else chunks.push(chunk)
     })
-    child.stderr.resume()
+    stderr = captureCommandStderr(child.stderr, options.captureStderrOnFailure ? options.maxOutputBytes : 0)
     child.stdin.end()
     const result = await child.completion
     if (result.error) throw result.error
@@ -42,13 +45,18 @@ export async function runWindowsIsolatedCommand(
     if (result.code !== 0) throw new Error(`command exited with status ${result.code ?? 'signal'}`)
     return { stdout: Buffer.concat(chunks).toString('utf8') }
   } catch (cause) {
+    // Startup cancellation owns preflight failures; a started child's cleanup failure stays visible.
     if (
       failure &&
-      cause instanceof Error &&
-      (cause.name === 'AbortError' || ('code' in cause && cause.code === 'ABORT_ERR'))
-    )
-      throw withCommandOutput(failure, chunks)
-    throw cause instanceof Error ? withCommandOutput(cause, chunks) : cause
+      !(cause instanceof Error && 'code' in cause && cause.code === 'E_JOB_CLEANUP_TIMEOUT') &&
+      (!started ||
+        (cause instanceof Error &&
+          (cause.name === 'AbortError' || ('code' in cause && cause.code === 'ABORT_ERR'))))
+    ) {
+      if (cause !== failure) failure.cause = cause
+      throw withCommandOutput(failure, chunks, stderr())
+    }
+    throw cause instanceof Error ? withCommandOutput(cause, chunks, stderr()) : cause
   } finally {
     clearTimeout(timeout)
     options.signal?.removeEventListener('abort', abort)

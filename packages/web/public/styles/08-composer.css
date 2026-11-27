@@ -156,26 +156,24 @@
   .composer-mention {
     position: relative;
     color: var(--agnes-brand-primary);
-    font-weight: var(--font-weight-semibold);
+    font: inherit;
     /* Cover the literal `@name` in the textarea before drawing its inline file marker. */
     background: var(--agnes-bg-surface);
     pointer-events: auto;
     cursor: default;
   }
   .composer-mention-at {
-    display: inline-block;
-    width: 0.625em;
-    height: 1em;
-    vertical-align: text-bottom;
+    position: relative;
+    color: transparent;
   }
   .composer-mention-icon {
-    display: block;
-    width: 0.625em;
-    height: 0.625em;
-    margin-top: 0.1875em;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0.875em;
+    height: 0.875em;
     color: var(--agnes-brand-primary);
-    transform: scale(1.4);
-    transform-origin: right center;
+    transform: translate(-50%, -50%);
   }
   /* A selected skill keeps its literal `$name` in the draft, while the overlay renders a light,
      link-like sparkle marker instead of a second opaque input chip. */
@@ -364,6 +362,19 @@
   }
   .composer-children > .agh-disclosure-body {
     padding: 0 var(--s4) var(--s4);
+    max-height: 22rem;
+    overflow-y: auto;
+  }
+  .composer-children-history {
+    margin-top: var(--s4);
+  }
+  .composer-children-history > .agh-disclosure-summary {
+    padding: var(--s2) var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .composer-children-history > .agh-disclosure-body {
+    padding-top: var(--s4);
   }
   .composer-children .agh-disclosure-meta {
     text-align: end;
@@ -387,6 +398,7 @@
     border-inline-start: 1px solid var(--agnes-line-hairline);
   }
   .composer-child {
+    container-type: inline-size;
     min-width: 0;
     border: 1px solid var(--agnes-line-hairline);
     border-radius: var(--radius-md);
@@ -400,24 +412,65 @@
     min-width: 0;
     padding: var(--s4) var(--s8) var(--s4) var(--s12);
   }
-  /* The name is a button that opens the child's terminal tab, so it carries no control chrome. */
+  /* Left-aligned clickable title; overrides Button's inline-flex centering so the leading words never clip. */
+  .composer-child-name.agnes-ui-button,
   .composer-child-name {
-    flex: 0 1 auto;
+    flex: 1 1 8rem;
     min-width: 0;
+    max-width: 100%;
+    height: auto;
+    min-height: 0;
+    justify-content: flex-start;
     overflow: hidden;
-    padding: 0;
+    padding: var(--s2) 0;
     border: 0;
     background: none;
     color: var(--agnes-text-primary);
     font: inherit;
     font-weight: var(--font-weight-medium);
     text-align: start;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     cursor: pointer;
   }
+  .composer-child-name > span,
+  .composer-child-title {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: start;
+  }
+  /* Touch devices have no hover tooltip, and keyboard focus reveals the full truncated title. */
+  .composer-child-name:focus-visible > span,
+  .composer-child-name:focus-visible .composer-child-title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+  }
+  @media (hover: none), (pointer: coarse) {
+    .composer-child-name > span,
+    .composer-child-title {
+      white-space: normal;
+      overflow-wrap: anywhere;
+      text-overflow: clip;
+    }
+  }
   .composer-child-name:is(:hover, :focus-visible) {
+    background: none;
+    color: var(--agnes-brand-primary);
     text-decoration: underline;
+  }
+  .composer-child-id {
+    flex: none;
+    padding: 0 var(--s4);
+    border-radius: var(--radius-xs);
+    color: var(--agnes-text-tertiary);
+    background: var(--agnes-bg-subtle);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    line-height: var(--line-sm);
   }
   /* The child's state in words; the tag colour only backs the word. */
   .composer-child-state {
@@ -428,6 +481,7 @@
     color: var(--agnes-text-secondary);
     background: var(--agnes-bg-fill);
     font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
     line-height: var(--line-sm);
     white-space: nowrap;
   }
@@ -452,21 +506,34 @@
     background: var(--agnes-status-danger-bg);
   }
   .composer-child-metrics {
-    flex: 1 1 10rem;
-    min-width: 0;
+    flex: none;
     margin: 0;
-    overflow: hidden;
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
-    text-align: end;
-    text-overflow: ellipsis;
+    line-height: var(--line-sm);
     white-space: nowrap;
   }
-  .composer-child-stop.agh-btn {
-    flex: none;
-    /* Keeps the action at the row's end when the numbers wrap to their own line. */
-    margin-inline-start: auto;
+  .composer-child-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--s2);
+    margin: 0 0 0 auto;
+    padding: 0;
+    border: 0;
+    min-inline-size: 0;
+    max-width: 100%;
+  }
+  .composer-child-actions .agnes-ui-button[data-emphasis="primary"]:not(:disabled) {
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-emphasis-soft);
+    font-weight: var(--font-weight-medium);
+  }
+  .composer-child-actions .agnes-ui-button[data-danger="true"]:hover:not(:disabled) {
+    color: var(--agnes-status-danger-text);
+    background: var(--agnes-status-danger-bg);
   }
   .composer-child-reply {
     display: flex;
@@ -479,15 +546,37 @@
     min-width: 0;
     font-size: var(--font-size-sm);
   }
-  .composer-child-error {
+  .composer-child-error,
+  .composer-child-refresh-warning {
     margin: 0 var(--s8) var(--s8) var(--s12);
   }
-  /* A narrow card stacks the numbers under the name instead of squeezing the row. */
-  @media (max-width: 540px) {
-    .composer-child-metrics {
+  .composer-child-refresh-warning {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s8);
+    padding: var(--s4) var(--s8);
+    border: 1px solid var(--agnes-status-warning-border);
+    border-radius: var(--radius-sm);
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+    font-size: var(--font-size-xs);
+  }
+  /* Narrow panel (desktop split-pane or mobile): stack metrics and actions cleanly while keeping the short ID visible. */
+  @container (max-width: 32rem) {
+    .composer-child-metrics,
+    .composer-child-actions {
       flex-basis: 100%;
-      order: 1;
-      text-align: start;
+      margin-inline-start: 0;
+      justify-content: flex-start;
+    }
+  }
+  @media (max-width: 540px) {
+    .composer-child-metrics,
+    .composer-child-actions {
+      flex-basis: 100%;
+      margin-inline-start: 0;
+      justify-content: flex-start;
     }
     .composer-children-sublist {
       margin-inline-start: var(--s4);
@@ -731,6 +820,7 @@
   }
   .composer-footer {
     padding: var(--s4) var(--s10) var(--s10);
+    container-type: inline-size;
   }
   /* The ghost is out of flow; its slot must not take space or a flex gap beside the textarea. */
   .composer-hint-slot {
@@ -925,7 +1015,23 @@
     align-items: center;
     gap: var(--s8);
     min-width: 0;
-    container-type: inline-size;
+  }
+  /* Keep the permission chip readable instead of clipping to half a glyph in split-pane widths. */
+  .composer-controls .composer-permission {
+    flex: 0 0 auto;
+  }
+  .composer-controls .composer-permission > svg {
+    flex: none;
+  }
+  @container (max-width: 34rem) {
+    .composer-controls {
+      flex-wrap: wrap;
+      row-gap: var(--s4);
+    }
+    .composer-controls .composer-permission {
+      flex: 0 1 auto;
+      max-width: 100%;
+    }
   }
   .composer-session-controls {
     display: inline-flex;

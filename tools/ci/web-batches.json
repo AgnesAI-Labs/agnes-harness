@@ -92,7 +92,7 @@
       },
       {
         "id": "main-25",
-        "args": ["ui-gate.spec.ts", "--grep", " en/dark$"],
+        "args": ["ui-gate.spec.ts", "v3-navigation.spec.ts", "--grep", " en/dark$"],
         "widths": "",
         "timeoutMinutes": 10
       },
@@ -142,7 +142,7 @@
       },
       {
         "id": "main-22",
-        "args": ["feedback.spec.ts", "plugin-purpose.spec.ts"],
+        "args": ["feedback.spec.ts", "plugin-purpose.spec.ts", "community-market-metadata.spec.ts"],
         "widths": "",
         "timeoutMinutes": 10
       },
@@ -177,7 +177,7 @@
         "args": [
           "v3-navigation.spec.ts",
           "--grep",
-          "permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/"
+          "permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/light$"
         ],
         "widths": "",
         "timeoutMinutes": 10
@@ -252,11 +252,11 @@
     "groups": [
       {
         "id": "batch-1",
-        "batches": ["main-9", "main-24"]
+        "batches": ["main-9", "main-3"]
       },
       {
         "id": "batch-2",
-        "batches": ["main-16", "main-3"]
+        "batches": ["main-16", "main-26"]
       },
       {
         "id": "batch-3",
@@ -264,7 +264,7 @@
       },
       {
         "id": "batch-4",
-        "batches": ["main-12", "main-26"]
+        "batches": ["main-12", "main-24"]
       },
       {
         "id": "batch-5",
@@ -272,7 +272,7 @@
       },
       {
         "id": "batch-6",
-        "batches": ["main-20", "main-2"]
+        "batches": ["main-20", "main-25"]
       },
       {
         "id": "batch-7",
@@ -284,7 +284,7 @@
       },
       {
         "id": "batch-9",
-        "batches": ["main-10", "main-25"]
+        "batches": ["main-10", "main-2"]
       },
       {
         "id": "batch-10",
@@ -326,8 +326,7 @@
           "auto-review.spec.ts",
           "base-conversation.spec.ts",
           "browser-layout.spec.ts",
-          "browser.spec.ts",
-          "business-agents.spec.ts"
+          "browser.spec.ts"
         ],
         "widths": "",
         "timeoutMinutes": 10
@@ -367,13 +366,23 @@
       },
       {
         "id": "main-5",
-        "args": ["memory.spec.ts", "plugin-config.spec.ts", "session-create.spec.ts"],
+        "args": [
+          "community-market-metadata.spec.ts",
+          "memory.spec.ts",
+          "plugin-config.spec.ts",
+          "session-create.spec.ts"
+        ],
         "widths": "",
         "timeoutMinutes": 10
       },
       {
         "id": "main-6",
-        "args": ["plugin-purpose.spec.ts", "prompt-trace.spec.ts", "session-activity.spec.ts"],
+        "args": [
+          "business-agents.spec.ts",
+          "plugin-purpose.spec.ts",
+          "prompt-trace.spec.ts",
+          "session-activity.spec.ts"
+        ],
         "widths": "",
         "timeoutMinutes": 10
       },
@@ -427,7 +436,7 @@
         "id": "main-13",
         "args": ["v3-navigation.spec.ts"],
         "widths": "",
-        "timeoutMinutes": 10
+        "timeoutMinutes": 15
       },
       {
         "id": "main-14",

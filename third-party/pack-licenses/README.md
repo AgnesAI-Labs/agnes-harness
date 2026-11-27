@@ -13,7 +13,7 @@ resolve or explicitly approve those notices before public distribution. Do not i
 copyright holders or treat an SPDX string as a legal review.
 
 `@earendil-works/pi-schema` carries code ported from TypeBox and ships that license as
-`LICENSES/typebox-LICENSE`, which the notice collector does not read. Its supplement joins the
+`THIRD_PARTY_NOTICES/typebox-LICENSE`, which the notice collector does not read. Its supplement joins the
 pi repository LICENSE with that TypeBox license so the attribution survives bundling.
 
 For upstream license snapshots, review the source against the locked version before

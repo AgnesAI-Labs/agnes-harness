@@ -628,20 +628,16 @@ it('keeps installed cards, jobs and children visible when settled process histor
   await act(async () => root.render(createElement(CardsHarness)))
   expect(host.querySelector<HTMLElement>('.turn-process')?.dataset.open).toBe('false')
   expect(item('tool')?.parentElement?.hidden).toBe(true)
-  for (const id of ['question', 'files', 'jobs', 'children', 'approval']) {
+  expect(item('children')?.parentElement?.hidden).toBe(true)
+  for (const id of ['question', 'files', 'jobs', 'approval']) {
     expect(item(id)?.parentElement?.className).toBe('turn-attention')
     expect(item(id)?.parentElement?.hidden).toBe(false)
   }
-  for (const id of ['background-job-card', 'child-agent-card'])
-    expect(host.querySelector(`[data-testid="${id}"]`)).not.toBeNull()
-  expect(host.querySelector('[data-testid="child-engine-output"]')?.textContent).toContain(
-    'child-a completed',
-  )
-  expect(host.querySelector('[data-testid="child-engine-output"]')?.getAttribute('aria-label')).toBe(
-    '子代理引擎输出',
-  )
+  expect(host.querySelector('[data-testid="background-job-card"]')).not.toBeNull()
+  expect(host.querySelector('[data-testid="child-engine-output"]')).toBeNull()
   await act(async () => host.querySelector<HTMLElement>('[data-testid="turn-process-toggle"]')?.click())
   expect(item('question')?.parentElement?.hidden).toBe(false)
+  expect(item('children')?.parentElement?.hidden).toBe(false)
 })
 
 it('summarizes interaction protocol and exact demo echoes while preserving raw details and arbitrary prose', async () => {

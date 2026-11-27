@@ -1,3 +1,4 @@
+import type { ChildControlStore, ChildTaskRecord } from '@agnes/extension-api'
 import type { KernelChildren } from './factory.js'
 
 const factories = new Map<string, KernelChildren>()
@@ -15,4 +16,20 @@ export function unbindChildFactory(sessionKey: string, factory?: KernelChildren)
 
 export function childBackend(sessionKey: string): KernelChildren | undefined {
   return factories.get(sessionKey)
+}
+
+/** Ancestors and descendants are determined by persisted ownership, including when all writers are cold. */
+export async function* ownedChildTree(
+  store: ChildControlStore,
+  rootKey: string,
+): AsyncGenerator<ChildTaskRecord> {
+  const seen = new Set([rootKey])
+  const pending = [...(await store.listByParent(rootKey))].reverse()
+  while (pending.length) {
+    const record = pending.pop()
+    if (!record || seen.has(record.childKey)) continue
+    seen.add(record.childKey)
+    yield { ...record }
+    pending.push(...(await store.listByParent(record.childKey)).reverse())
+  }
 }

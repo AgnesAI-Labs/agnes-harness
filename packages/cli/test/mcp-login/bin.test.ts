@@ -5,6 +5,8 @@ import { PassThrough, Readable } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { main } from '../../src/bin.js'
 import type { ParsedArgs } from '../../src/types.js'
+// Resolve the mocked boot module and its real imports before timing command routing.
+import '../../src/boot/default.js'
 
 const seen = vi.hoisted(() => ({ booted: [] as (string | undefined)[], calls: [] as string[] }))
 vi.mock('../../src/boot/default.js', async (importOriginal) => {

@@ -32,6 +32,7 @@ import {
 } from '@agnes/host-infrastructure/adapters/platform'
 import {
   type PowerShellDescriptor,
+  resolveConfiguredExecutionPowerShell,
   resolveConfiguredPowerShell,
 } from '@agnes/host-infrastructure/adapters/powershell'
 import {
@@ -309,8 +310,15 @@ export async function openAdapters(
         'Windows execution requires an absolute Node runtime separate from the SEA executable',
       )
     const shellEnv = { ...process.env, ...opts.env }
+    const needsRestrictedShell = (profile.permissions?.allowed ?? ['workspace-write']).some(
+      (permission) => permission !== 'full-access',
+    )
     const powerShell =
-      platform.os === 'win32' && platform.matches() ? await resolveConfiguredPowerShell(shellEnv) : undefined
+      platform.os === 'win32' && platform.matches() && windowsNodeExecutable
+        ? await ((shellEnv.AGNES_POWERSHELL ?? 'auto') === 'auto'
+            ? resolveConfiguredExecutionPowerShell(shellEnv, windowsNodeExecutable, needsRestrictedShell)
+            : resolveConfiguredPowerShell(shellEnv))
+        : undefined
     const exec = createExec({
       killTree: (pid) => platform.killTree(pid),
       detached: platform.os !== 'win32',

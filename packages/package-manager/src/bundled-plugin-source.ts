@@ -30,7 +30,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   ...['goal-ui', 'interaction-ui', 'navigation-ui', 'conversation-ui'].map((name) => ({
     name,
     id: `@agnes/${name}`,
-    version: name === 'goal-ui' || name === 'interaction-ui' ? '0.1.2' : '0.1.1',
+    version: name === 'interaction-ui' ? '0.1.3' : name === 'goal-ui' ? '0.1.2' : '0.1.1',
     license: 'Apache-2.0',
     ref: `file:./bundled-plugins/${name}`,
     optionalUnderCeiling: true,
@@ -38,7 +38,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'deliverables-ui',
     id: '@agnes/deliverables-ui',
-    version: '0.1.5',
+    version: '0.1.6',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/deliverables-ui',
     optionalUnderCeiling: true,
@@ -53,7 +53,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'browser',
     id: '@agnes/browser',
-    version: '0.1.19',
+    version: '0.1.24',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/browser',
     optionalUnderCeiling: true,
@@ -76,7 +76,7 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly BundledPackage[] = Object.freez
   {
     name: 'jev-loop',
     id: '@agnes/jev-loop',
-    version: '0.1.3',
+    version: '0.1.4',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/jev-loop',
     // index.mjs is generated from packages/loop-jev and is not committed.
@@ -86,7 +86,7 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly BundledPackage[] = Object.freez
   {
     name: 'judgment',
     id: '@agnes/judgment',
-    version: '0.1.5',
+    version: '0.1.6',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/judgment',
     sourcePath: 'package-manager/bundled-plugins/judgment',
@@ -131,11 +131,18 @@ export function bundledPluginSource(ref: string): { root: string; path: string }
   if (!pkg) return undefined
   const moduleDir = dirname(fileURLToPath(import.meta.url))
   const sea = process.getBuiltinModule('node:sea').isSea()
-  const packaged = sea || (typeof AGNES_PACKAGED_BUILTINS !== 'undefined' && AGNES_PACKAGED_BUILTINS)
+  const packaged = bundledPluginsRequireDigest()
   return {
     root: sea ? dirname(process.execPath) : packaged ? moduleDir : dirname(dirname(moduleDir)),
     path: packaged ? `bundled-plugins/${pkg.name}` : pkg.sourcePath,
   }
+}
+
+export function bundledPluginsRequireDigest(): boolean {
+  return (
+    process.getBuiltinModule('node:sea').isSea() ||
+    (typeof AGNES_PACKAGED_BUILTINS !== 'undefined' && AGNES_PACKAGED_BUILTINS)
+  )
 }
 
 /** Written beside the shipped payloads at build time: `{ [source.path]: hashDirectory(payload) }`. */

@@ -2,12 +2,14 @@ import { createElement, type ReactNode, useMemo } from 'react'
 import { fallbackT, type Translate } from '../locales/index.js'
 import { documentResourceUrl, sanitizeDocumentHtml } from './document-preview-policy.js'
 import { ConversationMarkdown } from './markdown.js'
+import { PdfPreviewFrame } from './pdf-preview-frame.js'
 
 export type DocumentPreviewKind = 'text' | 'markdown' | 'html' | 'image' | 'pdf' | 'code'
 
 export interface DocumentPreviewInput {
   readonly kind: DocumentPreviewKind
   readonly title?: string
+  /** Text for text kinds; base64 bytes from the authorized resource loader for PDF. */
   readonly content?: string
   /** The consumer supplies a resource-service object URL; scheme checks do not prove provenance. */
   readonly resourceUrl?: string
@@ -76,7 +78,11 @@ export function DocumentPreview({
       children = url ? <img src={url} alt={title ?? t('doc.imageFallback')} decoding="async" /> : undefined
       break
     case 'pdf':
-      children = url ? <iframe src={url} title={title ?? t('doc.pdfFallback')} sandbox="" /> : undefined
+      children = url ? (
+        <PdfPreviewFrame base64={content} resourceUrl={url} title={title ?? t('doc.pdfFallback')} t={t} />
+      ) : (
+        <p role="alert">{t('doc.pdfFailed')}</p>
+      )
       break
   }
   return (

@@ -35,6 +35,26 @@ const paths = [
   ),
   ...(process.env.AGNES_TEST_PWSH ? [process.env.AGNES_TEST_PWSH] : []),
 ]
+
+it.runIf(process.platform === 'win32' && !!process.env.AGH_TEST_INCOMPATIBLE_POWERSHELL)(
+  'refuses an incompatible packaged shell before short or long business commands run, without leaking scripts',
+  async () => {
+    const root = temporary()
+    const shell = await probePowerShell(process.env.AGH_TEST_INCOMPATIBLE_POWERSHELL as string)
+    const exec = createExec({ windowsNodeExecutable: process.execPath, windowsPowerShell: shell })
+    adapters.push(exec)
+    for (const length of ['short', 'long']) {
+      const command = `[IO.File]::WriteAllText('${join(root, 'business-started').replaceAll("'", "''")}','ready'); Start-Sleep 30`
+      await expect(
+        exec.run(powerShellCommand(shell, length === 'long' ? long(command) : command), {
+          cwd: root,
+          timeoutMs: 5000,
+        }),
+      ).rejects.toMatchObject({ code: 'E_POWERSHELL_UNAVAILABLE' })
+      expect(readdirSync(root)).toEqual([])
+    }
+  },
+)
 describe.runIf(process.platform === 'win32').each(paths)('private PowerShell script: %s', (path) => {
   it('creates private UTF16 content and a selected-interpreter bootstrap, then removes exactly its files', async () => {
     const root = temporary()

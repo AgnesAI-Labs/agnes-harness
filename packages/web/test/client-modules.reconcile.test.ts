@@ -2,6 +2,7 @@
 // 慢包不占住全局临界区。
 
 import { Context } from '@agnes/cordis'
+import type { ApplicationState, ClientModuleRosterRow } from '@agnes/protocol'
 import {
   AgnesClientService,
   type ClientContext,
@@ -15,6 +16,7 @@ import {
 import { Window } from 'happy-dom'
 import { createElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { createBrowserClientRoster } from '../src/app/client-roster.js'
 import { readyRosterModules } from '../src/client-modules/reconcile/roster.js'
 import { prepareDocumentStyles } from '../src/client-modules/reconcile/styles.js'
 import {
@@ -36,6 +38,8 @@ function mod(packageId: string, revision: string): ReadyClientModule {
   return {
     packageId,
     revision,
+    documentAdmission: { kind: 'release', bindingDigest: 'd'.repeat(64) },
+    contentDigest: `sha256-${'c'.repeat(64)}`,
     entryUrl: `/${packageId}/${revision}/index.js`,
     styleUrls: [],
     slots: [],
@@ -45,6 +49,44 @@ function mod(packageId: string, revision: string): ReadyClientModule {
 
 function styledMod(packageId: string, revision: string): ReadyClientModule {
   return { ...mod(packageId, revision), styleUrls: [`/${packageId}/${revision}/index.css`] }
+}
+
+function wireModule(
+  packageId: string,
+  documentAdmission: NonNullable<ClientModuleRosterRow['documentAdmission']>,
+) {
+  const rowId = `web:${packageId}`
+  return {
+    rowId,
+    packageId,
+    moduleName: packageId,
+    enabled: true,
+    phase: 'ready',
+    revision: 'v1',
+    entryUrl: `/plugins/${packageId}/v1/panel.js`,
+    styleUrls: [`/plugins/${packageId}/v1/panel.css`],
+    slots: [],
+    extIds: [],
+    documentAdmission,
+    contentDigest: `sha256-${'c'.repeat(64)}`,
+    binding: {
+      owner: rowId,
+      packageId,
+      profileId: 'test',
+      integrity: 'v1',
+      activationId: 'one',
+      lifetime: 'profile',
+      availability: 'active',
+    },
+  } satisfies ClientModuleRosterRow
+}
+
+function latch() {
+  let release!: () => void
+  const wait = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  return { wait, release }
 }
 
 async function harness() {
@@ -124,10 +166,13 @@ describe('client reconciler（WC10 前端状态机）', () => {
         await reconciler.reconcileNow()
         expect(h.loaded).toEqual([])
         expect(
-          readyRosterModules([
-            { rowId: 'web:disabled', enabled: false, phase: 'ready', moduleName: 'page' },
-            { rowId: 'web:failed', enabled: true, phase: 'blocked', moduleName: 'page' },
-          ]),
+          readyRosterModules(
+            [
+              { rowId: 'web:disabled', enabled: false, phase: 'ready', moduleName: 'page' },
+              { rowId: 'web:failed', enabled: true, phase: 'blocked', moduleName: 'page' },
+            ],
+            'test',
+          ),
         ).toEqual([])
         const entry = homeEntries.get('declared-page')!
         expect(entry).toMatchObject({ placement: 'primary', icon: 'cpu', order: 40 })
@@ -290,31 +335,213 @@ describe('client reconciler（WC10 前端状态机）', () => {
       }
     },
   )
-  it('leaves custom renderer modules in their isolated host on initial load and hot reload', async () => {
+  it('excludes old, unbound, and isolated rows before resolving executable assets', async () => {
     const h = await harness()
-    const custom = {
-      ...mod('finance', 'v1'),
-      intelligentComponents: [
-        {
-          kind: 'finance/reconcile/diff@1',
-          propsSchema: true,
-          maxPropsBytes: 256,
-          fallback: 'Use table.',
-          accessibility: { label: 'Differences', keyboard: true as const },
+    const admitted = wireModule('sample', { kind: 'release', bindingDigest: 'd'.repeat(64) })
+    const prepares = vi.fn(async () => ({ activate() {}, dispose() {} }))
+    const { contentDigest: _digest, ...missingDigest } = admitted
+    const { documentAdmission: _admission, ...legacy } = admitted
+    const refused = [
+      legacy,
+      missingDigest,
+      { ...admitted, documentAdmission: { kind: 'release' as const, bindingDigest: 'unknown' } },
+      {
+        ...admitted,
+        documentAdmission: {
+          kind: 'approved-presentation' as const,
+          bindingDigest: 'd'.repeat(64),
+          presentationRevision: -1,
         },
-      ],
-    }
+      },
+      { ...admitted, binding: { ...admitted.binding, profileId: 'other' } },
+      { ...admitted, entryUrl: '/plugins/other/v1/panel.js' },
+      { ...admitted, rendererDataUrl: '/plugins/sample/v1/panel.js?agnes_ui_source=1' },
+    ]
+    let current = roster(refused.flatMap((row) => readyRosterModules([row], 'test')))
     const reconciler = createReconciler({
       ctx: h.ctx,
       importer: h.importer,
-      source: { list: async () => roster([custom]) },
+      prepareStyles: prepares,
+      source: { list: async () => current },
     })
     try {
       await reconciler.reconcileNow()
-      await reconciler.reload('finance', 'v1')
+      await reconciler.reload('sample', 'v1')
       expect(h.loaded).toEqual([])
-      expect(reconciler.snapshot()).toEqual(new Map())
+      expect(prepares).not.toHaveBeenCalled()
+      current = roster(readyRosterModules([admitted], 'test'))
+      await reconciler.reconcileNow()
+      expect(h.loaded).toEqual([admitted.entryUrl])
+      expect(prepares).toHaveBeenCalledOnce()
     } finally {
+      await h.ctx.fiber.dispose()
+    }
+  })
+
+  it('admits release UI but defers presentation assets until the roster matches the application revision', async () => {
+    const h = await harness()
+    stubPlugin(h.ctx, { loaded: [], disposed: [] })
+    const release = wireModule('release-ui', { kind: 'release', bindingDigest: 'd'.repeat(64) })
+    let presentationRevision = 1
+    const application: ApplicationState = {
+      revision: 2,
+      status: 'host',
+      selection: null,
+      effective: null,
+      assets: {},
+      candidates: [],
+    }
+    const rosterSource = createBrowserClientRoster(
+      {
+        clientModules: {
+          async list() {
+            return {
+              revision: 'roster',
+              serverTime: '2026-01-01T00:00:00.000Z',
+              statuses: [],
+              modules: [],
+              rows: [
+                release,
+                wireModule('approved-ui', {
+                  kind: 'approved-presentation',
+                  bindingDigest: 'a'.repeat(64),
+                  presentationRevision,
+                }),
+              ],
+            }
+          },
+        },
+        request: async () => application,
+      },
+      () => ({ profile: 'test', sessionId: undefined, generation: 1 }),
+    )
+    rosterSource.setOnline(true)
+    const prepared: string[] = []
+    const reconciler = createReconciler({
+      ctx: h.ctx,
+      source: { list: rosterSource.source.list },
+      importer: h.importer,
+      prepareStyles: async (target) => {
+        prepared.push(...target.styleUrls)
+        return { activate() {}, dispose() {} }
+      },
+    })
+    try {
+      await reconciler.reconcileNow()
+      expect(h.loaded).toEqual(['/plugins/release-ui/v1/panel.js'])
+      expect(prepared).toEqual(['/plugins/release-ui/v1/panel.css'])
+
+      presentationRevision = application.revision
+      await reconciler.invalidate()
+      expect(h.loaded).toEqual(['/plugins/release-ui/v1/panel.js', '/plugins/approved-ui/v1/panel.js'])
+      expect(prepared).toEqual(['/plugins/release-ui/v1/panel.css', '/plugins/approved-ui/v1/panel.css'])
+    } finally {
+      await h.ctx.fiber.dispose()
+    }
+  })
+
+  it('does not start JavaScript or CSS after a queued target loses its roster', async () => {
+    const h = await harness()
+    const start = latch()
+    const resume = latch()
+    const prepareStyles = vi.fn(async () => ({ activate() {}, dispose() {} }))
+    let current = roster([styledMod('a', 'v1')])
+    const reconciler = createReconciler({
+      ctx: h.ctx,
+      source: { list: async () => current },
+      importer: h.importer,
+      prepareStyles,
+      onLifecycleStep: async (step) => {
+        if (step !== 'prefetch') return
+        start.release()
+        await resume.wait
+      },
+    })
+    const pending = reconciler.reconcileNow()
+    try {
+      await start.wait
+      current = roster([])
+      await reconciler.invalidate()
+      resume.release()
+      await pending
+      expect(h.loaded).toEqual([])
+      expect(prepareStyles).not.toHaveBeenCalled()
+    } finally {
+      resume.release()
+      await pending
+      await h.ctx.fiber.dispose()
+    }
+  })
+
+  it('revokes approved styling before slow disposal and never reloads an exception in that document', async () => {
+    const h = await harness()
+    const disposeStarted = latch()
+    const resume = latch()
+    const exception: ReadyClientModule = {
+      ...styledMod('exception', 'v1'),
+      documentAdmission: {
+        kind: 'approved-presentation',
+        bindingDigest: 'b'.repeat(64),
+        presentationRevision: 1,
+      },
+    }
+    const styles = new Set<string>()
+    const reloadRequired = vi.fn()
+    let current = roster([exception])
+    ;(h.ctx as unknown as { plugin: unknown }).plugin = () => {
+      const fiber = {
+        dispose: async () => {
+          disposeStarted.release()
+          await resume.wait
+        },
+      }
+      return Object.assign(Promise.resolve(fiber), fiber)
+    }
+    const reconciler = createReconciler({
+      ctx: h.ctx,
+      source: { list: async () => current, reloadRequired },
+      importer: h.importer,
+      prepareStyles: async (target) => ({
+        activate() {
+          styles.add(target.packageId)
+        },
+        dispose() {
+          styles.delete(target.packageId)
+        },
+      }),
+    })
+    let removed: Promise<void> | undefined
+    try {
+      await reconciler.reconcileNow()
+      expect(styles.has('exception')).toBe(true)
+      current = {
+        ...roster([]),
+        statuses: [
+          {
+            packageId: 'exception',
+            installedRevision: 'v1',
+            backendRevision: 'v1',
+            state: 'blocked',
+            reason: 'native-ui-not-admitted',
+          },
+        ],
+      }
+      removed = reconciler.invalidate()
+      await disposeStarted.wait
+      expect(styles.has('exception')).toBe(false)
+      expect(reloadRequired).toHaveBeenCalledOnce()
+      expect([...reconciler.snapshot().values()]).toContainEqual(
+        expect.objectContaining({ packageId: 'exception', reason: 'native-ui-not-admitted', phase: 'idle' }),
+      )
+      resume.release()
+      await removed
+      current = roster([exception])
+      await reconciler.reload('exception', 'v1')
+      expect(h.loaded).toEqual([exception.entryUrl])
+      expect(styles.has('exception')).toBe(false)
+    } finally {
+      resume.release()
+      await removed
       await h.ctx.fiber.dispose()
     }
   })
@@ -336,7 +563,6 @@ describe('client reconciler（WC10 前端状态机）', () => {
       ...mod('@agnes-examples/client-panel', 'v1'),
       slots: ['ui:sidebar'],
       slotCatalogVersion: 'dsh-client-slots/v1',
-      contentDigest: 'sha256-digest',
       publicConfig: { label: 'Public label' },
     }
     let current = roster([clientPanel])
@@ -357,7 +583,7 @@ describe('client reconciler（WC10 前端状态机）', () => {
 
     await reconciler.reconcileNow()
     expect(receivedConfig).toMatchObject({
-      contentDigest: 'sha256-digest',
+      contentDigest: clientPanel.contentDigest,
       publicConfig: { label: 'Public label' },
       slotCatalogVersion: 'dsh-client-slots/v1',
     })
@@ -521,8 +747,8 @@ describe('client reconciler（WC10 前端状态机）', () => {
     expect(styles).toEqual([
       'prepare:v1',
       'activate:v1',
-      'prepare:v2',
       'dispose:v1',
+      'prepare:v2',
       'activate:v2',
       'dispose:v2',
     ])
@@ -590,6 +816,7 @@ describe('client reconciler（WC10 前端状态机）', () => {
         if (kind === 'revoked') {
           current = roster([])
           removed = reconciler.invalidate()
+          expect(link()).toBeNull()
           await vi.waitFor(() => expect(reconciler.snapshot().get('a')?.phase).toBe('idle'))
         }
         const scriptFirst = kind === 'script-first-fails' || kind === 'styles-last-fail'
@@ -636,6 +863,45 @@ describe('client reconciler（WC10 前端状态机）', () => {
       }
     },
   )
+
+  it('disposes styles that finish after revocation without waiting for the pending import', async () => {
+    const h = await harness()
+    const finishImport = latch()
+    const finishStyles = latch()
+    const dispose = vi.fn()
+    const activate = vi.fn()
+    const prepareStyles = vi.fn(async () => {
+      await finishStyles.wait
+      return { activate, dispose }
+    })
+    let current = roster([styledMod('a', 'v1')])
+    const list = vi.fn(async () => current)
+    const reconciler = createReconciler({
+      ctx: h.ctx,
+      source: { list },
+      importer: async () => {
+        await finishImport.wait
+        return { apply() {} }
+      },
+      prepareStyles,
+    })
+    const loading = reconciler.reconcileNow()
+    try {
+      await vi.waitFor(() => expect(prepareStyles).toHaveBeenCalledOnce())
+      reconciler.retirePending()
+      expect(list).toHaveBeenCalledOnce()
+      finishStyles.release()
+      await vi.waitFor(() => expect(dispose).toHaveBeenCalledOnce())
+      expect(activate).not.toHaveBeenCalled()
+      current = roster([])
+      await reconciler.invalidate()
+    } finally {
+      finishStyles.release()
+      finishImport.release()
+      await loading
+      await h.ctx.fiber.dispose()
+    }
+  })
 
   it('样式加载失败保留旧版，并允许同 revision 再次触发时重试', async () => {
     const h = await harness()
@@ -1203,25 +1469,95 @@ describe('client reconciler（WC10 前端状态机）', () => {
     },
   )
 
-  it('名册源抛错：保持现状不崩，下次触发继续对账', async () => {
+  it('preserves mounted release UI without importing or preparing styles when an HMR read fails', async () => {
     const h = await harness()
     const log = { loaded: [], disposed: [] }
     stubPlugin(h.ctx, log)
     let shouldFail = true
+    const disposeStyles = vi.fn()
+    const prepareStyles = vi.fn(async () => ({ activate() {}, dispose: disposeStyles }))
     const reconciler = createReconciler({
       ctx: h.ctx,
       source: {
         list: async () => {
           if (shouldFail) throw new Error('roster down')
-          return roster([mod('a', 'v1')])
+          return roster([styledMod('a', 'v1')])
         },
       },
       importer: h.importer,
+      prepareStyles,
     })
     await reconciler.reconcileNow()
     expect(log.loaded).toEqual([])
     shouldFail = false
     await reconciler.invalidate()
+    expect(log.loaded).toEqual(['apply:a'])
+    expect(h.loaded).toEqual(['/a/v1/index.js'])
+    expect(prepareStyles).toHaveBeenCalledOnce()
+
+    shouldFail = true
+    await reconciler.reload('a', 'v1')
+    expect(h.loaded).toEqual(['/a/v1/index.js'])
+    expect(prepareStyles).toHaveBeenCalledOnce()
+    expect(disposeStyles).not.toHaveBeenCalled()
+    expect(log.disposed).toEqual([])
+    expect(reconciler.snapshot().get('a')).toMatchObject({ phase: 'active', revision: 'v1' })
+
+    shouldFail = false
+    await reconciler.reload('a', 'v1')
+    expect(h.loaded).toEqual(['/a/v1/index.js', '/a/v1/index.js'])
+    expect(prepareStyles).toHaveBeenCalledTimes(2)
+    expect(log.loaded).toEqual(['apply:a', 'apply:a'])
+  })
+
+  it('keeps the mounted release when an offline read retires its pending HMR attempt', async () => {
+    const h = await harness()
+    const log = { loaded: [] as string[], disposed: [] as string[] }
+    stubPlugin(h.ctx, log)
+    const importStarted = latch()
+    const finishImport = latch()
+    const pendingStylesDisposed = vi.fn()
+    const mountedStylesDisposed = vi.fn()
+    let offline = false
+    let reloading = false
+    const prepareStyles = vi.fn(async () => ({
+      activate() {},
+      dispose: reloading ? pendingStylesDisposed : mountedStylesDisposed,
+    }))
+    const reconciler = createReconciler({
+      ctx: h.ctx,
+      source: {
+        list: async () => {
+          if (offline) throw new Error('roster down')
+          return roster([styledMod('a', 'v1')])
+        },
+      },
+      async importer(url) {
+        if (reloading) {
+          importStarted.release()
+          await finishImport.wait
+        }
+        return h.importer(url)
+      },
+      prepareStyles,
+    })
+    await reconciler.reconcileNow()
+    reloading = true
+    const pending = reconciler.reload('a', 'v1')
+    try {
+      await importStarted.wait
+      await vi.waitFor(() => expect(prepareStyles).toHaveBeenCalledTimes(2))
+      offline = true
+      await reconciler.invalidate()
+      expect(pendingStylesDisposed).toHaveBeenCalledOnce()
+      expect(mountedStylesDisposed).not.toHaveBeenCalled()
+      expect(log.disposed).toEqual([])
+      expect(reconciler.snapshot().get('a')?.phase).toBe('active')
+    } finally {
+      finishImport.release()
+      await pending
+      await h.ctx.fiber.dispose()
+    }
     expect(log.loaded).toEqual(['apply:a'])
   })
 
@@ -1273,6 +1609,220 @@ describe('client reconciler（WC10 前端状态机）', () => {
     warn.mockRestore()
   })
 
+  it.each(['replace', 'withdraw'] as const)(
+    'readiness follows the latest authority read while a slow module is %s',
+    async (change) => {
+      const h = await harness()
+      stubPlugin(h.ctx, h)
+      const firstRead = latch(),
+        importing = latch(),
+        finishImport = latch()
+      let reads = 0
+      let current = roster([mod('conversation', 'v1')])
+      const reconciler = createReconciler({
+        ctx: h.ctx,
+        source: {
+          identity: () => 'same-backend-and-selection',
+          list: async () => {
+            if (++reads === 1) await firstRead.wait
+            return current
+          },
+        },
+        importer: async (url) => {
+          importing.release()
+          await finishImport.wait
+          return h.importer(url)
+        },
+      })
+      let ready = false
+      const old = reconciler.reconcileNow().then(() => {
+        ready = true
+      })
+      await vi.waitFor(() => expect(reads).toBeGreaterThan(0))
+      if (change === 'withdraw') current = roster([])
+      // Invalidation must reread even though the identity matches. A readiness waiter must follow it.
+      const latest = reconciler.invalidate()
+      try {
+        if (change === 'replace') await importing.wait
+        firstRead.release()
+        if (change === 'replace') {
+          await new Promise((resolve) => setTimeout(resolve, 0))
+          expect(ready).toBe(false)
+          expect(reconciler.snapshot().get('conversation')?.phase).toBe('loading')
+        }
+        finishImport.release()
+        await Promise.all([old, latest])
+        expect(ready).toBe(true)
+        expect(h.loaded.filter((value) => value === 'apply:conversation')).toHaveLength(
+          change === 'replace' ? 1 : 0,
+        )
+      } finally {
+        firstRead.release()
+        finishImport.release()
+        await Promise.allSettled([old, latest])
+        await h.ctx.fiber.dispose()
+      }
+    },
+  )
+
+  it.each(['resolve', 'reject'] as const)(
+    'moves readiness to the new roster before an obsolete read can %s',
+    async (outcome) => {
+      const h = await harness()
+      stubPlugin(h.ctx, h)
+      const started = latch(),
+        oldRead = latch(),
+        latestRead = latch()
+      const commit = vi.fn()
+      let reads = 0
+      const reconciler = createReconciler({
+        ctx: h.ctx,
+        source: {
+          identity: () => 'same-selection',
+          commit,
+          list: async () => {
+            if (++reads === 1) {
+              started.release()
+              await oldRead.wait
+              if (outcome === 'reject') throw new Error('obsolete request failure')
+              return roster([mod('revoked', 'v1')])
+            }
+            await latestRead.wait
+            return roster([])
+          },
+        },
+        importer: h.importer,
+      })
+      let ready = false
+      const initial = reconciler.reconcileNow().then(() => {
+        ready = true
+      })
+      await started.wait
+      // A push revokes the old authority before its replacement is scheduled.
+      reconciler.retirePending()
+      const latest = reconciler.invalidate()
+      try {
+        await vi.waitFor(() => expect(reads).toBe(2))
+        expect(ready).toBe(false)
+        latestRead.release()
+        await latest
+        await vi.waitFor(() => expect(ready).toBe(true))
+        expect(commit).toHaveBeenCalledTimes(1)
+        expect(h.loaded).toEqual([])
+        // A late success or failure cannot publish the revoked grant or undo readiness.
+        oldRead.release()
+        await initial
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(commit).toHaveBeenCalledTimes(1)
+        expect(h.loaded).toEqual([])
+      } finally {
+        oldRead.release()
+        latestRead.release()
+        await Promise.allSettled([initial, latest])
+        await h.ctx.fiber.dispose()
+      }
+    },
+  )
+
+  it('does not grant readiness between push revocation and the replacement read', async () => {
+    const h = await harness()
+    const old = latch(),
+      started = latch()
+    let reads = 0,
+      ready = false
+    const reconciler = createReconciler({
+      ctx: h.ctx,
+      source: {
+        identity: () => 'same-selection',
+        list: async () => {
+          if (++reads === 1) {
+            started.release()
+            await old.wait
+          }
+          return roster([])
+        },
+      },
+    })
+    const initial = reconciler.reconcileNow().then(() => {
+      ready = true
+    })
+    try {
+      await started.wait
+      reconciler.retirePending()
+      old.release()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(ready).toBe(false)
+      await reconciler.invalidate()
+      await initial
+      expect(ready).toBe(true)
+    } finally {
+      old.release()
+      await h.ctx.fiber.dispose()
+      await initial
+    }
+  })
+
+  it('releases readiness waiters on disposal without waiting for a stalled network request', async () => {
+    const h = await harness()
+    const old = latch(),
+      started = latch()
+    const list = vi.fn(async () => {
+      started.release()
+      await old.wait
+      return roster([mod('late', 'v1')])
+    })
+    const reconciler = createReconciler({ ctx: h.ctx, source: { list }, importer: h.importer })
+    const initial = reconciler.reconcileNow()
+    try {
+      await started.wait
+      await h.ctx.fiber.dispose()
+      await initial
+      await reconciler.reconcileNow()
+      expect(list).toHaveBeenCalledTimes(1)
+      old.release()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(h.loaded).toEqual([])
+    } finally {
+      old.release()
+      await h.ctx.fiber.dispose()
+    }
+  })
+
+  it('joins readiness reads for one identity but still rereads and refuses a revoked module', async () => {
+    const h = await harness()
+    stubPlugin(h.ctx, h)
+    const importing = latch(),
+      finish = latch()
+    let current = roster([mod('conversation', 'v1')])
+    const list = vi.fn(async () => current)
+    const reconciler = createReconciler({
+      ctx: h.ctx,
+      source: { identity: () => 'same-selection', list },
+      importer: async (url) => {
+        importing.release()
+        await finish.wait
+        return h.importer(url)
+      },
+    })
+    const first = reconciler.reconcileNow()
+    await importing.wait
+    const joined = reconciler.reconcileNow()
+    expect(list).toHaveBeenCalledTimes(1)
+    current = roster([])
+    const revoked = reconciler.invalidate()
+    try {
+      await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(2))
+      finish.release()
+      await Promise.all([first, joined, revoked])
+      expect(h.loaded).not.toContain('apply:conversation')
+      expect(reconciler.snapshot().get('conversation')?.phase).toBe('idle')
+    } finally {
+      finish.release()
+      await Promise.allSettled([first, joined, revoked])
+      await h.ctx.fiber.dispose()
+    }
+  })
+
   it('loading 中被移出名册：in-flight 挂载完成后 fiber 被 dispose，恰好一次', async () => {
     const h = await harness()
     const disposed: string[] = []
@@ -1318,25 +1868,37 @@ describe('client reconciler（WC10 前端状态机）', () => {
     const log = { loaded: [] as string[], disposed: [] as string[] }
     stubPlugin(h.ctx, log)
     let current = roster([mod('b', 'v1')])
+    const importStarted = latch()
+    const finishImport = latch()
     const reconciler = createReconciler({
       ctx: h.ctx,
       source: { list: async () => current },
-      importer: (url: string) =>
-        url.startsWith('/a/')
-          ? new Promise((resolve) => setTimeout(() => resolve({ inject: [], apply: () => {} }), 200))
-          : h.importer(url),
+      async importer(url) {
+        if (!url.startsWith('/a/')) return h.importer(url)
+        importStarted.release()
+        await finishImport.wait
+        return { inject: [], apply() {} }
+      },
     })
     await reconciler.reconcileNow()
     current = roster([mod('a', 'v1'), mod('b', 'v1')])
     const slow = reconciler.invalidate()
-    await new Promise((resolve) => setTimeout(resolve, 20))
-    // b 的禁用不能排在 a 那 200ms 导入之后：WC10 不许在全局临界区里等 import。
-    current = roster([mod('a', 'v1')])
-    const started = performance.now()
-    await reconciler.invalidate()
-    expect(log.disposed).toEqual(['dispose:b'])
-    expect(performance.now() - started).toBeLessThan(120)
-    await slow
+    let removal: Promise<void> | undefined
+    try {
+      await importStarted.wait
+      current = roster([mod('a', 'v1')])
+      removal = reconciler.invalidate()
+      // B must finish teardown while A's import (including any retry) is still held.
+      await vi.waitFor(() => {
+        expect(log.disposed).toEqual(['dispose:b'])
+        expect(reconciler.snapshot().get('b')?.phase).toBe('idle')
+      })
+      expect(log.loaded).toEqual(['apply:b'])
+    } finally {
+      finishImport.release()
+      await Promise.all([slow, removal])
+      await h.ctx.fiber.dispose()
+    }
   })
 })
 

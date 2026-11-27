@@ -42,7 +42,7 @@ let ui: ReturnType<typeof createDiagnosticsDialog> | undefined
 
 function setup(sessionId: string | null = 's1', over: Partial<DiagnosticsDialogDeps> = {}) {
   const collect = vi.fn<typeof collectDiagnostics>()
-  const save = vi.fn<(zip: Uint8Array, fileName: string) => Promise<'saved' | 'canceled'>>()
+  const save = vi.fn<NonNullable<DiagnosticsDialogDeps['save']>>()
   ui = createDiagnosticsDialog({
     call: vi.fn(),
     context: () => ({ sessionId, sessionTitle: null, projection: undefined, projectionHasEarlier: false }),
@@ -202,6 +202,38 @@ describe('createDiagnosticsDialog', () => {
     expect(t.error()).toBe('')
   })
 
+  it('shows the download request and lets the same ZIP be retried without duplicate clicks', async () => {
+    const t = setup()
+    const result = collected([{ source: 'diagnostics.events', reason: 'unavailable' }])
+    t.save.mockResolvedValue('download-requested')
+    await toReady(t, result)
+    t.button('Save ZIP').click()
+    await flush()
+
+    expect(t.step()).toBe('download-requested')
+    expect(t.heading()).toBe('Download requested')
+    expect(document.activeElement).toBe(t.dialog.querySelector('h2'))
+    expect(t.dialog.querySelector<HTMLElement>('[data-ready-warning]')?.hidden).toBe(false)
+    expect(t.dialog.querySelector<HTMLElement>('[data-ready-summary]')?.textContent).toContain(FILE)
+    expect(t.error()).toBe('')
+
+    const retry = t.button('Download again')
+    const secondClick = () => retry.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }))
+    secondClick()
+    expect(t.save).toHaveBeenCalledTimes(1)
+    retry.click()
+    expect(retry.disabled).toBe(true)
+    await flush()
+    secondClick()
+    expect(t.save.mock.calls).toEqual([
+      [result.zip, FILE],
+      [result.zip, FILE],
+    ])
+    expect(t.collect).toHaveBeenCalledTimes(1)
+    expect(retry.disabled).toBe(false)
+    expect(t.step()).toBe('download-requested')
+  })
+
   it('reports a save failure and allows a retry', async () => {
     const t = setup()
     t.save.mockRejectedValueOnce(new Error('disk full')).mockResolvedValueOnce('saved')
@@ -289,13 +321,13 @@ describe('createDiagnosticsDialog', () => {
     expect(t.dialog.querySelector('[data-ready-summary]')).toBeNull()
   })
 
-  it('releases the generated ZIP when the dialog closes', async () => {
+  it.each(['saved', 'download-requested'] as const)('releases the ZIP after %s', async (outcome) => {
     const t = setup()
-    t.save.mockResolvedValue('saved')
+    t.save.mockResolvedValue(outcome)
     await toReady(t)
     t.button('Save ZIP').click()
     await flush()
-    expect(t.step()).toBe('saved')
+    expect(t.step()).toBe(outcome)
     t.button('Close').click()
     expect(t.dialog.open).toBe(false)
     expect(t.dialog.textContent).not.toContain(FILE)
@@ -379,13 +411,22 @@ describe('createDiagnosticsDialog', () => {
     expect(document.activeElement).toBe(trigger)
   })
 
-  it('starts saving from the dialog click before yielding user activation', async () => {
+  it('starts saving in the click and ignores extra clicks during and after the save', async () => {
     const t = setup()
     await toReady(t)
-    t.save.mockReturnValue(new Promise(() => {}))
-    t.button('Save ZIP').click()
+    const pending = deferred<'saved'>()
+    t.save.mockReturnValue(pending.promise)
+    const button = t.button('Save ZIP')
+    button.click()
     expect(t.save).toHaveBeenCalledTimes(1)
-    expect(t.button('Save ZIP').disabled).toBe(true)
+    expect(button.disabled).toBe(true)
+    button.click()
+    expect(t.save).toHaveBeenCalledTimes(1)
+    pending.resolve('saved')
+    await flush()
+    expect(t.step()).toBe('saved')
+    button.click()
+    expect(t.save).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -399,19 +440,21 @@ function pickerWindow(
   writable: Writable,
   picker = vi.fn(async () => ({ name: FILE, createWritable: async () => writable })),
 ) {
-  return { win: { showSaveFilePicker: picker } as unknown as Window, picker }
+  const win = { document, showSaveFilePicker: picker }
+  return { win: Object.assign(win, { top: win }) as unknown as Window, picker }
 }
 
 describe('saveZip', () => {
   const zip = new Uint8Array([1, 2, 3])
 
-  it('writes through showSaveFilePicker', async () => {
+  it.each(['top-level', 'same-origin frame'])('writes through showSaveFilePicker in %s', async (context) => {
     const writable = {
       write: vi.fn(async () => {}),
       close: vi.fn(async () => {}),
       abort: vi.fn(async () => {}),
     }
     const { win, picker } = pickerWindow(writable)
+    if (context === 'same-origin frame') Object.assign(win, { top: window })
     await expect(saveZip(zip, FILE, win)).resolves.toBe('saved')
     expect(picker).toHaveBeenCalledWith({
       suggestedName: FILE,
@@ -434,42 +477,70 @@ describe('saveZip', () => {
   })
 
   it('returns canceled when the picker is dismissed', async () => {
+    const download = vi.spyOn(URL, 'createObjectURL')
     const writable = { write: vi.fn(), close: vi.fn(), abort: vi.fn() }
     const picker = vi.fn(async () => {
       throw new DOMException('dismissed', 'AbortError')
     })
     const { win } = pickerWindow(writable, picker as never)
     await expect(saveZip(zip, FILE, win)).resolves.toBe('canceled')
+    expect(download).not.toHaveBeenCalled()
   })
 
-  it('aborts the writable and rethrows when writing fails', async () => {
-    const order: string[] = []
-    const writable = {
-      write: vi.fn(async () => {
-        throw new Error('quota')
-      }),
-      close: vi.fn(async () => {}),
-      abort: vi.fn(async () => {
-        order.push('abort')
-      }),
-    }
-    const { win } = pickerWindow(writable)
-    await expect(saveZip(zip, FILE, win)).rejects.toThrow('quota')
-    expect(order).toEqual(['abort'])
-    expect(writable.close).not.toHaveBeenCalled()
+  it('surfaces a top-level picker security error without downloading', async () => {
+    const download = vi.spyOn(URL, 'createObjectURL')
+    const failure = new DOMException('Missing user activation', 'SecurityError')
+    const { win, picker } = pickerWindow({ write: vi.fn(), close: vi.fn(), abort: vi.fn() })
+    picker.mockRejectedValue(failure)
+    await expect(saveZip(zip, FILE, win)).rejects.toBe(failure)
+    expect(download).not.toHaveBeenCalled()
   })
 
-  it('falls back to an <a download> without showSaveFilePicker', async () => {
+  it.each(['createWritable', 'write', 'close'] as const)(
+    'reports a failure from %s without downloading',
+    async (stage) => {
+      const download = vi.spyOn(URL, 'createObjectURL')
+      const failure = new DOMException('Cannot save this file', 'NotAllowedError')
+      const writable = {
+        write: vi.fn(async () => {}),
+        close: vi.fn(async () => {}),
+        abort: vi.fn(async () => {}),
+      }
+      const { win, picker } = pickerWindow(writable)
+      const createWritable = vi.fn(async () => writable)
+      picker.mockResolvedValue({ name: FILE, createWritable })
+      const failingOperation = stage === 'createWritable' ? createWritable : writable[stage]
+      failingOperation.mockRejectedValue(failure)
+      await expect(saveZip(zip, FILE, win)).rejects.toBe(failure)
+      expect(writable.abort).toHaveBeenCalledTimes(stage === 'createWritable' ? 0 : 1)
+      expect(writable.close).toHaveBeenCalledTimes(stage === 'close' ? 1 : 0)
+      expect(download).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['without a picker', 'in a cross-origin frame'])('downloads once %s', async (context) => {
     vi.useFakeTimers()
     const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:diagnostics')
     const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
     let clicked: HTMLAnchorElement | undefined
     let attached = false
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
       clicked = this
       attached = this.isConnected
     })
-    await expect(saveZip(zip, FILE, window)).resolves.toBe('saved')
+    const { win, picker } = pickerWindow({ write: vi.fn(), close: vi.fn(), abort: vi.fn() })
+    const crossOriginTop = {
+      get document(): Document {
+        throw new DOMException('Cross-origin access denied', 'SecurityError')
+      },
+    }
+    Object.assign(win, { top: crossOriginTop })
+    const pending = saveZip(zip, FILE, context === 'in a cross-origin frame' ? win : window)
+    expect(click).toHaveBeenCalledTimes(1)
+    await expect(pending).resolves.toBe('download-requested')
+    expect(picker).not.toHaveBeenCalled()
     expect(create).toHaveBeenCalledTimes(1)
     expect(clicked?.download).toBe(FILE)
     expect(clicked?.href).toBe('blob:diagnostics')

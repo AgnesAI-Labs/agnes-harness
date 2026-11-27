@@ -22,13 +22,13 @@ it('runs an exact canonical batch with literal arguments, isolated output and it
       '--grep',
       '375 en/light$',
       '--workers=1',
+      '--global-timeout=600000',
     ],
     env: { KEEP: 'value', AGH_NARROW_WIDTHS: '375', AGH_WEB_TEST_OUTPUT: '.agnes-tmp/e2e-web/narrow-phone' },
   })
-  const nightly = source.nightly[0]
-  expect(
-    batchInvocation(JSON.stringify(nightly), ['--prepared-local', 'proof'], {}).env.AGH_NARROW_WIDTHS,
-  ).toBe('')
+  const nightly = batchInvocation(JSON.stringify(source.nightly[0]), ['--prepared-local', 'proof'], {})
+  expect(nightly.env.AGH_NARROW_WIDTHS).toBe('')
+  expect(nightly.args).toContain('--global-timeout=1200000')
 })
 
 it('refuses forged identities, options, selectors, widths and preparation arguments', () => {

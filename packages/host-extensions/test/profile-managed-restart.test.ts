@@ -166,7 +166,7 @@ it('stops a retry instance whose slot a racing publication retired, and leaves o
   let flakyCurrent = true
   const { managed, register } = manager((owner) => owner !== 'plugin/@example/flaky' || flakyCurrent)
   const handle = register('@example/flaky', flaky.definition)
-  register('@example/other', other.definition)
+  const otherHandle = register('@example/other', other.definition)
   await managed.publish()
   await expect(handle.get()).rejects.toThrow()
   const retry = handle.retry()
@@ -177,6 +177,7 @@ it('stops a retry instance whose slot a racing publication retired, and leaves o
   await publication
   expect(flaky.counts.running).toBe(0)
   expect(managed.statuses('@example/flaky')).toEqual([])
+  await expect(otherHandle.get()).resolves.toBe(1)
   expect(states(managed, '@example/other')).toEqual(['ready'])
   await managed.close()
   expect(other.counts.running).toBe(0)

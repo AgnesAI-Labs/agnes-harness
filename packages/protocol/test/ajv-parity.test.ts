@@ -844,6 +844,8 @@ const TOOLDEF_DEFS: Record<string, TSchema> = {
 // hooks.json, the fifth self-owned document. Seven of its $defs are cross-file aliases (six of
 // session-v1's and tooldef's ToolMeta), registered here for the two-way coverage guard like the rest.
 const HOOKS_DEFS: Record<string, TSchema> = {
+  TurnEndPayload: HooksGen.TurnEndPayload,
+  TurnEndReturn: HooksGen.TurnEndReturn,
   JsonValue: HooksGen.JsonValue,
   Actor: HooksGen.Actor,
   ContentBlock: HooksGen.ContentBlock,
@@ -2538,12 +2540,12 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     valid: {
       input: {
         key: 'k1',
-        kind: 'legacyOwnerMessage',
+        kind: 'recoveryContinuation',
         state: 'consumed',
         reason: 'eligible',
         version: 2,
         text: null,
-        source: { kind: 'legacy' },
+        source: { turnEndSeq: 7 },
         binding: { taskId: 'T-1', taskGeneration: 0, startKey: 'start' },
         turn: 3,
         seq: 9,
@@ -5165,13 +5167,20 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'one page row of session.list; lastSeq/generation boundaries and the five required fields',
   },
   SessionListParams: {
-    valid: { q: { cwd: '/work', prefix: 'x', text: 'hello' }, cursor: 'c1', limit: 20 },
+    valid: {
+      q: { cwd: '/work', prefix: 'x', text: 'hello' },
+      cursor: 'c1',
+      limit: 20,
+      includePromptTitles: true,
+    },
     invalid: [
       { limit: 0 }, // boundary: one below minimum:1
       { limit: 501 }, // boundary: one above maximum:500
       { cursor: rep(513) }, // boundary: maxLength:512
       { sidebar: { groupId: 'unassigned' }, q: {} },
       { sidebar: { groupId: 'unassigned' }, limit: 6 },
+      { includePromptTitles: 'true' },
+      { sidebar: { groupId: 'unassigned' }, includePromptTitles: true },
     ],
     note: 'every field is optional; the three boundaries are limit range and cursor length',
   },
@@ -5951,6 +5960,17 @@ const nullReturn: Sample = {
 }
 
 const HOOKS_SAMPLES: Record<string, Sample> = {
+  TurnEndPayload: {
+    note: 'committed turn outcome with nonnegative turn and positive ledger sequence',
+    valid: { turn: 0, reason: 'completed', endSeq: 1 },
+    invalid: [
+      { turn: -1, reason: 'completed', endSeq: 1 },
+      { turn: 0, reason: 'unknown', endSeq: 1 },
+      { turn: 0, reason: 'error', endSeq: 0 },
+      { turn: 0, reason: 'completed', endSeq: 1, extra: true },
+    ],
+  },
+  TurnEndReturn: { note: 'the observational hook returns only null', valid: null, invalid: [{}, true, 0] },
   JsonValue: SESSION_SAMPLES.JsonValue as Sample,
   Actor: SESSION_SAMPLES.Actor as Sample,
   ContentBlock: SESSION_SAMPLES.ContentBlock as Sample,
@@ -7784,6 +7804,51 @@ PackageAdminSamples.ContributionBinding = {
   invalid: [{ lifetime: 'profile', availability: 'active' }],
   note: 'Current roster authority binding',
 }
+const communityRelease = {
+  version: '1.0.0',
+  source: { type: 'git', ref: `git:https://github.com/acme/reports.git#${'a'.repeat(40)}` },
+}
+Object.assign(PackageAdminSamples, {
+  PackageCommunityVersionV2: {
+    valid: communityRelease,
+    invalid: [
+      { ...communityRelease, version: '' },
+      { ...communityRelease, version: 'a'.repeat(129) },
+      { ...communityRelease, compatibility: { kind: 'undeclared' } },
+    ],
+    note: 'Legacy releases are closed to v3 metadata',
+  },
+  PackageCommunityVersionV3: {
+    valid: {
+      ...communityRelease,
+      provides: ['tool', 'skills'],
+      publishTimestamp: 1,
+      compatibility: { kind: 'undeclared' },
+    },
+    invalid: [communityRelease, { ...communityRelease, compatibility: { kind: 'incompatible' } }],
+    note: 'V3 releases require daemon compatibility',
+  },
+  PackageCommunityProvides: {
+    valid: ['tool', 'skills'],
+    invalid: [[], ['tool', 'tool'], ['unknown']],
+    note: 'Provided capabilities must be known and unique',
+  },
+  PackageCommunityPublishTimestamp: {
+    valid: 1,
+    invalid: [0, 1.5, 253402300800],
+    note: 'Git committer time is bounded integer Unix seconds',
+  },
+  PackageCommunityCompatibility: {
+    valid: { kind: 'declared-compatible', range: '^1.0.0' },
+    invalid: [
+      { kind: 'incompatible' },
+      { kind: 'declared-compatible', range: '' },
+      { kind: 'unknown', range: 'a'.repeat(501) },
+      { kind: 'undeclared', range: '*' },
+    ],
+    note: 'Compatibility branches enforce their range requirements',
+  },
+} satisfies Record<string, Sample>)
 AGNES_SAMPLES.AuthoringFile = PackageAdminSamples.AuthoringFile as Sample
 AGNES_SAMPLES.AuthoringOrigin = PackageAdminSamples.AuthoringOrigin as Sample
 AGNES_SAMPLES.AuthoringTests = PackageAdminSamples.AuthoringTests as Sample
@@ -8199,6 +8264,26 @@ const AppSamples: Record<string, Sample> = {
       { id: 'secret://other/default', value: 'canary' },
     ],
     note: 'Closed write-only credential contract',
+  },
+  AdminCloudAuthorize: {
+    valid: {
+      origin: 'http://cloud.fixture:8443',
+      credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111',
+    },
+    invalid: [
+      {},
+      { origin: 'http://cloud.fixture:8443', key: 'raw-value' },
+      { origin: 'http://cloud.fixture', credentialRef: 'env:CLOUD_KEY' },
+    ],
+    note: 'Resolve only managed credential references',
+  },
+  AdminCloudAuthorization: {
+    valid: { token: `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`, expiresAt: 1000 },
+    invalid: [
+      { token: 'invalid', expiresAt: 1000 },
+      { token: `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`, expiresAt: 1000, key: 'must-not-return' },
+    ],
+    note: 'Return a temporary capability, never the original credential',
   },
   AdminCredentialCreate: {
     valid: { label: 'Work key', value: 'canary' },
@@ -9051,9 +9136,17 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     AuthoringProvenance: PackageAdminGen.AuthoringProvenance,
 
     SkinListResult: PackageAdminGen.SkinListResult,
+    SkinChoice: PackageAdminGen.SkinChoice,
+    SkinConfigSnapshot: PackageAdminGen.SkinConfigSnapshot,
+    SkinIdentity: PackageAdminGen.SkinIdentity,
+    SkinSelectParams: PackageAdminGen.SkinSelectParams,
+    SkinStoredSnapshot: PackageAdminGen.SkinStoredSnapshot,
     SkinReadParams: PackageAdminGen.SkinReadParams,
     SkinReadResult: PackageAdminGen.SkinReadResult,
     ClientModuleListResult: PackageAdminGen.ClientModuleListResult,
+    PluginUiEntryDeclaration: PackageAdminGen.PluginUiEntryDeclaration,
+    PluginUiEntry: PackageAdminGen.PluginUiEntry,
+    PluginUiEntriesResult: PackageAdminGen.PluginUiEntriesResult,
     ClientModuleRosterRow: PackageAdminGen.ClientModuleRosterRow,
     ContributionBinding: PackageAdminGen.ContributionBinding,
     ClientModuleReadParams: PackageAdminGen.ClientModuleReadParams,
@@ -9061,6 +9154,9 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     ClientModuleServiceCallParams: PackageAdminGen.ClientModuleServiceCallParams,
     ClientModuleEffectCallParams: PackageAdminGen.ClientModuleEffectCallParams,
     ClientModuleEffectCallResult: PackageAdminGen.ClientModuleEffectCallResult,
+    FrontendPublicationOwnerResult: PackageAdminGen.FrontendPublicationOwnerResult,
+    PackageDocsGetParams: PackageAdminGen.PackageDocsGetParams,
+    PackageDocsGetResult: PackageAdminGen.PackageDocsGetResult,
     ClientModuleServiceCallResult: PackageAdminGen.ClientModuleServiceCallResult,
     PackageAdminPermission: PackageAdminGen.PackageAdminPermission,
     PackageActivationTrust: PackageAdminGen.PackageActivationTrust,
@@ -9091,6 +9187,11 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     PackageOperationReceipt: PackageAdminGen.PackageOperationReceipt,
     PackageOperation: PackageAdminGen.PackageOperation,
     PackageCatalogPage: PackageAdminGen.PackageCatalogPage,
+    PackageCommunityCompatibility: PackageAdminGen.PackageCommunityCompatibility,
+    PackageCommunityProvides: PackageAdminGen.PackageCommunityProvides,
+    PackageCommunityPublishTimestamp: PackageAdminGen.PackageCommunityPublishTimestamp,
+    PackageCommunityVersionV2: PackageAdminGen.PackageCommunityVersionV2,
+    PackageCommunityVersionV3: PackageAdminGen.PackageCommunityVersionV3,
     PluginGenerationStatus: PackageAdminGen.PluginGenerationStatus,
     PackageListResult: PackageAdminGen.PackageListResult,
     PluginPublicationReport: PackageAdminGen.PluginPublicationReport,
@@ -9308,6 +9409,11 @@ describe('McpServerDescriptor: authorizationStatus field', () => {
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/admin.cloud.authorize': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminCloudAuthorize',
+    result: 'AdminCloudAuthorization',
+  },
   '_agnes/v1/channels.catalog': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
     params: 'AdminEmpty',
@@ -9883,6 +9989,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'PackageListParams',
     result: 'PackageListResult',
   },
+  '_agnes/v1/packages.docs.get': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PackageDocsGetParams',
+    result: 'PackageDocsGetResult',
+  },
   '_agnes/v1/skins.list': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
     params: 'PackageListParams',
@@ -9893,15 +10004,30 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SkinReadParams',
     result: 'SkinReadResult',
   },
+  '_agnes/v1/skins.select': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'SkinSelectParams',
+    result: 'SkinConfigSnapshot',
+  },
   '_agnes/v1/clientModules.list': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
     params: 'ClientModuleListParams',
     result: 'ClientModuleListResult',
   },
+  '_agnes/v1/clientModules.uiEntries': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PackageListParams',
+    result: 'PluginUiEntriesResult',
+  },
   '_agnes/v1/clientModules.read': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
     params: 'ClientModuleReadParams',
     result: 'ClientModuleReadResult',
+  },
+  '_agnes/v1/clientModules.frontendPublication': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PackageListParams',
+    result: 'FrontendPublicationOwnerResult',
   },
   '_agnes/v1/clientModules.callService': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
@@ -10405,6 +10531,18 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/admin.cloud.authorize': {
+    valid: {
+      origin: 'http://cloud.fixture:8443',
+      credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111',
+    },
+    invalid: [
+      {},
+      { origin: 'http://cloud.fixture:8443', key: 'raw-value' },
+      { origin: 'http://cloud.fixture', credentialRef: 'env:CLOUD_KEY' },
+    ],
+    note: 'The daemon exchanges an A-owned credential reference; no raw Key crosses this interface',
+  },
   '_agnes/v1/channels.catalog': {
     valid: {},
     invalid: [{ unexpected: true }],
@@ -11140,10 +11278,14 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/sessions.migrate': PackageAdminSamples.SessionGenerationMigrationParams as Sample,
   '_agnes/v1/plugins.generations': PackageAdminSamples.PackageListParams as Sample,
   '_agnes/v1/packages.list': PackageAdminSamples.PackageListParams as Sample,
+  '_agnes/v1/packages.docs.get': PackageAdminSamples.PackageDocsGetParams as Sample,
   '_agnes/v1/skins.list': PackageAdminSamples.PackageListParams as Sample,
   '_agnes/v1/skins.read': PackageAdminSamples.SkinReadParams as Sample,
+  '_agnes/v1/skins.select': PackageAdminSamples.SkinSelectParams as Sample,
   '_agnes/v1/clientModules.list': PackageAdminSamples.ClientModuleListParams as Sample,
+  '_agnes/v1/clientModules.uiEntries': PackageAdminSamples.PackageListParams as Sample,
   '_agnes/v1/clientModules.read': PackageAdminSamples.ClientModuleReadParams as Sample,
+  '_agnes/v1/clientModules.frontendPublication': PackageAdminSamples.PackageListParams as Sample,
   '_agnes/v1/clientModules.callService': PackageAdminSamples.ClientModuleServiceCallParams as Sample,
   '_agnes/v1/clientModules.callEffect': PackageAdminSamples.ClientModuleEffectCallParams as Sample,
   '_agnes/v1/packages.inspect': PackageAdminSamples.PackageInspectParams as Sample,
@@ -11463,6 +11605,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/admin.cloud.authorize': AppSamples.AdminCloudAuthorization!,
   '_agnes/v1/channels.catalog': {
     valid: { providers: [] },
     invalid: [{}, { providers: 'invalid' }],
@@ -11996,10 +12139,14 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
     note: 'Generation status rejects extra fields',
   },
   '_agnes/v1/packages.list': PackageAdminSamples.PackageListResult as Sample,
+  '_agnes/v1/packages.docs.get': PackageAdminSamples.PackageDocsGetResult as Sample,
   '_agnes/v1/skins.list': PackageAdminSamples.SkinListResult as Sample,
   '_agnes/v1/skins.read': PackageAdminSamples.SkinReadResult as Sample,
+  '_agnes/v1/skins.select': PackageAdminSamples.SkinConfigSnapshot as Sample,
   '_agnes/v1/clientModules.list': PackageAdminSamples.ClientModuleListResult as Sample,
+  '_agnes/v1/clientModules.uiEntries': PackageAdminSamples.PluginUiEntriesResult as Sample,
   '_agnes/v1/clientModules.read': PackageAdminSamples.ClientModuleReadResult as Sample,
+  '_agnes/v1/clientModules.frontendPublication': PackageAdminSamples.FrontendPublicationOwnerResult as Sample,
   '_agnes/v1/clientModules.callService': PackageAdminSamples.ClientModuleServiceCallResult as Sample,
   '_agnes/v1/clientModules.callEffect': PackageAdminSamples.ClientModuleEffectCallResult as Sample,
   '_agnes/v1/packages.inspect': PackageAdminSamples.PackageOperationReceipt as Sample,

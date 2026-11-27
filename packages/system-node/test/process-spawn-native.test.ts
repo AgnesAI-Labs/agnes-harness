@@ -11,6 +11,41 @@ type RestrictedTarget = {
 }
 
 describe.skipIf(process.platform !== 'win32')('broker native process launch', () => {
+  it('keeps an ordinary target suspended until resumed, and reclaims one discarded before execution', async () => {
+    const native = createRequire(import.meta.url)('@agnes/system-node/native') as {
+      spawnSuspended(...args: unknown[]): RestrictedTarget
+    }
+    const environment = `SystemRoot=${process.env.SystemRoot}\0\0`
+    for (const args of [
+      [],
+      ['relative', 'x', process.cwd(), environment],
+      [process.execPath, 'x', process.cwd(), 'bad'],
+    ])
+      expect(() => native.spawnSuspended(...args)).toThrow()
+    const target = native.spawnSuspended(
+      process.execPath,
+      `"${process.execPath}" -e "process.exit(7)"`,
+      process.cwd(),
+      environment,
+    )
+    try {
+      expect(target.startTime).toBe(windowsProcessStartTimeSync(target.pid))
+      expect(target.exitCode()).toBeNull()
+      target.resume()
+      await expect.poll(() => target.exitCode()).toBe(7)
+    } finally {
+      target.close()
+    }
+    const discarded = native.spawnSuspended(
+      process.execPath,
+      `"${process.execPath}"`,
+      process.cwd(),
+      environment,
+    )
+    discarded.close()
+    discarded.close()
+    await expect.poll(() => windowsProcessStartTimeSync(discarded.pid)).toBeNull()
+  })
   it('rejects malformed inputs and survives repeated failed launches', async () => {
     const native = createRequire(import.meta.url)('@agnes/system-node/native') as {
       spawnInherited(args: unknown, cwd: unknown, env: unknown, callback: unknown): number

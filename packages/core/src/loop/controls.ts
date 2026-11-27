@@ -19,6 +19,10 @@ export type SessionControl =
   | 'promote'
   | 'child-stop'
   | 'child-continue'
+  | 'child-pause'
+  | 'child-resume'
+  | 'child-close'
+  | 'child-retain'
 const PAUSE = 'x/core/pause-state'
 
 /** Core-owned controls apply to the session's pinned factory, independent of its scheduler. */
@@ -241,16 +245,23 @@ export class SessionControls {
     itemId?: string,
     child?: { id: string; text?: string },
   ): Promise<Seq> {
-    if (action === 'child-stop' || action === 'child-continue') {
+    if (
+      action === 'child-stop' ||
+      action === 'child-continue' ||
+      action === 'child-pause' ||
+      action === 'child-resume' ||
+      action === 'child-close' ||
+      action === 'child-retain'
+    ) {
       if (!child?.id) throw new CoreError('E_ENVELOPE', 'Child control requires a child id')
-      return applyChildControl(
-        this.s,
-        child.id,
-        action === 'child-stop' ? 'stop' : 'continue',
-        actor,
-        admissionId,
-        child.text,
-      )
+      const mapped = action.slice('child-'.length) as
+        | 'stop'
+        | 'continue'
+        | 'pause'
+        | 'resume'
+        | 'close'
+        | 'retain'
+      return applyChildControl(this.s, child.id, mapped, actor, admissionId, child.text)
     }
     if (action === 'pause' || action === 'resume') {
       await this.require('pause', actor)

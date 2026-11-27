@@ -63,9 +63,16 @@ const objectInput = (input: JsonValue): Record<string, JsonValue> => {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('object input required')
   return input
 }
+function clipUtf16(value: string, max: number): string {
+  if (max <= 0) return ''
+  if (value.length <= max) return value
+  const last = value.charCodeAt(max - 1)
+  return value.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 1 : max)
+}
 // Registry views also carry cleanup receipts and legacy shell selectors. Only this allowlist
 // crosses the service boundary, so internal additions cannot invalidate strict RPC results.
 function publicJob(job: ShellJobView, includeOutput = false): SessionJob {
+  const childLabel = job.childLabel ? clipUtf16(job.childLabel, 256) : undefined
   return {
     id: job.id,
     owner: job.owner,
@@ -78,6 +85,8 @@ function publicJob(job: ShellJobView, includeOutput = false): SessionJob {
     truncated: job.truncated || job.stdout.length > 65536 || job.stderr.length > 65536,
     ...(job.shell && job.shell !== 'powershell' ? { shell: job.shell } : {}),
     ...(job.sessionId !== undefined ? { sessionId: job.sessionId } : {}),
+    ...(job.childStatus !== undefined ? { childStatus: job.childStatus } : {}),
+    ...(childLabel ? { childLabel } : {}),
     ...(includeOutput ? { stdout: job.stdout.slice(-65536), stderr: job.stderr.slice(-65536) } : {}),
   }
 }
@@ -88,13 +97,14 @@ export function createJobsServices(jobs: ShellJobs): ServiceDef[] {
       async handler(raw, ctx): Promise<JsonValue> {
         const input = objectInput(raw)
         const scope = owner(ctx)
-        await jobs.syncChildren({ ...scope, cwd: ctx.cwd }, ctx.childJobs)
+        const selectedJobId = typeof input.jobId === 'string' ? input.jobId : undefined
+        await jobs.syncChildren({ ...scope, cwd: ctx.cwd }, ctx.childJobs, selectedJobId)
         const result: Record<string, JsonValue> = {
-          jobs: jobs.list(scope).map((job) => publicJob(job)),
+          jobs: jobs.listBounded(scope, selectedJobId).map((job) => publicJob(job)),
           completions: jobs.completions(scope).map((job) => publicJob(job)),
         }
-        if (typeof input.jobId === 'string') {
-          const job = await jobs.wait({ ...scope, signal: ctx.signal }, input.jobId, 0)
+        if (selectedJobId) {
+          const job = await jobs.wait({ ...scope, signal: ctx.signal }, selectedJobId, 0)
           result.job = publicJob(job, true)
         }
         return result
@@ -105,7 +115,6 @@ export function createJobsServices(jobs: ShellJobs): ServiceDef[] {
       async handler(raw, ctx): Promise<JsonValue> {
         const input = objectInput(raw)
         const scope = owner(ctx)
-        await jobs.syncChildren({ ...scope, cwd: ctx.cwd }, ctx.childJobs)
         if (input.operation === 'open') {
           if (!ctx.sandbox?.openProcess)
             throw new Error('SANDBOX_UNAVAILABLE: interactive process service is unavailable')
@@ -152,7 +161,18 @@ export function createJobsServices(jobs: ShellJobs): ServiceDef[] {
           )
         }
         if (typeof input.jobId !== 'string') throw new Error('jobId is required')
-        const job = jobs.list(scope).find((candidate) => candidate.id === input.jobId)
+        if (input.jobId.startsWith('child:')) {
+          if (input.operation !== 'kill')
+            throw new Error('CAPABILITY_DENIED: the UI controls human terminals and may only stop agent jobs')
+          const direct = await jobs.syncDirectChild({ ...scope, cwd: ctx.cwd }, ctx.childJobs, input.jobId)
+          if (!direct || !jobs.isControllableChild(scope, input.jobId))
+            throw new Error(
+              'CAPABILITY_DENIED: only unambiguous direct child jobs of this session can be stopped',
+            )
+          const killed = await jobs.kill(scope, input.jobId)
+          return publicJob(killed)
+        }
+        const job = jobs.findLocalJob(scope, input.jobId)
         // The UI drives human terminals; of the agent's jobs in this session it may only stop one.
         if (!job || (job.owner !== 'human' && !(job.owner === 'agent' && input.operation === 'kill')))
           throw new Error('CAPABILITY_DENIED: the UI controls human terminals and may only stop agent jobs')

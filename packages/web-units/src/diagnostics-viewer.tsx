@@ -1,5 +1,13 @@
 import type { UINode, UISpan } from '@agnes/protocol'
-import { Button, SettingsList, SettingsRow, SettingsState, Tabs } from '@agnes/web-ui'
+import {
+  Button,
+  SettingsList,
+  SettingsRow,
+  SettingsState,
+  systemInputText,
+  Tabs,
+  webUiLocaleCatalog,
+} from '@agnes/web-ui'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
   type DiagnosticsLocale,
@@ -8,6 +16,7 @@ import {
   diagnosticsViewerLabels,
 } from './diagnostics-locale.js'
 import type { DiagnosticsBundle } from './diagnostics-types.js'
+import { formatDurationMs } from './trace-model.js'
 
 /** Keep script breakers inert even when a downstream consumer re-embeds the JSON. */
 export function escapeBundleJson(bundle: DiagnosticsBundle): string {
@@ -22,33 +31,73 @@ const TAB_IDS = ['overview', 'conversation', 'trace', 'logs', 'system', 'artifac
 const STYLE = `
 @layer tokens, base, ui, app;
 @layer tokens {
-  :root { color-scheme: light dark; --agnes-bg-primary: Canvas; --agnes-text-primary: CanvasText; --agnes-text-secondary: GrayText; --agnes-line-primary: GrayText; --agnes-accent-primary: Highlight; }
+  :root {
+    color-scheme: light dark;
+    --agnes-bg-primary: Canvas;
+    --agnes-bg-surface: color-mix(in srgb, Canvas 96%, CanvasText 4%);
+    --agnes-bg-subtle: color-mix(in srgb, Canvas 92%, CanvasText 8%);
+    --agnes-text-primary: CanvasText;
+    --agnes-text-secondary: GrayText;
+    --agnes-line-primary: color-mix(in srgb, GrayText 35%, transparent);
+    --agnes-accent-primary: Highlight;
+    --agnes-accent-soft: color-mix(in srgb, Highlight 14%, transparent);
+    --agnes-warn-bg: color-mix(in srgb, Mark 20%, Canvas);
+    --agnes-warn-border: color-mix(in srgb, Mark 55%, Canvas);
+    --agnes-warn-text: CanvasText;
+    --agnes-ok: Highlight;
+    --agnes-bad: LinkText;
+  }
 }
 @layer base {
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--agnes-bg-primary); color: var(--agnes-text-primary); font-size: 14px; line-height: 1.6; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; background: var(--agnes-bg-primary); color: var(--agnes-text-primary); font-size: 14px; line-height: 1.6; }
+  .ant-tabs-body-holder { display: none; }
 }
 @layer app {
-  header { padding: 16px 20px; border-bottom: 1px solid var(--agnes-line-primary); }
-  header h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; text-wrap: balance; overflow-wrap: anywhere; }
-  header p { margin: 2px 0; color: var(--agnes-text-secondary); font-size: 13px; max-width: 75ch; overflow-wrap: anywhere; }
-  #agh-tabs { display: flex; gap: 4px; padding: 8px 20px; border-bottom: 1px solid var(--agnes-line-primary); flex-wrap: wrap; }
-   #agh-tabs button { border: 1px solid var(--agnes-line-primary); background: transparent; color: var(--agnes-text-primary); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; min-height: 32px; touch-action: manipulation; }
-   #agh-tabs button[aria-selected="true"] { background: var(--agnes-accent-primary); color: HighlightText; border-color: var(--agnes-accent-primary); }
+  header { padding: 20px 24px 16px; background: var(--agnes-bg-surface); border-bottom: 1px solid var(--agnes-line-primary); }
+  header h1 { margin: 0 0 6px; font-size: 19px; font-weight: 600; letter-spacing: -0.01em; text-wrap: balance; overflow-wrap: anywhere; }
+  header p { margin: 2px 0; color: var(--agnes-text-secondary); font-size: 13px; max-width: 80ch; overflow-wrap: anywhere; }
+  #agh-session-title { color: var(--agnes-text-primary); font-weight: 500; font-size: 14px; }
+  #agh-tabs { position: sticky; top: 0; z-index: 10; display: flex; gap: 6px; padding: 10px 24px; background: var(--agnes-bg-surface); border-bottom: 1px solid var(--agnes-line-primary); flex-wrap: wrap; }
+  #agh-tabs button { border: 1px solid transparent; background: transparent; color: var(--agnes-text-secondary); padding: 6px 14px; border-radius: 999px; cursor: pointer; font-size: 13px; font-weight: 500; min-height: 32px; touch-action: manipulation; transition: background .15s, color .15s; }
+  #agh-tabs button:hover { background: var(--agnes-bg-subtle); color: var(--agnes-text-primary); }
+  #agh-tabs button[aria-selected="true"] { background: var(--agnes-accent-primary); color: HighlightText; border-color: var(--agnes-accent-primary); }
   #agh-tabs button:focus-visible { outline: 2px solid var(--agnes-accent-primary); outline-offset: 2px; }
-  main { padding: 16px 20px; }
-  main section { max-width: 960px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  main { padding: 20px 24px 40px; }
+  main section { max-width: 1040px; margin: 0 auto; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
   @media (max-width: 600px) {
-    header, main { padding: 16px max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left)); }
+    header, main { padding: 16px max(16px, env(safe-area-inset-right)) 24px max(16px, env(safe-area-inset-left)); }
     #agh-tabs { padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right)); }
     #agh-tabs button { min-height: 44px; }
   }
-  pre { white-space: pre-wrap; word-break: break-word; background: color-mix(in srgb, var(--agnes-text-secondary) 8%, transparent); padding: 8px; border-radius: 6px; font-size: 12px; }
-  .agh-node, .agh-span { padding: 4px 0; border-bottom: 1px solid var(--agnes-line-primary); }
-  .agh-node-kind { font-weight: 600; margin-right: 6px; }
-  .agh-artifact { display: flex; gap: 8px; flex-wrap: wrap; }
-  .agh-artifact div { display: flex; gap: 4px; }
-  .agh-artifact dt { font-weight: 600; }
+  pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-word; background: var(--agnes-bg-subtle); border: 1px solid var(--agnes-line-primary); padding: 12px 14px; border-radius: 8px; font-size: 12px; line-height: 1.5; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; max-height: 460px; overflow: auto; }
+  .agh-include { list-style: none; padding: 0; margin: 0 0 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+  .agh-include li { background: var(--agnes-bg-surface); border: 1px solid var(--agnes-line-primary); border-radius: 10px; padding: 12px 14px; font-size: 13px; font-weight: 500; }
+  .agh-warnings { list-style: none; padding: 0; margin: 0 0 16px; display: flex; flex-direction: column; gap: 8px; }
+  .agh-warnings li { background: var(--agnes-warn-bg); border: 1px solid var(--agnes-warn-border); color: var(--agnes-warn-text); border-radius: 10px; padding: 10px 14px; font-size: 13px; }
+  .agh-events-meta { background: var(--agnes-bg-surface); border: 1px solid var(--agnes-line-primary); border-radius: 10px; padding: 12px 14px; margin: 0; color: var(--agnes-text-secondary); font-size: 13px; }
+  .agh-node { background: var(--agnes-bg-surface); border: 1px solid var(--agnes-line-primary); border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; }
+  .agh-node[data-kind="user"] { border-left: 3px solid var(--agnes-accent-primary); }
+  .agh-node[data-kind="assistant"] { border-left: 3px solid var(--agnes-ok); }
+  .agh-node[data-kind="context"], .agh-node[data-kind="context-sections"], .agh-node[data-kind="cost"] { background: transparent; border-style: dashed; padding: 8px 14px; }
+  .agh-node-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .agh-node-kind { display: inline-block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; padding: 2px 8px; border-radius: 999px; background: var(--agnes-bg-subtle); color: var(--agnes-text-secondary); }
+  .agh-node[data-kind="user"] .agh-node-kind { background: var(--agnes-accent-soft); color: var(--agnes-accent-primary); }
+  .agh-node[data-kind="assistant"] .agh-node-kind { background: color-mix(in srgb, var(--agnes-ok) 14%, transparent); color: var(--agnes-ok); }
+  .agh-node-seq { font-size: 12px; color: var(--agnes-text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .agh-node-body { white-space: pre-wrap; word-break: break-word; font-size: 13.5px; color: var(--agnes-text-primary); }
+  .agh-raw { margin-top: 8px; }
+  .agh-raw-toggle { border: 1px solid var(--agnes-line-primary); background: transparent; color: var(--agnes-text-secondary); padding: 2px 8px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .agh-turn-card { background: var(--agnes-bg-surface); border: 1px solid var(--agnes-line-primary); border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; }
+  .agh-turn-card h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+  .agh-span { padding: 6px 8px; border-bottom: 1px solid var(--agnes-line-primary); font-size: 13px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .agh-span:last-child { border-bottom: 0; }
+  .agh-span[data-status="failed"] { color: var(--agnes-bad); }
+  .agh-log-card { background: var(--agnes-bg-surface); border: 1px solid var(--agnes-line-primary); border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; }
+  .agh-log-card h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+  .agh-artifact { display: flex; gap: 12px; flex-wrap: wrap; margin: 4px 0 0; }
+  .agh-artifact div { display: flex; gap: 4px; font-size: 13px; }
+  .agh-artifact dt { font-weight: 600; color: var(--agnes-text-secondary); }
   .agh-artifact dd { margin: 0; }
 }
 `
@@ -82,6 +131,15 @@ const RUNTIME_SCRIPT = `
       select(tabs[next], true);
     });
   });
+  Array.prototype.slice.call(document.querySelectorAll('[data-agh-toggle]')).forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var panel = document.getElementById(btn.getAttribute('aria-controls') || '');
+      if (!panel) return;
+      var open = !panel.hidden;
+      panel.hidden = open;
+      btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+    });
+  });
 })();
 `
 
@@ -89,34 +147,51 @@ type Labels = ReturnType<typeof diagnosticsViewerLabels>
 function fill(template: string, vars: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (match, name: string) => String(vars[name] ?? match))
 }
-function nodeText(node: UINode, labels: Labels): string {
+function technicalPreview(text: string) {
+  return text
+    .replace(/\[Batch State(?::[^\]]*)?\][^\r\n]*/gi, '')
+    .replace(/\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{6}([0-9a-f]{6})\b/gi, '…$1')
+    .trim()
+}
+function nodeText(node: UINode, labels: Labels, locale: DiagnosticsLocale): string {
   switch (node.kind) {
     case 'user':
+      if (node.system)
+        return technicalPreview(
+          systemInputText(node.system, (key, vars) =>
+            fill(webUiLocaleCatalog[locale][key] ?? key, vars ?? {}),
+          ) ?? '',
+        )
       return node.content.map((block) => (block.type === 'text' ? block.text : '')).join(' ')
     case 'assistant':
       return node.text || node.thinking || ''
     case 'tool':
-      return node.summary ? fill(labels.toolSummary, { name: node.name, summary: node.summary }) : node.name
+      return node.summary
+        ? technicalPreview(fill(labels.toolSummary, { name: node.name, summary: node.summary }))
+        : node.name
     case 'approval':
     case 'compaction':
-      return node.summary || ''
+      return technicalPreview(node.summary ?? '')
     case 'cost':
       return node.model || node.purpose || ''
     case 'artifact':
       return node.name || ''
     case 'context':
-      return node.text || ''
+      return technicalPreview(node.text ?? '')
     default:
       return ''
   }
 }
-function formatDuration(ms: number | undefined, labels: Labels): string {
-  if (ms === undefined) return labels.durationRunning
-  if (ms < 1000) return fill(labels.durationMs, { n: ms })
-  if (ms < 60000) return fill(labels.durationSeconds, { n: (ms / 1000).toFixed(ms < 10000 ? 1 : 0) })
-  return fill(labels.durationMinutes, {
-    minutes: Math.floor(ms / 60000),
-    seconds: Math.round((ms % 60000) / 1000),
+function formatDuration(ms: number | undefined, status: UISpan['status'], labels: Labels): string {
+  return formatDurationMs(ms, {
+    running: status === 'running',
+    format: {
+      running: labels.durationRunning,
+      unknown: labels.durationUnknown,
+      ms: (n) => fill(labels.durationMs, { n }),
+      seconds: (n) => fill(labels.durationSeconds, { n }),
+      minutes: (minutes, seconds) => fill(labels.durationMinutes, { minutes, seconds }),
+    },
   })
 }
 function Span({ span, depth, labels }: { span: UISpan; depth: number; labels: Labels }) {
@@ -124,13 +199,13 @@ function Span({ span, depth, labels }: { span: UISpan; depth: number; labels: La
     span.kind,
     span.name,
     labels.status[span.status] ?? span.status,
-    formatDuration(span.durationMs, labels),
+    formatDuration(span.durationMs, span.status, labels),
   ]
   if (span.model) parts.push(span.model)
   if (span.error?.message) parts.push(fill(labels.error, { message: span.error.message }))
   return (
     <>
-      <div className="agh-span" style={{ paddingLeft: depth * 16 }}>
+      <div className="agh-span" data-status={span.status} style={{ paddingLeft: depth * 18 + 8 }}>
         {parts.join(' · ')}
       </div>
       {span.children.map((child) => (
@@ -139,12 +214,34 @@ function Span({ span, depth, labels }: { span: UISpan; depth: number; labels: La
     </>
   )
 }
+function emptySectionState(
+  selected: boolean | undefined,
+  present: boolean,
+  labels: Labels,
+  kind: 'conversation' | 'trace' | 'logs' | 'system' | 'artifacts',
+) {
+  if (selected === false) return <SettingsState>{labels.notSelected}</SettingsState>
+  if (selected === true) {
+    if (kind === 'artifacts') return <SettingsState>{labels.emptyArtifacts}</SettingsState>
+    return <SettingsState>{present ? labels.emptyExported : labels.unavailableExported}</SettingsState>
+  }
+  return <SettingsState>{labels.notIncluded}</SettingsState>
+}
 function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: DiagnosticsLocale }) {
   const labels = diagnosticsViewerLabels(locale)
   const text = (key: Parameters<typeof diagnosticsText>[0], vars?: Record<string, string | number>) =>
     diagnosticsText(key, vars, locale)
-  const empty = <SettingsState>{labels.notIncluded}</SettingsState>
+  const include = bundle.include as Partial<DiagnosticsBundle['include']> | undefined
   const turns = bundle.trace?.turns.filter((turn) => turn.trace) ?? []
+  const logCards = bundle.logs
+    ? (['requestAudit', 'host', 'runtime', 'browser'] as const)
+        .map((key) => {
+          const value =
+            key === 'requestAudit' ? (bundle.logs?.requestAudit ?? bundle.logs?.daemon) : bundle.logs?.[key]
+          return value ? { key, value } : null
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    : []
   return (
     <>
       <header>
@@ -203,44 +300,62 @@ function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: Diagnos
             </ul>
           )}
           {bundle.events && (
-            <p>{fill(labels.events, { count: bundle.events.count, seq: bundle.events.lastSeq })}</p>
+            <p className="agh-events-meta">
+              {fill(labels.events, { count: bundle.events.count, seq: bundle.events.lastSeq })}
+            </p>
           )}
         </section>
         <section id="tab-conversation" role="tabpanel" aria-labelledby="agh-tab-conversation" hidden>
           {bundle.trace?.nodes.length
-            ? bundle.trace.nodes.map((node) => (
-                <div key={node.id} className="agh-node">
-                  <span className="agh-node-kind">{node.kind}</span>
-                  <span>{nodeText(node, labels)}</span>
-                  <pre>{JSON.stringify(node, null, 2)}</pre>
-                </div>
-              ))
-            : empty}
+            ? bundle.trace.nodes.map((node) => {
+                const body = nodeText(node, labels, locale)
+                return (
+                  <div key={node.id} className="agh-node" data-kind={node.kind}>
+                    <div className="agh-node-head">
+                      <span className="agh-node-kind">{node.kind}</span>
+                      {'seq' in node && typeof node.seq === 'number' && (
+                        <span className="agh-node-seq">#{node.seq}</span>
+                      )}
+                    </div>
+                    {body && <div className="agh-node-body">{body}</div>}
+                    <div className="agh-raw">
+                      <Button
+                        htmlType="button"
+                        className="agh-raw-toggle"
+                        data-agh-toggle="raw"
+                        aria-expanded={false}
+                        aria-controls={`agh-raw-${node.id}`}
+                      >
+                        {labels.rawData}
+                      </Button>
+                      <pre id={`agh-raw-${node.id}`} hidden>
+                        {JSON.stringify(node, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                )
+              })
+            : emptySectionState(include?.conversation, bundle.trace !== undefined, labels, 'conversation')}
         </section>
         <section id="tab-trace" role="tabpanel" aria-labelledby="agh-tab-trace" hidden>
           {turns.length
             ? turns.map((turn) => (
-                <div key={turn.id}>
+                <div key={turn.id} className="agh-turn-card">
                   <h3>{fill(labels.turn, { turn: turn.turn })}</h3>
                   {turn.trace && <Span span={turn.trace} depth={0} labels={labels} />}
                 </div>
               ))
-            : empty}
+            : emptySectionState(include?.conversation, bundle.trace !== undefined, labels, 'trace')}
         </section>
         <section id="tab-logs" role="tabpanel" aria-labelledby="agh-tab-logs" hidden>
-          {bundle.logs
-            ? (['requestAudit', 'host', 'runtime', 'browser'] as const).map((key) => {
-                const value =
-                  key === 'requestAudit'
-                    ? (bundle.logs?.requestAudit ?? bundle.logs?.daemon)
-                    : bundle.logs?.[key]
-                if (!value) return null
+          {logCards.length
+            ? logCards.map(({ key, value }) => {
                 const content =
                   'entries' in value
                     ? value.entries.map((entry) => `[${entry.ts}] ${entry.level} ${entry.text}`).join('\n')
                     : value.text + (value.truncated ? `\n${labels.truncated}` : '')
                 return (
-                  <div key={key}>
+                  <div key={key} className="agh-log-card">
                     <h3>
                       {key === 'requestAudit' || key === 'runtime'
                         ? text(`diagnostics.viewer.log.${key}`)
@@ -250,10 +365,14 @@ function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: Diagnos
                   </div>
                 )
               })
-            : empty}
+            : emptySectionState(include?.logs, bundle.logs !== undefined, labels, 'logs')}
         </section>
         <section id="tab-system" role="tabpanel" aria-labelledby="agh-tab-system" hidden>
-          {bundle.system ? <pre>{JSON.stringify(bundle.system, null, 2)}</pre> : empty}
+          {bundle.system ? (
+            <pre>{JSON.stringify(bundle.system, null, 2)}</pre>
+          ) : (
+            emptySectionState(include?.system, false, labels, 'system')
+          )}
         </section>
         <section id="tab-artifacts" role="tabpanel" aria-labelledby="agh-tab-artifacts" hidden>
           {bundle.artifacts.length ? (
@@ -275,7 +394,7 @@ function Viewer({ bundle, locale }: { bundle: DiagnosticsBundle; locale: Diagnos
               ))}
             </SettingsList>
           ) : (
-            empty
+            emptySectionState(include?.conversation, true, labels, 'artifacts')
           )}
         </section>
       </main>

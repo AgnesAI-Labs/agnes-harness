@@ -114,7 +114,10 @@ describe('DSH document preview renderers', () => {
       },
       zhT,
     )
-    expect(pdfElement.querySelector<HTMLIFrameElement>('iframe')?.sandbox.value).toBe('')
+    expect(pdfElement.querySelector<HTMLIFrameElement>('iframe')?.sandbox.value).toBe('allow-scripts')
+    expect(pdfElement.querySelector<HTMLIFrameElement>('iframe')?.getAttribute('src')).toBe(
+      '/__agnes/pdf-preview',
+    )
     pdfPreview.dispose()
     preview.dispose()
     expect(element.childElementCount).toBe(0)

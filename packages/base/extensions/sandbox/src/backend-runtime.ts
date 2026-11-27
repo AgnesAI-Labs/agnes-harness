@@ -3,7 +3,7 @@ import type { Logger, WindowsWriteBoundary } from '@agnes/extension-api'
 import { bwrapConfine } from './backends/bwrap.js'
 import { seatbeltConfine } from './backends/seatbelt.js'
 import type { ClosedNetworkConfineOptions } from './backends/shared.js'
-import { backendCompileFault, requireClosedNetwork, validateArgv } from './backends/shared.js'
+import { backendCompileFault, requireSupportedNetwork, validateArgv } from './backends/shared.js'
 
 export function sandboxImplementation(platform: string): 'implemented' | 'unimplemented' | 'unknown' {
   if (platform === 'darwin' || platform === 'linux') return 'implemented'
@@ -146,7 +146,7 @@ export async function detectBackend(input: DetectBackendInput): Promise<RuntimeB
       'loopback serving requires the macOS L1 Seatbelt backend',
     )
   if (input.level !== 'L1' || input.shell !== 'posix') return NONE_BACKEND
-  requireClosedNetwork(input.options.networkAllow)
+  requireSupportedNetwork(input.options.networkAllow)
 
   const candidates =
     input.platform === undefined

@@ -43,17 +43,7 @@ function cmp(a: Semver, b: Semver): number {
   }
   return 0
 }
-function admits(token: string, v: Semver): boolean {
-  if (token === '*') return true
-  const wild = /^(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?\.(x|\*)$/.exec(token)
-  if (wild) return v.major === Number(wild[1]) && (wild[2] === undefined || v.minor === Number(wild[2]))
-  const m = /^(>=|<=|>|<|=|\^|~)?(.+)$/.exec(token)
-  if (!m) return false
-  const op = m[1] ?? '=',
-    body = m[2] ?? ''
-  const partial = op === '^' && /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(body)
-  const base = parseSemver(partial ? `${body}.0` : body)
-  if (!base) return false
+function admits(op: string, base: Semver, v: Semver, partial: boolean): boolean {
   const delta = cmp(v, base)
   switch (op) {
     case '=':
@@ -82,19 +72,45 @@ function admits(token: string, v: Semver): boolean {
  * Only the unqualified wildcard opts into every prerelease. Other sets follow npm's same-tuple
  * prerelease opt-in; build metadata never changes precedence. Unsupported syntax fails closed.
  */
-export function satisfiesApiRange(range: string, version = API_VERSION as string): boolean {
-  const v = parseSemver(version)
-  if (!v || typeof range !== 'string' || !range.trim()) return false
-  const tokens = range.trim().split(/\s+/)
-  if (!tokens.every((token) => admits(token, v))) return false
-  return (
-    v.pre === undefined ||
-    range.trim() === '*' ||
-    tokens.some((token) => {
-      const base = parseSemver(token.replace(/^(>=|<=|>|<|=|\^|~)/, ''))
-      return base?.pre !== undefined && tuple(v, base) === 0
-    })
-  )
+export function evaluateSemverRange(
+  range: string,
+  version: Semver | null,
+): 'unsupported' | 'unavailable' | 'match' | 'no-match' {
+  const normalized = typeof range === 'string' ? range.trim() : ''
+  if (!normalized) return 'unsupported'
+  let matches = true
+  let admitsPrerelease = version?.pre === undefined || normalized === '*'
+  for (const token of normalized.split(/\s+/)) {
+    if (token === '*') continue
+    const wild = /^(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?\.(x|\*)$/.exec(token)
+    if (wild) {
+      const major = Number(wild[1])
+      const minor = wild[2] === undefined ? undefined : Number(wild[2])
+      if (!Number.isSafeInteger(major) || (minor !== undefined && !Number.isSafeInteger(minor)))
+        return 'unsupported'
+      if (version && (version.major !== major || (minor !== undefined && version.minor !== minor)))
+        matches = false
+      continue
+    }
+    const m = /^(>=|<=|>|<|=|\^|~)?(.+)$/.exec(token)
+    if (!m) return 'unsupported'
+    const op = m[1] ?? '='
+    const body = m[2] ?? ''
+    const partial = op === '^' && /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(body)
+    const base = parseSemver(partial ? `${body}.0` : body)
+    if (!base) return 'unsupported'
+    if (version) {
+      if (matches && !admits(op, base, version, partial)) matches = false
+      if (!admitsPrerelease && base.pre !== undefined && tuple(version, base) === 0) admitsPrerelease = true
+    }
+  }
+  if (!version) return 'unavailable'
+  return matches && admitsPrerelease ? 'match' : 'no-match'
+}
+
+export function satisfiesApiRange(range: string, version: string = API_VERSION): boolean {
+  const installed = parseSemver(version)
+  return installed !== null && evaluateSemverRange(range, installed) === 'match'
 }
 export function checkApiRange(
   manifest: { id: string; apiRange: string },

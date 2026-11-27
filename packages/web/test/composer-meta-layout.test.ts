@@ -59,4 +59,16 @@ describe('composer rows', () => {
       /@media \(prefers-reduced-motion: reduce\) \{\s*\.composer-voice-spin \{\s*animation: none;/,
     )
   })
+
+  it('queries .composer-footer as the inline-size container so split-pane controls wrap cleanly and reveals child titles on touch or focus', () => {
+    expect(rule('.composer-footer')).toMatch(/container-type: inline-size;/)
+    expect(rule('.composer-controls')).not.toMatch(/container-type:/)
+    expect(css).toMatch(/@container \(max-width: 34rem\) \{[^}]*\.composer-controls \{[^}]*flex-wrap: wrap;/)
+    expect(css).toMatch(
+      /\.composer-child-name:focus-visible \.composer-child-title \{[^}]*white-space: normal;/,
+    )
+    expect(css).toMatch(
+      /@media \(hover: none\), \(pointer: coarse\) \{[^}]*\.composer-child-title \{[^}]*white-space: normal;/,
+    )
+  })
 })

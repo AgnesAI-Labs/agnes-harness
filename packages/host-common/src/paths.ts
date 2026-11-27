@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, parse, sep } from 'node:path'
 import { AGH_DIR, WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
@@ -74,22 +73,6 @@ export function inDataDir(home: string, sub: string): string {
 }
 
 /**
- * Where a pre-fix installation -- or any profile that left dataDir unset before the default moved
- * -- would have written its session database: directly under the home root instead of under
- * `data/`. This is detection only. Nothing in this module reads the file, moves it or deletes it;
- * whether a database sitting here still matters is a call only the person who owns the data can
- * make, so the most this function does is make the question answerable.
- */
-export function legacySessionsDbPath(home: string): string {
-  return join(home, 'sessions.db')
-}
-
-/** True when a database from the old home-root default is still sitting where doctor can find it. */
-export function hasLegacySessionsDb(home: string): boolean {
-  return existsSync(legacySessionsDbPath(home))
-}
-
-/**
  * Additional write refusals under full file access, layered over the main private-state fence.
  * These roots do not grant reads: credentials and profiles remain hard-denied by privateStateRoots.
  * They sit beside `data/` in the home root, so the data fence does not cover them. The home is inferred only from the conventional layout - `<home>/profiles/<name>` for
@@ -120,17 +103,29 @@ export function ownStateRoots(paths: {
 /** Host-owned private state, shared by command/PTY and confined MCP policy compilers.
  * Callers supply the actual installation home; canonicalization and alias masks belong to their fence.
  */
-export function privateStateRoots(paths: {
-  home: string
-  dataDir: string
-  workspace?: string
-  profileDir?: string
-  secretsDir?: string
-}): string[] {
+export function privateStateFiles(paths: { home: string }): string[] {
+  return [join(paths.home, 'cloud-key')]
+}
+
+export function privateStateRoots(
+  paths: {
+    home: string
+    dataDir: string
+    workspace?: string
+    profileDir?: string
+    secretsDir?: string
+  },
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string[] {
   const workspace = paths.workspace
   return [
     ...new Set([
       ...['secrets', 'auth', 'profiles', 'daemon', 'memory'].map((leaf) => join(paths.home, leaf)),
+      ...privateStateFiles(paths),
+      // The cloud image keeps backups and STS outside the Harness home.
+      ...[env.AGH_ASSETS_DIR, env.AGH_SYNC_DIR].filter(
+        (path): path is string => typeof path === 'string' && isAbsolute(path),
+      ),
       join(paths.dataDir, 'secrets'),
       join(paths.dataDir, 'daemon'),
       ...(workspace ? WORKSPACE_SECRET_DIRS.map((leaf) => join(workspace, leaf)) : []),

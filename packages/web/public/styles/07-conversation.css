@@ -16,7 +16,7 @@
    overflow: hidden），鼠标停在留白上时找不到可滚动祖先，滚轮会毫无反应。 */
   #transcript-content {
     margin-inline: auto;
-    padding: var(--s16) var(--s32);
+    padding: var(--s16) var(--s32) 3rem;
     width: min(100%, var(--chat-content-width));
   }
   #empty-state {
@@ -446,16 +446,16 @@
     color: var(--agnes-text-tertiary);
     font-weight: 600;
   }
-  /* Back to the newest content: a small round button centred over the composer edge. */
+  /* Back to the newest content: anchored at the trailing edge so it never covers centred prose. */
   .new-content.agh-btn {
     position: absolute;
-    left: 50%;
+    right: var(--s16);
     bottom: var(--s12);
+    z-index: 4;
     width: 2rem;
     min-width: 2rem;
     height: 2rem;
     padding: 0;
-    translate: -50% 0;
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-full);
     color: var(--agnes-text-secondary);
@@ -615,6 +615,66 @@
     .approval-actions button {
       flex: 1 1 auto;
       min-height: var(--control-height-touch);
+    }
+  }
+}
+@layer app {
+  /* Host loading UI never substitutes an unadmitted conversation or composer. */
+  .client-ui-preparation {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s16);
+    min-width: 0;
+    padding: var(--s48) var(--s24);
+    text-align: center;
+    font-family: var(--font-sans);
+  }
+  #conversation-shell:has(+ .client-ui-preparation),
+  #main-content:has(.client-ui-preparation) #composer-mount {
+    display: none;
+  }
+  .client-ui-preparation-indicator {
+    display: grid;
+    place-items: center;
+    width: var(--s48);
+    height: var(--s48);
+    border-radius: 50%;
+    color: var(--agnes-brand-primary);
+    background: color-mix(in srgb, var(--agnes-brand-primary) 8%, transparent);
+  }
+  .client-ui-preparation[aria-busy="true"] .icon {
+    animation: client-ui-preparation-spin calc(var(--motion-breathe) / 2) linear infinite;
+  }
+  .client-ui-preparation-copy {
+    max-width: 24rem;
+  }
+  .client-ui-preparation-title {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+  .client-ui-preparation-hint {
+    margin: var(--s8) 0 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-body);
+    line-height: 1.6;
+  }
+  #conversation-shell[hidden] + .client-ui-preparation {
+    display: none;
+  }
+  @keyframes client-ui-preparation-spin {
+    to {
+      transform: rotate(1turn);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .client-ui-preparation[aria-busy="true"] .icon {
+      animation: none;
     }
   }
 }

@@ -236,6 +236,13 @@ describe('recent sessions per workspace', () => {
       )
       expect(action).toHaveBeenLastCalledWith('a', 'retry')
       group.loading = true
+      group.refreshing = true
+      flushSync(draw)
+      expect(more.disabled).toBe(false)
+      flushSync(() => more.click())
+      expect(action).toHaveBeenLastCalledWith('a', 'more')
+      delete group.refreshing
+      group.loading = true
       flushSync(draw)
       expect(more.disabled).toBe(true)
       expect(nav.querySelector('.workspace-sessions')?.getAttribute('aria-busy')).toBe('true')

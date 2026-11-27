@@ -150,7 +150,9 @@ describe('artifact-backed input admission', () => {
     ).toBeUndefined()
     await session.run({ until: 'turn-end', signal: new AbortController().signal })
     expect(JSON.stringify(f.provider.requests)).not.toContain(btoa('private-original'))
-    expect(JSON.stringify(f.provider.requests)).toContain('session-file://')
+    const requests = JSON.stringify(f.provider.requests)
+    expect(requests).toContain('session-file://')
+    expect(requests).toContain('For shell processing, first use read with save_to')
   })
 
   it('refuses forged scope/size/MIME/hash and leaves the inbox unchanged on failure', async () => {

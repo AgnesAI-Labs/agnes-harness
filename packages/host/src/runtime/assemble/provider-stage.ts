@@ -1,7 +1,6 @@
 import { HostError } from '@agnes/host-common/errors'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { businessLimit } from '@agnes/host-common/profile-policy'
-import type { HostPluginTreeBase } from '@agnes/host-extensions/assemble/seams-cordis'
 import { resolveFileSecretsDirectory } from '@agnes/host-infrastructure/adapters/file-secrets-dir'
 import {
   composeSecrets,
@@ -33,6 +32,7 @@ import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
 import { retainedModelView } from './retained-model.js'
 import type { RowHosts } from './row-hosts.js'
+import type { RuntimeTargetHost } from './runtime-target.js'
 
 /**
  * Step `provider` - route table first, environment second, credentials third. The route table,
@@ -43,7 +43,10 @@ export async function assembleProvider(
   ctx: AssemblyContext,
   proc: ProcessServices,
   presets: PresetCatalog,
-  tree: { runtimeTarget: { pluginTree: HostPluginTreeBase }; rowHosts: Pick<RowHosts, 'setSideModels'> },
+  tree: {
+    runtimeTarget: Pick<RuntimeTargetHost, 'pluginTree' | 'setModelOwnerReconciler'>
+    rowHosts: Pick<RowHosts, 'setSideModels'>
+  },
 ) {
   const { deps, rollback, clock, env, say, providerSelections } = ctx
   const { pluginTree } = tree.runtimeTarget
@@ -82,19 +85,21 @@ export async function assembleProvider(
   )
   rollback.push('request-traces', requestTraces.start())
   const factory = deps.providerFactory ? { providerFactory: deps.providerFactory } : {}
+  const initialModelAdapters = pluginTree.root.modelAdapters
+  const initialModelOwners = initialModelAdapters.catalog()
   let {
     provider,
     contractStore,
     preconfiguredRoutes,
     uncredentialedRoutes,
     dispose: disposeProvider,
-  } = routes
+  } = routes || initialModelAdapters.hasContributedRoutes()
     ? await buildProvider(ctx.profile, routes, {
         secrets,
         clock,
         log: deps.log,
         trace: requestTraces,
-        modelAdapters: pluginTree.root.modelAdapters,
+        modelAdapters: initialModelAdapters,
         creditsSnapshot: () => businessLimit(hotPolicy, 'cost.credits_per_usd'),
         ...factory,
       })
@@ -125,10 +130,19 @@ export async function assembleProvider(
     () => ctx.profile,
     () => uncredentialedRoutes,
   )
-  const applyModelProfile = async (next: ResolvedProfile): Promise<void> => {
+  let modelOwners = initialModelOwners
+  let modelApplication = Promise.resolve()
+  const serializeModels = (operation: () => Promise<void>): Promise<void> => {
+    const applied = modelApplication.then(operation)
+    modelApplication = applied.catch(() => undefined)
+    return applied
+  }
+  const applyModelProfileNow = async (next: ResolvedProfile): Promise<void> => {
     next = applyProviderSelections(next)
+    const modelAdapters = pluginTree.root.modelAdapters
+    const nextOwners = modelAdapters.catalog()
     const nextRoutes = next.provider.routes?.length
-      ? materializeRoutes(bootstrapView(next), next, pluginTree.root.modelAdapters.catalog())
+      ? materializeRoutes(bootstrapView(next), next, nextOwners)
       : undefined
     const nextSecrets =
       next.adapters.secrets.kind === 'file'
@@ -145,17 +159,18 @@ export async function assembleProvider(
           ? createSecretsEnv()
           : undefined
     if (!nextSecrets) throw new HostError('E_SEAM_INIT', 'unsupported model credential store')
-    const built = nextRoutes
-      ? await buildProvider(next, nextRoutes, {
-          secrets: (ref) => nextSecrets.resolve(ref),
-          clock,
-          log: deps.log,
-          trace: requestTraces,
-          modelAdapters: pluginTree.root.modelAdapters,
-          creditsSnapshot: () => businessLimit(hotPolicy, 'cost.credits_per_usd'),
-          ...factory,
-        })
-      : unresolvedProviderAssembly()
+    const built =
+      nextRoutes || modelAdapters.hasContributedRoutes()
+        ? await buildProvider(next, nextRoutes, {
+            secrets: (ref) => nextSecrets.resolve(ref),
+            clock,
+            log: deps.log,
+            trace: requestTraces,
+            modelAdapters,
+            creditsSnapshot: () => businessLimit(hotPolicy, 'cost.credits_per_usd'),
+            ...factory,
+          })
+        : unresolvedProviderAssembly()
     let nextContracts: typeof contractForModel
     try {
       if (built.provider.registry && nextRoutes) verifyRoutes(nextRoutes, built.provider.registry)
@@ -177,10 +192,23 @@ export async function assembleProvider(
     routes = nextRoutes
     providerFingerprint = built.provider.registry?.fingerprint() ?? null
     ctx.profile = next
+    modelOwners = nextOwners
     tree.rowHosts.setSideModels(() =>
       models.provider.models().map(({ route, id, api }) => ({ route, model: id, api })),
     )
   }
+  const applyModelProfile = (next: ResolvedProfile): Promise<void> =>
+    serializeModels(() => applyModelProfileNow(next))
+  tree.runtimeTarget.setModelOwnerReconciler(() =>
+    serializeModels(async () => {
+      const current = pluginTree.root.modelAdapters.catalog()
+      if (
+        current.length !== modelOwners.length ||
+        current.some((owner, index) => owner !== modelOwners[index])
+      )
+        await applyModelProfileNow(ctx.profile)
+    }),
+  )
   const named = routes ? Object.entries(routes).map(([k, v]) => [k, `${v.route}/${v.model}`]) : []
   // The credit rate goes on the audit row, null included. An assembly that priced nothing is the
   // one whose ledger reads in dollars, and that has to be legible afterwards from the record the

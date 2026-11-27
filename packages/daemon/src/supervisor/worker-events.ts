@@ -32,6 +32,26 @@ export function deliverWorkerEvent(
   return registry.deliver(sessionKey, event, indexBeforePublish, onWire)
 }
 
+/** True when a live system inbox row holds a next-turn child completion or state follow-up. */
+export function hasChildFollowUpInbox(event: EventEnvelope): boolean {
+  if (event.type !== 'inbox' || (event.lane ?? 'main') !== 'main') return false
+  if (event.origin !== 'system' || event.trust !== 'trusted') return false
+  const items = (
+    event.data as {
+      items?: Array<{ target?: string; kind?: string; origin?: string; system?: { source?: string } }>
+    } | null
+  )?.items
+  return Boolean(
+    items?.some(
+      (item) =>
+        item.target === 'next-turn' &&
+        item.kind === 'follow_up' &&
+        item.origin === 'system' &&
+        item.system?.source === 'agnes/child',
+    ),
+  )
+}
+
 /** Observe durable run state before publishing its owner-scoped invalidation. */
 export function createAutomationEvents(
   ownership: Pick<SessionPrincipalOwnership, 'resolve'>,

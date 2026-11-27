@@ -5,6 +5,7 @@ import {
   BUNDLED_PLUGIN_DIGESTS,
   bundledPluginDigest,
   bundledPluginSource,
+  bundledPluginsRequireDigest,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
   OPTIONAL_BUNDLED_PACKAGES,
 } from './bundled-plugin-source.js'
@@ -36,12 +37,13 @@ export function bundledReleaseEntry(
   return entry
 }
 
-/** The shipped payload behind `ref`. A present digest manifest is authoritative (a corrupt or partial
- * one is never re-derived); only its absence, a development checkout, hashes the payload itself.
- * Missing or unreadable release evidence is undefined and never proves anything. */
+/** Packaged binaries require the build-time manifest. Only a source checkout with no manifest
+ * can derive a digest from its code-selected release directory. */
 export function shippedBundledRelease(
   ref: string,
-  releaseSourceFor: (ref: string) => { root: string; path: string } | undefined = bundledPluginSource,
+  releaseSourceFor: (
+    ref: string,
+  ) => { root: string; path: string; requiresDigest?: boolean } | undefined = bundledPluginSource,
 ): ShippedBundledRelease | undefined {
   try {
     const source = releaseSourceFor(ref)
@@ -53,6 +55,11 @@ export function shippedBundledRelease(
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       absent = true
     }
+    if (
+      absent &&
+      (source.requiresDigest || (releaseSourceFor === bundledPluginSource && bundledPluginsRequireDigest()))
+    )
+      return undefined
     const digest = absent ? hashDirectory(join(source.root, source.path)) : bundledPluginDigest(source)
     const manifest: unknown = JSON.parse(readFileSync(join(source.root, source.path, 'package.json'), 'utf8'))
     const { name, version } = (manifest && typeof manifest === 'object' ? manifest : {}) as Record<

@@ -2,7 +2,7 @@ import type { ConnectionState } from '@agnes/daemon-foundation/local/endpoint'
 import type { ApprovalRequest } from '@agnes/daemon-rpc/local/prompter'
 import { agnesHome, RefinementSettingsStore } from '@agnes/host'
 import { rpcError } from '@agnes/protocol'
-import { artifactMediaReadReply } from './artifact-read.js'
+import { artifactMediaReadReply, readChildSessionArtifactMedia } from './artifact-read.js'
 import type { AssemblyLifetime } from './assembly-lifetime.js'
 import type { AssemblyBase } from './assembly-options.js'
 import type { RuntimeState } from './assembly-runtime.js'
@@ -24,6 +24,72 @@ const PACKAGE_INSTALL_REQUESTS: ReadonlySet<string> = new Set([
   'plugin-manage',
   'mcp-manage',
 ])
+
+async function handleArtifactMediaRead(
+  state: Pick<
+    AssemblyBase & StoresState & WorkersState,
+    'o' | 'sessionOwnership' | 'projectedArtifactRead' | 'registry'
+  >,
+  sessionKey: string,
+  params: unknown,
+  workerSignal: AbortSignal,
+) {
+  const { o, sessionOwnership, projectedArtifactRead, registry } = state
+  if (!projectedArtifactRead?.workerRead) return undefined
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return undefined
+  const descriptors = Object.getOwnPropertyDescriptors(params)
+  if (
+    Reflect.ownKeys(descriptors).length !== 3 ||
+    !['lane', 'nodeSeq', 'sha256'].every(
+      (key) => descriptors[key]?.enumerable === true && Object.hasOwn(descriptors[key] ?? {}, 'value'),
+    ) ||
+    Reflect.ownKeys(descriptors).some(
+      (key) => typeof key !== 'string' || !['lane', 'nodeSeq', 'sha256'].includes(key),
+    )
+  )
+    return undefined
+  const lane = descriptors.lane?.value
+  const nodeSeq = descriptors.nodeSeq?.value
+  const sha256 = descriptors.sha256?.value
+  if (
+    typeof lane !== 'string' ||
+    lane.length < 1 ||
+    lane.length > 64 ||
+    !Number.isSafeInteger(nodeSeq) ||
+    (nodeSeq as number) < 1 ||
+    typeof sha256 !== 'string' ||
+    !/^[a-f0-9]{64}$/u.test(sha256)
+  )
+    return undefined
+  const activeOwner = sessionOwnership.resolve(sessionKey)
+  if (activeOwner?.active) {
+    await registry.ensureArtifactAuthority(sessionKey, nodeSeq as number)
+    const result = await projectedArtifactRead.workerRead(
+      { sessionId: sessionKey, laneId: lane, ownerId: activeOwner.principalId, sha256 },
+      new AbortController().signal,
+    )
+    return artifactMediaReadReply(result, sha256)
+  }
+  if (!sessionKey.includes('/') || !o.sessionFactRead) return undefined
+  const rootKey = sessionKey.slice(0, sessionKey.indexOf('/'))
+  const rootOwner = rootKey ? sessionOwnership.resolve(rootKey) : undefined
+  if (!rootOwner?.active) return undefined
+  return readChildSessionArtifactMedia({
+    dataDir: o.config.dataDir,
+    maxArtifactBytes: Math.max(100 * 1024 * 1024, o.profile.computerUse?.capture.maxBytesPerImage ?? 0),
+    sessionKey,
+    rootKey,
+    lane,
+    nodeSeq: nodeSeq as number,
+    sha256,
+    signal: workerSignal,
+    sessionFactRead: o.sessionFactRead,
+    stillAuthorized: () => {
+      const current = sessionOwnership.resolve(rootKey)
+      return !!current?.active && current.principalId === rootOwner.principalId && !workerSignal.aborted
+    },
+  })
+}
 
 export function createWorkerRequests(
   state: AssemblyBase & StoresState & WorkersState & RuntimeState & WorkerRequestServices,
@@ -190,42 +256,8 @@ export function createWorkerRequests(
         permissionRequests.delete(permissionKey)
       }
     }
-    if (f.method === 'artifact-media-read') {
-      if (!projectedArtifactRead?.workerRead) return undefined
-      if (!f.params || typeof f.params !== 'object' || Array.isArray(f.params)) return undefined
-      const descriptors = Object.getOwnPropertyDescriptors(f.params)
-      if (
-        Reflect.ownKeys(descriptors).length !== 3 ||
-        !['lane', 'nodeSeq', 'sha256'].every(
-          (key) => descriptors[key]?.enumerable === true && Object.hasOwn(descriptors[key] ?? {}, 'value'),
-        ) ||
-        Reflect.ownKeys(descriptors).some(
-          (key) => typeof key !== 'string' || !['lane', 'nodeSeq', 'sha256'].includes(key),
-        )
-      )
-        return undefined
-      const lane = descriptors.lane?.value
-      const nodeSeq = descriptors.nodeSeq?.value
-      const sha256 = descriptors.sha256?.value
-      if (
-        typeof lane !== 'string' ||
-        lane.length < 1 ||
-        lane.length > 64 ||
-        !Number.isSafeInteger(nodeSeq) ||
-        (nodeSeq as number) < 1 ||
-        typeof sha256 !== 'string' ||
-        !/^[a-f0-9]{64}$/u.test(sha256)
-      )
-        return undefined
-      await registry.ensureArtifactAuthority(sessionKey, nodeSeq as number)
-      const activeOwner = sessionOwnership.resolve(sessionKey)
-      if (!activeOwner?.active) return undefined
-      const result = await projectedArtifactRead.workerRead(
-        { sessionId: sessionKey, laneId: lane, ownerId: activeOwner.principalId, sha256 },
-        new AbortController().signal,
-      )
-      return artifactMediaReadReply(result, sha256)
-    }
+    if (f.method === 'artifact-media-read')
+      return handleArtifactMediaRead(state, sessionKey, f.params, workerSignal)
     // 'notice': declared on the wire (frames.ts) for a worker to relay a daemon notice, but nothing
     // in worker/main.ts constructs one yet (no `method: 'notice'` request-frame send site exists in
     // this package today) - this branch exists so a future worker-initiated notice has somewhere to

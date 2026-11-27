@@ -13,12 +13,13 @@ it('unifies child output/cancellation with owner isolation and completion notifi
   const jobs = new ShellJobs(),
     ctx = fakeToolContext({ sessionKey: 'parent' })
   let cancelled = false
+  let idle = false
   let latest = 'child output'
   ctx.subagent.list = async () => [
     {
       id: 'child-1',
       providerId: 'acp',
-      status: cancelled ? 'cancelled' : 'running',
+      status: cancelled ? 'cancelled' : idle ? 'idle' : 'running',
       continuable: true,
     },
   ]
@@ -75,6 +76,16 @@ it('unifies child output/cancellation with owner isolation and completion notifi
   expect(
     (await output!.execute({ jobId: 'child:child-1' }, fakeToolContext({ sessionKey: 'foreign' }))).isError,
   ).toBe(true)
+  idle = true
+  const settled = await output!.execute({ jobId: 'child:child-1' }, ctx)
+  expect(settled.structured).toMatchObject({ status: 'completed' })
+  expect(jobs.list(ctx)).toMatchObject([{ status: 'completed', code: 0 }])
+  expect(JSON.stringify(settled.content)).not.toContain('running for')
+  expect(jobs.completions(ctx)).toEqual([])
+  idle = false
+  expect((await output!.execute({ jobId: 'child:child-1' }, ctx)).structured).toMatchObject({
+    status: 'running',
+  })
   expect((await kill!.execute({ jobId: 'child:child-1' }, ctx)).structured).toEqual({
     jobId: 'child:child-1',
     status: 'killed',
@@ -574,4 +585,91 @@ it('job tools load eagerly while pty tools stay auto-deferred', () => {
   const pty = createPtyTools(jobs)
   expect(pty.length).toBeGreaterThan(0)
   for (const tool of pty) expect(tool.meta.deferLoading).toBe('auto')
+})
+
+it('preserves child status semantics in syncChildren without per-child collect fan-out', async () => {
+  const jobs = new ShellJobs()
+  const tool = fakeToolContext({ cwd: resolve('/work/proj'), sessionKey: 'children-sync' })
+  const collect = vi.fn(async (id: string) => ({ status: 'running' as const, text: `body:${id}` }))
+  let listings: Array<{
+    id: string
+    providerId: string
+    status: import('@agnes/extension-api').ChildAgentStatus
+    continuable: boolean
+    label?: string
+    text?: string
+  }> = [
+    { id: 'c-wait', providerId: 'in-process', status: 'waiting_approval', continuable: true, label: 'Wait' },
+    { id: 'c-pause', providerId: 'in-process', status: 'paused', continuable: true },
+    { id: 'c-disc', providerId: 'in-process', status: 'disconnected', continuable: true },
+    { id: 'c-stop', providerId: 'in-process', status: 'interrupted', continuable: true },
+    { id: 'c-idle', providerId: 'in-process', status: 'idle', continuable: true },
+  ]
+  const subagent = {
+    list: async () => listings,
+    collect,
+    cancel: async () => undefined,
+  } as unknown as import('@agnes/extension-api').ToolContext['subagent']
+  try {
+    await jobs.syncChildren({ session: tool.session, cwd: tool.cwd, subagent })
+    expect(collect).not.toHaveBeenCalled()
+    const byId = new Map(jobs.list(tool).map((row) => [row.id, row]))
+    expect(byId.get('child:c-wait')).toMatchObject({
+      status: 'running',
+      childStatus: 'waiting_approval',
+      childLabel: 'Wait',
+    })
+    expect(byId.get('child:c-pause')).toMatchObject({ status: 'running', childStatus: 'paused' })
+    expect(byId.get('child:c-disc')).toMatchObject({ status: 'running', childStatus: 'disconnected' })
+    expect(byId.get('child:c-stop')).toMatchObject({
+      status: 'killed',
+      code: null,
+      childStatus: 'interrupted',
+    })
+    expect(byId.get('child:c-idle')).toMatchObject({ status: 'completed', code: 0, childStatus: 'idle' })
+    // Selecting a single child reads only that child's text on demand.
+    await jobs.syncChildren({ session: tool.session, cwd: tool.cwd, subagent }, undefined, 'child:c-wait')
+    expect(collect).toHaveBeenCalledTimes(1)
+    expect(collect).toHaveBeenCalledWith('c-wait', { wait: false })
+    expect(jobs.output(tool, 'child:c-wait').stdout).toContain('body:c-wait')
+    // Closing an idle resident settles terminal code (-1), completions and waiters consistently without duplicates.
+    listings = [
+      { id: 'c-idle', providerId: 'in-process', status: 'cancelled', continuable: false },
+      { id: 'c-pause', providerId: 'in-process', status: 'failed', continuable: false },
+    ]
+    await jobs.syncChildren({ session: tool.session, cwd: tool.cwd, subagent })
+    expect(jobs.list(tool).find((row) => row.id === 'child:c-idle')).toMatchObject({
+      status: 'killed',
+      code: -1,
+      childStatus: 'cancelled',
+    })
+    expect(jobs.completions(tool)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'child:c-idle',
+          status: 'killed',
+          code: -1,
+          childStatus: 'cancelled',
+        }),
+        expect.objectContaining({
+          id: 'child:c-pause',
+          status: 'failed',
+          code: -1,
+          childStatus: 'failed',
+        }),
+      ]),
+    )
+    const completionsCount = jobs.completions(tool).length
+    await jobs.syncChildren({ session: tool.session, cwd: tool.cwd, subagent })
+    expect(jobs.completions(tool)).toHaveLength(completionsCount)
+    expect(await jobs.wait({ session: tool.session, signal: tool.signal }, 'child:c-idle', 10)).toMatchObject(
+      {
+        status: 'killed',
+        code: -1,
+        childStatus: 'cancelled',
+      },
+    )
+  } finally {
+    await jobs.dispose()
+  }
 })

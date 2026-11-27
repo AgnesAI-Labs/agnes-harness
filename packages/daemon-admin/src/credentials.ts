@@ -28,6 +28,7 @@ export function createCredentialAdmin(options: {
   dataDir: string
   configurations(): Promise<CredentialConfiguration[]>
   writableStore(): Promise<boolean>
+  onDeleted?(id: string): void
 }) {
   const store = createCredentialStore({ root: options.home })
   let tail: Promise<unknown> = Promise.resolve()
@@ -103,6 +104,11 @@ export function createCredentialAdmin(options: {
       : undefined
     if (action === 'delete') {
       await store.remove(id, admission)
+      try {
+        options.onDeleted?.(id)
+      } catch {
+        // The store already committed the deletion. A notification failure cannot undo it.
+      }
       return {}
     }
     const createdAt = before?.createdAt ?? new Date().toISOString()

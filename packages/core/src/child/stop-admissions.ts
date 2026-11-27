@@ -5,9 +5,14 @@ import type { ChildControlStore, ChildTaskRecord } from '@agnes/extension-api'
 import type { SessionImpl } from '../step/session.js'
 
 /** A stopped creation cannot be readmitted by reopening its session or retaining its inbox. */
-async function cancelAdmission(store: ChildControlStore, record: ChildTaskRecord): Promise<void> {
+async function cancelAdmission(
+  store: ChildControlStore,
+  record: ChildTaskRecord,
+  preserveRetained = false,
+): Promise<void> {
   let live: ChildTaskRecord | null = record
   while (live && !isTerminalChildState(live.state)) {
+    if (preserveRetained && (live.state === 'paused' || live.state === 'idle')) return
     if (await store.casState(live.childKey, live.stateRevision, 'cancelled')) return
     const next = await store.lookupByKey(live.childKey)
     if (next && !isTerminalChildState(next.state) && next.stateRevision === live.stateRevision)
@@ -17,7 +22,10 @@ async function cancelAdmission(store: ChildControlStore, record: ChildTaskRecord
 }
 
 /** Explicit lifecycle stops cover durable admissions, even children never opened in this process. */
-export async function stopChildAdmissions(session: SessionImpl): Promise<void> {
+export async function stopChildAdmissions(
+  session: SessionImpl,
+  options: { preserveRetained?: boolean } = {},
+): Promise<void> {
   const store = session.d.log.storage
   if (!hasChildControl(store)) return
   const pending = [session.key]
@@ -32,7 +40,7 @@ export async function stopChildAdmissions(session: SessionImpl): Promise<void> {
       requireChildControl(store)
       // Terminal ancestors may still have admitted descendants; do not prune that subtree.
       pending.push(child.childKey)
-      await cancelAdmission(store, child)
+      await cancelAdmission(store, child, options.preserveRetained)
     }
   }
 }

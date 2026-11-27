@@ -409,6 +409,7 @@ export async function compileWorkspacePolicy(
           .map((rule) => rule.path),
       ),
       networkAllow,
+      ...(networkAllow.includes('*') ? { network: 'allow' as const } : {}),
       ...(staticConfig.loopbackServe ? { loopbackServe: true } : {}),
       ...(staticConfig.access === 'full-access' ? { network: 'allow' as const, fullAccess: true } : {}),
     }),
@@ -435,9 +436,11 @@ export function intersectWorkspacePlan(plan: WorkspacePolicyPlan, parent: FsPoli
       hard: hard !== undefined,
     }
   })
-  const networkAllow = plan.policy.networkAllow.filter(
-    (host) => parent.networkAllow.includes('*') || parent.networkAllow.includes(host),
-  )
+  const networkAllow = plan.policy.networkAllow.includes('*')
+    ? [...parent.networkAllow]
+    : plan.policy.networkAllow.filter(
+        (host) => parent.networkAllow.includes('*') || parent.networkAllow.includes(host),
+      )
   const loopbackServe =
     plan.policy.loopbackServe === true && (parent.loopbackServe === true || parent.networkAllow.includes('*'))
   const policy: FsPolicy = {
@@ -473,7 +476,7 @@ export function intersectWorkspacePlan(plan: WorkspacePolicyPlan, parent: FsPoli
     explicitDeny,
     backendOptions: {
       ...backend,
-      network: 'deny',
+      network: networkAllow.includes('*') ? 'allow' : 'deny',
       loopbackServe,
       networkAllow,
       allowPaths:

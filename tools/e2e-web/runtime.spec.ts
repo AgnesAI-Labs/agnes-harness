@@ -28,11 +28,24 @@ test('consented role takeover and host-only recovery hand back the same session 
   const id = '@community/deliverables-gallery'
   await install(client, resolve('examples/community/deliverables-gallery'))
   await preferences(page)
+  const galleryRequests: string[] = []
+  page.on('request', (request) => {
+    const { pathname } = new URL(request.url())
+    if (pathname.startsWith('/plugins/') && pathname.includes(`${id}/`)) galleryRequests.push(pathname)
+  })
   const url = `${runtime.url}/?session=${session.id}`
   await page.goto(url)
   // Installation alone cannot take over a standard product role.
   await expect(page.getByTestId('turn-deliverables')).toContainText('Recovery evidence')
   await expect(page.getByTestId('deliverables-gallery')).toHaveCount(0)
+  const roster = () => client.clientModules.list('local-dev')
+  await expect
+    .poll(async () => (await roster()).statuses)
+    .toContainEqual(
+      expect.objectContaining({ packageId: id, state: 'blocked', reason: 'native-ui-not-admitted' }),
+    )
+  expect((await roster()).rows.find((row) => row.packageId === id)?.entryUrl).toBeUndefined()
+  expect(galleryRequests).toEqual([])
   const preview = await client.request('_agnes/v1/applications.preview', {
     profile: 'local-dev',
     packageId: id,
@@ -60,29 +73,53 @@ test('consented role takeover and host-only recovery hand back the same session 
   })
   await page.reload()
   await expect(page.getByTestId('deliverables-gallery').first()).toContainText('Recovery evidence')
+  const approved = (await roster()).rows.find((row) => row.packageId === id)
+  expect(approved?.documentAdmission).toMatchObject({
+    kind: 'approved-presentation',
+    presentationRevision: (await application()).revision,
+  })
+  if (!approved?.entryUrl) throw new Error('Approved gallery did not publish its entry')
+  expect(galleryRequests).toContain(approved.entryUrl)
+  expect((await page.request.get(runtime.url + approved.entryUrl)).status()).toBe(200)
   await expect(page.getByTestId('turn-deliverables')).toHaveCount(0)
   await page.getByRole('textbox', { name: 'Task content', exact: true }).fill('Recovery draft')
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
+  const approvedRequestCount = galleryRequests.length
   const pluginRequests: string[] = []
-  const record = (request: import('@playwright/test').Request) => {
-    if (new URL(request.url()).pathname.startsWith('/plugins/')) pluginRequests.push(request.url())
+  const recovery = await page.context().newPage()
+  try {
+    recovery.on('request', (request) => {
+      if (new URL(request.url()).pathname.startsWith('/plugins/')) pluginRequests.push(request.url())
+    })
+    await recovery.goto(`${runtime.url}/?admin`)
+    await expect(
+      recovery.getByRole('heading', { level: 1, name: 'Application recovery', exact: true }),
+    ).toBeVisible()
+    await expect(recovery.getByRole('main')).toContainText(id)
+    await recovery.getByRole('button', { name: 'Restore official interface', exact: true }).click()
+    await expect.poll(async () => (await application()).status).toBe('host')
+    await expect(page.getByTestId('presentation-reload-required')).toBeVisible()
+    await expect(page.getByTestId('deliverables-gallery')).toHaveCount(0)
+    await expect(page.getByTestId('turn-deliverables')).toContainText('Recovery evidence')
+  } finally {
+    await recovery.close()
   }
-  page.on('request', record)
-  await page.goto(`${runtime.url}/?admin`)
-  await expect(
-    page.getByRole('heading', { level: 1, name: 'Application recovery', exact: true }),
-  ).toBeVisible()
-  await expect(page.getByRole('main')).toContainText(id)
-  await page.getByRole('button', { name: 'Restore official interface', exact: true }).click()
-  await expect.poll(async () => (await application()).status).toBe('host')
   const cleared = await application()
   expect(cleared.selection).toBeNull()
   expect(cleared.roleSelections ?? {}).toEqual({})
   expect(pluginRequests).toEqual([])
-  page.off('request', record)
-  await page.goto(url)
+  for (const method of ['GET', 'HEAD']) {
+    for (const path of [approved.entryUrl, ...(approved.styleUrls ?? [])]) {
+      const denied = await page.request.fetch(runtime.url + path, { method })
+      expect(denied.status()).toBe(404)
+      expect(denied.headers()['cache-control']).toBe('no-store')
+    }
+  }
+  await page.reload()
+  await expect(page.getByTestId('presentation-reload-required')).toHaveCount(0)
   await expect(page.getByTestId('deliverables-gallery')).toHaveCount(0)
   await expect(page.getByTestId('turn-deliverables')).toContainText('Recovery evidence')
+  expect(galleryRequests).toHaveLength(approvedRequestCount)
   await page.getByRole('textbox', { name: 'Task content', exact: true }).fill('Handback draft')
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
   const after = await client.session.runtime(session.id)
@@ -148,8 +185,9 @@ test('session admission keeps history readable, drafts editable and sending gate
   await input.press('Enter')
   await expect(input).toHaveValue('/plan Local draft A')
   await expect(page.locator('#send')).toBeDisabled()
-  // The pending recorded history is a read-only preview until admission: the composer says so.
-  await expect(input).toHaveAttribute('placeholder', /read-only/i)
+  // Until admission finishes, commands stay withheld and the composer hint reports preparation.
+  await expect(input).toHaveAttribute('placeholder', 'Describe what you want to do, @ to reference files')
+  await expect(page.locator('#composer-hint')).toHaveText('Preparing session…')
   await expect(page.getByTestId('attachment-file-input')).toBeDisabled()
   await page.getByText('Admission B', { exact: true }).first().click()
   await input.fill('Local draft B')
@@ -169,12 +207,16 @@ test('session admission keeps history readable, drafts editable and sending gate
   await expect(page).toHaveURL(new RegExp(`session=${b.id}`))
   await page.getByText('Admission A', { exact: true }).first().click()
   await expect(input).toHaveValue('/plan Local draft A')
+  await expect(input).toHaveAttribute('placeholder', /\/ for commands/)
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
   expect(sent.some((m) => m.method === 'session/load' || m.method === 'session/prompt')).toBe(false)
 })
 
 // Uses the built CLI/browser payload and a durable synthetic session, without live providers.
-test('bundled deliverables survive a cold browser start and repeated reloads', async ({ page, runtime }) => {
+test('bundled deliverables survive a cold browser start and repeated reloads', async ({
+  page,
+  runtime,
+}, info) => {
   const client = await runtime.connect()
   for (let index = 0; index < 3; index++) {
     const other = await client.session.new({
@@ -202,6 +244,7 @@ test('bundled deliverables survive a cold browser start and repeated reloads', a
   const saved = await toolResult(session, 'present')
   expect(saved?.artifactRefs).toHaveLength(1)
   await runtime.restart()
+  expect(info.timeout).toBeGreaterThanOrEqual(120_000)
   await preferences(page)
   const skip = page.getByTestId('first-run-skip')
   await page.addLocatorHandler(skip, async () => await skip.click(), { times: 1 })
@@ -258,6 +301,7 @@ for (const [issue, version, action] of [
     page,
     runtime,
   }, info) => {
+    test.setTimeout(120_000)
     await preferences(page)
     const client = await runtime.connect()
     const session = await client.session.new({

@@ -25,6 +25,28 @@ describe('runIsolatedCommand', () => {
     ).rejects.toMatchObject({ message: 'command exited with status 3', stdout: 'failed assertion' })
   })
 
+  it('keeps bounded launcher stderr on request without serializing it by default', async () => {
+    const options = { cwd: process.cwd(), env: process.env, timeoutMs: 5000, maxOutputBytes: 32 }
+    const args = [
+      '-e',
+      "process.stderr.write('launcher failed to start\\n' + 'x'.repeat(200)); process.exitCode = 1",
+    ]
+    const failure = await runIsolatedCommand(process.execPath, args, {
+      ...options,
+      captureStderrOnFailure: true,
+    }).catch((error: unknown) => error)
+    expect(failure).toMatchObject({
+      message: 'command exited with status 1',
+      stdout: '',
+      stderr: 'launcher failed to start\n',
+    })
+    expect(Object.keys(failure as Error)).not.toContain('stderr')
+    const ordinaryFailure = await runIsolatedCommand(process.execPath, args, options).catch(
+      (error: unknown) => error,
+    )
+    expect(ordinaryFailure).not.toHaveProperty('stderr')
+  })
+
   it('rejects immediately without spawning when the signal starts already aborted', async () => {
     const controller = new AbortController()
     controller.abort()

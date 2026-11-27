@@ -1,12 +1,13 @@
 import { collectPackageSkillFiles } from '@agnes/base'
 import { RUN_PROGRESS_EVENT_TYPES } from '@agnes/base/schedule'
+import type { SessionLister } from '@agnes/daemon-foundation/local/ports'
 import { CompositeTargetStore } from '@agnes/daemon-foundation/storage/composite-target-store'
 import {
   SessionPreferencesStore,
   withSessionPreferences,
 } from '@agnes/daemon-foundation/storage/session-preferences'
 import { MemorySidebarSessions } from '@agnes/daemon-foundation/storage/sidebar-memory'
-import { SidebarSessions } from '@agnes/daemon-foundation/storage/sidebar-sessions'
+import { SidebarSessions, withSessionPromptTitles } from '@agnes/daemon-foundation/storage/sidebar-sessions'
 import { APPROVAL_TICKET_EVENT_TYPES, indexApprovalTicket } from '@agnes/daemon-rpc/local/methods/agnes'
 import { PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
 import { createFeedbackOwner, type FeedbackOwner } from '@agnes/host'
@@ -32,12 +33,27 @@ import { wireResourceSnapshotNotifications } from './resource-snapshot-notificat
 import { createInProcessRuntimeTargetProbe } from './runtime-target-probe.js'
 import { createSessionActivity, SESSION_ACTIVITY_EVENT_TYPES } from './session-activity.js'
 import { observeSessionRequests, SESSION_REQUEST_EVENT_TYPES } from './session-request-events.js'
-import { createAutomationEvents, deliverWorkerEvent } from './worker-events.js'
+import { createAutomationEvents, deliverWorkerEvent, hasChildFollowUpInbox } from './worker-events.js'
 import { WorkerPool } from './worker-pool.js'
 
 interface WorkerFeedbackOwner {
   bind: FeedbackOwner['bind']
   close: FeedbackOwner['close']
+}
+
+/** Keep list decoration and its shutdown owner together. */
+function ownSessionLister(
+  lifetime: AssemblyLifetime,
+  rawLister: SessionLister,
+  preferences: SessionPreferencesStore,
+  sessionFactRead: AssemblyBase['o']['sessionFactRead'],
+) {
+  const lister = withSessionPromptTitles(
+    withSessionPreferences(rawLister, preferences),
+    sessionFactRead ? (key, query) => sessionFactRead(key)(query) : undefined,
+  )
+  lifetime.own({ stop: () => lister.close(), dispose: () => lister.close() })
+  return lister
 }
 
 /** A managed session and its lineage open with outward command rules on, from every opener. */
@@ -52,6 +68,20 @@ function managedCommandRules(
 function traceWorkspace({ workspaces, workspaceCatalog }: StoresState, key: string) {
   const cwd = workspaces.get(key)
   return { ...(cwd ? { cwd } : {}), extraRoots: workspaceCatalog.extraRoots(key) }
+}
+
+function observeLiveWorkerEvent(
+  automationEvents: { observe(sessionKey: string, event: EventEnvelope): void },
+  sessionActivity: { observe(sessionKey: string, event: EventEnvelope): void },
+  pool: WorkerPool,
+  childFollowUps: { wake?: (sessionKey: string) => void },
+  sessionKey: string,
+  event: EventEnvelope,
+) {
+  automationEvents.observe(sessionKey, event)
+  sessionActivity.observe(sessionKey, event)
+  observeSessionRequests(pool, sessionKey, event)
+  if (hasChildFollowUpInbox(event)) childFollowUps.wake?.(sessionKey)
 }
 
 export async function openWorkers(state: AssemblyBase & StoresState, lifetime: AssemblyLifetime) {
@@ -107,6 +137,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     : undefined
   const runtimeTargetProbe = runtimeStore ? createInProcessRuntimeTargetProbe() : undefined
   const automationEvents = createAutomationEvents(sessionOwnership, notices, o.profile.name)
+  const childFollowUps: { wake?: (sessionKey: string) => void } = {}
   const sessionActivity = createSessionActivity({
     ownership: sessionOwnership,
     notices,
@@ -133,9 +164,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
 
     onEvent: (sessionKey, e) =>
       deliverWorkerEvent(registry, tickets, clock, sessionKey, e, workspaces, () => {
-        automationEvents.observe(sessionKey, e)
-        sessionActivity.observe(sessionKey, e)
-        observeSessionRequests(pool, sessionKey, e)
+        observeLiveWorkerEvent(automationEvents, sessionActivity, pool, childFollowUps, sessionKey, e)
         o.telemetry?.observe(sessionKey, e, () => traceWorkspace(state, sessionKey))
       }),
     onPreview: (sessionKey, p) => registry.deliverPreview(sessionKey, p),
@@ -246,7 +275,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
   lifetime.own({ dispose: () => sidebarSessions.close() })
   const rawLister = o.ports?.lister ?? supervisorLister(supervisorRegistry, workspaces)
 
-  const lister = withSessionPreferences(rawLister, preferences)
+  const lister = ownSessionLister(lifetime, rawLister, preferences, sessionFactRead)
 
   return {
     feedbackOwner,
@@ -257,6 +286,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     runtimeDelivery,
     runtimeTargetProbe,
     automationEvents,
+    childFollowUps,
     sessionActivity,
     workerRequests,
     pool,

@@ -1,19 +1,8 @@
 import type { TableHandle } from '@agnes/daemon-foundation/storage/table'
+import type { ManagedInputAdmission, ManagedInputReason } from '@agnes/extension-api'
 import type { JsonValue } from '@agnes/protocol'
 
-/** Why an input sits in its state; the platform fixes this vocabulary, no caller text goes here. */
-export type ManagedInputReason =
-  | 'eligible'
-  | 'busy'
-  | 'questionOpen'
-  | 'legacySourceUnknown'
-  | 'recoveryUnverified'
-  | 'receiptUnknown'
-  | 'pairingChanged'
-  | 'grantRevoked'
-  | 'sessionArchived'
-  | 'ownerRetained'
-  | 'ownerDiscarded'
+export type { ManagedInputReason }
 
 export type ManagedInputState =
   | 'queued'
@@ -23,7 +12,7 @@ export type ManagedInputState =
   | 'needsOwner'
   | 'waitingQuestion'
   | 'recoveryUnknown'
-export type ManagedInputKind = 'ownerMessage' | 'recoveryContinuation' | 'legacyOwnerMessage'
+export type ManagedInputKind = ManagedInputAdmission['input']['kind']
 
 export interface ManagedInputHistoryEntry {
   version: number
@@ -162,6 +151,9 @@ function checkText(text: string | null | undefined): void {
 }
 
 const KEY = 'owner = ? AND session_id = ? AND key = ?'
+const KINDS = "('ownerMessage', 'recoveryContinuation')"
+const isSupportedKind = (value: string): value is ManagedInputKind =>
+  value === 'ownerMessage' || value === 'recoveryContinuation'
 
 /**
  * Owner inputs the platform holds for managed sessions: the original text, where it stands, and the
@@ -182,25 +174,28 @@ export class ManagedSessionInputs {
       sessionId,
       key,
     ])
-    return found ? row(found) : undefined
+    return found && isSupportedKind(found.kind) ? row(found) : undefined
   }
 
-  /** Writes version 1 with its first history entry. `exists`: the key is known; `receiptTaken`: the receipt is bound to another key. */
-  reserve(value: NewManagedInput): 'reserved' | 'exists' | 'receiptTaken' {
+  hasKey(owner: string, sessionId: string, key: string): boolean {
+    return Boolean(
+      this.table.get(`SELECT 1 FROM managed_session_inputs WHERE ${KEY}`, [owner, sessionId, key]),
+    )
+  }
+
+  /** Writes version 1 with its first history entry. `exists`: the key is known; `retiredKey`: occupied by a retired kind; `receiptTaken`: the receipt is bound to another key. */
+  reserve(value: NewManagedInput): 'reserved' | 'exists' | 'retiredKey' | 'receiptTaken' {
     checkText(value.text)
     const now = this.clock()
     const history: ManagedInputHistoryEntry[] = [
       { version: 1, state: value.state, reason: value.reason, at: now, by: 'platform' },
     ]
     return this.table.transaction(() => {
-      if (
-        this.table.get(`SELECT 1 FROM managed_session_inputs WHERE ${KEY}`, [
-          value.owner,
-          value.sessionId,
-          value.key,
-        ])
+      const existing = this.table.get<{ kind: string }>(
+        `SELECT kind FROM managed_session_inputs WHERE ${KEY}`,
+        [value.owner, value.sessionId, value.key],
       )
-        return 'exists'
+      if (existing) return isSupportedKind(existing.kind) ? 'exists' : 'retiredKey'
       if (
         value.receiptId !== null &&
         this.table.get('SELECT 1 FROM managed_session_inputs WHERE receipt_id = ?', [value.receiptId])
@@ -305,7 +300,7 @@ export class ManagedSessionInputs {
     return this.table
       .all<Row>(
         `SELECT * FROM managed_session_inputs
-          WHERE session_id = ? AND state IN ${OPEN} AND submitted_seq IS NULL ORDER BY rowid`,
+          WHERE session_id = ? AND kind IN ${KINDS} AND state IN ${OPEN} AND submitted_seq IS NULL ORDER BY rowid`,
         [sessionId],
       )
       .map(row)
@@ -316,7 +311,7 @@ export class ManagedSessionInputs {
     return this.table
       .all<Row>(
         `SELECT * FROM managed_session_inputs
-          WHERE session_id = ? AND state IN ${OPEN} AND state = 'enqueued' AND submitted_seq IS NOT NULL
+          WHERE session_id = ? AND kind IN ${KINDS} AND state IN ${OPEN} AND state = 'enqueued' AND submitted_seq IS NOT NULL
           ORDER BY rowid`,
         [sessionId],
       )
@@ -327,7 +322,7 @@ export class ManagedSessionInputs {
   byOwner(owner: string): ManagedInputRow[] {
     return this.table
       .all<Row>(
-        `SELECT * FROM managed_session_inputs WHERE owner = ? AND state NOT IN ${FINAL} ORDER BY rowid`,
+        `SELECT * FROM managed_session_inputs WHERE owner = ? AND kind IN ${KINDS} AND state NOT IN ${FINAL} ORDER BY rowid`,
         [owner],
       )
       .map(row)
@@ -338,7 +333,7 @@ export class ManagedSessionInputs {
     return this.table
       .all<{ owner: string }>(
         `SELECT DISTINCT owner FROM managed_session_inputs
-          WHERE substr(owner, 1, length(?)) = ? AND state NOT IN ${FINAL} ORDER BY owner`,
+          WHERE substr(owner, 1, length(?)) = ? AND kind IN ${KINDS} AND state NOT IN ${FINAL} ORDER BY owner`,
         [prefix, prefix],
       )
       .map((value) => value.owner)
@@ -362,7 +357,7 @@ export class ManagedSessionInputs {
     return this.table
       .all<Row>(
         `SELECT * FROM managed_session_inputs
-          WHERE state IN ${ATTENTION} AND (state <> 'queued' OR updated_at <= ?) ORDER BY rowid LIMIT ?`,
+          WHERE kind IN ${KINDS} AND state IN ${ATTENTION} AND (state <> 'queued' OR updated_at <= ?) ORDER BY rowid LIMIT ?`,
         [queuedBefore, limit],
       )
       .map(row)
@@ -371,7 +366,7 @@ export class ManagedSessionInputs {
   sessionsWithWork(): string[] {
     return this.table
       .all<{ session_id: string }>(
-        `SELECT DISTINCT session_id FROM managed_session_inputs WHERE state IN ${OPEN}`,
+        `SELECT DISTINCT session_id FROM managed_session_inputs WHERE kind IN ${KINDS} AND state IN ${OPEN}`,
       )
       .map((value) => value.session_id)
   }

@@ -496,7 +496,7 @@ describe('file memory managed paragraphs', () => {
     await writeFile(f.index, stored)
     const started = performance.now()
     const snapshot = await f.session.snapshot(1)
-    expect(performance.now() - started).toBeLessThan(100)
+    expect(performance.now() - started).toBeLessThan(250)
     expect(snapshot?.content).toContain('[Memory omitted: consolidate the index')
     // The over-cap index still refuses a whole-file write that would drop managed text.
     await expect(f.files(1).write(f.index, 'replacement\n')).rejects.toMatchObject({

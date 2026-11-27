@@ -20,6 +20,8 @@ node agnes.mjs serve
 
 你可以使用 Agnes AI，也可以选择 Kimi、Kimi Coding Plan、GLM、Qwen、DeepSeek、OpenAI、Anthropic、Google、OpenRouter、MiniMax、xAI、Groq、Together AI、Cerebras、NVIDIA、Hugging Face、Moonshot / Kimi（moonshot.cn）或 GLM Coding（bigmodel.cn）。Web 将 Agnes AI 优先展示，紧随其后的是 **Agnes AI 国际版**：同一服务商，地址为国际站 `https://apihub.agnes-ai.com/v1`。Agnes 的 Key 按站点签发，国内 Key 用于 Agnes AI，国际站 Key 用于 Agnes AI 国际版；也可以自行修改 Agnes 账户的 Base URL。再往后是 **llm.sg**：用一个兼容 OpenAI 的地址 `https://api.llm.sg/v1` 提供多家模型的网关，按兼容 OpenAI 的接口接入，模型列表来自它的 `/models`，即你的 Key 可用的模型。这三个选项的「在哪里获取？」会直接打开签发 Key 的页面：`https://api.agnes-ai.cn/`、`https://apihub.agnes-ai.com/`、`https://www.llm.sg/`。实际模型、路由及能力来自当前目录与账号配置，不能用品牌名称推定工具、视觉或思考能力。自定义端点也应走配置服务的测试和模型选择流程，不用把不兼容端点伪装成某个已知模型。中转站、聚合服务或自建网关只要支持 OpenAI `/chat/completions`，就选「兼容 OpenAI 的接口」或下面「中转站」一行里的预设（OpenRouter、硅基流动、302.AI、AiHubMix、火山方舟、阿里百炼）：填地址（通常以 `/v1` 结尾）、需要时填 API Key，再从 `/models` 拉到的列表里选模型，或手动填写模型 ID。新建账户获取列表后，列出的模型默认全部勾选；已保存的账户可点「全选」补上没勾的。这些模型使用原生工具调用，不假定支持推理。内置模型目录认识的模型 ID 会带上目录里的输入类型和容量，例如 `agnes-3.0-flash` 支持图片、上下文窗口 200K；其余模型默认只支持文本、窗口 128K，接口自己报告容量时以接口为准。两者都可以在「输入类型」里修改。不填 Key 的账户会发送占位凭据 `Bearer no-key`。
 
+**模型目录升级提示：** 如果升级后的目录移除了账号当前选用的模型，请在升级前选择并保存其他可用模型。AGH 不会自动切换所选模型；未选用的模型如果已从目录移除，就不会出现在可用路由中。Qwen Token Plan 的模型目录已移除 `deepseek-v3.2` 和 `deepseek-v4-flash`。新建 Qwen 账号默认使用 `https://token-plan.maas.qwencloudapi.com/compatible-mode/v1`。已有账号保留原 Base URL；要改用新网关，请修改地址并输入适用于该网关的 API key。
+
 保存后关注生效提示：`new-sessions` 表示新会话可用，已有会话保留自己的选择；若提示重启，先结束需要保留的任务，使用同一 home/profile 执行 `daemon stop`，再重新 `serve`。连接失败时核对当前 home/profile，确保仍在操作同一个实例。
 
 点击“新建任务”，确认工作目录，然后发送：

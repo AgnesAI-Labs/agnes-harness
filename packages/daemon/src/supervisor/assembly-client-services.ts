@@ -47,6 +47,18 @@ function ownerInputDeps(
   }
 }
 
+function wakeIdleSession<T extends { inflight: unknown }>(
+  registry: { get(key: string): T | undefined },
+  continueTrigger: (entry: T) => void,
+) {
+  return (sessionKey: string) => {
+    setImmediate(() => {
+      const entry = registry.get(sessionKey)
+      if (entry && !entry.inflight) continueTrigger(entry)
+    })
+  }
+}
+
 export function openClientServices(
   state: AssemblyBase & StoresState & WorkersState & DispatchState & RuntimeState & SessionsState,
   lifetime: AssemblyLifetime,
@@ -54,6 +66,7 @@ export function openClientServices(
   const {
     o,
     lock,
+    notices,
 
     workspaceCatalog,
     activationBarrier,
@@ -96,6 +109,7 @@ export function openClientServices(
     },
     async () => undefined,
   )
+  state.childFollowUps.wake = wakeIdleSession(supervisorRegistry, continueTrigger)
   profilePorts.channelInteractions.submit = async (kind, value, credential) => {
     const method = kind === 'surface' ? '_agnes/v1/ui.action' : '_agnes/v1/approval.decide'
     if (!validateMethod(method, 'params', value).ok) throw rpcError('INVALID_PARAMS')
@@ -218,6 +232,7 @@ export function openClientServices(
   void workspaceGrants?.prune().catch(() => undefined)
   const appServerAdmin = createAppServerAdmin({
     triggerSession: triggerSessions.create,
+    onCredentialDeleted: (id) => notices.emit('credential_deleted', { detail: { id } }),
     credentialConfigurations: async () => {
       if (!runtimeStore) throw new Error('credential reference inspection unavailable')
       return runtimeStore.credentialConfigurations()

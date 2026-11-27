@@ -27,6 +27,8 @@ export type SidebarGroupState = SessionGroup & {
   opened: boolean
   loaded: boolean
   loading: boolean
+  /** A loaded page is rereading metadata; its next-page action can wait for the fresh cursor. */
+  refreshing?: boolean
   next?: string | undefined
   stale?: boolean
   error?: string

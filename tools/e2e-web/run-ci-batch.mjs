@@ -9,7 +9,14 @@ export function batchInvocation(value, argv, env = process.env) {
   const batch = canonicalBatch(JSON.parse(value))
   return {
     command: process.execPath,
-    args: ['tools/e2e-web/ci.mjs', 'test', ...argv, ...batch.args, '--workers=1'],
+    args: [
+      'tools/e2e-web/ci.mjs',
+      'test',
+      ...argv,
+      ...batch.args,
+      '--workers=1',
+      `--global-timeout=${batch.timeoutMinutes * 60_000}`,
+    ],
     env: { ...env, AGH_NARROW_WIDTHS: batch.widths, AGH_WEB_TEST_OUTPUT: `.agnes-tmp/e2e-web/${batch.id}` },
   }
 }

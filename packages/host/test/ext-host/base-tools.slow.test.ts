@@ -508,10 +508,14 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(namesFrom('agnes/subagent')).toEqual([
         'list_subagent_models',
         'subagent_cancel',
+        'subagent_close',
         'subagent_collect',
         'subagent_fork',
         'subagent_interrupt',
         'subagent_list',
+        'subagent_pause',
+        'subagent_recap',
+        'subagent_resume',
         'subagent_send_message',
         'subagent_spawn',
       ])
@@ -1303,16 +1307,20 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     // The skills extension is loaded but inert until a daemon worker supplies a private runtime
     // snapshot, and this host does not load code-mode. Count: tools-core 5, tools-search 3,
     // tools-web 2, interaction 1, deliverables 1, jobs 10, compaction 1, refine 3 (registered; offered
-    // only to sessions that run task experience), subagent 8,
+    // only to sessions that run task experience), subagent 12,
     // mcp-search 2, computer-use 1, plugin-creator 6, exit_plan_mode, and the three stable MCP
     // resource tools, workflow and workflow_status, session-query 5, two goal tools, and the four
     // schedule reminders, plus the LSP diagnostics tool.
-    expect(host.kernel.tools.size).toBe(66)
+    expect(host.kernel.tools.size).toBe(70)
     for (const name of [
       'lsp_diagnostics',
       'subagent_list',
       'subagent_send_message',
       'subagent_interrupt',
+      'subagent_pause',
+      'subagent_resume',
+      'subagent_close',
+      'subagent_recap',
       'plugin_creator_guide',
       'plugin_scaffold',
       'plugin_test',

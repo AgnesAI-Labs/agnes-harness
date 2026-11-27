@@ -1,9 +1,30 @@
-import { CoreError, resetChildAgentAllowlists, setChildAgentAllowlist, trackExternalChild } from '@agnes/core'
-import { checkToolDef, type ToolContext, type ToolDef } from '@agnes/extension-api'
+import { readFileSync } from 'node:fs'
+import {
+  buildToolContext,
+  CoreError,
+  Kernel,
+  MemoryStorage,
+  presetDefaults,
+  resetChildAgentAllowlists,
+  setChildAgentAllowlist,
+  trackExternalChild,
+} from '@agnes/core'
+import {
+  actor,
+  defaultLoops,
+  fakeProvider,
+  fakeSeams,
+  fencedFs,
+  noTimers,
+  testFsPolicy,
+  textTurn,
+} from '@agnes/core/testkit'
+import { checkToolDef, defaultToolPolicy, type ToolContext, type ToolDef } from '@agnes/extension-api'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createSubagentExtension } from '../src/index.js'
+import { subagentCloseTool, subagentPauseTool, subagentResumeTool } from '../src/lifecycle-tools.js'
 import type { SubagentDeps } from '../src/tools.js'
 import {
   createSubagentRuntime,
@@ -156,7 +177,7 @@ describe('subagent tool definitions', () => {
     expect(tools[1]?.description).toContain('non-git')
     expect(tools[0]?.description).toContain('non-git')
     expect(tools[0]?.meta).toMatchObject({ isReadOnly: false, isOpenWorld: true, replay: 'never' })
-    expect(tools[2]?.meta).toMatchObject({ isReadOnly: false, isDestructive: true })
+    expect(tools[2]?.meta).toMatchObject({ isReadOnly: true, isDestructive: false })
   })
 
   it('the explicit extension factory registers and disposes all child tools', () => {
@@ -178,12 +199,24 @@ describe('subagent tool definitions', () => {
       'subagent_list',
       'subagent_send_message',
       'subagent_interrupt',
+      'subagent_pause',
+      'subagent_resume',
+      'subagent_close',
+      'subagent_recap',
       'list_subagent_models',
     ])
+    const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      agnes: { plugins: Array<{ capabilities: { tools: { names: string[] } } }> }
+    }
+    expect(names).toEqual(manifest.agnes.plugins[0]?.capabilities.tools.names)
     expect(dispose).toBeTypeOf('function')
     ;(dispose as () => void)()
     expect(disposed).toEqual([
       'list_subagent_models',
+      'subagent_recap',
+      'subagent_close',
+      'subagent_resume',
+      'subagent_pause',
       'subagent_interrupt',
       'subagent_send_message',
       'subagent_list',
@@ -218,7 +251,19 @@ describe('subagent_fork', () => {
           resident: true,
           fork: true,
           toolFilter: {
-            deny: ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update', 'shell'],
+            deny: [
+              'schedule_create',
+              'schedule_delete',
+              'schedule_list',
+              'schedule_update',
+              'present',
+              'ui_guide',
+              'ui_render',
+              'ui_update',
+              'ui_close',
+              'ask_user_question',
+              'shell',
+            ],
           },
         },
       ],
@@ -246,7 +291,20 @@ describe('subagent_spawn', () => {
           budget: 7,
           isolation: 'worktree',
           resident: true,
-          toolFilter: { deny: ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update'] },
+          toolFilter: {
+            deny: [
+              'schedule_create',
+              'schedule_delete',
+              'schedule_list',
+              'schedule_update',
+              'present',
+              'ui_guide',
+              'ui_render',
+              'ui_update',
+              'ui_close',
+              'ask_user_question',
+            ],
+          },
           start: false,
         },
       ],
@@ -531,6 +589,121 @@ describe('subagent_spawn', () => {
     await first
   })
 
+  it('reconciles finished children via read-only list without calling collect during a new spawn', async () => {
+    let next = 0
+    let aStatus: 'running' | 'idle' = 'running'
+    let pendingNoticeA = false
+    const d = deps({ maxFanOut: 1, isolation: 'shared' })
+    const c = context({
+      spawn: async () => ({ childKey: `child-${++next}` }),
+      collect: async (childKey) => {
+        if (childKey === 'child-1' && aStatus === 'idle') pendingNoticeA = false
+        return { childKey, status: 'idle', text: 'findings from A' }
+      },
+    })
+    let listCalls = 0
+    c.ctx.subagent.list = async () => {
+      listCalls += 1
+      return next === 0
+        ? []
+        : [
+            {
+              id: 'child-1',
+              providerId: 'in-process',
+              status: aStatus,
+              executionState: aStatus,
+              continuable: true,
+            },
+          ]
+    }
+
+    expect((await subagentSpawnTool(d).execute({ task: 'A' }, c.ctx)).isError).toBeUndefined()
+    // While A is still running, B is refused without touching collect.
+    expect((await subagentSpawnTool(d).execute({ task: 'blocked' }, c.ctx)).isError).toBe(true)
+    expect(c.calls.collect).toEqual([])
+    expect(listCalls).toBe(2)
+
+    // Once A transitions to idle with an unconsumed notice, spawning B frees A's slot via list() and keeps A's notice intact.
+    aStatus = 'idle'
+    pendingNoticeA = true
+    const second = await subagentSpawnTool(d).execute({ task: 'B' }, c.ctx)
+    expect(second.isError).toBeUndefined()
+    expect(second.details).toMatchObject({ childKey: 'child-2' })
+    expect(c.calls.collect).toEqual([])
+    expect(pendingNoticeA).toBe(true)
+    expect(listCalls).toBe(3)
+
+    // Explicit subagent_collect still owns acknowledgement, withdraws the pending notice, and reads A's findings.
+    const collected = await subagentCollectTool(d).execute({ childKey: 'child-1' }, c.ctx)
+    expect(c.calls.collect).toEqual([['child-1', { wait: true }]])
+    expect(pendingNoticeA).toBe(false)
+    expect(collected.content).toEqual([{ type: 'text', text: 'findings from A' }])
+  })
+
+  it('counts a wait:true spawn as one active slot after handle promotion and releases once on exit or error', async () => {
+    let next = 0
+    let resolveA!: (value: { childKey: string; status: 'idle'; text: string }) => void
+    const waitA = new Promise<{ childKey: string; status: 'idle'; text: string }>((resolve) => {
+      resolveA = resolve
+    })
+    let rejectFail!: (error: Error) => void
+    const waitFail = new Promise<never>((_resolve, reject) => {
+      rejectFail = reject
+    })
+    const d = deps({ maxFanOut: 2, isolation: 'shared' })
+    const c = context({
+      spawn: async () => ({ childKey: `child-${++next}` }),
+      collect: async (childKey) => {
+        if (childKey === 'child-1') return waitA
+        if (childKey === 'child-3') return waitFail
+        return { childKey, status: 'completed', text: 'ok' }
+      },
+    })
+    const spawn = subagentSpawnTool(d)
+
+    // Limit 2: while A waits on collect, B succeeds and C is limited at active=2.
+    const runA = spawn.execute({ task: 'A', wait: true }, c.ctx)
+    await Promise.resolve()
+    const runB = await spawn.execute({ task: 'B' }, c.ctx)
+    expect(runB.isError).toBeUndefined()
+    expect(runB.details).toMatchObject({ childKey: 'child-2' })
+
+    const runC = await spawn.execute({ task: 'C' }, c.ctx)
+    expect(runC.isError).toBe(true)
+    expect(runC.structured).toEqual({
+      code: 'E_CHILD_LIMIT',
+      limit: 2,
+      active: 2,
+      activeChildKeys: ['child-1', 'child-2'],
+    })
+
+    // Finishing A frees exactly one slot, allowing child-3 to start; if child-3 fails in collect after commit,
+    // its handle and active slot are preserved until a retry collects it, and pending never goes negative.
+    resolveA({ childKey: 'child-1', status: 'idle', text: 'done A' })
+    expect((await runA).content).toEqual([{ type: 'text', text: 'Delegated task idle.\ndone A' }])
+
+    const failing = spawn.execute({ task: 'D', wait: true }, c.ctx)
+    await Promise.resolve()
+    expect((await spawn.execute({ task: 'full-again' }, c.ctx)).isError).toBe(true)
+    rejectFail(new Error('collect boom'))
+    const failResult = await failing
+    expect(failResult.isError).toBe(true)
+    expect(failResult.details).toMatchObject({
+      childKey: 'child-3',
+      retryable: true,
+      readError: 'collect boom',
+    })
+    expect(d.runtime?.sessions.get(c.ctx.session.key)?.pending).toBe(0)
+    // Child-3 remains active until collected, then freeing it allows child-4.
+    expect((await spawn.execute({ task: 'still-full' }, c.ctx)).isError).toBe(true)
+    c.ctx.subagent.collect = async (childKey) => ({ childKey, status: 'completed', text: 'retried D' })
+    expect((await subagentCollectTool(d).execute({ childKey: 'child-3' }, c.ctx)).content).toEqual([
+      { type: 'text', text: 'retried D' },
+    ])
+    expect((await spawn.execute({ task: 'E' }, c.ctx)).details).toMatchObject({ childKey: 'child-4' })
+    expect(d.runtime?.sessions.get(c.ctx.session.key)?.pending).toBe(0)
+  })
+
   it.each([
     { name: 'backend failure', error: new Error('child backend unavailable'), born: false, refused: false },
     {
@@ -601,14 +774,16 @@ describe('subagent_collect', () => {
       collect: async (childKey) => ({
         childKey,
         status,
-        ...(status === 'completed' ? { text: 'done', credits: 3 } : {}),
+        ...(status === 'completed'
+          ? { text: 'done', credits: 3, completionId: 'done-1', completionSeq: 19 }
+          : {}),
       }),
     })
 
     await subagentSpawnTool(d).execute({ task: 'one' }, c.ctx)
     const running = await subagentCollectTool(d).execute({ childKey: 'c1', wait: false }, c.ctx)
     expect(c.calls.collect[0]).toEqual(['c1', { wait: false }])
-    expect(running.details).toEqual({ childKey: 'c1', status: 'running' })
+    expect(running.details).toEqual({ childKey: 'c1', status: 'running', suggestedWaitMs: 5000 })
     expect(wt.calls.finish).toEqual([])
     expect((await subagentSpawnTool(d).execute({ task: 'blocked' }, c.ctx)).isError).toBe(true)
 
@@ -616,10 +791,12 @@ describe('subagent_collect', () => {
     const done = await subagentCollectTool(d).execute({ childKey: 'c1' }, c.ctx)
     expect(c.calls.collect.at(-1)).toEqual(['c1', { wait: true }])
     expect(done.content).toEqual([{ type: 'text', text: 'done' }])
-    expect(done.details).toEqual({
+    expect(done.structured).toEqual({
       childKey: 'c1',
       status: 'completed',
       credits: 3,
+      completionId: 'done-1',
+      completionSeq: 19,
     })
     expect(wt.calls.finish).toEqual([])
     expect((await subagentSpawnTool(d).execute({ task: 'now allowed' }, c.ctx)).isError).toBeUndefined()
@@ -794,5 +971,789 @@ describe('child allowlist and continuable controls', () => {
     } finally {
       untrack()
     }
+  })
+
+  it('returns recoverable tool errors for unknown child handles instead of throwing into unknown-outcome', async () => {
+    const missing = () => Promise.reject(new CoreError('E_CHILD_NOT_FOUND', 'unknown child bogus-id'))
+    const { ctx } = context()
+    ctx.subagent.collect = missing
+    ctx.subagent.cancel = missing
+    ctx.subagent.resume = missing
+    ctx.subagent.pause = missing
+    ctx.subagent.close = missing
+    const d = deps()
+    for (const run of [
+      () => subagentCollectTool(d).execute({ childKey: 'bogus-id', wait: true }, ctx),
+      () => subagentCancelTool(d).execute({ childKey: 'bogus-id' }, ctx),
+      () => subagentPauseTool.execute({ childKey: 'bogus-id' }, ctx),
+      () => subagentResumeTool.execute({ childKey: 'bogus-id' }, ctx),
+      () => subagentCloseTool.execute({ childKey: 'bogus-id' }, ctx),
+    ]) {
+      const result = await run()
+      expect(result.isError).toBe(true)
+      expect(result.details).toMatchObject({ code: 'E_CHILD_NOT_FOUND' })
+      expect(JSON.stringify(result.content)).toContain('unknown child bogus-id')
+    }
+  })
+
+  it('exempts pause/resume/close/recap management tools from tainted-turn approval prompts', () => {
+    for (const name of ['subagent_pause', 'subagent_resume', 'subagent_close', 'subagent_recap']) {
+      const decision = defaultToolPolicy.decide(
+        {
+          call: { name, args: {} },
+          policy: {
+            isReadOnly: name === 'subagent_recap',
+            isDestructive: false,
+            isPresentational: false,
+            isConcurrencySafe: true,
+            isOpenWorld: false,
+            replay: name === 'subagent_recap' ? 'safe' : 'never',
+            requiresApproval: 'never',
+            approvalScopes: [],
+          },
+          tainted: true,
+          fullAccess: false,
+          approvalMode: 'default',
+        } as never,
+        new AbortController().signal,
+      )
+      expect(decision).toMatchObject({ effect: 'allow' })
+    }
+  })
+
+  it('includes structured details and recovery guidance when fan-out limit is reached', async () => {
+    const d = deps({ maxFanOut: 1, isolation: 'shared' })
+    const { ctx } = context({
+      collect: async (childKey) => ({ childKey, status: 'running' }),
+    })
+    const spawn = subagentSpawnTool(d)
+    const first = await spawn.execute({ task: 'lane-1' }, ctx)
+    expect(first.isError).toBeUndefined()
+    const second = await spawn.execute({ task: 'lane-2' }, ctx)
+    expect(second.isError).toBe(true)
+    expect(second.structured).toEqual({
+      code: 'E_CHILD_LIMIT',
+      limit: 1,
+      active: 1,
+      activeChildKeys: ['child-1'],
+    })
+    expect(JSON.stringify(second.content)).toContain('fan-out limit 1 reached')
+    expect(JSON.stringify(second.content)).toContain('subagent_collect')
+  })
+
+  it('preserves local E_UNSUPPORTED instead of masking it as E_CHILD_NOT_FOUND when no external child exists', async () => {
+    const { ctx } = context()
+    ctx.subagent.sendMessage = async () => {
+      throw new CoreError('E_UNSUPPORTED', 'child c1 is cancelled and not continuable', { childKey: 'c1' })
+    }
+    const result = await subagentSendMessageTool.execute({ childKey: 'c1', text: 'hello' }, ctx)
+    expect(result.isError).toBe(true)
+    expect(result.details).toMatchObject({ code: 'E_UNSUPPORTED' })
+    expect(JSON.stringify(result.content)).toContain('cancelled and not continuable')
+  })
+
+  it('preserves handle, worktree and active slot when wait:true hits a retryable read error so collect can retry (P1-D)', async () => {
+    const wt = worktrees()
+    const d = deps({ maxFanOut: 1, worktrees: wt.manager })
+    let collectAttempts = 0
+    const cancelled: string[] = []
+    const { ctx } = context({
+      spawn: async () => ({ childKey: 'child-retry' }),
+      collect: async (childKey) => {
+        collectAttempts += 1
+        if (collectAttempts === 1) {
+          throw new CoreError(
+            'E_STORAGE_FAULT',
+            'Failed to read child ledger for child-retry: transient IO',
+            {
+              childKey,
+              retryable: true,
+              readError: 'transient IO',
+            },
+          )
+        }
+        return { childKey, status: 'completed', text: 'recovered findings' }
+      },
+    })
+    ctx.subagent.cancel = async (childKey) => {
+      cancelled.push(childKey)
+      return { childKey, status: 'cancelled' }
+    }
+
+    const first = await subagentSpawnTool(d).execute({ task: 'work', wait: true }, ctx)
+    expect(first.isError).toBe(true)
+    expect(first.details).toMatchObject({
+      childKey: 'child-retry',
+      code: 'E_STORAGE_FAULT',
+      retryable: true,
+      readError: expect.stringContaining('transient IO'),
+      worktree: '/work/proj/.worktrees/agnes-1234abcd',
+    })
+    expect(cancelled).toEqual([])
+    expect(wt.calls.finish).toEqual([])
+    // Child remains active until collected.
+    expect((await subagentSpawnTool(d).execute({ task: 'blocked' }, ctx)).isError).toBe(true)
+
+    const retry = await subagentCollectTool(d).execute({ childKey: 'child-retry' }, ctx)
+    expect(retry.isError).toBeUndefined()
+    expect(retry.content).toEqual([{ type: 'text', text: 'recovered findings' }])
+    expect(cancelled).toEqual([])
+    expect(wt.calls.finish).toEqual([])
+
+    // Untagged plain collect/receipt error after commit must also never cancel or roll back worktree.
+    const wtPlain = worktrees()
+    const dPlain = deps({ maxFanOut: 1, worktrees: wtPlain.manager })
+    let plainAttempts = 0
+    const plainCancelled: string[] = []
+    const plain = context({
+      spawn: async () => ({ childKey: 'child-plain-error' }),
+      collect: async (childKey) => {
+        plainAttempts += 1
+        if (plainAttempts === 1) throw new Error('temporary receipt append failure')
+        return { childKey, status: 'completed', text: 'plain recovered' }
+      },
+    })
+    plain.ctx.subagent.cancel = async (childKey) => {
+      plainCancelled.push(childKey)
+      return { childKey, status: 'cancelled' }
+    }
+    const plainFirst = await subagentSpawnTool(dPlain).execute({ task: 'plain', wait: true }, plain.ctx)
+    expect(plainFirst.isError).toBe(true)
+    expect(plainFirst.details).toMatchObject({
+      childKey: 'child-plain-error',
+      retryable: true,
+      readError: 'temporary receipt append failure',
+      worktree: '/work/proj/.worktrees/agnes-1234abcd',
+    })
+    expect(plainCancelled).toEqual([])
+    expect(wtPlain.calls.finish).toEqual([])
+    const plainRetry = await subagentCollectTool(dPlain).execute({ childKey: 'child-plain-error' }, plain.ctx)
+    expect(plainRetry.isError).toBeUndefined()
+    expect(plainRetry.content).toEqual([{ type: 'text', text: 'plain recovered' }])
+    expect(plainCancelled).toEqual([])
+    expect(wtPlain.calls.finish).toEqual([])
+
+    // Real Core joint verification: transient parent ledger receipt failure keeps child committed/idle and retryable.
+    const storage = new MemoryStorage()
+    const silentLog = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
+    const realFsOps = fencedFs(
+      {
+        read: async () => new Uint8Array(),
+        write: async () => undefined,
+        list: async () => [],
+        stat: async () => ({ kind: 'file' as const, size: 0, mtimeMs: 0 }),
+      },
+      testFsPolicy('/w'),
+    )
+    const k = Kernel.create({
+      loops: defaultLoops(),
+      storage,
+      seams: fakeSeams(),
+      provider: Object.assign(fakeProvider([textTurn('real core findings')]), {
+        models: () => [
+          {
+            id: 'm1',
+            name: 'm1',
+            api: 'openai-completions' as const,
+            route: 'default',
+            baseUrl: 'https://example.invalid/v1',
+            reasoning: false,
+            input: ['text' as const],
+            cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 8192,
+            maxTokens: 128,
+            toolCallFormats: ['native' as const],
+            thinkingReplay: 'native' as const,
+            contract_id: null,
+          },
+        ],
+      }),
+      contract: { contract_id: null, parser_version: '1' },
+      preset: { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 1, maxFanOut: 2 },
+      fsOps: realFsOps,
+      netFetch: async () => new Response(''),
+      logger: silentLog,
+      timers: noTimers,
+      clock: () => 1_757_203_200_000,
+    })
+    try {
+      const parent = await k.session('p1d-real-core', {
+        actor,
+        resolvedProfileHash: 'h1',
+        cwd: '/w',
+        writerRunId: 'r1',
+      })
+      const realCtx = fakeToolContext({ sessionKey: parent.key })
+      ;(realCtx as unknown as { subagent: ToolContext['subagent'] }).subagent = buildToolContext(
+        {
+          actor: parent.d.actor,
+          lane: parent.lane,
+          cwd: parent.d.cwd,
+          runtime: parent.d.runtime,
+          preset: parent.preset,
+          children: parent.d.children,
+          netFetch: parent.d.netFetch,
+          sessionKey: parent.key,
+          turn: 1,
+          step: 1,
+          depth: 0,
+          generationDepth: 0,
+          workspaceRoot: '/w',
+          log: silentLog,
+          fsOps: realFsOps,
+          invoke: async () => ({ content: [] }),
+          listTools: () => [],
+          appendPlan: async () => 1,
+          requestCompaction() {},
+          progress() {},
+          artifactJobEvent: async () => undefined,
+          lease: { remainingMs: () => 5000 },
+        },
+        {
+          toolUseId: 'spawn-p1d',
+          name: 'subagent_spawn',
+          signal: new AbortController().signal,
+          timeoutMs: 5000,
+          outputMaxBytes: 32768,
+        },
+      ).subagent
+      const origAppend = parent.d.log.append.bind(parent.d.log)
+      let injectedFailure = false
+      vi.spyOn(parent.d.log, 'append').mockImplementation(async (rows, options) => {
+        if (!injectedFailure && rows.some((row) => row.type === 'x/core/child-result-collected')) {
+          injectedFailure = true
+          throw new Error('temporary synthetic parent storage outage')
+        }
+        return origAppend(rows, options)
+      })
+      const realDeps = deps({ maxDepth: 2, maxFanOut: 2, isolation: 'shared' })
+      const realSpawn = await subagentSpawnTool(realDeps).execute(
+        { task: 'complete then collect', wait: true },
+        realCtx,
+      )
+      expect(injectedFailure).toBe(true)
+      expect(realSpawn.isError).toBe(true)
+      const realChildKey = (realSpawn.details as { childKey?: string } | undefined)?.childKey ?? ''
+      expect(realChildKey).toBeTruthy()
+      expect(realSpawn.details).toMatchObject({
+        childKey: realChildKey,
+        code: 'E_STORAGE_FAULT',
+        retryable: true,
+        readError: expect.stringContaining('temporary synthetic parent storage outage'),
+      })
+      const rows = await storage.listByParent(parent.key)
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({
+        childKey: realChildKey,
+        creationPhase: 'committed',
+        state: 'idle',
+      })
+      const realRetry = await subagentCollectTool(realDeps).execute({ childKey: realChildKey }, realCtx)
+      expect(realRetry.isError).toBeUndefined()
+      expect(realRetry.content).toEqual([{ type: 'text', text: 'real core findings' }])
+      expect(await parent.scan({ type: 'x/core/child-result-collected', limit: 10 })).toHaveLength(1)
+    } finally {
+      vi.restoreAllMocks()
+      await k.close()
+    }
+  })
+
+  it('does not evict a newly spawned child with a stale list() snapshot and counts waiting_approval as active (P1-F)', async () => {
+    // Race 1: stale list() from concurrent reconcile must not delete newly spawned child B.
+    let next = 0
+    let resolveStaleList!: (
+      value: Array<{
+        id: string
+        providerId: string
+        status: 'running'
+        executionState: 'running'
+        continuable: boolean
+      }>,
+    ) => void
+    const staleList = new Promise<
+      Array<{
+        id: string
+        providerId: string
+        status: 'running'
+        executionState: 'running'
+        continuable: boolean
+      }>
+    >((resolve) => {
+      resolveStaleList = resolve
+    })
+    let listCalls = 0
+    const d1 = deps({ maxFanOut: 2, isolation: 'shared' })
+    const c1 = context({ spawn: async () => ({ childKey: `c-${++next}` }) })
+    c1.ctx.subagent.list = async () => {
+      if (next === 0) return []
+      listCalls += 1
+      if (listCalls === 1) return staleList
+      return [
+        {
+          id: 'c-1',
+          providerId: 'in-process',
+          status: 'running',
+          executionState: 'running',
+          continuable: true,
+        },
+      ]
+    }
+    const spawn1 = subagentSpawnTool(d1)
+    expect((await spawn1.execute({ task: 'A' }, c1.ctx)).details).toMatchObject({ childKey: 'c-1' })
+
+    // Start C (suspends on list() taken before B exists), then spawn B to completion.
+    const spawnC = spawn1.execute({ task: 'C' }, c1.ctx)
+    await Promise.resolve()
+    const spawnB = await spawn1.execute({ task: 'B' }, c1.ctx)
+    expect(spawnB.isError).toBeUndefined()
+    expect(spawnB.details).toMatchObject({ childKey: 'c-2' })
+
+    // Resolve C's stale list() containing only c-1: c-2 must stay tracked, so C hits maxFanOut=2.
+    resolveStaleList([
+      {
+        id: 'c-1',
+        providerId: 'in-process',
+        status: 'running',
+        executionState: 'running',
+        continuable: true,
+      },
+    ])
+    const resC = await spawnC
+    expect(resC.isError).toBe(true)
+    expect(resC.structured).toMatchObject({
+      code: 'E_CHILD_LIMIT',
+      limit: 2,
+      active: 2,
+      activeChildKeys: ['c-1', 'c-2'],
+    })
+
+    // Race 2: waiting_approval stays active across both wait:true spawn and explicit collect.
+    let approvalDone = false
+    const d2 = deps({ maxFanOut: 1, isolation: 'shared' })
+    const c2 = context({
+      spawn: async () => ({ childKey: 'approval-child' }),
+      collect: async (childKey) =>
+        approvalDone
+          ? { childKey, status: 'idle', executionState: 'idle', text: 'approved result' }
+          : { childKey, status: 'waiting_approval', executionState: 'waiting_approval' },
+    })
+    const waited = await subagentSpawnTool(d2).execute({ task: 'needs approval', wait: true }, c2.ctx)
+    expect(waited.isError).toBeUndefined()
+    expect((await subagentSpawnTool(d2).execute({ task: 'over-limit-1' }, c2.ctx)).isError).toBe(true)
+
+    const polled = await subagentCollectTool(d2).execute({ childKey: 'approval-child', wait: false }, c2.ctx)
+    expect(polled.details).toMatchObject({ status: 'waiting_approval' })
+    expect((await subagentSpawnTool(d2).execute({ task: 'over-limit-2' }, c2.ctx)).isError).toBe(true)
+
+    approvalDone = true
+    const done = await subagentCollectTool(d2).execute({ childKey: 'approval-child' }, c2.ctx)
+    expect(done.content).toEqual([{ type: 'text', text: 'approved result' }])
+    expect((await subagentSpawnTool(d2).execute({ task: 'now-allowed' }, c2.ctx)).isError).toBeUndefined()
+
+    // Race 3: explicit collect clearing the last old handle during parallel spawn reconciliation must not detach state.
+    const d3 = deps({ maxFanOut: 1, isolation: 'shared' })
+    const c3 = context()
+    const spawn3 = subagentSpawnTool(d3)
+    const collect3 = subagentCollectTool(d3)
+    await spawn3.execute({ task: 'A' }, c3.ctx)
+    let resumeEmptyList!: (rows: []) => void
+    c3.ctx.subagent.list = () =>
+      new Promise((resolve) => {
+        resumeEmptyList = resolve
+      })
+    const secondSpawn = spawn3.execute({ task: 'B' }, c3.ctx)
+    await collect3.execute({ childKey: 'child-1' }, c3.ctx)
+    resumeEmptyList([])
+    const accepted = await secondSpawn
+    expect(accepted.isError).toBeUndefined()
+    expect(accepted.details).toMatchObject({ childKey: 'child-2' })
+    const tracked = [...(d3.runtime?.sessions.get(c3.ctx.session.key)?.children.keys() ?? [])]
+    expect(tracked).toEqual(['child-2'])
+    c3.ctx.subagent.list = async () => [
+      {
+        id: 'child-2',
+        providerId: 'in-process',
+        status: 'running',
+        executionState: 'running',
+        continuable: true,
+      },
+    ]
+    const overLimit = await spawn3.execute({ task: 'C' }, c3.ctx)
+    expect(overLimit.isError).toBe(true)
+    expect(overLimit.structured).toEqual({
+      code: 'E_CHILD_LIMIT',
+      limit: 1,
+      active: 1,
+      activeChildKeys: ['child-2'],
+    })
+
+    // Round 4 P2-F: reactivated resident is counted by extension maxFanOut even when local state.children is empty
+    // and Core's maxFanOut is higher than the extension limit.
+    const storage = new MemoryStorage()
+    let turns = 0
+    let releaseSecondTurn!: () => void
+    const secondTurnGate = new Promise<void>((resolve) => {
+      releaseSecondTurn = resolve
+    })
+    const silentLog = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
+    const fsOps = fencedFs(
+      {
+        read: async () => new Uint8Array(),
+        write: async () => undefined,
+        list: async () => [],
+        stat: async () => ({ kind: 'file' as const, size: 0, mtimeMs: 0 }),
+      },
+      testFsPolicy('/w'),
+    )
+    const baseProvider = fakeProvider([textTurn('first result'), textTurn('second result')])
+    const k = Kernel.create({
+      loops: defaultLoops(),
+      storage,
+      seams: fakeSeams(),
+      provider: {
+        models: () => [
+          {
+            id: 'm1',
+            name: 'm1',
+            api: 'openai-completions' as const,
+            route: 'default',
+            baseUrl: 'https://example.invalid/v1',
+            reasoning: false,
+            input: ['text' as const],
+            cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 8192,
+            maxTokens: 128,
+            toolCallFormats: ['native' as const],
+            thinkingReplay: 'native' as const,
+            contract_id: null,
+          },
+        ],
+        async *infer(req, options) {
+          if (turns++ > 0) await secondTurnGate
+          yield* baseProvider.infer(req, options)
+        },
+      },
+      contract: { contract_id: null, parser_version: '1' },
+      preset: { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 1, maxFanOut: 4 },
+      fsOps,
+      netFetch: async () => new Response(''),
+      logger: silentLog,
+      timers: noTimers,
+      clock: () => 1_757_203_200_000,
+    })
+    try {
+      const parent = await k.session('fanout-p2f', {
+        actor,
+        resolvedProfileHash: 'h1',
+        cwd: '/w',
+        writerRunId: 'r1',
+      })
+      const realCtx: ToolContext = {
+        ...fakeToolContext({ sessionKey: parent.key }),
+        subagent: buildToolContext(
+          {
+            actor: parent.d.actor,
+            lane: parent.lane,
+            cwd: parent.d.cwd,
+            runtime: parent.d.runtime,
+            preset: parent.preset,
+            children: parent.d.children,
+            netFetch: parent.d.netFetch,
+            sessionKey: parent.key,
+            turn: 1,
+            step: 1,
+            depth: 0,
+            generationDepth: 0,
+            workspaceRoot: '/w',
+            log: silentLog,
+            fsOps,
+            invoke: async () => ({ content: [] }),
+            listTools: () => [],
+            appendPlan: async () => 1,
+            requestCompaction() {},
+            progress() {},
+            artifactJobEvent: async () => undefined,
+            lease: { remainingMs: () => 5000 },
+          },
+          {
+            toolUseId: 'spawn-p2f',
+            name: 'subagent_spawn',
+            signal: new AbortController().signal,
+            timeoutMs: 5000,
+            outputMaxBytes: 32768,
+          },
+        ).subagent,
+      }
+      const runtime = createSubagentRuntime()
+      const spawn = subagentSpawnTool({
+        limits: { isolation: 'shared', maxFanOut: 1, maxDepth: 2 },
+        runtime,
+        worktrees: worktrees().manager,
+      })
+      const first = await spawn.execute({ task: 'first', wait: true }, realCtx)
+      const firstKey = (first.details as { childKey: string }).childKey
+      expect(runtime.sessions.get(parent.key)).toBeUndefined()
+
+      const sent = await subagentSendMessageTool.execute(
+        { childKey: firstKey, text: 'start second turn' },
+        realCtx,
+      )
+      expect(sent.isError).toBeUndefined()
+      await vi.waitFor(async () => expect((await storage.lookupByKey(firstKey))?.state).toBe('running'))
+
+      const blocked = await spawn.execute({ task: 'new child' }, realCtx)
+      expect(blocked.isError).toBe(true)
+      expect(blocked.structured).toEqual({
+        code: 'E_CHILD_LIMIT',
+        limit: 1,
+        active: 1,
+        activeChildKeys: [firstKey],
+      })
+      expect(await storage.listByParent(parent.key)).toHaveLength(1)
+    } finally {
+      releaseSecondTurn()
+      await k.close()
+    }
+  })
+
+  it('does not double-count or cancel an in-flight worktree or creating child under concurrent spawn (P1-F)', async () => {
+    // Real Kernel with Core maxFanOut=2 and extension maxFanOut=2: A suspended in worktrees.bind
+    // while Kernel already lists A as creating; concurrent B must succeed and A must not be cancelled.
+    const storage = new MemoryStorage()
+    const silentLog = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
+    const fsOps = fencedFs(
+      {
+        read: async () => new Uint8Array(),
+        write: async () => undefined,
+        list: async () => [],
+        stat: async () => ({ kind: 'file' as const, size: 0, mtimeMs: 0 }),
+      },
+      testFsPolicy('/w'),
+    )
+    let releaseInfer!: () => void
+    const inferGate = new Promise<void>((resolve) => {
+      releaseInfer = resolve
+    })
+    const baseProvider = fakeProvider([textTurn('done'), textTurn('done 2')])
+    const k = Kernel.create({
+      loops: defaultLoops(),
+      storage,
+      seams: fakeSeams(),
+      provider: {
+        models: () => [
+          {
+            id: 'm1',
+            name: 'm1',
+            api: 'openai-completions' as const,
+            route: 'default',
+            baseUrl: 'https://example.invalid/v1',
+            reasoning: false,
+            input: ['text' as const],
+            cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+            contextWindow: 8192,
+            maxTokens: 128,
+            toolCallFormats: ['native' as const],
+            thinkingReplay: 'native' as const,
+            contract_id: null,
+          },
+        ],
+        async *infer(req, options) {
+          await inferGate
+          yield* baseProvider.infer(req, options)
+        },
+      },
+      contract: { contract_id: null, parser_version: '1' },
+      preset: { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 1, maxFanOut: 2 },
+      fsOps,
+      netFetch: async () => new Response(''),
+      logger: silentLog,
+      timers: noTimers,
+      clock: () => 1_757_203_200_000,
+    })
+    let resolveEnteredBind!: () => void
+    const enteredBind = new Promise<void>((resolve) => {
+      resolveEnteredBind = resolve
+    })
+    let resolveReleaseBind!: () => void
+    const releaseBind = new Promise<void>((resolve) => {
+      resolveReleaseBind = resolve
+    })
+    const finishReasons: string[] = []
+    let keyA: string | undefined
+    try {
+      const parent = await k.session('concurrent-spawn-p1f', {
+        actor,
+        resolvedProfileHash: 'h1',
+        cwd: '/w',
+        writerRunId: 'r1',
+      })
+      const makeCtx = (toolUseId: string): ToolContext => ({
+        ...fakeToolContext({ sessionKey: parent.key }),
+        subagent: buildToolContext(
+          {
+            actor: parent.d.actor,
+            lane: parent.lane,
+            cwd: parent.d.cwd,
+            runtime: parent.d.runtime,
+            preset: parent.preset,
+            children: parent.d.children,
+            netFetch: parent.d.netFetch,
+            sessionKey: parent.key,
+            turn: 1,
+            step: 1,
+            depth: 0,
+            generationDepth: 0,
+            workspaceRoot: '/w',
+            log: silentLog,
+            fsOps,
+            invoke: async () => ({ content: [] }),
+            listTools: () => [],
+            appendPlan: async () => 1,
+            requestCompaction() {},
+            progress() {},
+            artifactJobEvent: async () => undefined,
+            lease: { remainingMs: () => 5000 },
+          },
+          {
+            toolUseId,
+            name: 'subagent_spawn',
+            signal: new AbortController().signal,
+            timeoutMs: 5000,
+            outputMaxBytes: 32768,
+          },
+        ).subagent,
+      })
+      const ctxA = makeCtx('spawn-a')
+      const ctxB = makeCtx('spawn-b')
+      const runtime = createSubagentRuntime()
+      const spawn = subagentSpawnTool({
+        limits: { isolation: 'shared', maxFanOut: 2, maxDepth: 2 },
+        runtime,
+        worktrees: {
+          async create() {
+            return { root: '/w', path: '/w/wt', branch: 'test', id: 'wt' }
+          },
+          async bind(key) {
+            keyA = key
+            resolveEnteredBind()
+            await releaseBind
+          },
+          async finish(_ctx, reason) {
+            finishReasons.push(reason)
+            return { action: 'removed' }
+          },
+        },
+      })
+      const first = spawn.execute({ task: 'first', isolation: 'worktree' }, ctxA)
+      await enteredBind
+      const listedAtBind = await ctxA.subagent.list?.()
+      expect(listedAtBind?.some((row) => row.id === keyA && row.executionState === 'creating')).toBe(true)
+
+      const second = await spawn.execute({ task: 'second', isolation: 'shared' }, ctxB)
+      resolveReleaseBind()
+      const a = await first
+      expect(a.isError).toBeFalsy()
+      expect(second.isError).toBeFalsy()
+      const keyB = (second.details as { childKey?: string } | undefined)?.childKey
+      expect(keyA).toBeTruthy()
+      expect(keyB).toBeTruthy()
+      expect(keyB).not.toBe(keyA)
+      const rows = await storage.listByParent(parent.key)
+      expect(rows).toHaveLength(2)
+      expect(rows.some((row) => row.state === 'cancelled')).toBe(false)
+      expect(finishReasons).toEqual([])
+    } finally {
+      resolveReleaseBind()
+      releaseInfer()
+      await k.close()
+    }
+
+    // Earlier window: A is still awaiting ctx.subagent.spawn() after backend persisted creating row;
+    // B reconciles and spawns without double-counting A, A takes ownership cleanly, and genuine duplicate keys still fail.
+    let resolveEnteredSpawnA!: () => void
+    const enteredSpawnA = new Promise<void>((resolve) => {
+      resolveEnteredSpawnA = resolve
+    })
+    let resolveReleaseSpawnA!: () => void
+    const releaseSpawnA = new Promise<void>((resolve) => {
+      resolveReleaseSpawnA = resolve
+    })
+    let spawnCount = 0
+    const cancelledKeys: string[] = []
+    const wtEarly = worktrees()
+    const dEarly = deps({ maxFanOut: 2, isolation: 'shared', worktrees: wtEarly.manager })
+    const cEarly = context({
+      spawn: async (task) => {
+        spawnCount += 1
+        if (task === 'A') {
+          resolveEnteredSpawnA()
+          await releaseSpawnA
+          return { childKey: 'child-a' }
+        }
+        if (task === 'dup') return { childKey: 'child-a' }
+        return { childKey: `child-${spawnCount}` }
+      },
+    })
+    cEarly.ctx.subagent.cancel = async (childKey) => {
+      cancelledKeys.push(childKey)
+      return { childKey, status: 'cancelled' }
+    }
+    cEarly.ctx.subagent.list = async () =>
+      spawnCount === 0
+        ? []
+        : [
+            {
+              id: 'child-a',
+              providerId: 'in-process',
+              status: 'starting',
+              executionState: 'creating',
+              continuable: true,
+            },
+          ]
+    const earlySpawn = subagentSpawnTool(dEarly)
+    const runA = earlySpawn.execute({ task: 'A' }, cEarly.ctx)
+    await enteredSpawnA
+    const runB = await earlySpawn.execute({ task: 'B' }, cEarly.ctx)
+    expect(runB.isError).toBeFalsy()
+    expect(runB.details).toMatchObject({ childKey: 'child-2' })
+    resolveReleaseSpawnA()
+    const resA = await runA
+    expect(resA.isError).toBeFalsy()
+    expect(resA.details).toMatchObject({ childKey: 'child-a' })
+    expect(cancelledKeys).toEqual([])
+
+    // Genuine duplicate key against an already-owned child is still rejected, cancelled, and rolled back.
+    const dDup = deps({ maxFanOut: 2, isolation: 'worktree', worktrees: wtEarly.manager })
+    const dupSpawn = subagentSpawnTool(dDup)
+    const cDup = context({ spawn: async () => ({ childKey: 'same-key' }) })
+    const dupCancelled: string[] = []
+    cDup.ctx.subagent.cancel = async (childKey) => {
+      dupCancelled.push(childKey)
+      return { childKey, status: 'cancelled' }
+    }
+    expect((await dupSpawn.execute({ task: 'first', isolation: 'shared' }, cDup.ctx)).isError).toBeFalsy()
+    const dupRes = await dupSpawn.execute({ task: 'second', isolation: 'worktree' }, cDup.ctx)
+    expect(dupRes.isError).toBe(true)
+    expect(JSON.stringify(dupRes.content)).toContain('invalid or duplicate child key')
+    expect(dupCancelled).toEqual(['same-key'])
+    expect(wtEarly.calls.finish).toEqual([['spawn-failed', '/work/proj/.worktrees/agnes-1234abcd']])
+  })
+
+  it('does not output contradictory cancelled wording when cancel remains cancelling (P1-C)', async () => {
+    const { ctx } = context()
+    ctx.subagent.cancel = async (childKey) => ({
+      childKey,
+      status: 'running',
+      executionState: 'cancelling',
+    })
+    const result = await subagentCancelTool(deps()).execute({ childKey: 'c-unconfirmed' }, ctx)
+    expect(result.isError).toBeUndefined()
+    expect(JSON.stringify(result.content)).not.toContain('cancelled c-unconfirmed: running')
+    expect(JSON.stringify(result.content)).toContain('cancelling c-unconfirmed')
+    expect(result.details).toMatchObject({
+      childKey: 'c-unconfirmed',
+      status: 'running',
+      executionState: 'cancelling',
+    })
   })
 })

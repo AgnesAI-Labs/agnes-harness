@@ -60,7 +60,7 @@ export function childListOutput(output: string, t: Translate): string {
           .split('\n')
           .map((line) => {
             const row =
-              /^(\S+) (starting|running|idle|completed|failed|cancelled|interrupted)( continuable)?$/.exec(
+              /^(\S+) (starting|running|idle|completed|failed|cancelled|interrupted|paused|disconnected|waiting_approval)( continuable)?$/.exec(
                 line,
               )
             return row

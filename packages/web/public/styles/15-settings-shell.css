@@ -80,6 +80,10 @@
     padding: 1.375rem var(--s12) 0;
     border-right: 0;
   }
+  /* The permissions page stays mounted when switching to a native settings pane. */
+  .settings-nav-item[data-settings-section="security"][data-attention]:not([aria-current="page"])::after {
+    content: none;
+  }
   /* A settings card is a hairline group on the dialog surface; it carries no tint of its own. */
   .config-card {
     min-width: 0;

@@ -257,6 +257,8 @@ it('mounts an installed UI package panel and reports a subsequent loader failure
           {
             packageId: item.id,
             revision,
+            documentAdmission: { kind: 'release', bindingDigest: 'd'.repeat(64) },
+            contentDigest: `sha256-${'c'.repeat(64)}`,
             entryUrl: `/plugins/panel/${revision}/index.js`,
             styleUrls: [],
             slots: ['workbench.panel'],

@@ -13,6 +13,7 @@ const MIME: Record<string, string> = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
   '.html': 'text/html',
   '.md': 'text/markdown',
   '.txt': 'text/plain',
@@ -20,6 +21,18 @@ const MIME: Record<string, string> = {
   '.json': 'application/json',
   '.tgz': 'application/gzip',
 }
+
+function deliverableName(file: { path: string; name?: string }): string {
+  const name = basename(file.name ?? file.path)
+  const extension = extname(file.path)
+  if (!extension || extension === '.') return name.slice(0, 256)
+  if (extension.length > 256) throw new Error('file extension exceeds the deliverable name limit')
+  const matches = name.toLowerCase().endsWith(extension.toLowerCase())
+  const suffix = matches ? name.slice(-extension.length) : extension
+  const stem = matches ? name.slice(0, -extension.length) : name
+  return stem.slice(0, 256 - suffix.length) + suffix
+}
+
 export const deliverableProjection: ProjectionDef<State> = {
   name: 'presented',
   stateVersion: 1,
@@ -53,7 +66,7 @@ export default defineAgnesPlugin({
         defineTool({
           name: 'present',
           description:
-            'Register existing workspace files as deliverables. Copies the files into session artifacts for durable surface lists and authorized artifact reads. Automatically displays the files as artifact-file cards; do not call ui_render again for these files. Does not create files. files[].path must be a workspace filesystem path, not an artifact:// reference or URL. For an authored plugin download, first pack the complete candidate tree with agh plugins pack and present the resulting .tgz; loose CSS/JSON cards are source previews, not installable packages. Presentation does not install or publish. Use ask_user_question for a question or choice, and ui_render for tables, charts, forms or dashboards in the UI instead. Each file must be readable, regular and at most 32 MiB; the total per call is also limited to 32 MiB.',
+            'Register existing workspace files as deliverables. Copies the files into session artifacts for durable surface lists and authorized artifact reads. Display and download names retain the source file extension, appending it to a custom name when needed. Automatically displays the files as artifact-file cards; do not call ui_render again for these files. Does not create files. files[].path must be a workspace filesystem path, not an artifact:// reference or URL. For an authored plugin download, first pack the complete candidate tree with agh plugins pack and present the resulting .tgz; loose CSS/JSON cards are source previews, not installable packages. Presentation does not install or publish. Use ask_user_question for a question or choice, and ui_render for tables, charts, forms or dashboards in the UI instead. Each file must be readable, regular and at most 32 MiB; the total per call is also limited to 32 MiB.',
           parameters: Type.Object(
             {
               files: Type.Array(
@@ -92,7 +105,7 @@ export default defineAgnesPlugin({
                 new TextEncoder().encode(
                   JSON.stringify(
                     args.files.map((file) => ({
-                      name: basename(file.name ?? file.path).slice(0, 256),
+                      name: deliverableName(file),
                       description: file.description ?? '',
                     })),
                   ),
@@ -118,7 +131,7 @@ export default defineAgnesPlugin({
                   loaded.push({ file, bytes })
                 }
                 for (const { file, bytes } of loaded) {
-                  const name = basename(file.name ?? file.path).slice(0, 256)
+                  const name = deliverableName(file)
                   const ref = await ctx.artifacts.put(bytes, {
                     name,
                     mime: MIME[extname(file.path).toLowerCase()] ?? 'application/octet-stream',

@@ -341,6 +341,320 @@ describe('session slash commands', () => {
     )
   })
 
+  it('/recap annotates partial tail windows and paginates on demand for earlier request and plan (#30)', async () => {
+    const earlierPlan = {
+      kind: 'tool',
+      id: 'p-early',
+      seq: 5,
+      name: 'update_plan',
+      toolUseId: 'p-early',
+      status: 'completed',
+      summary: '',
+      argsPreview: JSON.stringify({
+        plan: [
+          { step: 'design', status: 'completed' },
+          { step: 'implement', status: 'in_progress' },
+        ],
+      }),
+    }
+    const tailOpening = {
+      timeline: {
+        turns: [{ turn: 41 }, { turn: 42 }],
+        nodes: [
+          { kind: 'user', id: 'u-sys', seq: 90, origin: 'system', content: [{ type: 'text', text: 'sys' }] },
+        ],
+      },
+      history: { hasEarlier: true, cursor: { cut: 90, beforeIndex: 20 }, startIndex: 20, totalNodes: 21 },
+    }
+    const projectUIHistory = vi.fn(async (cursor: { cut: number; beforeIndex: number }) =>
+      cursor.beforeIndex === 20
+        ? {
+            sessionId: 'cur',
+            generation: 1,
+            cut: 90,
+            startIndex: 10,
+            totalNodes: 21,
+            hasEarlier: true,
+            cursor: { cut: 90, beforeIndex: 10 },
+            turns: [],
+            nodes: [
+              { kind: 'user', id: 'u40', seq: 50, content: [{ type: 'text', text: 'finish migration' }] },
+            ],
+          }
+        : {
+            sessionId: 'cur',
+            generation: 1,
+            cut: 90,
+            startIndex: 0,
+            totalNodes: 21,
+            hasEarlier: false,
+            turns: [],
+            nodes: [earlierPlan],
+          },
+    )
+    const session = {
+      projectUIOpening: vi.fn(async () => tailOpening),
+      projectUIHistory,
+      workspaceChanges: vi.fn(async () => ({ files: [] })),
+    }
+    const client = {
+      session: {
+        list: vi.fn(async () => ({ items: [meta('cur', '/w/a')] })),
+        runtime: vi.fn(async () => ({ sessionKey: 'k' })),
+      },
+      call: vi.fn(async () => ({ schedules: [] })),
+    }
+
+    const en = (await runSlash(appWith(client, session, { locale: 'en' }), '/recap')).text ?? ''
+    const enRows = Object.fromEntries(en.split('\n').map((row) => row.split(/ {2,}/) as [string, string]))
+    expect(enRows[tt('recap.turns', 'en')]).toBe('42 (recent 2 turns / partial history)')
+    expect(enRows[tt('recap.request', 'en')]).toBe('finish migration')
+    expect(enRows[tt('recap.plan', 'en')]).toBe('1/2 · implement')
+    expect(projectUIHistory).toHaveBeenCalledTimes(2)
+
+    const zh = (await runSlash(appWith(client, session, { locale: 'zh-CN' }), '/recap')).text ?? ''
+    const zhRows = Object.fromEntries(zh.split('\n').map((row) => row.split(/ {2,}/) as [string, string]))
+    expect(zhRows[tt('recap.turns', 'zh-CN')]).toBe('42（最近 2 轮 / 部分历史）')
+
+    // Authoritative totalTurns is preferred when supplied, and no history pages are fetched when tail already has request + plan.
+    const fastHistory = vi.fn()
+    const authOpening = {
+      timeline: {
+        turns: [{ turn: 10 }],
+        nodes: [
+          { kind: 'user', id: 'u10', seq: 99, content: [{ type: 'text', text: 'latest ask' }] },
+          earlierPlan,
+        ],
+      },
+      history: {
+        hasEarlier: true,
+        cursor: { cut: 99, beforeIndex: 5 },
+        startIndex: 5,
+        totalNodes: 7,
+        totalTurns: 10,
+      },
+    }
+    const authText =
+      (
+        await runSlash(
+          appWith(client, {
+            projectUIOpening: vi.fn(async () => authOpening),
+            projectUIHistory: fastHistory,
+            workspaceChanges: vi.fn(async () => ({ files: [] })),
+          }),
+          '/recap',
+        )
+      ).text ?? ''
+    const authRows = Object.fromEntries(
+      authText.split('\n').map((row) => row.split(/ {2,}/) as [string, string]),
+    )
+    expect(authRows[tt('recap.turns', 'en')]).toBe('10')
+    expect(fastHistory).not.toHaveBeenCalled()
+
+    // When the tail window has a newer plan whose argsPreview is truncated, never fall back to an obsolete older plan.
+    const truncatedLatestPlan = {
+      kind: 'tool',
+      id: 'p-latest-cut',
+      seq: 95,
+      resultSeq: 96,
+      name: 'update_plan',
+      toolUseId: 'p-latest-cut',
+      status: 'completed',
+      summary: 'plan updated',
+      argsPreview: '{"plan":[{"step":"new step","status":"in_progr',
+    }
+    const cutOpening = {
+      timeline: {
+        turns: [{ turn: 42 }],
+        nodes: [
+          { kind: 'user', id: 'u42', seq: 92, content: [{ type: 'text', text: 'deploy v2' }] },
+          truncatedLatestPlan,
+        ],
+      },
+      history: { hasEarlier: true, cursor: { cut: 96, beforeIndex: 10 }, startIndex: 10, totalNodes: 15 },
+    }
+    const obsoleteHistory = vi.fn(async () => ({
+      sessionId: 'cur',
+      generation: 1,
+      cut: 96,
+      startIndex: 0,
+      totalNodes: 15,
+      hasEarlier: false,
+      turns: [],
+      nodes: [earlierPlan],
+    }))
+
+    // 1) Without readToolDetail (or if detail fetch fails): reports truncated plan, does NOT show obsolete earlierPlan
+    const cutTextEn =
+      (
+        await runSlash(
+          appWith(client, {
+            projectUIOpening: vi.fn(async () => cutOpening),
+            projectUIHistory: obsoleteHistory,
+            workspaceChanges: vi.fn(async () => ({ files: [] })),
+          }),
+          '/recap',
+        )
+      ).text ?? ''
+    const cutRowsEn = Object.fromEntries(
+      cutTextEn.split('\n').map((row) => row.split(/ {2,}/) as [string, string]),
+    )
+    expect(obsoleteHistory).not.toHaveBeenCalled()
+    expect(cutRowsEn[tt('recap.plan', 'en')]).toBe('latest plan truncated / unavailable')
+    expect(cutTextEn).not.toContain('implement')
+
+    const cutTextZh =
+      (
+        await runSlash(
+          appWith(
+            client,
+            {
+              projectUIOpening: vi.fn(async () => cutOpening),
+              projectUIHistory: obsoleteHistory,
+              workspaceChanges: vi.fn(async () => ({ files: [] })),
+            },
+            { locale: 'zh-CN' },
+          ),
+          '/recap',
+        )
+      ).text ?? ''
+    const cutRowsZh = Object.fromEntries(
+      cutTextZh.split('\n').map((row) => row.split(/ {2,}/) as [string, string]),
+    )
+    expect(cutRowsZh[tt('recap.plan', 'zh-CN')]).toBe('最新计划已截断（无法解析）')
+
+    // 2) With readToolDetail: recovers the full newer plan directly instead of showing the obsolete older plan
+    const readToolDetail = vi.fn(async () => ({
+      call: {
+        args: {
+          plan: [
+            { step: 'verify', status: 'completed' },
+            { step: 'deploy v2', status: 'in_progress' },
+            { step: 'monitor', status: 'pending' },
+          ],
+        },
+      },
+    }))
+    const recoveredText =
+      (
+        await runSlash(
+          appWith(client, {
+            projectUIOpening: vi.fn(async () => cutOpening),
+            projectUIHistory: obsoleteHistory,
+            readToolDetail,
+            workspaceChanges: vi.fn(async () => ({ files: [] })),
+          }),
+          '/recap',
+        )
+      ).text ?? ''
+    const recoveredRows = Object.fromEntries(
+      recoveredText.split('\n').map((row) => row.split(/ {2,}/) as [string, string]),
+    )
+    expect(readToolDetail).toHaveBeenCalledWith(95, 96)
+    expect(obsoleteHistory).not.toHaveBeenCalled()
+    expect(recoveredRows[tt('recap.plan', 'en')]).toBe('1/3 · deploy v2')
+  })
+
+  it('/jobs pins displayed indices per session across evictions, supports explicit IDs and clips wide chars (#11, #34)', async () => {
+    const job = (id: string, command: string, status: 'running' | 'completed' = 'running') => ({
+      id,
+      owner: 'human' as const,
+      ownerSessionId: 'cur',
+      kind: 'shell' as const,
+      command,
+      cwd: '/w/a',
+      status,
+      code: null,
+      truncated: false,
+    })
+    let list = [job('job-a', 'echo A'), job('job-b', 'echo B'), job('job-c', 'echo C')]
+    const jobsRead = vi.fn(async () => ({ jobs: list, completions: [] }))
+    const jobsControl = vi.fn(async () => ({ output: { ok: true } }))
+    const app = appWith(
+      {},
+      { jobsRead, jobsControl },
+      { o: { term: { size: () => ({ columns: 60, rows: 24 }) } } },
+    )
+
+    // Stopping by number before listing does not guess an index
+    const beforeList = await runSlash(app, '/jobs stop 2')
+    expect(jobsControl).not.toHaveBeenCalled()
+    expect(beforeList.text).toContain('/jobs')
+
+    // List pins 1->job-a, 2->job-b, 3->job-c
+    const listed = await runSlash(app, '/jobs')
+    expect(listed.text).toContain('1. echo A')
+    expect(listed.text).toContain('2. echo B')
+
+    // Evict job-a and append job-d: index 2 in fresh list is now job-c, but `/jobs stop 2` still stops job-b!
+    list = [job('job-b', 'echo B'), job('job-c', 'echo C'), job('job-d', 'echo D')]
+    const stoppedB = await runSlash(app, '/jobs stop 2')
+    expect(jobsControl).toHaveBeenLastCalledWith({ operation: 'kill', jobId: 'job-b' })
+    expect(stoppedB.text).toBe(tt('jobs.stopped', 'en', { id: 'job-b' }))
+
+    // Evict job-b too: `/jobs stop 2` refuses stale index instead of killing job-c/job-d
+    jobsControl.mockClear()
+    list = [job('job-c', 'echo C'), job('job-d', 'echo D'), job('job-e', 'echo E')]
+    const stale = await runSlash(app, '/jobs stop 2')
+    expect(jobsControl).not.toHaveBeenCalled()
+    expect(stale.text).toContain('job-b')
+    expect(stale.text).toContain('/jobs')
+
+    // Explicit jobId still works directly
+    const explicit = await runSlash(app, '/jobs stop job-c')
+    expect(jobsControl).toHaveBeenCalledWith({ operation: 'kill', jobId: 'job-c' })
+    expect(explicit.text).toBe(tt('jobs.stopped', 'en', { id: 'job-c' }))
+
+    // Wide CJK command clipping fits within terminal display width and localizes labels in zh-CN
+    list = [
+      job('job-zh', '这是一个非常长的中文后台命令用来验证终端宽字符裁剪不会挤歪右侧的状态信息列'.repeat(3)),
+    ]
+    const zhApp = appWith(
+      {},
+      { jobsRead, jobsControl },
+      { locale: 'zh-CN', o: { term: { size: () => ({ columns: 60, rows: 24 }) } } },
+    )
+    const zhOut = (await runSlash(zhApp, '/jobs')).text ?? ''
+    expect(zhOut).toContain('[运行中]')
+    expect(zhOut).toContain('命令')
+    expect(zhOut).toContain('用户')
+    expect(zhOut).toContain('…')
+    expect(displayWidth(zhOut)).toBeLessThanOrEqual(60)
+
+    // Child jobs render childLabel and localized childStatus instead of raw provider command and generic [运行中] (#15)
+    const childJob = (
+      id: string,
+      childStatus: import('@agnes/protocol').SessionJob['childStatus'],
+      childLabel?: string,
+    ) => ({
+      id,
+      owner: 'agent' as const,
+      ownerSessionId: 'cur',
+      kind: 'child' as const,
+      command: 'ext',
+      cwd: '/w/a',
+      status: 'running' as const,
+      code: null,
+      truncated: false,
+      ...(childStatus ? { childStatus } : {}),
+      ...(childLabel ? { childLabel } : {}),
+    })
+    list = [
+      childJob('child:wait', 'waiting_approval', 'Approval task'),
+      childJob('child:pause', 'paused', 'Paused review'),
+      childJob('child:disc', 'disconnected'),
+    ] as unknown as typeof list
+    const zhChildren = (await runSlash(zhApp, '/jobs')).text ?? ''
+    expect(zhChildren).toContain('1. Approval task [待审批] · 子任务 · 智能体')
+    expect(zhChildren).toContain('2. Paused review [已暂停] · 子任务 · 智能体')
+    expect(zhChildren).toContain('3. ext [已断开] · 子任务 · 智能体')
+    expect(zhChildren).not.toContain('[运行中]')
+    const enChildren = (await runSlash(app, '/jobs')).text ?? ''
+    expect(enChildren).toContain('1. Approval task [waiting approval] · child · agent')
+    expect(enChildren).toContain('2. Paused review [paused] · child · agent')
+    expect(enChildren).toContain('3. ext [disconnected] · child · agent')
+  })
+
   it('/images hands its arguments to the inline image switch', async () => {
     const command = vi.fn(() => 'done')
     expect(await runSlash(appWith({}, {}, { images: { command } }), '/images off')).toEqual({ text: 'done' })

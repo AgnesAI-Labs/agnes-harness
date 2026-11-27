@@ -4,6 +4,7 @@ import { basename, dirname, join } from 'node:path'
 import {
   DEFAULT_REFINEMENT_BASE_URL,
   isAllowedRefinementBaseUrl,
+  LEGACY_REFINEMENT_BASE_URL,
   REFINEMENT_ENDPOINTS,
 } from '@agnes/distribution/refinement-model'
 import type { RefinementModelOption, RefinementSettings, RefinementSettingsSnapshot } from '@agnes/protocol'
@@ -55,13 +56,13 @@ export interface RefinementSettingsPort {
   current(): RefinementSettingsSnapshot
 }
 
-type StoredSettings = { settings: RefinementSettings; nonce?: string; modelOption?: RefinementModelOption }
 type Endpoints = [string, ...string[]]
 type EffectiveSnapshot = RefinementSettingsSnapshot & {
   settings: RefinementSettings & { baseUrl: string }
   endpoints: Endpoints
 }
 type CurrentSnapshot = EffectiveSnapshot & { modelOption?: RefinementModelOption }
+type StoredSettings = Pick<CurrentSnapshot, 'settings' | 'modelOption'> & { nonce?: string }
 /** What the files said when last read, and how to tell whether they still say it. */
 type Resolved = {
   snapshot: CurrentSnapshot
@@ -161,11 +162,11 @@ export class RefinementSettingsStore implements RefinementSettingsPort {
   }
 
   /**
-   * `current()` with the service key it resolved, for a dispatch: one resolution answers both, so a
-   * request reads the key file at most once, and not at all while nothing changed.
+   * Recheck the files at dispatch so a worker sees a switch saved by the daemon even inside the
+   * hot-read window. One resolution pairs the key with its settings and revision.
    */
   currentWithKey(): { snapshot: CurrentSnapshot; key: string | undefined } {
-    const { snapshot, key } = this.resolve(false)
+    const { snapshot, key } = this.resolve(true)
     return { snapshot: copy(snapshot), key }
   }
 
@@ -198,12 +199,7 @@ export class RefinementSettingsStore implements RefinementSettingsPort {
   }
 
   private snapshotOf(stored: StoredSettings | undefined, key: string | undefined): CurrentSnapshot {
-    const raw = stored?.settings ?? DEFAULT_REFINEMENT_SETTINGS
-    const baseUrl = raw.baseUrl ?? this.endpoints[0]
-    const retired = !isAllowedRefinementBaseUrl(baseUrl, this.endpoints)
-    const settings = retired
-      ? { ...raw, enabled: false as const, baseUrl: this.endpoints[0] }
-      : { ...raw, baseUrl }
+    const settings = stored?.settings ?? { ...DEFAULT_REFINEMENT_SETTINGS, baseUrl: this.endpoints[0] }
     const revision = refinementSettingsRevision(settings, stored?.nonce)
     const endpoints: Endpoints = [...this.endpoints]
     if (settings.credentialRef && !key)
@@ -212,7 +208,7 @@ export class RefinementSettingsStore implements RefinementSettingsPort {
       settings,
       revision,
       endpoints,
-      ...(!retired && stored?.modelOption ? { modelOption: stored.modelOption } : {}),
+      ...(stored?.modelOption ? { modelOption: stored.modelOption } : {}),
     }
   }
 
@@ -220,6 +216,21 @@ export class RefinementSettingsStore implements RefinementSettingsPort {
   resolveBaseUrl(baseUrl = this.endpoints[0]): string {
     if (!isAllowedRefinementBaseUrl(baseUrl, this.endpoints)) throw failure('CONFIG_INVALID_INPUT')
     return baseUrl
+  }
+
+  /** Check the transition before sending a key to the catalogue, and again before committing a save. */
+  prepareSave(settings: RefinementSettings, expectedRevision: string) {
+    if (!validateAgainst(Schema, settings).ok) throw failure('CONFIG_INVALID_INPUT')
+    const current = copy(this.resolve(true).snapshot)
+    if (current.revision !== expectedRevision) throw failure('CONFIG_REVISION_CONFLICT', { current })
+    const baseUrl = this.resolveBaseUrl(settings.baseUrl)
+    // A gateway switch is a separate paused save. Its next revision can bind a key for that site.
+    if (
+      baseUrl !== current.settings.baseUrl &&
+      (settings.enabled || settings.credentialRef || settings.model)
+    )
+      throw failure('CONFIG_INVALID_INPUT')
+    return { baseUrl, current }
   }
 
   /**
@@ -232,25 +243,11 @@ export class RefinementSettingsStore implements RefinementSettingsPort {
     expectedRevision: string,
     modelOption?: RefinementModelOption,
   ): { revision: string } {
-    if (
-      !validateAgainst(Schema, settings).ok ||
-      (modelOption &&
-        (!validateAgainst(ModelOptionSchema, modelOption).ok || modelOption.id !== settings.model))
-    )
-      throw failure('CONFIG_INVALID_INPUT')
-    const baseUrl = this.resolveBaseUrl(settings.baseUrl)
-    const current = copy(this.resolve(true).snapshot)
-    if (current.revision !== expectedRevision) throw failure('CONFIG_REVISION_CONFLICT', { current })
+    const { baseUrl, current } = this.prepareSave(settings, expectedRevision)
     const { credentialRef, model } = settings
-    // A disabled profile may switch gateways while retaining a key reference that needs recovery.
-    if (
-      credentialRef &&
-      !this.serviceKey(credentialRef) &&
-      (settings.enabled ||
-        credentialRef !== current.settings.credentialRef ||
-        baseUrl === current.settings.baseUrl)
-    )
+    if (modelOption && (!validateAgainst(ModelOptionSchema, modelOption).ok || modelOption.id !== model))
       throw failure('CONFIG_INVALID_INPUT')
+    if (credentialRef && !this.serviceKey(credentialRef)) throw failure('CONFIG_INVALID_INPUT')
     const clean = { ...settings, baseUrl }
     const option =
       modelOption ??
@@ -317,7 +314,13 @@ export class RefinementSettingsStore implements RefinementSettingsPort {
         (!validateAgainst(ModelOptionSchema, option).ok || option.id !== settings.model)
       )
         return undefined
-      return { settings, ...(nonce ? { nonce } : {}), ...(option ? { modelOption: option } : {}) }
+      // Files without an address were bound to the original default. Resolve retirement before
+      // looking up a key, so neither discovery nor dispatch can pair it with the fallback address.
+      const baseUrl = settings.baseUrl ?? LEGACY_REFINEMENT_BASE_URL
+      const version = nonce ? { nonce } : {}
+      if (!isAllowedRefinementBaseUrl(baseUrl, this.endpoints))
+        return { ...version, settings: { enabled: false, mode: settings.mode, baseUrl: this.endpoints[0] } }
+      return { ...version, settings: { ...settings, baseUrl }, ...(option ? { modelOption: option } : {}) }
     } catch {
       return undefined
     }

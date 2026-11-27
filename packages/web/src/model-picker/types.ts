@@ -46,6 +46,9 @@ export type ModelPickerProps = {
   onAuxiliarySelect?(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean>
   onError(error: unknown): void
   onSelect(option: ModelPickerOption): Promise<boolean>
+  /** Replaces available choices, including for existing sessions. An empty list blocks selection;
+   * undefined restores the backend catalog. A session's recorded model is never added as a choice. */
+  onCatalogChange?(models: readonly ModelPickerOption[] | undefined): void
   /**
    * Effort and budget changes; without this callback the panel only lists models.
    * Submit both together: app restores missing fields to null, so sending one would reset the other.

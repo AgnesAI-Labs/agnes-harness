@@ -15,6 +15,7 @@ export {
   resetChildAgentAllowlists,
   setChildAgentAllowlist,
 } from '@agnes/core-child-control/child/allowlist'
+export { ChildLock } from '@agnes/core-child-control/child/child-lock'
 export {
   capToMicrocredits,
   chargeToMicrocredits,
@@ -27,24 +28,45 @@ export {
   trackExternalChild,
   updateExternalChild,
 } from '@agnes/core-child-control/child/directory'
-export { createChildEventQueue } from '@agnes/core-child-control/child/events'
+export {
+  ChildEventBus,
+  createChildEventQueue,
+  createCursorEventStream,
+} from '@agnes/core-child-control/child/events'
+export {
+  type ProjectedChildStatus,
+  projectChildStatus,
+  resolveTerminalChildState,
+} from '@agnes/core-child-control/child/status-projection'
 export type { ChildControlStore } from '@agnes/core-child-control/child/store'
 export { hasChildControl, recoverCreatingChildAttempts } from '@agnes/core-child-control/child/store'
 export type {
+  AppendChildEventInput,
+  AppendChildEventResult,
   BeginChildAttemptInput,
   CancelCreatingChildInput,
   CancelledChildFact,
+  ChildCheckpointRecord,
   ChildCreationCasInput,
   ChildCreationPhase,
+  ChildEventEnvelope,
+  ChildEventKind,
+  ChildEventReplayResult,
+  ChildExecutionState,
+  ChildLeaseRecord,
   ChildTaskRecord,
   CreateDelegatedChildInput,
   CreateDelegatedChildResult,
   DeferCreatingChildInput,
   DeferredChildFact,
+  NonInterruptibleStopReceipt,
   PlannedWorkspace,
+  RecapFactSnapshot,
   ReserveRequest,
   ReserveResult,
   SettleRequest,
+  SubtaskArtifactRef,
+  SubtaskFactRecord,
   TreeUsage,
 } from '@agnes/core-child-control/child/types'
 export { canTransitionChildState, isTerminalChildState } from '@agnes/core-child-control/child/types'
@@ -211,7 +233,22 @@ export {
 export { DEFAULT_LOOP } from '@agnes/extension-api'
 export type { Provider } from '@agnes/protocol'
 export { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
+export {
+  bindChildPrompt,
+  childPromptSections,
+  compactChildHandoff,
+  RESULT_DELIVERY_GUIDANCE,
+} from './child/child-prompt-budget.js'
+export { deliverChildStateNotice } from './child/completion-notice.js'
+export { ChildEventStream, supportsChildEvents } from './child/event-stream.js'
 export { childFailureSuffix } from './child/failure.js'
+export {
+  attachChildHeartbeat,
+  ChildHeartbeatEmitter,
+  ChildLeaseWatchdog,
+  childEventStreamFor,
+  protectChildLeases,
+} from './child/heartbeat.js'
 export {
   type IdleChildRetirementOptions,
   type IdleChildRetirementResult,
@@ -219,13 +256,49 @@ export {
 } from './child/idle-retirement.js'
 export { bindChildAgentSession } from './child/loop-port.js'
 export { type ChildModelExclusion, type ChildModelScope, setChildModelScope } from './child/model-scope.js'
+export {
+  childStopDrain,
+  dispatchChildEffect,
+  drainChildStop,
+  trackChildDispatch,
+} from './child/non-interruptible-receipt.js'
+export {
+  ChildNoticeCoalescer,
+  deliverCoalescedChildCompletion,
+  POLL_WAIT_LADDER_MS,
+  pollWaitMetadata,
+} from './child/notice-coalescer.js'
+export { ChildLifecycleControls, childControls } from './child/pause-control.js'
 export type { InProcessChildBackend, ResidentStart, ResidentTurn } from './child/provider.js'
 export {
   IN_PROCESS_CHILD_CAPABILITIES,
   IN_PROCESS_CHILD_PROVIDER_ID,
   inProcessChildAgentProvider,
 } from './child/provider.js'
+export {
+  composeRecapMarkdown,
+  previewOutput,
+  renderDeterministicNarrative,
+  renderTruthBase,
+} from './child/recap-formatter.js'
+export { generateHybridRecap } from './child/recap-narrative.js'
+export { buildChildRecap, buildRecapFactSnapshot, childBatchCounts } from './child/recap-snapshot.js'
+export { guardParentRecapReply, guardSessionRecapExit, validateRecapOutput } from './child/recap-validator.js'
 export { bindChildFactory, childBackend, unbindChildFactory } from './child/sessions.js'
+export { humanChildState, projectChildControls } from './child/status.js'
+export {
+  ChildAdmissionGuard,
+  computeRemainingTreeCredits,
+  formatSpawnBudgetRefusal,
+} from './child/tree-admission.js'
+export {
+  checkUncertainRetryFence,
+  listUncertainEffects,
+  markUncertainEffectsVerified,
+  recordUncertainEffect,
+  resolveUncertainEffectFromHuman,
+  restoreUncertainEffectFence,
+} from './execution/turn/unknown-outcome-fence.js'
 export { HookBlockedError } from './hooks/block.js'
 export { type DispatchContext, HOOK_UNHANDLED, HookEngine, WORKSPACE_HOOK_SANDBOX } from './hooks/engine.js'
 export { type SessionHookInputs, SessionHookPort } from './hooks/port.js'

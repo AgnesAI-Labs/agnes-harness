@@ -2,8 +2,10 @@
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true })
 
 import { Context } from '@agnes/cordis'
+import { remoteFrontendSessionPath } from '@agnes/protocol'
 import type { UiCustomComponent } from '@agnes/protocol/gen/intelligent-ui'
 import type { ClientModuleRosterRow } from '@agnes/protocol/gen/package-admin'
+import { UI_COMPONENT_MODULE_BYTES } from '@agnes/protocol/intelligent-ui'
 import { ThemeService } from '@agnes/web-client'
 import { IntelligentCatalog } from '@agnes/web-ui'
 import { act } from 'react'
@@ -13,6 +15,8 @@ import {
   CustomUiHost,
   selectCustomUiModule,
 } from '../../../web-conversation/src/intelligent-ui/custom-host.js'
+import { authorizeRemoteFrontend, forgetRemoteAccess } from '../../src/remote-authorization.js'
+import { backendResourceUrl } from '../../src/remote-frontend.js'
 import { financeRecord } from './fixture.js'
 
 const declaration = {
@@ -39,7 +43,7 @@ const surface = {
   components: [component, ...financeRecord().surface.components],
   data: { ...financeRecord().surface.data, custom: { amount: 12 } },
 }
-const row: ClientModuleRosterRow = {
+const row = {
   rowId: 'web:finance',
   moduleName: 'finance',
   packageId: 'finance',
@@ -47,9 +51,19 @@ const row: ClientModuleRosterRow = {
   phase: 'ready',
   revision: 'sha512-reviewed',
   contentDigest: `sha256-${'a'.repeat(64)}`,
-  entryUrl: '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/sha512-reviewed/diff.mjs',
+  rendererDataUrl:
+    '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/sha512-reviewed/diff.mjs?agnes_ui_source=1',
+  binding: {
+    owner: 'web:finance',
+    packageId: 'finance',
+    profileId: 'local-dev',
+    integrity: 'sha512-reviewed',
+    lifetime: 'session',
+    availability: 'history-only',
+    activationId: 'archived',
+  },
   intelligentComponents: [declaration],
-}
+} satisfies ClientModuleRosterRow
 const base = { component, surface, disabled: false, onAction: vi.fn() }
 const message = (frame: HTMLIFrameElement, data: unknown) =>
   window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow, origin: 'null' }))
@@ -64,11 +78,15 @@ describe('reviewed custom host', () => {
     } finally {
       compile.mockRestore()
     }
+    const { rendererDataUrl: _source, ...legacy } = row
     for (const rows of [
       [],
       [{ ...row, phase: 'blocked' as const }],
       [{ ...row, enabled: false }],
-      [{ ...row, entryUrl: '/plugins/current/diff.mjs' }],
+      [{ ...row, rendererDataUrl: '/plugins/current/diff.mjs?agnes_ui_source=1' }],
+      [{ ...legacy, entryUrl: '/plugins/generations/old/diff.mjs' }],
+      [{ ...row, entryUrl: '/plugins/generations/old/diff.mjs' }],
+      [{ ...row, rendererDataUrl: row.rendererDataUrl.replace('?agnes_ui_source=1', '') }],
       [{ ...row, contentDigest: '' }],
       [{ ...row, intelligentComponents: [declaration, declaration] }],
       [{ ...row, intelligentComponents: [{ ...declaration, maxPropsBytes: 1 }] }],
@@ -83,12 +101,40 @@ describe('reviewed custom host', () => {
     ).toBeUndefined()
   })
   it('uses text for an untrusted module and isolates renderer failure while gating action ids', async () => {
+    const settings = (window as unknown as { happyDOM: { settings: { disableIframePageLoading: boolean } } })
+      .happyDOM.settings
+    const prevIframe = settings.disableIframePageLoading
+    settings.disableIframePageLoading = true
     const container = document.createElement('div')
     document.body.append(container)
     const root = createRoot(container)
     const theme = new ThemeService(new Context(), 'light')
+    const remote = 'https://8443-fixture.ap-shanghai.tencentags.com'
+    const frameOrigin = `http://${location.hostname}:49997`
+    const token = `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`
+    const prefix = remoteFrontendSessionPath(token)
+    const renderer = 'export const renderers = {}'
+    const fetchModule = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => Response.json({ source: renderer }))
+    const meta = document.createElement('meta')
+    meta.id = 'agnes-config'
+    meta.dataset.cloudOrigin = frameOrigin
+    document.head.append(meta)
+    localStorage.setItem(
+      `agnes.cloud.credential.v1:${remote}`,
+      'secret://generic/11111111-1111-1111-1111-111111111111',
+    )
+    await authorizeRemoteFrontend(remote, new AbortController().signal, async () =>
+      Response.json({ token, expiresAt: Date.now() + 60_000, proxied: true }),
+    )
     let rows: ClientModuleRosterRow[] = [{ ...row, phase: 'blocked' }]
-    const source = { theme, list: async () => rows, subscribe: () => () => {} }
+    const source = {
+      theme,
+      list: async () => rows,
+      subscribe: () => () => {},
+      resolveUrl: (url: string) => backendResourceUrl(url, remote, frameOrigin),
+    }
     const onAction = vi.fn()
     const render = async (disabled = false) => {
       await act(async () =>
@@ -109,6 +155,32 @@ describe('reviewed custom host', () => {
       )
       const frame = container.querySelector('iframe')!
       expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
+      expect(frame.getAttribute('src')).toBe('/__agnes/ui-frame')
+      expect(fetchModule).toHaveBeenCalledWith(`${frameOrigin}${prefix}${row.rendererDataUrl}`, {
+        signal: expect.any(AbortSignal),
+        credentials: 'omit',
+        redirect: 'error',
+        referrerPolicy: 'no-referrer',
+      })
+      const post = vi.fn()
+      Object.defineProperty(frame, 'contentWindow', { value: { postMessage: post } })
+      await act(async () => message(frame, { type: 'agnes-ui-action', id: 'confirm' }))
+      expect(onAction).not.toHaveBeenCalled()
+      await act(async () => message(frame, { type: 'agnes-ui-loaded' }))
+      await act(async () => message(frame, { type: 'agnes-ui-loaded' }))
+      expect(post.mock.calls).toEqual([
+        [
+          {
+            type: 'agnes-ui-init',
+            source: renderer,
+            kind: declaration.kind,
+            props: { amount: 12 },
+            theme: 'light',
+            locale: 'en',
+          },
+          '*',
+        ],
+      ])
       await act(async () => message(frame, { type: 'agnes-ui-action', id: 'undeclared' }))
       expect(onAction).not.toHaveBeenCalled()
       await act(async () => message(frame, { type: 'agnes-ui-ready' }))
@@ -126,9 +198,49 @@ describe('reviewed custom host', () => {
       expect(container.querySelector('iframe')).toBeNull()
       await act(async () => second.unmount())
     } finally {
+      fetchModule.mockRestore()
+      settings.disableIframePageLoading = prevIframe
+      forgetRemoteAccess(remote)
+      localStorage.removeItem(`agnes.cloud.credential.v1:${remote}`)
+      meta.remove()
       container.remove()
     }
   })
+  it.each(['unavailable', 'oversized', 'raw-javascript', 'unmounted'])(
+    'leaves the fallback when module loading is %s',
+    async (mode) => {
+      const container = document.body.appendChild(document.createElement('div'))
+      const root = createRoot(container)
+      const fetchModule = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, options) => {
+        if (mode === 'unmounted')
+          return new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true })
+          })
+        if (mode === 'unavailable') return new Response('unavailable', { status: 503 })
+        if (mode === 'raw-javascript')
+          return new Response('export const renderers = {}', {
+            headers: { 'content-type': 'text/javascript' },
+          })
+        return Response.json({ source: 'é'.repeat(UI_COMPONENT_MODULE_BYTES / 2 + 1) })
+      })
+      const source = {
+        theme: new ThemeService(new Context(), 'light'),
+        list: async () => [row],
+        subscribe: () => () => {},
+      }
+      try {
+        await act(async () => root.render(<CustomUiHost {...base} source={source} sessionId="s" />))
+        expect(fetchModule).toHaveBeenCalledOnce()
+        expect(container.textContent).toContain(declaration.fallback)
+        expect(container.querySelector('iframe')).toBeNull()
+      } finally {
+        await act(async () => root.unmount())
+        if (mode === 'unmounted') expect(fetchModule.mock.calls[0]?.[1]?.signal?.aborted).toBe(true)
+        fetchModule.mockRestore()
+        container.remove()
+      }
+    },
+  )
   it('isolates a synchronous renderer error and leaves the preset table working', async () => {
     const container = document.createElement('div')
     const root = createRoot(container)

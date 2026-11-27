@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import type { CheckpointSeam } from '@agnes/core'
+import type { CheckpointSeam } from '@agnes/extension-api/seams'
 import type { HostFs, SeamFactory, SeamInitContext } from '../../../src/seam-init.js'
 import { type Captured, ShadowGit } from './shadow-git.js'
 

@@ -44,7 +44,14 @@ export function tokenize(text: string): Token[] {
   for (;;) {
     let kind = scanner.scan()
     if (kind === K.eof) return out
-    if (kind === K.slash || kind === K.slashEquals) {
+    // The code scanner leaves a bare hash at the same offset (for example JSX text before {seq}).
+    if (scanner.getTokenStart() === scanner.getTokenEnd() && text[scanner.getTokenStart()] === '#')
+      kind = scanner.reScanHashToken()
+    const jsxClose =
+      prev?.text === '<' &&
+      prev.start + 1 === scanner.getTokenStart() &&
+      /^\/(?:[A-Za-z][\w.:-]*\s*)?>/.test(text.slice(scanner.getTokenStart()))
+    if ((kind === K.slash || kind === K.slashEquals) && !jsxClose) {
       const endsExpression =
         prev !== undefined &&
         [K.ident, K.closeParen, K.closeBracket, K.closeBrace, K.number, K.string, K.template].includes(

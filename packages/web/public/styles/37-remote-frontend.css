@@ -1,0 +1,31 @@
+@layer app {
+  .remote-connection-page {
+    grid-column: 1 / -1;
+    align-items: center;
+    padding: clamp(var(--s24), 8dvh, 96px) var(--s16);
+    overflow-y: auto;
+  }
+  .remote-connection-page > .agnes-settings-page {
+    flex: 0 0 auto;
+    width: min(100%, 640px);
+    padding: var(--s24);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-main-page);
+    background: var(--agnes-bg-surface);
+  }
+  .remote-connection-page .agnes-settings-page-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s16);
+    padding-bottom: var(--s16);
+  }
+  .remote-connection-page .agnes-settings-page-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s12);
+  }
+  .remote-connection-page p {
+    margin: 0;
+  }
+}

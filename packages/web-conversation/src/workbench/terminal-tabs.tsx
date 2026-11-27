@@ -9,6 +9,7 @@ import {
   Popover,
   SettingsInput,
   StatusDot,
+  type StatusDotTone,
 } from '@agnes/web-ui'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
@@ -51,7 +52,31 @@ export function TerminalTabs(props: Props) {
       {tabs.map((tab, index) => {
         if (!observed.current.has(tab.id)) observed.current.set(tab.id, now)
         const human = tab.owner === 'human',
-          running = tab.status === 'running'
+          running = tab.status === 'running',
+          isChild = tab.kind === 'child',
+          childState = isChild ? (tab.childStatus ?? tab.status) : undefined,
+          activelyRunning = isChild ? childState === 'running' || childState === 'starting' : running
+        const label = name(tab)
+        const dotTone: StatusDotTone = isChild
+          ? activelyRunning
+            ? 'accent'
+            : childState === 'waiting_approval' || childState === 'paused'
+              ? 'warning'
+              : childState === 'disconnected' || childState === 'failed'
+                ? 'danger'
+                : childState === 'completed'
+                  ? 'success'
+                  : 'neutral'
+          : running
+            ? 'success'
+            : tab.code === 0
+              ? 'neutral'
+              : 'danger'
+        const statusSummary = isChild
+          ? t(`workbench.terminal.childStatus.${childState}`)
+          : running
+            ? t('workbench.terminal.status.running')
+            : t('workbench.terminal.exitCode', { code: tab.code ?? '–' })
         const actions: MenuItem[] = [
           ...(human
             ? [
@@ -121,6 +146,7 @@ export function TerminalTabs(props: Props) {
                         className="workbench-terminal-select"
                         data-testid="terminal-tab"
                         id={`terminal-tab-${tab.id}`}
+                        title={`${label} · ${statusSummary}`}
                         aria-controls="terminal-job-content"
                         aria-pressed={active === tab.id}
                         tabIndex={
@@ -154,10 +180,7 @@ export function TerminalTabs(props: Props) {
                           }
                         }}
                       >
-                        <StatusDot
-                          running={running}
-                          tone={running ? 'success' : tab.code === 0 ? 'neutral' : 'danger'}
-                        />
+                        <StatusDot running={activelyRunning} tone={dotTone} />
                         <span
                           className="workbench-terminal-prompt"
                           role="img"
@@ -168,11 +191,11 @@ export function TerminalTabs(props: Props) {
                         >
                           {!human && <Icon name="sparkles" />}
                         </span>
-                        <span className="workbench-terminal-name">{name(tab)}</span>
+                        <span className="workbench-terminal-name">{label}</span>
                         <small className="workbench-terminal-runtime">
-                          {running
+                          {activelyRunning
                             ? `${Math.max(0, Math.floor((now - (observed.current.get(tab.id) ?? now)) / 1000))}s`
-                            : t('workbench.terminal.exitCode', { code: tab.code ?? '–' })}
+                            : statusSummary}
                         </small>
                       </Button>
                     }

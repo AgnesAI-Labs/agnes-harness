@@ -230,6 +230,23 @@ describe('hashDirectory', () => {
     expect(await withFreshDigests(() => hashDirectoryAsync(root))).toBe(fresh)
   })
 
+  it('compares requested leaves against fresh bytes while returning the same whole-tree digest', async () => {
+    const file = join(root, 'payload')
+    const old = 1_700_000_000
+    writeFileSync(file, 'first')
+    utimesSync(file, old, old)
+    const before = hashDirectory(root, { exclude: [] })
+    const verifyFiles = new Map([['payload', Buffer.from('first')]])
+    await expect(hashDirectoryAsync(root, { exclude: [], verifyFiles })).resolves.toBe(before)
+    writeFileSync(file, 'other')
+    utimesSync(file, old, old)
+    await expect(hashDirectoryAsync(root, { exclude: [], verifyFiles })).rejects.toBeDefined()
+    verifyFiles.set('payload', Buffer.from('other'))
+    await expect(hashDirectoryAsync(root, { exclude: [], verifyFiles })).resolves.not.toBe(before)
+    verifyFiles.set('not-in-tree', Buffer.from('other'))
+    await expect(hashDirectoryAsync(root, { exclude: [], verifyFiles })).rejects.toBeDefined()
+  })
+
   it('keeps digests across a routine write boundary', () => {
     // Every Host publication enters and leaves one; clearing here made each worker start hash again.
     const file = join(root, 'payload'),

@@ -1,5 +1,33 @@
-import { preserveRouteParams, searchParamRoute } from '@agnes/web-ui'
+import { preserveRouteParams, SETTINGS_ROUTE_EVENT, searchParamRoute } from '@agnes/web-ui'
 import { type SettingsMoveTarget, settingsMoved, settingsRoute } from '@agnes/web-units/shell'
+import { backendFrame, requestLocalManagement } from './backends/frame-context.js'
+import { hasPendingCloudBoot, localLocationUrl } from './backends/local-workbench-bus.js'
+
+export const isDeferredCloudSettings = (): boolean =>
+  !backendFrame() && (hasPendingCloudBoot() || new URLSearchParams(location.search).has('remote'))
+
+export function redirectFrameSettingsLink(
+  section: string | null = new URLSearchParams(location.search).get('settings'),
+): boolean {
+  if (!backendFrame() || !section) return false
+  const relayed = section === 'model/account' ? 'model' : section
+  if (!requestLocalManagement({ kind: 'settings', section: relayed })) return false
+  clearSettingsLink()
+  return true
+}
+
+export function applySettingsSectionRoute(section: string): string {
+  const [head = section, ...subpages] = section.split('/').filter(Boolean)
+  if (subpages.length) {
+    history.replaceState(
+      history.state,
+      '',
+      searchParamRoute('settings').href([settingsRoute(head).id, ...subpages]),
+    )
+    window.dispatchEvent(new Event(SETTINGS_ROUTE_EVENT))
+  }
+  return head
+}
 
 /** The new home of the page an old `?settings=<id>` link names, when it left the settings dialog. */
 export function movedSettingsTarget(id: string): SettingsMoveTarget | undefined {
@@ -14,7 +42,8 @@ export function movedSettingsTarget(id: string): SettingsMoveTarget | undefined 
  * list keep their `settings` value: the caller opens those from the sidebar.
  */
 export function rewriteMovedSettingsLink(): SettingsMoveTarget | undefined {
-  const url = new URL(location.href)
+  if (isDeferredCloudSettings() || redirectFrameSettingsLink()) return undefined
+  const url = localLocationUrl()
   const id = url.searchParams.get('settings')
   const target = id ? movedSettingsTarget(id) : undefined
   if (target?.kind !== 'page') return target
@@ -39,7 +68,7 @@ export function openMovedSettingsLink(
   if (!target || target.kind === 'page') return false
   if (target.kind === 'session-search') actions.searchSessions()
   else actions.showArchived()
-  const url = new URL(location.href)
+  const url = localLocationUrl()
   if (url.searchParams.get('settings') === id) {
     url.searchParams.delete('settings')
     history.replaceState(history.state, '', preserveRouteParams(url))
@@ -62,7 +91,8 @@ export function openMovedSettings(
  * instead of opening the dialog again.
  */
 export function clearSettingsLink(): void {
-  const url = new URL(location.href)
+  if (isDeferredCloudSettings()) return
+  const url = localLocationUrl()
   if (!url.searchParams.has('settings')) return
   url.searchParams.delete('settings')
   url.searchParams.delete('account')
@@ -78,21 +108,53 @@ export function needsModelNotice(state: { modelsRead: boolean; models: number; a
   return state.modelsRead && state.models === 0 && state.accounts > 0
 }
 
+export function settingsLinkTarget(link: { id: string; anchor: string }): string {
+  const anchored = link.anchor.replace(/^settings-subsection-/, '')
+  const anchoredRoute = settingsRoute(anchored)
+  return anchoredRoute.id === link.id && anchoredRoute.anchor === link.anchor ? anchored : link.id
+}
+
+export function resolveRestoredSettingsLink(
+  close: () => void,
+  openHome: (page: string, tab?: string) => void,
+): { id: string; target: string } | undefined {
+  if (redirectFrameSettingsLink()) {
+    close()
+    return undefined
+  }
+  const moved = rewriteMovedSettingsLink()
+  if (moved?.kind === 'page') {
+    close()
+    openHome(moved.page, moved.tab)
+    return undefined
+  }
+  const link = consumeSettingsLink()
+  if (!link.id) {
+    close()
+    return undefined
+  }
+  return { id: link.id, target: settingsLinkTarget(link) }
+}
+
 /** Read the settings route, normalizing legacy page/anchor links without consuming it. */
 export function consumeSettingsLink(): { id: string; anchor: string } {
+  const deferred = isDeferredCloudSettings()
   const address = searchParamRoute('settings')
-  const levels = address.read()
+  const url = localLocationUrl()
+  const levels = deferred
+    ? (url.searchParams.get('settings')?.split('/').filter(Boolean) ?? [])
+    : address.read()
   const requested = levels[0] ?? ''
   const route = settingsRoute(requested)
-  const url = new URL(location.href)
   const subsection = url.hash.startsWith('#settings-subsection-')
   const anchor = requested ? (subsection ? url.hash.slice(1) : (route.anchor ?? '')) : ''
-  if (requested) {
-    const subpages = levels.slice(1)
-    history.replaceState(history.state, '', address.href([route.id, ...subpages]))
+  const currentHref = `${location.pathname}${location.search}${location.hash}`
+  if (!deferred && requested) {
+    const nextHref = address.href([route.id, ...levels.slice(1)])
+    if (nextHref !== currentHref) history.replaceState(history.state, '', nextHref)
   }
-  if (subsection && !requested) {
-    const normalized = new URL(location.href)
+  if (!deferred && subsection && !requested) {
+    const normalized = localLocationUrl()
     normalized.hash = ''
     history.replaceState(history.state, '', normalized)
   }

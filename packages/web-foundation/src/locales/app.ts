@@ -3,6 +3,11 @@ import type { LocaleCatalog } from '@agnes/web-client'
 /** Host orchestration text: reconnect, plugin command authorization, approvals, recovery, new tasks, model/permission changes and connection events. */
 export const appLocaleCatalog: LocaleCatalog = {
   en: {
+    'app.uiPreparation.loading': 'Preparing your conversation',
+    'app.uiPreparation.hint': 'Your conversation will appear here when it is ready.',
+    'app.uiPreparation.failed': 'Your conversation could not be loaded',
+    'app.uiPreparation.failedHint': 'Check your connection and try again.',
+    'app.uiPreparation.retry': 'Retry interface loading',
     'app.notification.close': 'Dismiss notification',
     'app.reconnect.waiting':
       'Waiting for the backend to recover; the page reloads automatically. If only the backend restarted, re-run the Web start command as well.',
@@ -194,6 +199,11 @@ export const appLocaleCatalog: LocaleCatalog = {
       'The content is not shown in full ({count}). The hidden part takes effect with the call too, so this approval offers no “allow for the session”; only “allow once” or “reject”.',
   },
   'zh-CN': {
+    'app.uiPreparation.loading': '正在准备会话',
+    'app.uiPreparation.hint': '准备好后，对话将自动显示在这里。',
+    'app.uiPreparation.failed': '暂时无法加载会话',
+    'app.uiPreparation.failedHint': '请检查连接后重试。',
+    'app.uiPreparation.retry': '重新加载界面',
     'app.notification.close': '关闭通知',
     'app.reconnect.waiting':
       '正在等待后台恢复，恢复后页面会自动重新载入。只重启了后台时，请同时重新运行 Web 启动命令。',

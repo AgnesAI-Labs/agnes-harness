@@ -12,6 +12,8 @@ export type ChildAgentCapabilities = Readonly<{
   continuable: boolean
   /** Stops the current turn without disposing the child. */
   interrupt: boolean
+  /** Supports checkpoint-boundary pause and resume while preserving context and artifacts. */
+  pause?: boolean
   /** Honors `options.model`. */
   modelSelection: boolean
   /** Can seed the child from the parent conversation (`options.fork`). */
@@ -27,6 +29,9 @@ export type ChildAgentCapabilities = Readonly<{
 export type ChildAgentStatus =
   | 'starting'
   | 'running'
+  | 'waiting_approval'
+  | 'paused'
+  | 'disconnected'
   | 'idle'
   | 'completed'
   | 'failed'
@@ -34,9 +39,11 @@ export type ChildAgentStatus =
   | 'interrupted'
 
 export type ChildAgentEvent =
-  | { type: 'status'; status: ChildAgentStatus }
-  | { type: 'text'; text: string }
-  | { type: 'error'; message: string }
+  | { type: 'status'; status: ChildAgentStatus; seq?: number; ts?: number; eventId?: string }
+  | { type: 'heartbeat'; ts: number; leaseUntil: number; seq?: number; eventId?: string }
+  | { type: 'text'; text: string; seq?: number; ts?: number; eventId?: string }
+  | { type: 'error'; message: string; seq?: number; ts?: number; eventId?: string }
+  | { type: 'envelope'; envelope: import('./child-control.js').ChildEventEnvelope }
 
 export type ChildAgentResult = Readonly<{
   status: 'completed' | 'failed' | 'cancelled' | 'interrupted'
@@ -164,7 +171,11 @@ export type ChildAgentListing = Readonly<{
   id: string
   providerId: string
   status: ChildAgentStatus
+  executionState?: import('./child-control.js').ChildExecutionState
+  lastHeartbeatAt?: number
+  leaseUntil?: number
   continuable: boolean
+  label?: string
   text?: string
   role?: ChildRole
 }>

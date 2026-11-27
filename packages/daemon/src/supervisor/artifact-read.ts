@@ -11,10 +11,12 @@ import type {
   ArtifactReadRpcOptions,
   ArtifactReadScopeAuthority,
 } from '@agnes/daemon-rpc/local/methods/artifacts'
-import { createLocalArtifactReadStore } from '@agnes/host'
+import { ARTIFACT_RECLAIMED_FAILURE, createLocalArtifactReadStore, type ScanRead } from '@agnes/host'
+import type { EventEnvelope } from '@agnes/protocol'
 import {
   type ArtifactAuthorityProjectionWriter,
   createArtifactAuthorityProjection,
+  type TrustedArtifactHistory,
   type TrustedArtifactOwnership,
 } from './artifact-authority-projection.js'
 
@@ -37,6 +39,7 @@ export type ProductionArtifactAuthorityProjection = Readonly<{
   operationTimeoutMs: number
   scopeTimeoutMs: number
   readTimeoutMs?: number
+  history?: TrustedArtifactHistory
 }>
 
 export type DefaultProductionArtifactAuthorityProjection = Readonly<{
@@ -48,6 +51,7 @@ export type DefaultProductionArtifactAuthorityProjection = Readonly<{
   operationTimeoutMs: number
   scopeTimeoutMs: number
   readTimeoutMs?: number
+  history?: TrustedArtifactHistory
 }>
 
 function exactConfiguration(
@@ -93,7 +97,7 @@ export function composeDefaultProductionProjectedArtifactRead(
     const descriptors = exactConfiguration(
       input,
       ['artifactAuthority', 'sessionOwnership', 'limits', 'operationTimeoutMs', 'scopeTimeoutMs'],
-      ['readTimeoutMs'],
+      ['readTimeoutMs', 'history'],
     )
     const artifactAuthority = descriptors.artifactAuthority?.value
     const sessionOwnership = descriptors.sessionOwnership?.value
@@ -142,6 +146,9 @@ export function composeDefaultProductionProjectedArtifactRead(
       limits: descriptors.limits?.value as ProductionArtifactAuthorityProjection['limits'],
       operationTimeoutMs: descriptors.operationTimeoutMs?.value as number,
       scopeTimeoutMs: descriptors.scopeTimeoutMs?.value as number,
+      ...(descriptors.history === undefined
+        ? {}
+        : { history: descriptors.history.value as TrustedArtifactHistory }),
       ...(descriptors.readTimeoutMs === undefined
         ? {}
         : { readTimeoutMs: descriptors.readTimeoutMs.value as number }),
@@ -171,7 +178,7 @@ export function composeProductionProjectedArtifactRead(
       throw new Error('invalid')
     const descriptors = Object.getOwnPropertyDescriptors(input)
     const required = ['authority', 'writer', 'ownership', 'limits', 'operationTimeoutMs', 'scopeTimeoutMs']
-    const allowed = new Set([...required, 'readTimeoutMs'])
+    const allowed = new Set([...required, 'readTimeoutMs', 'history'])
     if (
       required.some(
         (key) => descriptors[key]?.enumerable !== true || !Object.hasOwn(descriptors[key] ?? {}, 'value'),
@@ -212,6 +219,9 @@ export function composeProductionProjectedArtifactRead(
       writer: descriptors.writer?.value as ArtifactAuthorityProjectionWriter,
       ownership: descriptors.ownership?.value as TrustedArtifactOwnership,
       inspector: Object.freeze({ inspect: artifacts.inspect.bind(artifacts) }),
+      ...(descriptors.history === undefined
+        ? {}
+        : { history: descriptors.history.value as TrustedArtifactHistory }),
     })
     const legacy: ProductionArtifactReadAuthority = Object.freeze({
       authority: descriptors.authority?.value as ArtifactReadAuthorityPort,
@@ -361,4 +371,85 @@ export function artifactMediaReadReply(
     mime: result.artifact.mime,
     data: Buffer.from(result.body).toString('base64'),
   })
+}
+
+function isAuthorizedChildMediaOrigin(event: Pick<EventEnvelope, 'origin' | 'trust'>): boolean {
+  return (
+    (['tool:computer_use', 'tool:document_read'].includes(event.origin) && event.trust === 'untrusted') ||
+    (event.origin === 'tool:read' && event.trust === 'trusted')
+  )
+}
+
+/**
+ * Authorize and read one image artifact referenced by a child session's own durable tool/result.
+ * Child sessions inherit ownership from their active root session rather than having independent
+ * entries in `sessionOwnership` or the top-level worker tail projection.
+ */
+export async function readChildSessionArtifactMedia(input: {
+  dataDir: string
+  maxArtifactBytes: number
+  sessionKey: string
+  rootKey: string
+  lane: string
+  nodeSeq: number
+  sha256: string
+  signal: AbortSignal
+  sessionFactRead: (sessionId: string) => ScanRead<EventEnvelope>
+  stillAuthorized: () => boolean
+}): Promise<Readonly<Record<string, unknown>> | undefined> {
+  if (!input.rootKey || !input.sessionKey.startsWith(`${input.rootKey}/`) || !input.stillAuthorized())
+    return undefined
+  try {
+    const [event] = await input.sessionFactRead(input.sessionKey)({
+      fromSeq: input.nodeSeq,
+      toSeq: input.nodeSeq,
+      order: 'asc',
+      limit: 1,
+    })
+    if (
+      !event ||
+      event.seq !== input.nodeSeq ||
+      event.type !== 'tool/result' ||
+      !isAuthorizedChildMediaOrigin(event) ||
+      (event.lane ?? 'main') !== input.lane
+    )
+      return undefined
+    const data = event.data as { content?: unknown; isError?: unknown } | null
+    if (data?.isError !== false || !Array.isArray(data.content)) return undefined
+    let mime: 'image/png' | 'image/jpeg' | undefined
+    for (const value of data.content) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+      const block = value as Record<string, unknown>
+      if (
+        block.type === 'resource_link' &&
+        block.uri === `artifact://${input.sha256}` &&
+        (block.mimeType === 'image/png' || block.mimeType === 'image/jpeg')
+      ) {
+        mime = block.mimeType
+        break
+      }
+    }
+    if (!mime || !input.stillAuthorized()) return undefined
+    const artifacts = createLocalArtifactReadStore({
+      dataDir: input.dataDir,
+      maxArtifactBytes: input.maxArtifactBytes,
+    })
+    try {
+      const ref = await artifacts.inspect({ sha256: input.sha256, mime }, input.signal)
+      const bytes = await artifacts.get(ref, input.signal)
+      if (!input.stillAuthorized()) return undefined
+      return Object.freeze({
+        sha256: ref.sha256,
+        size: ref.size,
+        mime: ref.mime,
+        data: Buffer.from(bytes).toString('base64'),
+      })
+    } catch (error) {
+      if (error === ARTIFACT_RECLAIMED_FAILURE && input.stillAuthorized())
+        return Object.freeze({ sha256: input.sha256, reclaimed: true })
+      return undefined
+    }
+  } catch {
+    return undefined
+  }
 }

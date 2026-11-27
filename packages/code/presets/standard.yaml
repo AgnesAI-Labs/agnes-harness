@@ -23,6 +23,6 @@ tools: { core: [read, write, edit, shell, grep, find, ls, todo, web_fetch, web_s
 mcp: { defer: true }
 # No cumulative step ceiling: completion, cancellation and failure end a normal task.
 budget: { per_request_cap: 4000, max_steps: null }
-subagent: { max_depth: 1, max_fan_out: 4 }
+subagent: { max_depth: 1, max_fan_out: 8 }
 ext_ui: { input: prompt, unattended: decline }
 hooks: [session_start, tool_call, tool_result, format_deviation]

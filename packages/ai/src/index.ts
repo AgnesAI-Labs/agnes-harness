@@ -29,6 +29,7 @@ export {
   createApiKeyProviderAdapters,
   createApiKeyProviderConfigs,
   getApiKeyProvider,
+  getModelCatalogueFacts,
 } from './adapters/pi/api-key-providers.js'
 export type {
   CodexCredential,
@@ -65,6 +66,8 @@ export {
 } from './adapters/pi/probe-models.js'
 export { PI_ADAPTER_APIS } from './adapters/pi/wire.js'
 export { validateModelBaseUrl } from './base-url.js'
+export type { ModelCatalogueFacts } from './catalogue-facts.js'
+export { readModelCatalogueFacts } from './catalogue-facts.js'
 export { isChatModelId } from './chat-model.js'
 export type { ContractStoreOptions } from './contract/store.js'
 export { FileContractStore, loadContractStore } from './contract/store.js'
@@ -89,6 +92,7 @@ export { Escalation } from './escalation.js'
 export { guardSequence, normalizeError, RETRYABLE, retryHint } from './guard.js'
 export type { KnownModel } from './known-models.js'
 export { knownModel } from './known-models.js'
+export { bindModelAdapterExternal } from './model-adapter-external.js'
 export { modelAdaptersPlugin } from './model-adapters.js'
 export type { InferenceDeps } from './provider.js'
 export { createProvider, runInference } from './provider.js'

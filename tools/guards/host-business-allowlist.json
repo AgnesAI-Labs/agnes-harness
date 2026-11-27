@@ -112,14 +112,6 @@
     "removal": "A4: inject provider refresh implementations through credential ports"
   },
   {
-    "path": "packages/host-infrastructure/src/adapters/session-workspace.ts",
-    "symbol": "<module>",
-    "literal": "@agnes/sandbox-remote",
-    "role": "import",
-    "max": 1,
-    "removal": "A4: extract the remote transport contract from its implementation package"
-  },
-  {
     "path": "packages/host-infrastructure/src/codex-login.ts",
     "symbol": "<module>",
     "literal": "@agnes/ai",
@@ -235,14 +227,6 @@
     "path": "packages/host-infrastructure/package.json",
     "symbol": "dependencies",
     "literal": "@agnes/ai",
-    "role": "dependency",
-    "max": 1,
-    "removal": "A4: remove AI and remote implementation dependencies after port extraction"
-  },
-  {
-    "path": "packages/host-infrastructure/package.json",
-    "symbol": "dependencies",
-    "literal": "@agnes/sandbox-remote",
     "role": "dependency",
     "max": 1,
     "removal": "A4: remove AI and remote implementation dependencies after port extraction"

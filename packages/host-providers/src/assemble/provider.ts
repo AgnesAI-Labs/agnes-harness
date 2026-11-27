@@ -109,7 +109,7 @@ export const PROVIDER_AUDIO_FACTS: ProviderAudioFacts = Object.freeze({
 
 export async function buildProvider(
   profile: ResolvedProfile,
-  routes: RouteTable,
+  routes: RouteTable | undefined,
   deps: {
     secrets: (ref: string) => string
     clock: () => number
@@ -122,7 +122,7 @@ export async function buildProvider(
 ): Promise<{
   provider: Provider & { registry?: Registry }
   contractStore: ContractStore
-  /** Built-in API-key routes actually fitted during this assembly. */
+  /** Built-in API-key and provider-owned runtime routes fitted during this assembly. */
   preconfiguredRoutes: readonly string[]
   /**
    * The routes fitted here whose credential reference did not resolve: built-in API-key routes, and
@@ -201,6 +201,7 @@ export async function buildProvider(
   }
   try {
     const catalog = modelAdapters.catalog()
+    const contributions = await modelAdapters.contributedRoutes()
     const adapterChoice = profile.composition?.providers?.['model-adapter']?.provider
     const selectedApis = typeof adapterChoice === 'string' ? [adapterChoice] : adapterChoice
     const allowsApi = (api: string) => !selectedApis?.length || selectedApis.includes(api)
@@ -213,6 +214,20 @@ export async function buildProvider(
       ...r,
       models: r.models ?? [],
     }))
+    const contributedNames = new Set<string>()
+    for (const group of contributions)
+      for (const route of group.routes) {
+        if (
+          manualRoutes.some((existing) => existing.route === route.route) ||
+          contributedNames.has(route.route)
+        )
+          throw new HostError(
+            'E_PRESET_UNRESOLVED',
+            'contributed model route conflicts with an existing route',
+          )
+        contributedNames.add(route.route)
+        manualRoutes.push({ ...route, models: [...route.models] })
+      }
     // The first-run client has to be able to choose any reviewed API-key provider before it owns a
     // key for one.  Those routes are therefore fitted once, at Host assembly, and their credentials
     // may remain unbound until selected.  A profile-owned route keeps precedence if it deliberately
@@ -303,7 +318,8 @@ export async function buildProvider(
       const entry = catalog.find((candidate) => candidate.id === id)
       if (
         !entry ||
-        !profile.provider.adapters.some((selected) => selected === id || selected === entry.sourcePackage)
+        (!contributions.some((group) => group.adapter === id) &&
+          !profile.provider.adapters.some((selected) => selected === id || selected === entry.sourcePackage))
       )
         throw new HostError('E_DEP_MISSING', `route selects an unavailable model adapter: ${id}`, {
           detail: { reason: 'adapter-unselected', id },
@@ -319,7 +335,8 @@ export async function buildProvider(
       createProvider({
         ...(deps.trace ? { trace: deps.trace } : {}),
         adapters: instances.map((instance) => instance.adapter),
-        routes,
+        // An unconfigured local profile stays unresolved until a caller explicitly selects a model.
+        routes: routes ?? { primary: { route: 'default', model: 'default' } },
         secrets: deps.secrets,
         clock: deps.clock,
         parserVersion: PARSER_VERSION,
@@ -329,10 +346,11 @@ export async function buildProvider(
         optionalCredentialRefs,
       }),
     )
-    verifyRoutes(routes, provider.registry)
-    const preconfiguredRoutes = Object.freeze(
-      apiKeyConfigs.flatMap((config) => config.routes.map((route) => route.route)),
-    )
+    if (routes) verifyRoutes(routes, provider.registry)
+    const preconfiguredRoutes = Object.freeze([
+      ...apiKeyConfigs.flatMap((config) => config.routes.map((route) => route.route)),
+      ...contributedNames,
+    ])
     return {
       provider: Object.assign(provider, { audio: PROVIDER_AUDIO_FACTS }),
       contractStore: built.contractStore,

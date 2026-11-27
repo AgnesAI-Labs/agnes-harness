@@ -22,7 +22,7 @@ async function workbenchScreen(page: Page, info: TestInfo, name: string, folder?
 }
 
 test('workspace dock previews and mentions a file that the agent reads', async ({ page, runtime }, info) => {
-  test.setTimeout(120_000)
+  test.setTimeout(180_000)
   for (const args of [
     ['init', '--quiet'],
     ['add', '--', 'report.md'],
@@ -268,7 +268,8 @@ test('session terminal survives UI detachment, follows agent output and honors p
   page,
   runtime,
 }, info) => {
-  test.setTimeout(240_000)
+  // Each viewport reload reattaches real terminals; leave time for both confined probes and cleanup.
+  test.setTimeout(360_000)
   // Real protected mount targets make the OS refusal observable. Bubblewrap cannot
   // create a missing deny mount below a read-only parent; keep that refusal intact.
   const protectedFiles = [
@@ -299,7 +300,10 @@ test('session terminal survives UI detachment, follows agent output and honors p
   const session = await client.session.load(id, { cwd: runtime.workspace })
   const agent = (await session.jobsRead()).jobs.find((job) => job.owner === 'agent')
   if (!agent) throw new Error('agent job required')
-  await expect(session.jobsControl({ operation: 'kill', jobId: agent.id })).rejects.toMatchObject({
+  // The session owner may stop an agent job; sending input or signals remains refused.
+  await expect(
+    session.jobsControl({ operation: 'signal', signal: 'SIGINT', jobId: agent.id }),
+  ).rejects.toMatchObject({
     data: { code: 'CAPABILITY_DENIED' },
   })
   await page.getByTestId('workbench-right-toggle').click()
@@ -385,16 +389,16 @@ test('session terminal survives UI detachment, follows agent output and honors p
   const folder = process.env.AGH_WORKBENCH_REPORT
   if (folder) await mkdir(folder, { recursive: true })
   for (const locale of ['en', 'zh-CN'])
-    for (const theme of ['light', 'dark'])
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(
+        ({ locale, theme }) => {
+          localStorage.setItem('agnes-locale', locale)
+          localStorage.setItem('agnes-theme', theme)
+        },
+        { locale, theme },
+      )
       for (const width of [1440, 1280]) {
         await page.setViewportSize({ width, height: 900 })
-        await page.evaluate(
-          ({ locale, theme }) => {
-            localStorage.setItem('agnes-locale', locale)
-            localStorage.setItem('agnes-theme', theme)
-          },
-          { locale, theme },
-        )
         await page.reload()
         await expect(panel.getByTestId('terminal-tab')).toHaveCount(2)
         await expect(terminalText).toContainText('WB1_AFTER_INTERRUPT')
@@ -404,6 +408,7 @@ test('session terminal survives UI detachment, follows agent output and honors p
         await workbenchScreen(page, info, `p2-${locale}-${theme}-${width}-before`, folder)
         await page.getByTestId('workbench-right-toggle').click()
       }
+    }
   await page.evaluate(() => {
     localStorage.setItem('agnes-locale', 'en')
     localStorage.setItem('agnes-theme', 'light')

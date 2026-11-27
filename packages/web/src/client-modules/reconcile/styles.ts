@@ -1,3 +1,4 @@
+import { backendResourceUrl } from '../../remote-frontend.js'
 import type { PreparedClientStyles, ReadyClientModule } from './contracts.js'
 
 export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -19,10 +20,13 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): 
 export async function prepareDocumentStyles(
   target: ReadyClientModule,
   timeoutMs: number,
+  signal: AbortSignal,
 ): Promise<PreparedClientStyles> {
+  signal.throwIfAborted()
   if (target.styleUrls.length === 0) return { activate() {}, dispose() {} }
   const nonce = document.querySelector<HTMLMetaElement>('meta[name="agnes-csp-nonce"]')?.content
-  const links = target.styleUrls.map((href) => {
+  const links = target.styleUrls.map((value) => {
+    const href = backendResourceUrl(value)
     const link = document.createElement(nonce ? 'style' : 'link')
     if (nonce) {
       // Use the page's existing style authorization for the import wrapper. Only the actual
@@ -39,7 +43,26 @@ export async function prepareDocumentStyles(
     return link
   })
   let timer: ReturnType<typeof setTimeout> | undefined
+  let abort: (() => void) | undefined
+  let disposed = false
+  function dispose(): void {
+    if (disposed) return
+    disposed = true
+    if (abort) signal.removeEventListener('abort', abort)
+    for (const link of links) link.remove()
+  }
   try {
+    const interrupted = new Promise<never>((_, reject) => {
+      abort = () => {
+        dispose()
+        reject(signal.reason)
+      }
+      signal.addEventListener('abort', abort, { once: true })
+      timer = setTimeout(
+        () => reject(new Error(`styles ${target.packageId} timeout after ${timeoutMs}ms`)),
+        timeoutMs,
+      )
+    })
     const loaded = Promise.all(
       links.map(
         (link) =>
@@ -52,33 +75,23 @@ export async function prepareDocumentStyles(
                 once: true,
               },
             )
+            signal.throwIfAborted()
             document.head.append(link)
           }),
       ),
     )
-    await Promise.race([
-      loaded,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(`styles ${target.packageId} timeout after ${timeoutMs}ms`)),
-          timeoutMs,
-        )
-      }),
-    ])
+    await Promise.race([loaded, interrupted])
+    signal.throwIfAborted()
   } catch (error) {
-    for (const link of links) link.remove()
+    dispose()
     throw error
   } finally {
     if (timer !== undefined) clearTimeout(timer)
   }
-  let disposed = false
   return {
     activate() {
       if (!disposed) for (const link of links) link.media = 'all'
     },
-    dispose() {
-      disposed = true
-      for (const link of links) link.remove()
-    },
+    dispose,
   }
 }

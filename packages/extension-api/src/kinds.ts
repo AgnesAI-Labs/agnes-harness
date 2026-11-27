@@ -55,6 +55,7 @@ export const modelAdapterKind = defineKind<ModelAdapter>({
       !adapter.wireApi.trim() ||
       !adapter.version ||
       typeof adapter.create !== 'function' ||
+      (adapter.contributeRoutes !== undefined && typeof adapter.contributeRoutes !== 'function') ||
       !adapter.capabilities ||
       ['imageInput', 'tools', 'streaming'].some(
         (key) => typeof adapter.capabilities[key as keyof typeof adapter.capabilities] !== 'boolean',

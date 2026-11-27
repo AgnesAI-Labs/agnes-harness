@@ -14,18 +14,45 @@ import {
   StatusMessage,
   useUiText,
 } from '@agnes/web-ui'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { PluginConfigApi } from './config-api.js'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { PluginConfigApi } from './config-api.js'
 import { PLUGIN_CONFIG_ADMIN_NAMESPACE, pluginConfigAdminCatalog } from './config-locale.js'
+import type { AdminContext } from './types.js'
+
+type ExactRow = Readonly<{ rowId: string; isCurrent(): boolean; onMissing(): void }>
+
+/** The workbench's bound Configure action uses the same editor and permissions as plugin details. */
+export function PluginRowConfiguration({
+  context,
+  packageId,
+  target,
+}: {
+  context: AdminContext
+  packageId: string
+  target: ExactRow
+}) {
+  const { profile, clientId } = context
+  const api = useMemo(() => new PluginConfigApi({ profile, clientId }), [profile, clientId])
+  return (
+    <PluginConfigPanel
+      api={api}
+      id={packageId}
+      canSave={!context.readOnly && context.permissions.includes('packages.activate')}
+      exactRow={target}
+    />
+  )
+}
 
 export function PluginConfigPanel({
   api,
   id,
   canSave,
+  exactRow,
 }: {
   api: PluginConfigApi
   id: string
   canSave: boolean
+  exactRow?: ExactRow
 }) {
   const { t } = useUiText(PLUGIN_CONFIG_ADMIN_NAMESPACE, pluginConfigAdminCatalog)
   const credentials = useCredentialOptions(id)
@@ -53,14 +80,23 @@ export function PluginConfigPanel({
   }, [])
   useEffect(() => {
     void loadVersion
+    if (exactRow && !exactRow.isCurrent()) return
     alive.current = true
     const abort = new AbortController()
     void api
       .get(id, abort.signal)
       .then((snapshot) => {
-        if (abort.signal.aborted) return
+        if (abort.signal.aborted || (exactRow && !exactRow.isCurrent())) return
+        const entry = exactRow
+          ? snapshot.entries.find(({ rowId }) => rowId === exactRow.rowId)
+          : snapshot.entries[0]
+        if (exactRow && !entry) {
+          setSnapshot(snapshot)
+          setRowId('')
+          exactRow.onMissing()
+          return
+        }
         setSnapshot(snapshot)
-        const entry = snapshot.entries[0]
         setRowId(entry?.rowId ?? '')
         setDraft(entry?.value)
         setIssues([])
@@ -75,7 +111,7 @@ export function PluginConfigPanel({
       alive.current = false
       abort.abort()
     }
-  }, [api, id, loadVersion])
+  }, [api, id, loadVersion, exactRow])
   const entry = snapshot?.entries.find((entry) => entry.rowId === rowId)
   useEffect(() => {
     if (!entry || invalidJson.size) {
@@ -87,6 +123,7 @@ export function PluginConfigPanel({
     const abort = new AbortController()
     setValidating(true)
     const timer = setTimeout(() => {
+      if (exactRow && !exactRow.isCurrent()) return
       void api
         .validate(id, entry.rowId, draft, abort.signal)
         .then((result) => {
@@ -107,7 +144,7 @@ export function PluginConfigPanel({
       clearTimeout(timer)
       abort.abort()
     }
-  }, [api, id, entry, draft, invalidJson])
+  }, [api, id, entry, draft, invalidJson, exactRow])
   const change = (value: unknown) => {
     setDraft(value)
     setValidating(true)
@@ -116,10 +153,11 @@ export function PluginConfigPanel({
   }
   const save = async () => {
     if (!snapshot || !entry || issues.length || invalidJson.size || validating || !canSave) return
+    if (exactRow && !exactRow.isCurrent()) return
     setSaving(true)
     try {
       const result = await api.save(id, entry.rowId, draft, snapshot.revision)
-      if (!alive.current) return
+      if (!alive.current || (exactRow && !exactRow.isCurrent())) return
       setIssues(result.issues)
       setNotice(result.ok && result.reason === 'saved' ? '' : result.reason)
       setRefusalReason(result.reason === 'refused' ? (result.refusalReason ?? '') : '')
@@ -133,10 +171,15 @@ export function PluginConfigPanel({
           if (alive.current) setNotice('refreshFailed')
           return undefined
         })
-        if (alive.current && latest) {
+        if (alive.current && latest && (!exactRow || exactRow.isCurrent())) {
+          const refreshed = latest.entries.find((item) => item.rowId === entry.rowId)
+          if (exactRow && !refreshed) {
+            exactRow.onMissing()
+            return
+          }
           if (latest.revision === result.revision) {
             setSnapshot(latest)
-            setDraft(latest.entries.find((item) => item.rowId === entry.rowId)?.value)
+            setDraft(refreshed?.value)
           } else setNotice('conflict')
         }
       }
@@ -169,30 +212,34 @@ export function PluginConfigPanel({
       </SettingsToolbar>
       {entry && snapshot && (
         <>
-          <SettingsSelect
-            aria-label={t('row')}
-            data-testid="plugin-config-entry"
-            value={rowId}
-            disabled={saving}
-            onChange={(event) => {
-              const next = snapshot.entries.find((entry) => entry.rowId === event.currentTarget.value)
-              if (next) {
-                setValidating(true)
-                setRowId(next.rowId)
-                setDraft(next.value)
-                setIssues([])
-                setInvalidJson(new Set())
-                setNotice('')
-                setRefusalReason('')
-              }
-            }}
-          >
-            {snapshot.entries.map((entry) => (
-              <option key={entry.rowId} value={entry.rowId}>
-                {entry.rowId}
-              </option>
-            ))}
-          </SettingsSelect>
+          {exactRow ? (
+            <p data-testid="plugin-config-exact-row">{entry.rowId}</p>
+          ) : (
+            <SettingsSelect
+              aria-label={t('row')}
+              data-testid="plugin-config-entry"
+              value={rowId}
+              disabled={saving}
+              onChange={(event) => {
+                const next = snapshot.entries.find((entry) => entry.rowId === event.currentTarget.value)
+                if (next) {
+                  setValidating(true)
+                  setRowId(next.rowId)
+                  setDraft(next.value)
+                  setIssues([])
+                  setInvalidJson(new Set())
+                  setNotice('')
+                  setRefusalReason('')
+                }
+              }}
+            >
+              {snapshot.entries.map((entry) => (
+                <option key={entry.rowId} value={entry.rowId}>
+                  {entry.rowId}
+                </option>
+              ))}
+            </SettingsSelect>
+          )}
           <p data-testid="plugin-config-reload-mode">{t(entry.reload === 'live' ? 'live' : 'next')}</p>
           <p>{t('revision', { revision: snapshot.revision })}</p>
           {issues.length > 0 && (

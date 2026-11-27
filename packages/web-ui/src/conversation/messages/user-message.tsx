@@ -234,13 +234,15 @@ export function UserMessage({
     )
     .map((block) => block.text)
     .join('\n')
-  if (node.origin === 'system' && node.system)
+  if (node.origin === 'system' && node.system) {
+    const isChildNotice =
+      node.system.presentation?.kind === 'child-completed' || node.system.source === 'agnes/child'
     return (
-      <div className={node.system.presentation?.kind === 'child-completed' ? 'delegation-notice' : undefined}>
+      <div className={isChildNotice ? 'delegation-notice' : undefined}>
         <div className="system-input-status" role="status">
           {systemInputText(node.system, t) ?? value}
         </div>
-        {node.system.presentation?.kind === 'child-completed' &&
+        {isChildNotice &&
           (() => {
             const data = node.system.data
             return data &&
@@ -254,17 +256,14 @@ export function UserMessage({
           <Disclosure
             variant="plain"
             className="system-input-trace"
-            summary={t(
-              node.system.presentation?.kind === 'child-completed'
-                ? 'delegation.technical'
-                : 'tool.detail.expand',
-            )}
+            summary={t(isChildNotice ? 'delegation.technical' : 'tool.detail.expand')}
           >
             <pre className="system-input-data">{JSON.stringify(node.system.data, null, 2)}</pre>
           </Disclosure>
         )}
       </div>
     )
+  }
   // What an app delivered: a fixed line, never the body, which stays folded beneath it as it was delivered.
   if (node.deliveredBy)
     return (

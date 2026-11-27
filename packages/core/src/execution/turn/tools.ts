@@ -15,6 +15,7 @@ import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { DecisionHandle, ToolResult } from '@agnes/extension-api'
 import type { Actor, ExecutionDomain, JsonValue, ResolvedToolCallPolicy } from '@agnes/protocol'
 import { automaticPermissionDecision } from '@agnes/protocol'
+import { dispatchChildEffect } from '../../child/non-interruptible-receipt.js'
 import { hardBlockedCall } from '../../command-table/floor.js'
 import { dispatchLoopEvent } from '../../loop/events.js'
 import { type ScopedSideCallPort, toolSideCallPort } from '../../loop/scoped-side-call.js'
@@ -68,6 +69,7 @@ import {
   toolDecisionSource,
 } from './tool-decision.js'
 import { discloseTool } from './tool-disclosure.js'
+import { toolResultRecords } from './tool-result-records.js'
 import {
   notStartedResults,
   reconciledMessage,
@@ -75,6 +77,7 @@ import {
   unknownOutcomeRows,
   unrecordedParkEvents,
 } from './unknown-outcome.js'
+import * as fence from './unknown-outcome-fence.js'
 
 export type ExecOpts = {
   depth: number
@@ -260,13 +263,14 @@ async function settleSyntheticDispatch(
   const notes = await callFailureNotes(s, call.name, effect.effectId, o, input.code)
   await s.transition(
     [
-      s.ev(
-        'tool/result',
+      ...toolResultRecords(
+        s,
         {
           toolUseId: call.toolUseId,
           content: toLedgerContent(result.content),
           isError: true,
           code: input.code,
+          dispatchPhase: phase,
           ...(input.structured ? { structured: input.structured } : {}),
           ...(input.code === 'CANCELLED'
             ? { partial: input.partial ?? false, cancelledBy: input.cancelledBy ?? s.d.actor }
@@ -378,6 +382,7 @@ export async function approveAndExecute(
     }
   const meta = await verifiedToolMeta(s.d.log, def.meta)
   const policy = call.resolvedPolicy
+  const fenceCall = { ...meta, ...call, isReadOnly: policy.isReadOnly }
   const recoveredEffect = o.resumeDispatch ? s.state.pendingEffects.get(o.resumeDispatch.effectId) : undefined
   if (
     o.resumeDispatch &&
@@ -407,6 +412,8 @@ export async function approveAndExecute(
   const grantChecks: (() => Promise<void>)[] = []
   let recheckPermission: (() => Promise<void>) | undefined
   if (!o.resumeDispatch) {
+    const blocked = await fence.checkUncertainRetryFence(s, call)
+    if (blocked) return { result: await refuse(s, call.toolUseId, blocked.code, blocked.message) }
     // Read from the fold, not from the counter: the counter's copy is a transaction behind the row
     // that taints, so the first call after an untrusted result would be judged against a clean turn.
     const taint = op.taint || s.laneTaint()
@@ -1261,7 +1268,8 @@ export async function approveAndExecute(
           call.args,
           ctx,
           { effectId: effect.effectId, startSeq },
-          () => def.execute(call.args as never, ctx),
+          () =>
+            dispatchChildEffect(s, call, effect.effectId, policy, () => def.execute(call.args as never, ctx)),
           { executionDomain: call.executionDomain, attempt },
         )
       const workspaceInvocation = s.d.workspaceInvocation
@@ -1427,22 +1435,16 @@ export async function approveAndExecute(
           return { result, ...(await parkOutcome(s, nestedParks, updateCall)) }
         }
         // Code and `unknown` settlement stay: the call may have changed the world, so it is never replayed.
-        const reconciliation = await unknownOutcomeRows(s, call.toolUseId, call.name)
+        await fence.recordUncertainEffect(s, fenceCall, effect.effectId)
+        const { rows, answer, park } = await unknownOutcomeRows(s, call.toolUseId, call.name)
+        const cause = timedOut ? 'timeout' : cancelled ? 'cancelled' : undefined
         const result = await settleFailed(attempt, 'may_have_sent', {
           code: 'TOOL_OUTCOME_UNKNOWN',
-          reconciliation: reconciliation.rows,
-          message:
-            unknownOutcomeMessage(
-              call.name,
-              timedOut ? 'timeout' : cancelled ? 'cancelled' : undefined,
-              timeoutMs,
-            ) + reconciledMessage(reconciliation.answer),
+          reconciliation: rows,
+          message: unknownOutcomeMessage(call.name, cause, timeoutMs) + reconciledMessage(answer),
           outcome: 'unknown',
         })
-        return {
-          result,
-          ...(reconciliation.park ? { park: reconciliation.park } : {}),
-        }
+        return { result, ...(park ? { park } : {}) }
       }
       if (timedOut || cancelled) {
         const result = await settleFailed(attempt, 'may_have_sent', {
@@ -1454,9 +1456,8 @@ export async function approveAndExecute(
         })
         return { result, ...(await parkOutcome(s, nestedParks, updateCall)) }
       }
-      result = errorResult(
-        observation.error instanceof Error ? observation.error.message : String(observation.error),
-      )
+      const { error } = observation
+      result = errorResult(error instanceof Error ? error.message : String(error))
       failed = true
       settledDispatchPhase = 'may_have_sent'
     } else {
@@ -1518,8 +1519,8 @@ export async function approveAndExecute(
           }),
         ]
       : [
-          s.ev(
-            'tool/result',
+          ...toolResultRecords(
+            s,
             {
               toolUseId: call.toolUseId,
               content: toLedgerContent(
@@ -1548,6 +1549,7 @@ export async function approveAndExecute(
                   : {}
               })(),
               ...(recordedResult.structured !== undefined ? { structured: recordedResult.structured } : {}),
+              dispatchPhase: settledDispatchPhase,
               isError: cancelled || recordedResult.isError === true,
               ...(cancelled
                 ? { code: 'CANCELLED', partial: true, cancelledBy: stopRequestedBy(s) ?? s.d.actor }
@@ -1574,7 +1576,7 @@ export async function approveAndExecute(
               ]
             : []),
         ]
-    resultRows.push(...(await executedNotes(s, call.name, o, deferred ? undefined : resultRows[0])))
+    resultRows.push(...(await executedNotes(s, call.name, o, resultRows)))
     const verifierSignal = s.ev('verifier/signal', {
       scope: 'tool',
       tier: s.preset.verifier.defaultTier,
@@ -1633,6 +1635,9 @@ export async function approveAndExecute(
         },
       ])
     }
+    const succeeded = !failed && !cancelled && !result.isError && !recordedResult.isError
+    if (!deferred && succeeded && verdict.verdict === 'pass')
+      await fence.markUncertainEffectsVerified(s, call.toolUseId, fenceCall)
     if (!deferred) onToolSettled(s, call.name, recordedResult, cancelled ? 'CANCELLED' : undefined)
     return {
       result: recordedResult,

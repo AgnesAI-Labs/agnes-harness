@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { commandBinding } from '@agnes/daemon-rpc/local/command-binding'
-import type { ManagedInputResult, ManagedInputTarget } from '@agnes/extension-api'
+import type { ManagedInputAdmission, ManagedInputResult, ManagedInputTarget } from '@agnes/extension-api'
 import { type Actor, type JsonValue, rpcError } from '@agnes/protocol'
 import type { GateReport } from './managed-input-gates.js'
 import { type OwnerInputAttention, ownerInputAttention, ownerInputNotes } from './managed-input-notes.js'
@@ -108,12 +108,6 @@ export interface OwnerInputEngineDeps {
   clock?(): number
 }
 
-type AdmissionInput =
-  | { kind: 'ownerMessage'; receiptId: string }
-  | { kind: 'recoveryContinuation'; turnEndSeq: number }
-  | { kind: 'legacyOwnerMessage'; text: string; originalInbox: string | null }
-type Admission = { key: string; target: ManagedInputTarget; input: AdmissionInput }
-
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
 const refuse = (reason: string) => rpcError('CAPABILITY_DENIED', { reason })
 const invalid = () => rpcError('INVALID_PARAMS')
@@ -125,7 +119,7 @@ const storable = (value: unknown): value is string =>
 const RECOVERABLE = new Set(['aborted', 'interrupted', 'error'])
 
 /** Only the fields the contract names; anything else, an `ownerMessage` text included, is dropped. */
-function parseAdmission(value: unknown): Admission {
+function parseAdmission(value: unknown): ManagedInputAdmission {
   const request = value as {
     key?: unknown
     target?: Record<string, unknown>
@@ -159,15 +153,6 @@ function parseAdmission(value: unknown): Admission {
     (input.turnEndSeq as number) > 0
   )
     return { ...parsed, input: { kind: 'recoveryContinuation', turnEndSeq: input.turnEndSeq as number } }
-  if (
-    input.kind === 'legacyOwnerMessage' &&
-    storable(input.text) &&
-    (input.originalInbox === null || name(input.originalInbox, 4096))
-  )
-    return {
-      ...parsed,
-      input: { kind: 'legacyOwnerMessage', text: input.text, originalInbox: input.originalInbox },
-    }
   throw invalid()
 }
 
@@ -175,7 +160,7 @@ function parseAdmission(value: unknown): Admission {
  * The text an input carries and where it came from. An `ownerMessage` takes its text only from a
  * Host resolution of the same receipt; anything else stores nothing that could run.
  */
-function prepare(request: Admission, resolution: HostInputResolution | undefined) {
+function prepare(request: ManagedInputAdmission, resolution: HostInputResolution | undefined) {
   const input = request.input
   if (input.kind === 'ownerMessage') {
     const same = resolution?.receiptId === input.receiptId
@@ -194,12 +179,12 @@ function prepare(request: Admission, resolution: HostInputResolution | undefined
       unresolved: same && resolution?.kind === 'unresolved' ? resolution.reason : ('receiptUnknown' as const),
     }
   }
-  const text = input.kind === 'legacyOwnerMessage' ? input.text : RECOVERY_CONTINUATION_TEXT
-  const source =
-    input.kind === 'legacyOwnerMessage'
-      ? { originalInbox: input.originalInbox }
-      : { turnEndSeq: input.turnEndSeq }
-  return { receiptId: null, text, contentDigest: digest(text), source }
+  return {
+    receiptId: null,
+    text: RECOVERY_CONTINUATION_TEXT,
+    contentDigest: digest(RECOVERY_CONTINUATION_TEXT),
+    source: { turnEndSeq: input.turnEndSeq },
+  }
 }
 
 export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEngine {
@@ -210,8 +195,7 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
   const progress = inputProgress(deps, notes, trace)
 
   /**
-   * A bound session must match. A session opened before bindings existed is bound here, once, by its
-   * own manager naming its own start key; from then on it is like any other.
+   * A bound session must match. Its manager can bind an unbound session once by naming its start key.
    */
   const bindTarget = (record: ManagedSessionRecord, owner: string, target: ManagedInputTarget) => {
     if (target.startKey !== record.startKey || record.owner !== owner)
@@ -225,7 +209,7 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
 
   const reserve = (
     ctx: AdmitContext,
-    request: Admission,
+    request: ManagedInputAdmission,
     prepared: ReturnType<typeof prepare>,
     bindingDigest: string,
   ) => {
@@ -249,15 +233,21 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
       consumedSeq: null,
     }
     // One receipt, one admission: a second key naming it keeps nothing that could run.
-    if (inputs.reserve(value) === 'receiptTaken')
-      inputs.reserve({
-        ...value,
-        receiptId: null,
-        text: null,
-        contentDigest: null,
-        state: 'needsOwner',
-        reason: 'receiptUnknown',
-      })
+    const outcome = inputs.reserve(value)
+    if (outcome === 'retiredKey') throw refuse('OWNER_INPUT_KEY_REUSED')
+    if (outcome === 'receiptTaken') {
+      if (
+        inputs.reserve({
+          ...value,
+          receiptId: null,
+          text: null,
+          contentDigest: null,
+          state: 'needsOwner',
+          reason: 'receiptUnknown',
+        }) === 'retiredKey'
+      )
+        throw refuse('OWNER_INPUT_KEY_REUSED')
+    }
   }
 
   const recoveryVerified = async (sessionId: string, turnEndSeq: number) => {
@@ -269,7 +259,7 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
   const complete = async (
     row: ManagedInputRow,
     record: ManagedSessionRecord,
-    request: Admission,
+    request: ManagedInputAdmission,
     prepared: ReturnType<typeof prepare>,
   ) => {
     const sessionId = record.sessionId
@@ -286,8 +276,6 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
         state: 'needsOwner',
         reason: 'unresolved' in prepared ? prepared.unresolved : 'receiptUnknown',
       }
-    else if (input.kind === 'legacyOwnerMessage')
-      next = { state: 'recoveryUnknown', reason: 'legacySourceUnknown' }
     else if (input.kind === 'recoveryContinuation' && !(await recoveryVerified(sessionId, input.turnEndSeq)))
       next = { state: 'recoveryUnknown', reason: 'recoveryUnverified' }
     else if (await progress.questionOpen(sessionId))
@@ -314,11 +302,13 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
         const prepared = prepare(request, resolution)
         let row = inputs.get(ctx.owner, sessionId, request.key)
         if (row && row.bindingDigest !== bindingDigest) throw refuse('OWNER_INPUT_KEY_REUSED')
+        if (!row && inputs.hasKey(ctx.owner, sessionId, request.key)) throw refuse('OWNER_INPUT_KEY_REUSED')
         if (!row) {
           bindTarget(record, ctx.owner, request.target)
           reserve(ctx, request, prepared, bindingDigest)
           deps.faults?.afterReserve?.()
-          row = inputs.get(ctx.owner, sessionId, request.key) as ManagedInputRow
+          row = inputs.get(ctx.owner, sessionId, request.key)
+          if (!row) throw refuse('OWNER_INPUT_KEY_REUSED')
         }
         if (row.state === 'queued')
           await complete(row, record, request, prepared).catch((error: unknown) => {
@@ -338,23 +328,9 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
     const sessionId = ctx.record.sessionId
     return deps.serial(sessionLane(sessionId), async () => {
       const row = inputs.get(ctx.owner, sessionId, key)
-      if (row) {
-        await progress.advanceNow(sessionId, 'result').catch(notes.failed('inputResult', sessionId))
-        return projectInput(inputs.get(ctx.owner, sessionId, key) ?? row)
-      }
-      // The sends ledger is never pruned by time: a key in neither table was never sent or admitted.
-      const sent = ports.records.sendState(ctx.owner, sessionId, key)
-      if (sent === undefined) return { state: 'absent', historyCoverage: 'complete' }
-      const actor = deps.actor(ctx.caller.owner, ctx.record)
-      const found = await ports.sessions.findUserMessage(
-        sessionId,
-        `${actor.id}:send:${digest(key).slice(0, 32)}`,
-        1,
-      )
-      return {
-        state: 'legacySend',
-        delivery: found ? 'consumed' : sent === 'pending' ? 'pending' : 'unknown',
-      }
+      if (!row) return { state: 'absent', historyCoverage: 'complete' }
+      await progress.advanceNow(sessionId, 'result').catch(notes.failed('inputResult', sessionId))
+      return projectInput(inputs.get(ctx.owner, sessionId, key) ?? row)
     })
   }
 

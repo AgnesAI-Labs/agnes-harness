@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path'
 import { isSea } from 'node:sea'
 import { DatabaseSync } from 'node:sqlite'
-import { dataDir, cacheDir as defaultCacheDir, hasLegacySessionsDb, legacySessionsDbPath } from '@agnes/host'
+import { dataDir, cacheDir as defaultCacheDir } from '@agnes/host'
 import type { BootDeps } from '../types.js'
 
 export type Section = {
@@ -49,15 +49,6 @@ export async function doctorStorage(d: BootDeps): Promise<Section> {
       result = failure('storage')
     }
   }
-  // Independent of the probe above: a file left at this exact path is the pre-fix default's
-  // signature, not this run's business. Reported, never touched -- moving or reading someone
-  // else's database is not this command's call to make, only naming it is.
-  if (hasLegacySessionsDb(d.home))
-    result.detail.push(
-      `legacy session database at ${legacySessionsDbPath(d.home)}: not opened, not moved, not ` +
-        `deleted. Current sessions live under ${dataDir(d.home)}; nothing here decides what happens ` +
-        'to the old file.',
-    )
   return result
 }
 

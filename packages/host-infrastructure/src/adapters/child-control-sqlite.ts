@@ -34,54 +34,6 @@ const SLOT = `(t.state IN (${sqlList(UNLEASED)}) OR (t.state IN (${sqlList(LEASE
 const SLOT_FROM =
   'FROM child_tasks t LEFT JOIN writer_claims w ON w.session_key = t.child_key ' +
   'LEFT JOIN writer_claims o ON o.session_key = t.runtime_owner'
-type ReservationRecord = {
-  permitId: string
-  rootTaskId: string
-  scopeIds: string[]
-  qMicro: bigint
-  effectId: string
-  requestHash: string
-  writerGeneration: number
-  status: 'held' | 'settled' | 'released' | 'unknown'
-}
-
-type OriginEnvelope = {
-  v: 2
-  permitId: string
-  effectId: string
-  requestHash: string
-  writerGeneration: number
-  scopeIds: string[]
-}
-
-function originEnvelope(reservation: ReservationRecord): OriginEnvelope {
-  return {
-    v: 2,
-    permitId: reservation.permitId,
-    effectId: reservation.effectId,
-    requestHash: reservation.requestHash,
-    writerGeneration: reservation.writerGeneration,
-    scopeIds: [...reservation.scopeIds],
-  }
-}
-
-function sameOriginEnvelope(value: unknown, expected: OriginEnvelope): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  const row = value as Record<string, unknown>
-  const keys = Object.keys(row).sort()
-  if (keys.join(',') !== 'effectId,permitId,requestHash,scopeIds,v,writerGeneration') return false
-  return (
-    row.v === 2 &&
-    row.permitId === expected.permitId &&
-    row.effectId === expected.effectId &&
-    row.requestHash === expected.requestHash &&
-    row.writerGeneration === expected.writerGeneration &&
-    Array.isArray(row.scopeIds) &&
-    row.scopeIds.length === expected.scopeIds.length &&
-    row.scopeIds.every((scope, index) => scope === expected.scopeIds[index])
-  )
-}
-
 function isActive(state: string): boolean {
   return ACTIVE.has(state)
 }
@@ -97,6 +49,13 @@ function fitsCap(settled: bigint, held: bigint, q: bigint, cap: bigint): boolean
 }
 
 import type { DatabaseSync } from 'node:sqlite'
+import {
+  originEnvelope,
+  type ReservationRecord,
+  sameOriginEnvelope,
+  sqliteChildEventPort,
+  sqliteUnconsumedChildCapMicro,
+} from './child-control-sqlite-events.js'
 
 type Db = Pick<DatabaseSync, 'prepare' | 'exec'>
 
@@ -180,6 +139,12 @@ export function sqliteChildControl(
     byRoot: db.prepare(`${TASK_SELECT} WHERE t.root_task_id = ?`),
     slotsByParent: db.prepare(`SELECT COUNT(*) AS n ${SLOT_FROM} WHERE t.parent_key = ? AND ${SLOT}`),
     slotsByRoot: db.prepare(`SELECT COUNT(*) AS n ${SLOT_FROM} WHERE t.root_task_id = ? AND ${SLOT}`),
+    activeByParent: db.prepare(
+      `SELECT t.child_key ${SLOT_FROM} WHERE t.parent_key = ? AND ${SLOT} ORDER BY t.child_key`,
+    ),
+    activeByRoot: db.prepare(
+      `SELECT t.child_key ${SLOT_FROM} WHERE t.root_task_id = ? AND ${SLOT} ORDER BY t.child_key`,
+    ),
     liveWriter: db.prepare('SELECT 1 AS live FROM writer_claims WHERE session_key = ? AND until >= ?'),
     lost: db.prepare(
       `${TASK_SELECT} WHERE t.parent_key = ? AND t.creation_phase = 'committed' AND t.state IN (${sqlList(['ready', ...LEASED])})
@@ -307,8 +272,7 @@ export function sqliteChildControl(
   }
 
   // Counted in SQL over the parent/root indexes: no task row is read back or parsed.
-  const slots = (parentKey: string, rootTaskId: string) => {
-    const now = clock()
+  const slots = (parentKey: string, rootTaskId: string, now = clock()) => {
     return {
       parent: Number((q.slotsByParent.get(parentKey, now, now) as { n: number }).n),
       root: Number((q.slotsByRoot.get(rootTaskId, now, now) as { n: number }).n),
@@ -501,13 +465,26 @@ export function sqliteChildControl(
           const record = parseTask(existingRow)
           return { status: record.inputHash === input.inputHash ? 'existing' : 'conflict', record }
         }
-        const used = slots(input.parentKey, input.rootTaskId)
-        if (used.parent >= input.maxFanOut || used.root >= input.maxFanOut)
+        const now = clock()
+        const used = slots(input.parentKey, input.rootTaskId, now)
+        if (used.parent >= input.maxFanOut || used.root >= input.maxFanOut) {
+          const parentLimited = used.parent >= input.maxFanOut
+          const activeRows = (parentLimited ? q.activeByParent : q.activeByRoot).all(
+            parentLimited ? input.parentKey : input.rootTaskId,
+            now,
+            now,
+          ) as { child_key: string }[]
           return {
             status: 'refused',
             reason: 'fan_out',
             message: `fan-out limit ${input.maxFanOut} reached`,
+            fanOut: {
+              limit: input.maxFanOut,
+              active: activeRows.length,
+              activeChildKeys: activeRows.map((row) => row.child_key),
+            },
           }
+        }
         const root = scopeOf(`root:${input.rootTaskId}`)
         if (!root) return { status: 'refused', reason: 'budget', message: 'tree budget scope is missing' }
         const parentRow = q.task.get(input.parentKey) as Record<string, unknown> | undefined
@@ -516,18 +493,26 @@ export function sqliteChildControl(
         if (parentTask && !ancestorScopeIds.includes(parentTask.budgetScopeId))
           ancestorScopeIds.push(parentTask.budgetScopeId)
         if (!ancestorScopeIds.includes(root.scopeId)) ancestorScopeIds.unshift(root.scopeId)
+        if (input.childCapMicro !== null && input.childCapMicro <= 0n)
+          return { status: 'refused', reason: 'budget', message: 'child budget must be positive' }
         for (const id of ancestorScopeIds) {
           const scope = scopeOf(id)
           if (!scope) return { status: 'refused', reason: 'budget', message: `unknown ancestor scope ${id}` }
-          if (
-            input.childCapMicro !== null &&
-            input.childCapMicro > scope.capMicro - scope.settledMicro - scope.heldMicro
-          )
-            return {
-              status: 'refused',
-              reason: 'budget',
-              message: 'child budget exceeds remaining ancestor cap',
-            }
+          const reserved = sqliteUnconsumedChildCapMicro(db, scope.scopeId, scope.capMicro, input.maxFanOut)
+          const remaining = scope.capMicro - scope.settledMicro - scope.heldMicro - reserved
+          if (input.childCapMicro !== null) {
+            if (input.childCapMicro > remaining)
+              return {
+                status: 'refused',
+                reason: 'budget',
+                message: 'child budget exceeds remaining ancestor cap',
+              }
+          } else {
+            const fanDiv = BigInt(Math.max(1, input.maxFanOut))
+            const floor = scope.capMicro / fanDiv < 1_000_000n ? scope.capMicro / fanDiv : 1_000_000n
+            if (remaining <= 0n || (floor > 0n && remaining < floor))
+              return { status: 'refused', reason: 'budget', message: 'ancestor budget cap is exhausted' }
+          }
         }
         if (!q.session.get(input.parentKey))
           throw new CoreError('E_STORAGE_FAULT', 'parent session missing', { parent: input.parentKey })
@@ -808,6 +793,7 @@ export function sqliteChildControl(
         unknownHeld,
       }
     },
+    ...sqliteChildEventPort(db, tx),
   }
   return store
 }

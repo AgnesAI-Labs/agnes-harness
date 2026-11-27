@@ -1528,8 +1528,21 @@ describe('length-cap retry', () => {
     scripts: Script[],
     configuredThinking?: ThinkingLevel,
     cancelOnSummary = false,
+    catalog: {
+      models?: ModelRecord[]
+      compaction?: { route: string; model: string }
+      primaryThinking?: ThinkingLevel
+    } = {},
   ) {
     const provider = fakeProvider([textTurn('old-one'), textTurn('old-two'), ...scripts])
+    provider.models = () =>
+      catalog.models ?? [
+        {
+          ...model('default', 'primary', 128_000),
+          reasoning: true,
+          thinkingLevelMap: { off: 'off', minimal: 'minimal', low: 'low', high: 'high' },
+        },
+      ]
     const ac = new AbortController()
     const infer = provider.infer.bind(provider)
     provider.infer = async function* (request, options) {
@@ -1540,11 +1553,17 @@ describe('length-cap retry', () => {
       }
     }
     const opened = await openSession({ provider })
+    if (catalog.primaryThinking !== undefined)
+      opened.session.preset.model.thinking.primary = catalog.primaryThinking
     for (const prompt of ['one '.repeat(200), 'two '.repeat(200)]) {
       await opened.session.enqueue('next-turn', { content: [{ type: 'text', text: prompt }], actor })
       expect((await opened.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     }
     if (configuredThinking !== undefined) opened.session.preset.model.thinking.compaction = configuredThinking
+    if (catalog.compaction) {
+      opened.session.preset.model.route.compaction = catalog.compaction.route
+      opened.session.preset.model.id.compaction = catalog.compaction.model
+    }
     opened.session.compaction = new CompactionRunner({
       plan: async (payload: HookPayloadMap['before_compact']) => {
         const surface = payload.getSurface()
@@ -1589,11 +1608,117 @@ describe('length-cap retry', () => {
     expect(begins[0]?.data).toMatchObject({ mode: 'elided', cause: expect.stringMatching(/max_tokens/) })
   })
 
-  it('does not retry when the configured level is already low or below', async () => {
-    const { provider } = await compactWithScripts([capped('')], 'low')
-    // old-one, old-two, one summary attempt — no retry call.
-    expect(provider.calls).toBe(3)
+  it.each(['off', 'minimal', 'low'] as const)(
+    'does not retry when the configured level is already %s',
+    async (thinking) => {
+      const { provider } = await compactWithScripts([capped('')], thinking)
+      // old-one, old-two, one summary attempt — no retry call.
+      expect(provider.calls).toBe(3)
+    },
+  )
+
+  it.each(['off', 'minimal', 'low'] as const)(
+    'does not retry when the summary inherits %s from the primary prefix',
+    async (thinking) => {
+      const { provider, reasons, replaced, costs } = await compactWithScripts(
+        [capped(''), textTurn('Goal: redundant retry')],
+        undefined,
+        false,
+        { primaryThinking: thinking },
+      )
+      const requests = provider.requests.filter((request) => request.kind === 'summary')
+      expect(requests).toHaveLength(1)
+      expect(requests[0]?.sampling?.thinking).toBe(thinking)
+      expect(costs).toHaveLength(1)
+      expect(reasons).toEqual([])
+      expect(replaced).toHaveLength(1)
+    },
+  )
+
+  it('honors explicit summary thinking over an inherited low primary prefix', async () => {
+    const { provider, costs, reasons, replaced } = await compactWithScripts(
+      [capped(''), textTurn('Goal: recovered summary')],
+      'high',
+      false,
+      { primaryThinking: 'low' },
+    )
+    const requests = provider.requests.filter((request) => request.kind === 'summary')
+    expect(requests.map((request) => request.sampling?.thinking)).toEqual(['high', 'low'])
+    expect(costs).toHaveLength(2)
+    expect(reasons).toEqual([])
+    expect(replaced).toHaveLength(1)
   })
+
+  it.each([
+    ['non-reasoning', [model('default', 'primary', 128_000)]],
+    ['unmapped reasoning', [{ ...model('default', 'primary', 128_000), reasoning: true }]],
+    [
+      'unsupported low',
+      [{ ...model('default', 'primary', 128_000), reasoning: true, thinkingLevelMap: { high: 'high' } }],
+    ],
+    [
+      'blank low',
+      [{ ...model('default', 'primary', 128_000), reasoning: true, thinkingLevelMap: { low: ' ' } }],
+    ],
+    ['unknown', []],
+  ] satisfies Array<[string, ModelRecord[]]>)(
+    'keeps the length fallback without a locally rejected low retry for a %s model',
+    async (_name, models) => {
+      const unsupported: Script = [
+        {
+          type: 'error',
+          reason: 'error',
+          code: 'FORMAT',
+          message: 'thinking=low unsupported',
+          retryable: false,
+        },
+      ]
+      const { provider, reasons, replaced, begins, costs } = await compactWithScripts(
+        [capped(''), unsupported],
+        undefined,
+        false,
+        { models },
+      )
+      expect(provider.requests.filter((request) => request.kind === 'summary')).toHaveLength(1)
+      expect(provider.calls).toBe(3)
+      expect(reasons).toEqual([])
+      expect(costs).toHaveLength(1)
+      expect(replaced).toHaveLength(1)
+      expect(begins[0]?.data).toMatchObject({ mode: 'elided', cause: expect.stringMatching(/max_tokens/) })
+    },
+  )
+
+  it.each([true, false])(
+    'uses the explicit summary model low capability (supported=%s)',
+    async (supported) => {
+      const primary = {
+        ...model('answer', 'primary', 128_000),
+        reasoning: !supported,
+        ...(!supported ? { thinkingLevelMap: { low: 'low' } } : {}),
+      }
+      const summary = {
+        ...model('summary', 'compaction', 128_000),
+        route: 'summary-route',
+        reasoning: supported,
+        ...(supported ? { thinkingLevelMap: { low: 'low' } } : {}),
+      }
+      const { provider, reasons, replaced, costs } = await compactWithScripts(
+        [capped(''), textTurn('Goal: recovered summary')],
+        undefined,
+        false,
+        { models: [primary, summary], compaction: { route: summary.route, model: summary.id } },
+      )
+      const requests = provider.requests.filter((request) => request.kind === 'summary')
+      expect(requests).toHaveLength(supported ? 2 : 1)
+      expect(
+        requests.every((request) => request.route === summary.route && request.model === summary.id),
+      ).toBe(true)
+      expect(requests.at(-1)?.sampling?.thinking).toBe(supported ? 'low' : undefined)
+      expect(costs).toHaveLength(supported ? 2 : 1)
+      expect(reasons).toEqual([])
+      expect(replaced).toHaveLength(1)
+    },
+  )
 
   it('does not retry a cancelled wide summary and settles its consumed cost once', async () => {
     const { provider, costs, replaced } = await compactWithScripts([capped('')], undefined, true)

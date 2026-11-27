@@ -1,7 +1,9 @@
 import { execFile } from 'node:child_process'
-import { statSync } from 'node:fs'
-import { win32 } from 'node:path'
+import { mkdtempSync, rmSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, win32 } from 'node:path'
 import { promisify } from 'node:util'
+import { sealWindowsConfinement, startWindowsJobProcess } from '@agnes/system-node/process-spawn'
 
 export type PowerShellRequest = 'auto' | '5.1' | '7' | Readonly<{ path: string }>
 export type PowerShellDescriptor = Readonly<{
@@ -16,6 +18,81 @@ type Probe = (path: string) => Promise<PowerShellDescriptor>
 
 /** Shared by runtime assembly and read-only diagnostics; callers provide the effective environment. */
 export const resolveConfiguredPowerShell = createConfiguredPowerShellResolver()
+
+let executionResolver:
+  | { node: string; restricted: boolean; resolve: ReturnType<typeof createConfiguredPowerShellResolver> }
+  | undefined
+
+/** Metadata success alone does not prove a packaged shell can join the Host's restricted Job. */
+export function resolveConfiguredExecutionPowerShell(
+  env: NodeJS.ProcessEnv,
+  nodeExecutable: string,
+  restricted = true,
+) {
+  // A missing broker runtime is a dependency error, not an unavailable PowerShell installation.
+  statSync(nodeExecutable)
+  if (executionResolver?.node !== nodeExecutable || executionResolver.restricted !== restricted)
+    executionResolver = {
+      node: nodeExecutable,
+      restricted,
+      resolve: createConfiguredPowerShellResolver(async (path) => {
+        const descriptor = await probePowerShell(path)
+        await probePowerShellExecution(descriptor, nodeExecutable, restricted)
+        return descriptor
+      }),
+    }
+  return executionResolver.resolve(env)
+}
+
+/** A finite read-only command, under the same native token and Job gate as real commands. */
+export async function probePowerShellExecution(
+  shell: PowerShellDescriptor,
+  nodeExecutable: string,
+  restricted = true,
+): Promise<void> {
+  const root = mkdtempSync(join(tmpdir(), 'agh-shell-probe-'))
+  let child: Awaited<ReturnType<typeof startWindowsJobProcess>> | undefined
+  let completed = false
+  try {
+    child = await startWindowsJobProcess(
+      [shell.path, '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'Write-Output AGH_SHELL_PROBE_OK'],
+      {
+        cwd: root,
+        env: Object.fromEntries(
+          ['SystemRoot', 'PATH'].flatMap((name) =>
+            process.env[name] ? [[name, process.env[name] as string]] : [],
+          ),
+        ),
+        nodeExecutable,
+        startupTimeoutMs: 3000,
+        signal: AbortSignal.timeout(5000),
+        ...(restricted
+          ? { confinement: sealWindowsConfinement({ mode: 'read-only', root, writeSids: [] }) }
+          : {}),
+      },
+    )
+    let output = ''
+    child.stdout.on('data', (data: Buffer) => {
+      output = (output + data.toString('utf8')).slice(-256)
+    })
+    child.stderr.resume()
+    child.stdin.end()
+    const result = await child.completion
+    completed = true
+    if (result.error || result.code !== 0 || !output.includes('AGH_SHELL_PROBE_OK'))
+      throw new Error('Restricted PowerShell execution probe failed')
+  } catch {
+    throw new PowerShellUnavailable([
+      { path: shell.path, reason: restricted ? 'restricted-execution-failed' : 'execution-failed' },
+    ])
+  } finally {
+    if (child && !completed) {
+      child.terminate()
+      await child.completion
+    }
+    rmSync(root, { recursive: true, force: true, maxRetries: 3 })
+  }
+}
 
 /** Reuse process-local shell facts, not a running shell or a grant. Changed installations re-probe. */
 export function createConfiguredPowerShellResolver(probe: Probe = probePowerShell) {
@@ -87,8 +164,30 @@ const usablePath = (path: string): boolean => absolutePath(path) && /\.exe$/i.te
 export class PowerShellUnavailable extends Error {
   readonly code = 'E_POWERSHELL_UNAVAILABLE'
   constructor(readonly attempts: ReadonlyArray<Readonly<{ path: string; reason: string }>>) {
-    super('No requested PowerShell executable passed the version probe')
+    super(
+      'No requested PowerShell executable passed the availability checks; use auto or a compatible installation',
+    )
   }
+}
+
+/** Translate only the selected shell's managed startup failure, never other programs or ACL setup. */
+export function powerShellStartError(
+  cause: unknown,
+  shell: PowerShellDescriptor | undefined,
+  argv: readonly string[],
+  restricted: boolean,
+): unknown {
+  const code = (cause as { code?: unknown } | null)?.code
+  if (
+    shell &&
+    argv[0] &&
+    win32.normalize(argv[0]).toLowerCase() === win32.normalize(shell.path).toLowerCase() &&
+    (code === 'EACCES' || code === 'E_JOB_MEMBERSHIP')
+  )
+    return new PowerShellUnavailable([
+      { path: shell.path, reason: restricted ? 'restricted-execution-failed' : 'execution-failed' },
+    ])
+  return cause
 }
 
 function checked(value: unknown): PowerShellDescriptor {
@@ -233,8 +332,17 @@ export async function resolvePowerShell(
         continue
       }
       return descriptor
-    } catch {
-      attempts.push({ path: candidate.path, reason: 'probe-failed' })
+    } catch (error) {
+      const execution =
+        error instanceof PowerShellUnavailable
+          ? error.attempts.find((attempt) =>
+              ['restricted-execution-failed', 'execution-failed'].includes(attempt.reason),
+            )?.reason
+          : undefined
+      attempts.push({
+        path: candidate.path,
+        reason: execution ?? 'probe-failed',
+      })
     }
   }
   throw new PowerShellUnavailable(attempts)

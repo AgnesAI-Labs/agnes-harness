@@ -11,10 +11,12 @@ import {
   AgnesClientService,
   ClientResourceReclaimedError,
   ClientResourceService,
+  type ClientServiceCaller,
   CommandService,
   clientModule,
   DSH_SLOT_CATALOG_VERSION,
   LocaleService,
+  revokeContributionOwner,
   SessionService,
   SlotOutlet,
   SlotRegistry,
@@ -191,7 +193,14 @@ describe('clientModule fiber 绑定', () => {
       compact: async () => undefined,
       cancel: async () => undefined,
     }
-    const caller = vi.fn(async () => ({ answer: 42 }))
+    const caller = vi.fn<ClientServiceCaller>(async (_module, _id, _name, input, signal) => {
+      if (input.wait) {
+        return new Promise((_, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+        })
+      }
+      return { answer: 42 }
+    })
     const { ctx } = await makeRegistry(
       { sessions: { get: (id: string) => (id === 'session-a' ? handle : undefined) } } as never,
       caller,
@@ -205,7 +214,13 @@ describe('clientModule fiber 绑定', () => {
           service = cctx.agnes.services
         },
       }),
-      { packageId: 'acme/panel', rowId: 'web:acme/panel', revision: 'r1', services: ['panel.search'] },
+      {
+        binding: { ...profileBinding('web:acme/panel'), packageId: 'acme/panel' },
+        packageId: 'acme/panel',
+        rowId: 'web:acme/panel',
+        revision: 'r1',
+        services: ['panel.search'],
+      },
     )
     await fiber
     await expect(service?.call('panel.search', { text: 'hello' })).resolves.toEqual({ answer: 42 })
@@ -218,8 +233,14 @@ describe('clientModule fiber 绑定', () => {
       'session-a',
       'panel.search',
       { text: 'hello' },
+      expect.any(AbortSignal),
     )
     await expect(service?.call('other.read', {})).rejects.toThrow('unavailable')
+    const read = service?.call('panel.search', { wait: true })
+    const canceled = expect(read).rejects.toMatchObject({ name: 'AbortError' })
+    revokeContributionOwner('web:acme/panel')
+    await canceled
+    await expect(service?.call('panel.search', {})).rejects.toThrow('unavailable')
     await fiber.dispose()
   })
 
@@ -296,7 +317,12 @@ describe('clientModule fiber 绑定', () => {
           service = cctx.agnes.services
         },
       }),
-      { packageId: 'acme/panel', revision: 'r1', services: ['panel.search'] },
+      {
+        binding: { ...profileBinding('web:acme/panel'), packageId: 'acme/panel' },
+        packageId: 'acme/panel',
+        revision: 'r1',
+        services: ['panel.search'],
+      },
     )
     await fiber
     await expect(service?.call('panel.search', {})).rejects.toThrow('active session')
@@ -324,6 +350,103 @@ describe('clientModule fiber 绑定', () => {
 })
 
 describe('ClientResourceService', () => {
+  it('resolves an old inline HTML card to one durable present result and refuses ambiguous history', async () => {
+    const ctx = new Context(),
+      session = new SessionService(ctx, 'session-a')
+    const html = '<object data="image.svg"></object>',
+      svg = '<svg xmlns="http://www.w3.org/2000/svg"/>'
+    const artifact = { sha256: 'a'.repeat(64), size: html.length, mime: 'text/html' },
+      image = { sha256: 'b'.repeat(64), size: svg.length, mime: 'application/octet-stream' }
+    const item = {
+      callSeq: 4,
+      resultSeq: 6,
+      structured: { deliverables: [{ ref: artifact }, { ref: image }] },
+    }
+    const deliverables = vi.fn(async () => ({ items: [item], nextAfterSeq: undefined }))
+    const readToolDetail = vi.fn(async () => ({
+      call: {
+        name: 'present',
+        toolUseId: 'p',
+        args: { files: [{ path: 'page.html' }, { path: 'image.svg' }] },
+      },
+      result: { toolUseId: 'p', structured: item.structured },
+    }))
+    const call = vi.fn(async (_method: string, input: { artifact: typeof artifact }) => ({
+      ok: true,
+      status: 200,
+      artifact: input.artifact,
+      contentLength: input.artifact.size,
+      base64: btoa(input.artifact.sha256 === artifact.sha256 ? html : svg),
+    }))
+    const service = new ClientResourceService(
+      ctx,
+      { call, sessions: { get: () => ({ deliverables, readToolDetail }) } } as never,
+      session,
+    )
+    const result = await service.documents.load({ laneId: 'main', kind: 'html', artifact })
+    expect(result.content).toContain('data:image/svg+xml;base64,')
+    expect(readToolDetail).toHaveBeenCalledWith(4, 6)
+    deliverables.mockResolvedValue({
+      items: [item, { ...item, callSeq: 8, resultSeq: 9 }],
+      nextAfterSeq: undefined,
+    })
+    await expect(service.documents.load({ laneId: 'main', kind: 'html', artifact })).rejects.toMatchObject({
+      code: 'HTML_PREVIEW_RESOURCE_UNAVAILABLE',
+    })
+    await ctx.fiber.dispose()
+  })
+  it.each(['image/svg+xml', 'application/octet-stream'])(
+    'previews authorized SVG snapshots with MIME %s without changing their identity',
+    async (mime) => {
+      const ctx = new Context(),
+        session = new SessionService(ctx, 'session-a')
+      const text = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10"/></svg>'
+      const artifact = { sha256: 'e'.repeat(64), size: text.length, mime }
+      const call = vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        artifact,
+        contentLength: text.length,
+        base64: btoa(text),
+      }))
+      const service = new ClientResourceService(ctx, { call } as never, session)
+      const create = vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+        expect((blob as Blob).type).toBe('image/svg+xml')
+        return 'blob:svg'
+      })
+      const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+      try {
+        const value = await service.documents.load({
+          laneId: 'main',
+          kind: 'image',
+          name: '插画.svg',
+          artifact,
+        })
+        expect(value.artifact).toEqual(artifact)
+        expect(call).toHaveBeenCalledWith('_agnes/v1/artifact.read', {
+          sessionId: 'session-a',
+          laneId: 'main',
+          artifact,
+        })
+        value.release()
+        expect(revoke).toHaveBeenCalledWith('blob:svg')
+        call.mockResolvedValue({
+          ok: true,
+          status: 200,
+          artifact,
+          contentLength: artifact.size,
+          base64: btoa('<html></html>'.padEnd(text.length)),
+        })
+        await expect(
+          service.documents.load({ laneId: 'main', kind: 'image', name: 'bad.svg', artifact }),
+        ).rejects.toThrow('SVG preview is invalid')
+      } finally {
+        create.mockRestore()
+        revoke.mockRestore()
+        await ctx.fiber.dispose()
+      }
+    },
+  )
   it('只通过当前会话授权读取图片，并提供可回收的 Blob URL', async () => {
     const ctx = new Context()
     const session = new SessionService(ctx, 'session-a')
@@ -424,6 +547,7 @@ describe('ClientResourceService', () => {
     const document = await service.documents.load({ laneId: 'lane-a', kind: 'pdf', artifact })
 
     expect(document.url).toBe('blob:test-pdf')
+    expect(document.content).toBe('JVBERg==')
     document.release()
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:test-pdf')
     await expect(
@@ -535,14 +659,26 @@ describe('SessionService plugin boundary', () => {
           services = plugin.agnes.services
         },
       }),
-      { packageId: 'acme/panel', rowId: 'web:acme/panel', revision: 'r1', services: ['panel.query'] },
+      {
+        binding: { ...profileBinding('web:acme/panel'), packageId: 'acme/panel' },
+        packageId: 'acme/panel',
+        rowId: 'web:acme/panel',
+        revision: 'r1',
+        services: ['panel.query'],
+      },
     )
     await fiber
     const changed = vi.fn()
     const stop = session.projection.subscribe(changed)
 
     await services?.call('panel.query', {})
-    expect(caller).toHaveBeenLastCalledWith(expect.anything(), 'session-a', 'panel.query', {})
+    expect(caller).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'session-a',
+      'panel.query',
+      {},
+      expect.any(AbortSignal),
+    )
     first.listeners.forEach((listener) => {
       listener()
     })
@@ -554,7 +690,13 @@ describe('SessionService plugin boundary', () => {
     })
     expect(changed).toHaveBeenCalledTimes(2)
     await services?.call('panel.query', {})
-    expect(caller).toHaveBeenLastCalledWith(expect.anything(), 'session-b', 'panel.query', {})
+    expect(caller).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'session-b',
+      'panel.query',
+      {},
+      expect.any(AbortSignal),
+    )
     await expect(session.projection.read()).resolves.toMatchObject({ value: { session: 'session-b' } })
     await expect(session.commands.prompt({ text: 'new session only' })).resolves.toBe('session-b')
     expect(first.prompt).not.toHaveBeenCalled()

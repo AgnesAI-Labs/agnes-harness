@@ -182,6 +182,14 @@ describe('compaction trigger', () => {
       { refinementEnabled: () => true, refinementTriggers: port },
       [capped, textTurn('SUMMARY')],
     )
+    provider.models = () => [
+      model('answer-model', 'primary', 100),
+      {
+        ...model('summary-model', 'compaction', 1000),
+        reasoning: true,
+        thinkingLevelMap: { low: 'low' },
+      },
+    ]
     await session.requestCompaction({ actor, admissionId: 'trigger-retry' })
     expect(await session.runCompaction()).toEqual({ phase: 'checkpoint' })
     // Two summary calls (the cut-off one and its retry), one committed replacement, one offer.

@@ -1,5 +1,6 @@
 import { createWorkspaceInvocationPort, type FsOps, type WorkspaceInvocationSource } from '@agnes/core'
 import { withPhase } from '@agnes/core-common/step/op-state'
+import { presetDefaults } from '@agnes/core-common/step/preset'
 import { defaultToolPolicy, type ToolContext, type ToolDef, type ToolPolicyInput } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it, vi } from 'vitest'
@@ -338,6 +339,7 @@ describe('tools phase', () => {
     // commit carries the counter as a cell beside its rows.
     expect(types.slice(i + 3)).toEqual([
       'effect/intent',
+      'x/core/tool-dispatch',
       'tool/result',
       'effect/settled',
       'verifier/signal',
@@ -1228,6 +1230,92 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
     expect((await s.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data).toMatchObject({
       isError: false,
     })
+  })
+
+  it('concurrent read-only subagent_collect handles receipts, known refusals and timeouts without parking on TOOL_OUTCOME_UNKNOWN', async () => {
+    const registry = new ToolRegistry()
+    const collect: ToolDef = {
+      name: 'subagent_collect',
+      description: 'collect child',
+      parameters: Type.Object({ childKey: Type.String(), mode: Type.Optional(Type.String()) }),
+      meta: {
+        isReadOnly: true,
+        isDestructive: false,
+        isConcurrencySafe: true,
+        isOpenWorld: false,
+        replay: 'safe',
+        requiresApproval: 'never',
+      },
+      async execute(raw, ctx) {
+        const args = raw as { childKey: string; mode?: string }
+        if (args.mode === 'timeout') {
+          await new Promise<void>((_, reject) => {
+            ctx.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+          })
+        }
+        if (args.childKey.startsWith('missing-')) {
+          return {
+            content: [{ type: 'text', text: `unknown child ${args.childKey}` }],
+            isError: true,
+            details: { code: 'E_CHILD_NOT_FOUND' },
+          }
+        }
+        return {
+          content: [{ type: 'text', text: `result:${args.childKey}` }],
+          details: { childKey: args.childKey, status: 'idle' },
+        }
+      },
+    }
+    registry.add(collect, { source: 's', trust: 'builtin' })
+
+    // 1. Two concurrent valid collects and two concurrent unknown-handle refusals complete at checkpoint.
+    const batch = (calls: Array<Record<string, string>>): Script => [
+      sent(),
+      ...calls.map((args, ordinal) => ({
+        type: 'toolcall_end' as const,
+        call: { toolUseId: '', name: 'subagent_collect', args, ordinal },
+        via: 'native' as const,
+      })),
+      usage(),
+      { type: 'done', reason: 'toolUse' },
+    ]
+    const s = await openSession({
+      provider: fakeProvider([
+        batch([{ childKey: 'child-1' }, { childKey: 'child-2' }]),
+        batch([{ childKey: 'missing-1' }, { childKey: 'missing-2' }]),
+        batch([{ childKey: 'slow-1', mode: 'timeout' }]),
+      ]),
+      registry,
+      seams: fakeSeams(),
+      preset: { ...presetDefaults(), tools: { ...presetDefaults().tools, timeoutMs: 40 } },
+    })
+    await s.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
+    await s.session.acceptInput()
+    await s.session.runInference()
+
+    expect(await s.session.runToolsPhase()).toEqual({ phase: 'checkpoint' })
+    const okResults = (await s.log.scan({ type: 'tool/result', limit: 10 })).map((r) => r.data)
+    expect(okResults).toHaveLength(2)
+    expect(okResults.every((r) => (r as { isError?: boolean }).isError === false)).toBe(true)
+
+    await s.session.step()
+    await s.session.step()
+    expect(await s.session.runToolsPhase()).toEqual({ phase: 'checkpoint' })
+    const refusalResults = (await s.log.scan({ type: 'tool/result', limit: 10 }))
+      .slice(-2)
+      .map((r) => r.data as { isError?: boolean; code?: string })
+    expect(refusalResults.every((r) => r.isError === true && r.code !== 'TOOL_OUTCOME_UNKNOWN')).toBe(true)
+
+    await s.session.step()
+    await s.session.step()
+    expect(await s.session.runToolsPhase()).toEqual({ phase: 'checkpoint' })
+    const timeoutResult = (await s.log.scan({ type: 'tool/result', order: 'desc', limit: 1 }))[0]?.data as {
+      isError?: boolean
+      code?: string
+    }
+    expect(timeoutResult.isError).toBe(true)
+    expect(timeoutResult.code).toBe('CANCELLED')
+    expect(await s.log.scan({ type: 'x/core/unknown-outcome', limit: 5 })).toEqual([])
   })
 
   /** Yolo overrides an ordinary destructive ask too, not just the subagent/taint exemptions above. */

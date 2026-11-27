@@ -455,6 +455,36 @@ it('reads confined local PNG/JPEG bytes as model images, downsizes them, and fal
     expect(result.content[0]?.type).toBe('image')
     expect(await sharp(received[0]).metadata()).toMatchObject({ width: 100, height: 50 })
     expect(base.calls.read[0]?.path).toBe('picture')
+    const attachmentContext = {
+      ...ctx,
+      session: {
+        ...ctx.session,
+        readAttachment: async () => ({ bytes, name: `uploaded.${format}`, mimeType: `image/${format}` }),
+      },
+    }
+    const readsBefore = [...base.calls.read]
+    const uploaded = await readTool.execute({ path: 'session-file://3/1' }, attachmentContext)
+    expect(uploaded.content[0]?.type).toBe('image')
+    expect(await sharp(received[1]).metadata()).toMatchObject({ width: 100, height: 50 })
+    expect(base.calls.read).toEqual(readsBefore)
+    const refusedUpload = await readTool.execute(
+      { path: 'session-file://3/1' },
+      {
+        ...attachmentContext,
+        session: {
+          ...attachmentContext.session,
+          imageInputPolicy: async () => ({
+            supported: false,
+            maxWidth: 100,
+            maxHeight: 100,
+            maxBytes: 100000,
+            maxPixels: 10000,
+          }),
+        },
+      },
+    )
+    expect(textOf(refusedUpload)).toContain('pixels were not inspected')
+    expect(received).toHaveLength(2)
     const fallback = await readTool.execute(
       { path: 'picture' },
       {
@@ -472,7 +502,7 @@ it('reads confined local PNG/JPEG bytes as model images, downsizes them, and fal
       },
     )
     expect(textOf(fallback)).toContain('pixels were not inspected')
-    expect(received).toHaveLength(1)
+    expect(received).toHaveLength(2)
     base.mem.files.set('/w/picture', Uint8Array.of(0x89, 0x50, 0x4e, 0x47))
     expect((await readTool.execute({ path: 'picture' }, ctx)).isError).toBe(true)
   }

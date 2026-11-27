@@ -1239,6 +1239,40 @@ it.each([
   },
 )
 
+it('formats child-batch-completed notices without leaking raw UUIDs or batch state instructions', async () => {
+  const node: UINode = {
+    kind: 'user',
+    id: 'batch-notice',
+    seq: 2,
+    commandId: 'child-batch:1',
+    content: [
+      {
+        type: 'text',
+        text: 'Background child p/01M86JE4DZ253VTFWEW2KF1W9G cancelled. [Batch State: completed=2/6] DO NOT report overall batch completion.',
+      },
+    ],
+    origin: 'system',
+    system: {
+      source: 'agnes/child',
+      type: 'child-batch-completed',
+      summary:
+        'Background child p/01M86JE4DZ253VTFWEW2KF1W9G cancelled. [Batch State: completed=2/6] DO NOT report overall batch completion.',
+      data: {
+        children: [
+          { childKey: 'p/01M86JE4DZ253VTFWEW2KF1W9G', status: 'cancelled' },
+          { childKey: 'p/01M86JPX0RFR168K7JKXSMBA0A', status: 'cancelled' },
+        ],
+      },
+    },
+  }
+  const store = createConversationProjectionStore({ sessionId: 's', nodes: [node] })
+  await act(async () => root.render(createElement(Harness, { store })))
+  expect(host.querySelector('.delegation-notice')).not.toBeNull()
+  expect(host.querySelector('[role=status]')?.textContent).toBe('后台任务已取消：KF1W9G / SMBA0A')
+  expect(host.querySelector('[role=status]')?.textContent).not.toContain('Batch State')
+  expect(host.querySelector('.system-input-trace')?.hasAttribute('open')).toBe(false)
+})
+
 it.each([
   ['an app delivered', { kind: 'bundled-app', appId: '@agnes/superagent/superagent' }],
   ['a person typed', undefined],
@@ -1354,54 +1388,64 @@ describe('reconciliation and calls that never ran', () => {
   })
 })
 
-it('lazily loads stored image references, downloads originals and releases late URLs after a scope change', async () => {
-  const original = { sha256: 'a'.repeat(64), size: 500, mime: 'image/png' }
-  const thumbnail = { sha256: 'b'.repeat(64), size: 50, mime: 'image/jpeg' }
-  const content = [attachmentLink(original, 'photo.png', { image: { width: 32, height: 24 }, thumbnail })]
-  const node: UINode = { kind: 'user', id: 'image-ref', seq: 7, content }
-  const release = vi.fn()
-  let show: ((entries: { isIntersecting: boolean }[]) => void) | undefined
-  vi.stubGlobal(
-    'IntersectionObserver',
-    class {
-      constructor(private callback: typeof show) {}
-      observe(target: HTMLElement) {
-        if (target.classList.contains('user-message-attachment')) show = this.callback
+it.each([false, true])(
+  'lazily previews stored images with legacy metadata=%s, downloads originals and releases late URLs',
+  async (legacy) => {
+    const original = { sha256: 'a'.repeat(64), size: 500, mime: 'image/png' }
+    const thumbnail = { sha256: 'b'.repeat(64), size: 50, mime: 'image/jpeg' }
+    const content = [
+      attachmentLink(original, 'photo.png', legacy ? {} : { image: { width: 32, height: 24 }, thumbnail }),
+    ]
+    const node: UINode = { kind: 'user', id: 'image-ref', seq: 7, content }
+    const release = vi.fn()
+    let show: ((entries: { isIntersecting: boolean }[]) => void) | undefined
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(private callback: typeof show) {}
+        observe(target: HTMLElement) {
+          if (target.classList.contains('user-message-attachment')) show = this.callback
+        }
+        disconnect() {}
+      },
+    )
+    let late: ((value: { url: string; release(): void }) => void) | undefined
+    let previewLoaded = false
+    const read = vi.fn(async (_artifact: typeof original) => {
+      if (!previewLoaded) {
+        previewLoaded = true
+        return { url: 'blob:thumbnail', release }
       }
-      disconnect() {}
-    },
-  )
-  let late: ((value: { url: string; release(): void }) => void) | undefined
-  const read = vi.fn(async (artifact: typeof original) => {
-    if (artifact.sha256 === thumbnail.sha256) return { url: 'blob:thumbnail', release }
-    return new Promise<{ url: string; release(): void }>((resolve) => {
-      late = resolve
+      return new Promise<{ url: string; release(): void }>((resolve) => {
+        late = resolve
+      })
     })
-  })
-  try {
-    await act(async () =>
-      root.render(createElement(ConversationMessages, { t, nodes: [node], readAttachment: read })),
-    )
-    expect(read).not.toHaveBeenCalled()
-    await act(async () => show?.([{ isIntersecting: true }]))
-    expect(read.mock.calls.map(([ref]) => ref)).toEqual([thumbnail])
-    expect(host.querySelector('img')?.getAttribute('src')).toBe('blob:thumbnail')
-    expect(host.innerHTML).not.toContain('base64')
-    const button = [...host.querySelectorAll('button')].find((el) => el.textContent?.includes('下载原件'))
-    await act(async () => button?.click())
-    expect(late).toBeTypeOf('function')
-    await act(async () =>
-      root.render(createElement(ConversationMessages, { key: 'another-session', t, nodes: [] })),
-    )
-    const releaseLate = vi.fn()
-    await act(async () => late?.({ url: 'blob:late-original', release: releaseLate }))
-    expect(release).toHaveBeenCalled()
-    expect(releaseLate).toHaveBeenCalledOnce()
-    expect(host.innerHTML).not.toContain('blob:late-original')
-  } finally {
-    vi.unstubAllGlobals()
-  }
-})
+    try {
+      await act(async () =>
+        root.render(createElement(ConversationMessages, { t, nodes: [node], readAttachment: read })),
+      )
+      expect(read).not.toHaveBeenCalled()
+      await act(async () => show?.([{ isIntersecting: true }]))
+      expect(read.mock.calls.map(([ref]) => ref)).toEqual([legacy ? original : thumbnail])
+      expect(host.querySelector('img')?.getAttribute('src')).toBe('blob:thumbnail')
+      expect(host.innerHTML).not.toContain('base64')
+      const button = [...host.querySelectorAll('button')].find((el) => el.textContent?.includes('下载原件'))
+      // The original still loads separately when the user requests its download.
+      await act(async () => button?.click())
+      expect(late).toBeTypeOf('function')
+      await act(async () =>
+        root.render(createElement(ConversationMessages, { key: 'another-session', t, nodes: [] })),
+      )
+      const releaseLate = vi.fn()
+      await act(async () => late?.({ url: 'blob:late-original', release: releaseLate }))
+      expect(release).toHaveBeenCalled()
+      expect(releaseLate).toHaveBeenCalledOnce()
+      expect(host.innerHTML).not.toContain('blob:late-original')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  },
+)
 
 it('shows a missing/reclaimed referenced image as unavailable without creating inline image bytes', async () => {
   vi.stubGlobal(

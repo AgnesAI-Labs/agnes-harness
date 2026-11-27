@@ -128,6 +128,10 @@ export const defaultToolPolicy: ToolPolicy = {
       'subagent_list',
       'subagent_send_message',
       'subagent_interrupt',
+      'subagent_pause',
+      'subagent_resume',
+      'subagent_close',
+      'subagent_recap',
     ].includes(input.call.name)
     // A presentational tool only publishes display state. Tainted input does not escalate it.
     // requiresApproval "always" and a destructive declaration still ask.

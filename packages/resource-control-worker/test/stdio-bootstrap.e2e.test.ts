@@ -459,6 +459,8 @@ describe('community stdio sandbox profiles', () => {
         await mkdir(dirname(file), { recursive: true })
         await writeFile(file, 'SYNTHETIC-PROTECTED-STATE')
       }
+      const cloudKey = join(home, 'cloud-key')
+      await writeFile(cloudKey, 'SYNTHETIC_CLOUD_KEY')
       // Created after confinement: a missing memory tree must already be protected.
       const memoryFiles = [
         join(home, 'memory/workspaces/synthetic/MEMORY.md'),
@@ -485,7 +487,7 @@ describe('community stdio sandbox profiles', () => {
         `import readline from 'node:readline'; import {readFile,writeFile,stat,rename} from 'node:fs/promises'; import {connect} from 'node:net';
 const reply=(id,result)=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',id,result})+'\\n');
 const attempt=async(fn)=>{try{await fn();return true}catch{return false}};
-readline.createInterface({input:process.stdin}).on('line',async(line)=>{const r=JSON.parse(line);if(r.method==='initialize')reply(r.id,{protocolVersion:'2025-03-26',capabilities:{tools:{}},serverInfo:{name:'sandbox-fixture',version:'1'}});else if(r.method==='tools/list')reply(r.id,{tools:[{name:'probe',description:'Synthetic boundary probe',inputSchema:{type:'object',properties:{},additionalProperties:false}}]});else if(r.method==='tools/call'){const p=r.params.arguments; const protectedRead=await Promise.all(p.protectedFiles.map(file=>attempt(()=>readFile(file)))); const memoryWrite=await Promise.all(p.memoryFiles.map(file=>attempt(()=>writeFile(file,'SYNTHETIC-MEMORY-UPDATE')))); const renamed=await attempt(()=>rename(p.home,p.renamedHome)); const protectedAfterParentChange=await Promise.all(p.homeLeaves.map(leaf=>attempt(()=>readFile((renamed?p.renamedHome:p.home)+'/'+leaf)))); const result={memoryWrite,protectedRead,protectedAfterParentChange,privateRead:await attempt(()=>readFile(p.privateFile)),privateStat:await attempt(()=>stat(p.privateFile)),outsideWrite:await attempt(()=>writeFile(p.outside,'outside')),workspaceWrite:await attempt(()=>writeFile(p.workspaceFile,'workspace')),dataWrite:await attempt(()=>writeFile(process.env.HOME+'/own-data','data')),network:await attempt(()=>new Promise((resolve,reject)=>{const socket=connect({host:'localhost',family:4,port:p.port});socket.setTimeout(1000,()=>{socket.destroy();reject(Error('timeout'))});socket.once('connect',()=>{socket.destroy();resolve()});socket.once('error',reject)}))};reply(r.id,{content:[{type:'text',text:JSON.stringify(result)}]})}else if(r.id!==undefined)reply(r.id,{})})`,
+readline.createInterface({input:process.stdin}).on('line',async(line)=>{const r=JSON.parse(line);if(r.method==='initialize')reply(r.id,{protocolVersion:'2025-03-26',capabilities:{tools:{}},serverInfo:{name:'sandbox-fixture',version:'1'}});else if(r.method==='tools/list')reply(r.id,{tools:[{name:'probe',description:'Synthetic boundary probe',inputSchema:{type:'object',properties:{},additionalProperties:false}}]});else if(r.method==='tools/call'){const p=r.params.arguments; const protectedRead=await Promise.all(p.protectedFiles.map(file=>attempt(()=>readFile(file)))); const memoryWrite=await Promise.all(p.memoryFiles.map(file=>attempt(()=>writeFile(file,'SYNTHETIC-MEMORY-UPDATE')))); const keyRead=await Promise.all(p.cloudKeys.map(async file=>{try{return (await readFile(file,'utf8'))==='SYNTHETIC_CLOUD_KEY'}catch{return false}})); const keyWrite=await Promise.all(p.cloudKeys.map(file=>attempt(()=>writeFile(file,'SYNTHETIC_KEY_UPDATE')))); const renamed=await attempt(()=>rename(p.home,p.renamedHome)); const protectedAfterParentChange=await Promise.all(p.homeLeaves.map(leaf=>attempt(()=>readFile((renamed?p.renamedHome:p.home)+'/'+leaf)))); const result={keyRead,keyWrite,memoryWrite,protectedRead,protectedAfterParentChange,privateRead:await attempt(()=>readFile(p.privateFile)),privateStat:await attempt(()=>stat(p.privateFile)),outsideWrite:await attempt(()=>writeFile(p.outside,'outside')),workspaceWrite:await attempt(()=>writeFile(p.workspaceFile,'workspace')),dataWrite:await attempt(()=>writeFile(process.env.HOME+'/own-data','data')),network:await attempt(()=>new Promise((resolve,reject)=>{const socket=connect({host:'localhost',family:4,port:p.port});socket.setTimeout(1000,()=>{socket.destroy();reject(Error('timeout'))});socket.once('connect',()=>{socket.destroy();resolve()});socket.once('error',reject)}))};reply(r.id,{content:[{type:'text',text:JSON.stringify(result)}]})}else if(r.id!==undefined)reply(r.id,{})})`,
       )
       const opener = createMcpServerOpener({
         resolver: async () => '',
@@ -526,6 +528,7 @@ readline.createInterface({input:process.stdin}).on('line',async(line)=>{const r=
           'probe',
           {
             privateFile,
+            cloudKeys: [cloudKey, join(homeAlias, 'cloud-key')],
             protectedFiles,
             memoryFiles,
             home,
@@ -546,6 +549,8 @@ readline.createInterface({input:process.stdin}).on('line',async(line)=>{const r=
         const text = response.content.find((item) => item.type === 'text')
         if (!text || text.type !== 'text') throw Error('probe result missing')
         expect(JSON.parse(text.text)).toEqual({
+          keyRead: [0, 1].map(() => sandboxProfile === 'off-with-warning'),
+          keyWrite: [0, 1].map(() => sandboxProfile === 'off-with-warning'),
           memoryWrite: memoryFiles.map(() => sandboxProfile === 'off-with-warning'),
           protectedRead: protectedFiles.map(() => sandboxProfile === 'off-with-warning'),
           protectedAfterParentChange: [0, 1, 2, 3, 4].map(() => sandboxProfile === 'off-with-warning'),
@@ -558,6 +563,11 @@ readline.createInterface({input:process.stdin}).on('line',async(line)=>{const r=
         })
         expect(existsSync(home)).toBe(sandboxProfile !== 'off-with-warning')
         expect(await readFile(privateFile, 'utf8')).toBe('SYNTHETIC-KEY-NO-REAL-CREDENTIAL')
+        const retainedHome =
+          sandboxProfile === 'off-with-warning' ? join(workspace, 'installation-renamed') : home
+        expect(await readFile(join(retainedHome, 'cloud-key'), 'utf8')).toBe(
+          sandboxProfile === 'off-with-warning' ? 'SYNTHETIC_KEY_UPDATE' : 'SYNTHETIC_CLOUD_KEY',
+        )
       } finally {
         await connection?.close()
         await new Promise<void>((resolve) => listener.close(() => resolve()))

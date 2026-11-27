@@ -15,6 +15,19 @@ import type { Translate } from '../locales/index.js'
 import type { ComposerReferences } from '../reference-picker.js'
 import type { ComposerSkill, ComposerSkills } from '../skill-picker.js'
 
+export type ComposerChildAction = 'stop' | 'continue' | 'pause' | 'resume' | 'close' | 'retain' | 'recap'
+
+export type ComposerChildControlOptions = {
+  /** Stable idempotency key for an unconfirmed child write; session controllers reuse pending keys across UI remounts. */
+  readonly commandId?: string
+}
+
+/** Returned when a child control write succeeded but the follow-up state read failed. */
+export type ComposerChildControlOutcome = {
+  readonly refreshFailed?: string
+  readonly retryRefresh?: () => Promise<void>
+}
+
 export type ModelPickerOption = {
   id: string
   route: string
@@ -51,6 +64,7 @@ export type ModelPickerProps = {
   state: ModelPickerState
   onError(error: unknown): void
   onSelect(option: ModelPickerOption): Promise<boolean>
+  onCatalogChange?(models: readonly ModelPickerOption[] | undefined): void
   /** Submission port for panel effort/budget changes; without it the panel renders only the model list. */
   onSettingsChange?(settings: ModelSettings): Promise<boolean>
   onAuxiliaryRead?(): Promise<SessionAuxiliarySnapshot>
@@ -224,11 +238,17 @@ export interface ComposerRegionOptions {
   onAuxiliaryRead?(): Promise<SessionAuxiliarySnapshot>
   onAuxiliarySelect?(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean>
   onModelSelect(option: ModelPickerOption): Promise<boolean>
+  onModelCatalogChange?(models: readonly ModelPickerOption[] | undefined): void
   onModelSettingsChange?(settings: ModelSettings): Promise<boolean>
   onPermissionSelect(mode: PermissionMode): Promise<boolean>
   /** `steer` is true for the guidance shortcut (⌘/Ctrl+Enter): while the agent runs it joins at the next step. */
   onSubmit(options?: { steer?: boolean }): void
-  onChildControl?(id: string, action: 'stop' | 'continue', text?: string): Promise<void>
+  onChildControl?(
+    id: string,
+    action: ComposerChildAction,
+    text?: string,
+    options?: ComposerChildControlOptions,
+  ): Promise<void | ComposerChildControlOutcome>
   onPauseResume?(): void
   onEditQueued?(itemId: string, text: string): Promise<void>
   onSendNow?(itemId: string): void

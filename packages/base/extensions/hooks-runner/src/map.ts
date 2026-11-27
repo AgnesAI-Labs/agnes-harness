@@ -138,6 +138,7 @@ export function translateReturn<E extends HookEvent>(
     case 'subagent_start':
     case 'subagent_end':
     case 'format_deviation':
+    case 'turn_end':
     case 'shutdown':
       return observeReturn(event, blocked)
     case 'before_request':

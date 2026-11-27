@@ -22,6 +22,13 @@ The command also typechecks the harness and runs the i18n-scanner unit checks.
 No browser or package installation happens during the gate. `AGH_CHROMIUM_PATH` can select an
 already installed executable for local debugging; CI uses the pinned Playwright Chromium cache.
 
+To verify plugin UI across builds, run `plugin-ui-entries.spec.ts` with
+`AGH_WEB_TEST_BASELINE_ENTRY` set to the absolute path of a previously built
+`dist/local/agnes.mjs`. The test authorizes the legacy UI on that build, then uses
+`AGH_WEB_TEST_ENTRY` (default `packages/cli/dist/local/agnes.mjs`) to start the candidate in
+the same isolated home. Without the baseline override, the test checks the candidate
+before and after installing the new plugins.
+
 ## Runtime and SDK coverage
 
 Each real-runtime test receives a new short `/tmp` directory and an isolated `AGH_HOME` and `HOME`. The harness

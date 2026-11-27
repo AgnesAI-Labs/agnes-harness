@@ -177,3 +177,13 @@ export async function finishAborted(s: SessionImpl): Promise<StepOutcome> {
   await closeTurn(s, reason, error ? { error } : {})
   return { phase: 'terminal', reason }
 }
+
+export function collectCloseFailures(failures: unknown[]) {
+  return async (close: () => unknown | Promise<unknown>): Promise<void> => {
+    try {
+      await close()
+    } catch (error) {
+      failures.push(error)
+    }
+  }
+}

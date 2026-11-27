@@ -29,7 +29,7 @@ const errorCode = (error: unknown): string | undefined => (error as { code?: str
 export function registerRefinement(
   ep: LocalEndpoint,
   deps: {
-    settings: Pick<RefinementSettingsStore, 'read' | 'save' | 'serviceKey' | 'resolveBaseUrl'>
+    settings: Pick<RefinementSettingsStore, 'read' | 'save' | 'serviceKey' | 'prepareSave'>
     fetchModels: (baseUrl: string, key: string, signal: AbortSignal) => Promise<RefinementModelOption[]>
     /** Told, after the save, when a save turned refinement on; it cannot fail the save. */
     switchedOn?: () => void
@@ -95,17 +95,14 @@ export function registerRefinement(
   ep.register('_agnes/v1/refinement.save', async (params, c): Promise<RefinementSettingsSaveResult> => {
     local(c)
     const p = params as RefinementSettingsSaveParams
-    const { revision, settings: previous } = stored(() => deps.settings.read())
-    if (revision !== p.expectedRevision)
-      throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_REVISION_CONFLICT' })
-    const baseUrl = stored(() => deps.settings.resolveBaseUrl(p.settings.baseUrl))
+    const { baseUrl, current } = stored(() => deps.settings.prepareSave(p.settings, p.expectedRevision))
+    const previous = current.settings
     const { enabled, model, credentialRef } = p.settings
     const requiresCatalogue =
       model &&
       credentialRef &&
       (model !== previous.model ||
-        (enabled &&
-          (!previous.enabled || credentialRef !== previous.credentialRef || baseUrl !== previous.baseUrl)))
+        (enabled && (!previous.enabled || credentialRef !== previous.credentialRef)))
     let option: RefinementModelOption | undefined
     if (requiresCatalogue) {
       option = (await loadModels(baseUrl, credentialRef, c.signal)).find(({ id }) => id === model)

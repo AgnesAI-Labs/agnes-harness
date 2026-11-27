@@ -17,6 +17,9 @@ export const pluginAdminLocaleCatalog: LocaleCatalog = {
     'status.desired': 'Requested state',
     'status.actual': 'Observed runtime',
     'status.browser': 'Browser module',
+    'status.nativeUiBlocked': 'Not approved',
+    'status.nativeUiNotAdmitted':
+      'Some native UI from this plugin is not approved for the official workbench. The plugin’s backend status is unchanged.',
     'status.generation': 'Generation state',
     'status.bound': 'Bound sessions',
     'status.draining': 'Retained older sessions',
@@ -77,6 +80,8 @@ export const pluginAdminLocaleCatalog: LocaleCatalog = {
     'status.desired': '期望启用状态',
     'status.actual': '实际运行状态',
     'status.browser': '浏览器模块',
+    'status.nativeUiBlocked': '未获准',
+    'status.nativeUiNotAdmitted': '此插件有原生界面未获官方工作台准入。插件的后端运行状态不受影响。',
     'status.generation': '代际状态',
     'status.bound': '绑定会话数',
     'status.draining': '保留旧代际会话数',

@@ -1,4 +1,5 @@
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -11,23 +12,58 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { InstalledInventory, InstalledPackage, PackageManager } from '@agnes/package-manager'
-import { hashDirectory, RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
+import { createPackageManager, hashDirectory, RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import {
   buildRuntimeTarget,
   createPluginRow,
   decodeRuntimeTargetArtifact,
   encodeRuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
-import { projectClientModuleRows } from '@agnes/protocol'
+import { type ClientContribution, projectClientModuleRows } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createClientModuleRegistry, runtimeArtifactsFromStore } from '../src/packages/client-modules.js'
+import { admissionDigest } from '../src/packages/client-admission.js'
+import {
+  createClientModuleRegistry as createRegistry,
+  runtimeArtifactsFromStore,
+} from '../src/packages/client-modules.js'
 import { createPackageAdminService, type PackageActivationObservation } from '../src/packages/handler.js'
 import { FilePackageOperationStore } from '../src/packages/operations.js'
 import { previewRole, roleDigest } from '../src/packages/role-selection.js'
 
+const installedAt = '2026-11-26T00:00:00.000Z'
+
 const roots: string[] = []
+const fixtureIdentities = new Set<string>()
+const fixtureName = /^(?:acme\/(?:panel|second)|@agnes-examples\/client-panel|@acme\/panel)$/
+
+function createClientModuleRegistry(options: Parameters<typeof createRegistry>[0]) {
+  const registry = createRegistry({
+    releaseEvidence: (tree, archive) => {
+      const identity = `${tree.integrity}:${tree.treeIntegrity}:${tree.capabilityHash}`
+      const expectedSource =
+        tree.source?.ref === 'file:./synthetic' || tree.source?.ref === 'file:./installed'
+      if (
+        fixtureName.test(tree.packageId) &&
+        (expectedSource || (archive && !tree.source)) &&
+        fixtureIdentities.has(identity)
+      )
+        return identity
+      return undefined
+    },
+    ...options,
+  })
+  return {
+    ...registry,
+    read: (
+      input: Omit<Parameters<typeof registry.read>[0], 'purpose'> & {
+        purpose?: Parameters<typeof registry.read>[0]['purpose']
+      },
+    ) => registry.read({ purpose: 'document', ...input }),
+  }
+}
 
 afterEach(() => {
+  fixtureIdentities.clear()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
@@ -62,10 +98,26 @@ function installed(input: {
   assets?: string[]
 }): InstalledPackage {
   const integrity = input.integrity ?? `sha256-${'1'.repeat(64)}`
+  const treeIntegrity = hashDirectory(input.directory, { exclude: [] })
+  fixtureIdentities.add(`${integrity}:${treeIntegrity}:capability`)
   return {
     id: 'acme/panel',
     directory: input.directory,
-    entry: { integrity },
+    entry: {
+      integrity,
+      treeIntegrity,
+      version: '1.0.0',
+      source: { type: 'file', ref: 'file:./synthetic' },
+      trust: 'trusted',
+      license: 'MIT',
+      state: {
+        installed: installedAt,
+        trusted: input.trusted === false ? null : installedAt,
+        enabled: input.enabled ?? true,
+      },
+      dependencies: {},
+      previous: null,
+    },
     capabilityHash: 'capability',
     enabled: input.enabled ?? true,
     trusted: input.trusted ?? true,
@@ -94,7 +146,7 @@ function installed(input: {
         },
       },
     ],
-  } as unknown as InstalledPackage
+  }
 }
 
 function inventory(row: InstalledPackage): InstalledInventory {
@@ -105,6 +157,93 @@ const running = (integrity: string): PackageActivationObservation => ({
   actual: 'running',
   actualIntegrity: integrity,
 })
+
+async function archivedFixture(
+  files: ReturnType<typeof fixture>,
+  clients: readonly ClientContribution[],
+): Promise<InstalledPackage> {
+  const ids = clients.map((_, index) => `ext:archive/client-${index}`)
+  const { root, packageDirectory } = files
+  const descriptors = clients.map((client, index) => {
+    const relative = index === 0 ? '' : `client-${index}/`
+    const path = `./${relative}agnes.client.json`
+    if (relative) {
+      mkdirSync(join(packageDirectory, relative), { recursive: true })
+      cpSync(join(packageDirectory, 'dist'), join(packageDirectory, relative, 'dist'), { recursive: true })
+    }
+    writeFileSync(join(packageDirectory, path), JSON.stringify({ client }))
+    return { rowId: ids[index], path }
+  })
+  writeFileSync(join(packageDirectory, 'index.mjs'), 'export const client = { apply() {} }\n')
+  writeFileSync(
+    join(packageDirectory, 'package.json'),
+    JSON.stringify({
+      name: '@acme/panel',
+      version: '1.0.0',
+      license: 'MIT',
+      exports: './index.mjs',
+      agnes: {
+        clientDescriptors: descriptors,
+        plugins: ids.map((id, index) => ({
+          id,
+          export: `client-${index}`,
+          apiRange: '^5.0.0',
+          runtime: 'in-process',
+          capabilities: { ui: true },
+        })),
+      },
+    }),
+  )
+  const profile = join(root, 'profiles', 'local-dev')
+  mkdirSync(profile, { recursive: true })
+  const manager = createPackageManager({ dataDir: root, cwd: root, agnesVersion: '0.1.0' })
+  const source = { type: 'file', ref: 'file:./installed' } satisfies InstalledPackage['entry']['source']
+  const preview = await manager.inspect(profile, source)
+  const capabilityHash = preview.capabilityHash
+  if (!capabilityHash) throw new Error('Missing verified fixture capabilities')
+  const treeIntegrity = hashDirectory(packageDirectory, { exclude: [] })
+  fixtureIdentities.add(`${preview.integrity}:${treeIntegrity}:${capabilityHash}`)
+  return {
+    id: preview.id,
+    directory: packageDirectory,
+    entry: {
+      source,
+      version: preview.version,
+      integrity: preview.integrity,
+      treeIntegrity,
+      trust: 'trusted',
+      license: 'MIT',
+      dependencies: preview.dependencies,
+      state: { installed: installedAt, trusted: installedAt, enabled: true },
+      previous: null,
+      ...(preview.declaredCapabilities ? { declaredCapabilities: preview.declaredCapabilities } : {}),
+    },
+    capabilityHash,
+    trusted: true,
+    enabled: true,
+    blockers: [],
+    verifiedRollbackTarget: null,
+    contributions: preview.contributions,
+  }
+}
+
+function archivedArtifact(row: InstalledPackage, clientIds: readonly string[] = []) {
+  const [web] = decodeRuntimeTargetArtifact(webArtifact(row.id, row.entry.integrity)).tree.rows
+  if (!web) throw new Error('Missing Web fixture row')
+  return buildRuntimeTarget({
+    rows: [
+      ...(clientIds.length ? clientIds.map((id) => ({ ...web, id: `web:${row.id}:${id}` })) : [web]),
+      ...row.contributions.flatMap((item) =>
+        item.kind === 'client' && 'rowId' in item && typeof item.rowId === 'string'
+          ? [{ ...web, id: item.rowId, mountRevision: 'host-ordinary-row:v1' }]
+          : [],
+      ),
+    ],
+    resources: { mcp: [], skills: {} },
+    resourceRevision: 'a'.repeat(64),
+    compositeRevision: 'b'.repeat(64),
+  })
+}
 
 function webArtifact(packageId: string, revision: string, disabled = false) {
   return encodeRuntimeTargetArtifact(
@@ -132,23 +271,23 @@ function webArtifact(packageId: string, revision: string, disabled = false) {
 describe('client module immutable snapshots', () => {
   it('serves the session generation roster and assets after the installed plugin is removed', async () => {
     const f = fixture(),
-      row = installed({
-        directory: f.packageDirectory,
-        slots: [],
-        styles: [],
-        intelligentComponents: [
-          {
-            kind: 'acme/panel/diff@1',
-            propsSchema: { type: 'object' },
-            maxPropsBytes: 256,
-            fallback: 'Use the preset table.',
-            accessibility: { label: 'Differences', keyboard: true },
-          },
-        ],
-      })
+      row = await archivedFixture(f, [
+        {
+          entry: './dist/index.js',
+          intelligentComponents: [
+            {
+              kind: '@acme/panel/diff@1',
+              propsSchema: { type: 'object' },
+              maxPropsBytes: 256,
+              fallback: 'Use the preset table.',
+              accessibility: { label: 'Differences', keyboard: true },
+            },
+          ],
+        },
+      ])
     const store = new RuntimeGenerationSnapshotStore(f.root)
     const snapshot = store.create(
-      decodeRuntimeTargetArtifact(webArtifact(row.id, row.entry.integrity)),
+      archivedArtifact(row),
       [
         {
           generation: 1,
@@ -159,6 +298,7 @@ describe('client module immutable snapshots', () => {
             profile: 'local-dev',
             packageId: row.id,
             version: '1.0.0',
+            source: row.entry.source,
             treeIntegrity: hashDirectory(f.packageDirectory, { exclude: [] }),
             capabilityHash: row.capabilityHash,
             directory: f.packageDirectory,
@@ -189,91 +329,60 @@ describe('client module immutable snapshots', () => {
       ])
       expect(currentRoster.modules).toEqual([])
       expect(roster.rows?.[0]?.binding?.availability).toBe('history-only')
-      expect(roster.modules).toHaveLength(1)
-      expect(roster.modules[0]?.intelligentComponents).toEqual(
-        row.contributions[0] && 'client' in row.contributions[0]
-          ? row.contributions[0].client?.intelligentComponents
-          : undefined,
-      )
-      expect(roster.rows?.find((item) => item.phase === 'ready')?.intelligentComponents).toEqual(
-        roster.modules[0]?.intelligentComponents,
-      )
-      expect(roster.modules[0]?.entryUrl).toContain(`/plugins/generations/${snapshot.id}/`)
+      expect(roster.modules).toEqual([])
+      const renderer = roster.rows?.[0]
+      expect(renderer).toMatchObject({
+        intelligentComponents: [{ kind: '@acme/panel/diff@1' }],
+        rendererDataUrl: expect.stringContaining(`/plugins/generations/${snapshot.id}/`),
+      })
+      expect(renderer).not.toHaveProperty('entryUrl')
+      expect(renderer).not.toHaveProperty('styleUrls')
+      expect(renderer).not.toHaveProperty('documentAdmission')
       expect(otherRoster.revision).not.toBe(roster.revision)
-      expect(otherRoster.modules[0]?.entryUrl).toContain(`/plugins/generations/${another.id}/`)
-      const module = roster.modules[0]
-      if (!module) throw new Error('missing generation client module')
-      const asset = await registry.read({ ...input, path: module.entryUrl })
+      expect(otherRoster.rows?.[0]?.rendererDataUrl).toContain(`/plugins/generations/${another.id}/`)
+      const path = renderer?.rendererDataUrl?.split('?')[0]
+      if (!path) throw new Error('missing generation renderer data URL')
+      expect(await registry.read({ ...input, path, purpose: 'document' })).toEqual({ found: false })
+      const asset = await registry.read({ ...input, path, purpose: 'isolated-component' })
       expect(asset.found).toBe(true)
       if (asset.found) expect(Buffer.from(asset.base64, 'base64').toString()).toContain('"v1"')
       const archived = join(snapshot.sources[0]!.snapshot.directory, 'dist', 'index.js')
       const saved = readFileSync(archived)
       try {
         writeFileSync(archived, 'tampered after the roster was read')
-        await expect(registry.list({ ...input, sessionId: 'old-session' })).rejects.toThrow(
-          'E_GENERATION_INTEGRITY',
-        )
-        await expect(registry.read({ ...input, path: module.entryUrl })).rejects.toThrow(
-          'E_GENERATION_INTEGRITY',
-        )
+        expect((await registry.list({ ...input, sessionId: 'old-session' })).rows).toEqual([])
+        expect(await registry.read({ ...input, path, purpose: 'isolated-component' })).toEqual({
+          found: false,
+        })
       } finally {
         writeFileSync(archived, saved)
       }
-      expect((await registry.list({ ...input, sessionId: 'old-session' })).modules).toHaveLength(1)
+      expect((await registry.list({ ...input, sessionId: 'old-session' })).rows).toHaveLength(1)
       expect((await registry.list(input)).modules).toEqual([])
+      store.releaseSession('old-session')
+      expect(await registry.read({ ...input, path, purpose: 'isolated-component' })).toEqual({ found: false })
     } finally {
       registry.close()
     }
   })
   it('uses current profile entries beside historical session renderers and revokes only the global entry', async () => {
     const f = fixture()
-    const base = installed({
-      directory: f.packageDirectory,
-      lifetime: 'profile',
-      homeEntries: [{ id: 'alpha', placement: 'primary' }],
-    })
-    const row: InstalledPackage = {
-      ...base,
-      entry: {
-        ...base.entry,
-        version: '1.0.0',
-        source: { type: 'file', ref: 'file:./synthetic' },
-        dependencies: {},
+    const row = await archivedFixture(f, [
+      {
+        id: 'profile-ui',
+        entry: './dist/index.js',
+        lifetime: 'profile',
+        presentationRoles: ['navigation'],
+        homeEntries: [{ id: 'alpha', placement: 'primary' }],
       },
-    }
-    const profile = row.contributions[0]
-    if (!profile || !('client' in profile) || !profile.client) throw new Error('missing profile client')
-    profile.client.id = 'profile-ui'
-    profile.client.presentationRoles = ['navigation']
-    const session = structuredClone(row.contributions[0]) as Extract<
-      InstalledPackage['contributions'][number],
-      { kind: 'extension' }
-    >
-    session.id = 'acme/history'
-    if (session.client) {
-      session.client.lifetime = 'session'
-      session.client.id = 'history-ui'
-      delete session.client.presentationRoles
-      delete session.client.homeEntries
-    }
-    const mixed = { ...row, contributions: [...row.contributions, session] }
+      {
+        id: 'history-ui',
+        entry: './dist/index.js',
+        lifetime: 'session',
+      },
+    ])
     const store = new RuntimeGenerationSnapshotStore(f.root)
-    const original = decodeRuntimeTargetArtifact(webArtifact(row.id, row.entry.integrity))
-    const originalRow = original.tree.rows[0]
-    if (!originalRow) throw new Error('missing row')
-    const artifact = buildRuntimeTarget({
-      rows: [
-        { ...originalRow, id: 'web:acme/panel:profile-ui' },
-        {
-          ...originalRow,
-          id: 'web:acme/panel:history-ui',
-          plugin: `acme/panel@${row.entry.integrity}/client/history`,
-        },
-      ],
-      resources: { mcp: [], skills: {} },
-      resourceRevision: 'a'.repeat(64),
-      compositeRevision: 'b'.repeat(64),
-    })
+    const artifact = archivedArtifact(row, ['profile-ui', 'history-ui'])
     const snapshot = store.create(
       artifact,
       [
@@ -289,14 +398,14 @@ describe('client module immutable snapshots', () => {
             treeIntegrity: hashDirectory(f.packageDirectory, { exclude: [] }),
             capabilityHash: row.capabilityHash,
             directory: f.packageDirectory,
-            contributions: mixed.contributions,
+            contributions: row.contributions,
           },
         },
       ],
       'test',
     )
     store.pin('old-session', snapshot.id, [])
-    let current = inventory(mixed)
+    let current = inventory(row)
     const registry = createClientModuleRegistry({ snapshotDirectory: () => f.snapshots })
     const input = () => ({
       profile: 'local-dev',
@@ -324,13 +433,83 @@ describe('client module immutable snapshots', () => {
       expect(active.rows?.find((row) => row.binding?.lifetime === 'session')?.entryUrl).toContain(
         '/generations/',
       )
-      current = inventory({ ...mixed, enabled: false })
+      const generationEntry = active.rows?.find((row) => row.binding?.lifetime === 'session')?.entryUrl
+      if (!global?.entryUrl || !generationEntry) throw new Error('Missing mixed release roster')
+      expect(await registry.read({ ...input(), path: generationEntry })).toMatchObject({ found: true })
+      expect(
+        await registry.read({
+          ...input(),
+          path: global.entryUrl.replace('/plugins/', `/plugins/generations/${snapshot.id}/`),
+        }),
+      ).toEqual({ found: false })
+
+      const thirdParty = fixture()
+      const base = installed({ directory: thirdParty.packageDirectory, lifetime: 'profile' })
+      const approved: InstalledPackage = {
+        ...base,
+        entry: { ...base.entry, source: { type: 'file', ref: 'file:./ordinary' } },
+      }
+      const declaration = approved.contributions[0]
+      if (declaration?.kind !== 'extension' || !declaration.client)
+        throw new Error('Missing approved fixture')
+      let releaseArchive!: () => void
+      const held = new Promise<void>((resolve) => {
+        releaseArchive = resolve
+      })
+      const originalRead = RuntimeGenerationSnapshotStore.prototype.readAsync
+      const pauseArchive = vi
+        .spyOn(RuntimeGenerationSnapshotStore.prototype, 'readAsync')
+        .mockImplementation(async function (this: RuntimeGenerationSnapshotStore, id) {
+          await held
+          return originalRead.call(this, id)
+        })
+      const approvedInventory = { ...inventory(row), packages: [row, approved] }
+      let consent = true
+      let consentChecks = 0
+      let pending: ReturnType<typeof registry.list> | undefined
+      try {
+        pending = registry.list({
+          ...input(),
+          sessionId: 'old-session',
+          inventory: approvedInventory,
+          refreshInventory: async () => approvedInventory,
+          presentation: async () => ({
+            revision: 17,
+            grants: [
+              {
+                packageId: approved.id,
+                rowId: `web:${approved.id}`,
+                clientId: declaration.id,
+                declarationDigest: admissionDigest(declaration.client),
+                consent: 'reviewed',
+                pages: ['home'],
+                roles: [],
+              },
+            ],
+            current: async () => {
+              consentChecks++
+              return consent
+            },
+          }),
+        })
+        await vi.waitFor(() => expect(consentChecks).toBe(1), { timeout: 1_500 })
+        consent = false
+        releaseArchive()
+        const raced = await pending
+        expect(raced.rows?.map(({ packageId }) => packageId)).toEqual([row.id, row.id])
+        expect(raced.modules.map(({ packageId }) => packageId)).toEqual([row.id, row.id])
+      } finally {
+        releaseArchive()
+        await pending?.catch(() => undefined)
+        pauseArchive.mockRestore()
+      }
+      current = inventory({ ...row, enabled: false })
       const disabled = await registry.list({ ...input(), sessionId: 'old-session' })
       expect(disabled.rows?.some((row) => row.binding?.lifetime === 'profile')).toBe(false)
       expect(disabled.rows?.find((row) => row.binding?.lifetime === 'session')?.binding?.availability).toBe(
         'history-only',
       )
-      current = inventory(mixed)
+      current = inventory(row)
       const enabled = await registry.list(input())
       expect(
         enabled.rows?.find((row) => row.binding?.lifetime === 'profile')?.binding?.activationId,
@@ -339,6 +518,39 @@ describe('client module immutable snapshots', () => {
       registry.close()
     }
   })
+
+  it('does not restore a hidden sibling in legacy modules when two rows share an entry', async () => {
+    const files = fixture()
+    const base = installed({ directory: files.packageDirectory })
+    const extension = base.contributions[0]
+    if (extension?.kind !== 'extension' || !extension.client) throw new Error('Missing fixture client')
+    const row = {
+      ...base,
+      contributions: [
+        { ...extension, client: { ...extension.client, id: 'visible' } },
+        { ...extension, id: 'acme/hidden', client: { ...extension.client, id: 'hidden' } },
+      ],
+    }
+    const visible = `web:${row.id}:visible`
+    const registry = createClientModuleRegistry({
+      snapshotDirectory: () => files.snapshots,
+      composition: () => ({ shell: { modules: [visible] } }),
+    })
+    try {
+      const result = await registry.list({
+        profile: 'local-dev',
+        profileDirectory: files.root,
+        inventory: inventory(row),
+        actual: async () => undefined,
+        refreshInventory: async () => inventory(row),
+      })
+      expect(result.rows?.map(({ rowId }) => rowId)).toEqual([visible])
+      expect(result.modules.map(({ rowId }) => rowId)).toEqual([visible])
+    } finally {
+      registry.close()
+    }
+  })
+
   it('leaves a pinned generation registry its own staging when the profile registry prunes', async () => {
     const f = fixture()
     const row = installed({ directory: f.packageDirectory })
@@ -809,19 +1021,11 @@ describe('client module immutable snapshots', () => {
 
   it.each([16, 17])('keeps %i client rows of one package readable across lists', async (count) => {
     const files = fixture()
-    const base = installed({ directory: files.packageDirectory, styles: [] })
-    const primary = base.contributions[0]
-    if (primary?.kind !== 'extension' || !primary.client) throw new Error('missing fixture extension')
-    const contributions = Array.from({ length: count }, (_, index) => {
-      const name = `c${String(index).padStart(2, '0')}`
-      writeFileSync(join(files.packageDirectory, 'dist', `${name}.js`), `export const value = "${name}"\n`)
-      return {
-        ...primary,
-        id: `acme/${name}`,
-        client: { ...primary.client, entry: `dist/${name}.js`, styles: [] },
-      }
-    })
-    const row = { ...base, contributions } as unknown as InstalledPackage
+    const names = Array.from({ length: count }, (_, index) => `c${String(index).padStart(2, '0')}`)
+    const row = await archivedFixture(
+      files,
+      names.map((id) => ({ id, entry: './dist/index.js', slots: ['workbench.panel'] })),
+    )
     const registry = createClientModuleRegistry({ snapshotDirectory: () => files.snapshots })
     const reasons: string[] = []
     registry.subscribe((event) => reasons.push(event.reason))
@@ -834,14 +1038,19 @@ describe('client module immutable snapshots', () => {
     }
     try {
       const first = await registry.list(input)
-      expect(first.rows?.filter((item) => item.phase === 'ready')).toHaveLength(count)
+      const rowIds = names.map((id) => `web:${row.id}:${id}`)
+      expect(first.rows?.map((item) => [item.rowId, item.phase, item.documentAdmission?.kind])).toEqual(
+        rowIds.map((id) => [id, 'ready', 'release']),
+      )
+      expect(first.modules.map((item) => item.rowId)).toEqual(rowIds)
       const announced = reasons.length
       const second = await registry.list(input)
       expect(second.revision).toBe(first.revision)
       expect(reasons.slice(announced)).not.toContain('resources')
-      expect(await registry.read({ ...input, path: first.rows?.[0]?.entryUrl ?? '' })).toMatchObject({
-        found: true,
-      })
+      for (const item of [first.rows?.at(0), first.rows?.at(-1)]) {
+        if (!item?.entryUrl) throw new Error('Missing release fixture entry')
+        expect(await registry.read({ ...input, path: item.entryUrl })).toMatchObject({ found: true })
+      }
     } finally {
       registry.close()
     }
@@ -864,8 +1073,7 @@ describe('client module immutable snapshots', () => {
     }
     await registry.list(input)
     const next = {
-      ...base,
-      entry: { ...base.entry, integrity: `sha256-${'2'.repeat(64)}` },
+      ...installed({ directory: files.packageDirectory, integrity: `sha256-${'2'.repeat(64)}` }),
       contributions: [
         primary,
         {
@@ -1050,9 +1258,7 @@ describe('client module immutable snapshots', () => {
         inventory: { ...inventory(disabled), packages: [] },
         path: module.entryUrl,
       }),
-    ).toMatchObject({
-      found: true,
-    })
+    ).toEqual({ found: false })
     refs = {
       desired: encodeRuntimeTargetArtifact(
         buildRuntimeTarget({
@@ -1287,10 +1493,13 @@ describe('client module immutable snapshots', () => {
     registry.close()
   })
 
-  it('retains a replaced snapshot for exactly the grace window and then refuses it', async () => {
+  it('requires an exact verified rollback target in addition to the retained grace period', async () => {
     const files = fixture()
     let now = new Date('2026-09-18T00:00:00.000Z')
     let row = installed({ directory: files.packageDirectory })
+    const original = row
+    const previousDirectory = join(files.root, 'verified-previous')
+    cpSync(files.packageDirectory, previousDirectory, { recursive: true })
     let currentInventory = inventory(row)
     const registry = createClientModuleRegistry({
       snapshotDirectory: () => files.snapshots,
@@ -1316,7 +1525,31 @@ describe('client module immutable snapshots', () => {
     expect(second.statuses[0]?.retained).toEqual([
       { revision: `sha256-${'1'.repeat(64)}`, expiresAt: '2026-09-18T00:00:01.000Z' },
     ])
+    expect(await registry.read({ ...input(), path: oldUrl })).toEqual({ found: false })
+    row = {
+      ...row,
+      verifiedRollbackTarget: {
+        source: original.entry.source,
+        version: original.entry.version,
+        integrity: original.entry.integrity,
+        treeIntegrity: original.entry.treeIntegrity!,
+        directory: previousDirectory,
+        capabilityHash: original.capabilityHash,
+        contributions: original.contributions,
+      },
+    }
+    currentInventory = inventory(row)
     expect(await registry.read({ ...input(), path: oldUrl })).toMatchObject({ found: true })
+    let freshnessChecks = 0
+    const expiring = await registry.read({
+      ...input(),
+      path: oldUrl,
+      refreshInventory: async () => {
+        if (++freshnessChecks === 2) now = new Date('2026-09-18T00:00:01.000Z')
+        return currentInventory
+      },
+    })
+    expect(expiring).toEqual({ found: false })
 
     now = new Date('2026-09-18T00:00:01.001Z')
     await registry.list(input())
@@ -1362,8 +1595,7 @@ describe('client module immutable snapshots', () => {
         ]),
       )
       const asset = await registry.read({ ...input(), path: previousUrl })
-      expect(asset).toMatchObject({ found: true })
-      if (asset.found) expect(Buffer.from(asset.base64, 'base64').toString()).toContain(`"v${total - 1}"`)
+      expect(asset).toEqual({ found: false })
     } finally {
       registry.close()
     }
@@ -1570,6 +1802,173 @@ describe('client module immutable snapshots', () => {
     },
   )
 
+  const batchFixture = (options?: Partial<Parameters<typeof createRegistry>[0]>) => {
+    const files = fixture()
+    const row = installed({ directory: files.packageDirectory })
+    const observed = inventory(row)
+    const input = {
+      profile: observed.profile,
+      profileDirectory: files.root,
+      inventory: observed,
+      actual: async () => undefined,
+      refreshInventory: async () => observed,
+    }
+    const registry = createClientModuleRegistry({ snapshotDirectory: () => files.snapshots, ...options })
+    const path = (leaf: string) => `/plugins/${row.id}/${row.entry.integrity}/dist/${leaf}`
+    const entry = { ...input, path: path('index.js') }
+    const style = { ...input, path: path('index.css') }
+    return { registry, input, entry, style }
+  }
+
+  it.each([1, 2])('shares queued checks, not late arrivals (gate %i)', async (gate) => {
+    const { registry, input, entry, style } = batchFixture()
+    let checking!: () => void
+    let release!: () => void
+    const checkingCurrent = new Promise<void>((resolve) => {
+      checking = resolve
+    })
+    const waitForRelease = new Promise<void>((resolve) => {
+      release = resolve
+    })
+
+    let freshChecks = 0
+    const refreshInventory = async () => {
+      if (++freshChecks > 2) throw new Error('The inventory observation is no longer available')
+      if (freshChecks === gate) {
+        checking()
+        await waitForRelease
+      }
+      return input.inventory
+    }
+    try {
+      await registry.list(input)
+      const first = registry.read({ ...entry, refreshInventory })
+      const wrongPurpose = registry.read({ ...entry, refreshInventory, purpose: 'isolated-component' })
+      const second = registry.read({ ...style, refreshInventory })
+      await checkingCurrent
+      const late = registry.read({ ...style, refreshInventory })
+      release()
+      expect(await Promise.all([first, wrongPurpose, second, late])).toEqual([
+        { found: true, base64: Buffer.from('export const value = "v1"\n').toString('base64') },
+        { found: false },
+        { found: true, base64: Buffer.from('.panel { color: red }\n').toString('base64') },
+        { found: false },
+      ])
+    } finally {
+      release()
+      registry.close()
+    }
+  })
+
+  it.each(['list', 'refresh', 'inventory'] as const)(
+    'does not share results across an intervening %s observation',
+    async (boundary) => {
+      const { registry, input, entry, style } = batchFixture()
+      try {
+        await registry.list(input)
+        const first = registry.read(entry)
+        const observed =
+          boundary === 'list'
+            ? registry.list(input)
+            : boundary === 'refresh'
+              ? registry.refresh(input, 'inventory')
+              : undefined
+        const last = registry.read({
+          ...style,
+          inventory: boundary === 'inventory' ? { ...style.inventory } : style.inventory,
+          refreshInventory: async () => {
+            throw new Error('New observation unavailable')
+          },
+        })
+        expect(await first).toMatchObject({ found: true })
+        if (observed) expect((await observed).modules).toHaveLength(1)
+        expect(await last).toEqual({ found: false })
+      } finally {
+        registry.close()
+      }
+    },
+  )
+
+  it.each(['runtime', 'inventory', 'close'] as const)(
+    'refuses queued bytes when %s changes during the final freshness check',
+    async (change) => {
+      let epoch = 1
+      const { registry, input, entry, style } = batchFixture({ activationEpoch: () => epoch })
+      let checking!: () => void
+      let release!: () => void
+      const checkingFinal = new Promise<void>((resolve) => {
+        checking = resolve
+      })
+      const waitForRelease = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      let prepared = false
+      const refreshInventory = async () => {
+        if (!prepared) {
+          prepared = true
+          return input.inventory
+        }
+        checking()
+        await waitForRelease
+        return change === 'inventory' ? { ...input.inventory, hash: 'changed' } : input.inventory
+      }
+      try {
+        await registry.list(input)
+        const first = registry.read({ ...entry, refreshInventory })
+        const second = registry.read({ ...style, refreshInventory })
+        await checkingFinal
+        if (change === 'close') {
+          const queued = registry.read(entry)
+          registry.close()
+          expect(await queued).toEqual({ found: false })
+          expect(await registry.read(style)).toEqual({ found: false })
+        } else {
+          if (change === 'runtime') epoch++
+          release()
+        }
+        expect(await Promise.all([first, second])).toEqual([{ found: false }, { found: false }])
+      } finally {
+        release()
+        registry.close()
+      }
+    },
+  )
+
+  it('does not let a damaged snapshot supply bytes or disqualify another verified package', async () => {
+    const files = fixture()
+    const otherFiles = fixture()
+    const row = installed({ directory: files.packageDirectory })
+    const other = { ...installed({ directory: otherFiles.packageDirectory }), id: 'acme/second' }
+    const observed = { ...inventory(row), packages: [row, other] }
+    const registry = createClientModuleRegistry({ snapshotDirectory: () => files.snapshots })
+    const input = {
+      profile: observed.profile,
+      profileDirectory: files.root,
+      inventory: observed,
+      actual: async () => undefined,
+      refreshInventory: async () => observed,
+    }
+    try {
+      await registry.list(input)
+      const refreshInventory = async () => {
+        writeFileSync(join(files.snapshots, row.id, row.entry.integrity, 'dist/index.js'), 'corrupted')
+        return observed
+      }
+      const read = (pkg: InstalledPackage) =>
+        registry.read({
+          ...input,
+          refreshInventory,
+          path: `/plugins/${pkg.id}/${pkg.entry.integrity}/dist/index.js`,
+        })
+      expect(await Promise.all([read(row), read(other)])).toEqual([
+        { found: false },
+        { found: true, base64: Buffer.from('export const value = "v1"\n').toString('base64') },
+      ])
+    } finally {
+      registry.close()
+    }
+  })
+
   it('reads the roster and module bytes from the settled inventory, and re-checks authority fresh', async () => {
     const files = fixture()
     const row = installed({
@@ -1606,7 +2005,7 @@ describe('client module immutable snapshots', () => {
     options.length = 0
     await service.call(
       '_agnes/v1/clientModules.read',
-      { profile: 'local-dev', path: listed.modules[0]!.entryUrl },
+      { profile: 'local-dev', path: listed.modules[0]!.entryUrl, purpose: 'document' },
       authority,
     )
     expect(options[0]).toEqual({ settled: true })
@@ -1702,7 +2101,11 @@ describe('client module immutable snapshots', () => {
     const entryUrl = listed.modules[0]?.entryUrl
     if (!entryUrl) throw new Error('missing RPC module entry URL')
     expect(
-      await service.call('_agnes/v1/clientModules.read', { profile: 'local-dev', path: entryUrl }, authority),
+      await service.call(
+        '_agnes/v1/clientModules.read',
+        { profile: 'local-dev', path: entryUrl, purpose: 'document' },
+        authority,
+      ),
     ).toMatchObject({ found: true })
     expect(
       await service.call(
@@ -1710,6 +2113,7 @@ describe('client module immutable snapshots', () => {
         {
           profile: 'local-dev',
           path: entryUrl.replace(`${row.entry.integrity}/`, `${row.entry.integrity}0/`),
+          purpose: 'document',
         },
         authority,
       ),
@@ -1882,6 +2286,9 @@ describe('client module immutable snapshots', () => {
     // Contract reference point: clientModules.list already refuses this way.
     await expect(
       service.call('_agnes/v1/clientModules.list', { profile: 'local-dev' }, authority),
+    ).rejects.toMatchObject({ data: { reason: 'E_PACKAGE_INTEGRITY' } })
+    await expect(
+      service.call('_agnes/v1/clientModules.uiEntries', { profile: 'local-dev' }, authority),
     ).rejects.toMatchObject({ data: { reason: 'E_PACKAGE_INTEGRITY' } })
     // callService/callEffect rebuild the identical roster via clientModules.list(...) before
     // dispatching into extension backend code, so they must refuse the same way -- before ever

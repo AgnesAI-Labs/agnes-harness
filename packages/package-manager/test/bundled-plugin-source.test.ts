@@ -13,6 +13,7 @@ import {
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
   OPTIONAL_BUNDLED_PACKAGES,
 } from '../src/bundled-plugin-source.js'
+import { checkedArchiveClientTree, clientReleaseEvidence } from '../src/client-release.js'
 import { inspectVerifiedTree } from '../src/inspect.js'
 import { emptyLock, readLock, writeLock } from '../src/lockfile.js'
 import { createPackageManager } from '../src/manager.js'
@@ -212,6 +213,9 @@ it('refuses the bundled-origin fact on missing, corrupt or mismatched release ev
   expect(shippedBundledRelease(superagent.ref, () => ({ root, path: 'payload' }))).toBeUndefined()
   cpSync(payload, join(root, 'payload'), { recursive: true })
   expect(shippedBundledRelease(superagent.ref, () => ({ root, path: 'payload' }))).toEqual(shipped)
+  expect(
+    shippedBundledRelease(superagent.ref, () => ({ root, path: 'payload', requiresDigest: true })),
+  ).toBeUndefined()
   for (const manifest of ['invalid', '{}', JSON.stringify({ payload: 'sha256-short' })]) {
     writeFileSync(join(root, 'bundled-plugin-digests.json'), manifest)
     expect(
@@ -226,6 +230,34 @@ it('refuses the bundled-origin fact on missing, corrupt or mismatched release ev
     digest: recorded,
   })
   expect(shippedBundledRelease('file:./bundled-plugins/unknown')).toBeUndefined()
+})
+
+it('requires exact release source, full reserved integrity and independently checked declarations', () => {
+  const release = bundledPluginSource(superagent.ref)!
+  const directory = join(release.root, release.path)
+  const preview = inspectCopy(directory, parseSource(superagent.ref))
+  const capabilityHash = preview.capabilityHash
+  if (!capabilityHash) throw new Error('Missing verified release capabilities')
+  const tree = {
+    packageId: preview.id,
+    directory,
+    source: preview.source,
+    version: preview.version,
+    integrity: preview.integrity,
+    treeIntegrity: hashDirectory(directory, { exclude: [] }),
+    capabilityHash,
+    contributions: preview.contributions,
+  }
+  expect(checkedArchiveClientTree(tree)).toBeDefined()
+  expect(clientReleaseEvidence(tree, false)).toBeDefined()
+  const { source: _, ...old } = tree
+  expect(checkedArchiveClientTree(old)).toBeDefined()
+  expect(clientReleaseEvidence(old, true)).toBeDefined()
+  expect(clientReleaseEvidence(old, false)).toBeUndefined()
+  expect(clientReleaseEvidence({ ...tree, integrity: `sha256-${'0'.repeat(64)}` }, true)).toBeUndefined()
+  expect(clientReleaseEvidence({ ...tree, source: parseSource('file:./same-content') }, true)).toBeUndefined()
+  expect(checkedArchiveClientTree({ ...tree, capabilityHash: '0'.repeat(64) })).toBeUndefined()
+  expect(clientReleaseEvidence({ ...tree, capabilityHash: '0'.repeat(64) }, false)).toBeUndefined()
 })
 
 it.each([

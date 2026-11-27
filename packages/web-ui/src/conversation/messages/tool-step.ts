@@ -39,7 +39,7 @@ const TARGET_KEYS: Record<ActivityKind, readonly string[]> = {
   list: ['path', 'dir', 'directory', 'pattern'],
   search: ['pattern', 'query', 'queries', 'q', 'regex', 'name', 'path'],
   web: ['url', 'query', 'queries', 'q'],
-  tool: ['description', 'title', 'path', 'object', 'scope'],
+  tool: ['description', 'title', 'task', 'path', 'object', 'scope'],
   thinking: [],
   approval: [],
   step: [],

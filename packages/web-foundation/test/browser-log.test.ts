@@ -41,11 +41,47 @@ describe('browser-log capture', () => {
     const fakeWindow = makeFakeWindow()
     installBrowserLogCapture({ console: fakeConsole as unknown as Console, window: fakeWindow })
 
-    fakeConsole.error(`Authorization: Bearer ${FAKE_BEARER_TOKEN}`)
+    fakeConsole.error('Authorization:', 'Bearer', FAKE_BEARER_TOKEN)
 
     const [entry] = getBrowserLog().entries
     expect(entry?.text).toBeDefined()
     expect(entry?.text).not.toContain(FAKE_BEARER_TOKEN)
+  })
+
+  it('keeps a quoted credential value with its preceding console argument', () => {
+    const fakeConsole = makeFakeConsole()
+    installBrowserLogCapture({ console: fakeConsole as unknown as Console, window: makeFakeWindow() })
+
+    const value = 'synthetic-opaque-console-key'
+    fakeConsole.log('AGH_CLOUD_KEY:', JSON.stringify(value), { region: 'east' })
+
+    const [entry] = getBrowserLog().entries
+    expect(entry?.text).toBe('AGH_CLOUD_KEY: "***REDACTED***"\n{"region":"east"}')
+
+    const ticket = `m0ck.${'n'.repeat(22)}.${'s'.repeat(43)}`
+    const endpoint = (segment: string) => `https://h.example/_agnes/remote-access/${segment}/health`
+    fakeConsole.log('request', JSON.stringify(endpoint(ticket)).replaceAll('/', '\\u002f'))
+    expect(getBrowserLog().entries[1]?.text).toBe(`request\n"${endpoint('***REDACTED***')}"`)
+  })
+
+  it('keeps a JSON argument parseable when logged beside a message', () => {
+    const fakeConsole = makeFakeConsole()
+    installBrowserLogCapture({ console: fakeConsole as unknown as Console, window: makeFakeWindow() })
+
+    const query = 'synthetic-artifact'
+    const prefix = 'request failed'
+    fakeConsole.log(prefix, {
+      message: JSON.stringify({ url: `https://h.example/file?path=${query}` }),
+      ref: 'secret://generic/cloud-key',
+    })
+
+    const text = getBrowserLog().entries[0]?.text ?? ''
+    expect(text).not.toContain(query)
+    const [message, record] = text.split('\n')
+    expect(message).toBe(prefix)
+    const body = JSON.parse(record ?? '')
+    expect(JSON.parse(body.message)).toEqual({ url: 'https://h.example/file?path=***REDACTED***' })
+    expect(body.ref).toBe('secret://generic/cloud-key')
   })
 
   it('caps the buffer at 1000 entries and counts drops', () => {

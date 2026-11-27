@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { SyntaxKind } from 'typescript/unstable/ast'
 import { createScanner } from 'typescript/unstable/ast/scanner'
 import { bundledManifests } from '../../packages/cli/tools/bundled-manifests.mjs'
+import { checkPackagedClientModules } from '../../packages/cli/tools/client-module-check.js'
 import { AGH_DIR } from '../../packages/protocol/src/index.js'
 import { npmCommand } from '../toolchain/check.mjs'
 import { packNpxPackage } from './pack-npx.js'
@@ -275,6 +276,11 @@ async function packAuthors(root: string, env: NodeJS.ProcessEnv): Promise<string
       await rm(join(stage, 'dist/testkit/testkit'), { recursive: true, force: true })
     }
     if (name === '@agnes/protocol') await portableProtocolFacade(join(stage, 'dist'))
+    if (name === '@agnes/system-node') {
+      // Compiled src imports runtime files relative to dist/src, while public .mjs exports
+      // still resolve at the package root. Include runtime declarations alongside the JS.
+      await cp(join(directory, 'runtime'), join(stage, 'dist/runtime'), { recursive: true })
+    }
     for (const target of Object.values(
       typeof manifest.exports === 'string' ? { '.': manifest.exports } : manifest.exports,
     )) {
@@ -408,9 +414,11 @@ export async function externalExamples(
     const home = join(root, 'pack-home')
     await mkdir(home)
     const tarballs = await packAuthors(root, environment(home))
+    let webImports: string | undefined
     if (!options.authorOnly) {
       const { stage } = await packNpxPackage(join(root, 'harness'))
       tarballs.push(await pack(stage, root, environment(home)))
+      webImports = await readFile(join(stage, 'dist/web/index.html'), 'utf8')
     }
     const examplesRoot = join(repo, 'examples/community')
     const sources = options.examples?.length
@@ -434,23 +442,36 @@ export async function externalExamples(
       const exampleHome = join(root, 'homes', name)
       await mkdir(exampleHome, { recursive: true })
       const env = environment(exampleHome)
-      run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', ...tarballs], directory, env)
+      const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'))
+      // A shipped browser client is consumed through the workbench import map. Install its
+      // tarball as a consumer so npm doesn't try to resolve its local authoring dependencies.
+      const clientOnly =
+        manifest.agnes?.clientDescriptors?.length && !manifest.scripts?.build && !manifest.scripts?.test
+      const installedIn = clientOnly ? join(root, 'installed', name) : directory
+      await mkdir(installedIn, { recursive: true })
+      const inputs = clientOnly ? [...tarballs, await pack(directory, root, env)] : tarballs
+      run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', ...inputs], installedIn, env)
       for (const name of ['@agnes/extension-api', '@agnes/plugin-runtime']) {
-        const installed = await realpath(join(directory, 'node_modules', name))
-        if (!inside(directory, installed))
+        const installed = await realpath(join(installedIn, 'node_modules', name))
+        if (!inside(installedIn, installed))
           throw new Error(`Workspace dependency leaked into ${name}: ${installed}`)
       }
-      run('npm', ['run', 'build'], directory, env)
-      run('npm', ['test'], directory, env)
+      if (clientOnly) {
+        await checkPackagedClientModules(join(installedIn, 'node_modules', manifest.name), webImports)
+      } else {
+        run('npm', ['run', 'build'], installedIn, env)
+        run('npm', ['test'], installedIn, env)
+      }
       if (!options.authorOnly)
         run(
           process.execPath,
-          [join(directory, 'node_modules/@agnes/harness/bin/agh'), '--version'],
-          directory,
+          [join(installedIn, 'node_modules/@agnes/harness/bin/agh'), '--version'],
+          installedIn,
           env,
         )
+      const checks = clientOnly ? 'packed client exports and assets' : 'build, own tests'
       console.log(
-        `PASS ${name}: external install, build, own tests${options.authorOnly ? ' (harness packing skipped)' : ''}`,
+        `PASS ${name}: external install, ${checks}${options.authorOnly ? ' (harness packing skipped)' : ''}`,
       )
     }
   } finally {

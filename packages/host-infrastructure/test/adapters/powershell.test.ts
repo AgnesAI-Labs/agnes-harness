@@ -6,7 +6,9 @@ import {
   createConfiguredPowerShellResolver,
   type PowerShellCandidate,
   type PowerShellDescriptor,
+  PowerShellUnavailable,
   powerShellCandidates,
+  powerShellStartError,
   probePowerShell,
   resolvePowerShell,
 } from '../../src/adapters/powershell.js'
@@ -66,6 +68,32 @@ it('an explicit version never falls back to the other family', async () => {
     attempts: [{ path: modern.path, reason: 'probe-failed' }],
   })
   expect(probe).toHaveBeenCalledExactlyOnceWith(modern.path)
+})
+it('reports selected-shell restriction failures without misclassifying full access or other programs', () => {
+  const denied = Object.assign(new Error('private native detail'), { code: 'EACCES' })
+  expect(powerShellStartError(denied, modern, [modern.path], true)).toMatchObject({
+    code: 'E_POWERSHELL_UNAVAILABLE',
+    attempts: [{ reason: 'restricted-execution-failed' }],
+  })
+  expect(powerShellStartError(denied, modern, [modern.path], false)).toMatchObject({
+    code: 'E_POWERSHELL_UNAVAILABLE',
+    attempts: [{ reason: 'execution-failed' }],
+  })
+  expect(powerShellStartError(denied, modern, [legacy.path], true)).toBe(denied)
+  const cancelled = Object.assign(new Error('cancelled'), { code: 'ABORT_ERR' })
+  expect(powerShellStartError(cancelled, modern, [modern.path], true)).toBe(cancelled)
+})
+it('auto skips a shell that cannot run restricted, while explicit selection reports the safe reason', async () => {
+  const probe = async (path: string) => {
+    if (path === modern.path)
+      throw new PowerShellUnavailable([{ path, reason: 'restricted-execution-failed' }])
+    return legacy
+  }
+  expect(await resolvePowerShell('auto', candidates, probe)).toEqual(legacy)
+  await expect(resolvePowerShell({ path: modern.path }, candidates, probe)).rejects.toMatchObject({
+    code: 'E_POWERSHELL_UNAVAILABLE',
+    attempts: [{ path: modern.path, reason: 'restricted-execution-failed' }],
+  })
 })
 it('an explicit path is probed once and may return the actual executable path', async () => {
   const path = 'D:\\工具 space%\\chosen.exe'

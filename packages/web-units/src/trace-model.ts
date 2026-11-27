@@ -76,16 +76,42 @@ export type { GanttBar, TimelineMode, TimelineRange } from './trace-gantt-model.
 export const clip = (value: string, max: number): string =>
   value.length <= max ? value : `${value.slice(0, max).trimEnd()}…`
 
-export const durationLabel = (duration?: number): string => {
-  if (duration === undefined) return traceText('trace.duration.running')
-  if (duration < 1000) return traceText('trace.duration.ms', { n: duration })
-  if (duration < 60_000)
-    return traceText('trace.duration.seconds', { n: (duration / 1000).toFixed(duration < 10_000 ? 1 : 0) })
-  return traceText('trace.duration.minutes', {
-    minutes: Math.floor(duration / 60_000),
-    seconds: Math.round((duration % 60_000) / 1000),
-  })
+export function formatDurationMs(
+  duration: number | undefined,
+  options: {
+    running?: boolean
+    format: {
+      running: string
+      unknown: string
+      ms: (n: number) => string
+      seconds: (n: string) => string
+      minutes: (minutes: number, seconds: number) => string
+    }
+  },
+): string {
+  if (duration === undefined) return options.running ? options.format.running : options.format.unknown
+  const clamped = Math.max(0, duration)
+  if (clamped < 1000) return options.format.ms(Math.round(clamped))
+  if (clamped < 10_000) {
+    const tenths = Math.round(clamped / 100) / 10
+    if (tenths < 10) return options.format.seconds(tenths.toFixed(1))
+  }
+  const totalSeconds = Math.round(clamped / 1000)
+  if (totalSeconds < 60) return options.format.seconds(String(totalSeconds))
+  return options.format.minutes(Math.floor(totalSeconds / 60), totalSeconds % 60)
 }
+
+export const durationLabel = (duration?: number, status?: string): string =>
+  formatDurationMs(duration, {
+    running: status === undefined || status === 'running',
+    format: {
+      running: traceText('trace.duration.running'),
+      unknown: traceText('trace.duration.unknown'),
+      ms: (n) => traceText('trace.duration.ms', { n }),
+      seconds: (n) => traceText('trace.duration.seconds', { n }),
+      minutes: (minutes, seconds) => traceText('trace.duration.minutes', { minutes, seconds }),
+    },
+  })
 
 export const tokenLabel = (
   tokens: { input: number; output: number; cacheRead: number; cacheWrite: number; reasoning?: number },
@@ -723,15 +749,35 @@ export const traceRowBuilder = { build: buildTraceRows }
 export const traceStats = (turns: readonly UITurn[]): Array<[string, string]> => {
   let calls = 0
   let duration = 0
+  let knownDurations = 0
+  let missingDurations = 0
+  let hasRunning = false
   for (const turn of turns) {
-    duration += turn.durationMs ?? turn.trace?.durationMs ?? 0
+    const turnDuration = turn.durationMs ?? turn.trace?.durationMs
+    if (turnDuration !== undefined) {
+      duration += turnDuration
+      knownDurations += 1
+    } else {
+      missingDurations += 1
+      if (turn.status === 'running' || turn.trace?.status === 'running') hasRunning = true
+    }
     if (turn.trace)
       walkSpans(turn.trace, (span) => {
         if (span.kind === 'generation' || span.kind === 'tool') calls += 1
       })
   }
+  const durationText =
+    turns.length === 0
+      ? durationLabel(0)
+      : knownDurations === 0
+        ? hasRunning
+          ? traceText('trace.duration.running')
+          : traceText('trace.duration.unknown')
+        : missingDurations > 0
+          ? traceText('trace.duration.partial', { value: durationLabel(duration) })
+          : durationLabel(duration)
   return [
-    [traceText('trace.stat.duration'), durationLabel(duration)],
+    [traceText('trace.stat.duration'), durationText],
     [traceText('trace.stat.turns'), String(turns.length)],
     [traceText('trace.stat.calls'), String(calls)],
   ]

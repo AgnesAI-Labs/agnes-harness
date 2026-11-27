@@ -20,6 +20,9 @@
       "path": "../web-slots"
     },
     {
+      "path": "../web-ui"
+    },
+    {
       "path": "../web-units"
     }
   ]

@@ -2,30 +2,22 @@ import { randomUUID } from 'node:crypto'
 import { resolve as resolvePath } from 'node:path'
 import type { ProcessOutput, SandboxProcess, SessionChildJobs, ToolContext } from '@agnes/extension-api'
 import { SHELL_SENTINEL, SHELL_STDIN_SENTINEL } from '@agnes/extension-api'
+import {
+  type ChildJobListing,
+  collectBoundedJobs,
+  type ExtendedChildJobsPort,
+  isReadOnlyChildListing,
+  pruneReclaimedChildren,
+  resolveChildJobsPort,
+  type ShellJobView,
+  stopChildJob,
+  upsertChildProjection,
+} from './child-jobs.js'
 import { legacyProcess } from './legacy-process.js'
 import { OutputCursors, type OutputPosition, outputPosition } from './output-cursor.js'
 import { PersistentShell, type PersistentShellName, type ShellName, shellArgv } from './persistent-shell.js'
 
-export interface ShellJobView {
-  id: string
-  owner: 'human' | 'agent'
-  ownerSessionId: string
-  kind: 'shell' | 'shell-session' | 'pty' | 'child'
-  command: string
-  cwd: string
-  status: 'running' | 'completed' | 'failed' | 'killed'
-  code: number | null
-  stdout: string
-  stderr: string
-  truncated: boolean
-  stoppedProcesses?: number
-  /** The signal that ended the job's own shell when it did not exit by itself. */
-  signal?: string
-  /** A shell command's own exit code, known before the processes it backgrounded have ended. */
-  foregroundCode?: number
-  shell?: PersistentShellName
-  sessionId?: string
-}
+export type { ShellJobView }
 export type ProcessJobContext = Pick<ToolContext, 'session' | 'cwd' | 'signal' | 'fs'> & {
   sandbox: Pick<ToolContext['sandbox'], 'openProcess'> | ToolContext['sandbox']
 }
@@ -34,6 +26,9 @@ interface Job {
   view: ShellJobView
   /** When the registry took the job on; a read of a running job says how long it has run. */
   startedAt: number
+  childIdle?: boolean
+  childTerminal?: boolean
+  readOnly?: boolean
   /** Last output, input or read; an idle persistent shell or terminal is closed from it. */
   activeAt: number
   capturedBytes: number
@@ -45,13 +40,12 @@ interface Job {
   finish(code: number | null): void
   endForeground(code: number): void
   stop(): Promise<void>
+  refreshChild?: () => Promise<ChildJobListing | undefined>
   /** The child's newest message as last read; a child reports one message, never a stream. */
   childText?: string
 }
 const MAX_JOBS = 128,
   MAX_OUTPUT = 4 * 1024 * 1024
-/** One child pane keeps what a person can still read; the jobs read slices output to the same size. */
-const CHILD_OUTPUT_LIMIT = 65536
 /**
  * A persistent shell with no command running, or a terminal nobody has written to, read or heard
  * from, is closed after these. Both otherwise keep a process alive for the whole daemon lifetime and
@@ -69,6 +63,10 @@ const copy = (job: Job) => ({ ...job.view })
 export class ShellJobs {
   private readonly cursors = new OutputCursors()
   private readonly sessions = new Map<string, Map<string, Job>>()
+  /** Direct controllable children, isolated from the 128-slot local process/terminal table. */
+  private readonly directChildren = new Map<string, Map<string, Job>>()
+  /** Read-only descendant and ambiguous child projections, strictly isolated from kill and completions. */
+  private readonly descendants = new Map<string, Map<string, Job>>()
   private readonly processes = new Map<string, SandboxProcess>()
   private readonly shells = new Map<string, PersistentShell>()
   private readonly calls = new Map<string, string>()
@@ -81,30 +79,35 @@ export class ShellJobs {
   private disposal: Promise<void> | undefined
   private sweeper: ReturnType<typeof setInterval> | undefined
 
-  private table(ctx: JobOwner): Map<string, Job> {
-    const key = owner(ctx)
+  private assertOpen(key: string): void {
     if (this.disposed || this.closing.has(key)) throw new Error('session jobs are closing')
-    let jobs = this.sessions.get(key)
+  }
+  private mapFor(store: Map<string, Map<string, Job>>, ctx: JobOwner): Map<string, Job> {
+    const key = owner(ctx)
+    this.assertOpen(key)
+    let jobs = store.get(key)
     if (!jobs) {
       jobs = new Map()
-      this.sessions.set(key, jobs)
+      store.set(key, jobs)
     }
     return jobs
   }
-  private add(ctx: JobOwner, view: ShellJobView, stop: () => Promise<void>, quiet = false): Job {
-    view.ownerSessionId = ctx.session.key
-    const jobs = this.table(ctx)
-    if (jobs.size >= MAX_JOBS) {
-      const old = [...jobs].find(([, job]) => job.view.status !== 'running' && !job.cleanupPending)
-      if (!old) throw new Error('session job limit reached; close a running job first')
-      jobs.delete(old[0])
-      for (const [call, id] of this.calls) if (id === old[0]) this.calls.delete(call)
-    }
+  private table(ctx: JobOwner): Map<string, Job> {
+    return this.mapFor(this.sessions, ctx)
+  }
+  private createJob(
+    ctx: JobOwner,
+    view: ShellJobView,
+    stop: () => Promise<void>,
+    quiet = false,
+    readOnly = false,
+  ): Job {
     let resolve!: (view: ShellJobView) => void
     let foreground!: () => void
     const job: Job = {
       view,
       stop,
+      ...(readOnly ? { readOnly: true } : {}),
       startedAt: Date.now(),
       activeAt: Date.now(),
       capturedBytes: 0,
@@ -133,6 +136,18 @@ export class ShellJobs {
         foreground()
       },
     }
+    return job
+  }
+  private add(ctx: JobOwner, view: ShellJobView, stop: () => Promise<void>, quiet = false): Job {
+    view.ownerSessionId = ctx.session.key
+    const jobs = this.table(ctx)
+    if (jobs.size >= MAX_JOBS) {
+      const old = [...jobs].find(([, job]) => job.view.status !== 'running' && !job.cleanupPending)
+      if (!old) throw new Error('session job limit reached; close a running job first')
+      jobs.delete(old[0])
+      for (const [call, id] of this.calls) if (id === old[0]) this.calls.delete(call)
+    }
+    const job = this.createJob(ctx, view, stop, quiet)
     jobs.set(view.id, job)
     return job
   }
@@ -164,27 +179,6 @@ export class ShellJobs {
       job.view.truncated = true
       job.position.lost += bytes.length - end
     }
-  }
-  /**
-   * A child agent republishes its newest message: `text` replaces the previous one instead of growing
-   * a stream. A pane that only keeps the newest message loses everything said before it, so append the
-   * message here — the tail of a message still being written, or a whole new message above it.
-   */
-  private appendChildText(job: Job, text: string) {
-    if (text === job.childText) return
-    let chunk = text
-    if (job.childText !== undefined && text.startsWith(job.childText))
-      chunk = text.slice(job.childText.length) // Same message, now longer.
-    else if (job.view.stdout) chunk = `\n\n${text}` // A new message starts on its own line.
-    job.childText = text
-    job.view.stdout += chunk
-    if (job.view.stdout.length <= CHILD_OUTPUT_LIMIT) return
-    const before = Buffer.byteLength(job.view.stdout)
-    const tail = job.view.stdout.slice(-CHILD_OUTPUT_LIMIT)
-    // Never begin the retained tail with half of a surrogate pair.
-    job.view.stdout = /^[\uDC00-\uDFFF]/.test(tail) ? tail.slice(1) : tail
-    job.position.stdoutStart += before - Buffer.byteLength(job.view.stdout)
-    job.view.truncated = true
   }
   private watchIdle(): void {
     if (this.sweeper) return
@@ -222,7 +216,11 @@ export class ShellJobs {
     )
   }
   private get(ctx: JobOwner, id: string): Job {
-    const job = this.sessions.get(owner(ctx))?.get(id)
+    const key = owner(ctx)
+    const job =
+      this.sessions.get(key)?.get(id) ??
+      this.directChildren.get(key)?.get(id) ??
+      this.descendants.get(key)?.get(id)
     if (!job) throw new Error('JOB_NOT_FOUND: job is not owned by this session/lane')
     return job
   }
@@ -462,7 +460,33 @@ export class ShellJobs {
     return copy(job)
   }
   list(ctx: JobOwner): ShellJobView[] {
-    return [...(this.sessions.get(owner(ctx))?.values() ?? [])].map(copy)
+    const key = owner(ctx)
+    return [
+      ...(this.sessions.get(key)?.values() ?? []),
+      ...(this.directChildren.get(key)?.values() ?? []),
+      ...(this.descendants.get(key)?.values() ?? []),
+    ].map(copy)
+  }
+  /**
+   * Bounded list for the public `jobs.read` RPC (`maxItems: 128`). Real session jobs always come
+   * first, then direct children, then read-only descendants, while preserving an explicitly
+   * selected job if it falls past the window.
+   */
+  listBounded(ctx: JobOwner, selectedJobId?: string, limit = MAX_JOBS): ShellJobView[] {
+    const key = owner(ctx)
+    return collectBoundedJobs(
+      [this.sessions.get(key), this.directChildren.get(key), this.descendants.get(key)],
+      selectedJobId,
+      limit,
+    )
+  }
+  findLocalJob(ctx: JobOwner, id: string): ShellJobView | undefined {
+    const job = this.sessions.get(owner(ctx))?.get(id)
+    return job ? copy(job) : undefined
+  }
+  isControllableChild(ctx: JobOwner, id: string): boolean {
+    const job = this.directChildren.get(owner(ctx))?.get(id)
+    return Boolean(job && !job.readOnly && job.view.ownerSessionId === ctx.session.key)
   }
   completions(ctx: JobOwner): ShellJobView[] {
     return [...(this.notifications.get(owner(ctx)) ?? [])]
@@ -472,8 +496,9 @@ export class ShellJobs {
    * finished job, a kill), so no completion notice is due for it. A job still running is not marked.
    */
   acknowledge(ctx: JobOwner, id: string): void {
-    const job = this.sessions.get(owner(ctx))?.get(id)
-    if (job && job.view.code !== null) this.markTold(owner(ctx), [id])
+    const key = owner(ctx)
+    const job = this.sessions.get(key)?.get(id) ?? this.directChildren.get(key)?.get(id)
+    if (job && job.view.code !== null) this.markTold(key, [id])
   }
   /** The completions the model has not been told about yet, each returned once. */
   announceCompletions(ctx: JobOwner): ShellJobView[] {
@@ -493,45 +518,80 @@ export class ShellJobs {
     if (told.length) this.told.set(key, new Set(told))
     else this.told.delete(key)
   }
+  private upsertChild(
+    ctx: JobOwner & Pick<ToolContext, 'cwd'>,
+    child: ChildJobListing,
+    controls: ExtendedChildJobsPort,
+  ): Job {
+    return upsertChildProjection(ctx.session.key, child, controls, {
+      direct: () => this.mapFor(this.directChildren, ctx),
+      descendants: () => this.mapFor(this.descendants, ctx),
+      create: (id, ownerSessionId, readOnly, stop) =>
+        this.createJob(
+          ctx,
+          { ...this.view('child', child.providerId, ctx.cwd), id, ownerSessionId },
+          stop,
+          readOnly,
+          readOnly,
+        ),
+    })
+  }
   async syncChildren(
     ctx: JobOwner & Pick<ToolContext, 'cwd'> & { subagent?: ToolContext['subagent'] },
     port?: SessionChildJobs,
+    selectedJobId?: string,
   ): Promise<void> {
-    const controls =
-      port ??
-      (ctx.subagent?.list
-        ? {
-            list: async () =>
-              Promise.all(
-                (await ctx.subagent!.list!()).map(async (child) => {
-                  if (child.text !== undefined) return child
-                  const snapshot = await ctx.subagent!.collect(child.id, { wait: false })
-                  return { ...child, ...(snapshot.text !== undefined ? { text: snapshot.text } : {}) }
-                }),
-              ),
-            cancel: async (id: string) => {
-              await ctx.subagent!.cancel(id)
-            },
-          }
-        : undefined)
+    const controls = resolveChildJobsPort(ctx.subagent, port, selectedJobId)
     if (!controls) return
+    const present = new Set<string>()
+    let listedDirect = 0
+    let listedDescendants = 0
     for (const child of await controls.list()) {
-      const jobs = this.table(ctx),
-        id = `child:${child.id}`
-      let job = jobs.get(id)
-      if (!job)
-        job = this.add(ctx, { ...this.view('child', child.providerId, ctx.cwd), id }, async () => {
-          if (!controls.cancel) throw new Error('child cancellation needs an effect service')
-          await controls.cancel(child.id)
-        })
-      if (controls.cancel) job.stop = () => controls.cancel!(child.id)
-      if (child.text !== undefined) this.appendChildText(job, child.text)
-      if (['completed', 'failed', 'cancelled'].includes(child.status)) {
-        if (child.status === 'cancelled') job.view.status = 'killed'
-        job.finish(child.status === 'completed' ? 0 : -1)
-      }
+      const job = this.upsertChild(ctx, child, controls)
+      present.add(job.view.id)
+      if (job.readOnly) listedDescendants++
+      else listedDirect++
     }
+    const selectedConfirmedMissing = new Set<string>()
+    if (selectedJobId?.startsWith('child:') && controls.readDetail) {
+      const detail = await controls.readDetail(selectedJobId.slice('child:'.length))
+      if (detail) present.add(this.upsertChild(ctx, detail, controls).view.id)
+      else if (!present.has(selectedJobId)) selectedConfirmedMissing.add(selectedJobId)
+    }
+    await pruneReclaimedChildren(
+      controls,
+      {
+        direct: this.directChildren.get(owner(ctx)),
+        descendants: this.descendants.get(owner(ctx)),
+        upsert: (child) => this.upsertChild(ctx, child, controls),
+      },
+      { present, selectedConfirmedMissing, listedDirect, listedDescendants },
+    )
   }
+  /** Resolve and sync one direct child for kill without materializing the full descendant tree. */
+  async syncDirectChild(
+    ctx: JobOwner & Pick<ToolContext, 'cwd'>,
+    port: SessionChildJobs | undefined,
+    jobId: string,
+  ): Promise<ShellJobView | undefined> {
+    if (!port || !jobId.startsWith('child:')) return undefined
+    const extended = port as ExtendedChildJobsPort
+    if (extended.readDirect) {
+      const rawId = jobId.slice('child:'.length)
+      const existing = this.directChildren.get(owner(ctx))?.get(jobId)
+      const direct = await extended.readDirect(rawId)
+      if (!direct || isReadOnlyChildListing(direct, ctx.session.key)) {
+        const map = this.directChildren.get(owner(ctx))
+        if (existing && !existing.childTerminal && map?.get(jobId) === existing) map.delete(jobId)
+        return undefined
+      }
+      return copy(this.upsertChild(ctx, direct, extended))
+    }
+    await this.syncChildren(ctx, port)
+    const job = this.directChildren.get(owner(ctx))?.get(jobId)
+    return job && !job.readOnly ? copy(job) : undefined
+  }
+
   output(ctx: JobOwner, id: string, cursor?: string) {
     const job = this.get(ctx, id)
     job.activeAt = Date.now()
@@ -551,12 +611,11 @@ export class ShellJobs {
     ctx.signal.throwIfAborted()
     const job = this.get(ctx, id)
     job.activeAt = Date.now()
-    if (job.view.status !== 'running' || ms <= 0) return copy(job)
     if (job.view.kind === 'child' && ctx.cwd && ctx.subagent) {
-      const deadline = Date.now() + ms
+      const deadline = Date.now() + Math.max(0, ms)
       do {
-        await this.syncChildren({ session: ctx.session, cwd: ctx.cwd, subagent: ctx.subagent })
-        if (job.view.status !== 'running') return copy(job)
+        await this.syncChildren({ session: ctx.session, cwd: ctx.cwd, subagent: ctx.subagent }, undefined, id)
+        if (job.view.status !== 'running' || ms <= 0) return copy(job)
         await this.wait(
           { session: ctx.session, signal: ctx.signal },
           id,
@@ -565,6 +624,7 @@ export class ShellJobs {
       } while (Date.now() < deadline)
       return copy(job)
     }
+    if (job.view.status !== 'running' || ms <= 0) return copy(job)
     return new Promise((resolve, reject) => {
       const cleanup = () => {
         clearTimeout(timer)
@@ -594,14 +654,26 @@ export class ShellJobs {
   }
   async kill(ctx: JobOwner, id: string): Promise<ShellJobView> {
     const job = this.get(ctx, id)
-    if (job.view.status === 'running' || job.cleanupPending) {
+    if (job.readOnly)
+      throw new Error('CAPABILITY_DENIED: read-only child job cannot be stopped from this session')
+    if (job.view.status === 'running' || job.cleanupPending || job.childIdle) {
+      if (job.view.kind === 'child') {
+        const isCurrent = () => this.directChildren.get(owner(ctx))?.get(id) === job
+        const reclaimed = await stopChildJob(job, isCurrent)
+        const view = copy(job)
+        if (reclaimed && !job.childTerminal && isCurrent()) this.directChildren.get(owner(ctx))?.delete(id)
+        return view
+      }
+      const { status, code } = job.view
+      job.view.code = null
       job.view.status = 'killed'
       try {
         await job.stop()
         job.cleanupPending = false
         job.finish(-1)
       } catch (error) {
-        job.view.status = 'running'
+        job.view.status = status
+        job.view.code = code
         throw error
       }
     }
@@ -627,12 +699,18 @@ export class ShellJobs {
     await process.signal(signal)
   }
   async closeSession(key: string, lane?: string): Promise<void> {
-    for (const [ownerKey, jobs] of this.sessions) {
+    const ownerKeys = new Set([
+      ...this.sessions.keys(),
+      ...this.directChildren.keys(),
+      ...this.descendants.keys(),
+    ])
+    for (const ownerKey of ownerKeys) {
       if (lane === undefined ? !ownerKey.startsWith(`${key}\0`) : ownerKey !== `${key}\0${lane}`) continue
+      const jobs = this.sessions.get(ownerKey)
       this.closing.add(ownerKey)
       await Promise.allSettled([...(this.starting.get(ownerKey) ?? [])])
       const failures = await Promise.allSettled(
-        [...jobs.values()]
+        [...(jobs?.values() ?? [])]
           .filter((job) => (job.view.status === 'running' || job.cleanupPending) && job.view.kind !== 'child')
           .map(async (job) => {
             job.view.status = 'killed'
@@ -652,6 +730,8 @@ export class ShellJobs {
           'job shutdown failed',
         )
       this.sessions.delete(ownerKey)
+      this.directChildren.delete(ownerKey)
+      this.descendants.delete(ownerKey)
       this.notifications.delete(ownerKey)
       this.told.delete(ownerKey)
       this.starting.delete(ownerKey)
@@ -685,7 +765,12 @@ export class ShellJobs {
       this.sweeper = undefined
       await Promise.resolve()
       try {
-        for (const key of this.sessions.keys()) await this.closeSession(key.split('\0')[0]!)
+        const keys = new Set([
+          ...this.sessions.keys(),
+          ...this.directChildren.keys(),
+          ...this.descendants.keys(),
+        ])
+        for (const key of keys) await this.closeSession(key.split('\0')[0]!)
       } finally {
         this.disposed = false
         this.disposal = undefined

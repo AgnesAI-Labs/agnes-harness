@@ -28,6 +28,7 @@ export const ADMIN_FEATURES = Object.freeze({
   runtimeIdentity: 'packages.runtime-identity.v1',
   rollbackTarget: 'packages.rollback-target.v1',
   operationControl: 'packages.operation-control.v1',
+  docs: 'packages.docs.v1',
 } as const)
 export type AdminFeature = (typeof ADMIN_FEATURES)[keyof typeof ADMIN_FEATURES]
 
@@ -57,6 +58,7 @@ export type AdminPageState = {
   surfaceLinks: readonly AdminSurfaceLink[]
   catalog: readonly PackageCatalogDescriptor[]
   community?: PackageCatalogPage['communityIndex']
+  communityVersion?: 2 | 3 | undefined
   communityReadFailed?: boolean
   nextCursor: string | null
   selectedId?: string | undefined

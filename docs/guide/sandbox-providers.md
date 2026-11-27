@@ -78,7 +78,17 @@ Linux bubblewrap already supplies an isolated minimal device tree through `--dev
 
 When the macOS Seatbelt profile allows the network, it also permits looking up the system certificate trust services `com.apple.trustd.agent` and `com.apple.trustd`. Go programs such as `gh`, and other clients that verify server certificates with Security.framework, need them to complete TLS; without them they fail with `x509: OSStatus -26276` or a TLS error. Commands in a login session ask the trust agent and commands under a LaunchDaemon ask the system trust daemon, so both names are granted. Certificate verification stays on and no other Mach service is granted. trustd downloads intermediate certificates and revocation data for the certificates it checks, outside the profile's network rules, so the lookup comes only with a fully open network: closed-network and loopback-serving profiles receive no Mach lookup.
 
+## Open command networking with file confinement
+
+Linux bubblewrap and macOS Seatbelt accept the existing `sandbox.network_allow: ['*']` setting as an explicit outbound-network grant. Add it to the deployment's relevant preset or permission overlay while retaining `level: L1`, approvals and the existing file write scope. Full access is not required. An omitted grant keeps command networking closed; approving a shell command does not itself open the network.
+
+Only `['*']` or an empty list is supported. Named-host filtering remains refused rather than silently allowing all traffic. Delegated sessions retain their parent's network ceiling. This setting cannot be combined with `loopback_serve` and does not bypass the destination service's own access policy. Windows write restriction keeps its separate contract below and does not use this setting.
+
+For the LLMSG Linux cloud image, run `node integrations/llmsg/command-network.mjs /build/core` in the exported build source after dependency installation and before `build:local`; replace `/build/core` with the actual source root. This changes only `permission-workspace-write` to `network_allow: ['*']`, retaining its file restrictions, tool policy and approvals. Read-only still refuses unclassified shell effects. The script refuses Git checkouts, custom named-host policies and loopback-serving configurations. Ordinary builds remain closed by default: pulling this branch and running the old build command alone does not enable cloud command networking. Include this preparation step in the image builder, then rebuild the AGH runtime image. No sandbox DNS, egress, Key or Token setting is needed. Existing sessions retain their policy; validate with a new session after updating the image.
+
 ## Windows write restriction
+
+When the deployment offers read-only or workspace-write permissions, automatic PowerShell selection checks both version metadata and a finite read-only command under the restricted token and managed Job. Incompatible installations are skipped without dropping the write restriction. Explicit `AGNES_POWERSHELL=7`, `5.1` or an absolute path checks version metadata only, never falls back to another family and does not block full-access use. An actual restricted startup failure returns `E_POWERSHELL_UNAVAILABLE` with attempt reason `restricted-execution-failed`. Select `auto` or install a compatible version and restart. Facts are cached in-process and re-probed when the selection or executable changes.
 
 On Windows, `local` runs commands for `read-only` and `workspace-write` sessions under a Windows ACL write restriction: a restricted token, Low integrity, NTFS ACL grants and a Job Object that the Host owns. This is partial protection. It limits file writes only. It is not the full L1 isolation of macOS and Linux, and it is not a strict path sandbox. It needs an NTFS workspace and a working native module.
 
@@ -94,6 +104,12 @@ File reads and network access are not restricted. A command can read files outsi
 
 The start is refused, and the command never runs directly, when the restriction cannot be set up: a non-NTFS volume, a drive root, a UNC path, a junction root that is not verified, a missing native module, or a failed ACL change.
 
+Setting up a write grant requires the AGH account to have `WRITE_DAC` and `WRITE_OWNER` on the workspace and the objects being granted. Ordinary file modification permission is insufficient. An access denial during this setup is reported as `E_ACL_ACCESS_DENIED`; choose a workspace with the required permissions or have its owner review them. AGH does not elevate, take ownership or fall back to unrestricted execution.
+
+Automatic Windows PowerShell selection probes a finite command through the Job gate, using a restricted token when the deployment offers restricted permissions and the ordinary token for a full-access-only deployment. An incompatible installation is skipped. Explicit version/path selection does not fall back; incompatible managed startup returns `E_POWERSHELL_UNAVAILABLE`, with attempt reason `restricted-execution-failed` or `execution-failed` respectively. The Store 7.7 installation tested here cannot join the Job, even with full access; `auto` selects a verified 5.1 installation. Restart after changing selection or installation.
+
+Every finite Windows command must join its owned Job before being resumed. Full access disables file isolation, not lifetime management. Rebuild and ship the Windows native artifact and broker together; replacing only the frontend or JavaScript is insufficient.
+
 Side effects on the workspace:
 
 - Grants stay on the workspace until explicitly removed. Ending a command or closing a session does not remove them.
@@ -105,6 +121,7 @@ Side effects on the workspace:
 
 Limits inside a confined command:
 
+- Windows Schannel clients, including the system `curl.exe`, can fail HTTPS credential initialization with `SEC_E_NO_CREDENTIALS` (`0x8009030e`) under the restricted token. This alone does not diagnose a DNS or network outage. Use a Node HTTPS client or an OpenSSL-based client under the same permission for a connectivity check; the command reports this guidance without changing permissions, rewriting commands or disabling certificate verification.
 - A Node program cannot start a child and capture its output or feed it input (`stdio: 'pipe'`, which is also the default of `execFileSync` and `execSync`): the start fails with `EPERM`. A child that inherits or ignores stdio starts, and PowerShell pipelines work.
 - A read-only command has no writable temporary directory, so PowerShell starts in Constrained Language Mode: `Add-Type`, .NET method calls such as `[Console]::Out.Write`, COM and reflection fail, while cmdlets work. A workspace-write command is not affected.
 - The restriction covers file writes only. Confined commands of one Windows user are not isolated from each other as processes: a read-only command can open the process of a workspace-write command that runs at the same time.

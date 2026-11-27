@@ -421,14 +421,14 @@ export function createPolicyOperation<T>(
       }),
       network: Object.freeze({
         mode:
-          state.access === 'full-access'
+          state.access === 'full-access' || policy.networkAllow.includes('*')
             ? 'allow'
             : policy.loopbackServe
               ? 'loopback-serve'
               : policy.networkAllow.length
                 ? 'hosts'
                 : 'deny',
-        hosts: Object.freeze([...policy.networkAllow]),
+        hosts: Object.freeze(policy.networkAllow.includes('*') ? [] : [...policy.networkAllow]),
       }),
       requiredEnforcement: Object.freeze(
         state.backend === 'l1' || state.requiredFileIsolation

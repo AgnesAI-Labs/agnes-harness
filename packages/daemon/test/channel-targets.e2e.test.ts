@@ -26,7 +26,7 @@ import type { DecisionHandle, PackageOperationReceipt } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
 import { startLoopProvider } from './fixtures/loop-provider.js'
-import { sourceTranspileCache } from './source-transpile-cache.js'
+import { SOURCE_WORKER_STARTUP_MS, sourceTranspileCache } from './source-transpile-cache.js'
 
 const sourceDaemon = fileURLToPath(new URL('./fixtures/source-loop-daemon.ts', import.meta.url))
 const CHAT = '@acme/fake-chat'
@@ -96,8 +96,12 @@ async function bounded<T>(promise: Promise<T>, label: string): Promise<T> {
   }
 }
 
-async function until<T>(read: () => Promise<T | undefined> | T | undefined, label: string): Promise<T> {
-  const deadline = Date.now() + STEP_MS
+async function until<T>(
+  read: () => Promise<T | undefined> | T | undefined,
+  label: string,
+  ms = STEP_MS,
+): Promise<T> {
+  const deadline = Date.now() + ms
   for (;;) {
     const value = await read()
     if (value !== undefined) return value
@@ -312,6 +316,7 @@ function writeProfile(root: string, baseUrl: string) {
     JSON.stringify({
       name: 'local-dev',
       cacheDir: sourceTranspileCache(),
+      limits: { 'worker.startup_ms': SOURCE_WORKER_STARTUP_MS },
       computerUse: { enabled: false },
       adapters: { secrets: { kind: 'file', path: secretDir } },
       provider: {
@@ -401,16 +406,20 @@ it.skipIf(process.platform === 'win32')(
       }
       let client = await connect()
       await client.workspace.add(workspace)
-      const operation = async (receipt: PackageOperationReceipt) => {
-        const result = await until(async () => {
-          const value = await client.packages.operation.get({
-            profile: receipt.profile,
-            operationId: receipt.operationId,
-          })
-          if (['failed', 'cancelled', 'rolled-back'].includes(value.state))
-            throw new Error(`package ${value.operation}: ${JSON.stringify(value.error)}`)
-          return value.state === 'completed' ? value : undefined
-        }, `package ${receipt.operationId}`)
+      const operation = async (receipt: PackageOperationReceipt, ms = STEP_MS) => {
+        const result = await until(
+          async () => {
+            const value = await client.packages.operation.get({
+              profile: receipt.profile,
+              operationId: receipt.operationId,
+            })
+            if (['failed', 'cancelled', 'rolled-back'].includes(value.state))
+              throw new Error(`package ${value.operation}: ${JSON.stringify(value.error)}`)
+            return value.state === 'completed' ? value : undefined
+          },
+          `package ${receipt.operationId}`,
+          ms,
+        )
         return result
       }
       const command = async () => ({
@@ -439,7 +448,7 @@ it.skipIf(process.platform === 'win32')(
             capabilityHash: preview.capabilityHash,
           }),
         )
-        await operation(await client.packages.enable({ ...(await command()), id }))
+        await operation(await client.packages.enable({ ...(await command()), id }), SOURCE_WORKER_STARTUP_MS)
       }
       await install(DESK, plugins.desk)
       await install(CHAT, plugins.chat)

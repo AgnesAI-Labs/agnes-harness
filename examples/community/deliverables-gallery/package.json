@@ -58,9 +58,17 @@
     "@agnes/web-ui": "0.0.0",
     "react": "18.3.1"
   },
+  "peerDependenciesMeta": {
+    "@agnes/web-client": {
+      "optional": true
+    },
+    "@agnes/web-ui": {
+      "optional": true
+    }
+  },
   "devDependencies": {
-    "@agnes/web-client": "workspace:*",
-    "@agnes/web-ui": "workspace:*",
+    "@agnes/web-client": "0.0.0",
+    "@agnes/web-ui": "0.0.0",
     "react": "18.3.1"
   }
 }

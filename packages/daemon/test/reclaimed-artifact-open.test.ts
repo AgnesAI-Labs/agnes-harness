@@ -2,15 +2,15 @@ import { createHash } from 'node:crypto'
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import {
+  createArtifactReadAuthorityPort,
+  PersistentArtifactReadAuthorityIndex,
+} from '@agnes/daemon-rpc/local/artifact-read-authority'
 import { createSqliteStorage } from '@agnes/host'
 import type { ArtifactRef, EventEnvelope } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
-import {
-  createArtifactReadAuthorityPort,
-  PersistentArtifactReadAuthorityIndex,
-} from '../src/local/artifact-read-authority.js'
 import { composeProductionProjectedArtifactRead } from '../src/supervisor/artifact-read.js'
 import { WorkerRegistry } from '../src/supervisor/registry.js'
 import type { WorkerPool } from '../src/supervisor/worker-pool.js'

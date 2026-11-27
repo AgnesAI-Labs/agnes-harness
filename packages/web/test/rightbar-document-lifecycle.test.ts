@@ -2,7 +2,7 @@
 import { Context } from '@agnes/cordis'
 import { ClientResourceService, SessionService, SlotOutlet, SlotRegistry } from '@agnes/web-client'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
-import { createElement, StrictMode, useState } from 'react'
+import { act, createElement, StrictMode, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { startClientModules } from '../src/client-modules/boot.js'
@@ -139,10 +139,15 @@ describe('real rightbar document resource boundary', () => {
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:pdf')
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
     const call = vi.fn(async (_method, input) => result(input, '%PDF'))
+    const fetcher = vi.spyOn(globalThis, 'fetch')
     // A detached DOM verifies the real frame/state; navigation is exercised in the live browser.
     const f = await fixture(reference('pdf', '%PDF'), call, { detached: true })
-    await vi.waitFor(() => expect(f.host.querySelector('iframe')?.getAttribute('src')).toBe('blob:pdf'))
-    expect(f.host.querySelector('iframe')?.getAttribute('sandbox')).toBe('')
+    await vi.waitFor(() =>
+      expect(f.host.querySelector('iframe')?.getAttribute('src')).toBe('/__agnes/pdf-preview'),
+    )
+    expect(f.host.querySelector('iframe')?.getAttribute('sandbox')).toBe('allow-scripts')
+    expect(f.host.querySelector('object,embed')).toBeNull()
+    expect(fetcher).not.toHaveBeenCalled()
     expect(f.host.querySelector('iframe')?.title).toBe('Document')
     f.mount.dispose()
     expect(revoked).toHaveBeenCalledTimes(created.mock.calls.length)
@@ -356,13 +361,17 @@ describe('real rightbar document resource boundary', () => {
     await vi.waitFor(() => expect(pending.length).toBe(1))
     for (const finish of pending.splice(0)) finish()
     await vi.waitFor(() => expect(host.querySelector('img')?.getAttribute('src')).toBe('blob:runtime-1'))
-    for (const finish of late) finish()
-    await vi.waitFor(() => expect(created).toHaveBeenCalledTimes(2))
-    expect(revoked.mock.calls).toEqual([['blob:runtime-2']])
+    await act(async () => {
+      for (const finish of late) finish()
+    })
+    const urls = () =>
+      created.mock.results.filter((result) => result.type === 'return').map((result) => result.value)
+    // A retired service may reject before allocating. Every URL it did acquire must still be released.
+    expect(revoked.mock.calls.map(([url]) => url)).toEqual(urls().filter((url) => url !== 'blob:runtime-1'))
     expect(host.querySelector('img')?.getAttribute('src')).toBe('blob:runtime-1')
     await next.dispose()
     runtimes.pop()
-    expect(revoked.mock.calls).toEqual([['blob:runtime-2'], ['blob:runtime-1']])
+    expect(revoked.mock.calls.map(([url]) => url).sort()).toEqual(urls().sort())
     expect(host.textContent).toBe('')
   })
 })

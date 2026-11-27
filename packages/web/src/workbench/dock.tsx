@@ -20,8 +20,24 @@ import {
   Tabs,
   Tooltip,
 } from '@agnes/web-ui'
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { createPortal, flushSync } from 'react-dom'
+import { usePluginUiDock } from '../declarative-ui/dock.js'
+import type { PluginUiCard } from '../declarative-ui/entries.js'
+import {
+  PluginUiContent,
+  PluginUiMenu,
+  pluginUiLabels,
+  pluginUiMenuItems,
+} from '../declarative-ui/presentation.js'
 import { useApplicationPanelFocus, useApplicationPanels } from './application-panels.js'
 import {
   BOTTOM_DEFAULT,
@@ -70,7 +86,7 @@ type DockTab = { id: string; title: string; icon: IconName | undefined; count?: 
  * A dock's tab strip. Tabs that do not fit the strip fold into one "more" menu instead of scrolling
  * out of sight; the current tab always stays in the strip.
  */
-function DockTabs({
+function DockHeading({
   edge,
   label,
   more,
@@ -78,6 +94,10 @@ function DockTabs({
   activeId,
   select,
   open,
+  extensions,
+  bottomExtensions,
+  openExtension,
+  children,
 }: {
   edge: 'right' | 'bottom'
   label: string
@@ -86,6 +106,10 @@ function DockTabs({
   activeId: string | undefined
   select(id: string): void
   open(id: string): void
+  extensions: readonly PluginUiCard[]
+  bottomExtensions: readonly PluginUiCard[]
+  openExtension(entry: PluginUiCard): void
+  children: ReactNode
 }) {
   // More than five panels never share the strip, however wide it is: four stay, and the fifth
   // place goes to the current tab when it is one of the rest.
@@ -100,7 +124,9 @@ function DockTabs({
     JSON.stringify(strip),
   )
   const folded = tabs.filter((tab, index) => (crowded && index >= 4) || overflow.hidden.includes(tab.id))
-  return (
+  const text = pluginUiLabels()
+  const standaloneExtensions = !folded.length && extensions.length > 0
+  const navigation = (
     <>
       <Tabs
         className="workbench-dock-tabs"
@@ -156,13 +182,42 @@ function DockTabs({
         <Menu
           label={more}
           trigger={<IconButton name="ellipsis" label={more} />}
-          items={folded.map((tab) => ({ id: tab.id, label: tab.title, onSelect: () => open(tab.id) }))}
+          items={[
+            ...folded.map((tab) => ({ id: tab.id, label: tab.title, onSelect: () => open(tab.id) })),
+            ...pluginUiMenuItems(extensions, openExtension, text.extensions),
+          ]}
         />
+      )}
+    </>
+  )
+  return (
+    <>
+      <div className="workbench-dock-heading">
+        {navigation}
+        {children}
+      </div>
+      {(standaloneExtensions || bottomExtensions.length > 0) && (
+        <div className="declarative-ui-dock-row">
+          {standaloneExtensions && (
+            <PluginUiMenu label={text.extensions} items={pluginUiMenuItems(extensions, openExtension)} />
+          )}
+          {bottomExtensions.length > 0 && (
+            <PluginUiMenu label={text.bottom} items={pluginUiMenuItems(bottomExtensions, openExtension)} />
+          )}
+        </div>
       )}
     </>
   )
 }
 export function Dock({ context }: { context: UiExtensionContext }) {
+  const {
+    active: declarative,
+    entries: declarativeEntries,
+    open: openExtension,
+    clear: clearExtension,
+    close: closeExtension,
+    narrow,
+  } = usePluginUiDock()
   const registryVersion = useSyncExternalStore(workbenchPanels.subscribe, workbenchPanels.getSnapshot)
   const applicationPanels = useApplicationPanels(context)
   const panels = useMemo(() => {
@@ -186,6 +241,9 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     .some((panel) => panel.edge === 'bottom' && (panel.visibility !== 'contextual' || panel.when?.(context)))
   const sessionId = (context.data as WorkbenchContext)?.session?.id
   const [layout, setLayout] = useState(() => readLayout(sessionId))
+  const rightOpen = declarative?.edge === 'right' || (layout.rightOpen && !(narrow && declarative))
+  const bottomOpen =
+    declarative?.edge === 'bottom' || (layout.bottomOpen && bottomAvailable && !(narrow && declarative))
   const [expanded, setExpanded] = useState(false)
   const [rightMax, setRightMax] = useState(() => maxRightWidth(window.innerWidth))
   const rightWidth = clampRightWidth(layout.rightWidth, rightMax)
@@ -272,6 +330,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     const openPanel = (id: string, selection?: unknown) => {
       const panel = getPanel(id)
       if (!panel || (panel.visibility === 'contextual' && !panel.when?.(context))) return false
+      clearExtension()
       rememberFocus(panel.edge)
       // A link may name the tab to show, such as a child agent's job in the terminal panel.
       setSelection(selection)
@@ -300,7 +359,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       removePanel()
       removeMentions()
     }
-  }, [rememberFocus, context, getPanel])
+  }, [rememberFocus, context, getPanel, clearExtension])
   useEffect(
     () => () => {
       surfaces.split?.classList.remove('workbench-right-open', 'workbench-bottom-open')
@@ -315,26 +374,33 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     } catch {
       /* in-memory layout remains usable */
     }
+  }, [layout, selected, sessionId])
+  useEffect(() => {
     const split = surfaces.split
     if (!split) return
-    split.classList.toggle('workbench-right-open', layout.rightOpen)
-    split.classList.toggle('workbench-bottom-open', layout.bottomOpen && bottomAvailable)
+    split.classList.toggle('workbench-right-open', rightOpen)
+    split.classList.toggle('workbench-bottom-open', bottomOpen)
     split.style.setProperty('--workbench-width', expanded ? '60vw' : `${rightWidth}px`)
     split.parentElement?.style.setProperty('--workbench-width', expanded ? '60vw' : `${rightWidth}px`)
     split.style.setProperty('--workbench-height', `${layout.bottomHeight}px`)
     for (const edge of edges) {
       const host = surfaces[edge]
-      if (host) host.hidden = !layout[`${edge}Open`] || (edge === 'bottom' && !bottomAvailable)
+      if (host) host.hidden = !(edge === 'right' ? rightOpen : bottomOpen)
     }
-  }, [layout, rightWidth, surfaces, expanded, selected, bottomAvailable, sessionId])
+  }, [rightOpen, bottomOpen, rightWidth, surfaces, expanded, layout.bottomHeight])
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
       const edge = edges.find(
-        (value) => layout[`${value}Open`] && surfaces[value]?.contains(event.target as Node),
+        (value) =>
+          (value === 'right' ? rightOpen : bottomOpen) && surfaces[value]?.contains(event.target as Node),
       )
       if (!edge || event.defaultPrevented) return
       if (event.key === 'Escape') {
         event.preventDefault()
+        if (declarative?.edge === edge) {
+          closeExtension()
+          return
+        }
         setLayout((value) => ({ ...value, [`${edge}Open`]: false }))
         restoreFocus(edge)
       }
@@ -364,10 +430,11 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     }
     document.addEventListener('keydown', keyboard)
     return () => document.removeEventListener('keydown', keyboard)
-  }, [layout, surfaces, restoreFocus])
+  }, [rightOpen, bottomOpen, declarative, surfaces, restoreFocus, closeExtension])
   const openPanel = (id: string, payload?: unknown) => {
     const panel = getPanel(id)
     if (!panel || (panel.visibility === 'contextual' && !panel.when?.(context))) return
+    clearExtension()
     const edge = panel.edge
     rememberFocus(edge)
     setSelection(payload)
@@ -383,6 +450,10 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   }
   useApplicationPanelFocus(context, applicationPanels, openPanel)
   const close = (edge: 'right' | 'bottom') => {
+    if (declarative?.edge === edge) {
+      closeExtension()
+      return
+    }
     setLayout((value) => ({ ...value, [`${edge}Open`]: false }))
     restoreFocus(edge)
   }
@@ -407,10 +478,27 @@ export function Dock({ context }: { context: UiExtensionContext }) {
         const entries = panels.filter(
           (panel) => panel.edge === edge && (panel.visibility !== 'contextual' || panel.when?.(context)),
         )
-        if (entries.length === 0 && edge === 'bottom') return null
+        const extension = declarative?.edge === edge ? declarative.entry : undefined
+        const host = surfaces[`${edge}Content`]
+        if (entries.length === 0 && edge === 'bottom') {
+          return extension && host
+            ? createPortal(
+                <div className="workbench-dock-body">
+                  <div className="workbench-dock-heading">
+                    <IconButton name="x" label={t('workbench.close')} onClick={closeExtension} />
+                  </div>
+                  <div className="workbench-panel-content">
+                    <PluginUiContent key={extension.key} entry={extension} onBack={closeExtension} />
+                  </div>
+                </div>,
+                host,
+                'declarative-bottom',
+              )
+            : null
+        }
         const active = entries.find((panel) => panel.id === selected[edge]) ?? entries[0]
         const Component = active?.component
-        const host = surfaces[`${edge}Content`]
+        const showing = edge === 'right' ? rightOpen : bottomOpen
         const open = layout[`${edge}Open`]
         return (
           <span key={edge}>
@@ -422,10 +510,15 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                 data-edge={edge}
                 data-testid={`workbench-${edge}-toggle`}
                 aria-controls={`workbench-${edge}`}
-                aria-expanded={open}
-                aria-pressed={open}
+                aria-expanded={showing}
+                aria-pressed={showing}
                 aria-label={t(`workbench.${edge}`)}
                 onClick={() => {
+                  if (extension) {
+                    closeExtension()
+                    return
+                  }
+                  if (narrow) clearExtension()
                   rememberFocus(edge)
                   setLayout((value) => ({
                     ...value,
@@ -451,7 +544,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                 <div className="workbench-dock-body">
                   <hr
                     className="workbench-resize"
-                    hidden={edge === 'right' && expanded}
+                    hidden={!!extension || (edge === 'right' && expanded)}
                     tabIndex={0}
                     aria-label={t('workbench.resize')}
                     aria-orientation={edge === 'right' ? 'vertical' : 'horizontal'}
@@ -488,37 +581,52 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                       element.addEventListener('pointercancel', end)
                     }}
                   />
-                  <div className="workbench-dock-heading">
-                    <DockTabs
-                      edge={edge}
-                      label={t(`workbench.${edge}`)}
-                      more={t('workbench.more')}
-                      tabs={entries.map((panel) => ({
-                        id: panel.id,
-                        title: panel.title?.(context) ?? t(panel.titleKey),
-                        icon: sharedIcon(panel.icon) ? panel.icon : undefined,
-                        count: panel.count?.read(context),
-                      }))}
-                      activeId={active?.id}
-                      select={(id) => setSelected((value) => ({ ...value, [edge]: id }))}
-                      open={openPanel}
+                  <DockHeading
+                    edge={edge}
+                    label={t(`workbench.${edge}`)}
+                    more={t('workbench.more')}
+                    tabs={entries.map((panel) => ({
+                      id: panel.id,
+                      title: panel.title?.(context) ?? t(panel.titleKey),
+                      icon: sharedIcon(panel.icon) ? panel.icon : undefined,
+                      count: panel.count?.read(context),
+                    }))}
+                    activeId={active?.id}
+                    select={(id) => {
+                      clearExtension()
+                      setSelected((value) => ({ ...value, [edge]: id }))
+                    }}
+                    open={openPanel}
+                    extensions={declarativeEntries.filter((entry) => entry.placement === `workbench.${edge}`)}
+                    bottomExtensions={
+                      edge === 'right' && !bottomAvailable
+                        ? declarativeEntries.filter((entry) => entry.placement === 'workbench.bottom')
+                        : []
+                    }
+                    openExtension={openExtension}
+                  >
+                    <div
+                      id={`workbench-header-actions-${edge}`}
+                      className="workbench-header-actions"
+                      aria-hidden={extension ? true : undefined}
                     />
-                    <div id={`workbench-header-actions-${edge}`} className="workbench-header-actions" />
                     {edge === 'right' && (
                       <IconButton
                         name="maximize-2"
                         label={t(expanded ? 'workbench.collapse' : 'workbench.expand')}
                         aria-pressed={expanded}
+                        disabled={!!extension}
                         onClick={() => setExpanded((value) => !value)}
                       />
                     )}
                     <IconButton name="x" label={t('workbench.close')} onClick={() => close(edge)} />
-                  </div>
+                  </DockHeading>
                   <div
                     role="tabpanel"
                     id={`workbench-panel-${edge}`}
                     aria-labelledby={active ? `workbench-tab-${active.id}` : undefined}
                     className="workbench-panel-content"
+                    hidden={!!extension}
                   >
                     <RegionErrorBoundary key={active?.id} region={`workbench-${edge}`}>
                       {!Component && open && (
@@ -560,6 +668,11 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                       )}
                     </RegionErrorBoundary>
                   </div>
+                  {extension && (
+                    <div className="workbench-panel-content">
+                      <PluginUiContent key={extension.key} entry={extension} onBack={closeExtension} />
+                    </div>
+                  )}
                 </div>,
                 host,
               )}

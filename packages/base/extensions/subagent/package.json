@@ -24,6 +24,10 @@
               "subagent_list",
               "subagent_send_message",
               "subagent_interrupt",
+              "subagent_pause",
+              "subagent_resume",
+              "subagent_close",
+              "subagent_recap",
               "list_subagent_models"
             ]
           },

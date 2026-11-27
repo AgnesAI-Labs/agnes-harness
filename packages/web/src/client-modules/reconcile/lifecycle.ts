@@ -5,6 +5,7 @@ import type {
   PluginRuntimePhase,
   RuntimeErrorStage,
 } from '@agnes/web-foundation/client-modules/runtime-status'
+import { measurePreparation } from '../../preparation-timing.js'
 import { validateCatalogContract } from './catalog.js'
 import type {
   ClientModuleCache,
@@ -20,6 +21,7 @@ import { withTimeout } from './styles.js'
 export interface ReconcileLifecycleContext {
   ctx: Context
   identity(): string | undefined
+  beginImport(rowId: string, target: ReadyClientModule): void
   registry: { spec?: (name: string) => unknown } | undefined
   timeouts: { import: number; styles: number; apply: number; dispose: number }
   importer: ModuleImporter
@@ -130,14 +132,34 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
   function applyTarget(rowId: string, state: PackageState, target: ReadyClientModule): Promise<void> {
     const epoch = ++state.epoch
     const identity = context.identity()
-    const current = () => epoch === state.epoch && identity === context.identity()
+    state.attempt?.abort()
+    const controller = new AbortController()
+    state.attempt = controller
+    const { signal } = controller
+    const current = () => !signal.aborted && epoch === state.epoch && identity === context.identity()
+    let stagedStyles: PreparedClientStyles | undefined
+    function discardStyles(): void {
+      const styles = stagedStyles
+      stagedStyles = undefined
+      styles?.dispose()
+    }
+    function abortStyles(): void {
+      try {
+        discardStyles()
+      } catch {
+        console.warn('[client-modules] retired stylesheet disposal failed')
+      }
+    }
+    signal.addEventListener('abort', abortStyles, { once: true })
     state.packageId = target.packageId
     state.target = target
     setPhase(rowId, state, 'loading')
+    const shouldStart = () => current() && state.target === target
     const run = async (): Promise<void> => {
       let mod: unknown
-      let stagedStyles: PreparedClientStyles | undefined
+      let preparedStyles: PreparedClientStyles
       try {
+        if (!shouldStart()) return
         if (state.cleanupPending && !(await disposeCleanup(rowId, state))) {
           if (current()) fail(rowId, state, 'dispose')
           return
@@ -155,14 +177,28 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
         // Preparation is independent within this module. Settle both sides before failure or
         // replacement so a late stylesheet cannot escape cleanup; activation stays serial.
         const [script, styles] = await Promise.allSettled([
-          Promise.resolve().then(() =>
-            withTimeout(importer(target.entryUrl), timeouts.import, `import ${rowId}`),
-          ),
-          Promise.resolve().then(() => prepareStyles(target, timeouts.styles)),
+          Promise.resolve().then(() => {
+            if (!shouldStart()) throw new Error('obsolete client module')
+            context.beginImport(rowId, target)
+            return measurePreparation('client_script', () =>
+              withTimeout(importer(target.entryUrl), timeouts.import, `import ${rowId}`),
+            )
+          }),
+          Promise.resolve().then(async () => {
+            if (!shouldStart()) throw new Error('obsolete client styles')
+            const prepared = await measurePreparation('client_styles', () =>
+              prepareStyles(target, timeouts.styles, signal),
+            )
+            if (!current()) {
+              prepared.dispose()
+              throw new Error('obsolete client styles')
+            }
+            stagedStyles = prepared
+            return prepared
+          }),
         ])
-        if (styles.status === 'fulfilled') stagedStyles = styles.value
         if (script.status === 'rejected' || styles.status === 'rejected') {
-          stagedStyles?.dispose()
+          discardStyles()
           const error =
             script.status === 'rejected'
               ? script.reason
@@ -182,9 +218,9 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
           return
         }
         mod = script.value
-        stagedStyles = styles.value
+        preparedStyles = styles.value
       } catch (error) {
-        stagedStyles?.dispose()
+        discardStyles()
         if (current())
           fail(
             rowId,
@@ -200,11 +236,11 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
           typeof (mod as Record<string, unknown>).apply !== 'function'
         ) {
           if (current()) fail(rowId, state, 'module-shape')
-          stagedStyles.dispose()
+          discardStyles()
           return
         }
         if (!current()) {
-          stagedStyles.dispose()
+          discardStyles()
           return
         }
 
@@ -212,7 +248,16 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
         const oldStyles = state.styles
         const oldEntryUrl = state.active?.entryUrl ?? target.entryUrl
         await lifecycle('cache-registry-delete', rowId)
+        if (!current()) {
+          discardStyles()
+          return
+        }
         if (old || oldStyles || state.active) await moduleCache.delete(oldEntryUrl)
+        if (!current()) {
+          discardStyles()
+          return
+        }
+        state.retainsMountedDuringAttempt = false
         const oldOwnerRowId = registrationOwner(rowId, state)
         try {
           removeOwner(oldOwnerRowId)
@@ -235,7 +280,7 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
         oldStyles?.dispose()
         state.ownerRowId = undefined
         if (!current()) {
-          stagedStyles.dispose()
+          discardStyles()
           try {
             removeOwner(oldOwnerRowId)
           } catch {
@@ -249,7 +294,11 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
         let fiber: { dispose(): Promise<void> | void } | undefined
         try {
           await lifecycle('refresh', rowId)
-          stagedStyles.activate()
+          if (!current()) {
+            discardStyles()
+            return
+          }
+          preparedStyles.activate()
           const created = ctx.plugin(clientModule(mod as never), {
             ...(target.exampleOf ? { exampleOf: target.exampleOf } : {}),
             ...(target.pageEntry ? { pageEntry: target.pageEntry } : {}),
@@ -268,7 +317,7 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
             ...(target.slotCatalogVersion === undefined
               ? {}
               : { slotCatalogVersion: target.slotCatalogVersion }),
-            ...(target.contentDigest === undefined ? {} : { contentDigest: target.contentDigest }),
+            contentDigest: target.contentDigest,
             ...(target.services === undefined ? {} : { services: target.services }),
             ...(target.backendOwner ? { backendOwner: target.backendOwner } : {}),
             ...(target.streams ? { streams: target.streams } : {}),
@@ -285,24 +334,25 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
           if (fiberState !== undefined && fiberState !== FiberState.ACTIVE)
             throw new Error(`client module ${rowId} did not activate`)
         } catch {
+          discardStyles()
           await discardUncommitted(fiber, rowId)
-          stagedStyles.dispose()
           if (current()) fail(rowId, state, 'apply')
           return
         }
         if (!current()) {
+          discardStyles()
           await discardUncommitted(fiber, rowId)
-          stagedStyles.dispose()
           return
         }
         state.fiber = fiber
-        state.styles = stagedStyles
+        state.styles = preparedStyles
+        stagedStyles = undefined
         state.active = target
         state.ownerRowId = rowId
         state.revision = target.revision
         setPhase(rowId, state, 'active')
       } catch (error) {
-        stagedStyles?.dispose()
+        discardStyles()
         if (current())
           fail(
             rowId,
@@ -312,7 +362,10 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
       }
     }
     // Serialize within each package: queue each application after the previous one.
-    state.chain = state.chain.then(run, run)
+    state.chain = state.chain.then(run, run).finally(() => {
+      signal.removeEventListener('abort', abortStyles)
+      if (state.attempt === controller) state.attempt = undefined
+    })
     return state.chain
   }
 

@@ -52,6 +52,10 @@ describe('permission overlays preserve real recipe documents', () => {
       const timeouts = (got.tools as { timeouts: Record<string, number> }).timeouts
       expect(timeouts.job_output).toBe(310_000)
       delete timeouts.job_output
+      // Parallel subagent orchestration raised the standard/base fan-out cap from 4 to 8.
+      const subagent = got.subagent as { max_fan_out?: number } | undefined
+      const wantSubagent = want.subagent as { max_fan_out?: number } | undefined
+      if (wantSubagent?.max_fan_out === 4 && subagent?.max_fan_out === 8) subagent.max_fan_out = 4
     }
     if (name !== 'minimal-rl') {
       // Compaction now follows primary; tool discovery is a prompt section and UI has a guide.

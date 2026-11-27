@@ -5,6 +5,8 @@ export const observations = {
   requests: [] as Array<{ model: string; image: boolean; credential?: string }>,
   disposed: false,
   cleaned: false,
+  cleanups: 0,
+  rejectNextMount: false,
 }
 
 const adapter: ModelAdapter = {
@@ -38,6 +40,7 @@ const adapter: ModelAdapter = {
   },
   cleanup() {
     observations.cleaned = true
+    observations.cleanups++
   },
 }
 
@@ -45,5 +48,9 @@ export const plugin = {
   inject: ['providers'],
   apply(ctx: { providers: ProviderRegistrationPort }) {
     ctx.providers.register(modelAdapterKind, adapter)
+    if (observations.rejectNextMount) {
+      observations.rejectNextMount = false
+      throw new Error('candidate plugin mount failed')
+    }
   },
 }

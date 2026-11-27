@@ -170,16 +170,14 @@ it('keeps a batch through upload session opening, stores references and cleans a
   await act(async () => remove?.click())
   expect(handle.current?.getAttachmentBlocks()).toHaveLength(2)
   expect(cancelled).not.toHaveBeenCalled()
-  // 模型不收图片时这份上传是按文件发出去的，所以同一张图回到文件行，不再给缩略图。
+  // Previewing local image bytes is independent of the model's input capabilities. Switching to a
+  // text-only model keeps the same stored attachment and must not remove its preview entry point.
+  const beforeModelChange = handle.current?.getAttachmentBlocks()
   await act(async () =>
     handle.current?.render({ ...view, imagePolicy: userImagePolicy({ input: ['text'] }) }),
   )
-  expect(host.querySelector('.composer-image-preview')).toBeNull()
-  expect(
-    [...host.querySelectorAll('[data-testid="attachment-ready"]')].some(
-      (node) => node.classList.contains('composer-file-preview') && node.textContent?.includes('one.png'),
-    ),
-  ).toBe(true)
+  expect(host.querySelector('.composer-image-preview img')?.getAttribute('src')).toBe('blob:preview')
+  expect(handle.current?.getAttachmentBlocks()).toEqual(beforeModelChange)
 })
 
 it.each([

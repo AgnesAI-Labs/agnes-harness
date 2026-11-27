@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { PresentationObservation } from '../../packages/daemon-admin/src/packages/client-admission.js'
 import { createClientModuleRegistry } from '../../packages/daemon-admin/src/packages/client-modules.js'
+import {
+  roleDigest,
+  uniquePresentationClient,
+} from '../../packages/daemon-admin/src/packages/role-selection.js'
 import { assemble } from '../../packages/host/src/runtime/assemble/assemble.js'
 import { resolveProfile } from '../../packages/host-common/src/profile/resolve.js'
 import {
@@ -16,13 +21,17 @@ import {
   createPluginRow,
   encodeRuntimeTargetArtifact,
 } from '../../packages/plugin-runtime/src/host/index.js'
-import type { createFixture } from './fixture.js'
+import type { PackageLoadFixture } from './fixture.js'
 import { measure, type Sample, type Stage } from './metrics.js'
 
 export type Results = Partial<Record<Stage, Sample>>
 
 /** Cold means new manager/loader + empty jiti disk cache, not a flushed OS filesystem cache. */
-export async function runPackageLoad(f: Awaited<ReturnType<typeof createFixture>>, run: number) {
+export async function runPackageLoad(
+  f: PackageLoadFixture,
+  run: number,
+  { checkWithoutConsent = false } = {},
+) {
   const results: Results = {}
   const inventoryReader = f.reader()
   const cold = await measure(() => inventoryReader.inventory(f.profileDir))
@@ -110,11 +119,32 @@ export async function runPackageLoad(f: Awaited<ReturnType<typeof createFixture>
       compositeRevision: '0'.repeat(64),
     }),
   )
+  const approval: PresentationObservation = {
+    revision: 1,
+    grants: cold.value.packages.map((row) => {
+      const match = uniquePresentationClient(
+        row,
+        (client) => !!client.homeEntries?.some(({ id }) => id === f.homePage),
+      )
+      assert(match, `missing synthetic home page: ${row.id}`)
+      return {
+        packageId: row.id,
+        clientId: match.clientId,
+        rowId: match.rowId,
+        declarationDigest: roleDigest(match.client),
+        consent: 'synthetic-package-load-review',
+        roles: [],
+        pages: [f.homePage],
+      }
+    }),
+    current: async () => true,
+  }
+  const presentation = async () => approval
   const registry = createClientModuleRegistry({
     snapshotDirectory: () => join(f.home, `client-cache-${run}`),
     runtimeArtifacts: () => ({ desired: artifact, lastGood: artifact }),
   })
-  const input = async () => ({
+  const input = async (approved = true) => ({
     profile: 'local-dev',
     profileDirectory: f.profileDir,
     inventory: await inventoryReader.inventory(f.profileDir),
@@ -123,23 +153,46 @@ export async function runPackageLoad(f: Awaited<ReturnType<typeof createFixture>
       actualIntegrity: cold.value.packages.find((pkg) => pkg.id === id)?.entry.integrity ?? '',
     }),
     refreshInventory: () => inventoryReader.inventory(f.profileDir, { fresh: true }),
+    ...(approved ? { presentation } : {}),
   })
   try {
     for (const stage of ['readonlyCold', 'readonlyWarm'] as const) {
       const page = await measure(async () => {
         const roster = await registry.list(await input())
-        assert.equal(roster.modules.length, snapshots.value.length)
-        const paths = roster.modules.flatMap((module) => [module.entryUrl, ...module.styleUrls])
-        assert.equal(paths.length, 2 * snapshots.value.length)
+        if (roster.modules.length !== snapshots.value.length) {
+          const statuses = roster.statuses
+            .map(({ packageId, state, reason }) => `${packageId}: ${state}${reason ? ` (${reason})` : ''}`)
+            .join(', ')
+          assert.fail(
+            `${stage}: expected ${snapshots.value.length} native modules, got ${roster.modules.length}; ${statuses || 'no roster statuses'}`,
+          )
+        }
+        const paths = roster.modules.flatMap((module) => {
+          assert.equal(module.styleUrls.length, 1)
+          return [module.entryUrl, ...module.styleUrls]
+        })
         // A page requests assets together, exercising the production in-flight inventory sharing.
         await Promise.all(
           paths.map(async (path) => {
-            const asset = await registry.read({ ...(await input()), path })
-            assert(asset.found)
+            const asset = await registry.read({ ...(await input()), path, purpose: 'document' })
+            assert(asset.found && asset.base64)
           }),
         )
+        return paths
       })
       results[stage] = page.sample
+      if (checkWithoutConsent && stage === 'readonlyWarm') {
+        const unapproved = await input(false)
+        const roster = await registry.list(unapproved)
+        assert.deepEqual(roster.modules, [])
+        assert.equal(roster.rows?.length ?? 0, 0)
+        assert.equal(roster.statuses.length, snapshots.value.length)
+        for (const status of roster.statuses) assert.equal(status.reason, 'native-ui-not-admitted')
+        for (const path of page.value)
+          assert.deepEqual(await registry.read({ ...unapproved, path, purpose: 'document' }), {
+            found: false,
+          })
+      }
     }
   } finally {
     registry.close()
@@ -148,7 +201,7 @@ export async function runPackageLoad(f: Awaited<ReturnType<typeof createFixture>
 }
 
 /** Warm readers and import caches must still refuse changed install/snapshot bytes. */
-export async function assertTamperRefused(f: Awaited<ReturnType<typeof createFixture>>) {
+export async function assertTamperRefused(f: PackageLoadFixture) {
   const manager = f.reader()
   const inventory = await manager.inventory(f.profileDir)
   const [source] = await manager.runtimePluginSnapshots(f.profileDir)

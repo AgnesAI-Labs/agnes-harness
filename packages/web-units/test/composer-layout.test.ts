@@ -710,73 +710,166 @@ it('uses the shared ghost seam for live follow-up hints and invalidates dismisse
   expect(loadHint).toHaveBeenCalledTimes(5)
 })
 
-it.each(['running', 'idle', 'interrupted', 'completed', 'failed', 'cancelled'] as const)(
-  'shows only usable child controls and labels follow-ups (%s)',
-  (status) => {
-    const active = !['completed', 'failed', 'cancelled'].includes(status)
-    const { host } = mount(
-      {
-        onChildControl: async () => {},
-        dependencies: {
-          ...dependencies,
-          translate: (key, vars) =>
-            (webUnitsLocaleCatalog['zh-CN'][key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) =>
-              String(vars?.[name] ?? name),
-            ),
+it.each([
+  'starting',
+  'running',
+  'waiting_approval',
+  'paused',
+  'disconnected',
+  'idle',
+  'completed',
+  'failed',
+  'cancelled',
+  'interrupted',
+] as const)('shows only usable child controls and labels follow-ups (%s)', (status) => {
+  const active = !['completed', 'failed', 'cancelled'].includes(status)
+  const working = status === 'starting' || status === 'running'
+  const { host } = mount(
+    {
+      onChildControl: async () => {},
+      dependencies: {
+        ...dependencies,
+        translate: (key, vars) =>
+          (webUnitsLocaleCatalog['zh-CN'][key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) =>
+            String(vars?.[name] ?? name),
+          ),
+      },
+    },
+    {
+      ...idle,
+      children: [
+        {
+          id: 'child',
+          parentId: 'parent',
+          providerId: 'in-process',
+          status,
+          controls: { stop: working, continue: active },
+          totalTokens: 15,
+          durationMs: 1200,
         },
-      },
-      {
-        ...idle,
-        children: [
-          {
-            id: 'child',
-            parentId: 'parent',
-            providerId: 'in-process',
-            status,
-            controls: { stop: status === 'running', continue: active },
-            totalTokens: 15,
-            durationMs: 1200,
-          },
-        ],
-      },
-    )
-    expect(host.querySelector('[data-testid="child-stop"]') !== null).toBe(status === 'running')
-    expect(host.querySelector('[data-testid="child-continue"]') !== null).toBe(active)
-    const metrics = host.querySelector('[data-testid="child-control-metrics"]')?.textContent
-    expect(metrics).toContain('15')
-    expect(metrics).toContain('1.2')
-    // The built-in provider reads as a subagent; the end of the id keeps two children apart.
-    const name = host.querySelector('.composer-child-name')
-    expect(name?.textContent).toBe('子智能体 · child')
-    expect(name?.getAttribute('title')).toBe('child')
-    // Status is stated in words first; the tag tone only backs it.
-    const state = host.querySelector('[data-testid="child-control-row"] [role="status"]')
-    expect(state?.textContent).toBe(
-      {
-        running: '运行中',
-        idle: '空闲',
-        interrupted: '已停止',
-        completed: '已完成',
-        failed: '失败',
-        cancelled: '已取消',
-      }[status as 'running'],
-    )
-    expect(state?.getAttribute('data-tone')).toBe(
-      { running: 'info', idle: null, interrupted: 'warn', completed: 'ok', failed: 'bad', cancelled: null }[
-        status as 'running'
       ],
-    )
-    // The collapsed header still states how much of the tree is working.
-    const header = host.querySelector('[data-testid="child-control-tree"] .agh-disclosure-meta')
-    expect(header?.textContent ?? null).toBe(status === 'running' ? '1 个运行中' : null)
-    const input = host.querySelector('[data-testid="child-continue-message"]')
-    expect(input !== null).toBe(active)
-    if (active) {
-      expect(input?.getAttribute('placeholder')).toBe('发给子代理的消息')
-      expect(input?.getAttribute('aria-label')).toBe('发给子代理的消息')
-    }
-  },
-)
+    },
+  )
+  expect(host.querySelector('[data-testid="child-stop"]') !== null).toBe(working)
+  const steerToggle = host.querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')
+  expect(steerToggle !== null).toBe(active)
+  expect(host.querySelector('[data-testid="child-continue-message"]')).toBeNull()
+  if (active) {
+    act(() => {
+      steerToggle?.click()
+    })
+    expect(host.querySelector('[data-testid="child-continue"]')?.textContent).toBe(working ? '发送' : '继续')
+  } else {
+    expect(host.querySelector('[data-testid="child-continue"]')).toBeNull()
+  }
+  const metrics = host.querySelector('[data-testid="child-control-metrics"]')?.textContent
+  expect(metrics).toContain('15')
+  expect(metrics).toContain('1.2')
+  // The built-in provider reads as a subagent; the end of the id keeps two children apart.
+  const name = host.querySelector('.composer-child-name')
+  expect(name?.textContent).toBe('子智能体 · child')
+  expect(name?.getAttribute('title')).toBe('child')
+  // Status is stated in words first (never raw translation keys); the tag tone only backs it.
+  const state = host.querySelector('[data-testid="child-control-row"] [role="status"]')
+  expect(state?.textContent).toBe(
+    {
+      starting: '正在启动',
+      running: '运行中',
+      waiting_approval: '待审批',
+      paused: '已暂停',
+      disconnected: '已断开',
+      idle: '空闲',
+      completed: '已完成',
+      failed: '失败',
+      cancelled: '已取消',
+      interrupted: '已停止',
+    }[status],
+  )
+  expect(state?.getAttribute('data-tone')).toBe(
+    {
+      starting: 'info',
+      running: 'info',
+      waiting_approval: 'warn',
+      paused: 'warn',
+      disconnected: 'warn',
+      idle: null,
+      completed: 'ok',
+      failed: 'bad',
+      cancelled: null,
+      interrupted: 'warn',
+    }[status],
+  )
+  // The collapsed header always reports a non-blank status summary.
+  const header = host.querySelector('[data-testid="child-control-tree"] .agh-disclosure-meta')
+  expect(header?.textContent).toBe(
+    working
+      ? '1 个运行中'
+      : status === 'waiting_approval' ||
+          status === 'paused' ||
+          status === 'disconnected' ||
+          status === 'interrupted'
+        ? '1 个待处理'
+        : status === 'failed'
+          ? '1 个失败'
+          : '1 个已结束',
+  )
+  const input = host.querySelector('[data-testid="child-continue-message"]')
+  expect(input !== null).toBe(active)
+  if (active) {
+    expect(input?.getAttribute('placeholder')).toBe('发给子代理的消息')
+    expect(input?.getAttribute('aria-label')).toBe('发给子代理的消息')
+  }
+})
+
+it('pins live children above folded idle and cancelled history and strips markdown from labels', () => {
+  const { host } = mount(
+    {
+      onChildControl: async () => {},
+      dependencies: {
+        ...dependencies,
+        translate: (key, vars) =>
+          (webUnitsLocaleCatalog['zh-CN'][key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) =>
+            String(vars?.[name] ?? name),
+          ),
+      },
+    },
+    {
+      ...idle,
+      children: [
+        {
+          id: 'parent/old1',
+          parentId: 'parent',
+          providerId: 'in-process',
+          label: '旧任务【北京】',
+          status: 'idle',
+          controls: { stop: false, continue: true },
+          totalTokens: 100,
+          durationMs: 2000,
+        },
+        {
+          id: 'parent/new1',
+          parentId: 'parent',
+          providerId: 'in-process',
+          label: '调研【北京】宜居情况。**重要：测试**',
+          status: 'running',
+          controls: { stop: true, continue: true },
+          totalTokens: 200,
+          durationMs: 3000,
+        },
+      ],
+    },
+  )
+  expect(host.querySelector('[data-testid="child-control-tree"] .agh-disclosure-meta')?.textContent).toBe(
+    '1 个运行中 · 1 个其他',
+  )
+  const topList = host.querySelector('.composer-children-list')
+  expect(topList?.querySelectorAll('[data-testid="child-control-row"]')).toHaveLength(1)
+  expect(topList?.querySelector('.composer-child-name')?.textContent).toBe('调研【北京】宜居情况。重要：测试')
+  const history = host.querySelector('[data-testid="child-control-history"]')
+  expect(history).not.toBeNull()
+  expect(history?.hasAttribute('open')).toBe(false)
+  expect(history?.textContent).toContain('空闲 / 已结束（1）')
+})
 
 it('asks the terminal panel for the child job when its name is clicked', () => {
   const view: ComposerView = {
@@ -809,4 +902,371 @@ it('asks the terminal panel for the child job when its name is clicked', () => {
   } finally {
     document.removeEventListener('agnes:open-terminal-job', listener)
   }
+})
+
+it.each([
+  ['idle', 'pause'],
+  ['paused', 'resume'],
+  ['paused', 'close'],
+  ['completed', 'recap'],
+] as const)('routes %s child row action %s', async (status, action) => {
+  const onChildControl = vi.fn(async () => {})
+  const { host } = mount(
+    { onChildControl },
+    {
+      ...idle,
+      children: [
+        {
+          id: 'controlled-child',
+          parentId: 'parent',
+          providerId: 'in-process',
+          status,
+          controls: {
+            stop: false,
+            continue: false,
+            pause: status === 'idle',
+            resume: status === 'paused',
+            close: status === 'paused',
+          },
+          totalTokens: 10,
+          durationMs: 1200,
+        },
+      ],
+    },
+  )
+  const button = host.querySelector<HTMLButtonElement>(`[data-testid="child-${action}"]`)
+  expect(button).not.toBeNull()
+  await act(async () => button?.click())
+  expect(onChildControl).toHaveBeenCalledWith('controlled-child', action, undefined, {
+    commandId: expect.any(String),
+  })
+})
+
+it('keeps idle ancestors with waiting_approval grandchildren out of history, preserves literal chars, formats unknown metrics and separates write from refresh', async () => {
+  const retryRefresh = vi.fn(async () => {})
+  const onChildControl = vi.fn(async () => ({ refreshFailed: 'network timeout', retryRefresh }))
+  const zhTranslate = (key: string, vars?: Record<string, string | number>) =>
+    (webUnitsLocaleCatalog['zh-CN'][key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) =>
+      String(vars?.[name] ?? name),
+    )
+  const { host } = mount(
+    {
+      onChildControl,
+      dependencies: { ...dependencies, translate: zhTranslate },
+    },
+    {
+      ...idle,
+      children: [
+        {
+          id: 'root/parent-a',
+          parentId: 'root',
+          providerId: 'in-process',
+          label: '订单对账_g #42 (C# lane_1.txt)',
+          status: 'idle',
+          controls: { stop: false, continue: true },
+          totalTokens: null,
+          durationMs: null,
+        },
+        {
+          id: 'root/parent-a/grandchild',
+          parentId: 'root/parent-a',
+          providerId: 'in-process',
+          label: 'web_search `query` **bold**',
+          status: 'waiting_approval',
+          controls: { stop: true, continue: false },
+          totalTokens: 0,
+          durationMs: 0,
+        },
+        {
+          id: 'root/finished-b',
+          parentId: 'root',
+          providerId: 'in-process',
+          label: '已完成兄弟',
+          status: 'completed',
+          controls: { stop: false, continue: false },
+          totalTokens: 50,
+          durationMs: 1000,
+        },
+      ],
+    },
+  )
+  // Header summarizes attention + settled without omitting pending grandchildren.
+  expect(host.querySelector('[data-testid="child-control-tree"] .agh-disclosure-meta')?.textContent).toBe(
+    '1 个待处理 · 2 个已结束',
+  )
+  // Active top list keeps idle parent-a AND its waiting_approval grandchild; only finished-b folds into history.
+  const topList = host.querySelector('.composer-children-list')
+  expect(topList?.querySelector('[data-child-id="root/parent-a"]')).not.toBeNull()
+  expect(topList?.querySelector('[data-child-id="root/parent-a/grandchild"]')).not.toBeNull()
+  const history = host.querySelector('[data-testid="child-control-history"]')
+  expect(history?.querySelector('[data-child-id="root/finished-b"]')).not.toBeNull()
+  expect(history?.querySelector('[data-child-id="root/parent-a/grandchild"]')).toBeNull()
+  // Underscores and hashes are preserved while paired markdown markers are stripped.
+  const parentRow = topList?.querySelector('[data-child-id="root/parent-a"]') as HTMLElement
+  const grandchildRow = topList?.querySelector('[data-child-id="root/parent-a/grandchild"]') as HTMLElement
+  expect(parentRow.querySelector('.composer-child-title')?.textContent).toBe('订单对账_g #42 (C# lane_1.txt)')
+  expect(grandchildRow.querySelector('.composer-child-title')?.textContent).toBe('web_search query bold')
+  // Null/null metrics render natural language instead of "未知 · 未知s"; known zeros stay visible.
+  expect(parentRow.querySelector('[data-testid="child-control-metrics"]')?.textContent).toBe('暂无用量')
+  expect(grandchildRow.querySelector('[data-testid="child-control-metrics"]')?.textContent).toContain('0.0s')
+  // Accessible button labels include task context.
+  const steerToggle = parentRow.querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')
+  expect(steerToggle?.getAttribute('aria-label')).toContain('订单对账_g #42')
+  // Write succeeds + refresh fails: clears draft, shows read-only refresh warning, retry does not re-send write.
+  act(() => steerToggle?.click())
+  const input = parentRow.querySelector<HTMLInputElement>('[data-testid="child-continue-message"]')!
+  expect(input.getAttribute('aria-label')).toContain('订单对账_g #42')
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(input, '继续核对')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  const sendBtn = parentRow.querySelector<HTMLButtonElement>('[data-testid="child-continue"]')!
+  await act(async () => sendBtn.click())
+  expect(onChildControl).toHaveBeenCalledTimes(1)
+  expect(parentRow.querySelector('[data-testid="child-continue-message"]')).toBeNull()
+  expect(parentRow.querySelector('[data-testid="child-refresh-warning"]')?.textContent).toContain(
+    '操作已提交',
+  )
+  const retryBtn = parentRow.querySelector<HTMLButtonElement>('[data-testid="child-refresh-retry"]')!
+  await act(async () => retryBtn.click())
+  expect(retryRefresh).toHaveBeenCalledTimes(1)
+  expect(onChildControl).toHaveBeenCalledTimes(1)
+  expect(parentRow.querySelector('[data-testid="child-refresh-warning"]')).toBeNull()
+})
+
+it('pins continuable interrupted grandchildren in active tree, disambiguates duplicate names by short ID and reuses commandId on retry', async () => {
+  const onChildControl = vi
+    .fn()
+    .mockRejectedValueOnce(new Error('network ack lost'))
+    .mockRejectedValueOnce(new Error('still failing'))
+    .mockResolvedValueOnce(undefined)
+    .mockResolvedValueOnce(undefined)
+  const zhTranslate = (key: string, vars?: Record<string, string | number>) =>
+    (webUnitsLocaleCatalog['zh-CN'][key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) =>
+      String(vars?.[name] ?? name),
+    )
+  const { host } = mount(
+    {
+      onChildControl,
+      dependencies: { ...dependencies, translate: zhTranslate },
+    },
+    {
+      ...idle,
+      children: [
+        {
+          id: 'root/parent-x',
+          parentId: 'root',
+          providerId: 'in-process',
+          label: '同名调研任务',
+          status: 'idle',
+          controls: { stop: false, continue: true },
+          totalTokens: 100,
+          durationMs: 1000,
+        },
+        {
+          id: 'root/parent-x/736YNQ',
+          parentId: 'root/parent-x',
+          providerId: 'in-process',
+          label: '同名调研任务',
+          status: 'interrupted',
+          controls: { stop: false, continue: true },
+          totalTokens: 20,
+          durationMs: 500,
+        },
+        {
+          id: 'root/998ABC',
+          parentId: 'root',
+          providerId: 'in-process',
+          label: '同名调研任务',
+          status: 'paused',
+          controls: { stop: false, continue: true, resume: true },
+          totalTokens: 30,
+          durationMs: 600,
+        },
+        {
+          id: 'root/dead-stop',
+          parentId: 'root',
+          providerId: 'in-process',
+          label: '不可继续中断任务',
+          status: 'interrupted',
+          controls: { stop: false, continue: false },
+          totalTokens: 10,
+          durationMs: 400,
+        },
+      ],
+    },
+  )
+
+  // Continuable interrupted grandchild keeps its idle ancestor in the active list; non-continuable interrupted folds into history.
+  const topList = host.querySelector('.composer-children-list')!
+  expect(topList.querySelector('[data-child-id="root/parent-x"]')).not.toBeNull()
+  expect(topList.querySelector('[data-child-id="root/parent-x/736YNQ"]')).not.toBeNull()
+  expect(topList.querySelector('[data-child-id="root/998ABC"]')).not.toBeNull()
+  const history = host.querySelector('[data-testid="child-control-history"]')!
+  expect(history.querySelector('[data-child-id="root/dead-stop"]')).not.toBeNull()
+  expect(history.querySelector('[data-child-id="root/parent-x/736YNQ"]')).toBeNull()
+  expect(host.querySelector('[data-testid="child-control-tree"] .agh-disclosure-meta')?.textContent).toBe(
+    '2 个待处理 · 2 个已结束',
+  )
+
+  // Identically named tasks carry distinct short IDs in every button's accessible label while keeping testids intact.
+  const firstNamed = topList.querySelector<HTMLElement>('[data-child-id="root/parent-x/736YNQ"]')!
+  const secondNamed = topList.querySelector<HTMLElement>('[data-child-id="root/998ABC"]')!
+  expect(firstNamed.querySelector('[data-testid="child-open"]')?.getAttribute('aria-label')).toContain(
+    '736YNQ · 同名调研任务',
+  )
+  expect(secondNamed.querySelector('[data-testid="child-open"]')?.getAttribute('aria-label')).toContain(
+    '998ABC · 同名调研任务',
+  )
+  expect(firstNamed.querySelector('[data-testid="child-steer-toggle"]')?.getAttribute('aria-label')).toBe(
+    '继续：736YNQ · 同名调研任务',
+  )
+  expect(secondNamed.querySelector('[data-testid="child-resume"]')?.getAttribute('aria-label')).toBe(
+    '恢复：998ABC · 同名调研任务',
+  )
+
+  // Retrying the same draft after a lost write receipt reuses the exact commandId; editing the draft rotates it.
+  act(() => firstNamed.querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')?.click())
+  const input = firstNamed.querySelector<HTMLInputElement>('[data-testid="child-continue-message"]')!
+  expect(input.getAttribute('aria-label')).toContain('736YNQ · 同名调研任务')
+  const setInputValue = (value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  act(() => setInputValue('继续处理'))
+  const sendBtn = firstNamed.querySelector<HTMLButtonElement>('[data-testid="child-continue"]')!
+  expect(sendBtn.getAttribute('aria-label')).toBe('继续：736YNQ · 同名调研任务')
+  await act(async () => sendBtn.click())
+  // Write failed: draft stays open so user can retry with the same commandId.
+  expect(firstNamed.querySelector('[data-testid="child-continue-message"]')).not.toBeNull()
+  await act(async () => sendBtn.click())
+  const firstCmdId = (onChildControl.mock.calls[0]?.[3] as { commandId?: string } | undefined)?.commandId
+  const retryCmdId = (onChildControl.mock.calls[1]?.[3] as { commandId?: string } | undefined)?.commandId
+  expect(firstCmdId).toBeTruthy()
+  expect(retryCmdId).toBe(firstCmdId)
+  // Editing the draft rotates to a new commandId, and once confirmed the draft clears.
+  act(() => setInputValue('继续处理（修改后）'))
+  await act(async () => sendBtn.click())
+  const editedCmdId = (onChildControl.mock.calls[2]?.[3] as { commandId?: string } | undefined)?.commandId
+  expect(editedCmdId).toBeTruthy()
+  expect(editedCmdId).not.toBe(firstCmdId)
+  expect(firstNamed.querySelector('[data-testid="child-continue-message"]')).toBeNull()
+  act(() => firstNamed.querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')?.click())
+  const nextInput = firstNamed.querySelector<HTMLInputElement>('[data-testid="child-continue-message"]')!
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(nextInput, '继续处理（修改后）')
+    nextInput.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await act(async () =>
+    firstNamed.querySelector<HTMLButtonElement>('[data-testid="child-continue"]')?.click(),
+  )
+  const nextCmdId = (onChildControl.mock.calls[3]?.[3] as { commandId?: string } | undefined)?.commandId
+  expect(nextCmdId).toBeTruthy()
+  expect(nextCmdId).not.toBe(editedCmdId)
+})
+
+it('preserves pending commandId for recap and continue when a row remounts between active and folded history groups', async () => {
+  const onChildControl = vi
+    .fn()
+    .mockRejectedValueOnce(new Error('recap receipt lost'))
+    .mockResolvedValueOnce(undefined)
+    .mockRejectedValueOnce(new Error('continue receipt lost'))
+    .mockResolvedValueOnce(undefined)
+    .mockResolvedValueOnce(undefined)
+  const oldChild = {
+    id: 'root/old',
+    parentId: 'root',
+    providerId: 'in-process',
+    label: 'Old task',
+    status: 'idle' as const,
+    controls: { stop: false, continue: true },
+    totalTokens: 0,
+    durationMs: 100,
+  }
+  const runningSibling = {
+    ...oldChild,
+    id: 'root/sibling',
+    label: 'Active sibling',
+    status: 'running' as const,
+    controls: { stop: true, continue: true },
+  }
+  const view: ComposerView = { ...idle, children: [oldChild] }
+  const { host, handle } = mount({ onChildControl }, view)
+
+  // 1. Recap fails in top active group, row moves into folded history when a running sibling arrives,
+  //    then user retries Recap in history: both calls carry the exact same commandId.
+  const recapBtn = () =>
+    host.querySelector<HTMLButtonElement>('[data-child-id="root/old"] [data-testid="child-recap"]')!
+  expect(host.querySelector('.composer-children-list [data-child-id="root/old"]')).not.toBeNull()
+  expect(host.querySelector('[data-testid="child-control-history"]')).toBeNull()
+  await act(async () => recapBtn().click())
+  await act(async () => handle.render({ ...view, children: [oldChild, runningSibling] }))
+  const history = host.querySelector('[data-testid="child-control-history"]')
+  expect(history).not.toBeNull()
+  expect(history?.querySelector('[data-child-id="root/old"]')).not.toBeNull()
+  expect(
+    host.querySelector('.composer-children-list')?.querySelector('[data-child-id="root/old"]'),
+  ).toBeNull()
+  await act(async () => recapBtn().click())
+  const recapFirstId = (onChildControl.mock.calls[0]?.[3] as { commandId?: string } | undefined)?.commandId
+  const recapRetryId = (onChildControl.mock.calls[1]?.[3] as { commandId?: string } | undefined)?.commandId
+  expect(recapFirstId).toBeTruthy()
+  expect(recapRetryId).toBe(recapFirstId)
+
+  // 2. Continue fails while row is in folded history, sibling finishes so row remounts back into the
+  //    top active group, then user retries the exact same draft: both calls carry the exact same commandId.
+  const row = () => host.querySelector<HTMLElement>('[data-child-id="root/old"]')!
+  const setValue = (input: HTMLInputElement, value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  act(() => row().querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')?.click())
+  act(() =>
+    setValue(
+      row().querySelector<HTMLInputElement>('[data-testid="child-continue-message"]')!,
+      'same follow-up',
+    ),
+  )
+  await act(async () => row().querySelector<HTMLButtonElement>('[data-testid="child-continue"]')?.click())
+
+  await act(async () =>
+    handle.render({
+      ...view,
+      children: [
+        oldChild,
+        { ...runningSibling, status: 'completed', controls: { stop: false, continue: false } },
+      ],
+    }),
+  )
+  expect(host.querySelector('[data-testid="child-control-history"]')).toBeNull()
+  expect(host.querySelector('.composer-children-list > [data-child-id="root/old"]')).not.toBeNull()
+  act(() => row().querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')?.click())
+  act(() =>
+    setValue(
+      row().querySelector<HTMLInputElement>('[data-testid="child-continue-message"]')!,
+      'same follow-up',
+    ),
+  )
+  await act(async () => row().querySelector<HTMLButtonElement>('[data-testid="child-continue"]')?.click())
+  const contFirstId = (onChildControl.mock.calls[2]?.[3] as { commandId?: string } | undefined)?.commandId
+  const contRetryId = (onChildControl.mock.calls[3]?.[3] as { commandId?: string } | undefined)?.commandId
+  expect(contFirstId).toBeTruthy()
+  expect(contRetryId).toBe(contFirstId)
+
+  // 3. After confirmation succeeds, sending the same draft again allocates a new commandId.
+  act(() => row().querySelector<HTMLButtonElement>('[data-testid="child-steer-toggle"]')?.click())
+  act(() =>
+    setValue(
+      row().querySelector<HTMLInputElement>('[data-testid="child-continue-message"]')!,
+      'same follow-up',
+    ),
+  )
+  await act(async () => row().querySelector<HTMLButtonElement>('[data-testid="child-continue"]')?.click())
+  const contFreshId = (onChildControl.mock.calls[4]?.[3] as { commandId?: string } | undefined)?.commandId
+  expect(contFreshId).toBeTruthy()
+  expect(contFreshId).not.toBe(contFirstId)
 })

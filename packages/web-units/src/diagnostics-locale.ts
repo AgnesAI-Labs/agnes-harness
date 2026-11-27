@@ -5,6 +5,7 @@ const en = {
   'diagnostics.title.menu': 'Report a problem',
   'diagnostics.title.share': 'Choose what to include',
   'diagnostics.title.ready': 'Diagnostics package is ready',
+  'diagnostics.title.downloadRequested': 'Download requested',
   'diagnostics.title.saved': 'Diagnostics file saved',
   'diagnostics.intro':
     'Create a diagnostics ZIP you can share with support. It can include this session’s conversation and trace, logs, and system information.',
@@ -20,6 +21,8 @@ const en = {
   'diagnostics.warning':
     'Some diagnostics were unavailable or over the export limit. See diagnostic-export-warnings.json in the package.',
   'diagnostics.save': 'Save ZIP',
+  'diagnostics.downloadIntro': 'Check your browser’s downloads for the ZIP.',
+  'diagnostics.downloadAgain': 'Download again',
   'diagnostics.savedIntro': 'Share this ZIP with support or engineering. Unzip it and open index.html.',
   'diagnostics.close': 'Close',
   'diagnostics.error.generate': 'Could not generate the diagnostics package: {detail}',
@@ -37,11 +40,16 @@ const en = {
   'diagnostics.viewer.tab.system': 'System',
   'diagnostics.viewer.tab.artifacts': 'Artifacts',
   'diagnostics.viewer.notIncluded': 'Not included',
+  'diagnostics.viewer.notSelected': 'Not selected for export',
+  'diagnostics.viewer.emptyExported': 'Included in export, no records were captured.',
+  'diagnostics.viewer.unavailableExported': 'Selected for export, but unavailable or omitted.',
+  'diagnostics.viewer.emptyArtifacts': 'No artifacts recorded in this export.',
   'diagnostics.viewer.included': 'Included',
   'diagnostics.viewer.excluded': 'Not included',
   'diagnostics.viewer.events':
     'The full event ledger is events.jsonl ({count} records, through event #{seq})',
   'diagnostics.viewer.duration.running': 'In progress',
+  'diagnostics.viewer.duration.unknown': 'Duration unknown',
   'diagnostics.viewer.duration.ms': '{n} ms',
   'diagnostics.viewer.duration.seconds': '{n} s',
   'diagnostics.viewer.duration.minutes': '{minutes} min {seconds} s',
@@ -62,6 +70,7 @@ const en = {
   'diagnostics.viewer.warning': '{source}: {reason}',
   'diagnostics.viewer.warningDetail': '{source}: {reason} ({detail})',
   'diagnostics.viewer.toolSummary': '{name}: {summary}',
+  'diagnostics.viewer.rawData': 'Raw record',
   'diagnostics.trace.window':
     'Only the {n} most recently loaded nodes are included. Earlier history is not included.',
 } as const
@@ -70,6 +79,7 @@ const zh: Record<keyof typeof en, string> = {
   'diagnostics.title.menu': '报告问题',
   'diagnostics.title.share': '选择要包含的内容',
   'diagnostics.title.ready': '诊断包已生成',
+  'diagnostics.title.downloadRequested': '已请求下载',
   'diagnostics.title.saved': '诊断文件已保存',
   'diagnostics.intro':
     '创建一个可分享给支持人员的诊断 ZIP 包，可以包含当前会话的对话与轨迹、日志和系统信息。',
@@ -84,6 +94,8 @@ const zh: Record<keyof typeof en, string> = {
   'diagnostics.generating': '正在生成…',
   'diagnostics.warning': '部分诊断资料不可用或超出导出上限，详见包内 diagnostic-export-warnings.json。',
   'diagnostics.save': '保存 ZIP 包',
+  'diagnostics.downloadIntro': '请在浏览器的下载列表里查看 ZIP。',
+  'diagnostics.downloadAgain': '重新下载',
   'diagnostics.savedIntro': '把这个 ZIP 包分享给支持或研发人员。解压后打开 index.html 查看。',
   'diagnostics.close': '关闭',
   'diagnostics.error.generate': '生成诊断包失败：{detail}',
@@ -101,10 +113,15 @@ const zh: Record<keyof typeof en, string> = {
   'diagnostics.viewer.tab.system': '系统',
   'diagnostics.viewer.tab.artifacts': '产物',
   'diagnostics.viewer.notIncluded': '未包含',
+  'diagnostics.viewer.notSelected': '未选择导出',
+  'diagnostics.viewer.emptyExported': '已导出，本次没有记录。',
+  'diagnostics.viewer.unavailableExported': '已选择导出，但内容不可用或未包含。',
+  'diagnostics.viewer.emptyArtifacts': '本次导出没有产物记录。',
   'diagnostics.viewer.included': '已包含',
   'diagnostics.viewer.excluded': '未包含',
   'diagnostics.viewer.events': '完整事件账本见 events.jsonl（{count} 条，截至事件序号 {seq}）',
   'diagnostics.viewer.duration.running': '进行中',
+  'diagnostics.viewer.duration.unknown': '时长未知',
   'diagnostics.viewer.duration.ms': '{n} 毫秒',
   'diagnostics.viewer.duration.seconds': '{n} 秒',
   'diagnostics.viewer.duration.minutes': '{minutes} 分 {seconds} 秒',
@@ -125,6 +142,7 @@ const zh: Record<keyof typeof en, string> = {
   'diagnostics.viewer.warning': '{source}：{reason}',
   'diagnostics.viewer.warningDetail': '{source}：{reason}（{detail}）',
   'diagnostics.viewer.toolSummary': '{name}：{summary}',
+  'diagnostics.viewer.rawData': '原始记录',
   'diagnostics.trace.window': '仅含已加载的最近 {n} 个节点，更早的历史未包含',
 }
 
@@ -152,9 +170,14 @@ export function diagnosticsViewerLabels(locale: DiagnosticsLocale = diagnosticsL
     diagnosticsText(key, vars, locale)
   return {
     notIncluded: text('diagnostics.viewer.notIncluded'),
+    notSelected: text('diagnostics.viewer.notSelected'),
+    emptyExported: text('diagnostics.viewer.emptyExported'),
+    unavailableExported: text('diagnostics.viewer.unavailableExported'),
+    emptyArtifacts: text('diagnostics.viewer.emptyArtifacts'),
     included: text('diagnostics.viewer.included'),
     excluded: text('diagnostics.viewer.excluded'),
     durationRunning: text('diagnostics.viewer.duration.running'),
+    durationUnknown: text('diagnostics.viewer.duration.unknown'),
     durationMs: text('diagnostics.viewer.duration.ms'),
     durationSeconds: text('diagnostics.viewer.duration.seconds'),
     durationMinutes: text('diagnostics.viewer.duration.minutes'),
@@ -185,5 +208,6 @@ export function diagnosticsViewerLabels(locale: DiagnosticsLocale = diagnosticsL
     warning: text('diagnostics.viewer.warning'),
     warningDetail: text('diagnostics.viewer.warningDetail'),
     toolSummary: text('diagnostics.viewer.toolSummary'),
+    rawData: text('diagnostics.viewer.rawData'),
   }
 }

@@ -1,10 +1,52 @@
 import type { ContentBlock } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import type { Session } from '@agnes/sdk/browser'
+import type { ComposerChildControlOutcome } from '@agnes/web-units/shell'
 import type { AppSessionContext } from '../app.js'
 import { showCommandFeedback } from './command-feedback.js'
+import type { SessionBinding } from './session-owner.js'
 
 export type ApplySessionControls = (options?: { render?: boolean }) => Promise<void>
+
+const POLLABLE_CHILD_STATUSES = new Set(['starting', 'running', 'waiting_approval', 'disconnected'])
+
+type ChildControlAction = 'stop' | 'continue' | 'pause' | 'resume' | 'close' | 'retain' | 'recap'
+
+type RefreshSlot = {
+  readonly binding: SessionBinding
+  readonly session: Session
+  seq: number
+  inFlight?: { promise: Promise<void> } | undefined
+  trailing?:
+    | {
+        promise: Promise<void>
+        resolve: () => void
+        reject: (error: unknown) => void
+      }
+    | undefined
+}
+
+function createChildCommandId(): string {
+  return typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID()
+    : `child-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function childActionAvailable(
+  child: NonNullable<SessionControlStateResult['children']>[number],
+  action: ChildControlAction,
+): boolean {
+  if (action === 'recap') return child.providerId === 'in-process'
+  if (action === 'resume') return child.status === 'paused' && Boolean(child.controls.resume)
+  return Boolean(child.controls[action])
+}
+
+export type ChildControlPollerOptions = {
+  intervalMs?: number
+  isVisible: () => boolean
+  onVisible: (handler: () => void) => () => void
+  onFocus: (handler: () => void) => () => void
+}
 
 export function createCommandController(
   context: Pick<
@@ -38,7 +80,20 @@ export function createCommandController(
   >,
 ) {
   let stopRequest = 0
-  let controlsRefresh = 0
+  const refreshSlots = new Map<SessionBinding, RefreshSlot>()
+  const pendingChildCommands = new Map<
+    string,
+    {
+      binding: SessionBinding
+      sessionId: string
+      childId: string
+      action: ChildControlAction
+      text: string | undefined
+      commandId: string
+    }
+  >()
+  let armChildPoller: ((session?: Session) => void) | undefined
+
   function handleComposerCancel(): void {
     requestStop(false)
   }
@@ -175,8 +230,81 @@ export function createCommandController(
       })
   }
 
-  async function refreshSessionControls(session: Session): Promise<void> {
-    await (await readSessionControls(session))()
+  function settleStaleRefreshes(): void {
+    for (const [binding, slot] of refreshSlots) {
+      if (context.sessionBinding.isCurrent(binding, slot.session)) continue
+      if (slot.trailing) {
+        const trailing = slot.trailing
+        slot.trailing = undefined
+        trailing.resolve()
+      }
+      if (!slot.inFlight) refreshSlots.delete(binding)
+    }
+  }
+
+  function refreshSlotFor(binding: SessionBinding, session: Session): RefreshSlot | undefined {
+    settleStaleRefreshes()
+    if (!context.sessionBinding.isCurrent(binding, session)) return undefined
+    let slot = refreshSlots.get(binding)
+    if (!slot || slot.session !== session) {
+      if (slot?.trailing) {
+        const trailing = slot.trailing
+        slot.trailing = undefined
+        trailing.resolve()
+      }
+      slot = { binding, session, seq: 0 }
+      refreshSlots.set(binding, slot)
+    }
+    return slot
+  }
+
+  function runSingleRefresh(slot: RefreshSlot): Promise<void> {
+    const promise = (async () => {
+      await (await readSessionControls(slot.session))()
+    })()
+    const entry = { promise }
+    slot.inFlight = entry
+    const onSettled = () => {
+      if (slot.inFlight === entry) slot.inFlight = undefined
+      settleStaleRefreshes()
+      if (slot.trailing) {
+        const next = slot.trailing
+        slot.trailing = undefined
+        if (!context.sessionBinding.isCurrent(slot.binding, slot.session)) {
+          next.resolve()
+          refreshSlots.delete(slot.binding)
+          return
+        }
+        void runSingleRefresh(slot).then(next.resolve, next.reject)
+      } else if (!slot.inFlight && !context.sessionBinding.isCurrent(slot.binding, slot.session)) {
+        refreshSlots.delete(slot.binding)
+      }
+    }
+    promise.then(onSettled, onSettled)
+    return promise
+  }
+
+  /**
+   * Single-flight per session binding: concurrent refreshes for the same binding coalesce into at most
+   * one trailing read after the in-flight read settles, so slow reads are never starved by overlap and
+   * switching sessions resolves stale trailing waits without touching the newly selected session.
+   */
+  function refreshSessionControls(session: Session): Promise<void> {
+    const binding = context.sessionBinding.capture()
+    const slot = refreshSlotFor(binding, session)
+    if (!slot) return Promise.resolve()
+    if (slot.inFlight) {
+      if (slot.trailing) return slot.trailing.promise
+      let resolve!: () => void
+      let reject!: (error: unknown) => void
+      const promise = new Promise<void>((res, rej) => {
+        resolve = res
+        reject = rej
+      })
+      slot.trailing = { promise, resolve, reject }
+      return promise
+    }
+    return runSingleRefresh(slot)
   }
 
   /**
@@ -184,9 +312,11 @@ export function createCommandController(
    * that renders right after applying can leave the render to itself.
    */
   async function readSessionControls(session: Session): Promise<ApplySessionControls> {
-    const epoch = context.sessionBinding.capture()
-    const request = ++controlsRefresh
-    const current = () => context.sessionBinding.isCurrent(epoch, session) && request === controlsRefresh
+    const binding = context.sessionBinding.capture()
+    const slot = refreshSlotFor(binding, session)
+    if (!slot) return async () => {}
+    const request = ++slot.seq
+    const current = () => context.sessionBinding.isCurrent(binding, session) && request === slot.seq
     const history = context.controlsHistory.get(session.id) ?? { through: 0, facts: [] }
     let through = history.through
     const facts = [...history.facts]
@@ -202,6 +332,27 @@ export function createCommandController(
     return (options) => applySessionControls(session, state, current, options?.render ?? true)
   }
 
+  function pruneStaleChildCommands(binding: SessionBinding): void {
+    for (const [key, entry] of pendingChildCommands) {
+      if (entry.binding !== binding) pendingChildCommands.delete(key)
+    }
+  }
+
+  function pruneResolvedChildCommands(session: Session, value: SessionControlStateResult): void {
+    if (!value.children) return
+    const children = new Map(value.children.map((child) => [child.id, child]))
+    for (const [key, entry] of pendingChildCommands) {
+      if (entry.sessionId !== session.id) continue
+      const child = children.get(entry.childId)
+      if (
+        !child ||
+        !childActionAvailable(child, entry.action) ||
+        !context.sessionBinding.isCurrent(entry.binding, session)
+      )
+        pendingChildCommands.delete(key)
+    }
+  }
+
   async function applySessionControls(
     session: Session,
     value: SessionControlStateResult,
@@ -210,6 +361,7 @@ export function createCommandController(
   ): Promise<void> {
     if (!current()) return
     context.sessionControls = { sessionId: session.id, value }
+    pruneResolvedChildCommands(session, value)
     for (const fact of value.facts ?? []) {
       if (fact.action !== 'cancel' || fact.outcome !== 'requested') continue
       const key = `agnes-return:${session.id}:${fact.seq}`
@@ -235,16 +387,171 @@ export function createCommandController(
       sessionStorage.setItem(key, 'pending')
     }
     if (render) context.render()
+    if (hasPollableChildren(session, { allowPending: true })) armChildPoller?.(session)
     await showCommandFeedback(context, session)
   }
 
-  async function handleChildControl(id: string, action: 'stop' | 'continue', text?: string): Promise<void> {
+  function hasPollableChildren(
+    session: Session | undefined = context.current,
+    options?: { allowPending?: boolean },
+  ): boolean {
+    if (!context.connected || !session) return false
+    if (!options?.allowPending && context.sessionPending) return false
+    if (context.sessionControls?.sessionId !== session.id) return false
+    return (
+      context.sessionControls.value.children?.some((child) => POLLABLE_CHILD_STATUSES.has(child.status)) ??
+      false
+    )
+  }
+
+  /**
+   * Serial, visibility-aware polling for active child tasks: waits for the previous read to finish
+   * before scheduling the next interval, pauses when hidden, and catches up on tab return.
+   */
+  function startChildControlPolling(options: ChildControlPollerOptions): () => void {
+    const intervalMs = options.intervalMs ?? 1500
+    let stopped = false
+    let pollingBinding: SessionBinding | undefined
+    let catchUp = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const isPollingCurrent = () =>
+      pollingBinding !== undefined && context.sessionBinding.isCurrent(pollingBinding)
+    const schedule = (delay: number, session: Session | undefined = context.current) => {
+      if (stopped || timer !== undefined || isPollingCurrent() || !options.isVisible()) return
+      if (!hasPollableChildren(session, { allowPending: true })) return
+      timer = setTimeout(() => {
+        timer = undefined
+        void tick()
+      }, delay)
+    }
+    const tick = async (): Promise<void> => {
+      if (stopped || !options.isVisible()) return
+      const session = context.current
+      if (!session || !hasPollableChildren(session, { allowPending: true })) return
+      if (context.sessionPending) {
+        schedule(intervalMs, session)
+        return
+      }
+      if (isPollingCurrent()) {
+        catchUp = true
+        return
+      }
+      const binding = context.sessionBinding.capture()
+      pollingBinding = binding
+      catchUp = false
+      try {
+        const slot = refreshSlotFor(binding, session)
+        if (slot?.inFlight) await slot.inFlight.promise
+        else await refreshSessionControls(session)
+      } catch (error) {
+        if (!stopped && options.isVisible() && context.sessionBinding.isCurrent(binding, session))
+          context.showError(error)
+      } finally {
+        if (pollingBinding === binding) pollingBinding = undefined
+        if (!stopped && options.isVisible() && hasPollableChildren(context.current, { allowPending: true })) {
+          if (catchUp && context.sessionBinding.isCurrent(binding, session)) {
+            catchUp = false
+            void tick()
+          } else schedule(intervalMs)
+        }
+      }
+    }
+    const wake = () => {
+      if (stopped || !options.isVisible()) return
+      if (timer !== undefined) {
+        clearTimeout(timer)
+        timer = undefined
+      }
+      if (hasPollableChildren()) void tick()
+    }
+    armChildPoller = (session) => schedule(intervalMs, session ?? context.current)
+    const stopVisible = options.onVisible(wake)
+    const stopFocus = options.onFocus(wake)
+    schedule(intervalMs)
+    return () => {
+      stopped = true
+      if (timer !== undefined) {
+        clearTimeout(timer)
+        timer = undefined
+      }
+      armChildPoller = undefined
+      stopVisible()
+      stopFocus()
+    }
+  }
+
+  async function handleChildControl(
+    id: string,
+    action: ChildControlAction,
+    text?: string,
+    options?: { readonly commandId?: string },
+  ): Promise<void | ComposerChildControlOutcome> {
     const session = context.current
-    if (!session || context.sessionPending || !context.connected) return
-    if (action === 'stop') await session.stopChild(id)
-    else await session.continueChild(id, text ?? '')
-    await refreshSessionControls(session)
+    if (!session || context.sessionPending || !context.connected)
+      throw new Error(context.t('composer.child.unavailable'))
+    const binding = context.sessionBinding.capture()
+    pruneStaleChildCommands(binding)
+    const key = `${session.id}\0${id}\0${action}`
+    const existing = pendingChildCommands.get(key)
+    let commandId: string
+    if (existing && existing.binding === binding && existing.text === text) {
+      commandId = existing.commandId
+    } else {
+      commandId = options?.commandId ?? createChildCommandId()
+      pendingChildCommands.set(key, {
+        binding,
+        sessionId: session.id,
+        childId: id,
+        action,
+        text,
+        commandId,
+      })
+    }
+    try {
+      if (action === 'recap')
+        await session.followUp(context.t('composer.child.recapPrompt', { id }), { commandId })
+      else
+        await session.control(`child-${action}`, {
+          childId: id,
+          ...(text === undefined ? {} : { text }),
+          commandId,
+        })
+    } catch (error) {
+      if (context.sessionBinding.isCurrent(binding, session))
+        void showCommandFeedback(context, session).catch(() => undefined)
+      throw error
+    }
+    if (pendingChildCommands.get(key)?.commandId === commandId) pendingChildCommands.delete(key)
+    // The write succeeded. Refresh errors must not masquerade as a failed write or trigger a duplicate send.
+    if (!context.sessionBinding.isCurrent(binding, session)) return
     context.live?.refresh()
+    try {
+      await refreshSessionControls(session)
+    } catch (error) {
+      if (!context.sessionBinding.isCurrent(binding, session)) return
+      const retryRefresh = async () => {
+        if (!context.sessionBinding.isCurrent(binding, session)) return
+        await refreshSessionControls(session)
+        if (context.sessionBinding.isCurrent(binding, session)) context.notice.setText('')
+      }
+      context.notice.setText(context.t('composer.child.refreshFailed'))
+      context.notice.setKind('warning')
+      context.notice.offer?.({
+        label: context.t('composer.child.refreshRetry'),
+        run: () => {
+          void retryRefresh().catch(() => {
+            if (context.sessionBinding.isCurrent(binding, session)) {
+              context.notice.setText(context.t('composer.child.refreshFailed'))
+              context.notice.setKind('warning')
+            }
+          })
+        },
+      })
+      return {
+        refreshFailed: error instanceof Error ? error.message : String(error),
+        retryRefresh,
+      }
+    }
   }
 
   function handlePauseResume(): void {
@@ -293,6 +600,7 @@ export function createCommandController(
     handleQueuedAction,
     refreshSessionControls,
     readSessionControls,
+    startChildControlPolling,
     handleChildControl,
     handlePauseResume,
     handleEditQueued,

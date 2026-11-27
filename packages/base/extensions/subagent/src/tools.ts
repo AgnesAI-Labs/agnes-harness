@@ -5,7 +5,9 @@ import {
   childFailureSuffix,
   externalChild,
   externalChildren,
+  formatSpawnBudgetRefusal,
   IN_PROCESS_CHILD_PROVIDER_ID,
+  pollWaitMetadata,
 } from '@agnes/core'
 import type {
   ChildAgentAllowlistConfig,
@@ -28,13 +30,16 @@ export type SubagentLimits = {
 }
 
 type ChildRecord = {
+  polls?: number
   running: boolean
   worktree?: string
   cleanup?: Promise<WorktreeFinishResult>
+  adoptedPending?: boolean
 }
 
 type SessionState = {
   pending: number
+  reconciling: number
   children: Map<string, ChildRecord>
 }
 
@@ -56,7 +61,18 @@ export type SubagentDeps = {
 }
 
 const DEFAULT_CHILD_TOOL_FILTER: ChildAgentToolFilter = {
-  deny: ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update'],
+  deny: [
+    'schedule_create',
+    'schedule_delete',
+    'schedule_list',
+    'schedule_update',
+    'present',
+    'ui_guide',
+    'ui_render',
+    'ui_update',
+    'ui_close',
+    'ask_user_question',
+  ],
 }
 
 const implicitRuntimes = new WeakMap<SubagentDeps, SubagentRuntime>()
@@ -82,20 +98,76 @@ export function resetSubagentRuntime(deps: SubagentDeps): void {
 function stateOf(runtime: SubagentRuntime, sessionKey: string): SessionState {
   let state = runtime.sessions.get(sessionKey)
   if (!state) {
-    state = { pending: 0, children: new Map() }
+    state = { pending: 0, reconciling: 0, children: new Map() }
     runtime.sessions.set(sessionKey, state)
   }
   return state
 }
 
 function prune(runtime: SubagentRuntime, sessionKey: string, state: SessionState): void {
-  if (state.pending === 0 && state.children.size === 0) runtime.sessions.delete(sessionKey)
+  if (
+    runtime.sessions.get(sessionKey) === state &&
+    state.pending === 0 &&
+    state.reconciling === 0 &&
+    state.children.size === 0
+  )
+    runtime.sessions.delete(sessionKey)
+}
+
+const ACTIVE_STATES = new Set(
+  'creating ready running waiting_approval recovery_pending cancelling'.split(' '),
+)
+const ACTIVE_STATUSES = new Set(['starting', 'running', 'waiting_approval'])
+
+function isActiveChild(item: { status: string; executionState?: string }): boolean {
+  return item.executionState !== undefined
+    ? ACTIVE_STATES.has(item.executionState)
+    : ACTIVE_STATUSES.has(item.status)
+}
+
+function isStartingChild(item: { status: string; executionState?: string }): boolean {
+  return item.executionState !== undefined
+    ? item.executionState === 'creating' || item.executionState === 'ready'
+    : item.status === 'starting'
+}
+
+async function reconcileActiveChildren(state: SessionState, ctx: ToolContext): Promise<void> {
+  if (!ctx.subagent.list) return
+  const candidates = [...state.children.entries()].filter(([, rec]) => rec.running)
+  const candidateKeys = new Set(candidates.map(([key]) => key))
+  const listed = await ctx.subagent.list().catch(() => undefined)
+  if (!listed) return
+  const byId = new Map(listed.map((child) => [child.id, child]))
+  for (const [key, rec] of candidates) {
+    if (state.children.get(key) !== rec || !rec.running) continue
+    const item = byId.get(key)
+    if (!item || !isActiveChild(item)) {
+      rec.running = false
+      state.children.delete(key)
+    } else if (rec.adoptedPending && state.pending === 0) delete rec.adoptedPending
+  }
+  for (const item of listed) {
+    if (
+      item.providerId !== IN_PROCESS_CHILD_PROVIDER_ID ||
+      !isActiveChild(item) ||
+      candidateKeys.has(item.id) ||
+      state.children.has(item.id)
+    )
+      continue
+    const adoptedPending = state.pending > 0 && isStartingChild(item)
+    state.children.set(item.id, adoptedPending ? { running: true, adoptedPending: true } : { running: true })
+  }
 }
 
 function active(state: SessionState): number {
-  let count = state.pending
-  for (const child of state.children.values()) if (child.running) count += 1
-  return count
+  let owned = 0
+  let adoptedPending = 0
+  for (const child of state.children.values()) {
+    if (!child.running) continue
+    if (child.adoptedPending) adoptedPending += 1
+    else owned += 1
+  }
+  return owned + Math.max(state.pending, adoptedPending)
 }
 
 function fail(text: string): ToolResult {
@@ -140,8 +212,13 @@ function missedChild(error: unknown): boolean {
   return error instanceof CoreError && (error.code === 'E_UNSUPPORTED' || error.code === 'E_CHILD_NOT_FOUND')
 }
 
-function controlFailure(error: unknown): ToolResult {
-  if (error instanceof CoreError) return fail(error.message)
+export function controlFailure(error: unknown): ToolResult {
+  if (error instanceof CoreError) {
+    const hint =
+      error.code === 'E_CHILD_NOT_FOUND' ? ' Call subagent_list to inspect valid childKey handles.' : ''
+    const details = { ...error.detail, code: error.code }
+    return { ...fail(`${error.message}${hint}`), details, structured: details }
+  }
   throw error
 }
 
@@ -214,7 +291,7 @@ const forkDefinition: ToolDef<typeof forkParameters> = {
 // Preserve the standalone tool's shared-cwd default. Official assembly supplies resolved
 // isolation and worktree preparation through subagentForkToolWithDeps.
 const standaloneForkDeps: SubagentDeps = {
-  limits: { maxDepth: 1, maxFanOut: 4, isolation: 'shared' },
+  limits: { maxDepth: 1, maxFanOut: 8, isolation: 'shared' },
   worktrees: {
     async create() {
       throw new Error('worktree isolation requires the assembled subagent extension')
@@ -284,30 +361,44 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
 
       const runtime = runtimeOf(deps)
       const sessionKey = ctx.session.key
+      const initialState = stateOf(runtime, sessionKey)
+      initialState.reconciling += 1
+      try {
+        await reconcileActiveChildren(initialState, ctx)
+      } finally {
+        initialState.reconciling -= 1
+        prune(runtime, sessionKey, initialState)
+      }
       const state = stateOf(runtime, sessionKey)
-      for (const [key, rec] of state.children) {
-        if (!rec.running) continue
-        try {
-          const snap = await ctx.subagent.collect(key, { wait: false })
-          if (snap.status !== 'running') {
-            rec.running = false
-            state.children.delete(key)
-          }
-        } catch {
-          rec.running = false
-          state.children.delete(key)
+      if (active(state) >= deps.limits.maxFanOut) {
+        const activeCount = active(state)
+        const activeChildKeys = [...state.children.entries()]
+          .filter(([, rec]) => rec.running)
+          .map(([key]) => key)
+        prune(runtime, sessionKey, state)
+        const details = {
+          code: 'E_CHILD_LIMIT',
+          limit: deps.limits.maxFanOut,
+          active: activeCount,
+          activeChildKeys,
+        }
+        return {
+          ...fail(
+            `fan-out limit ${deps.limits.maxFanOut} reached (${activeCount} active). Collect or wait for an active child with subagent_collect, or pause/cancel one, before spawning the next batch.`,
+          ),
+          details,
+          structured: details,
         }
       }
-      if (active(state) >= deps.limits.maxFanOut) {
-        prune(runtime, sessionKey, state)
-        return fail(`fan-out limit ${deps.limits.maxFanOut} reached`)
-      }
 
-      // Reserve capacity before preparing the workspace; start only after isolation is resolved.
+      // Reserve one slot before workspace preparation, then promote pending -> running synchronously.
       state.pending += 1
+      let pendingHeld = true
       let worktree: string | undefined
       let childKey: string | undefined
       let sharedNonGit = false
+      let spawned: Awaited<ReturnType<ToolContext['subagent']['spawn']>>
+      let committedRecord: ChildRecord | undefined
       try {
         const requested = args.isolation ?? (args.role ? 'shared' : deps.limits.isolation)
         if (requested === 'worktree' && !deps.worktrees.bind)
@@ -332,70 +423,122 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
           toolFilter: narrowFilter(narrowFilter(DEFAULT_CHILD_TOOL_FILTER, deps.toolFilter), args.toolFilter),
           ...(worktree ? { start: false as const } : {}),
         }
-        const spawned = await ctx.subagent.spawn(args.task, options)
+        spawned = await ctx.subagent.spawn(args.task, options)
         childKey = spawned.childKey
-        if (worktree) {
-          await deps.worktrees.bind?.(spawned.childKey, worktree)
-          await ctx.subagent.resume(spawned.childKey)
-        }
-
-        if (spawned.childKey.length === 0 || state.children.has(spawned.childKey)) {
-          await ctx.subagent.cancel(spawned.childKey)
+        const existing = childKey.length > 0 ? state.children.get(childKey) : undefined
+        if (childKey.length === 0 || (existing && !existing.adoptedPending)) {
+          await ctx.subagent.cancel(childKey)
           await rollbackWorktree(deps, ctx, worktree)
           return fail('subagent backend returned an invalid or duplicate child key')
         }
-        state.children.set(spawned.childKey, { running: true, ...(worktree ? { worktree } : {}) })
-
-        const collected = args.wait ? await ctx.subagent.collect(spawned.childKey, { wait: true }) : undefined
-        if (collected && collected.childKey !== spawned.childKey)
-          throw new Error('subagent backend returned a mismatched child key')
-        if (collected && collected.status !== 'running') state.children.delete(spawned.childKey)
-        const details: Record<string, JsonValue> = {
-          childKey: spawned.childKey,
-          ...(spawned.role
-            ? {
-                role: spawned.role,
-                task: args.task,
-                status: collected?.status === 'idle' ? 'completed' : (collected?.status ?? 'running'),
-              }
-            : {}),
-          isolation: worktree ? 'worktree' : 'shared',
-        }
-        if (worktree) details.worktree = worktree
-        if (collected) Object.assign(details, failureDetails(collected))
-        const followUp =
-          ctx.tools.availability?.('subagent_list').status === 'offered'
-            ? 'Use subagent_list for the handle if follow-up is needed'
-            : 'Keep the task reference for follow-up'
-        return {
-          content: [
-            {
-              type: 'text',
-              text:
-                (sharedNonGit ? 'Child ran in the shared folder because it is not a git repository.\n' : '') +
-                (collected
-                  ? `Delegated task ${collected.status}${collected.status === 'failed' ? childFailureSuffix(collected) : ''}.\n${collected.text ?? 'No findings returned.'}`
-                  : `Task delegated in the background. A completion notice will carry the findings. ${followUp}; do not repeat internal handles to the user.`),
-            },
-          ],
-          details,
-          ...(spawned.role ? { structured: details } : {}),
-          ...(collected?.status === 'failed' ? { isError: true } : {}),
+        committedRecord = { running: true, ...(worktree ? { worktree } : {}) }
+        state.children.set(childKey, committedRecord)
+        state.pending -= 1
+        pendingHeld = false
+        if (worktree) {
+          await deps.worktrees.bind?.(childKey, worktree)
+          await ctx.subagent.resume(childKey)
         }
       } catch (error) {
-        if (childKey) await ctx.subagent.cancel(childKey)
-        await rollbackWorktree(deps, ctx, worktree)
+        try {
+          if (childKey) await ctx.subagent.cancel(childKey)
+          await rollbackWorktree(deps, ctx, worktree)
+        } finally {
+          if (committedRecord && childKey && state.children.get(childKey) === committedRecord) {
+            committedRecord.running = false
+            state.children.delete(childKey)
+          }
+        }
         // Core's admission limit refuses creation; failures after a child handle remain uncertain.
-        if (!childKey && error instanceof CoreError && error.code === 'E_CHILD_LIMIT')
-          return { ...fail(error.message), details: { code: error.code } }
+        const budget = !childKey && formatSpawnBudgetRefusal(error)
+        if (budget) return budget
+        if (!childKey && error instanceof CoreError && error.code === 'E_CHILD_LIMIT') {
+          const hint = error.message.includes('fan-out limit')
+            ? ' Collect or wait for an active child with subagent_collect, or pause/cancel one, before spawning the next batch.'
+            : ''
+          const { limit, active, activeChildKeys } = error.detail ?? {}
+          const details = {
+            code: error.code,
+            ...(typeof limit === 'number' ? { limit } : {}),
+            ...(typeof active === 'number' ? { active } : {}),
+            ...(Array.isArray(activeChildKeys)
+              ? { activeChildKeys: activeChildKeys.filter((key): key is string => typeof key === 'string') }
+              : {}),
+          }
+          return { ...fail(`${error.message}${hint}`), details, structured: details }
+        }
         // Core refuses an unusable model before it creates anything.
         const refusedModel = childKey ? undefined : modelRefusal(error, ctx)
         if (refusedModel) return refusedModel
         if (args.role && error instanceof Error) return fail(error.message)
         throw error
       } finally {
-        state.pending -= 1
+        if (pendingHeld) state.pending -= 1
         prune(runtime, sessionKey, state)
+      }
+
+      // Strict post-commit boundary: wait/collect/ACK errors never cancel the child or roll back its worktree.
+      let collected: ChildStatus | undefined
+      if (args.wait) {
+        try {
+          collected = await ctx.subagent.collect(spawned.childKey, { wait: true })
+          if (collected.childKey !== spawned.childKey)
+            throw new Error('subagent backend returned a mismatched child key')
+        } catch (error) {
+          const readError = error instanceof Error ? error.message : String(error)
+          const details: Record<string, JsonValue> = {
+            childKey: spawned.childKey,
+            code: error instanceof CoreError ? error.code : 'E_STORAGE_FAULT',
+            retryable: true,
+            readError,
+            isolation: worktree ? 'worktree' : 'shared',
+            ...(worktree ? { worktree } : {}),
+          }
+          return {
+            ...fail(
+              `Delegated task ${spawned.childKey} was created, but reading its result failed (${readError}). Retry with subagent_collect.`,
+            ),
+            details,
+            structured: details,
+          }
+        }
+      }
+      if (collected && !isActiveChild(collected)) {
+        if (committedRecord) committedRecord.running = false
+        if (state.children.get(spawned.childKey) === committedRecord) state.children.delete(spawned.childKey)
+        prune(runtime, sessionKey, state)
+      }
+      const details: Record<string, JsonValue> = {
+        childKey: spawned.childKey,
+        ...(spawned.role
+          ? {
+              role: spawned.role,
+              task: args.task,
+              status: collected?.status === 'idle' ? 'completed' : (collected?.status ?? 'running'),
+            }
+          : {}),
+        isolation: worktree ? 'worktree' : 'shared',
+      }
+      if (worktree) details.worktree = worktree
+      if (collected) Object.assign(details, failureDetails(collected))
+      const followUp =
+        ctx.tools.availability?.('subagent_list').status === 'offered'
+          ? 'Use subagent_list for the handle if follow-up is needed'
+          : 'Keep the task reference for follow-up'
+      return {
+        content: [
+          {
+            type: 'text',
+            text:
+              (sharedNonGit ? 'Child ran in the shared folder because it is not a git repository.\n' : '') +
+              (collected
+                ? `Delegated task ${collected.status}${collected.status === 'failed' ? childFailureSuffix(collected) : ''}.\n${collected.text ?? 'No findings returned.'}`
+                : `Task delegated in the background. A completion notice will carry the findings. ${followUp}; do not repeat internal handles to the user.`),
+          },
+        ],
+        details,
+        ...(spawned.role ? { structured: details } : {}),
+        ...(collected?.status === 'failed' ? { isError: true } : {}),
       }
     },
   }
@@ -460,8 +603,8 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
       'Read the current or terminal result of a spawned child on demand. Do not poll: when a child finishes its turn or ends, the platform delivers a child-completed notice to this session.',
     parameters: collectParameters,
     meta: {
-      isReadOnly: false,
-      isDestructive: true,
+      isReadOnly: true,
+      isDestructive: false,
       isConcurrencySafe: true,
       isOpenWorld: false,
       replay: 'safe',
@@ -471,7 +614,12 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
     },
     async execute(args, ctx) {
       if (args.childKey.length === 0) return fail('childKey must not be empty')
-      const result = await ctx.subagent.collect(args.childKey, { wait: args.wait ?? true })
+      let result: ChildStatus
+      try {
+        result = await ctx.subagent.collect(args.childKey, { wait: args.wait ?? true })
+      } catch (error) {
+        return controlFailure(error)
+      }
       if (result.childKey !== args.childKey) return fail('subagent backend returned a mismatched child key')
 
       const runtime = runtimeOf(deps)
@@ -482,12 +630,21 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
         childKey: result.childKey,
         status: result.status,
         ...failureDetails(result),
+        ...(result.completionId === undefined ? {} : { completionId: result.completionId }),
+        ...(result.completionSeq === undefined ? {} : { completionSeq: result.completionSeq }),
         ...(result.credits === undefined ? {} : { credits: result.credits }),
+        ...(result.waitTimedOut ? { waitTimedOut: true } : {}),
       }
 
-      if (result.status !== 'running' && record) {
+      if (result.status === 'running' && args.wait === false) {
+        const polls = record?.polls ?? 0
+        Object.assign(details, pollWaitMetadata(polls))
+        if (record) record.polls = polls + 1
+      } else if (record) delete record.polls
+
+      if (!isActiveChild(result) && record) {
         record.running = false
-        state?.children.delete(args.childKey)
+        if (state?.children.get(args.childKey) === record) state.children.delete(args.childKey)
         if (state) prune(runtime, sessionKey, state)
       }
 
@@ -501,6 +658,7 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
       return {
         content: [{ type: 'text', text }],
         details,
+        structured: details,
         ...(result.status === 'failed' ? { isError: true } : {}),
       }
     },
@@ -531,10 +689,22 @@ export function subagentCancelTool(deps: SubagentDeps): ToolDef<typeof cancelPar
     },
     async execute(args, ctx) {
       if (args.childKey.length === 0) return fail('childKey must not be empty')
-      const result = await ctx.subagent.cancel(args.childKey)
-      return {
-        content: [{ type: 'text', text: `cancelled ${result.childKey}: ${result.status}` }],
-        details: { childKey: result.childKey, status: result.status },
+      try {
+        const result = await ctx.subagent.cancel(args.childKey)
+        const cancelling = result.executionState === 'cancelling' || result.status === 'running'
+        const text = cancelling
+          ? `cancelling ${result.childKey}: stop not yet confirmed; child remains cancelling`
+          : `cancelled ${result.childKey}: ${result.status}`
+        return {
+          content: [{ type: 'text', text }],
+          details: {
+            childKey: result.childKey,
+            status: result.status,
+            ...(result.executionState ? { executionState: result.executionState } : {}),
+          },
+        }
+      } catch (error) {
+        return controlFailure(error)
       }
     },
   }
@@ -580,7 +750,10 @@ export const subagentListTool = defineTool({
       children.length === 0
         ? 'no child agents'
         : children
-            .map((child) => `${child.id} ${child.status}${child.continuable ? ' continuable' : ''}`)
+            .map(
+              (child) =>
+                `${child.id} ${child.status}${child.continuable ? ' continuable' : ''}${child.label ? ` — ${child.label}` : ''}`,
+            )
             .join('\n')
     const available = roles.map(
       (role) =>
@@ -598,6 +771,7 @@ export const subagentListTool = defineTool({
           providerId: child.providerId,
           status: child.status,
           continuable: child.continuable,
+          ...(child.label === undefined ? {} : { label: child.label }),
           ...(child.text === undefined ? {} : { text: child.text }),
         })),
       },
@@ -619,15 +793,20 @@ async function deliverMessage(
   text: string,
 ): Promise<{ messageId: string }> {
   ctx.signal.throwIfAborted()
+  let localError: unknown
   if (ctx.subagent.sendMessage) {
     try {
       return await ctx.subagent.sendMessage(childKey, text, ctx.signal)
     } catch (error) {
       if (!missedChild(error)) throw error
+      localError = error
     }
   }
   const external = externalChild(ctx.session.key, childKey)
-  if (!external) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+  if (!external) {
+    if (localError instanceof CoreError && localError.code === 'E_UNSUPPORTED') throw localError
+    throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+  }
   if (!external.sendMessage)
     throw new CoreError('E_UNSUPPORTED', `child ${childKey} is not continuable`, { childKey })
   return external.sendMessage(text, ctx.signal)
@@ -654,15 +833,20 @@ export const subagentSendMessageTool = defineTool({
 })
 
 async function interruptChild(ctx: ToolContext, childKey: string): Promise<{ accepted: boolean }> {
+  let localError: unknown
   if (ctx.subagent.interrupt) {
     try {
       return await ctx.subagent.interrupt(childKey)
     } catch (error) {
       if (!missedChild(error)) throw error
+      localError = error
     }
   }
   const external = externalChild(ctx.session.key, childKey)
-  if (!external) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+  if (!external) {
+    if (localError instanceof CoreError && localError.code === 'E_UNSUPPORTED') throw localError
+    throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+  }
   if (!external.interrupt) return { accepted: false }
   return external.interrupt()
 }

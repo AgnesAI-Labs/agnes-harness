@@ -5,6 +5,7 @@ import {
   type Model,
   type Provider as PiProvider,
 } from '@earendil-works/pi-ai'
+import { type ModelCatalogueFacts, readModelCatalogueFacts } from '../../catalogue-facts.js'
 import { isUsableCredential } from '../../credentials.js'
 import { nativeToolCallFormats } from '../../decode/prose-calls.js'
 import { AGNES_SYS1_BASE_URL, AGNES_SYS1_WIRE_API } from '../agnes-sys1/index.js'
@@ -174,7 +175,7 @@ const specs: readonly ProviderSpec[] = [
     id: 'qwen',
     displayName: 'Qwen',
     api: 'openai-completions',
-    baseUrl: 'https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
+    baseUrl: 'https://token-plan.maas.qwencloudapi.com/compatible-mode/v1',
     sourceProviderId: 'qwen-token-plan',
     load: () => load(import('@earendil-works/pi-ai/providers/qwen-token-plan'), 'qwenTokenPlanProvider'),
   },
@@ -532,6 +533,21 @@ export async function createApiKeyProviderConfigs(): Promise<
   readonly { id: string; routes: ManualRoute[] }[]
 > {
   return Promise.all(specs.map(async (spec) => ({ id: spec.id, routes: await providerRoutes(spec) })))
+}
+
+/** Installed catalogue facts only: no network, adapter, credential or profile access. */
+export async function getModelCatalogueFacts(
+  api: string,
+  baseUrl: string,
+  options?: Readonly<{ byId?: boolean }>,
+): Promise<ReadonlyMap<string, ModelCatalogueFacts>> {
+  return readModelCatalogueFacts(
+    specs,
+    async (spec) => ({ records: (await providerRoutes(spec)).flatMap((route) => route.models) }),
+    api,
+    baseUrl,
+    options?.byId ?? true,
+  )
 }
 
 const byId = new Map(API_KEY_PROVIDER_REGISTRY.map((entry) => [entry.id, entry]))
