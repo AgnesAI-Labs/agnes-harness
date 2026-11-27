@@ -109,6 +109,8 @@ it('serves only the consented client closure, and accepts renderer source only a
   ])
   const registry = createClientModuleRegistry({ snapshotDirectory: () => join(root, 'snapshots') })
   let consent = false
+  let revokeDuringFinalCheck = false
+  let presentationChecks = 0
   const input = {
     profile: inventory.profile,
     profileDirectory: root,
@@ -132,7 +134,10 @@ it('serves only the consented client closure, and accepts renderer source only a
               },
             ]
           : [],
-        current: async () => consent === saved,
+        current: async () => {
+          if (revokeDuringFinalCheck && ++presentationChecks === 2) consent = false
+          return consent === saved
+        },
       }
     },
   }
@@ -173,7 +178,14 @@ it('serves only the consented client closure, and accepts renderer source only a
       found: true,
       base64: Buffer.from('export function render() {}').toString('base64'),
     })
-    consent = false
+    revokeDuringFinalCheck = true
+    expect(
+      await Promise.all([asset('entry.js'), asset('style.css'), asset('renderer.js', 'isolated-component')]),
+    ).toEqual([
+      { found: false },
+      { found: false },
+      { found: true, base64: Buffer.from('export function render() {}').toString('base64') },
+    ])
     expect(await asset('entry.js')).toEqual({ found: false })
     expect((await registry.list(input)).modules).toEqual([])
   } finally {
