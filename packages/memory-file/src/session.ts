@@ -265,6 +265,8 @@ function captureTurnSnapshot(args: {
 
   return {
     files,
+    own: new Map(),
+    withdrawn: new Set(),
     baseRanges,
     readViews,
     agent,
@@ -316,15 +318,22 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
   }
   const resolvedFor = (turn: TurnSnapshot): TurnReadState => {
     const prior = turn.readState ?? turn
+    let validityRev = prior.validityRev === null ? null : viewRevision(input.validity)
     const current = resolveReadOverlay(prior, {
       store,
       user,
       meta,
       userMeta,
       pipeline,
-      validity,
+      validity(id) {
+        // An own commit can introduce the first registry-backed reference in this turn.
+        if (validityRev === null) validityRev = viewRevision(input.validity)
+        return validity(id)
+      },
       userValidity,
-      validityRev: turn.validityRev === null ? null : viewRevision(input.validity),
+      get validityRev() {
+        return validityRev
+      },
       userValidityRev: turn.userValidityRev === null ? null : viewRevision(input.userValidity),
       now: clock(),
     })
@@ -515,15 +524,15 @@ export async function inspectMemoryConsistency(
 }> {
   const internal = sessions.get(session)
   if (!internal) throw fault('MEMORY_RECALL_UNAVAILABLE')
-  const { store, user, meta, pipeline, clock, validity, capture, resolvedFor } = internal
+  const { store, meta, pipeline, clock, validity, capture, resolvedFor } = internal
   const snap = capture(turn)
   const state = resolvedFor(snap)
   const config = store.configuration()
   const ctx: ViewContext = {
     layer: 'workspace',
-    files: snap.files,
-    ...(config.userEnabled ? { userFiles: user.files() } : {}),
-    userEnabled: config.userEnabled,
+    files: state.files,
+    userFiles: state.userFiles,
+    userEnabled: state.userEnabled,
     now: clock(),
     validity,
     meta,
@@ -538,10 +547,14 @@ export async function inspectMemoryConsistency(
       return []
     }
   }
+  const index = state.files.find((entry) => entry.path === 'MEMORY.md')
   const res = await inspectConsistency({
     pipeline,
     context: ctx,
-    injectedIndex: snap.noteViewContent,
+    injectedIndex:
+      snap.own.size && index
+        ? buildView(index, state.baseRanges.get(index.path) ?? [], 'note', formatLifecycleOmission).content
+        : snap.noteViewContent,
     readViews: state.readViews,
     ...(retrieval
       ? {
@@ -556,7 +569,7 @@ export async function inspectMemoryConsistency(
     const view = state.readViews.get(entry.path)
     return view ? safeChunks(entry, view).map(keyOf) : []
   })
-  const rawFilteredIds = snap.files.flatMap((entry) =>
+  const rawFilteredIds = state.files.flatMap((entry) =>
     safeChunks(entry, buildIndexView(entry, pipeline.collectHideRanges(entry, ctx))).map(keyOf),
   )
   const indexIds = retrieval ? retrieval.inspectIndexedChunks(meta).map(keyOf) : []

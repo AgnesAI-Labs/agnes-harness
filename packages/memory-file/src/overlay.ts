@@ -4,10 +4,12 @@ import { file, hash } from './content.js'
 import type { MetaStore } from './meta.js'
 import type { MemoryPipeline, ViewContext } from './pipeline.js'
 import type { MemoryStore } from './store.js'
-import { buildView, type HideRange, type MemoryView } from './view.js'
+import { buildView, type HideRange, type MemoryView, retainedEditRanges } from './view.js'
 
 export type TurnReadState = Readonly<{
   files: readonly MemoryFile[]
+  own: Map<string, MemoryFile>
+  withdrawn: Set<string>
   baseRanges: ReadonlyMap<string, readonly HideRange[]>
   readViews: ReadonlyMap<string, MemoryView>
   agent: ReadonlyMap<string, MemoryFile>
@@ -35,19 +37,39 @@ type LiveOverlayInputs = Readonly<{
   now: number
 }>
 
-// Remove only bytes that disappeared. Modified nonempty bodies stay pinned until the next turn.
-function survivingFiles(store: MemoryStore, entries: readonly MemoryFile[]): readonly MemoryFile[] {
+// Verify a local commit once before promoting it. Its bytes then stay pinned across foreign overwrites.
+function survivingFiles(
+  store: MemoryStore,
+  entries: readonly MemoryFile[],
+  workspace?: Pick<TurnReadState, 'own' | 'withdrawn'>,
+): readonly MemoryFile[] {
+  const pinned = new Map(entries.map((entry) => [entry.path, entry]))
+  const paths = new Set([...pinned.keys(), ...(workspace?.own.keys() ?? [])])
   const files: MemoryFile[] = []
-  let changed = false
-  for (const entry of entries) {
-    const size = store.fileSize(entry.path)
-    if (size === undefined) changed = true
-    else if (size === 0 && entry.bytes > 0) {
-      files.push(file(entry.path, ''))
-      changed = true
-    } else files.push(entry)
+  for (const path of paths) {
+    let entry = pinned.get(path)
+    if (!entry && workspace?.withdrawn.has(path)) continue
+    const own = workspace?.own.get(path)
+    const size = store.fileSize(path)
+    if (size === undefined) {
+      workspace?.withdrawn.add(path)
+      continue
+    }
+    if (own && own !== entry && !workspace?.withdrawn.has(path)) {
+      if (store.read(path).hash === own.hash) entry = own
+      else if (size === 0) {
+        workspace?.withdrawn.add(path)
+        entry = file(path, '')
+      }
+    }
+    if (!entry) continue
+    if (size === 0 && entry.bytes) {
+      workspace?.withdrawn.add(path)
+      entry = file(path, '')
+    }
+    files.push(entry)
   }
-  return changed ? files : entries
+  return files.length === entries.length && files.every((entry, i) => entry === entries[i]) ? entries : files
 }
 
 function rebuildLayer(
@@ -55,6 +77,7 @@ function rebuildLayer(
   prevViews: ReadonlyMap<string, MemoryView>,
   ctx: ViewContext,
   pipeline: MemoryPipeline,
+  previousFiles?: ReadonlyMap<string, MemoryFile>,
   skipPath?: string,
 ) {
   const ranges = new Map<string, readonly HideRange[]>()
@@ -64,8 +87,8 @@ function rebuildLayer(
   for (const entry of ctx.files) {
     const prior = prevViews.get(entry.path)
     // Files excluded from the captured view stay unreadable until the next turn.
-    if (!prior) continue
-    if (entry.path === skipPath && entry.bytes) {
+    if (!prior && !previousFiles) continue
+    if (prior && entry.path === skipPath && entry.bytes) {
       views.set(entry.path, prior)
       agent.set(entry.path, entry)
       continue
@@ -74,7 +97,11 @@ function rebuildLayer(
     // surviving targets, so a removed topic replaces its previous stale-link warning.
     const current = pipeline.collectHideRanges(entry, ctx)
     const retained = entry.bytes
-      ? (baseRanges.get(entry.path) ?? []).filter((r) => r.appliesTo !== 'note')
+      ? retainedEditRanges(
+          previousFiles?.get(entry.path)?.content ?? entry.content,
+          entry.content,
+          baseRanges.get(entry.path) ?? [],
+        )
       : []
     const combined = [...new Map([...retained, ...current].map((r) => [JSON.stringify(r), r])).values()]
     ranges.set(entry.path, combined)
@@ -93,14 +120,14 @@ export function nextLayerExpiry(pipeline: MemoryPipeline, workspace: ViewContext
   return usr === undefined ? ws : Math.min(ws, usr)
 }
 
-/** Advance the agent read view independently of the original snapshot and whole-file CAS baseline. */
+/** Advance the read view from acknowledged local commits and observed restrictions. */
 export function resolveReadOverlay(turn: TurnReadState, live: LiveOverlayInputs): TurnReadState {
-  const files = survivingFiles(live.store, turn.files)
+  const files = survivingFiles(live.store, turn.files, turn)
   const userFiles = turn.userEnabled ? survivingFiles(live.user, turn.userFiles) : turn.userFiles
   const expiryCrossed = turn.nextExpiry !== undefined && live.now >= turn.nextExpiry
-  const filesRemoved = files !== turn.files || userFiles !== turn.userFiles
+  const filesChanged = files !== turn.files || userFiles !== turn.userFiles
   if (
-    !filesRemoved &&
+    !filesChanged &&
     !expiryCrossed &&
     live.validityRev === turn.validityRev &&
     live.userValidityRev === turn.userValidityRev
@@ -121,7 +148,8 @@ export function resolveReadOverlay(turn: TurnReadState, live: LiveOverlayInputs)
     turn.readViews,
     wsCtx,
     live.pipeline,
-    turn.invalidIndexLimits ? 'MEMORY.md' : undefined,
+    new Map(turn.files.map((entry) => [entry.path, entry])),
+    turn.invalidIndexLimits && !turn.own.has('MEMORY.md') ? 'MEMORY.md' : undefined,
   )
   const userCtx: ViewContext = {
     ...wsCtx,
@@ -132,10 +160,11 @@ export function resolveReadOverlay(turn: TurnReadState, live: LiveOverlayInputs)
   }
   const usr = rebuildLayer(turn.userBaseRanges, turn.userReadViews, userCtx, live.pipeline)
   const revision =
-    filesRemoved || ws.changed || usr.changed
+    filesChanged || ws.changed || usr.changed
       ? hash(
           JSON.stringify([
             turn.revision,
+            ...(turn.own.size ? [[...turn.own.values()].map(({ path, hash }) => [path, hash])] : []),
             ...[ws.views, usr.views].map((views) =>
               [...views].map(([path, view]) => [path, hash(view.content)]),
             ),
@@ -154,7 +183,8 @@ export function resolveReadOverlay(turn: TurnReadState, live: LiveOverlayInputs)
     userReadViews: usr.views,
     validityRev: live.validityRev,
     userValidityRev: live.userValidityRev,
-    nextExpiry: expiryCrossed ? nextLayerExpiry(live.pipeline, wsCtx, userCtx) : turn.nextExpiry,
+    nextExpiry:
+      expiryCrossed || filesChanged ? nextLayerExpiry(live.pipeline, wsCtx, userCtx) : turn.nextExpiry,
     revision,
   }
 }

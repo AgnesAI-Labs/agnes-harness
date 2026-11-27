@@ -16,7 +16,6 @@ import {
   isHiddenParagraphs,
   refusalCode,
   replaceOneByOne,
-  viewAfter,
 } from './hidden-paragraphs.js'
 import { withLspNote } from './lsp-note.js'
 import { isBinary, MAX_READ_BYTES } from './read.js'
@@ -166,7 +165,13 @@ export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions, l
               return editFailure(ctx, refusalCode(e), 'write_failed', null, false, EDIT_UNSUPPORTED_TEXT)
             exact = await replaceOneByOne(ctx, args.path, planned, bytes)
             if (exact.applied.length === 0) return exactFailure(ctx, exact, planned.length)
-            text = await viewAfter(ctx, args.path, exact.failure ? original : text)
+            if (exact.failure) {
+              text = original
+              for (const index of exact.applied) {
+                const { oldText, newText } = planned[index]!
+                text = text.replace(oldText, () => newText)
+              }
+            }
           } else {
             const code = failureCode(e, 'FS_WRITE_FAILED')
             if (isAttestedPreEffect(e)) {

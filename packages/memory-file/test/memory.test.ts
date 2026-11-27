@@ -265,11 +265,24 @@ describe('file memory contract', () => {
     expect(outcomes.filter((outcome) => outcome.status === 'rejected')).toMatchObject([
       { reason: { code: 'MEMORY_CONFLICT' } },
     ])
+    const diskAfterRace = await f.session.readFile('MEMORY.md')
+    for (const [i, port] of [f.files(2), other].entries()) {
+      const expected = outcomes[i]?.status === 'fulfilled' ? diskAfterRace.content : 'Original preference'
+      expect(Buffer.from(await port.read(f.index)).toString()).toBe(expected)
+    }
+    await f.session.editFile('MEMORY.md', 'Human preference', diskAfterRace.hash)
+    const winner = outcomes[0]?.status === 'fulfilled' ? f.files(2) : other
+    expect(Buffer.from(await winner.read(f.index)).toString()).toBe(diskAfterRace.content)
+    await expect(winner.write(f.index, 'Stale rewrite')).rejects.toMatchObject({ code: 'MEMORY_CONFLICT' })
+    await expect(winner.replaceExact!(f.index, 'wins', 'lost')).rejects.toMatchObject({
+      code: 'MEMORY_CONFLICT',
+    })
     expect(await f.session.snapshot(2)).toEqual(first)
     expect((await f.session.snapshot(3))?.revision).not.toBe(first?.revision)
     expect(await f.files(3).revision?.(f.index)).toBe((await f.session.snapshot(3))?.revision)
     const disk = await f.session.readFile('MEMORY.md')
-    expect(['First wins', 'Second wins']).toContain(disk.content)
+    expect(disk.content).toBe('Human preference')
+    expect(Buffer.from(await f.files(3).read(f.index)).toString()).toBe(disk.content)
     expect((await f.session.inspect()).lastWriter).toMatchObject({ turn: expect.any(Number) })
     await expect(f.session.editFile('MEMORY.md', 'stale editor', 'invalid-hash')).rejects.toMatchObject({
       code: 'MEMORY_CONFLICT',
@@ -416,6 +429,7 @@ describe('file memory contract', () => {
       const meta = new MetaStore(new MemoryStore(roots(f.home, f.home).protectedRoot, f.session.root))
       const committed = await f.session.readFile('MEMORY.md')
       expect(committed.content).toBe(content)
+      expect(Buffer.from(await f.files(2).read(f.index)).toString()).toContain('Independent guidance')
       expect(readAuditEntries(meta).at(-1)).toMatchObject({ action: 'commit', afterHash: committed.hash })
       if (failed !== 'acknowledged.json')
         expect(meta.store.acknowledged()?.['MEMORY.md']).toBe(committed.hash)
@@ -875,7 +889,7 @@ describe('phase 0 view pipeline, same-turn R1-R6 overlay and audit log', () => {
 
     await p1.write(extra, 'BRAND_NEW_FACT\n')
     expect((await session.snapshot(1))?.revision).toBe(s1?.revision)
-    expect((await p1.recall?.({ query: 'BRAND_NEW_FACT' }))?.hits).toEqual([])
+    expect((await p1.recall?.({ query: 'BRAND_NEW_FACT' }))?.hits).toMatchObject([{ path: 'extra.md' }])
 
     validity.set('rc000000003', 'unknown')
     expect((await p1.recall?.({ query: 'RECALL_ME' }))?.hits).toEqual([])

@@ -135,12 +135,16 @@ describe('edit through the memory provider with a hidden paragraph', () => {
       path: index,
       edits: [
         { oldText: 'Use pnpm.', newText: 'Use pnpm 10.' },
-        { oldText: 'Bottom line.', newText: 'Bottom line, updated.' },
+        { oldText: 'Bottom line.', newText: 'Bottom line.\n\n<!-- expires_at: 2020-01-01 -->\nUpdated.' },
       ],
     })
     expect(result).toMatchObject({ isError: false })
+    expect(JSON.stringify(result)).toContain('(+3 lines)')
     expect(await readFile(index, 'utf8')).toBe(
-      STORED.replace('Use pnpm.', 'Use pnpm 10.').replace('Bottom line.', 'Bottom line, updated.'),
+      STORED.replace('Use pnpm.', 'Use pnpm 10.').replace(
+        'Bottom line.',
+        'Bottom line.\n\n<!-- expires_at: 2020-01-01 -->\nUpdated.',
+      ),
     )
   })
 
@@ -172,6 +176,7 @@ describe('edit through the memory provider with a hidden paragraph', () => {
       })
       const text = JSON.stringify(result)
       expect(text).toContain(code)
+      expect(text).not.toContain('retrying the batch')
       expect(text).not.toContain('Nothing was written')
       expect(text).not.toContain('HIDDEN-PARAGRAPH-BODY')
       expect(await readFile(index, 'utf8')).toBe(STORED.replace('Use pnpm.', 'Use pnpm 10.'))

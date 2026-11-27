@@ -116,6 +116,11 @@ export function exactFailure(ctx: ToolContext, outcome: ExactOutcome, total: num
     })
   }
   const notApplied = index === null ? Array.from({ length: total }, (_, k) => k) : [index, ...rest]
+  const hint = Object.hasOwn(PROTECTED_TEXT, code)
+    ? PROTECTED_TEXT[code]
+    : index === null
+      ? 'Read the file again before retrying the batch.'
+      : `Review the failure before retrying ${notApplied.length === 1 ? 'edit' : 'edits'} ${nth(notApplied)}.`
   const parts =
     index === null
       ? [
@@ -138,20 +143,12 @@ export function exactFailure(ctx: ToolContext, outcome: ExactOutcome, total: num
                   ? `edit ${nth(rest)} was not attempted`
                   : `edits ${nth(rest)} were not attempted`,
               ]),
-          'This memory file has managed paragraphs, so its edits are applied one replacement at a time and an earlier one is not undone; read the file again and resend only the edits that are not applied.',
-          ...(Object.hasOwn(PROTECTED_TEXT, code) ? [PROTECTED_TEXT[code]] : []),
+          hint,
         ]
   const message = parts.join(index === null ? '. ' : '; ')
-  return editFailure(ctx, code, 'write_failed', index, applied.length > 0, message, { applied, notApplied })
-}
-
-const dec = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
-
-/** The visible content as it stands now, or `fallback` when it cannot be read back as text. */
-export async function viewAfter(ctx: ToolContext, path: string, fallback: string): Promise<string> {
-  try {
-    return dec.decode(await ctx.fs.read(path))
-  } catch {
-    return fallback
-  }
+  return editFailure(ctx, code, 'write_failed', index, applied.length > 0, message, {
+    applied,
+    notApplied,
+    hint,
+  })
 }

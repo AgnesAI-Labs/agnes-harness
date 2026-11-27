@@ -253,11 +253,24 @@ it.each(
         })
         return
       }
-      if (initialAnswer === 'cas-conflict' || initialAnswer === 'metadata-failure') {
+      if (initialAnswer === 'cas-conflict') {
+        expect(rejected.results[0]?.data).toMatchObject({
+          isError: true,
+          code: 'TOOL_REJECTED_BEFORE_EFFECT',
+          structured: { effect: 'none', code: 'MEMORY_CONFLICT' },
+        })
+        expect((await memory.readFile('MEMORY.md')).content).toBe('Human concurrent revision')
+        const decisions = await rejected.session.decisions.list()
+        expect(decisions.some((value) => value.request.spec.purpose === 'unknown-outcome')).toBe(false)
+        expect(decisions.find((value) => value.request.spec.purpose === 'memory')?.result).toMatchObject({
+          reason: 'answered',
+          response: { option: 'allowed-once' },
+        })
+        return
+      }
+      if (initialAnswer === 'metadata-failure') {
         expect(rejected.results[0]?.data).toMatchObject({ isError: true, code: 'TOOL_OUTCOME_UNKNOWN' })
-        expect((await memory.readFile('MEMORY.md')).content).toBe(
-          initialAnswer === 'cas-conflict' ? 'Human concurrent revision' : 'Prefer short answers.',
-        )
+        expect((await memory.readFile('MEMORY.md')).content).toBe('Prefer short answers.')
         const rows = await rejected.session.scan({ type: ['decision/state', 'effect/settled'], limit: 100 })
         expect(
           rows.some(

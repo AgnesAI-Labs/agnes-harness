@@ -99,12 +99,23 @@ export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<T
     validateContent(entry, store.configuration(), path === 'MEMORY.md')
     return { shown: state.agent.get(path) ?? entry, state }
   }
-  const submit = (leaf: string, prepare: () => FileChange) =>
-    reviewAndCommit(
+  const submit = (leaf: string, prepare: (turn: TTurn) => FileChange) => {
+    return reviewAndCommit(
       { store, pipeline, clock, root: paths.root, source, signal, approve, active, viewCtx },
       leaf,
-      prepare,
+      () => {
+        const turn = capture(source.turn)
+        const change = prepare(turn)
+        return {
+          ...change,
+          committed() {
+            turn.own.set(leaf, change.candidate)
+            resolvedFor(turn)
+          },
+        }
+      },
     )
+  }
 
   return Object.freeze<MemoryFilePort>({
     async read(path, options) {
@@ -140,10 +151,10 @@ export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<T
     async write(path, content) {
       const leaf = target(path)
       if (leaf === undefined) return fallback.write(path, content)
-      return submit(leaf, () => {
-        const turn = capture(source.turn)
+      return submit(leaf, (turn) => {
         const state = resolvedFor(turn)
-        const before = turn.files.find((entry) => entry.path === leaf) ?? file(leaf, '')
+        const before = turn.own.get(leaf) ?? turn.files.find((entry) => entry.path === leaf) ?? file(leaf, '')
+        if (store.read(leaf).hash !== before.hash) throw fault('MEMORY_CONFLICT')
         // A whole file written from a view that leaves text out would silently drop that text.
         if (turn.readViews.get(leaf)?.hidden || state.readViews.get(leaf)?.hidden) {
           throw fault('MEMORY_HIDDEN_PARAGRAPHS')
@@ -182,14 +193,14 @@ export function createFilePort<TTurn extends TurnReadState>(deps: FilePortDeps<T
         if (fallback.replaceExact) return fallback.replaceExact(path, oldText, newText)
         throw fault('MEMORY_SCOPE_DENIED')
       }
-      return submit(leaf, () => {
-        const turn = capture(source.turn)
+      return submit(leaf, (turn) => {
         const state = resolvedFor(turn)
         const before = store.read(leaf)
         const prior = state.files.find((entry) => entry.path === leaf)
         if (leaf === 'MEMORY.md' && state.invalidIndexLimits && prior)
           validateContent(prior, state.invalidIndexLimits, true)
         if (!prior?.bytes && before.bytes) throw fault('MEMORY_REPLACE_NOT_FOUND')
+        if (prior && before.hash !== prior.hash) throw fault('MEMORY_CONFLICT')
         const replace = (current: MemoryFile, ctx: ViewContext, readState: TurnReadState) => {
           const omitted = new Set(readState.readViews.get(leaf)?.omitted)
           const ranges = pipeline.collectHideRanges(current, {
@@ -280,16 +291,14 @@ async function reviewAndCommit(
     viewCtx: (now: number, config?: MemorySettings) => ViewContext
   },
   leaf: string,
-  prepare: () => FileChange,
+  prepare: () => FileChange & { committed: () => void },
 ): Promise<void> {
   const { store, pipeline, clock, source, signal, approve, active, viewCtx } = context
   const prepareProposal = async () => {
     const config = active()
     signal.throwIfAborted()
-    const { before, candidate, verifyView } = prepare()
+    const { before, candidate, verifyView, committed } = prepare()
     validateContent(candidate, config, leaf === 'MEMORY.md')
-    // Check stale base hash before guards so concurrent external writes return MEMORY_CONFLICT.
-    if (store.read(leaf).hash !== before.hash) throw fault('MEMORY_CONFLICT')
     const actor = source.toolUseId
       ? `agent:${source.sessionKey}:${source.toolUseId}`
       : `agent:${source.sessionKey}`
@@ -312,13 +321,13 @@ async function reviewAndCommit(
       diff: diff(before.content, candidate.content),
       source,
     })
-    return { config, intent, proposal, verifyView }
+    return { config, intent, proposal, verifyView, committed }
   }
   const refuse = (error: unknown): never => {
     if (signal.aborted) throw error
     return markPreEffectRefusal(error, source)
   }
-  const { config, intent, proposal, verifyView } = await prepareProposal().catch(refuse)
+  const { config, intent, proposal, verifyView, committed } = await prepareProposal().catch(refuse)
   const { before, candidate } = intent
   let admission: MemoryEffectAdmission | undefined
   if (config.mode === 'ask') {
@@ -338,14 +347,20 @@ async function reviewAndCommit(
         message: `MEMORY_APPROVAL_UNANSWERED: ${result.reason}`,
       })
   }
-  await store.commit(
-    candidate,
-    before.hash,
-    source,
-    config.mode,
-    signal,
-    admission,
-    commitHooks(pipeline, intent, viewCtx, clock, verifyView),
-    refuse,
-  )
+  try {
+    await store.commit(
+      candidate,
+      before.hash,
+      source,
+      config.mode,
+      signal,
+      admission,
+      commitHooks(pipeline, intent, viewCtx, clock, verifyView),
+      refuse,
+    )
+  } catch (error) {
+    if (error instanceof MemoryFault && error.code === 'MEMORY_COMMITTED_METADATA_FAILED') committed()
+    throw error
+  }
+  committed()
 }
