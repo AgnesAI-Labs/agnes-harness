@@ -16,7 +16,23 @@
 
 可选用户偏好由人创建 `$AGH_HOME/memory/user/MEMORY.md`，通过 [SDK](../reference/api.zh-CN.md) 管理方法开启 `userEnabled`。用户层只读，使用相同索引存储上限和独立注入预算。Agent 不能修改用户文件或读取其他工作区记忆。开启[任务经验](refinement.zh-CN.md#保存到用户记忆)后，适用于所有工作区的经验可以自动加入用户记忆，与下文段落一样带标记行；智能体看到的内容中你自己写的文字总是在前，放不下的经验不会写入。
 
-SDK 方法 `_agnes/v1/admin.memory` 接收 `cwd`、可选 settings 补丁，或人工编辑的 `file`、`content`、`baseHash`，或用于管理已保存任务经验段落的 `saved`（`{ action: 'list' | 'renew' | 'withdraw' | 'convert', paragraphId?, layer? }`，见下文；`layer: 'user'` 管理用户记忆中的经验，没有 `convert`）。可配置 `indexMaxBytes`、`indexMaxLines`、`topicMaxBytes`、`totalMaxBytes`、`tokenBudget`、`userTokenBudget`、`userEnabled`。选择 `_agnes/v1/admin.context` 返回的可用工作区。设置和编辑需要本机 owner 管理权限，插件工具不能自行开启访问。
+SDK 方法 `_agnes/v1/admin.memory` 接收 `cwd`、可选 settings 补丁，或人工编辑的 `file`、`content`、`baseHash`，或按主题当前版本删除文件的 `deleteFile: { path, baseHash }`，或用于管理已保存任务经验段落的 `saved`（`{ action: 'list' | 'renew' | 'withdraw' | 'convert', paragraphId?, layer? }`，见下文；`layer: 'user'` 管理用户记忆中的经验，没有 `convert`）。可配置 `indexMaxBytes`、`indexMaxLines`、`topicMaxBytes`、`totalMaxBytes`、`tokenBudget`、`userTokenBudget`、`userEnabled`。选择 `_agnes/v1/admin.context` 返回的可用工作区。设置和编辑需要本机 owner 管理权限，插件工具不能自行开启访问。
+
+## 管理条目与主题
+
+在**记忆文件**中，每个普通段落都有到期时间设置。选择**设置到期时间**或**编辑到期时间**，可选 **+7天**、**+30天**，也可指定本地日期和时间。**清除到期时间**会取消时间限制，其他隐藏规则仍然有效。**删除条目**会移除整段。编辑段落或更改到期时间后，该段落会标记为人工编写，智能体无法再修改或删除。非空文件的更改从下一轮起对智能体可见。
+
+要删除主题，请先从 `MEMORY.md` 移除指向它的链接并保存索引，再点击主题旁的**删除**并确认。索引仍有引用时，删除会被拒绝，文件保留。所有记忆模式下，所有者都可以执行这些操作。
+
+智能体可调用 `memory_delete`，传入不含目录的主题文件名或其在工作区记忆目录中的路径。它只能删除没有引用的主题。即使在询问模式下，索引、空主题，以及含有隐藏段落、托管段落或人工编写内容的主题也受保护。删除成功后，在同一轮中读取文件、列出目录或调用 `memory_recall` 都无法再看到该主题。
+
+会话会检查破坏性工具 `memory_delete` 的调用权限。在询问模式下，记忆服务还会要求对文件的具体版本进行审批。
+
+| 记忆模式 | 手动审批（manual） | 自动审核（auto-review） | 完全访问（full-access） |
+| --- | --- | --- | --- |
+| 关闭（off） | 拒绝 | 拒绝 | 拒绝 |
+| 询问（ask） | 工具审批后，人工批准该版本 | 工具审核后，人工批准该版本 | 自动批准两项 |
+| 自动（auto） | 仅需工具审批 | 仅需工具审核 | 自动批准工具调用 |
 
 ## 已保存的任务经验
 

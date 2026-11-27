@@ -292,3 +292,139 @@ test('full access auto-allows memory and retains private-store isolation and off
   // Includes an active-memory turn and any later echo, even after settings are off.
   expect(await runtime.diagnostics()).not.toContain('PRIVATE_MEMORY_E2E')
 })
+
+test('manages ordinary entry expiry and deletes topics through owner and agent controls', async ({
+  page,
+  runtime,
+  expectedBrowserErrors,
+}) => {
+  test.setTimeout(120_000)
+  const cwd = await realpath(runtime.workspace)
+  const owner = await runtime.connect()
+  const read = async (file: string) => (await owner.request('_agnes/v1/admin.memory', { cwd, file })).file!
+  const save = async (file: string, content: string) =>
+    owner.request('_agnes/v1/admin.memory', {
+      cwd,
+      file,
+      content,
+      baseHash: (await read(file)).hash,
+    })
+  const index = 'MEMORY.md'
+  const topic = 'conventions.md'
+  const note = 'Prefer short summaries.'
+  const link = '[[conventions.md]]'
+  await save(topic, 'Use tables.')
+  await save(index, note)
+  await preferences(page, 'en')
+  await page.goto(runtime.url)
+  await chooseWorkspace(page, runtime, 'en')
+  await settings(page, 'en')
+  await advanced(page)
+  await section(page, 'memory')
+  await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
+  await selectValue(page, 'memory-workspace', cwd)
+  await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
+  await page.getByTestId('memory-open').click()
+  const entries = page.getByTestId('memory-entries')
+  const editor = page.getByTestId('memory-content')
+  const indexContent = async () => (await read(index)).content
+  await entries.getByRole('button', { name: 'Set expiry' }).click()
+  await entries.getByRole('button', { name: '+7d', exact: true }).click()
+  await expect.poll(indexContent).toMatch(/^<!-- expires_at: [^\n]+Z -->\nPrefer short summaries\.$/)
+  await entries.getByRole('button', { name: 'Clear expiry' }).click()
+  await expect.poll(indexContent).toBe(note)
+  await entries.getByRole('button', { name: 'Delete entry' }).click()
+  await expect.poll(indexContent).toBe('')
+  await editor.fill(link)
+  await page.getByTestId('memory-save').click()
+  await expect.poll(indexContent).toBe(link)
+  await page.getByTestId('memory-open-file').click()
+  await expect(editor).toHaveValue('Use tables.')
+  const remove = async () => {
+    await page.getByTestId('memory-delete-file').click()
+    await page.getByTestId('memory-delete-confirm').click()
+  }
+  const refusal = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/api/memory' && response.status() === 400,
+  )
+  await remove()
+  expect((await (await refusal).json()).error.data.cause.code).toBe('MEMORY_TOPIC_REFERENCED')
+  expectedBrowserErrors.push(
+    'console: Failed to load resource: the server responded with a status of 400 (Bad Request)',
+  )
+  await expect(page.getByTestId('memory-error')).toContainText('MEMORY.md still links')
+  await expect(editor).toHaveValue('Use tables.')
+  expect((await read(topic)).content).toBe('Use tables.')
+  await page.getByTestId('memory-open-index').click()
+  await expect(editor).toHaveValue(link)
+  await editor.fill('Index')
+  await page.getByTestId('memory-save').click()
+  await expect.poll(indexContent).toBe('Index')
+  await remove()
+  await expect(page.getByTestId('memory-files')).not.toContainText(topic)
+  const files = async () =>
+    (await owner.request('_agnes/v1/admin.memory', { cwd })).inspection!.files.map((file) => file.path)
+  expect(await files()).not.toContain(topic)
+
+  const { startProviderFixture } = await import('../acceptance/provider-fixture.js')
+  const { prompt, toolResult } = await import('./sdk.js')
+  const state = await owner.request('_agnes/v1/admin.memory', { cwd, settings: { mode: 'auto' } })
+  const root = state.inspection!.root
+  const agentTopic = 'agent-note.md'
+  const path = `${root}/${agentTopic}`
+  const fixture = await startProviderFixture('Done', undefined, 'deepseek-flash')
+  try {
+    await owner.config.save({
+      providerId: 'deepseek',
+      model: 'deepseek-flash',
+      baseUrl: fixture.baseUrl,
+      apiKey: fixture.apiKey,
+      accountId: 'memory-test',
+      label: 'Memory test',
+      makeDefault: true,
+      expectedRevision: (await owner.config.get()).revision,
+    })
+    const client = await runtime.connect('web')
+    const session = await client.session.new({
+      cwd,
+      preset: 'standard',
+      sessionKey: crypto.randomUUID(),
+      permission: 'full-access',
+    })
+    await session.attach()
+    await session.setModel({ slot: 'primary', route: 'account-memory-test', model: 'deepseek-flash' })
+    fixture.queueTool({ name: 'tool_describe', args: { name: 'memory_delete' } })
+    fixture.queueTool({ name: 'write', args: { path, content: 'Use quartz.' } })
+    await prompt(session, 'Prepare a temporary topic.')
+    expect((await read(agentTopic)).content).toBe('Use quartz.')
+    fixture.queueTool({ name: 'tool_describe', args: { name: 'memory_recall' } })
+    fixture.queueTool({ name: 'memory_recall', args: { query: 'quartz' } })
+    await prompt(session, 'Find the temporary topic.')
+    expect(JSON.stringify((await toolResult(session, 'memory_recall'))?.content)).toContain('Use quartz.')
+    fixture.queueTool({ name: 'memory_delete', args: { path } })
+    fixture.queueTool({ name: 'memory_recall', args: { query: 'quartz' } })
+    await prompt(session, 'Delete the temporary topic and search for it again.')
+    expect(JSON.stringify(await toolResult(session, 'memory_delete'))).toContain('Deleted memory topic')
+    expect(JSON.stringify((await toolResult(session, 'memory_recall'))?.content)).toContain(
+      'No matching memory.',
+    )
+    expect(await files()).not.toContain(agentTopic)
+
+    fixture.queueTool({ name: 'write', args: { path, content: 'Keep this topic.' } })
+    await prompt(session, 'Create a topic to keep.')
+    expect((await read(agentTopic)).content).toBe('Keep this topic.')
+    await owner.request('_agnes/v1/admin.memory', { cwd, settings: { mode: 'off' } })
+    fixture.queueTool({ name: 'memory_delete', args: { path } })
+    await prompt(session, 'Try deleting the topic with memory off.')
+    const timeline = await session.projectUI(undefined, { surface: 'web' })
+    const last = timeline.nodes.findLast((node) => node.kind === 'tool')
+    if (last?.kind !== 'tool' || last.resultSeq === undefined) throw new Error('Missing deletion result')
+    expect(last.name).toBe('memory_delete')
+    const denied = (await session.readToolDetail(last.seq, last.resultSeq)).result
+    expect(denied?.isError).toBe(true)
+    expect(JSON.stringify(denied)).toContain('E_FS_DENIED')
+    expect((await read(agentTopic)).content).toBe('Keep this topic.')
+  } finally {
+    await fixture.close()
+  }
+})

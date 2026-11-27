@@ -44,6 +44,7 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
   const [readFailed, setReadFailed] = useState(false)
   // A failed change is offered again from the group label; a failed file save shows in the editor.
   const [failedChange, setFailedChange] = useState<Request>()
+  const [confirmPath, setConfirmPath] = useState<string>()
   const [fileError, setFileError] = useState<unknown>()
   const [reads, setReads] = useState(0)
   // biome-ignore lint/correctness/useExhaustiveDependencies: reads is an explicit retry.
@@ -53,6 +54,7 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
     setBusy(true)
     setReadFailed(false)
     setFailedChange(undefined)
+    setConfirmPath(undefined)
     setFileError(undefined)
     setFile(undefined)
     void trackPageRequest(contextRequest({}, fetch, abort.signal))
@@ -94,13 +96,17 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
     const request = captureRequest(lifetime)
     setBusy(true)
     if (kind === 'change') setFailedChange(undefined)
+    setConfirmPath(undefined)
     setFileError(undefined)
     try {
       const result = await memoryRequest(input, request.signal)
       if (!request.isCurrent()) return
       setSnapshot(result)
       if (kind !== 'read') reportSuccess('memory', fallbackT('ui.settingsSaved'))
-      if (result.file) {
+      if (input.deleteFile && input.deleteFile.path === file?.path) {
+        setFile(undefined)
+        setContent('')
+      } else if (result.file) {
         setFile(result.file)
         setContent(result.file.content)
       }
@@ -119,10 +125,6 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
   const used = numbers.format((index?.bytes ?? 0) / 1024)
   const limit = numbers.format((inspection?.settings.indexMaxBytes ?? 0) / 1024)
   const files = inspection ? [...new Set(['MEMORY.md', ...inspection.files.map((entry) => entry.path)])] : []
-  const sizeOf = (path: string) => {
-    const bytes = inspection?.files.find((entry) => entry.path === path)?.bytes
-    return bytes === undefined ? t('fileEmpty') : `${numbers.format(bytes / 1024)} KB`
-  }
   const mode = failedChange?.settings?.mode ?? inspection?.settings.mode
   const noWorkspace = !busy && !workspaces.some((workspace) => workspace.available)
   return (
@@ -216,32 +218,68 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
           }}
         >
           <SettingsBlock data-testid="memory-files">
-            {files.map((path) => (
-              <SettingsItem
-                key={path}
-                icon="file"
-                label={<span translate="no">{path}</span>}
-                description={sizeOf(path)}
-              >
-                <Button
-                  size="small"
-                  data-testid={path === 'MEMORY.md' ? 'memory-open-index' : 'memory-open-file'}
-                  disabled={busy || file?.path === path}
-                  onClick={() => void request({ cwd, file: path })}
+            {files.map((path) => {
+              const entry = inspection.files.find((item) => item.path === path)
+              const deleteDisabled =
+                !canSave || busy || !entry?.hash || (file?.path === path && content !== file.content)
+              return (
+                <SettingsItem
+                  key={path}
+                  icon="file"
+                  label={<span translate="no">{path}</span>}
+                  description={entry ? `${numbers.format(entry.bytes / 1024)} KB` : t('fileEmpty')}
                 >
-                  {t(file?.path === path ? 'opened' : 'openFile')}
-                </Button>
-              </SettingsItem>
-            ))}
+                  <Button
+                    size="small"
+                    data-testid={path === 'MEMORY.md' ? 'memory-open-index' : 'memory-open-file'}
+                    disabled={busy || file?.path === path}
+                    onClick={() => void request({ cwd, file: path })}
+                  >
+                    {t(file?.path === path ? 'opened' : 'openFile')}
+                  </Button>
+                  {path !== 'MEMORY.md' &&
+                    (confirmPath === path ? (
+                      <>
+                        <Button
+                          size="small"
+                          data-testid="memory-delete-confirm"
+                          disabled={deleteDisabled}
+                          onClick={() =>
+                            entry && void request({ cwd, deleteFile: { path, baseHash: entry.hash } }, 'file')
+                          }
+                        >
+                          {t('confirmDelete')}
+                        </Button>
+                        <Button
+                          size="small"
+                          data-testid="memory-delete-cancel"
+                          onClick={() => setConfirmPath(undefined)}
+                        >
+                          {t('cancel')}
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        size="small"
+                        data-testid="memory-delete-file"
+                        disabled={deleteDisabled}
+                        onClick={() => setConfirmPath(path)}
+                      >
+                        {t('deleteFile')}
+                      </Button>
+                    ))}
+                </SettingsItem>
+              )
+            })}
           </SettingsBlock>
+          {Boolean(fileError) && (
+            <Banner tone="error" role="alert" data-testid="memory-error">
+              {appServerErrorMessage(fileError, locale) ?? t('failed')}
+              {publicErrorCode(fileError) === 'MEMORY_MISSING_TOPIC' && ` ${t('entries.missingTopic')}`}
+            </Banner>
+          )}
           {file && (
             <SettingsBlock bare label={<span translate="no">{file.path}</span>} data-testid="memory-actions">
-              {Boolean(fileError) && (
-                <Banner tone="error" role="alert" data-testid="memory-error">
-                  {appServerErrorMessage(fileError, locale) ?? t('failed')}
-                  {publicErrorCode(fileError) === 'MEMORY_MISSING_TOPIC' && ` ${t('entries.missingTopic')}`}
-                </Banner>
-              )}
               <SettingsTextArea
                 id="memory-content"
                 data-testid="memory-content"

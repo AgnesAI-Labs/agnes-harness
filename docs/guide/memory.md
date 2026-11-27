@@ -16,7 +16,23 @@ A turn keeps any removal it has observed. If you restore an emptied or deleted f
 
 For optional read-only user preferences, create `$AGH_HOME/memory/user/MEMORY.md` yourself and enable `userEnabled` via the [SDK](../reference/api.md) admin method. User memory uses the same index storage limits and its separate context budget. Agent tools cannot change it or read another workspace's memory. With [Task experience](refinement.md#save-to-user-memory) on, lessons that hold in every workspace can be added to it automatically, as saved sections with marker lines like the paragraphs below; your own text always comes first in what the agent is shown, and a lesson that does not fit is not written.
 
-The supported SDK request `_agnes/v1/admin.memory` accepts `cwd`, an optional settings patch, or `file`, `content` and `baseHash` for an explicit human edit, or `saved` to manage saved task experience paragraphs (`{ action: 'list' | 'renew' | 'withdraw' | 'convert', paragraphId?, layer? }`, see below; `layer: 'user'` manages the lessons in user memory, without `convert`). Configure `indexMaxBytes`, `indexMaxLines`, `topicMaxBytes`, `totalMaxBytes`, `tokenBudget`, `userTokenBudget` and `userEnabled` here. Select an available workspace returned by `_agnes/v1/admin.context`. Settings and editor operations require local owner administration; plugin tools cannot self-enable memory.
+The supported SDK request `_agnes/v1/admin.memory` accepts `cwd`, an optional settings patch, or `file`, `content` and `baseHash` for an explicit human edit, or `deleteFile: { path, baseHash }` to delete a topic at its listed revision, or `saved` to manage saved task experience paragraphs (`{ action: 'list' | 'renew' | 'withdraw' | 'convert', paragraphId?, layer? }`, see below; `layer: 'user'` manages the lessons in user memory, without `convert`). Configure `indexMaxBytes`, `indexMaxLines`, `topicMaxBytes`, `totalMaxBytes`, `tokenBudget`, `userTokenBudget` and `userEnabled` here. Select an available workspace returned by `_agnes/v1/admin.context`. Settings and editor operations require local owner administration; plugin tools cannot self-enable memory.
+
+## Managing entries and topics
+
+In **Memory files**, each ordinary paragraph has expiry controls. Choose **Set expiry** or **Edit expiry** to select **+7d**, **+30d**, or a local date and time. **Clear expiry** removes the time limit. Other visibility rules still apply. **Delete entry** removes the paragraph. Editing a paragraph or changing its expiry marks it as human-authored and protects it from agent edits and deletion. Changes to a non-empty file become visible to agents on the next turn.
+
+To remove a topic, first remove its links from `MEMORY.md` and save the index. Choose **Delete** beside the topic and confirm. If the index still references the topic, the file stays intact. Owner controls work in every memory mode.
+
+The agent can call `memory_delete` with a flat topic filename or its workspace memory path. It can delete only an unreferenced topic. The index, empty topics, and topics containing hidden, managed or human-authored content are protected even in ask mode. After deletion the topic immediately disappears from the agent’s file reads, directory listings and `memory_recall` results in the same turn.
+
+The session checks tool permission for the destructive `memory_delete` call. In ask mode the memory provider also requires approval for the exact file revision.
+
+| Memory mode | Manual permission | Auto-review | Full access |
+| --- | --- | --- | --- |
+| Off | Denied | Denied | Denied |
+| Ask | Tool approval, then human approval for the revision | Tool review, then human approval for the revision | Automatically approves both |
+| Auto | Tool approval only | Tool review only | Automatically approves the tool call |
 
 ## Saved task experience
 

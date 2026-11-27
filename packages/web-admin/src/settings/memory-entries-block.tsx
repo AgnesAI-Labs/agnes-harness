@@ -85,9 +85,10 @@ export function MemoryEntriesBlock(props: {
                     key={days}
                     size="small"
                     disabled={disabled}
-                    onClick={() =>
+                    onClick={() => {
+                      setEditing(undefined)
                       onSave(setEntryExpiry(content, entry, utcSeconds(Date.now() + days * 86_400_000)))
-                    }
+                    }}
                   >
                     {t('entries.days', { days })}
                   </Button>
@@ -103,7 +104,10 @@ export function MemoryEntriesBlock(props: {
                 <Button
                   size="small"
                   disabled={disabled || !valid}
-                  onClick={() => onSave(setEntryExpiry(content, entry, timestamp))}
+                  onClick={() => {
+                    setEditing(undefined)
+                    onSave(setEntryExpiry(content, entry, timestamp))
+                  }}
                 >
                   {t('save')}
                 </Button>

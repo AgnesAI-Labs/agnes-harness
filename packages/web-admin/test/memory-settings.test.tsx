@@ -60,7 +60,11 @@ let saved: Saved[] = []
 /** Task experience promoted to user memory. */
 let userSaved: Saved[] = []
 
-function server(fail: (body: Record<string, unknown>) => boolean | string = () => false, userEnabled = true) {
+function server(
+  fail: (body: Record<string, unknown>) => boolean | string = () => false,
+  userEnabled = true,
+  topic?: string,
+) {
   const memory: Record<string, unknown>[] = []
   let mode: 'off' | 'ask' | 'auto' = 'off'
   vi.stubGlobal(
@@ -99,9 +103,12 @@ function server(fail: (body: Record<string, unknown>) => boolean | string = () =
         )
       if (asked?.layer === 'user') userSaved = list
       else saved = list
+      if (body.deleteFile) topic = undefined
+      const state = inspection(mode, userEnabled)
+      if (topic) state.files.push({ path: topic, hash: hash('c'), bytes: 10, lines: 1 })
       return Response.json({
         workspaces: [{ path: '/work/WorkLLM', available: true }],
-        inspection: inspection(mode, userEnabled),
+        inspection: state,
         ...(file ? { file } : {}),
         ...(asked ? { saved: { paragraphs: list } } : {}),
       })
@@ -371,11 +378,14 @@ it('edits expiry with the saved hash, retains the draft on conflict, and updates
       ['MEMORY_SECRET_LIKE_CONTENT', 'Remove credentials'],
     ] as const) {
       refusal = code
-      await act(async () => button('Save').click())
+      expect(section()?.querySelector('input')).toBeNull()
+      await act(async () => button('Set expiry').click())
+      await act(async () => button('+30d').click())
       expect(error()).toContain(hint)
     }
     expect(editor().value).toBe('- prefers tables')
-    expect(input.value).toBe(local)
+    expect(section()?.querySelector('input')).toBeNull()
+    await act(async () => button('Set expiry').click())
     refusal = ''
     await act(async () => button('+7d').click())
     expect(editor().value).toBe('<!-- expires_at: 2027-03-08T01:02:03Z -->\n- prefers tables')
@@ -754,6 +764,44 @@ it('user-layer RSI sections show validity and can be renewed or withdrawn', asyn
     expect(rows()).toHaveLength(1)
     // The workspace's own block is not shown when it holds nothing.
     expect(host.querySelector('[data-testid="memory-saved"]')).toBeNull()
+  } finally {
+    await unmount()
+  }
+})
+
+it('confirms deletion of a topic by its listed revision while memory is off', async () => {
+  const path = 'prefs.md'
+  let referenced = true
+  const requests = server((body) => !!body.deleteFile && referenced && 'MEMORY_TOPIC_REFERENCED', true, path)
+  const { host, unmount } = await render()
+  const button = (id: string) => host.querySelector<HTMLButtonElement>(`[data-testid="memory-${id}"]`)
+  const click = (id: string) => act(async () => button(id)!.click())
+  try {
+    expect(radio(host, 'off')?.checked).toBe(true)
+    await click('open')
+    expect(host.querySelectorAll('[data-testid="memory-delete-file"]')).toHaveLength(1)
+    await click('open-file')
+    await editContent(host, 'Unsaved draft')
+    expect(button('delete-file')?.disabled).toBe(true)
+    await editContent(host, '- prefers tables')
+    await click('delete-file')
+    await click('delete-cancel')
+    expect(requests.some((request) => request.deleteFile)).toBe(false)
+    await click('delete-file')
+    await click('delete-confirm')
+    expect(requests.at(-1)).toEqual({ cwd: '/work/WorkLLM', deleteFile: { path, baseHash: hash('c') } })
+    expect(button('error')?.textContent).toContain('MEMORY.md still links to this topic')
+    expect(button('actions')?.textContent).toContain(path)
+    expect(host.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('- prefers tables')
+    referenced = false
+    await click('delete-file')
+    await click('delete-confirm')
+    expect(button('files')?.textContent).not.toContain(path)
+    expect(button('open-index')).not.toBeNull()
+    expect(button('delete-file')).toBeNull()
+    expect(button('delete-confirm')).toBeNull()
+    expect(button('content')).toBeNull()
+    expect(button('error')).toBeNull()
   } finally {
     await unmount()
   }
