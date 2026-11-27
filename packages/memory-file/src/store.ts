@@ -1,6 +1,7 @@
 import { isUtf8 } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
 import {
+  type BigIntStats,
   chmodSync,
   closeSync,
   existsSync,
@@ -21,6 +22,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { MemoryEffectAdmission, MemoryFile, MemorySettings, MemorySource } from '@agnes/extension-api'
 import { openCanonicalFileSync, renameWriteThroughSync } from '@agnes/system-node'
+import { appendAudit, readAuditEntries } from './audit.js'
 import {
   defaults,
   fault,
@@ -35,8 +37,10 @@ import {
   validateRemovalContent,
 } from './content.js'
 import {
+  type DeleteMetadata,
   finishTopicDeletion,
   hasDeleteIntent,
+  ongoingMove,
   provisionalTopic,
   recoverTopic,
   retryBusy,
@@ -93,24 +97,33 @@ export class MemoryStore {
     readonly protectedRoot: string,
     readonly root: string,
     private readonly layer: 'workspace' | 'user' = 'workspace',
+    private readonly refreshRecoveredIndex?: () => void,
   ) {}
 
   provisionallyDeleted(path: string): boolean {
-    return provisionalTopic(this.root) === path
+    return provisionalTopic(this.root)?.leaf === path
   }
   // Reads are synchronous. Take the same SQLite lock before replaying an abandoned intent.
-  private recoverBeforeRead(): void {
-    if (heldLocks.has(this.root) || !hasDeleteIntent(this.root)) return
+  private recoverBeforeRead() {
+    if (heldLocks.has(this.root)) return provisionalTopic(this.root)
+    if (!hasDeleteIntent(this.root)) return undefined
     const db = this.lockDatabase()
     try {
       try {
         db.exec('BEGIN EXCLUSIVE')
       } catch (error) {
-        if ([5, 6].includes((error as { errcode?: number }).errcode ?? 0)) throw fault('MEMORY_BUSY')
+        if ([5, 6].includes((error as { errcode?: number }).errcode ?? 0)) {
+          return ongoingMove(this)
+        }
         throw error
       }
-      recoverTopic(this)
-      db.exec('COMMIT')
+      heldLocks.add(this.root)
+      try {
+        recoverTopic(this, 'read')
+        db.exec('COMMIT')
+      } finally {
+        heldLocks.delete(this.root)
+      }
     } finally {
       db.close()
     }
@@ -119,13 +132,30 @@ export class MemoryStore {
     safe(this.protectedRoot, this.root)
     mkdirSync(this.root, { recursive: true, mode: 0o700 })
   }
-  private readText(path: string, limit: number, limitCode: string, requireUtf8 = false): string | undefined {
-    this.recoverBeforeRead()
-    const absolute = join(this.root, path)
+  private readPath(path: string): string {
+    const moved = this.recoverBeforeRead()
+    const live = join(this.root, path)
+    return moved?.leaf === path && !lstatSync(live, { throwIfNoEntry: false })
+      ? join(this.root, moved.tombstone)
+      : live
+  }
+  private readText(
+    path: string,
+    limit: number,
+    limitCode: string,
+    requireUtf8 = false,
+    expected?: BigIntStats,
+  ): string | undefined {
+    const absolute = this.readPath(path)
     safe(this.protectedRoot, absolute)
     let fd: number | undefined
     try {
       fd = openCanonicalFileSync(absolute)
+      if (expected) {
+        const stat = fstatSync(fd, { bigint: true })
+        if (!stat.isFile() || stat.nlink !== 1n || stat.dev !== expected.dev || stat.ino !== expected.ino)
+          throw fault('MEMORY_CONFLICT')
+      }
       const { size, nlink } = fstatSync(fd)
       if (nlink !== 1) throw fault('MEMORY_SCOPE_DENIED')
       if (size > limit) throw fault(limitCode)
@@ -153,8 +183,7 @@ export class MemoryStore {
   }
   fileSize(path: string): number | undefined {
     name(path)
-    this.recoverBeforeRead()
-    const absolute = join(this.root, path)
+    const absolute = this.readPath(path)
     safe(this.protectedRoot, absolute)
     try {
       return statSync(absolute).size
@@ -165,7 +194,7 @@ export class MemoryStore {
   }
   files(purpose: 'view' | 'commit' = 'view', allowOverCount = false): MemoryFile[] {
     safe(this.protectedRoot, this.root)
-    this.recoverBeforeRead()
+    const moved = this.recoverBeforeRead()
     if (!existsSync(this.root)) return []
     const userView = this.layer === 'user' && purpose === 'view'
     const paths = readdirSync(this.root, { withFileTypes: true })
@@ -175,7 +204,9 @@ export class MemoryStore {
           : entry.name.endsWith('.md'),
       )
       .map((entry) => entry.name)
-      .sort()
+    if (moved && !paths.includes(moved.leaf) && this.fileSize(moved.leaf) !== undefined)
+      paths.push(moved.leaf)
+    paths.sort()
     if (paths.length <= MAX_FILES) return paths.map((path) => this.read(path))
     if (!allowOverCount) throw new FileCountLimit()
     // Management can shrink an over-count store. Keep the ordinary enumeration's hard read bound.
@@ -356,16 +387,55 @@ export class MemoryStore {
       )
     })
   }
+  private publishDeletion(leaf: string, source: MemorySource, fallback?: readonly MemoryFile[]) {
+    this.atomic(join(this.root, 'writer.json'), JSON.stringify(source))
+    const acknowledged = { ...(this.acknowledged() ?? hashes(fallback ?? this.files('commit', true))) }
+    delete acknowledged[leaf]
+    this.acknowledge(acknowledged)
+  }
+
+  reconcileDeletedTopic(leaf: string, metadata: DeleteMetadata) {
+    const meta = new MetaStore(this)
+    const { source, origin, actor, baseHash, auditSeq } = metadata
+    forgetProvenance(meta, leaf)
+    this.publishDeletion(leaf, source)
+    this.refreshRecoveredIndex?.()
+    const recorded = readAuditEntries(meta).some(
+      (entry) =>
+        entry.seq > (auditSeq ?? 0) &&
+        entry.path === leaf &&
+        entry.beforeHash === baseHash &&
+        entry.action === 'delete',
+    )
+    if (!recorded)
+      appendAudit(meta, {
+        at: new Date().toISOString(),
+        path: leaf,
+        action: 'delete',
+        origin,
+        actor,
+        sessionKey: source.sessionKey,
+        ...(source.maintenance ? { maintenance: source.maintenance } : {}),
+        beforeHash: baseHash,
+        afterHash: hash('delete:' + baseHash),
+      })
+  }
+
   async deleteFile(
     path: string,
     baseHash: string,
     source: MemorySource,
-    agentMode: false | 'ask' | 'auto',
+    owner: { actor: string } | 'ask' | 'auto',
     prepare: (before: MemoryFile, candidate: MemoryFile) => () => void,
     signal?: AbortSignal,
     admission?: MemoryEffectAdmission,
     onPreCommitRefusal?: (error: unknown) => never,
   ): Promise<void> {
+    const agentMode = typeof owner === 'string' && owner
+    const actor =
+      typeof owner === 'object'
+        ? owner.actor
+        : `agent:${source.sessionKey}${source.toolUseId ? ':' + source.toolUseId : ''}`
     await this.locked(
       async () => {
         const assertActive = () => {
@@ -406,32 +476,37 @@ export class MemoryStore {
         await unlinkTopic(
           this,
           path,
+          {
+            baseHash,
+            source,
+            origin: agentMode ? 'agent' : 'human',
+            actor,
+            auditSeq: readAuditEntries(new MetaStore(this)).at(-1)?.seq ?? 0,
+          },
           (tombstone, identity) => {
             if (identity.dev !== checked.identity.dev || identity.ino !== checked.identity.ino) return false
-            const content = this.readText(basename(tombstone), MAX_FILE_BYTES, 'MEMORY_CONFLICT', true)
+            const content = this.readText(
+              basename(tombstone),
+              MAX_FILE_BYTES,
+              'MEMORY_CONFLICT',
+              true,
+              identity,
+            )
             return content !== undefined && hash(content) === baseHash
           },
           assertActive,
           () => forgetProvenance(new MetaStore(this), path),
         )
-        let failed = false
-        for (const publish of [
-          () => finishTopicDeletion(this.root),
-          () => this.atomic(join(this.root, 'writer.json'), JSON.stringify(source)),
-          () => {
-            const acknowledged = { ...(this.acknowledged() ?? hashes(checked.all)) }
-            delete acknowledged[path]
-            this.acknowledge(acknowledged)
-          },
-          checked.after,
-        ]) {
+        try {
           try {
-            await publish()
-          } catch {
-            failed = true
+            this.publishDeletion(path, source, checked.all)
+          } finally {
+            checked.after()
           }
+          await finishTopicDeletion(this.root)
+        } catch {
+          throw fault('MEMORY_COMMITTED_METADATA_FAILED')
         }
-        if (failed) throw fault('MEMORY_COMMITTED_METADATA_FAILED')
       },
       signal,
       onPreCommitRefusal,

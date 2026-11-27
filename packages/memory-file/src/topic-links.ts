@@ -13,10 +13,11 @@ type LinkState = Readonly<{ status: 'missing' | 'valid' | 'corrupt'; bindings: M
 const filename = 'links.json'
 const digest = /^[0-9a-f]{64}$/u
 const destination = /(?:<([^<>\s#]+\.md)(?:#[^<>\s]*)?>|([^()<>\s#]+\.md)(?:#[^()\s]*)?)/u.source
-const title = /(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?/u.source
-const inline = String.raw`\]\(${destination}${title}\)`
+const padding = /[ \t]*(?:\r?\n[ \t]*)?/u.source
+const title = /(?:(?:[ \t]+|[ \t]*\r?\n[ \t]*)(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?/u.source
+const inline = String.raw`\]\(${padding}${destination}${title}${padding}\)`
 const wiki = /\[\[([^\]#|\n]+\.md)(?:#[^\]|\n]*)?(?:\|[^\]\n]*)?\]\]/u.source
-const definition = String.raw`^ {0,3}\[[^\]\n]+\]:\s*${destination}(?=\s|$)`
+const definition = String.raw`^(?: {0,3}> ?)* {0,3}\[[^\]\n]+\]:\s*${destination}(?=\s|$)`
 const links = new RegExp([inline, wiki, definition].join('|'), 'gimu')
 
 export function* topicLinks(content: string, firstLine = true) {

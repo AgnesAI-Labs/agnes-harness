@@ -290,7 +290,9 @@ function captureTurnSnapshot(args: {
 
 export function openMemory(input: OpenMemoryInput): MemorySession {
   const paths = roots(input.home, input.workspaceRoot)
-  const store = new MemoryStore(paths.protectedRoot, paths.root)
+  const store: MemoryStore = new MemoryStore(paths.protectedRoot, paths.root, 'workspace', () => {
+    retrievalOf(pipeline)?.refreshIndex(viewCtx(clock(), store.configuration(), true))
+  })
   const user = new MemoryStore(paths.protectedRoot, paths.userRoot, 'user')
   const meta = new MetaStore(store)
   const userMeta = new MetaStore(user)
@@ -462,16 +464,17 @@ export function openMemory(input: OpenMemoryInput): MemorySession {
     },
     async deleteFile(path, baseHash, options) {
       const source = { sessionKey: input.sessionKey, turn: 0 }
+      const actor = options?.actor?.trim() || 'human'
       await store.deleteFile(
         path,
         baseHash,
         source,
-        false,
+        { actor },
         commitHooks(
           pipeline,
           {
             origin: 'human',
-            actor: options?.actor?.trim() || 'human',
+            actor,
             path,
             via: 'edit',
             layer: 'workspace',
