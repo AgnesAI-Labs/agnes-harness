@@ -14,10 +14,11 @@ const filename = 'links.json'
 const digest = /^[0-9a-f]{64}$/u
 const destination = /(?:<([^<>\s#]+\.md)(?:#[^<>\s]*)?>|([^()<>\s#]+\.md)(?:#[^()\s]*)?)/u.source
 const padding = /[ \t]*(?:\r?\n[ \t]*)?/u.source
-const title = /(?:(?:[ \t]+|[ \t]*\r?\n[ \t]*)(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?/u.source
+const titleBody = (delim: string) => `(?:[^${delim}\\\\\\r\\n]|\\\\.|\\r?\\n(?![ \\t]*\\r?\\n))*`
+const title = `(?:(?:[ \\t]+|[ \\t]*\\r?\\n[ \\t]*)(?:"${titleBody('"')}"|'${titleBody("'")}'|\\(${titleBody('()')}\\)))?`
 const inline = String.raw`\]\(${padding}${destination}${title}${padding}\)`
 const wiki = /\[\[([^\]#|\n]+\.md)(?:#[^\]|\n]*)?(?:\|[^\]\n]*)?\]\]/u.source
-const definition = String.raw`^(?: {0,3}> ?)* {0,3}\[[^\]\n]+\]:\s*${destination}(?=\s|$)`
+const definition = String.raw`^(?: {0,3}>[ \t]?)* {0,3}\[[^\]\n]+\]:\s*${destination}(?=\s|$)`
 const links = new RegExp([inline, wiki, definition].join('|'), 'gimu')
 
 export function* topicLinks(content: string, firstLine = true) {

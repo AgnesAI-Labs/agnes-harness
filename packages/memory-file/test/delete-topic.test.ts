@@ -485,3 +485,73 @@ it.each([
   expect(isMemoryPreEffectRefusal(error, source)).toBe(true)
   expect(await readFile(path, 'utf8')).toBe('agent topic')
 })
+
+it('allows turning memory off while committed-deletion audit metadata is blocked and preserves the intent', async () => {
+  const { session, path } = await setup()
+  const saved = await session.editFile('prefs.md', 'topic body', hash(''))
+  const auditPath = join(session.root, 'meta', 'audit.jsonl')
+  await rm(auditPath, { force: true })
+  await mkdir(auditPath)
+  await expect(session.deleteFile!('prefs.md', saved.hash)).rejects.toMatchObject({
+    code: 'MEMORY_COMMITTED_METADATA_FAILED',
+  })
+  const journal = join(session.root, 'delete-intent.json')
+  expect(existsSync(journal)).toBe(true)
+  const inspected = await session.configure({ mode: 'off' })
+  expect(inspected.settings.mode).toBe('off')
+  expect(existsSync(journal)).toBe(true)
+  await rm(auditPath, { recursive: true })
+  expect((await session.inspect()).files).toEqual([])
+  expect(existsSync(journal)).toBe(false)
+  const audit = (await readFile(auditPath, 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+  expect(audit.filter((entry) => entry.action === 'delete' && entry.path === 'prefs.md')).toHaveLength(1)
+  expect(existsSync(path)).toBe(false)
+})
+
+it('reconciles a verified post-unlink intent even when the topic name is recreated before recovery', async () => {
+  const { session, path } = await setup()
+  const saved = await session.editFile('prefs.md', 'old topic', hash(''))
+  await rm(path)
+  await writeFile(path, 'recreated independently')
+  const journal = join(session.root, 'delete-intent.json')
+  await writeFile(
+    journal,
+    JSON.stringify({
+      leaf: 'prefs.md',
+      tombstone: 'prefs.md.12345678-1234-1234-1234-123456789abc.del.tmp',
+      baseHash: saved.hash,
+      origin: 'human',
+      actor: 'human',
+      source: { sessionKey: 'work', turn: 0 },
+      phase: 'verified',
+    }),
+  )
+  expect((await session.readFile('prefs.md')).content).toBe('recreated independently')
+  expect(existsSync(journal)).toBe(false)
+  const ack = JSON.parse(await readFile(join(session.root, 'acknowledged.json'), 'utf8')) as {
+    files: Record<string, string>
+  }
+  expect(ack.files['prefs.md']).toBeUndefined()
+  const audit = (await readFile(join(session.root, 'meta', 'audit.jsonl'), 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+  expect(audit.filter((entry) => entry.action === 'delete' && entry.beforeHash === saved.hash)).toHaveLength(
+    1,
+  )
+})
+
+it.each(['[label](prefs.md "line one\nline two")', '>\t[ref]: prefs.md\n\n[label][ref]'])(
+  'blocks deletion for multiline title and tab-blockquote links: %s',
+  async (indexBody) => {
+    const { session } = await setup()
+    const topic = await session.editFile('prefs.md', 'referenced body', hash(''))
+    await session.editFile('MEMORY.md', indexBody, hash(''))
+    await expect(session.deleteFile!('prefs.md', topic.hash)).rejects.toMatchObject({
+      code: 'MEMORY_TOPIC_REFERENCED',
+    })
+  },
+)

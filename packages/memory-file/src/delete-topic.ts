@@ -28,7 +28,7 @@ export type DeleteMetadata = {
   source: MemorySource
   auditSeq?: number
 }
-type DeleteIntent = MovedTopic & DeleteMetadata & { phase: 'moved' | 'unlinked' }
+type DeleteIntent = MovedTopic & DeleteMetadata & { phase: 'moved' | 'verified' | 'unlinked' }
 const pending = new Map<string, MovedTopic>()
 export const provisionalTopic = (root: string) => pending.get(root)
 
@@ -116,7 +116,7 @@ function readIntent(store: MemoryStore): DeleteIntent | MovedTopic | undefined {
     (source.toolUseId !== undefined && typeof source.toolUseId !== 'string') ||
     (source.maintenance !== undefined && typeof source.maintenance !== 'string') ||
     (auditSeq !== undefined && (!Number.isSafeInteger(auditSeq) || auditSeq < 0)) ||
-    (phase !== 'moved' && phase !== 'unlinked')
+    (phase !== 'moved' && phase !== 'verified' && phase !== 'unlinked')
   )
     throw fault('MEMORY_INVALID_METADATA')
   return { leaf, tombstone, baseHash, origin, actor, source, phase, auditSeq }
@@ -124,7 +124,9 @@ function readIntent(store: MemoryStore): DeleteIntent | MovedTopic | undefined {
 
 export function ongoingMove(store: MemoryStore) {
   const intent = readIntent(store)
-  return intent && (!('phase' in intent) || intent.phase === 'moved') ? intent : undefined
+  return intent && (!('phase' in intent) || intent.phase === 'moved' || intent.phase === 'verified')
+    ? intent
+    : undefined
 }
 
 /** Called only with the exclusive store lock. Older intents have no post-unlink metadata. */
@@ -133,21 +135,19 @@ export function recoverTopic(store: MemoryStore, purpose: 'read' | 'write' = 'wr
   if (!intent) return
   const original = join(store.root, intent.leaf)
   const tombstone = join(store.root, intent.tombstone)
-  if (
-    !('phase' in intent) ||
-    (intent.phase === 'moved' &&
-      (lstatSync(tombstone, { throwIfNoEntry: false }) || lstatSync(original, { throwIfNoEntry: false })))
-  ) {
+  const hasTombstone = !!lstatSync(tombstone, { throwIfNoEntry: false })
+  const hasOriginal = !!lstatSync(original, { throwIfNoEntry: false })
+  if (!('phase' in intent) || hasTombstone || (intent.phase === 'moved' && hasOriginal)) {
     restore(original, tombstone)
   } else {
     try {
-      if (intent.phase === 'moved') {
+      if (intent.phase !== 'unlinked') {
         syncDirectorySync(store.root)
         store.atomic(join(store.root, intentName), JSON.stringify({ ...intent, phase: 'unlinked' }))
       }
       store.reconcileDeletedTopic(intent.leaf, intent)
     } catch (error) {
-      // The unlink is committed. Readers can use live files while the journal awaits repair.
+      // The unlink is committed. Readers and restrictive settings changes can proceed while the journal awaits repair.
       if (purpose === 'read') return
       throw error
     }
@@ -172,6 +172,7 @@ export async function unlinkTopic(
   const original = join(store.root, leaf)
   const tombstone = join(store.root, intent.tombstone)
   const journal = join(store.root, intentName)
+  const verified = JSON.stringify({ ...intent, phase: 'verified' })
   const unlinked = JSON.stringify({ ...intent, phase: 'unlinked' })
   if (Buffer.byteLength(unlinked) > maxIntentBytes) throw fault('MEMORY_INVALID_METADATA')
   store.atomic(journal, JSON.stringify(intent))
@@ -190,6 +191,8 @@ export async function unlinkTopic(
     await retryBusy(() => {
       verify()
       prune()
+      verify()
+      store.atomic(journal, verified)
       verify()
       unlinkSync(tombstone)
       pending.delete(store.root)

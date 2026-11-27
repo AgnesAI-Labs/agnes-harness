@@ -194,18 +194,35 @@ export class MemoryStore {
   }
   files(purpose: 'view' | 'commit' = 'view', allowOverCount = false): MemoryFile[] {
     safe(this.protectedRoot, this.root)
-    const moved = this.recoverBeforeRead()
-    if (!existsSync(this.root)) return []
     const userView = this.layer === 'user' && purpose === 'view'
-    const paths = readdirSync(this.root, { withFileTypes: true })
-      .filter((entry) =>
-        userView && entry.name !== 'MEMORY.md'
-          ? entry.isFile() && isMemoryName(entry.name) && (this.fileSize(entry.name) ?? 0) <= MAX_FILE_BYTES
-          : entry.name.endsWith('.md'),
+    let paths: string[] = []
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const moved = this.recoverBeforeRead()
+      if (!existsSync(this.root)) return []
+      const entries = readdirSync(this.root, { withFileTypes: true })
+      const sawDeleteArtifact = entries.some(
+        (entry) => entry.name === 'delete-intent.json' || entry.name.endsWith('.del.tmp'),
       )
-      .map((entry) => entry.name)
-    if (moved && !paths.includes(moved.leaf) && this.fileSize(moved.leaf) !== undefined)
-      paths.push(moved.leaf)
+      paths = entries
+        .filter((entry) =>
+          userView && entry.name !== 'MEMORY.md'
+            ? entry.isFile() && isMemoryName(entry.name) && (this.fileSize(entry.name) ?? 0) <= MAX_FILE_BYTES
+            : entry.name.endsWith('.md'),
+        )
+        .map((entry) => entry.name)
+      const after = this.recoverBeforeRead()
+      if (
+        attempt < 3 &&
+        ((!moved && sawDeleteArtifact) ||
+          after?.leaf !== moved?.leaf ||
+          after?.tombstone !== moved?.tombstone)
+      )
+        continue
+      const provisional = after ?? moved
+      if (provisional && !paths.includes(provisional.leaf) && this.fileSize(provisional.leaf) !== undefined)
+        paths.push(provisional.leaf)
+      break
+    }
     paths.sort()
     if (paths.length <= MAX_FILES) return paths.map((path) => this.read(path))
     if (!allowOverCount) throw new FileCountLimit()
@@ -339,6 +356,7 @@ export class MemoryStore {
     action: () => T | Promise<T>,
     signal?: AbortSignal,
     onLockRefusal?: (error: unknown) => never,
+    recoveryPurpose: 'read' | 'write' = 'write',
   ): Promise<T> {
     signal?.throwIfAborted()
     this.ensure()
@@ -364,7 +382,7 @@ export class MemoryStore {
       }
       try {
         heldLocks.add(this.root)
-        if (hasDeleteIntent(this.root)) await retryBusy(() => recoverTopic(this))
+        if (hasDeleteIntent(this.root)) await retryBusy(() => recoverTopic(this, recoveryPurpose))
         const value = action()
         const result = value instanceof Promise ? await value : value
         db.exec('COMMIT')
@@ -380,25 +398,47 @@ export class MemoryStore {
     }
   }
   async configure(input: Partial<MemorySettings>): Promise<void> {
-    await this.locked(() => {
-      this.atomic(
-        join(this.root, 'settings.json'),
-        JSON.stringify(settings({ ...this.configuration(), ...input })),
-      )
-    })
+    const restrictive =
+      input.mode === 'off' ||
+      (input.mode === undefined && input.userEnabled === false) ||
+      (input.mode === 'ask' &&
+        (() => {
+          try {
+            return this.configuration().mode === 'auto'
+          } catch {
+            return false
+          }
+        })())
+    await this.locked(
+      () => {
+        this.atomic(
+          join(this.root, 'settings.json'),
+          JSON.stringify(settings({ ...this.configuration(), ...input })),
+        )
+      },
+      undefined,
+      undefined,
+      restrictive ? 'read' : 'write',
+    )
   }
-  private publishDeletion(leaf: string, source: MemorySource, fallback?: readonly MemoryFile[]) {
+  private publishDeletion(
+    leaf: string,
+    source: MemorySource,
+    fallback?: readonly MemoryFile[],
+    onlyIfHash?: string,
+  ) {
     this.atomic(join(this.root, 'writer.json'), JSON.stringify(source))
     const acknowledged = { ...(this.acknowledged() ?? hashes(fallback ?? this.files('commit', true))) }
-    delete acknowledged[leaf]
+    if (onlyIfHash === undefined || acknowledged[leaf] === onlyIfHash) delete acknowledged[leaf]
     this.acknowledge(acknowledged)
   }
 
   reconcileDeletedTopic(leaf: string, metadata: DeleteMetadata) {
     const meta = new MetaStore(this)
     const { source, origin, actor, baseHash, auditSeq } = metadata
-    forgetProvenance(meta, leaf)
-    this.publishDeletion(leaf, source)
+    const recreated = !!lstatSync(join(this.root, leaf), { throwIfNoEntry: false })
+    if (!recreated) forgetProvenance(meta, leaf)
+    this.publishDeletion(leaf, source, undefined, recreated ? baseHash : undefined)
     this.refreshRecoveredIndex?.()
     const recorded = readAuditEntries(meta).some(
       (entry) =>
