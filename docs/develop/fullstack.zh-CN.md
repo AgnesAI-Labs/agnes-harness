@@ -4,63 +4,86 @@
 
 [文档导航](../README.zh-CN.md) · 前提：[后端](backend.zh-CN.md)与[前端](frontend.zh-CN.md)
 
-这一步把界面和后端连起来。完成后，面板会显示后端返回的版本；你还会验证更新、回滚和撤权后的变化。它可以作为只读业务状态面板的起点。
+在官方 Web 工作台运行[显式采用的服务面板](../../examples/packages/approved-service-panel/package.json)。你将审阅应用，在真实会话中打开页签，并看到只读查询返回的 `backend 1.0.0`。示例使用模拟数据，无需模型账号。
 
-复用 [client-service-panel/v1](../../examples/packages/client-service-panel/v1/package.json)。当前示例由**同一个受信 Cordis 行注册 query service，并声明对应的浏览器模块**；浏览器通过同源 BFF 发起受限调用。
+<a id="运行前显式配置能力上限"></a>
 
-## 结构与调用链
+## 启动隔离工作台
 
-```text
-package.json
-  agnes.plugins → runtime 命名导出（后端 Cordis 行）
-  agnes.clientDescriptors → 同 rowId 的 agnes.client.json
-extensions/main/index.mjs
-  runtime.apply(ctx) → ctx.services.register(panel.version)
-extensions/main/client/index.js
-  ctx.agnes.services.call('panel.version', {}) → 显示版本
-```
-
-浏览器 Context → 当前 client row 的 service allow-list → 本地同源 BFF → daemon 的身份/状态校验 → worker/Host 的行服务授权 → handler。
-
-`ctx.provide()` 只在本端 Context 发布 Cordis 依赖，不会自动成为远程服务。后端行应通过 `ctx.services.register()` 注册受 Host 约束的服务。不要创建第二个浏览器 SDK/daemon socket 来绕过 BFF。
-
-## 运行前显式配置能力上限
-
-当前 local-dev 与 enterprise 模板包含 `services`。旧版或自定义配置档需在 `policy.capabilityCeiling` 中显式允许它，同时保留其他条目与部署限制；包信任不授予该能力。在隔离实例中先检查解析后的能力上限。启动策略发生变化时，先结束任务，再停止并重启该实例。
-
-启动后 inspect、install、trust、enable：
+先[构建本地发行版](../guide/install.zh-CN.md)。在已构建的源码仓库中，为本次演练创建独立的 home 和工作目录，再启动 Web：
 
 ```sh
-node agnes.mjs package inspect file:./examples/packages/client-service-panel/v1
-node agnes.mjs install file:./examples/packages/client-service-panel/v1
+export AGH_SOURCE="$PWD"
+export AGH_HOME="$(mktemp -d /tmp/agh-service-panel.XXXXXX)"
+export AGH_HOME="$(cd "$AGH_HOME" && pwd -P)"
+export AGNES_PROFILE=local-dev
+export AGH_DEMO_WORKSPACE="$(mktemp -d /tmp/agh-service-panel-work.XXXXXX)"
+printf 'AGH_SOURCE=%s\nAGH_HOME=%s\nWorkspace=%s\n' "$AGH_SOURCE" "$AGH_HOME" "$AGH_DEMO_WORKSPACE"
+mise exec -- node agnes.mjs serve --cwd "$AGH_DEMO_WORKSPACE" --port 4198
 ```
 
-后续 trust/enable 使用实际预览摘要，流程见[插件管理](../guide/packages.zh-CN.md)。
+在独立的浏览器配置中打开命令输出的本地地址。默认 `local-dev` 配置允许 `services`。如果自定义部署不允许，请停止演练，不要为教程放宽策略。
 
-## 后端与前端各声明一次
+## 安装并审阅应用
 
-[包声明](../../examples/packages/client-service-panel/v1/package.json)中的 `agnes.plugins` 声明后端行，`agnes.clientDescriptors` 将[客户端描述](../../examples/packages/client-service-panel/v1/extensions/main/agnes.client.json)绑定到同一行。描述文件的 `client.services` 只列出浏览器可调用的服务名；Host 仍核对服务是否由该行真实注册并允许当前会话访问。
+1. 在第二个终端，把下面两处路径替换为第一个终端打印的实际路径，再从源码安装。市场不会自动上架这个教程包。保留该终端用于清理。
 
-[后端入口](../../examples/packages/client-service-panel/v1/extensions/main/index.mjs)通过 `ctx.services.register` 定义 `panel.version` 的 `kind: query`、输入/输出 Schema、超时和最大结果字节；handler 返回当前示例版本。[浏览器入口](../../examples/packages/client-service-panel/v1/extensions/main/client/index.js)使用 `ctx.agnes.services.call('panel.version', {})`；不会收到 Host grant 或 daemon 凭据。
+   ```sh
+   export AGH_SOURCE='/absolute/path/to/agnes-harness'
+   export AGH_HOME='/tmp/agh-service-panel.your-suffix'
+   export AGNES_PROFILE=local-dev
+   cd "$AGH_SOURCE"
+   mise exec -- node agnes.mjs plugins add "$AGH_SOURCE/examples/packages/approved-service-panel"
+   ```
 
-调用要求当前会话。启用插件后在 Web 配置模型并新建会话，使其绑定已发布版本；选中该会话再刷新页面，让 apply 在会话就绪后执行。示例在 apply 时只查询一次；无会话时显示 `unavailable`，不会在后来选会话后自动重试。这是最小样例的限制，正式应用应围绕当前会话生命周期安排刷新。
+2. 审阅来源、完整性摘要和所需能力，再确认安装、信任并启用。此时后端可以运行，但官方工作台不会加载原生客户端或显示页签。信任插件不等于批准其原生界面。
+3. 在隔离浏览器中打开工作台。在首次运行引导中选择 **Demo**，再选中刚创建的临时工作目录。
+4. 打开**设置 → 应用**，预览本教程的候选应用。由于没有声明品牌，候选项显示官方名称 **Agnes Harness**。展开**技术详情**，核对 `packageId` 为 `@agnes-examples/approved-service-panel`、版本为 `1.0.0`，且来源和完整性摘要与安装时一致。
+5. 检查 `declaration.workbench.tabs` 只有一个 `page` 页签，指向 `@agnes-examples/approved-service-panel#service-version`，且 `replacedRoles` 为空。示例不更改官方首页、导航、皮肤或默认智能体。核对无误再点击**采用**。每个 profile 同一时间只能采用一个应用，不要在需要保留现有应用的 profile 中演练。
 
-成功显示 `backend 1.0.0`；更新、信任并启用 v2 后，新建会话核对前后端均为 `2.0.0`；v1 会话保留原代码。只显示前端 v2 不能证明后端已切换。
+## 在会话中读取结果
 
-## 失败与清理
+1. 新建对话，发送一条无副作用的消息，例如 `查看服务面板教程`，等待 Demo 回复。请在启用插件后创建会话，使其后端代次包含本示例。
+2. 打开右侧**工作台**，选择**服务版本**。如果页签折叠，请在**更多**中查找。会话就绪且后端返回结果后，页面显示 `backend 1.0.0`。
+3. 保持该会话选中并刷新页面，必要时重新打开页签。再创建第二个 Demo 对话，在两个会话之间切换。页面会等待所选会话就绪并重新读取。如果当前会话不可用，页面不能显示其他会话的结果。
 
-所选版本缺少后端行、关闭对应浏览器行、当前授权被拒绝、缺少 allow-list 或当前会话，都应拒绝服务调用；前端会显示 unavailable。普通插件的安装代码不能自行授予 `services`。
+<a id="结构与调用链"></a>
+<a id="后端与前端各声明一次"></a>
 
-禁用或移除阻止新会话绑定该贡献；保留的会话继续使用原后端代码与配套浏览器模块，仍须通过当前授权检查。回滚后核对预览摘要，显式重新信任并启用恢复的版本，再用新会话检查。回滚不撤销外部业务数据变更；显式迁移与快照保留见[热更新](../extend/hot-reload.zh-CN.md)。不要把该 query 样例改成写操作却保留 `kind: query`；有副作用服务另需 effect/命令身份与授权合同。
+## 在源码中追踪调用
 
-## 验证命令
+- [包声明](../../examples/packages/approved-service-panel/package.json)只声明一个后端 Cordis 行。`agnes.clientDescriptors` 通过相同的 `rowId` 绑定 [profile 客户端描述](../../examples/packages/approved-service-panel/client/agnes.client.json)。工作台页签引用描述中的 `homeEntries` 页面，不声明全局槽位，也不替换界面角色。
+- [后端入口](../../examples/packages/approved-service-panel/index.mjs)通过 `ctx.services.register()` 注册 `approved.panel.version`。该会话查询接收空对象，返回含版本字符串的对象，并限制超时和结果大小。查询不写入数据，也不访问外部系统。`ctx.provide()` 本身只发布本地 Cordis 依赖。
+- [页面](../../examples/packages/approved-service-panel/client/index.js)通过同源浏览器桥接调用 `ctx.agnes.services.call('approved.panel.version', {})`。客户端描述只允许这个服务名。daemon 先核对获准的客户端行及服务归属，Host 再检查所选会话并调用处理函数。页面不会获得 daemon 凭据或 Host 授权。
+- 页面订阅会话就绪状态和客户端贡献的可用状态。仅在会话就绪时查询，也只展示与当前两份状态快照对应的结果。页签卸载时退订，丢弃尚未完成的结果。
+
+<a id="失败与清理"></a>
+
+## 恢复官方界面
+
+如果会话已就绪但显示**服务不可用**，检查包是否仍启用、应用是否仍处于采用状态。如果会话早于安装，请新建会话，不要修改旧会话的后端代次。
+
+在隔离浏览器中打开工作台本地地址下的 `/?admin`，选择**恢复官方界面**。回到对话，按提示刷新。页签消失，官方工作台仍可用。恢复操作会清除该 profile 的应用选择和单独设置的界面选择，但不会停用包或修改已保存的会话。恢复地址本身不授予权限。
+
+如果 Web 无法打开，用第二个终端清除应用选择。如果已在 Web 中**恢复官方界面**，跳过清除命令。保留隔离 home 的环境变量，再单独停用插件：
 
 ```sh
-pnpm exec vitest run tools/public-docs/examples.test.ts packages/host/test/assemble/dynamic-client-extension.test.ts packages/daemon-admin/test/client-modules.test.ts --maxWorkers=1
+mise exec -- node agnes.mjs app clear --profile local-dev
+mise exec -- node agnes.mjs plugins disable @agnes-examples/approved-service-panel
 ```
 
-该组合覆盖示例模块、Host 装配撤权和 daemon 浏览器调用边界；完整 browser → BFF → daemon → worker → Host 的可选验收程序为 [web-workbench.mjs](../../tools/acceptance/web-workbench.mjs)，实际运行版本与覆盖范围单列于[验证记录](../maintainers/verification.zh-CN.md)。
+在第一个终端按 Ctrl-C 停止 `serve`。再回到第二个终端，运行 `mise exec -- node agnes.mjs daemon stop` 停止本次隔离 daemon。
 
-事实源：[Host 动态 client 扩展](../../packages/host/src/runtime/assemble/extension-rows.ts)、[动态装配测试](../../packages/host/test/assemble/dynamic-client-extension.test.ts)、[ClientContext 的服务门控](../../packages/web-client/src/client-module.ts)。
+如果启动 Web 时提示 daemon 的来源地址不同，仅停止本次隔离 home 下的 daemon，再重试原 `serve` 命令。不要通过修改信任或准入设置来显示示例。完整合同见[应用采用与恢复](../extend/applications.zh-CN.md)。
 
-[Profile 服务与持久通知](profile-services.zh-CN.md)支持会话之外的操作。
+<a id="验证命令"></a>
+
+## 检查旧版服务测试样本
+
+[v1](../../examples/packages/client-service-panel/v1/package.json) 和 [v2](../../examples/packages/client-service-panel/v2/package.json) 是独立测试样本，用于覆盖后端版本、会话代次固定和撤权。它们不提供可采用的应用页面，普通安装不会让其原生界面进入官方工作台。可继续运行这些 API 和生命周期测试：
+
+```sh
+mise exec -- node tools/toolchain/run.mjs exec vitest run tools/public-docs/examples.test.ts packages/host/test/assemble/dynamic-client-extension.test.ts packages/daemon-admin/test/client-modules.test.ts --maxWorkers=1
+```
+
+这些测试覆盖样本注册和授权，不能替代上面的真实浏览器步骤。会话以外的操作请参阅 [Profile 服务与持久通知](profile-services.zh-CN.md)。
