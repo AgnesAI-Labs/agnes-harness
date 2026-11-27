@@ -93,6 +93,8 @@ The schema declares structural bounds and exports `X_AGNES_UI_LIMITS`; backend a
 
 Aggregate projection capacity is enforced before writes, not merely each surface's limit. Rendering/updating over capacity refuses the operation, preserving the preceding revision. Read pages may contain fewer entries to fit the byte bound. Command identity and closed-surface tombstones remain ledger facts even when omitted from the bounded projection cache. Admission reconstructs its recent window from receipt facts after restart; concurrent admissions are serialized. Identical command retries do not consume a new-command quota. Overload returns the existing `OVERLOADED` RPC refusal with a retry hint; it does not create a business execution.
 
+If a session already has 16 open cards, `ui_render` refuses a valid new card before resolving its data sources or writing any facts. The tool returns `isError: true` with `structured: { code: 'UI_LIMIT', published: false }`. Existing cards stay unchanged. Close a card you no longer need, then retry with the same surface ID. The service still throws `SEMANTIC_REJECTED` with `data.code` set to `UI_LIMIT`.
+
 ### Finance surface example
 
 The following is a complete surface value. Amounts remain exact integer USD cents; display labels state the unit.
@@ -215,7 +217,7 @@ The host session bridge resolves sources. The official plugin calls that functio
 
 | When | Behavior |
 | --- | --- |
-| `ui_render` / `ui_update` | Resolve every binding first. The first failure rejects the whole write and stores nothing. An empty array is valid data. The stored surface is the binding. |
+| `ui_render` / `ui_update` | After checking session state, resolve all bindings before publishing. The first source refusal stops publication. An empty array is valid data. The stored surface keeps the binding. |
 | `ui.read` | The view substitutes ready results and adds `sources[dataKey]`. One failed key degrades that component. Sibling components still render. The stored record keeps the binding. |
 | `_agnes/v1/ui.refresh` | Same authenticated forwarding path as `ui.read`. It re-queries, returns a `UiSurfaceRecord`, and leaves `surface.revision` unchanged. It writes no surface fact. A closed surface returns `UI_CLOSED`. `received`, `pending-approval` or `executing` returns `UI_BUSY`. |
 | Action execution | Re-query only keys the action depends on: `from: "data"`, and `from: "selection"` or `"row"` through that component's `dataKey`. A disabled or untrusted source on one of those keys refuses the action. An unused source does not. |
