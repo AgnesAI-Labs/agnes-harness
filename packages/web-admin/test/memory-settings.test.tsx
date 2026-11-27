@@ -60,7 +60,7 @@ let saved: Saved[] = []
 /** Task experience promoted to user memory. */
 let userSaved: Saved[] = []
 
-function server(fail: (body: Record<string, unknown>) => boolean = () => false, userEnabled = true) {
+function server(fail: (body: Record<string, unknown>) => boolean | string = () => false, userEnabled = true) {
   const memory: Record<string, unknown>[] = []
   let mode: 'off' | 'ask' | 'auto' = 'off'
   vi.stubGlobal(
@@ -69,7 +69,12 @@ function server(fail: (body: Record<string, unknown>) => boolean = () => false, 
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
       if (url === '/api/context') return Response.json(context([{ path: '/work/WorkLLM', available: true }]))
       memory.push(body)
-      if (fail(body)) return Response.json({ error: { code: 'E_TEST', message: 'nope' } }, { status: 500 })
+      const refusal = fail(body)
+      if (refusal)
+        return Response.json(
+          { error: { code: typeof refusal === 'string' ? refusal : 'E_TEST' } },
+          { status: 409 },
+        )
       const settings = body.settings as { mode?: typeof mode } | undefined
       if (settings?.mode) mode = settings.mode
       const file =
@@ -326,6 +331,70 @@ it('opens the memory files subpage with MEMORY.md, saves with the version it rea
     // The injection limit is bytes, shown in KB.
     expect(host.querySelector('[data-testid="memory-inject-limit"]')?.textContent).toBe('2.0 KB')
   } finally {
+    await unmount()
+  }
+})
+
+it('edits expiry with the saved hash, retains the draft on conflict, and updates the entry at its deadline', async () => {
+  const now = Date.UTC(2027, 2, 1, 1, 2, 3)
+  vi.useFakeTimers({ now, toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+  let refusal = 'MEMORY_CONFLICT'
+  const requests = server((body) => typeof body.content === 'string' && refusal)
+  const { host, unmount } = await render()
+  const section = () => host.querySelector<HTMLElement>('[data-testid="memory-entries"]')
+  const button = (label: string) =>
+    [...section()!.querySelectorAll('button')].find((b) => b.textContent === label)!
+  const editor = () => host.querySelector<HTMLTextAreaElement>('[data-testid="memory-content"]')!
+  try {
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="memory-open"]')?.click())
+    expect(section()?.textContent).toContain('Workspace memory is off')
+    await editContent(host, 'Draft')
+    expect(button('Set expiry').disabled).toBe(true)
+    expect(button('Delete entry').disabled).toBe(true)
+    await editContent(host, '- prefers tables')
+    await act(async () => button('Set expiry').click())
+    const input = section()!.querySelector<HTMLInputElement>('input[type="datetime-local"]')!
+    const local = '2028-03-01T01:02:03'
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, local)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => button('Save').click())
+    expect(requests.at(-1)).toMatchObject({
+      content: `<!-- expires_at: ${new Date(local).toISOString().replace('.000Z', 'Z')} -->\n- prefers tables`,
+      baseHash: hash('a'),
+    })
+    const error = () => host.querySelector('[data-testid="memory-error"]')?.textContent
+    expect(error()).toContain('Reload')
+    for (const [code, hint] of [
+      ['MEMORY_MISSING_TOPIC', 'missing memory topic'],
+      ['MEMORY_SECRET_LIKE_CONTENT', 'Remove credentials'],
+    ] as const) {
+      refusal = code
+      await act(async () => button('Save').click())
+      expect(error()).toContain(hint)
+    }
+    expect(editor().value).toBe('- prefers tables')
+    expect(input.value).toBe(local)
+    refusal = ''
+    await act(async () => button('+7d').click())
+    expect(editor().value).toBe('<!-- expires_at: 2027-03-08T01:02:03Z -->\n- prefers tables')
+    expect(section()?.textContent).toContain('Expiry: expires')
+    await act(async () => {
+      vi.advanceTimersByTime(7 * 86_400_000)
+    })
+    expect(section()?.textContent).toContain('Expiry: expired')
+    await act(async () => button('Clear expiry').click())
+    expect(requests.filter((req) => typeof req.content === 'string').at(-1)).toMatchObject({
+      content: '- prefers tables',
+      baseHash: hash('b'),
+    })
+    expect(section()?.textContent).toContain('Expiry: valid')
+    await act(async () => button('Delete entry').click())
+    expect(editor().value).toBe('')
+    expect(section()).toBeNull()
+  } finally {
+    vi.useRealTimers()
     await unmount()
   }
 })

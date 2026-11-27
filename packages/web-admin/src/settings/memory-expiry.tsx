@@ -1,32 +1,14 @@
+import { annotations } from '@agnes/protocol/memory-expiry'
 import { useUiText } from '@agnes/web-ui'
 import { useEffect, useReducer } from 'react'
 import { memoryCatalog } from './memory-locale.js'
-
-// Keep the editor preview in step with memory-file/src/expiry-annotation.ts.
-const annotation = /^<!--\s*expires_at:/u
-const iso = /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(Z|[+-]\d{2}:?\d{2})?)?$/u
-
-function expiryTime(value: string): number {
-  const match = iso.exec(value)
-  if (!match) return NaN
-  const [, date, time, zone] = match
-  const midnight = new Date(`${date}T00:00:00Z`)
-  if (!Number.isFinite(midnight.getTime()) || !midnight.toISOString().startsWith(`${date}T`)) return NaN
-  return time ? Date.parse(`${date}T${time}${zone ?? 'Z'}`) : midnight.getTime()
-}
 
 export function analyzeExpiry(content: string, now: number) {
   let expired = 0
   let invalid = 0
   let future = 0
   let earliest: number | undefined
-  // Each standalone marker covers the text from its line to the next blank line or EOF.
-  // Counting the markers directly also handles multiple markers before the same blank line.
-  for (const line of content.split('\n')) {
-    const text = line.trim()
-    const marker = annotation.exec(text)
-    if (!marker || text.indexOf('-->') !== text.length - 3) continue
-    const time = expiryTime(text.slice(marker[0].length, -3).trim())
+  for (const { expiresAt: time } of annotations(content)) {
     if (!Number.isFinite(time)) invalid++
     else if (time <= now) expired++
     else {

@@ -1,3 +1,4 @@
+import { publicErrorCode } from '@agnes/protocol'
 import type { AdminMemoryResult, MemoryFile, MemorySettings } from '@agnes/protocol/gen/app-server'
 import {
   appServerErrorMessage,
@@ -18,6 +19,7 @@ import { useEffect, useRef, useState } from 'react'
 import { captureRequest } from './async-request.js'
 import { contextRequest } from './context.js'
 import { memoryRequest } from './memory-api.js'
+import { MemoryEntriesBlock } from './memory-entries-block.js'
 import { MemoryExpiryStatus } from './memory-expiry.js'
 import { memoryCatalog } from './memory-locale.js'
 import { SavedParagraphsBlock } from './memory-saved.js'
@@ -237,6 +239,7 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
               {Boolean(fileError) && (
                 <Banner tone="error" role="alert" data-testid="memory-error">
                   {appServerErrorMessage(fileError, locale) ?? t('failed')}
+                  {publicErrorCode(fileError) === 'MEMORY_MISSING_TOPIC' && ` ${t('entries.missingTopic')}`}
                 </Banner>
               )}
               <SettingsTextArea
@@ -251,6 +254,18 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
               />
               <MemoryExpiryStatus content={content} memoryOff={inspection.settings.mode === 'off'} />
             </SettingsBlock>
+          )}
+          {file && (
+            <MemoryEntriesBlock
+              key={JSON.stringify([cwd, file.path, file.hash])}
+              content={file.content}
+              disabled={!canSave || busy}
+              dirty={content !== file.content}
+              memoryOff={inspection.settings.mode === 'off'}
+              onSave={(next) =>
+                void request({ cwd, file: file.path, content: next, baseHash: file.hash }, 'file')
+              }
+            />
           )}
           {file && cwd && (
             <SavedParagraphsBlock
