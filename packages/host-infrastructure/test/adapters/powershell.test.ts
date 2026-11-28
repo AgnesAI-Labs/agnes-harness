@@ -70,13 +70,15 @@ it('an explicit version never falls back to the other family', async () => {
   expect(probe).toHaveBeenCalledExactlyOnceWith(modern.path)
 })
 it('reports selected-shell restriction failures without misclassifying full access or other programs', () => {
-  const denied = Object.assign(new Error('private native detail'), { code: 'EACCES' })
+  const denied = Object.assign(new Error('private native detail'), { code: 'EACCES', win32Code: 5 })
   expect(powerShellStartError(denied, modern, [modern.path], true)).toMatchObject({
     code: 'E_POWERSHELL_UNAVAILABLE',
+    win32Code: 5,
     attempts: [{ reason: 'restricted-execution-failed' }],
   })
   expect(powerShellStartError(denied, modern, [modern.path], false)).toMatchObject({
     code: 'E_POWERSHELL_UNAVAILABLE',
+    win32Code: 5,
     attempts: [{ reason: 'execution-failed' }],
   })
   expect(powerShellStartError(denied, modern, [legacy.path], true)).toBe(denied)

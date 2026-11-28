@@ -1,13 +1,36 @@
-import type { ToolContext } from '@agnes/extension-api'
+import type { ToolContext, ToolResult } from '@agnes/extension-api'
+import { failureCode, toolFailure } from './guards/feedback.js'
 
 const timeouts = new Map<string, number>()
 
-export function shellSetupAdvice(error: unknown): string | undefined {
-  if ((error as { code?: unknown } | null)?.code === 'E_POWERSHELL_UNAVAILABLE')
-    return 'The selected PowerShell cannot start as a managed Windows command (E_POWERSHELL_UNAVAILABLE); the command did not start. Set AGNES_POWERSHELL=auto or install a compatible PowerShell, then restart. Do not change permissions automatically.'
-  if ((error as { code?: unknown } | null)?.code === 'E_ACL_ACCESS_DENIED')
-    return "Windows denied setup of the workspace write restriction; the command did not start. Use an NTFS workspace where this account can change permissions (WRITE_DAC and WRITE_OWNER), or ask the user to review that directory's permissions. Ordinary file write access alone is insufficient."
-  return undefined
+export async function shellSetupFailure(ctx: ToolContext, error: unknown): Promise<ToolResult | undefined> {
+  const code = failureCode(error, '')
+  if (!code) return undefined
+  const acl = code.startsWith('E_ACL_')
+  const powerShell = code === 'E_POWERSHELL_UNAVAILABLE'
+
+  // Only report a numeric Win32 error. A native message may contain an absolute private path.
+  const setup = error as { win32Code?: unknown; cause?: { win32Code?: unknown } }
+  const nativeCode = acl ? (setup.cause?.win32Code ?? setup.win32Code) : setup.win32Code
+  const win32Code =
+    typeof nativeCode === 'number' &&
+    Number.isInteger(nativeCode) &&
+    nativeCode > 0 &&
+    nativeCode <= 0xffffffff
+      ? nativeCode
+      : undefined
+  if (!acl && !powerShell && win32Code === undefined) return undefined
+  const diagnostic = win32Code === undefined ? { code } : { code, win32Code }
+  const label = win32Code === undefined ? code : `${code}, Win32 ${win32Code}`
+  const message =
+    code === 'E_ACL_ACCESS_DENIED'
+      ? `Windows denied setup of the workspace write restriction (${label}). The command did not start. Use an NTFS workspace where this account can change permissions (WRITE_DAC and WRITE_OWNER), or ask the user to review that directory's permissions. Ordinary file write access alone is insufficient. For read-only work, use file tools such as ls, find or read when available.`
+      : acl
+        ? `Windows could not set up the workspace write restriction (${label}). The command did not start. Check the sandbox status with agh doctor before retrying.`
+        : powerShell
+          ? `The selected PowerShell cannot start as a managed Windows command (${label}). The command did not start. Set AGNES_POWERSHELL=auto or install a compatible PowerShell, then restart. Do not change permissions automatically.`
+          : `Windows reported a process error (${label}). Check whether the command ran before retrying.`
+  return { ...(await toolFailure(ctx, code, message)), details: diagnostic, structured: diagnostic }
 }
 
 export function commandNetworkNote(ctx: ToolContext, stdout: string, stderr: string): string | undefined {

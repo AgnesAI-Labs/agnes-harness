@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
+import type { Locator } from '@playwright/test'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { installAgentSource } from './developer-example.js'
 import { expect, root as it, test } from './fixtures.js'
@@ -98,6 +99,64 @@ test('v3 account dialog automatically tests a scripted provider before saving', 
   } finally {
     await provider.close()
   }
+})
+
+test('model setup, sending and session approval accept mouse clicks', async ({ page, runtime }) => {
+  test.setTimeout(120_000)
+  const click = async (control: Locator) => {
+    await expect(control).toBeVisible()
+    await expect(control).toBeEnabled()
+    await control.scrollIntoViewIfNeeded()
+    const box = await control.boundingBox()
+    if (!box) throw new Error('Mouse target has no bounding box')
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  }
+
+  await preferences(page, 'zh-CN')
+  await page.goto(runtime.url)
+  await chooseWorkspace(page, runtime, 'zh-CN')
+  await settings(page, 'zh-CN')
+  await page.getByTestId('settings-nav-model').click()
+  await click(page.locator('.config-accounts-welcome [data-provider="more"]'))
+  const account = page.getByTestId('account-page-add')
+  await expect(account).toBeVisible()
+
+  const more = account.getByTestId('account-more-providers').getByRole('button', { name: '更多服务商' })
+  await click(more)
+  await expect(more).toHaveAttribute('aria-expanded', 'true')
+  await click(account.getByRole('button', { name: /兼容 OpenAI 的接口/ }))
+  await expect(account.locator('#config-base-url')).toBeVisible()
+  await account.locator('#config-account-cancel').click()
+  await page.locator('#config-account-discard-confirm').click()
+  await expect(account).toBeHidden()
+  await closeSettings(page, 'zh-CN')
+  const closeSidebar = page.locator('#sidebar-close')
+  if (await closeSidebar.isVisible()) await click(closeSidebar)
+
+  const input = page.getByRole('textbox', { name: '任务内容', exact: true })
+  const sendButton = page.getByRole('button', { name: '发送', exact: true })
+  await input.fill('call shell {"command":"echo AGH_MOUSE_CLICK"}')
+  await click(sendButton)
+  const first = page.getByTestId('conversation-turn').filter({ hasText: 'call shell' })
+  await expect(first).toBeVisible({ timeout: 30_000 })
+  await click(page.getByRole('button', { name: '本会话内允许此工具的所有调用', exact: true }))
+  await expect(first).toHaveAttribute('data-status', 'completed')
+  const id = new URL(page.url()).searchParams.get('session')
+  if (!id) throw new Error('Mouse send did not open a session')
+  const client = await runtime.connect()
+  expect((await client.approval.sessionGrants(id)).grants).toContainEqual(
+    expect.objectContaining({ scope: 'tool:shell:execute' }),
+  )
+  const session = await client.session.open(id, { cwd: runtime.workspace })
+  expect(JSON.stringify(await toolResult(session, 'shell'))).toContain('AGH_MOUSE_CLICK')
+
+  const followUp = 'Verify that a fresh draft can be sent from the current session'
+  await input.fill(followUp)
+  await click(sendButton)
+  await expect(page.getByTestId('conversation-turn').filter({ hasText: followUp })).toHaveAttribute(
+    'data-status',
+    'completed',
+  )
 })
 
 test('v3 plugin tabs and built-in context save survive navigation and reload', async ({ page, runtime }) => {

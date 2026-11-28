@@ -11,7 +11,7 @@ import {
   deadlineWait,
   packageListsNote,
   shellGuidance,
-  shellSetupAdvice,
+  shellSetupFailure,
   timeoutGuidance,
 } from '../shell-guidance.js'
 import { ShellParams } from './schemas.js'
@@ -114,11 +114,13 @@ export function createShellTool(jobs?: ShellJobs, observationMs?: number) {
       } catch (e) {
         // A refusal to launch (no interpreter, sandbox denial) is reported to the model as a failed
         // call, which it can react to, rather than as an exception that ends the turn.
+        const setup = await shellSetupFailure(ctx, e)
+        if (setup) return setup
+        const code = failureCode(e, 'SHELL_START_FAILED')
         return toolFailure(
           ctx,
-          failureCode(e, 'SHELL_START_FAILED'),
-          shellSetupAdvice(e) ??
-            `command could not be started (${failureCode(e, 'SHELL_START_FAILED')}); check the selected interpreter and cwd with available file tools; choose an allowed command or ask the user to adjust access.`,
+          code,
+          `command could not be started (${code}); check the selected interpreter and cwd with available file tools; choose an allowed command or ask the user to adjust access.`,
         )
       }
       const parts: string[] = shellGuidance(ctx, args.command, r.stoppedProcesses)

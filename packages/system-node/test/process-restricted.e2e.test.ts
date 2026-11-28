@@ -392,6 +392,27 @@ describe.skipIf(process.platform !== 'win32')('restricted Windows launch', { tim
     ).rejects.toMatchObject({ code: 'E_WINDOWS_CONFINEMENT_INVALID' })
   })
 
+  it.each(['ordinary', 'restricted'])(
+    'preserves the native Win32 error from a failed %s launch',
+    async (mode) => {
+      const root = temporary()
+      const executable = join(root, 'invalid.exe')
+      writeFileSync(executable, 'This file is not a Windows executable.')
+      const launch = startWindowsJobProcess([executable], {
+        cwd: root,
+        env: env(),
+        nodeExecutable: process.execPath,
+        ...(mode === 'restricted' ? { confinement: sealWindowsConfinement(readOnly(root)) } : {}),
+      })
+      await expect(launch).rejects.toMatchObject({
+        code: 'EIO',
+        message: 'Windows target process could not start',
+      })
+      const win32Code = await launch.catch((error: { win32Code?: number }) => error.win32Code)
+      expect([193, 216]).toContain(win32Code)
+    },
+  )
+
   it('reads the same root identity as an inspection', () => {
     const root = temporary()
     expect(readWindowsObjectIdentity(root)).toEqual(inspectWindowsAcl(root).identity)

@@ -290,29 +290,45 @@ describe('shell', () => {
   })
 
   it.each([
-    [true, 'E_ACL_ACCESS_DENIED', 'WRITE_DAC and WRITE_OWNER'],
-    [false, 'E_ACL_ACCESS_DENIED', 'WRITE_DAC and WRITE_OWNER'],
-    [true, 'E_POWERSHELL_UNAVAILABLE', 'AGNES_POWERSHELL=auto'],
-    [false, 'E_POWERSHELL_UNAVAILABLE', 'AGNES_POWERSHELL=auto'],
-  ] as const)('explains Windows setup failure with jobs=%s and code=%s', async (useJobs, code, advice) => {
-    const denied = Object.assign(new Error('/private/native-detail'), { code })
-    const ctx = fakeToolContext({
-      exec: () => {
+    [true, 'E_ACL_ACCESS_DENIED', 'WRITE_DAC and WRITE_OWNER', 5, 'E_ACL_ACCESS_DENIED, Win32 5'],
+    [false, 'E_ACL_ACCESS_DENIED', 'WRITE_DAC and WRITE_OWNER', 5, 'E_ACL_ACCESS_DENIED, Win32 5'],
+    [true, 'E_ACL_ACCESS_DENIED', 'use file tools', '/private/native-detail', 'E_ACL_ACCESS_DENIED'],
+    [false, 'E_ACL_ACCESS_DENIED', 'use file tools', undefined, 'E_ACL_ACCESS_DENIED'],
+    [true, 'E_ACL_ROOT_OVERLAP', 'agh doctor', undefined, 'E_ACL_ROOT_OVERLAP'],
+    [false, 'E_ACL_STATE_UNSAFE', 'agh doctor', undefined, 'E_ACL_STATE_UNSAFE'],
+    [true, 'E_POWERSHELL_UNAVAILABLE', 'AGNES_POWERSHELL=auto', undefined, 'E_POWERSHELL_UNAVAILABLE'],
+    [false, 'E_POWERSHELL_UNAVAILABLE', 'AGNES_POWERSHELL=auto', 5, 'E_POWERSHELL_UNAVAILABLE, Win32 5'],
+    [true, 'EIO', 'Check whether the command ran', 193, 'EIO, Win32 193'],
+    [false, 'EIO', 'Check whether the command ran', 193, 'EIO, Win32 193'],
+  ] as const)(
+    'explains Windows setup failure with jobs=%s and code=%s',
+    async (useJobs, code, advice, win32Code, diagnostic) => {
+      const cause = Object.assign(new Error('/private/native-detail'), { win32Code })
+      const denied = new Error('/private/setup-detail', { cause })
+      Object.assign(denied, { code, ...(code.startsWith('E_ACL_') ? {} : { win32Code }) })
+      const ctx = fakeToolContext({
+        exec: () => {
+          throw denied
+        },
+      })
+      const jobs = new ShellJobs()
+      vi.spyOn(jobs, 'start').mockRejectedValue(denied)
+      ctx.sandbox.openProcess = async () => {
         throw denied
-      },
-    })
-    const jobs = new ShellJobs()
-    vi.spyOn(jobs, 'start').mockRejectedValue(denied)
-    ctx.sandbox.openProcess = async () => {
-      throw denied
-    }
-    const result = await createShellTool(useJobs ? jobs : undefined).execute({ command: 'echo ready' }, ctx)
-    expect(result.isError).toBe(true)
-    expect(result.details).toMatchObject({ code })
-    expect(textOf(result)).toContain('command did not start')
-    expect(textOf(result)).toContain(advice)
-    expect(textOf(result)).not.toContain('/private/native-detail')
-  })
+      }
+      const result = await createShellTool(useJobs ? jobs : undefined).execute({ command: 'echo ready' }, ctx)
+      expect(result.isError).toBe(true)
+      const fields = typeof win32Code === 'number' ? { code, win32Code } : { code }
+      expect(result.details).toEqual(fields)
+      expect(result.structured).toEqual(fields)
+      if (code === 'EIO') expect(textOf(result)).not.toContain('command did not start')
+      else expect(textOf(result)).toContain('command did not start')
+      expect(textOf(result)).toContain(`(${diagnostic})`)
+      expect(textOf(result)).toContain(advice)
+      expect(textOf(result)).not.toContain('/private/native-detail')
+      expect(textOf(result)).not.toContain('/private/setup-detail')
+    },
+  )
 
   it.each([
     [true, true],

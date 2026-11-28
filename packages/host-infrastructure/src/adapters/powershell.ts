@@ -183,10 +183,20 @@ export function powerShellStartError(
     argv[0] &&
     win32.normalize(argv[0]).toLowerCase() === win32.normalize(shell.path).toLowerCase() &&
     (code === 'EACCES' || code === 'E_JOB_MEMBERSHIP')
-  )
-    return new PowerShellUnavailable([
+  ) {
+    const unavailable = new PowerShellUnavailable([
       { path: shell.path, reason: restricted ? 'restricted-execution-failed' : 'execution-failed' },
     ])
+    const win32Code = (cause as { win32Code?: unknown }).win32Code
+    if (
+      typeof win32Code === 'number' &&
+      Number.isInteger(win32Code) &&
+      win32Code > 0 &&
+      win32Code <= 0xffffffff
+    )
+      Object.assign(unavailable, { win32Code })
+    return unavailable
+  }
   return cause
 }
 

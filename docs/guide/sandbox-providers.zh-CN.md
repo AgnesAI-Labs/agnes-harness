@@ -100,7 +100,7 @@ Windows 上，`local` 对 `read-only` 和 `workspace-write` 会话的命令使�
 
 写限制无法建立时拒绝启动，命令不会直接运行。常见原因：非 NTFS 卷、磁盘根目录、UNC 路径、未验证的 junction 根目录、缺少原生模块、ACL 修改失败。
 
-建立写授权需要运行 AGH 的账户对工作区和待授权对象拥有 `WRITE_DAC`、`WRITE_OWNER` 权限，普通文件修改权限并不足够。此阶段访问被拒绝时返回 `E_ACL_ACCESS_DENIED`；应选择具备所需权限的工作区，或由目录所有者检查权限。AGH 不会提权、取得所有权或自动改为不受限执行。
+建立写授权需要运行 AGH 的账户对工作区和待授权对象拥有 `WRITE_DAC`、`WRITE_OWNER` 权限，普通文件修改权限并不足够。此阶段访问被拒绝时，Shell 结果和 Trace 显示 `E_ACL_ACCESS_DENIED`。Windows ACL 和原生进程启动错误的结构化工具结果会记录 `code`，有 Win32 错误编号时也会记录数字字段 `win32Code`。可以选择具备所需权限的工作区，或由目录所有者检查权限。只读任务可以使用当前会话提供的 `ls`、`find`、`read` 等文件工具。AGH 不会提权、取得所有权或自动改为不受限执行。
 
 Windows 自动选择 PowerShell 时会验证版本，并实际运行一条有限的探测命令：部署允许只读或可修改工作区时使用受限令牌；仅允许完全访问时保留普通令牌。不能加入受管 Job 或不能执行的安装会被跳过，再选择可用版本，不取消写限制。显式指定 `AGNES_POWERSHELL=7`、`5.1` 或绝对路径时不跨版本回退；实际启动不兼容时返回 `E_POWERSHELL_UNAVAILABLE`，受限启动的 attempt.reason 为 `restricted-execution-failed`，普通启动为 `execution-failed`。本机商店版 7.7 无法加入 Job，完全访问也会拒绝，以免取消和超时失效；`auto` 可选择通过探测的 5.1。改为 `auto` 或安装兼容版本后重启。探测结果在进程内缓存，选择或可执行文件变化时重新探测。
 

@@ -11,7 +11,7 @@ import {
   jobToolsHint,
   packageListsNote,
   shellGuidance,
-  shellSetupAdvice,
+  shellSetupFailure,
   signalNote,
   timeoutGuidance,
 } from '../../tools-core/src/shell-guidance.js'
@@ -131,8 +131,8 @@ export async function runShellJob(
         'SHELL_JOB_BACKEND_UNAVAILABLE',
         'command backend unavailable; run a foreground command or ask the user to configure the jobs backend.',
       )
-    const setupAdvice = shellSetupAdvice(e)
-    if (setupAdvice) return toolFailure(ctx, failureCode(e, 'SHELL_JOB_FAILED'), setupAdvice)
+    const setup = await shellSetupFailure(ctx, e)
+    if (setup) return setup
     const message = e instanceof Error ? e.message : ''
     const reason: [string, string] =
       message.startsWith('SHELL_BUSY:') || message === 'shell is busy'

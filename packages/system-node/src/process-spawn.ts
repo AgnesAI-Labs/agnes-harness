@@ -321,7 +321,16 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
         typeof message.code === 'string' &&
         /^[A-Z0-9_]+$/.test(message.code)
       ) {
-        fail(error(message.code, 'Windows target process could not start'))
+        const failure = error(message.code, 'Windows target process could not start')
+        const win32Code = message.win32Code
+        if (
+          typeof win32Code === 'number' &&
+          Number.isInteger(win32Code) &&
+          win32Code > 0 &&
+          win32Code <= 0xffffffff
+        )
+          Object.assign(failure, { win32Code })
+        fail(failure)
       } else fail(error('EPROTO', 'Unexpected process gate reply'))
     })
     broker.once('exit', () => {

@@ -442,20 +442,28 @@ describe('Windows confined launch', () => {
     ).rejects.toMatchObject({ code: 'EPROTO' })
   })
 
-  it('passes a broker launch failure through without any other launch', async () => {
-    const spawn = await load('win32')
-    const gate = broker((message, owner) => {
-      if (message.type === 'run-restricted') owner.answer({ type: 'error', code: 'EACCES' })
-    })
-    await expect(
-      spawn.startWindowsJobProcess([tool], {
+  it.each([undefined, 5, '5', 0x100000000])(
+    'passes a broker launch failure with Win32 field %s without any other launch',
+    async (win32Code) => {
+      const spawn = await load('win32')
+      const gate = broker((message, owner) => {
+        if (message.type === 'run-restricted')
+          owner.answer({ type: 'error', code: 'EACCES', win32Code, message: 'private native detail' })
+      })
+      const failure = spawn.startWindowsJobProcess([tool], {
         ...options(),
         confinement: spawn.sealWindowsConfinement(writable),
-      }),
-    ).rejects.toMatchObject({ code: 'EACCES' })
-    expect(gate.sent.map((message) => message.type)).toEqual(['run-restricted', 'abort'])
-    expect(fake.spawns).toBe(1)
-  })
+      })
+      await expect(failure).rejects.toMatchObject({
+        code: 'EACCES',
+        message: 'Windows target process could not start',
+      })
+      if (win32Code === 5) await expect(failure).rejects.toHaveProperty('win32Code', 5)
+      else await expect(failure).rejects.not.toHaveProperty('win32Code')
+      expect(gate.sent.map((message) => message.type)).toEqual(['run-restricted', 'abort'])
+      expect(fake.spawns).toBe(1)
+    },
+  )
 
   it('does not resume a created target after cancellation', async () => {
     const spawn = await load('win32')

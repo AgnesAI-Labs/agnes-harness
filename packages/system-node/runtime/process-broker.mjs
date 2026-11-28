@@ -15,7 +15,18 @@ const send = (message, after) => {
     else after?.()
   })
 }
-const fail = (error) => send({ type: 'error', code: error.code ?? 'EIO' }, () => process.exit(1))
+const fail = (error) => {
+  const win32Code = error.win32Code
+  send(
+    {
+      type: 'error',
+      code: error.code ?? 'EIO',
+      // Only send the numeric Windows error. Native messages and paths stay in the broker.
+      ...(Number.isInteger(win32Code) && win32Code > 0 && win32Code <= 0xffffffff ? { win32Code } : {}),
+    },
+    () => process.exit(1),
+  )
+}
 const unavailable = (message) => Object.assign(new Error(message), { code: 'E_SYSTEM_NATIVE_UNAVAILABLE' })
 const native = () => {
   const binding = createRequire(import.meta.url)('@agnes/system-node/native')

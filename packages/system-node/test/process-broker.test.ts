@@ -29,7 +29,7 @@ writeFileSync(
   `const { appendFileSync } = require('node:fs')
 const log = (entry) => appendFileSync(process.env.AGNES_FAKE_LOG, JSON.stringify(entry) + '\\n')
 const mode = process.env.AGNES_FAKE_MODE
-const fault = (code) => Object.assign(new Error(code), { code })
+const fault = (code, win32Code) => Object.assign(new Error('private native detail'), { code, win32Code, path: 'private' })
 const native = {
   abiVersion: 1,
   spawnInherited() {
@@ -42,6 +42,8 @@ if (mode !== 'missing')
   for (const call of ['spawnRestricted', 'spawnSuspended']) native[call] = (...args) => {
     log({ call, args })
     if (mode === 'throws') throw fault('EACCES')
+    if (mode === 'throws-win32') throw fault('EACCES', 5)
+    if (mode === 'throws-invalid-win32') throw fault('EACCES', '5')
     let resumed = false
     let polls = 0
     return {
@@ -49,7 +51,7 @@ if (mode !== 'missing')
       startTime: '888',
       resume() {
         log({ call: 'resume' })
-        if (mode === 'resume-throws') throw fault('EIO')
+        if (mode === 'resume-throws') throw fault('EIO', 6)
         resumed = true
       },
       exitCode: () => (resumed && ++polls > 2 ? 7 : null),
@@ -137,14 +139,20 @@ describe('process broker restricted launch', () => {
   })
 
   it.each([
-    ['a missing restricted launch', 'missing', 'E_SYSTEM_NATIVE_UNAVAILABLE'],
-    ['a test build of the native artifact', 'test-build', 'E_SYSTEM_NATIVE_UNAVAILABLE'],
-    ['a refused launch', 'throws', 'EACCES'],
-  ])('reports %s without any other launch', async (_name, mode, code) => {
+    ['a missing restricted launch', 'missing', 'E_SYSTEM_NATIVE_UNAVAILABLE', undefined],
+    ['a test build of the native artifact', 'test-build', 'E_SYSTEM_NATIVE_UNAVAILABLE', undefined],
+    ['a refused launch', 'throws', 'EACCES', undefined],
+    ['a refused launch with a Win32 number', 'throws-win32', 'EACCES', 5],
+    ['a refused launch with an invalid Win32 field', 'throws-invalid-win32', 'EACCES', undefined],
+  ])('reports %s without any other launch', async (_name, mode, code, win32Code) => {
     const run = start(mode)
     await run.next()
     run.child.send(payload())
-    expect(await run.next()).toEqual({ type: 'error', code })
+    expect(await run.next()).toEqual({
+      type: 'error',
+      code,
+      ...(win32Code === undefined ? {} : { win32Code }),
+    })
     expect((await run.exited)[0]).toBe(1)
     expect(run.calls().filter(({ call }) => call !== 'spawnRestricted')).toEqual([])
   })
@@ -230,7 +238,7 @@ describe('process broker restricted launch', () => {
     run.child.send(payload())
     await run.next()
     run.child.send({ type: 'resume' })
-    expect(await run.next()).toEqual({ type: 'error', code: 'EIO' })
+    expect(await run.next()).toEqual({ type: 'error', code: 'EIO', win32Code: 6 })
     expect((await run.exited)[0]).toBe(1)
     expect(run.calls().slice(1)).toEqual([{ call: 'resume' }, { call: 'close', resumed: false }])
   })
