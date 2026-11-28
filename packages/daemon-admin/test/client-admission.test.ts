@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -192,6 +192,220 @@ it('serves only the consented client closure, and accepts renderer source only a
     registry.close()
   }
 })
+
+it.each([
+  'grants',
+  'inventory',
+  'inventory-mismatch',
+  'activation',
+  'composition',
+  'other-composition',
+  'close',
+] as const)(
+  'checks published document bytes when the final observation changes: %s',
+  async (change) => {
+    const client: ClientContribution = { id: 'approved', lifetime: 'profile', entry: 'entry.js' }
+    const { root, row, inventory } = await fixture([client])
+    const rowId = `web:${row.id}`
+    let visible = true
+    let otherModule = false
+    let grantsAvailable = true
+    let activation = 1
+    const registry = createClientModuleRegistry({
+      snapshotDirectory: (_profile, directory) => join(directory, 'snapshots'),
+      activationEpoch: () => activation,
+      composition: () => ({
+        shell: {
+          modules: visible ? [rowId, ...(otherModule ? ['web:another/panel'] : [])] : ['web:another/panel'],
+        },
+      }),
+    })
+    const input = {
+      profile: inventory.profile,
+      profileDirectory: root,
+      inventory,
+      actual: async () => undefined,
+      refreshInventory: async () => inventory,
+      presentation: async () => ({
+        revision: 7,
+        grants: grantsAvailable
+          ? [
+              {
+                rowId,
+                packageId: row.id,
+                clientId: 'approved',
+                declarationDigest: admissionDigest(client),
+                consent: 'reviewed',
+                roles: [],
+                pages: ['home'],
+              },
+            ]
+          : [],
+        // An unavailable reviewed dependency can remove grants without rewriting persisted consent.
+        current: async () => true,
+      }),
+    }
+    const atFreshInventory = Promise.withResolvers<void>()
+    const finishFreshInventory = Promise.withResolvers<void>()
+    try {
+      const path = `/plugins/${row.id}/${row.entry.integrity}/entry.js`
+      const asset = { ...input, path, purpose: 'document' as const }
+      const bytes = {
+        found: true,
+        base64: Buffer.from('export { shared } from "./shared.js"').toString('base64'),
+      }
+      const admitted = await registry.list(input)
+      expect(admitted.rows?.[0]?.entryUrl).toBe(path)
+      expect(await registry.read(asset)).toEqual(bytes)
+      expect(await registry.read({ ...asset, inventory: { ...inventory } })).toEqual(bytes)
+      const notices: unknown[] = []
+      registry.subscribe((event) => notices.push(event))
+      const pending = registry.read({
+        ...asset,
+        refreshInventory: async () => {
+          atFreshInventory.resolve()
+          await finishFreshInventory.promise
+          if (change === 'inventory') throw new Error('An installed package failed integrity verification')
+          if (change === 'inventory-mismatch') return { ...inventory, hash: 'changed' }
+          return inventory
+        },
+      })
+      await Promise.race([
+        atFreshInventory.promise,
+        pending.then(() => {
+          throw new Error('Published bytes settled without a fresh inventory observation')
+        }),
+      ])
+      if (change === 'grants') grantsAvailable = false
+      if (change === 'activation') activation++
+      if (change === 'composition') visible = false
+      if (change === 'other-composition') otherModule = true
+      if (change === 'close') registry.close()
+      finishFreshInventory.resolve()
+      expect(await pending).toEqual(change === 'other-composition' ? bytes : { found: false })
+      if (change === 'inventory' || change === 'inventory-mismatch' || change === 'grants')
+        expect(notices).toContainEqual({
+          profile: inventory.profile,
+          revision: expect.stringMatching(/^sha256-[a-f0-9]{64}$/),
+          reason: 'resources',
+        })
+      if (change === 'other-composition' || change === 'close')
+        expect(notices).not.toContainEqual(expect.objectContaining({ reason: 'resources' }))
+    } finally {
+      finishFreshInventory.resolve()
+      registry.close()
+    }
+  },
+)
+
+it('uses each request’s approval adapter when adjacent reads have different authority', async () => {
+  const client: ClientContribution = { id: 'approved', lifetime: 'profile', entry: 'entry.js' }
+  const { root, row, inventory } = await fixture([client])
+  const registry = createClientModuleRegistry({ snapshotDirectory: () => join(root, 'snapshots') })
+  const input = {
+    profile: inventory.profile,
+    profileDirectory: root,
+    inventory,
+    actual: async () => undefined,
+    refreshInventory: async () => inventory,
+    presentation: async () => ({
+      revision: 7,
+      grants: [
+        {
+          rowId: `web:${row.id}`,
+          packageId: row.id,
+          clientId: 'approved',
+          declarationDigest: admissionDigest(client),
+          consent: 'reviewed',
+          roles: [],
+          pages: ['home'],
+        },
+      ],
+      current: async () => true,
+    }),
+  }
+  try {
+    const path = (await registry.list(input)).rows?.[0]?.entryUrl
+    if (!path) throw new Error('Expected a published document')
+    const asset = { ...input, path, purpose: 'document' as const }
+    const results = await Promise.all([
+      registry.read(asset),
+      registry.read({
+        ...asset,
+        presentation: async () => ({ revision: 7, grants: [], current: async () => true }),
+      }),
+    ])
+    expect(results).toEqual([
+      { found: true, base64: Buffer.from('export { shared } from "./shared.js"').toString('base64') },
+      { found: false },
+    ])
+  } finally {
+    registry.close()
+  }
+})
+
+it.each([0, 1])(
+  'rechecks every client source tree on a published read when tree %i changes',
+  async (damaged) => {
+    const client: ClientContribution = { id: 'approved', lifetime: 'profile', entry: 'entry.js' }
+    const first = await fixture([client])
+    const second = await fixture([client])
+    const sibling = { ...second.row, id: '@acme/sibling' }
+    const packages = [first.row, sibling]
+    const inventory = { ...first.inventory, packages }
+    const registry = createClientModuleRegistry({ snapshotDirectory: () => join(first.root, 'snapshots') })
+    const changes: string[] = []
+    const input = {
+      profile: inventory.profile,
+      profileDirectory: first.root,
+      inventory,
+      actual: async () => undefined,
+      refreshInventory: async () => inventory,
+      presentation: async () => ({
+        revision: 7,
+        grants: packages.map(({ id }) => ({
+          rowId: `web:${id}`,
+          packageId: id,
+          clientId: 'approved',
+          declarationDigest: admissionDigest(client),
+          consent: 'reviewed',
+          roles: [],
+          pages: ['home'],
+        })),
+        current: async () => true,
+      }),
+    }
+    try {
+      const roster = await registry.list(input)
+      expect(roster.rows).toHaveLength(2)
+      const read = ({ id, entry }: InstalledPackage) =>
+        registry.read({
+          ...input,
+          path: `/plugins/${id}/${entry.integrity}/entry.js`,
+          purpose: 'document',
+        })
+      const original = {
+        found: true,
+        base64: Buffer.from('export { shared } from "./shared.js"').toString('base64'),
+      }
+      expect(await Promise.all(packages.map(read))).toEqual([original, original])
+      registry.subscribe(({ revision }) => changes.push(revision))
+      const directory = packages[damaged]?.directory
+      if (!directory) throw new Error('Missing installed fixture')
+      // Mutate an unserved leaf without changing file size or the observed inventory.
+      const path = join(directory, 'other.js')
+      const { atime, mtime } = await stat(path)
+      await writeFile(path, 'export const sibling = null')
+      await utimes(path, atime, mtime)
+      expect(await read(first.row)).toEqual(damaged === 0 ? { found: false } : original)
+      expect(changes[0]).toBeDefined()
+      expect(changes[0]).not.toBe(roster.revision)
+      expect(await read(sibling)).toEqual(damaged === 1 ? { found: false } : original)
+    } finally {
+      registry.close()
+    }
+  },
+)
 
 it.each(['export { shared } from "./shared.js"', `// ${'a'.repeat(UI_COMPONENT_MODULE_BYTES)}`])(
   'refuses a non-leaf or oversized isolated renderer (%#)',

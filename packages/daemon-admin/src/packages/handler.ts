@@ -1122,6 +1122,7 @@ class Service implements PackageAdminService {
         ...params,
         profileDirectory: directory,
         inventory,
+        assetAdapterScope: this,
         actual: async (packageId) => {
           if (!this.options.activation) return undefined
           return normalizeObservation(await this.options.activation.actual(params.profile, packageId))
