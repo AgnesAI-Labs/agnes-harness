@@ -413,7 +413,7 @@ function trackedDeclarations(item: PackageState): PackageState {
   return { ...item, declarations: Object.fromEntries(kept) }
 }
 
-async function pruneUntracked(root: string, state: ProfileState): Promise<boolean> {
+async function pruneUntracked(root: string, state: ProfileState, mode: 'remove' | 'detect' = 'remove'): Promise<boolean> {
   const tracked = new Set<string>()
   for (const [packageId, item] of Object.entries(state.packages))
     for (const revision of [
@@ -423,6 +423,7 @@ async function pruneUntracked(root: string, state: ProfileState): Promise<boolea
       tracked.add(resolve(snapshotDirectory(root, packageId, revision)))
   let changed = false
   const visit = async (directory: string, depth: number): Promise<void> => {
+    if (mode === 'detect' && changed) return
     let entries: Dirent[]
     try {
       entries = await readdir(directory, { withFileTypes: true })
@@ -431,7 +432,7 @@ async function pruneUntracked(root: string, state: ProfileState): Promise<boolea
     }
     if (entries.some((entry) => entry.isFile() && entry.name === SNAPSHOT_FILE)) {
       if (!tracked.has(resolve(directory))) {
-        await rm(directory, { recursive: true, force: true })
+        if (mode === 'remove') await rm(directory, { recursive: true, force: true })
         changed = true
       }
       return
@@ -443,7 +444,7 @@ async function pruneUntracked(root: string, state: ProfileState): Promise<boolea
       if (directory === join(root, 'generations') && GENERATION_ID.test(entry.name)) continue
       const child = join(directory, entry.name)
       if (entry.name.startsWith('_staging-')) {
-        await rm(child, { recursive: true, force: true })
+        if (mode === 'remove') await rm(child, { recursive: true, force: true })
         changed = true
       } else await visit(child, depth + 1)
     }

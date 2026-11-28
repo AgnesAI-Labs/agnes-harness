@@ -1,12 +1,10 @@
 import { createHash } from 'node:crypto'
-import { constants } from 'node:fs'
-import { mkdir, open } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import { clientModuleRowIdForContribution } from '@agnes/daemon-foundation/composite-desired'
 import { type CompositionPatch, CompositionSessionStore, compositionModuleAllowed } from '@agnes/host'
 import {
   CLIENT_MAX_TOTAL_BYTES,
-  CLIENT_RESOURCE_MAX_FILE_BYTES,
   CLIENT_RESOURCE_MAX_TOTAL_BYTES,
   clientReleaseEvidence,
   hashDirectoryAsync,
@@ -14,7 +12,6 @@ import {
   type InstalledPackage,
   isRuntimePackageEligible,
   RuntimeGenerationSnapshotStore,
-  resolveClientModuleAsset,
   type VerifiedClientTree,
 } from '@agnes/package-manager'
 import type { RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
@@ -37,11 +34,26 @@ import {
   type ReleaseEvidence,
 } from './client-admission.js'
 import { cleanRelative, collectSnapshotFiles } from './client-asset-references.js'
+import {
+  type AssetPurpose,
+  assetRoute as route,
+  createPublishedAssetReads,
+  MAX_BATCH_READS,
+  type ObservationStatus,
+  type PendingRead,
+  readAssetBatch,
+  type ReadInput,
+  type RowAssets,
+  runtimeObservation,
+  sameActivation,
+  sameReadAdapters,
+  type SelectedAsset,
+  type SourceTreeProof,
+} from './client-asset-reads.js'
 import { createClientGenerations } from './client-generations.js'
 import {
   digest,
   emptyState,
-  encodedRevision,
   type PackageState,
   type ProfileState,
   pruneUntracked,
@@ -73,8 +85,6 @@ import type { PackageActivationObservation } from './handler.js'
 
 export const CLIENT_MODULE_RETENTION_MS = 30 * 60 * 1000
 export const CLIENT_MODULE_SNAPSHOT_QUOTA_BYTES = 256 * 1024 * 1024
-const MAX_BATCH_READS = 32
-const MAX_BATCH_BYTES = CLIENT_RESOURCE_MAX_FILE_BYTES
 
 type ClientContribution = NonNullable<
   Extract<InstalledPackage['contributions'][number], { kind: 'extension' }>['client']
@@ -132,6 +142,8 @@ type ClientRegistryInput = {
   inventory: InstalledInventory
   actual(packageId: string): Promise<PackageActivationObservation | undefined>
   refreshInventory(): Promise<InstalledInventory>
+  /** Server-owned identity when adjacent requests create equivalent adapter closures. */
+  assetAdapterScope?: object
   presentation?(inventory: InstalledInventory): Promise<PresentationObservation>
   archive?: Readonly<{
     id: string
@@ -143,23 +155,6 @@ type ClientRegistryInput = {
 }
 
 type NativeOrIsolated = Exclude<ClientAdmission, { kind: 'denied' }>
-type AssetPurpose = ClientModuleReadParams['purpose']
-type RowAssets = {
-  rowId: string
-  packageId: string
-  revision: string
-  purpose: AssetPurpose
-  admission: NativeOrIsolated
-  files: readonly VerifiedAsset[]
-}
-
-type ObservationStatus = 'current' | 'presentation-changed' | 'runtime-changed'
-type SelectedAsset = {
-  file: VerifiedAsset
-  packageId: string
-  revision: string
-  expiresAt?: number
-}
 
 type Reconciled = {
   roster: ClientModuleListResult
@@ -168,8 +163,6 @@ type Reconciled = {
   checkCurrent(includePresentation: boolean): Promise<ObservationStatus>
 }
 
-type ReadInput = ClientRegistryInput & Pick<ClientModuleReadParams, 'path' | 'purpose'>
-type PendingRead = { input: ReadInput; resolve(result: ClientModuleReadResult): void }
 type ReadBatch = { input: ReadInput; reads: PendingRead[]; tail: Promise<void> | undefined }
 
 export type ClientModuleRegistry = Readonly<{
@@ -185,14 +178,6 @@ export type ClientModuleRegistry = Readonly<{
   subscribe(listener: (event: ClientModulesChanged) => void): () => void
   close(): void
 }>
-
-function route(packageId: string, revision: string, path: string): string {
-  const encodedPath = path
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/')
-  return `/plugins/${packageId}/${encodedRevision(revision)}/${encodedPath}`
-}
 
 function declarations(row: ClientRegistryPackage): readonly ClientDeclaration[] {
   const extensions = row.contributions.filter(
@@ -431,17 +416,6 @@ function supportsClientSlots(client: ClientContribution): boolean {
   )
 }
 
-function runtimeObservation(
-  artifacts: ReturnType<NonNullable<ClientModuleRegistryOptions['runtimeArtifacts']>>,
-) {
-  return JSON.stringify([
-    artifacts?.desired?.digest,
-    artifacts?.previous?.digest,
-    artifacts?.lastGood?.digest,
-    [...(artifacts?.activeBackendRows ?? [])].sort(),
-  ])
-}
-
 function rosterRevision(
   value: Pick<ClientModuleListResult, 'modules' | 'statuses' | 'rows' | 'rowAliases'>,
 ): string {
@@ -530,6 +504,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
   const inputs = new Map<string, Parameters<ClientModuleRegistry['list']>[0]>()
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
   const resourceFailures = new Map<string, boolean>()
+  const publishedReads = createPublishedAssetReads(options, () => clock().getTime())
 
   const emit = (event: ClientModulesChanged): void => {
     for (const listener of listeners) {
@@ -604,6 +579,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
     input: Parameters<ClientModuleRegistry['list']>[0],
     announce: boolean,
   ): Promise<Reconciled> => {
+    if (!input.archive) publishedReads.invalidate(input.profile)
     const root = options.snapshotDirectory(input.profile, input.profileDirectory)
     await mkdir(root, { recursive: true, mode: 0o700 })
     const now = clock()
@@ -630,6 +606,9 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       ? undefined
       : await input.presentation?.(input.inventory).catch(() => undefined)
     const observations = new Map<string, PackageActivationObservation>()
+    const observedActual = presentation ? new Map<string, PackageActivationObservation | undefined>() : undefined
+    const observedSources: SourceTreeProof[] = []
+    let activationUnavailable = false
     const checkCurrent = async (includePresentation: boolean): Promise<ObservationStatus> => {
       try {
         if (!input.archive) {
@@ -637,15 +616,8 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
           if (fresh.profile !== input.inventory.profile || fresh.hash !== input.inventory.hash)
             return 'runtime-changed'
         }
-        for (const [id, prior] of observations) {
-          const actual = await input.actual(id)
-          if (
-            actual?.actual !== prior.actual ||
-            actual.actualIntegrity !== prior.actualIntegrity ||
-            actual.actualVersion !== prior.actualVersion
-          )
-            return 'runtime-changed'
-        }
+        for (const [id, prior] of observations)
+          if (!sameActivation(await input.actual(id), prior)) return 'runtime-changed'
         if (input.archive) return (await input.archive.current()) ? 'current' : 'runtime-changed'
         const presentationCurrent =
           !includePresentation || (await presentation?.current().catch(() => false)) === true
@@ -798,8 +770,9 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       let observation: PackageActivationObservation | undefined
       try {
         observation = await input.actual(row.id)
+        observedActual?.set(row.id, observation)
       } catch {
-        observation = undefined
+        activationUnavailable = true
       }
       const requiresBackend = activeDeclarations.some((item) => item.requiresBackend)
       const backendRevision = requiresBackend ? (observation?.actualIntegrity ?? null) : null
@@ -972,6 +945,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         resourceFailure = true
         continue
       }
+      if (observedActual) observedSources.push({ directory: tree.directory, treeIntegrity: tree.treeIntegrity })
       if (publication === 'published' && liveRow && selectedRevision === installedRevision) {
         const prior = state.packages[row.id]
         publications.add(liveRow, async () => {
@@ -1153,6 +1127,29 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       serverTime: now.toISOString(),
       ...(Object.keys(selectedAliases).length ? { rowAliases: selectedAliases } : {}),
     }
+    if (
+      !closed &&
+      !resourceFailure &&
+      !activationUnavailable &&
+      freshness === 'current' &&
+      presentation &&
+      observedActual &&
+      allowed.some(({ admission }) => admission.kind === 'native' && admission.source === 'approved-presentation')
+    ) {
+      try {
+        const selection = options.composition?.(input.profile)
+        const visible = new Set(filterRoster(result, selection).rows?.map(({ rowId }) => rowId))
+        publishedReads.remember(input, root, state, allowed, selection, visible, {
+          runtime: observedRuntime,
+          epoch: activationEpoch,
+          presentation,
+          actual: observedActual,
+          sources: observedSources,
+        })
+      } catch {
+        publishedReads.invalidate(input.profile)
+      }
+    }
     const previous = lastRevision.get(input.profile)
     lastRevision.set(input.profile, result.revision)
     if (announce) {
@@ -1233,98 +1230,39 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
     if (pendingReads.delete(read)) read.resolve(result ?? { found: false })
   }
 
-  const readBytes = async (root: string, path: string, { file, packageId, revision }: SelectedAsset) => {
-    const snapshot = await verifySnapshot(root, packageId, revision)
-    const recorded = snapshot?.manifest.files.find((item) => item.path === file.path)
-    if (!sameAsset(recorded, file)) return
-    const resolved = resolveClientModuleAsset(root, path)
-    if (!resolved) return
-    const handle = await open(resolved, constants.O_RDONLY | constants.O_NONBLOCK)
-    try {
-      const info = await handle.stat()
-      if (!info.isFile() || info.size !== file.bytes) return
-      // Read one byte past the expected end without an unbounded allocation if the file grew.
-      const buffer = Buffer.allocUnsafe(file.bytes + 1)
-      let size = 0
-      while (size < buffer.length) {
-        const { bytesRead } = await handle.read(buffer, size, buffer.length - size, size)
-        if (!bytesRead) break
-        size += bytesRead
-      }
-      if (size !== file.bytes) return
-      const bytes = buffer.subarray(0, size)
-      if (digest(bytes) === file.sha256) return bytes
-    } finally {
-      await handle.close()
-    }
-  }
+  const delivery = { closed: () => closed, settle: settleRead, now: () => clock().getTime() }
 
-  const readBatch = async (reads: readonly PendingRead[], prepared: Reconciled): Promise<void> => {
-    const ready: { read: PendingRead; bytes: Buffer; approved: boolean }[] = []
-    let buffered = 0
-    const complete = async (): Promise<boolean> => {
-      if (closed) return false
-      if (!ready.length) return true
-      const freshness = await prepared.checkCurrent(ready.some(({ approved }) => approved))
-      if (closed || freshness === 'runtime-changed') return false
-      for (const { read, bytes, approved } of ready) {
-        if (!approved || freshness === 'current')
-          settleRead(read, { found: true, base64: bytes.toString('base64') })
-        else settleRead(read)
-      }
-      ready.length = 0
-      buffered = 0
-      return true
-    }
-    for (const read of reads) {
-      if (closed) return
-      const { input } = read
-      let selected: SelectedAsset | undefined
-      let approved = false
-      let retained = false
-      let root: string
-      try {
-        root = options.snapshotDirectory(input.profile, input.profileDirectory)
+  const readBatch = (reads: readonly PendingRead[], prepared: Reconciled): Promise<void> =>
+    readAssetBatch(
+      reads,
+      async (input) => {
+        const root = options.snapshotDirectory(input.profile, input.profileDirectory)
         const visible = options.composition?.(input.profile)
         const rows = new Set(
           filterRoster(prepared.roster, visible)
             .rows?.filter((row) => !input.archive || historicalContribution(row))
             .map(({ rowId }) => rowId),
         )
+        let approved: SelectedAsset | undefined
         for (const grant of prepared.assets) {
           if (grant.purpose !== input.purpose || !rows.has(grant.rowId)) continue
           const { packageId, revision } = grant
           const file = grant.files.find(({ path }) => route(packageId, revision, path) === input.path)
           if (!file) continue
-          selected = { file, packageId, revision }
-          approved = grant.admission.kind === 'native' && grant.admission.source === 'approved-presentation'
-          if (!approved) break
+          const asset = { file, packageId, revision }
+          if (grant.admission.kind !== 'native' || grant.admission.source !== 'approved-presentation')
+            return { root, asset, kind: 'current' }
+          approved = asset
         }
-        if (!selected && input.purpose === 'document') {
-          selected = await retainedAsset(input, prepared.state, visible)
-          retained = selected !== undefined
+        if (approved) return { root, asset: approved, kind: 'approved' }
+        if (input.purpose === 'document') {
+          const asset = await retainedAsset(input, prepared.state, visible)
+          if (asset) return { root, asset, kind: 'retained' }
         }
-      } catch {
-        continue
-      }
-      if (!selected || closed) continue
-      if ((retained || buffered + selected.file.bytes > MAX_BATCH_BYTES) && !(await complete())) return
-      const bytes = await readBytes(root, input.path, selected).catch(() => undefined)
-      if (!bytes || closed) continue
-      if (retained) {
-        if (
-          (await prepared.checkCurrent(false)) === 'current' &&
-          !closed &&
-          (selected.expiresAt === undefined || clock().getTime() < selected.expiresAt)
-        )
-          settleRead(read, { found: true, base64: bytes.toString('base64') })
-      } else {
-        ready.push({ read, bytes, approved })
-        buffered += bytes.length
-      }
-    }
-    await complete()
-  }
+      },
+      prepared.checkCurrent,
+      delivery,
+    )
 
   const queueRead = (read: PendingRead): void => {
     const { input } = read
@@ -1335,7 +1273,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       queued?.input.inventory === input.inventory &&
       queued.input.profileDirectory === input.profileDirectory &&
       queued.input.sessionId === input.sessionId &&
-      Boolean(queued.input.presentation) === Boolean(input.presentation) &&
+      sameReadAdapters(queued.input, input) &&
       queued.tail === tails.get(profile)
     ) {
       queued.reads.push(read)
@@ -1349,8 +1287,28 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         await pruneGenerationAssets(input)
         if (closed) return
         inputs.set(profile, input)
-        const prepared = await reconcile(input, true)
-        await readBatch(reads, prepared)
+        const published = await publishedReads.batch(input, reads)
+        if (closed) return
+        let selected = input
+        let remaining = reads
+        if (published) {
+          await readAssetBatch(reads, published.select, published.checkCurrent, delivery)
+          if (closed) return
+          const failure = published.failure()
+          if (!failure) return
+          if (failure.kind === 'terminal') {
+            emitResourceFailure(input)
+            return
+          }
+          remaining = reads.filter(
+            (member) => pendingReads.has(member) && failure.paths.has(member.input.path),
+          )
+          if (!remaining.length) return
+          selected = { ...input, inventory: failure.inventory }
+          inputs.set(profile, selected)
+        }
+        const prepared = await reconcile(selected, true)
+        await readBatch(remaining, prepared)
       } finally {
         for (const member of reads) settleRead(member)
       }
@@ -1469,6 +1427,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       inputs.clear()
       resourceFailures.clear()
       queuedReads.clear()
+      publishedReads.clear()
       listeners.clear()
     },
   }
